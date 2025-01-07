@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Playful Profile Template</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: "Poppins", sans-serif;
+      }
+
+      body {
+        background: #ffd6e7;
+        background-image: radial-gradient(circle at 20px 20px, #fff2 12px, transparent 12px), radial-gradient(circle at 60px 60px, #fff2 12px, transparent 12px),
+          radial-gradient(circle at 100px 20px, #fff2 12px, transparent 12px);
+        background-size: 120px 120px;
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+      }
+
+      .profile-wrapper {
+        background: white;
+        border-radius: 40px;
+        padding: 40px;
+        width: 100%;
+        max-width: 440px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1), 0 1px 8px rgba(0, 0, 0, 0.05);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .decorative-circle {
+        position: absolute;
+        border-radius: 50%;
+      }
+
+      .circle-1 {
+        width: 160px;
+        height: 160px;
+        background: #ffd6e7;
+        top: -80px;
+        right: -80px;
+      }
+
+      .circle-2 {
+        width: 120px;
+        height: 120px;
+        background: #e0c1f4;
+        bottom: -60px;
+        left: -60px;
+      }
+
+      .profile-content {
+        position: relative;
+        z-index: 1;
+        text-align: center;
+      }
+
+      .avatar-container {
+        position: relative;
+        width: 140px;
+        height: 140px;
+        margin: 0 auto 24px;
+      }
+
+      .avatar {
+        width: 100%;
+        height: 100%;
+        border-radius: 30px;
+        object-fit: cover;
+        border: 4px solid white;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+      }
+
+      .avatar-badge {
+        position: absolute;
+        bottom: -10px;
+        right: -10px;
+        background: #7c3aed;
+        color: white;
+        padding: 8px;
+        border-radius: 12px;
+        font-size: 20px;
+        box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+      }
+
+      .name {
+        font-size: 28px;
+        font-weight: 700;
+        color: #2d3748;
+        margin-bottom: 4px;
+      }
+
+      .username {
+        color: #7c3aed;
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 20px;
+      }
+
+      .bio {
+        color: #4a5568;
+        line-height: 1.7;
+        margin-bottom: 24px;
+        font-size: 15px;
+        padding: 0 10px;
+      }
+
+      .location-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        background: #f7f7ff;
+        border-radius: 20px;
+        color: #4a5568;
+        font-size: 14px;
+        font-weight: 500;
+        transition: transform 0.2s;
+      }
+
+      .location-tag:hover {
+        transform: scale(1.05);
+      }
+
+      .location-tag svg {
+        width: 16px;
+        height: 16px;
+        color: #7c3aed;
+      }
+
+      @keyframes float {
+        0% {
+          transform: translateY(0px);
+        }
+        50% {
+          transform: translateY(-10px);
+        }
+        100% {
+          transform: translateY(0px);
+        }
+      }
+
+      .avatar-container {
+        animation: float 4s ease-in-out infinite;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="profile-wrapper">
+      <div class="decorative-circle circle-1"></div>
+      <div class="decorative-circle circle-2"></div>
+      <div class="profile-content">
+        <div class="avatar-container">
+          <img src="https://via.placeholder.com/140" alt="Profile Picture" class="avatar" />
+          <div class="avatar-badge">✨</div>
+        </div>
+        <h1 class="name">Emma Wilson</h1>
+        <div class="username">@emmacreates</div>
+        <p class="bio">Digital artist and illustrator creating whimsical worlds. Let's make the internet a more colorful place together! ✨🎨</p>
+        <div class="location-tag">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+          </svg>
+          Portland, OR
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
