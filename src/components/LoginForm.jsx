@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import "./LoginForm.css";
 
 const LoginForm = () => {
@@ -129,7 +130,7 @@ const LoginForm = () => {
         </div>
 
         <div className='signup-link'>
-          Don't have an account? <a href='/signup'>Sign Up</a>
+          Don't have an account? <Link to='/signup'>Sign Up</Link>
         </div>
       </div>
     </div>
