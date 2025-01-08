@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import "./SignupForm.css";
 
 const SignupForm = () => {
@@ -11,6 +11,25 @@ const SignupForm = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState({});
+  const [isFormValid, setIsFormValid] = useState(false);
+
+  useEffect(() => {
+    // Check if form is valid
+    const validateForm = () => {
+      // Email validation
+      const isEmailValid = formData.email && /\S+@\S+\.\S+/.test(formData.email);
+
+      // Password validation
+      const isPasswordValid = formData.password && formData.password.length >= 8;
+
+      // Confirm password validation
+      const isConfirmPasswordValid = formData.password === formData.confirmPassword && formData.confirmPassword;
+
+      return isEmailValid && isPasswordValid && isConfirmPasswordValid;
+    };
+
+    setIsFormValid(validateForm());
+  }, [formData]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -122,7 +141,7 @@ const SignupForm = () => {
             {errors.confirmPassword && <span className='error-message'>{errors.confirmPassword}</span>}
           </div>
 
-          <button type='submit' className='continue-button'>
+          <button type='submit' className={`continue-button ${isFormValid ? "active" : ""}`}>
             Continue
           </button>
         </form>
