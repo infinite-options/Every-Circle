@@ -1,7 +1,5 @@
 import { ThemeProvider, createTheme } from '@mui/material';
-import ResponsiveContainer from './components/Layout/ResponsiveContainer';
 import ProfileSetupForm from './components/ProfileSetup/ProfileSetupForm';
-import ProfileEditor from './components/profile_editor';
 
 const theme = createTheme({
   typography: {
