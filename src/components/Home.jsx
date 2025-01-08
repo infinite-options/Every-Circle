@@ -20,9 +20,9 @@ const Home = () => {
         </div>
 
         {/* Login Circle */}
-        <div className='circle login'>
+        <Link to='/login' className='circle login'>
           <span>Login</span>
-        </div>
+        </Link>
 
         {/* How It Works Circle */}
         <div className='circle how-it-works'>
