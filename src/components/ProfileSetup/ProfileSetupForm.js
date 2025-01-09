@@ -28,6 +28,8 @@ const ProfileSetupForm = () => {
     template: '',
   });
 
+  // console.log("userId", userId);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({

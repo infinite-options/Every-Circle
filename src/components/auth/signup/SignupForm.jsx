@@ -127,7 +127,7 @@ const SignupForm = () => {
         );
 
         navigate(`/profileSetup`, {
-          state: { userId: response?.data?.result },
+          state: { userId: response?.data?.user_uid },
         });
       }
     }
