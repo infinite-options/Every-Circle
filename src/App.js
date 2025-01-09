@@ -1,9 +1,8 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import Home from "./components/Home";
-import SignupForm from "./components/SignupForm";
-import LoginForm from "./components/LoginForm";
-import "./App.css";
+import SignupForm from "./components/auth/signup/SignupForm";
+import LoginForm from "./components/auth/Login/LoginForm";
 import { ThemeProvider, createTheme } from '@mui/material';
 import ProfileSetupForm from './components/ProfileSetup/ProfileSetupForm';
 
@@ -26,14 +25,16 @@ const theme = createTheme({
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        <Route exact path='/' element={<Home />} />
-        <Route path='/signup' element={<SignupForm />} />
-        <Route path='/login' element={<LoginForm />} />
-        <Route path='/profile-setup' element={<ProfileSetupForm />} />
-      </Routes>
-    </Router>
+    <ThemeProvider theme={theme}>
+      <Router>
+        <Routes>
+          <Route exact path='/' element={<Home />} />
+          <Route path='/signup' element={<SignupForm />} />
+          <Route path='/login' element={<LoginForm />} />
+          <Route path='/profileSetup' element={<ProfileSetupForm />} />
+        </Routes>
+      </Router>
+    </ThemeProvider>
   );
 }
 

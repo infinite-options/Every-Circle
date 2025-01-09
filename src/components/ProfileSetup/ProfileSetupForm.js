@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLocation } from "react-router-dom";
 import { Box, Typography, Button } from '@mui/material';
 import ProfileSetupStepper from './ProfileSetupStepper';
 import BasicInfoStep from './Steps/BasicInfoStep';
@@ -8,9 +9,11 @@ import TemplateStep from './Steps/TemplateStep';
 import ResponsiveContainer from '../Layout/ResponsiveContainer';
 
 const ProfileSetupForm = () => {
+  const location = useLocation();
+  const userId = location.state?.userId ? location.state.userId : null;
   const [activeStep, setActiveStep] = useState(0);
   const [formData, setFormData] = useState({
-    firstName: '',
+    firstName: "",
     lastName: '',
     phoneNumber: '',
     tagLine: '',

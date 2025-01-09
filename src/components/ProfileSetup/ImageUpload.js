@@ -33,7 +33,7 @@ const ImageUpload = ({ onImageUpload, imageUrl }) => {
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
       ) : (
-        <IconButton component="label">
+        <IconButton component="label" sx={{ width: '100%', height: '100%' }}>
           <input
             type="file"
             hidden

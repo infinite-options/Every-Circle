@@ -14,9 +14,9 @@ const ResponsiveContainer = ({ children }) => {
       <Paper
         elevation={3}
         sx={{
-          // width: '100%',
-          width: '600px',
-          borderRadius: '50%', // Keeps it circular
+          width: '700px',
+          height: '700px',
+          borderRadius: '50%',
           overflow: 'hidden',
           backgroundColor: '#1976d2',
           display: 'flex',
@@ -24,22 +24,6 @@ const ResponsiveContainer = ({ children }) => {
           alignItems: 'center',
           padding: 2,
           zIndex: 1,
-          // '&::before': {
-          //   content: '""',
-          //   position: 'absolute',
-          //   top: '-50%',
-          //   left: '-100%', 
-          //   width: '300%', 
-          //   height: '200%',
-          //   backgroundColor: '#1976d2',
-          //   borderRadius: '50%',
-          //   zIndex: 0,
-          //   transform: 'scale(1.2)',
-          //   '@media (min-width: 600px)': {
-          //     left: '-50%',
-          //     transform: 'scale(1)', 
-          //   },
-          // },
         }}
       >
         <Box
