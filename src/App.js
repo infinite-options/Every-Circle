@@ -5,6 +5,11 @@ import SignupForm from "./components/auth/signup/SignupForm";
 import LoginForm from "./components/auth/Login/LoginForm";
 import { ThemeProvider, createTheme } from '@mui/material';
 import ProfileSetupForm from './components/ProfileSetup/ProfileSetupForm';
+import Profile from './components/profile/Profile';
+import Settings from './components/settings/Settings';
+import AccountDashboard from './components/account/AccountDashboard';
+import Network from './components/network/Network';
+import Search from './components/search/Search';
 
 const theme = createTheme({
   typography: {
@@ -32,6 +37,11 @@ function App() {
           <Route path='/signup' element={<SignupForm />} />
           <Route path='/login' element={<LoginForm />} />
           <Route path='/profileSetup' element={<ProfileSetupForm />} />
+          <Route path='/profile' element={<Profile />} />
+          <Route path = "/settings" element={<Settings />} />
+          <Route path = "/account" element={<AccountDashboard />} />
+          <Route path = "/network" element={<Network />} />
+          <Route path = "/search" element={<Search />} />
         </Routes>
       </Router>
     </ThemeProvider>
