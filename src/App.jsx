@@ -7,6 +7,7 @@ import Profile from "./components/profile/Profile";
 import Settings from "./components/settings/Settings";
 import AccountDashboard from "./components/account/AccountDashboard";
 import Network from "./components/network/Network";
+import Search from "./components/search/Search";
 import "./App.css";
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
                 <Route path = "/settings" element={<Settings />} />
                 <Route path = "/account" element={<AccountDashboard />} />
                 <Route path = "/network" element={<Network />} />
+                <Route path = "/search" element={<Search />} />
       </Routes>
     </Router>
   );
