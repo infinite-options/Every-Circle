@@ -110,12 +110,14 @@ const LoginForm = () => {
                 );
 
                 // console.log(loginResponse);
-                const { message, user_uid } = loginResponse?.data;
+                const { message, result } = loginResponse?.data;
 
                 switch (message) {
                   case "Login successful":
-                    // console.log("Login successful", user_uid);
-                    navigate("/profileSetup", { state: { userId: user_uid } });
+                    // console.log("Login successful", result?.user_uid);
+                    navigate("/profileSetup", {
+                      state: { userId: result?.user_uid },
+                    });
                     break;
 
                   case "Incorrect password":
