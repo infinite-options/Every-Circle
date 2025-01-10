@@ -5,6 +5,7 @@ import SignupForm from "./components/SignupForm";
 import LoginForm from "./components/LoginForm";
 import Profile from "./components/profile/Profile";
 import Settings from "./components/settings/Settings";
+import AccountDashboard from "./components/account/AccountDashboard";
 import "./App.css";
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
         <Route path='/login' element={<LoginForm />} /> */}
                 <Route path='/' element={<Profile />} />
                 <Route path = "/settings" element={<Settings />} />
+                <Route path = "/account" element={<AccountDashboard />} />
       </Routes>
     </Router>
   );
