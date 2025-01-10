@@ -27,7 +27,7 @@ const NavigationBar = () => {
       <IconButton aria-label="add" sx={{ width: '60px', height: '60px' }} onClick={() => navigate('/account')}>
         <AccountBalanceIcon sx={{ width: '30px', height: '30px' }} />
       </IconButton>
-      <IconButton aria-label="favorites" sx={{ width: '60px', height: '60px' }}>
+      <IconButton aria-label="favorites" sx={{ width: '60px', height: '60px'}} onClick={()=>navigate('/network')}>
         <ShareIcon sx={{ width: '30px', height: '30px' }} />
       </IconButton>
       <IconButton aria-label="profile" sx={{ width: '60px', height: '60px' }}>

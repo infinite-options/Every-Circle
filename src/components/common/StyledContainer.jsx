@@ -1,7 +1,7 @@
 import React from "react";
-import { Container, styled } from "@mui/material";
+import { Container, styled, Box } from "@mui/material";
 
-const StyledContainerComponent = styled(Container)({
+const StyledContainerComponent = styled(Box)({
     width: '500px',
     minHeight: '100vh',
     backgroundColor: "#f5f5f5",
@@ -11,6 +11,7 @@ const StyledContainerComponent = styled(Container)({
     justifyContent: "center",
     display: "flex",
     flexDirection: "column",
+    margin: '0 auto',
   });
 
 export default function StyledContainer(props) {

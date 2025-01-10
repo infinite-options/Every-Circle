@@ -14,6 +14,7 @@ const MainContent = styled(Box)({
   flexDirection: "column",
   alignItems: "center",
   justifyContent: "center",
+  padding: "0 16px",
 });
 
 export default function AccountPage() {

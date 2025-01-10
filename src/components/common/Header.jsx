@@ -6,16 +6,15 @@ const HeaderBox = styled(Box)({
     padding: "20px 64px",
     textAlign: "center",
     marginBottom: 25,
-    fontWeight: 400,
-    fontSize: 24,
-    lineHeight: 30,
+    width: "100%",
+    width: "100%",
 });
 
 
 export default function Header({ title }) {
     return (
         <HeaderBox>
-            <Typography variant="h4" color="white">
+            <Typography variant="h5" color="white">
                 {title}
             </Typography>
         </HeaderBox>
