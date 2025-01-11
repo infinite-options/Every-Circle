@@ -18,7 +18,7 @@ const NavigationBar = () => {
         marginTop: "auto",
       }}
     >
-       <IconButton aria-label="home" sx={{ width: '60px', height: '60px' }} onClick={() => navigate('/')}>
+       <IconButton aria-label="home" sx={{ width: '60px', height: '60px' }} onClick={() => navigate('/profile')}>
         <AccountCircleIcon sx={{ width: '30px', height: '30px' }} />
       </IconButton>
       <IconButton aria-label="search" sx={{ width: '60px', height: '60px' }} onClick={() => navigate('/settings')}>
