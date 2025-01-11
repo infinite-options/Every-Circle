@@ -8,7 +8,9 @@ const SettingsOptions = () => {
         display: "flex",
         justifyContent: "space-between",
         width: "100%",
+        height: "100%",
         maxWidth: "400px",
+        mt: '10px',
       }}
     >
       <Box

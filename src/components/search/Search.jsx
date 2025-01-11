@@ -61,8 +61,8 @@ export default function Search() {
     <StyledContainerComponent>
       <Header title="Search" />
       <Box sx={{
-        // backgroundColor: "yellow",
         width: "100%",
+        height: "100%",
         padding: "20px",
       }}>
         <Box sx={{ alignItems: "center", justifyContent: "center", margin: "0px 0px 20px 0px" }}>

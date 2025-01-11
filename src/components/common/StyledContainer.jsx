@@ -2,7 +2,7 @@ import React from "react";
 import { Container, styled, Box } from "@mui/material";
 
 const StyledContainerComponent = styled(Box)({
-    width: '500px',
+    width: '700px',
     minHeight: '100vh',
     backgroundColor: "#f5f5f5",
     overflow: "hidden",
