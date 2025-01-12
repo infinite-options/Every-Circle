@@ -11,6 +11,7 @@ const StyledContainerComponent = styled(Box) (({theme}) => ({
     display: "flex",
     flexDirection: "column",
     margin: '0 auto',
+    boxShadow: '0px 2px 2px rgba(0, 0, 0, 0.2)',
     [theme.breakpoints.down('sm')]: {
       width: '100%',
     },
