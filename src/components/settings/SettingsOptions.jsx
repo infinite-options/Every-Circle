@@ -52,7 +52,7 @@ const SettingsOptions = () => {
           Edit User Information
         </Link>
         <Link
-          href="/change-password"
+          href="/changePassword"
           underline="always"
           sx={{ color: 'inherit' }}
         >

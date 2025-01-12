@@ -9,6 +9,7 @@ export const InputField = ({
   rows,
   onChange,
   width,
+  backgroundColor,
 }) => (
   <Box sx={{ mb: 3 }}>
     <Typography variant="caption" sx={{ ml: 1, mb: 0.5, display: "block" }}>
@@ -23,7 +24,7 @@ export const InputField = ({
       onChange={(e) => onChange?.(e.target.value)}
       placeholder={`${label} ${optional ? "(optional)" : ""}`}
       sx={{
-        backgroundColor: "#e0e0e0",
+        backgroundColor: backgroundColor || "#e0e0e0",
         borderRadius: 2,
         "& .MuiOutlinedInput-root": {
           borderRadius: 2,

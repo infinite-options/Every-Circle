@@ -6,7 +6,7 @@ const StyledButton = styled(Button)(({ width, height })=>({
     width: width,
     height: height,
     borderRadius: "50%",
-    backgroundColor: "#ffc107",
+    backgroundColor: "#FF9500",
     color: "#fff",
     margin: "14px auto",
     display: "block",

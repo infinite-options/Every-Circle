@@ -48,7 +48,7 @@ export function TransactionList({ transactions }) {
       <DataGrid
         rows={transactions}
         columns={columns}
-        autoSize
+        autoHeight
         hideFooter
         sx={{
           border: "none",

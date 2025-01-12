@@ -11,6 +11,7 @@ import AccountDashboard from "./components/account/AccountDashboard";
 import Network from "./components/network/Network";
 import Search from "./components/search/Search";
 import ReferralForm from "./components/referral/ReferralForm";
+import ChangePassword from "./components/settings/password/ChangePassword";
 
 const theme = createTheme({
   typography: {
@@ -44,6 +45,7 @@ function App() {
           <Route path="/network" element={<Network />} />
           <Route path="/search" element={<Search />} />
           <Route path="/referral" element={<ReferralForm />} />
+          <Route path="/changePassword" element={<ChangePassword />} />
         </Routes>
       </Router>
     </ThemeProvider>
