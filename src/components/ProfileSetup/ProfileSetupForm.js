@@ -49,6 +49,7 @@ const ProfileSetupForm = () => {
 
   const handleNext = () => {
     if (activeStep === steps.length - 1) {
+      // TODO: Add API call to Finish Profile Setup
       navigate('/profile');
     } else {
       setActiveStep((prev) => prev + 1);
