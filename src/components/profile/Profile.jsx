@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Box, Typography, Container, styled, Paper } from "@mui/material";
+import { Box, Typography, styled, } from "@mui/material";
 import { SocialLink } from "./SocialLink";
 import { InputField } from "../common/InputField";
 import { ImageUpload } from "../common/ImageUpload";
@@ -13,13 +13,6 @@ import twitter from "../../assets/twitter-icon.png";
 import CircleButton from "../common/CircleButton";
 import NavigationBar from "../navigation/NavigationBar";
 
-
-// const StyledContainer = styled(Container)({
-//   width: '500px',
-//   backgroundColor: "#f5f5f5",
-//   overflow: "hidden",
-//   padding: 0,
-// });
 
 const FormBox = styled(Box)({
   padding: "0 16px",
@@ -154,9 +147,8 @@ export default function Profile() {
 
             <CircleButton onClick={handleSubmit} width={135} height={135} text="Save" />
           </FormBox>
-
-          <NavigationBar />
         </form>
+        <NavigationBar />
       </Box>
 
     </StyledContainer>
