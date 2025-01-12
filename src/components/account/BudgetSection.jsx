@@ -61,21 +61,22 @@ export function BudgetSection() {
           rows={budgetItems}
           columns={columns}
           getRowId={(row) => row.id}
+          autoSize
           hideFooter
           sx={{
-            border: "none",
+            // border: "none",
             "& .MuiDataGrid-cell": {
-              border: "none",
+              // border: "none",
+              alignItems: "center",
               fontSize: "12px",
               color: "rgba(26, 26, 26, 0.5)",
               fontWeight: 400,
-              lineHeight: 2,
             },
             "& .MuiDataGrid-columnHeaderTitle": {
               fontSize: "12px",
               color: "rgba(26, 26, 26, 0.5)",
               fontWeight: 700,
-              border: "none",
+              // border: "none",
               backgroundColor: "transparent",
             },
             // "& .MuiDataGrid-columnHeader": {
@@ -83,7 +84,7 @@ export function BudgetSection() {
             // },
           }} />
 
-        <Grid container sx={{ marginTop: "16px" }}>
+        <Grid container sx={{ padding: "16px 0px"}}>
           <Grid size={6}>
             <BudgetCell sx={{ fontWeight: 700 }}>Max Monthly Spend:</BudgetCell>
           </Grid>

@@ -48,16 +48,16 @@ export function TransactionList({ transactions }) {
       <DataGrid
         rows={transactions}
         columns={columns}
-        autoHeight
+        autoSize
         hideFooter
         sx={{
           border: "none",
           "& .MuiDataGrid-cell": {
-            border: "none",
+            // border: "none",
+            alignItems: "center",
             fontSize: "12px",
             color: "rgba(26, 26, 26, 0.5)",
             fontWeight: 400,
-            lineHeight: 2,
           },
           "& .MuiDataGrid-columnHeaders": {
             display: "none",
