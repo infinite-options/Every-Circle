@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Box, Typography, styled, } from "@mui/material";
 import { SocialLink } from "./SocialLink";
 import { InputField } from "../common/InputField";
@@ -12,6 +12,7 @@ import linkedin from "../../assets/linkedin-icon.png";
 import twitter from "../../assets/twitter-icon.png";
 import CircleButton from "../common/CircleButton";
 import NavigationBar from "../navigation/NavigationBar";
+import axios from "axios";
 
 
 const FormBox = styled(Box)({
@@ -20,9 +21,9 @@ const FormBox = styled(Box)({
 
 export default function Profile() {
   const [formData, setFormData] = useState({
-    firstName: "Orbit",
-    lastName: "Ellison",
-    phoneNumber: "408-000-0000",
+    firstName: "",
+    lastName: "",
+    phoneNumber: "",
     tagLine: "",
     shortBio: "",
     images: [],

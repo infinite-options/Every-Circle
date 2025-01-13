@@ -1,5 +1,5 @@
 import React from "react";
-import { useParams } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { Box, Typography } from "@mui/material";
 import speedyRotoLogo from "../../assets/speedy_roto.jpg";
 import abcPlumbingLogo from "../../assets/ABCPlumbing.jpg";
@@ -9,7 +9,8 @@ import NavigationBar from "../navigation/NavigationBar";
 
 
 export default function ShowTemplate() {
-    const { name } = useParams();
+    const { state } = useLocation();
+    const name = state.name;
     const data = [{
         name: "Speedy Roto",
         services: [

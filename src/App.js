@@ -14,6 +14,7 @@ import ReferralForm from "./components/referral/ReferralForm";
 import ChangePassword from "./components/settings/password/ChangePassword";
 import ShowTemplate from "./components/showTemplate/ShowTemplate";
 import SelectTemplate from "./components/SelectTemplate/SelectTemplate";
+import MultiResult from "./components/search/MultiResult";
 
 const theme = createTheme({
   typography: {
@@ -48,7 +49,8 @@ function App() {
           <Route path="/search" element={<Search />} />
           <Route path="/referral" element={<ReferralForm />} />
           <Route path="/changePassword" element={<ChangePassword />} />
-          <Route path="/showTemplate/:name" element={<ShowTemplate />} />
+          <Route path="/showTemplate" element={<ShowTemplate />} />
+          <Route path="/multiResult" element={<MultiResult />} />
           <Route path="/selectTemplate" element={<SelectTemplate />} />
         </Routes>
       </Router>
