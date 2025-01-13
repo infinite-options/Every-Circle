@@ -8,7 +8,7 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
-
+import CircleButton from "../common/CircleButton";
 
 export default function ReferralForm() {
     const [formData, setFormData] = useState({
@@ -97,6 +97,8 @@ export default function ReferralForm() {
                         value={formData.email}
                         onChange={(value) => setFormData({ ...formData, email: value })}
                     />
+
+                    <CircleButton width={100} height={100} text="Save" />
 
                 </form>
             </Box>

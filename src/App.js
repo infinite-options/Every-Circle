@@ -13,6 +13,7 @@ import Search from "./components/search/Search";
 import ReferralForm from "./components/referral/ReferralForm";
 import ChangePassword from "./components/settings/password/ChangePassword";
 import ShowTemplate from "./components/showTemplate/ShowTemplate";
+import SelectTemplate from "./components/SelectTemplate/SelectTemplate";
 
 const theme = createTheme({
   typography: {
@@ -48,6 +49,7 @@ function App() {
           <Route path="/referral" element={<ReferralForm />} />
           <Route path="/changePassword" element={<ChangePassword />} />
           <Route path="/showTemplate/:name" element={<ShowTemplate />} />
+          <Route path="/selectTemplate" element={<SelectTemplate />} />
         </Routes>
       </Router>
     </ThemeProvider>
