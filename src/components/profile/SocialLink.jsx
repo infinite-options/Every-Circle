@@ -1,7 +1,7 @@
 import React from "react";
 import { TextField, Box } from "@mui/material";
 
-export const SocialLink = ({ iconSrc, alt, value, onChange }) => (
+export const SocialLink = ({ iconSrc, alt, value, onChange, backgroundColor, disabled }) => (
   <Box sx={{ display: "flex", gap: 2, mb: 3, alignItems: "center" }}>
     <img
       src={iconSrc}
@@ -13,9 +13,10 @@ export const SocialLink = ({ iconSrc, alt, value, onChange }) => (
       variant="outlined"
       placeholder="Enter Link (optional)"
       value={value}
+      disabled={disabled}
       onChange={(e) => onChange?.(e.target.value)}
       sx={{
-        backgroundColor: "#e0e0e0",
+        backgroundColor: backgroundColor || "#e0e0e0",
         borderRadius: 2,
         "& .MuiOutlinedInput-root": {
           borderRadius: 2,

@@ -1,7 +1,7 @@
 import React from "react";
 import { TextField } from "@mui/material";
 
-export const HelpItem = ({ text, onChange }) => (
+export const HelpItem = ({ text, onChange, backgroundColor, disabled }) => (
   <TextField
     fullWidth
     variant="outlined"
@@ -9,11 +9,12 @@ export const HelpItem = ({ text, onChange }) => (
     onChange={(e) => onChange?.(e.target.value)}
     sx={{
       mb: 2,
-      backgroundColor: "#e0e0e0",
+      backgroundColor: backgroundColor || "#e0e0e0",
       borderRadius: 2,
       "& .MuiOutlinedInput-root": {
         borderRadius: 2,
       },
     }}
+    disabled={disabled}
   />
 );

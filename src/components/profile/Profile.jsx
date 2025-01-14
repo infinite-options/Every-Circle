@@ -15,6 +15,7 @@ import NavigationBar from "../navigation/NavigationBar";
 import axios from "axios";
 import { useLocation } from "react-router-dom";
 import APIConfig from "../../APIConfig";
+import EditIcon from '@mui/icons-material/Edit';
 
 
 const FormBox = styled(Box)({
@@ -39,6 +40,7 @@ export default function Profile() {
     youHelp: ["", "", "", ""],
   });
   const [profileId, setProfileId] = useState("");
+  const [editMode, setEditMode] = useState(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -48,22 +50,23 @@ export default function Profile() {
         if (response.status === 200) {
           const user = response.data.result[0];
           setFormData(
-            { ...formData, 
-              firstName: user.first_name || "", 
-              lastName: user.last_name || "", 
-              phoneNumber: user.phone_number || "", 
-              tagLine: user.profile_tag_line || "", 
-              shortBio: user.profile_short_bio || "", 
+            {
+              ...formData,
+              firstName: user.first_name || "",
+              lastName: user.last_name || "",
+              phoneNumber: user.phone_number || "",
+              tagLine: user.profile_tag_line || "",
+              shortBio: user.profile_short_bio || "",
               images: user.profile_images || [],
               facebookLink: user.profile_facebook_link || "",
               twitterLink: user.profile_twitter_link || "",
-              linkedinLink: user.profile_linkedin_link || ""  ,
+              linkedinLink: user.profile_linkedin_link || "",
               youtubeLink: user.profile_youtube_link || "",
-              template: user.profile_template || "", 
-              youHelp: user.profile_how_can_you_help ? JSON.parse(user.profile_how_can_you_help) : ["", "", "", ""], 
+              template: user.profile_template || "",
+              youHelp: user.profile_how_can_you_help ? JSON.parse(user.profile_how_can_you_help) : ["", "", "", ""],
               weHelp: user.profile_how_can_we_help ? JSON.parse(user.profile_how_can_we_help) : ["", "", "", ""]
             });
-            setProfileId(user.profile_uid);
+          setProfileId(user.profile_uid);
         } else {
           console.log("Error fetching profile: ", response.status);
         }
@@ -107,6 +110,12 @@ export default function Profile() {
   return (
     <StyledContainer>
       <Header title="Profile" />
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', padding: '0px 30px', width: '100%',}}>
+        <EditIcon
+          onClick={() => setEditMode(!editMode)}
+          sx={{ cursor: 'pointer' }}
+        />
+      </Box>
       <Box sx={{ borderRadius: '10px', margin: "10px 25px" }}>
         <form onSubmit={handleSubmit}>
           <FormBox>
@@ -114,11 +123,15 @@ export default function Profile() {
               label="First Name"
               value={formData.firstName}
               onChange={(value) => setFormData({ ...formData, firstName: value })}
+              disabled={!editMode}
+              backgroundColor={editMode ? 'white' : '#e0e0e0'}
             />
             <InputField
               label="Last Name"
               value={formData.lastName}
               onChange={(value) => setFormData({ ...formData, lastName: value })}
+              disabled={!editMode}
+              backgroundColor={editMode ? 'white' : '#e0e0e0'}
             />
             <InputField
               label="Phone Number"
@@ -126,12 +139,16 @@ export default function Profile() {
               onChange={(value) =>
                 setFormData({ ...formData, phoneNumber: value })
               }
+              disabled={!editMode}
+              backgroundColor={editMode ? 'white' : '#e0e0e0'}
             />
             <InputField
               label="Tag Line"
               optional
               value={formData.tagLine}
               onChange={(value) => setFormData({ ...formData, tagLine: value })}
+              disabled={!editMode}
+              backgroundColor={editMode ? 'white' : '#e0e0e0'}
             />
             <InputField
               label="Short Bio"
@@ -140,6 +157,8 @@ export default function Profile() {
               rows={4}
               value={formData.shortBio}
               onChange={(value) => setFormData({ ...formData, shortBio: value })}
+              disabled={!editMode}
+              backgroundColor={editMode ? 'white' : '#e0e0e0'}
             />
 
             <Box sx={{ display: "flex", gap: 2, my: 3, justifyContent: "space-between" }}>
@@ -161,6 +180,8 @@ export default function Profile() {
               alt="Facebook"
               value={formData.facebookLink}
               onChange={(value) => setFormData({ ...formData, facebookLink: value })}
+              disabled={!editMode}
+              backgroundColor={editMode ? 'white' : '#e0e0e0'}
             />
 
             <SocialLink
@@ -168,6 +189,8 @@ export default function Profile() {
               alt="Twitter"
               value={formData.twitterLink}
               onChange={(value) => setFormData({ ...formData, twitterLink: value })}
+              disabled={!editMode}
+              backgroundColor={editMode ? 'white' : '#e0e0e0'}
             />
 
             <SocialLink
@@ -175,6 +198,8 @@ export default function Profile() {
               alt="LinkedIn"
               value={formData.linkedinLink}
               onChange={(value) => setFormData({ ...formData, linkedinLink: value })}
+              disabled={!editMode}
+              backgroundColor={editMode ? 'white' : '#e0e0e0'}
             />
 
             <SocialLink
@@ -182,12 +207,16 @@ export default function Profile() {
               alt="YouTube"
               value={formData.youtubeLink}
               onChange={(value) => setFormData({ ...formData, youtubeLink: value })}
+              disabled={!editMode}
+              backgroundColor={editMode ? 'white' : '#e0e0e0'}
             />
 
             <InputField
               label="Template"
               value={formData.template}
               onChange={(value) => setFormData({ ...formData, template: value })}
+              disabled={!editMode}
+              backgroundColor={editMode ? 'white' : '#e0e0e0'}
             />
 
             <Typography variant="subtitle2" sx={{ mt: 4, mb: 2 }}>
@@ -202,6 +231,8 @@ export default function Profile() {
                   newItems[index] = value;
                   setFormData({ ...formData, weHelp: newItems });
                 }}
+                disabled={!editMode}
+                backgroundColor={editMode ? 'white' : '#e0e0e0'}
               />
             ))}
 
@@ -217,10 +248,19 @@ export default function Profile() {
                   newItems[index] = value;
                   setFormData({ ...formData, youHelp: newItems });
                 }}
+                disabled={!editMode}
+                backgroundColor={editMode ? 'white' : '#e0e0e0'}
               />
             ))}
 
-            <CircleButton onClick={handleSubmit} width={135} height={135} text="Save" />
+            {editMode && (
+              <CircleButton
+                onClick={handleSubmit}
+                width={135}
+                height={135}
+                text="Save"
+              />
+            )}
           </FormBox>
         </form>
         <NavigationBar />

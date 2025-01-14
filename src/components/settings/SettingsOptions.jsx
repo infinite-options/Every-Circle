@@ -45,7 +45,7 @@ const SettingsOptions = () => {
           Terms and Conditions
         </Link>
         <Link
-          href="/edit-profile"
+          href="/profile"
           underline="always"
           sx={{ color: 'inherit' }}
         >
@@ -57,6 +57,13 @@ const SettingsOptions = () => {
           sx={{ color: 'inherit' }}
         >
           Change Password
+        </Link>
+        <Link
+          href="/logout"
+          underline="always"
+          sx={{ color: 'inherit' }}
+        >
+          Logout
         </Link>
       </Box>
     </Box>
