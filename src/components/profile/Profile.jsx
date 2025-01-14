@@ -7,19 +7,20 @@ import { HelpItem } from "./HelpItem";
 import StyledContainer from "../common/StyledContainer";
 import Header from "../common/Header";
 import facebook from "../../assets/facebook-icon.png";
-import instagram from "../../assets/youtube-icon.png";
+import youtube from "../../assets/youtube-icon.png";
 import linkedin from "../../assets/linkedin-icon.png";
 import twitter from "../../assets/twitter-icon.png";
 import CircleButton from "../common/CircleButton";
 import NavigationBar from "../navigation/NavigationBar";
 import axios from "axios";
-
+import { useLocation } from "react-router-dom";
 
 const FormBox = styled(Box)({
   padding: "0 16px",
 });
 
 export default function Profile() {
+  const { userId } = useLocation().state;
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -27,18 +28,46 @@ export default function Profile() {
     tagLine: "",
     shortBio: "",
     images: [],
-    socialLinks: ["", "", "", ""],
-    template: "Template 1A",
-    helpNeeded: ["Item 1", "Item 2", "Item 1", "Item 2", "Item 1"],
-    helpOffered: ["Item 1", "Item 2", "Item 1", "Item 2", "Item 1"],
+    facebookLink: "",
+    twitterLink: "",
+    linkedinLink: "",
+    youtubeLink: "",
+    template: "",
+    weHelp: ["Item 1", "Item 2", "Item 1", "Item 2", "Item 1"],
+    youHelp: ["", "", "", ""],
   });
 
-  const socialLinks = [
-    { iconSrc: facebook, alt: "Social media icon 1" },
-    { iconSrc: instagram, alt: "Social media icon 2" },
-    { iconSrc: linkedin, alt: "Social media icon 3" },
-    { iconSrc: twitter, alt: "Social media icon 4" },
-  ];
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const response = await axios.get(`https://ioec2testsspm.infiniteoptions.com/profile/${userId}`);
+        console.log("Profile response", response);
+        if (response.status === 200) {
+          const user = response.data.result[0];
+          setFormData(
+            { ...formData, firstName: user.first_name || "", 
+              lastName: user.last_name || "", 
+              phoneNumber: user.phone_number || "", 
+              tagLine: user.profile_tag_line || "", 
+              shortBio: user.profile_short_bio || "", 
+              images: user.profile_images || [],
+              facebookLink: user.profile_facebook_link || "",
+              twitterLink: user.profile_twitter_link || "",
+              linkedinLink: user.profile_linkedin_link || ""  ,
+              youtubeLink: user.profile_youtube_link || "",
+              template: user.profile_template || "", 
+              youHelp: user.profile_how_can_you_help ? user.profile_how_can_you_help : ["", "", "", ""], 
+              weHelp: user.profile_how_can_we_help ? user.profile_how_can_we_help : ["", "", "", ""]
+            });
+        } else {
+          console.log("Error fetching profile: ", response.status);
+        }
+      } catch (error) {
+        console.error("Error fetching profile:", error);
+      }
+    };
+    fetchProfile();
+  }, []);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -97,18 +126,33 @@ export default function Profile() {
               ))}
             </Box>
 
-            {socialLinks.map((link, index) => (
-              <SocialLink
-                key={index}
-                {...link}
-                value={formData.socialLinks[index]}
-                onChange={(value) => {
-                  const newLinks = [...formData.socialLinks];
-                  newLinks[index] = value;
-                  setFormData({ ...formData, socialLinks: newLinks });
-                }}
-              />
-            ))}
+            <SocialLink
+              iconSrc={facebook}
+              alt="Facebook"
+              value={formData.facebookLink}
+              onChange={(value) => setFormData({ ...formData, facebookLink: value })}
+            />
+
+            <SocialLink
+              iconSrc={twitter}
+              alt="Twitter"
+              value={formData.twitterLink}
+              onChange={(value) => setFormData({ ...formData, twitterLink: value })}
+            />
+
+            <SocialLink
+              iconSrc={linkedin}
+              alt="LinkedIn"
+              value={formData.linkedinLink}
+              onChange={(value) => setFormData({ ...formData, linkedinLink: value })}
+            />
+
+            <SocialLink
+              iconSrc={youtube}
+              alt="YouTube"
+              value={formData.youtubeLink}
+              onChange={(value) => setFormData({ ...formData, youtubeLink: value })}
+            />
 
             <InputField
               label="Template"
@@ -119,14 +163,14 @@ export default function Profile() {
             <Typography variant="subtitle2" sx={{ mt: 4, mb: 2 }}>
               How Can We Help You
             </Typography>
-            {formData.helpNeeded.map((item, index) => (
+            {formData.weHelp.map((item, index) => (
               <HelpItem
                 key={index}
                 text={item}
                 onChange={(value) => {
-                  const newItems = [...formData.helpNeeded];
+                  const newItems = [...formData.weHelp];
                   newItems[index] = value;
-                  setFormData({ ...formData, helpNeeded: newItems });
+                  setFormData({ ...formData, weHelp: newItems });
                 }}
               />
             ))}
@@ -134,14 +178,14 @@ export default function Profile() {
             <Typography variant="subtitle2" sx={{ mt: 4, mb: 2 }}>
               How Can You Help Others
             </Typography>
-            {formData.helpOffered.map((item, index) => (
+            {formData.youHelp.map((item, index) => (
               <HelpItem
                 key={index}
                 text={item}
                 onChange={(value) => {
-                  const newItems = [...formData.helpOffered];
+                  const newItems = [...formData.youHelp];
                   newItems[index] = value;
-                  setFormData({ ...formData, helpOffered: newItems });
+                  setFormData({ ...formData, youHelp: newItems });
                 }}
               />
             ))}
