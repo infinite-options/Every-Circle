@@ -14,6 +14,8 @@ import CircleButton from "../common/CircleButton";
 import NavigationBar from "../navigation/NavigationBar";
 import axios from "axios";
 import { useLocation } from "react-router-dom";
+import APIConfig from "../../APIConfig";
+
 
 const FormBox = styled(Box)({
   padding: "0 16px",
@@ -33,19 +35,21 @@ export default function Profile() {
     linkedinLink: "",
     youtubeLink: "",
     template: "",
-    weHelp: ["Item 1", "Item 2", "Item 1", "Item 2", "Item 1"],
+    weHelp: ["", "", "", "", ""],
     youHelp: ["", "", "", ""],
   });
+  const [profileId, setProfileId] = useState("");
 
   useEffect(() => {
     const fetchProfile = async () => {
       try {
         const response = await axios.get(`https://ioec2testsspm.infiniteoptions.com/profile/${userId}`);
-        console.log("Profile response", response);
+        console.log("Profile GET response", response);
         if (response.status === 200) {
           const user = response.data.result[0];
           setFormData(
-            { ...formData, firstName: user.first_name || "", 
+            { ...formData, 
+              firstName: user.first_name || "", 
               lastName: user.last_name || "", 
               phoneNumber: user.phone_number || "", 
               tagLine: user.profile_tag_line || "", 
@@ -56,9 +60,10 @@ export default function Profile() {
               linkedinLink: user.profile_linkedin_link || ""  ,
               youtubeLink: user.profile_youtube_link || "",
               template: user.profile_template || "", 
-              youHelp: user.profile_how_can_you_help ? user.profile_how_can_you_help : ["", "", "", ""], 
-              weHelp: user.profile_how_can_we_help ? user.profile_how_can_we_help : ["", "", "", ""]
+              youHelp: user.profile_how_can_you_help ? JSON.parse(user.profile_how_can_you_help) : ["", "", "", ""], 
+              weHelp: user.profile_how_can_we_help ? JSON.parse(user.profile_how_can_we_help) : ["", "", "", ""]
             });
+            setProfileId(user.profile_uid);
         } else {
           console.log("Error fetching profile: ", response.status);
         }
@@ -69,9 +74,34 @@ export default function Profile() {
     fetchProfile();
   }, []);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log(formData);
+    const form = new FormData();
+    // form.append("first_name", formData.firstName);
+    // form.append("last_name", formData.lastName);
+    // form.append("phone_number", formData.phoneNumber);
+    form.append("profile_tag_line", formData.tagLine);
+    form.append("profile_short_bio", formData.shortBio);
+    // form.append("profile_images", formData.images);
+    form.append("profile_facebook_link", formData.facebookLink);
+    form.append("profile_twitter_link", formData.twitterLink);
+    form.append("profile_linkedin_link", formData.linkedinLink);
+    form.append("profile_youtube_link", formData.youtubeLink);
+    form.append("profile_template", formData.template);
+    form.append("profile_how_can_we_help", JSON.stringify(formData.weHelp));
+    form.append("profile_how_can_you_help", JSON.stringify(formData.youHelp));
+    form.append("profile_uid", profileId);
+    try {
+      const response = await axios.put(`${APIConfig.baseURL.dev}/profile`, form);
+      console.log("Profile updated successfully", response);
+      if (response.data.code === 200) {
+        alert("Profile updated successfully");
+      } else {
+        alert("Error updating profile");
+      }
+    } catch (error) {
+      console.error("Error updating profile:", error);
+    }
   };
 
   return (
