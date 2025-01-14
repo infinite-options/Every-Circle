@@ -115,7 +115,10 @@ const LoginForm = () => {
                 switch (message) {
                   case "Login successful":
                     // console.log("Login successful", result?.user_uid);
-                    navigate("/profileSetup", {
+                    // navigate("/profileSetup", {
+                    //   state: { userId: result?.user_uid },
+                    // });
+                    navigate("/profile", {
                       state: { userId: result?.user_uid },
                     });
                     break;

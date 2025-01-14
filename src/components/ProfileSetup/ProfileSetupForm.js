@@ -8,6 +8,8 @@ import OptionalInfoStep from './Steps/OptionalInfoStep';
 import SocialLinksStep from './Steps/SocialLinksStep';
 import TemplateStep from './Steps/TemplateStep';
 import ResponsiveContainer from '../Layout/ResponsiveContainer';
+import axios from 'axios';
+import APIConfig from '../../APIConfig';
 
 const ProfileSetupForm = () => {
   const location = useLocation();
@@ -30,7 +32,14 @@ const ProfileSetupForm = () => {
     template: '',
   });
 
-  // console.log("userId", userId);
+  const [lastSubmittedData, setLastSubmittedData] = useState({
+    firstName: "",
+    lastName: "",
+    phoneNumber: "",
+  });
+
+
+  console.log("userId", userId);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -47,11 +56,71 @@ const ProfileSetupForm = () => {
     }));
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
+    console.log("activeStep", activeStep);
     if (activeStep === steps.length - 1) {
-      // TODO: Add API call to Finish Profile Setup
-      navigate('/profile');
-    } else {
+      const data = new FormData();
+      data.append("user_uid", userId);
+      data.append("profile_tag_line", formData.tagLine);
+      data.append("profile_short_bio", formData.shortBio);
+      data.append("profile_facebook_link", formData.facebook);
+      data.append("profile_twitter_link", formData.twitter);
+      data.append("profile_linkedin_link", formData.linkedin);
+      data.append("profile_youtube_link", formData.youtube);
+      data.append("profile_template", formData.template);
+      data.append("referred_by_code", "12345");
+
+      // console.log("data", data);
+      try {
+        const response = await axios.post(`${APIConfig.baseURL.dev}/profile`, data, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+        console.log("response in profile setup", response);
+        if (response.status === 200) {
+          navigate("/profile", {
+            state: { userId: result?.user_uid },
+          });
+        } else {
+          console.log("Error finishing profile setup");
+        }
+      } catch (error) {
+        console.log("Error updating profile data", error);
+      }
+    } else if (activeStep === 0) {
+      const hasChanges =
+        formData.firstName !== lastSubmittedData.firstName ||
+        formData.lastName !== lastSubmittedData.lastName ||
+        formData.phoneNumber !== lastSubmittedData.phoneNumber;
+
+      if (hasChanges) {
+        try {
+          const data = {
+            first_name: formData.firstName,
+            last_name: formData.lastName,
+            phone_number: formData.phoneNumber,
+            user_uid: userId,
+          };
+          const response = await axios.put(`${APIConfig.baseURL.dev}/userinfo`, data);
+          // console.log("response", response);
+
+          if (response.status === 200) {
+            setLastSubmittedData({
+              firstName: formData.firstName,
+              lastName: formData.lastName,
+              phoneNumber: formData.phoneNumber,
+            });
+            setActiveStep((prev) => prev + 1);
+          } else {
+            console.log("Error updating user info data");
+          }
+        } catch (error) {
+          console.log("Error updating user info data", error);
+        }
+      }
+    }
+    else {
       setActiveStep((prev) => prev + 1);
     }
   };
