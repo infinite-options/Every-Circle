@@ -80,7 +80,7 @@ const ProfileSetupForm = () => {
         console.log("response in profile setup", response);
         if (response.status === 200) {
           navigate("/profile", {
-            state: { userId: result?.user_uid },
+            state: { userId: userId },
           });
         } else {
           console.log("Error finishing profile setup");
