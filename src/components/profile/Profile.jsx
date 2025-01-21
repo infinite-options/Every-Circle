@@ -52,9 +52,9 @@ export default function Profile() {
           setFormData(
             {
               ...formData,
-              firstName: user.first_name || "",
-              lastName: user.last_name || "",
-              phoneNumber: user.phone_number || "",
+              firstName: user.profile_first_name || "",
+              lastName: user.profile_last_name || "",
+              phoneNumber: user.profile_phone || "",
               tagLine: user.profile_tag_line || "",
               shortBio: user.profile_short_bio || "",
               images: user.profile_images || [],
@@ -117,7 +117,7 @@ export default function Profile() {
         />
       </Box>
       <Box sx={{ borderRadius: '10px', margin: "10px 25px" }}>
-        <form onSubmit={handleSubmit}>
+        <form>
           <FormBox>
             <InputField
               label="First Name"

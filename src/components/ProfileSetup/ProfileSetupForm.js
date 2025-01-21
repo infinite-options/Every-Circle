@@ -32,14 +32,7 @@ const ProfileSetupForm = () => {
     template: '',
   });
 
-  const [lastSubmittedData, setLastSubmittedData] = useState({
-    firstName: "",
-    lastName: "",
-    phoneNumber: "",
-  });
-
-
-  console.log("userId", userId);
+  // console.log("userId", userId);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -61,6 +54,9 @@ const ProfileSetupForm = () => {
     if (activeStep === steps.length - 1) {
       const data = new FormData();
       data.append("user_uid", userId);
+      data.append("profile_first_name", formData.firstName);
+      data.append("profile_last_name", formData.lastName);
+      data.append("profile_phone", formData.phoneNumber);
       data.append("profile_tag_line", formData.tagLine);
       data.append("profile_short_bio", formData.shortBio);
       data.append("profile_facebook_link", formData.facebook);
@@ -87,37 +83,6 @@ const ProfileSetupForm = () => {
         }
       } catch (error) {
         console.log("Error updating profile data", error);
-      }
-    } else if (activeStep === 0) {
-      const hasChanges =
-        formData.firstName !== lastSubmittedData.firstName ||
-        formData.lastName !== lastSubmittedData.lastName ||
-        formData.phoneNumber !== lastSubmittedData.phoneNumber;
-
-      if (hasChanges) {
-        try {
-          const data = {
-            first_name: formData.firstName,
-            last_name: formData.lastName,
-            phone_number: formData.phoneNumber,
-            user_uid: userId,
-          };
-          const response = await axios.put(`${APIConfig.baseURL.dev}/userinfo`, data);
-          // console.log("response", response);
-
-          if (response.status === 200) {
-            setLastSubmittedData({
-              firstName: formData.firstName,
-              lastName: formData.lastName,
-              phoneNumber: formData.phoneNumber,
-            });
-            setActiveStep((prev) => prev + 1);
-          } else {
-            console.log("Error updating user info data");
-          }
-        } catch (error) {
-          console.log("Error updating user info data", error);
-        }
       }
     }
     else {
