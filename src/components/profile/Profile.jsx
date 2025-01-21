@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Typography, styled, } from "@mui/material";
+import { Box, Typography, styled, IconButton, TextField } from "@mui/material";
 import { SocialLink } from "./SocialLink";
 import { InputField } from "../common/InputField";
 import { ImageUpload } from "../common/ImageUpload";
@@ -13,17 +13,18 @@ import twitter from "../../assets/twitter-icon.png";
 import CircleButton from "../common/CircleButton";
 import NavigationBar from "../navigation/NavigationBar";
 import axios from "axios";
-import { useLocation } from "react-router-dom";
 import APIConfig from "../../APIConfig";
 import EditIcon from '@mui/icons-material/Edit';
-
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import { useNavigate, useLocation } from "react-router-dom";
 
 const FormBox = styled(Box)({
   padding: "0 16px",
 });
 
 export default function Profile() {
-  const { userId } = useLocation().state;
+  const location = useLocation();
+  const { userId } = location.state;
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -40,7 +41,15 @@ export default function Profile() {
     youHelp: ["", "", "", ""],
   });
   const [profileId, setProfileId] = useState("");
-  const [editMode, setEditMode] = useState(false);
+  const [editMode, setEditMode] = useState(location.state?.editMode ?? false);
+  const navigate = useNavigate();
+
+  const templateMap = {
+    1: "modern",
+    2: "minimalist",
+    3: "split",
+    4: "creative",
+  }
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -64,7 +73,8 @@ export default function Profile() {
               youtubeLink: user.profile_youtube_link || "",
               template: user.profile_template || "",
               youHelp: user.profile_how_can_you_help ? JSON.parse(user.profile_how_can_you_help) : ["", "", "", ""],
-              weHelp: user.profile_how_can_we_help ? JSON.parse(user.profile_how_can_we_help) : ["", "", "", ""]
+              weHelp: user.profile_how_can_we_help ? JSON.parse(user.profile_how_can_we_help) : ["", "", "", ""],
+              profileId: user.profile_uid,
             });
           setProfileId(user.profile_uid);
         } else {
@@ -75,14 +85,14 @@ export default function Profile() {
       }
     };
     fetchProfile();
-  }, []);
+  }, [userId]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     const form = new FormData();
-    // form.append("first_name", formData.firstName);
-    // form.append("last_name", formData.lastName);
-    // form.append("phone_number", formData.phoneNumber);
+    form.append("profile_first_name", formData.firstName);
+    form.append("profile_last_name", formData.lastName);
+    form.append("profile_phone", formData.phoneNumber);
     form.append("profile_tag_line", formData.tagLine);
     form.append("profile_short_bio", formData.shortBio);
     // form.append("profile_images", formData.images);
@@ -110,7 +120,7 @@ export default function Profile() {
   return (
     <StyledContainer>
       <Header title="Profile" />
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', padding: '0px 30px', width: '100%',}}>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', padding: '0px 30px', width: '100%', }}>
         <EditIcon
           onClick={() => setEditMode(!editMode)}
           sx={{ cursor: 'pointer' }}
@@ -211,13 +221,35 @@ export default function Profile() {
               backgroundColor={editMode ? 'white' : '#e0e0e0'}
             />
 
-            <InputField
-              label="Template"
-              value={formData.template}
-              onChange={(value) => setFormData({ ...formData, template: value })}
-              disabled={!editMode}
-              backgroundColor={editMode ? 'white' : '#e0e0e0'}
-            />
+            <Box sx={{ mb: 3 }}>
+              <Box sx={{ display: "flex", alignItems: "center", mb: 0.5 }}>
+                <Typography variant="caption" sx={{ ml: 1, mr: 1 }}>
+                  Template
+                </Typography>
+                <IconButton size="small" sx={{ p: 0 }}
+                  onClick={() => {
+                    navigate("/selectTemplate", { state: { data: formData } });
+                  }}
+                  disabled={!editMode}
+                >
+                  <VisibilityIcon fontSize="small" />
+                </IconButton>
+              </Box>
+              <TextField
+                fullWidth
+                variant="outlined"
+                value={templateMap[formData.template]}
+                placeholder="Template (Optional)"
+                disabled
+                sx={{
+                  backgroundColor: editMode ? 'white' : '#e0e0e0',
+                  borderRadius: 2,
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 2,
+                  },
+                }}
+              />
+            </Box>
 
             <Typography variant="subtitle2" sx={{ mt: 4, mb: 2 }}>
               How Can We Help You

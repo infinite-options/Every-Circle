@@ -14,30 +14,34 @@ const TemplateStep = ({ formData, handleTemplateSelect }) => {
   const templates = [
     {
       component: ModernTemplate,
-      value: 'modern'
+      value: 'modern',
+      id: 1,
     },
     {
       component: MinimalistTemplate,
-      value: 'minimalist'
+      value: 'minimalist',
+      id: 2,
     },
     {
       component: SplitTemplate,
-      value: 'split'
+      value: 'split',
+      id: 3,
     },
     {
       component: CreativeTemplate,
-      value: 'creative'
+      value: 'creative',
+      id: 4
     }
   ];
 
   const handleNext = () => {
     setCurrentTemplate((prev) => (prev + 1) % templates.length);
-    handleTemplateSelect(templates[(currentTemplate + 1) % templates.length].value);
+    handleTemplateSelect(templates[(currentTemplate + 1) % templates.length].id);
   };
 
   const handlePrev = () => {
     setCurrentTemplate((prev) => (prev - 1 + templates.length) % templates.length);
-    handleTemplateSelect(templates[(currentTemplate - 1 + templates.length) % templates.length].value);
+    handleTemplateSelect(templates[(currentTemplate - 1 + templates.length) % templates.length].id);
   };
   
   return (

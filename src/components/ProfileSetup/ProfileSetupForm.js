@@ -95,9 +95,10 @@ const ProfileSetupForm = () => {
   };
 
   const handleTemplateSelect = (template) => {
+    // console.log('template---', template)
     setFormData((prev) => ({
       ...prev,
-      template,
+      template: template,
     }));
   };
 
