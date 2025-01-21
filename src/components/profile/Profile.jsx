@@ -24,7 +24,7 @@ const FormBox = styled(Box)({
 
 export default function Profile() {
   const location = useLocation();
-  const { userId } = location.state;
+  const { userId = "", editMode: initialEditMode = false } = location.state || {};
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -41,7 +41,7 @@ export default function Profile() {
     youHelp: ["", "", "", ""],
   });
   const [profileId, setProfileId] = useState("");
-  const [editMode, setEditMode] = useState(location.state?.editMode ?? false);
+  const [editMode, setEditMode] = useState(initialEditMode);
   const navigate = useNavigate();
 
   const templateMap = {

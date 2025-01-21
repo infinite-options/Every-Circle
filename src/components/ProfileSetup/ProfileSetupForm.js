@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { useLocation } from "react-router-dom";
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Typography, Button } from '@mui/material';
 import ProfileSetupStepper from './ProfileSetupStepper';
 import BasicInfoStep from './Steps/BasicInfoStep';
@@ -50,7 +49,7 @@ const ProfileSetupForm = () => {
   };
 
   const handleNext = async () => {
-    console.log("activeStep", activeStep);
+    // console.log("activeStep", activeStep);
     if (activeStep === steps.length - 1) {
       const data = new FormData();
       data.append("user_uid", userId);

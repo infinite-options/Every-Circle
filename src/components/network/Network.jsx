@@ -6,6 +6,7 @@ import NetworkData from "./NetworkData";
 import SearchBar from "../common/SearchBar";
 import { Box, Typography, styled, IconButton } from "@mui/material";
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
+import Diversity3Icon from '@mui/icons-material/Diversity3';
 import { useNavigate } from "react-router-dom";
 
 const TotalLabel = styled(Typography)({
@@ -31,6 +32,10 @@ export default function Network() {
             <Box sx={{ width: "100%", padding: "0px 16px 16px 16px" }}>
                 <Box sx={{ width: "100%", paddingX: "16px", display: "flex", justifyContent: "flex-end" }}>
                     <IconButton onClick={() => navigate("/referral")}>
+                        <Diversity3Icon />
+                    </IconButton>
+
+                    <IconButton onClick={() => navigate("/recommendation")}>
                         <AddCircleOutlineIcon />
                     </IconButton>
                 </Box>

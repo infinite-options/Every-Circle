@@ -15,6 +15,7 @@ import ChangePassword from "./components/settings/password/ChangePassword";
 import ShowTemplate from "./components/showTemplate/ShowTemplate";
 import SelectTemplate from "./components/SelectTemplate/SelectTemplate";
 import MultiResult from "./components/search/MultiResult";
+import RecommendationForm from "./components/recommendation/RecommendationForm";
 
 const theme = createTheme({
   typography: {
@@ -52,6 +53,7 @@ function App() {
           <Route path="/showTemplate" element={<ShowTemplate />} />
           <Route path="/multiResult" element={<MultiResult />} />
           <Route path="/selectTemplate" element={<SelectTemplate />} />
+          <Route path="/recommendation" element={<RecommendationForm/>} />
         </Routes>
       </Router>
     </ThemeProvider>
