@@ -32,12 +32,12 @@ const TemplateStep = ({ formData, handleTemplateSelect }) => {
 
   const handleNext = () => {
     setCurrentTemplate((prev) => (prev + 1) % templates.length);
-    // handleTemplateSelect(templates[(currentTemplate + 1) % templates.length].value);
+    handleTemplateSelect(templates[(currentTemplate + 1) % templates.length].value);
   };
 
   const handlePrev = () => {
     setCurrentTemplate((prev) => (prev - 1 + templates.length) % templates.length);
-    // handleTemplateSelect(templates[(currentTemplate - 1 + templates.length) % templates.length].value);
+    handleTemplateSelect(templates[(currentTemplate - 1 + templates.length) % templates.length].value);
   };
   
   return (

@@ -65,8 +65,8 @@ const ProfileSetupForm = () => {
       data.append("profile_youtube_link", formData.youtube);
       data.append("profile_template", formData.template);
       data.append("referred_by_code", "12345");
-
-      // console.log("data", data);
+     
+      console.log("data", data);
       try {
         const response = await axios.post(`${APIConfig.baseURL.dev}/profile`, data, {
           headers: {
@@ -94,6 +94,13 @@ const ProfileSetupForm = () => {
     setActiveStep((prev) => prev - 1);
   };
 
+  const handleTemplateSelect = (template) => {
+    setFormData((prev) => ({
+      ...prev,
+      template,
+    }));
+  };
+
   const steps = [
     {
       component: <BasicInfoStep formData={formData} handleChange={handleChange} />,
@@ -113,7 +120,7 @@ const ProfileSetupForm = () => {
       title: "Social Media Links"
     },
     {
-      component: <TemplateStep formData={formData} />,
+      component: <TemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect}/>,
       title: "Select Your Template"
     }
   ];
