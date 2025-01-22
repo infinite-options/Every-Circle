@@ -17,6 +17,7 @@ import APIConfig from "../../APIConfig";
 import EditIcon from '@mui/icons-material/Edit';
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useUserContext } from "../contexts/UserContext";
 
 const FormBox = styled(Box)({
   padding: "0 16px",
@@ -24,7 +25,10 @@ const FormBox = styled(Box)({
 
 export default function Profile() {
   const location = useLocation();
-  const { userId = "", editMode: initialEditMode = false } = location.state || {};
+  const { editMode: initialEditMode = false } = location.state || {};
+  const {user, updateUser} = useUserContext();
+  // console.log('user data', user);
+  const userId = user.userId;
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -76,6 +80,7 @@ export default function Profile() {
               weHelp: user.profile_how_can_we_help ? JSON.parse(user.profile_how_can_we_help) : ["", "", "", ""],
               profileId: user.profile_uid,
             });
+          updateUser({profileId:user.profile_uid})
           setProfileId(user.profile_uid);
         } else {
           console.log("Error fetching profile: ", response.status);

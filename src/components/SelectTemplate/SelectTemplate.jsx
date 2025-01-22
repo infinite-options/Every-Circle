@@ -34,7 +34,7 @@ export default function SelectTemplate() {
             const response = await axios.put(`${APIConfig.baseURL.dev}/profile`, form);
             console.log("template updated successfully", response);
             if (response.data.code === 200) {
-                navigate("/profile", {state:{userId:"100-000036", editMode: "true"}})
+                navigate("/profile", {state:{editMode: "true"}})
             } else {
               alert("Error updating template");
             }
