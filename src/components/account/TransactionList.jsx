@@ -1,6 +1,6 @@
 import * as React from "react";
 import { DataGrid } from "@mui/x-data-grid";
-import { Box, Typography } from "@mui/material";
+import { Box, Typography, Paper } from "@mui/material";
 import { styled } from "@mui/material/styles";
 
 const TransactionSection = styled(Box)({
@@ -44,6 +44,7 @@ export function TransactionList({ transactions }) {
           Transaction History
         </Typography>
       </TransactionHeader>
+      <Paper>
       <DataGrid
         rows={transactions}
         columns={columns}
@@ -52,17 +53,18 @@ export function TransactionList({ transactions }) {
         sx={{
           border: "none",
           "& .MuiDataGrid-cell": {
-            border: "none",
+            // border: "none",
+            alignItems: "center",
             fontSize: "12px",
             color: "rgba(26, 26, 26, 0.5)",
             fontWeight: 400,
-            lineHeight: 2,
           },
           "& .MuiDataGrid-columnHeaders": {
             display: "none",
           },
         }}
       />
+      </Paper>
     </TransactionSection>
   );
 }

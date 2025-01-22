@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { useLocation } from "react-router-dom";
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Typography, Button } from '@mui/material';
 import ProfileSetupStepper from './ProfileSetupStepper';
 import BasicInfoStep from './Steps/BasicInfoStep';
@@ -8,6 +7,8 @@ import OptionalInfoStep from './Steps/OptionalInfoStep';
 import SocialLinksStep from './Steps/SocialLinksStep';
 import TemplateStep from './Steps/TemplateStep';
 import ResponsiveContainer from '../Layout/ResponsiveContainer';
+import axios from 'axios';
+import APIConfig from '../../APIConfig';
 
 const ProfileSetupForm = () => {
   const location = useLocation();
@@ -47,16 +48,57 @@ const ProfileSetupForm = () => {
     }));
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
+    // console.log("activeStep", activeStep);
     if (activeStep === steps.length - 1) {
-      navigate('/profile');
-    } else {
+      const data = new FormData();
+      data.append("user_uid", userId);
+      data.append("profile_first_name", formData.firstName);
+      data.append("profile_last_name", formData.lastName);
+      data.append("profile_phone", formData.phoneNumber);
+      data.append("profile_tag_line", formData.tagLine);
+      data.append("profile_short_bio", formData.shortBio);
+      data.append("profile_facebook_link", formData.facebook);
+      data.append("profile_twitter_link", formData.twitter);
+      data.append("profile_linkedin_link", formData.linkedin);
+      data.append("profile_youtube_link", formData.youtube);
+      data.append("profile_template", formData.template);
+      data.append("referred_by_code", "12345");
+     
+      console.log("data", data);
+      try {
+        const response = await axios.post(`${APIConfig.baseURL.dev}/profile`, data, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        });
+        console.log("response in profile setup", response);
+        if (response.status === 200) {
+          navigate("/profile", {
+            state: { userId: userId },
+          });
+        } else {
+          console.log("Error finishing profile setup");
+        }
+      } catch (error) {
+        console.log("Error updating profile data", error);
+      }
+    }
+    else {
       setActiveStep((prev) => prev + 1);
     }
   };
 
   const handleBack = () => {
     setActiveStep((prev) => prev - 1);
+  };
+
+  const handleTemplateSelect = (template) => {
+    // console.log('template---', template)
+    setFormData((prev) => ({
+      ...prev,
+      template: template,
+    }));
   };
 
   const steps = [
@@ -78,7 +120,7 @@ const ProfileSetupForm = () => {
       title: "Social Media Links"
     },
     {
-      component: <TemplateStep formData={formData} />,
+      component: <TemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect}/>,
       title: "Select Your Template"
     }
   ];

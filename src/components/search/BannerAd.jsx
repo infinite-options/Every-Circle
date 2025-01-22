@@ -5,6 +5,7 @@ export function BannerAd() {
   return (
     <Box
       sx={{
+        width: "100%",
         bgcolor: "#d9d9d9",
         alignSelf: "center",
         mt: 4.25,
@@ -20,7 +21,7 @@ export function BannerAd() {
           fontFamily: "Lexend, sans-serif",
           fontSize: "16px",
           fontWeight: 700,
-          lineHeight: 1,
+          lineHeight: 2,
         }}
       >
         Relevant Banner Ad

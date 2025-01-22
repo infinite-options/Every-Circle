@@ -10,6 +10,12 @@ import Settings from "./components/settings/Settings";
 import AccountDashboard from "./components/account/AccountDashboard";
 import Network from "./components/network/Network";
 import Search from "./components/search/Search";
+import ReferralForm from "./components/referral/ReferralForm";
+import ChangePassword from "./components/settings/password/ChangePassword";
+import ShowTemplate from "./components/showTemplate/ShowTemplate";
+import SelectTemplate from "./components/SelectTemplate/SelectTemplate";
+import MultiResult from "./components/search/MultiResult";
+import RecommendationForm from "./components/recommendation/RecommendationForm";
 
 const theme = createTheme({
   typography: {
@@ -42,6 +48,12 @@ function App() {
           <Route path="/account" element={<AccountDashboard />} />
           <Route path="/network" element={<Network />} />
           <Route path="/search" element={<Search />} />
+          <Route path="/referral" element={<ReferralForm />} />
+          <Route path="/changePassword" element={<ChangePassword />} />
+          <Route path="/showTemplate" element={<ShowTemplate />} />
+          <Route path="/multiResult" element={<MultiResult />} />
+          <Route path="/selectTemplate" element={<SelectTemplate />} />
+          <Route path="/recommendation" element={<RecommendationForm/>} />
         </Routes>
       </Router>
     </ThemeProvider>

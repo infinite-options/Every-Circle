@@ -1,60 +1,66 @@
 import * as React from "react";
-import { Box, Typography, Table, TableBody, TableRow, TableCell } from "@mui/material";
+import { Box, Typography, } from "@mui/material";
+import { DataGrid } from "@mui/x-data-grid";
 
-export default function NetworkData({ count, label, value }) {
-  return (
-    <Box sx={{ width: "80%" }}>
-    <Table sx={{ width: "100%", margin: "20px 10px 10px 16px" }}>
-    <TableBody>
-      <TableRow>
-        <TableCell sx={{ border: "none", display: "flex", gap: "34px", padding: "0" }}>
-          <Typography
-            sx={{
-              color: "#1a1a1a",
-              fontSize: "16px",
-              fontWeight: 400,
-              lineHeight: 1,
-              margin: "auto 0",
-            }}
-          >
-            {count}
-          </Typography>
-          <Box
-            sx={{
-              backgroundColor: "#ff9500",
-              borderRadius: "50%",
-              fontSize: "12px",
-              color: "#f5f5f5",
-              fontWeight: 500,
-              textAlign: "center",
-              letterSpacing: "-0.48px",
-              lineHeight: "52px",
-              width: "52px",
-              height: "52px",
-              padding: "0 6px",
-            }}
-          >
-            {label}
-          </Box>
-        </TableCell>
-        {/* Second Cell */}
-        <TableCell
+export default function NetworkData({ data }) {
+  const [nbRows, setNbRows] = React.useState(3);
+  const removeRow = () => setNbRows((x) => Math.max(0, x - 1));
+  const addRow = () => setNbRows((x) => Math.min(100, x + 1));
+
+  const columns = [
+    { field: "count", headerName: "Count", flex: 1 },
+    {
+      field: "label",
+      headerName: "Label",
+      flex: 1,
+      renderCell: (params) => (
+        <Box
           sx={{
-            border: "none",
-            textAlign: "right",
-            color: "#1a1a1a",
-            fontSize: "16px",
-            fontWeight: 400,
-            lineHeight: 1,
-            letterSpacing: "-0.64px",
-            padding: "0",
+            width: 50,
+            height: 50,
+            borderRadius: "50%",
+            backgroundColor: "#ff9500",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#fff",
+            fontSize: 12,
+            fontWeight: 500,
           }}
         >
-          {value}
-        </TableCell>
-      </TableRow>
-    </TableBody>
-  </Table>
-  </Box>
+          {params.value}
+        </Box>
+      ),
+    },
+    { field: "value", headerName: "Value", flex: 1 },
+  ]
+
+  const rows = data.map((item) => ({
+    id: item.id,
+    count: item.count,
+    label: item.label,
+    value: item.value,
+  }));
+
+  return (
+    <Box sx={{ width: "100%", minHeight: "300px", marginTop: "16px" }}>
+      <DataGrid
+        rows={rows}
+        columns={columns}
+        getRowId={(row) => row.id}
+        hideFooter
+        autoHeight
+        sx={{
+          flexGrow: 1,
+          "& .MuiDataGrid-columnHeaders": {
+            display: "none",
+          },
+          "& .MuiDataGrid-cell": {
+            alignItems: "center",
+            // border: "none",
+          },
+        }}
+      />
+    </Box>
   );
 }

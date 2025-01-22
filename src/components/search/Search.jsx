@@ -1,5 +1,6 @@
 import * as React from "react";
-import { Box, Container, TextField, InputAdornment, Rating } from "@mui/material";
+import { useNavigate } from "react-router-dom";
+import { Box, Container, TextField, InputAdornment, Rating, Link } from "@mui/material";
 import SearchIcon from '@mui/icons-material/Search';
 import Header from "../common/Header";
 import NavigationBar from "../navigation/NavigationBar";
@@ -7,6 +8,8 @@ import { BannerAd } from "./BannerAd";
 import StyledContainerComponent from "../common/StyledContainer";
 import { DataGrid } from '@mui/x-data-grid';
 import SectionTitle from "./SectionTitle";
+import SearchBar from "../common/SearchBar";
+import MultiResult from "./MultiResult";
 
 const data = [
   {
@@ -35,54 +38,65 @@ const directData = [
     date: "1/30",
     name: "Speedy Roto",
     rating: 4,
+    refferedBy: "John",
   },
-];
-
-const columns = [
-  { field: 'date', headerName: 'Date', width: 100 },
-  { field: 'name', headerName: 'Name', flex: 150 },
   {
-    field: 'rating',
-    headerName: 'Rating',
-    width: 150,
-    renderCell: (params) => (
-      <Rating
-        value={params.value}
-        readOnly
-        size="small"
-      />
-    ),
+    id: 2,
+    date: "1/10",
+    name: "Speedy Roto",
+    rating: 1,
+    refferedBy: "Jill",
   },
 ];
 
 
 export default function Search() {
+  const navigate = useNavigate();
+
+  const columns = [
+    { field: 'date', headerName: 'Date', width: 100 },
+    {
+      field: 'name', headerName: 'Name', flex: 150,
+      renderCell: (params) => {
+        // console.log(params.value);
+        const directList = directData.filter(item => item.name === params.value);
+        // console.log("directList is: ", directList);
+        return <Link onClick={() => {
+          const directList = directData.filter(item => item.name === params.value);
+          console.log("directList is: ", directList);
+          if (directList.length == 1) {
+            navigate("/showTemplate", { state: { name: params.value } });
+          } else {
+            // navigate("/multiResult", { state: { data: directList } });
+            navigate("/showTemplate", { state: { name: params.value } });
+          }
+        }} sx={{ cursor: "pointer" }}>{params.value}</Link>
+      }
+    },
+    {
+      field: 'rating',
+      headerName: 'Rating',
+      width: 150,
+      renderCell: (params) => (
+        <Rating
+          value={params.value}
+          readOnly
+          size="small"
+        />
+      ),
+    },
+  ];
+
   return (
     <StyledContainerComponent>
       <Header title="Search" />
       <Box sx={{
         width: "100%",
         height: "100%",
-        padding: "20px",
+        padding: "24px",
       }}>
-        <Box sx={{ alignItems: "center", justifyContent: "center", margin: "0px 0px 20px 0px" }}>
-          
-          <TextField
-            variant="outlined"
-            fullWidth
-            placeholder="Search..."
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon />
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
-        </Box>
-        <SectionTitle>Your Recommendations</SectionTitle>
+        <SearchBar />
+        <SectionTitle sx={{ margin: "20px 0px 10px 0px" }}>Your Recommendations</SectionTitle>
         <DataGrid
           rows={data}
           columns={columns}
@@ -101,7 +115,7 @@ export default function Search() {
           }}
         />
 
-        <SectionTitle>Direct</SectionTitle>
+        <SectionTitle sx={{ margin: "20px 0px 10px 0px" }}>Direct</SectionTitle>
         <DataGrid
           rows={directData}
           columns={columns}
@@ -119,10 +133,10 @@ export default function Search() {
             },
           }}
         />
-        <SectionTitle sx={{ mt: 5 }}>1 - Away</SectionTitle>
-        <SectionTitle sx={{ mt: 5 }}>2 - Away</SectionTitle>
+        <SectionTitle sx={{ margin: "20px 0px 0px 0px" }}>1 - Away</SectionTitle>
+        <SectionTitle sx={{ margin: "20px 0px 0px 0px" }}>2 - Away</SectionTitle>
+        <BannerAd />
       </Box>
-      <BannerAd />
       <NavigationBar />
     </StyledContainerComponent>
   );

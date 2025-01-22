@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./LoginForm.css";
+import { useUserContext } from '../../contexts/UserContext';
 
 const LoginForm = () => {
   const navigate = useNavigate();
@@ -13,6 +14,7 @@ const LoginForm = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isFormValid, setIsFormValid] = useState(false);
   const [errors, setErrors] = useState({});
+  const { updateUser } = useUserContext();
 
   useEffect(() => {
     const validateForm = () => {
@@ -115,7 +117,15 @@ const LoginForm = () => {
                 switch (message) {
                   case "Login successful":
                     // console.log("Login successful", result?.user_uid);
-                    navigate("/profileSetup", {
+                    // navigate("/profileSetup", {
+                    //   state: { userId: result?.user_uid },
+                    // });
+                    const loginData = {
+                      userId: result?.user_uid,
+                      isUserLoggedIn: true,
+                    };
+                    updateUser( loginData);
+                    navigate("/profile", {
                       state: { userId: result?.user_uid },
                     });
                     break;

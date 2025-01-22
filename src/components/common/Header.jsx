@@ -4,7 +4,7 @@ import { Box, Typography, styled } from "@mui/material";
 const HeaderBox = styled(Box)({
     position: 'relative',
     width: '100%',
-    height: '15vh',
+    height: '10vh',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',

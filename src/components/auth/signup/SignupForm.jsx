@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import "./SignupForm.css";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { useUserContext } from "../../contexts/UserContext";
 
 const SignupForm = () => {
   const navigate = useNavigate();
@@ -16,6 +17,7 @@ const SignupForm = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState({});
   const [isFormValid, setIsFormValid] = useState(false);
+  const { updateUser } = useUserContext();
 
   useEffect(() => {
     // Check if form is valid
@@ -125,6 +127,12 @@ const SignupForm = () => {
           `https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/CreateAccount/EVERY-CIRCLE`,
           userObject
         );
+
+        const loginData = {
+          userId: response?.data?.user_uid ,
+          isUserLoggedIn: true,
+        };
+        updateUser( loginData);
 
         navigate(`/profileSetup`, {
           state: { userId: response?.data?.user_uid },

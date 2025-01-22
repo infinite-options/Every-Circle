@@ -6,9 +6,8 @@ import Grid from '@mui/material/Grid2';
 
 const BudgetContainer = styled(Paper)({
   width: "100%",
-  marginTop: "37px",
-  boxShadow: "none",
-  backgroundColor: "transparent",
+  marginTop: "10px",
+  // backgroundColor: "transparent",
 });
 
 const BudgetHeader = styled(Box)({
@@ -23,10 +22,7 @@ const BudgetCell = styled(Typography)({
   color: "rgba(26, 26, 26, 0.5)",
   fontWeight: 400,
   lineHeight: 2,
-  textAlign: "right",
-  "&:first-of-type": {
-    textAlign: "left",
-  },
+  paddingLeft: "10px",
 });
 
 export function BudgetSection() {
@@ -44,7 +40,7 @@ export function BudgetSection() {
   ];
 
   return (
-    <BudgetContainer>
+    <Box sx={{ width: "100%", marginTop: "10px" }}>
       <BudgetHeader>
         <Typography
           variant="h2"
@@ -60,42 +56,46 @@ export function BudgetSection() {
           Budget
         </Typography>
       </BudgetHeader>
+      <BudgetContainer>
+        <DataGrid
+          rows={budgetItems}
+          columns={columns}
+          getRowId={(row) => row.id}
+          autoSize
+          hideFooter
+          sx={{
+            // border: "none",
+            "& .MuiDataGrid-cell": {
+              // border: "none",
+              alignItems: "center",
+              fontSize: "12px",
+              color: "rgba(26, 26, 26, 0.5)",
+              fontWeight: 400,
+            },
+            "& .MuiDataGrid-columnHeaderTitle": {
+              fontSize: "12px",
+              color: "rgba(26, 26, 26, 0.5)",
+              fontWeight: 700,
+              // border: "none",
+              backgroundColor: "transparent",
+            },
+            // "& .MuiDataGrid-columnHeader": {
+            //   backgroundColor: "#f5f5f5",
+            // },
+          }} />
 
-      <DataGrid 
-      rows={budgetItems} 
-      columns={columns} 
-      getRowId={(row) => row.id} 
-      hideFooter 
-      sx={{
-        border: "none",
-        "& .MuiDataGrid-cell": {
-          border: "none",
-          fontSize: "12px",
-          color: "rgba(26, 26, 26, 0.5)",
-          fontWeight: 400,
-          lineHeight: 2,
-        },
-        "& .MuiDataGrid-columnHeaderTitle": {
-          fontSize: "12px",
-          color: "rgba(26, 26, 26, 0.5)",
-          fontWeight: 700,
-          border: "none",
-          backgroundColor: "transparent",
-        },
-      }}/>
-
-      <Grid container spacing={4} sx={{ marginTop: "16px" }}>
-        <Grid item xs={4} md={4}>
-          <BudgetCell sx={{ fontWeight: 700 }}>Max Monthly Spend:</BudgetCell>
+        <Grid container sx={{ padding: "16px 0px"}}>
+          <Grid size={6}>
+            <BudgetCell sx={{ fontWeight: 700 }}>Max Monthly Spend:</BudgetCell>
+          </Grid>
+          <Grid size={3}>
+            <BudgetCell>$30.00</BudgetCell>
+          </Grid>
+          <Grid size={3}>
+            <BudgetCell>$30.00</BudgetCell>
+          </Grid>
         </Grid>
-          <Grid item xs={3} md={3}>
-          <BudgetCell>$30.00</BudgetCell>
-        </Grid>
-        <Grid item xs={3} md={3}>
-          <BudgetCell>$30.00</BudgetCell>
-        </Grid>
-      </Grid>
-    </BudgetContainer>
-
+      </BudgetContainer>
+    </Box>
   );
 }
