@@ -1,7 +1,9 @@
 import React from "react";
 import { Box, Typography, Switch, Link } from "@mui/material";
+import { useUserContext } from "../contexts/UserContext";
 
 const SettingsOptions = () => {
+  const {logout} = useUserContext();
   return (
     <Box
       sx={{
@@ -59,9 +61,12 @@ const SettingsOptions = () => {
           Change Password
         </Link>
         <Link
-          href="/logout"
+          // href="/logout"
           underline="always"
-          sx={{ color: 'inherit' }}
+          sx={{ color: 'inherit', cursor: 'pointer' }}
+          onClick={() => {
+            logout();
+          }}
         >
           Logout
         </Link>

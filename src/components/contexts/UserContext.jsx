@@ -7,7 +7,7 @@ export const UserProvider = ({ children, cookiesObj = new Cookies() }) => {
     const [cookies, setCookie] = useCookies(["user"]);
     const [user, setUser] = useState(cookies.user);
 
-    
+
     const updateUser = (updates) => {
         setUser((prevUser) => {
             const newUserData = { ...prevUser, ...updates };
@@ -18,8 +18,15 @@ export const UserProvider = ({ children, cookiesObj = new Cookies() }) => {
           });
       };
 
+      const logout = () => {
+        // //console.log("In logout as ", user);
+        sessionStorage.clear();
+        cookiesObj.remove("user");
+        window.location.href = "/";
+      };
+
     return (
-        <UserContext.Provider value={{ user, updateUser }}>
+        <UserContext.Provider value={{ user, updateUser, logout }}>
             {children}
         </UserContext.Provider>
     )
