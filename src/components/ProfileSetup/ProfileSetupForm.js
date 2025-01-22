@@ -19,6 +19,7 @@ const ProfileSetupForm = () => {
     firstName: "",
     lastName: '',
     phoneNumber: '',
+    location: '',
     tagLine: '',
     shortBio: '',
     image1: null,
@@ -56,6 +57,7 @@ const ProfileSetupForm = () => {
       data.append("profile_first_name", formData.firstName);
       data.append("profile_last_name", formData.lastName);
       data.append("profile_phone", formData.phoneNumber);
+      // data.append("profile_location", formData.location);
       data.append("profile_tag_line", formData.tagLine);
       data.append("profile_short_bio", formData.shortBio);
       data.append("profile_facebook_link", formData.facebook);
