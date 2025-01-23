@@ -67,7 +67,7 @@ const ProfileSetupForm = () => {
       data.append("profile_template", formData.template);
       data.append("referred_by_code", "12345");
      
-      console.log("data", data);
+      console.log("userId", userId);
       try {
         const response = await axios.post(`${APIConfig.baseURL.dev}/profile`, data, {
           headers: {

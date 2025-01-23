@@ -3,6 +3,8 @@ import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./LoginForm.css";
 import { useUserContext } from '../../contexts/UserContext';
+import GoogleLogin from "./GoogleLogin";
+import { useUserAuth } from "../authUtils/useUserAuth";
 
 const LoginForm = () => {
   const navigate = useNavigate();
@@ -15,6 +17,7 @@ const LoginForm = () => {
   const [isFormValid, setIsFormValid] = useState(false);
   const [errors, setErrors] = useState({});
   const { updateUser } = useUserContext();
+  const {handleLogin} = useUserAuth();
 
   useEffect(() => {
     const validateForm = () => {
@@ -64,98 +67,12 @@ const LoginForm = () => {
 
     if (validateForm()) {
       try {
-        // First API call to get salt
-        axios
-          .post(
-            "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AccountSalt/EVERY-CIRCLE",
-            {
-              email: formData.email,
-            }
-          )
-          .then(async (response) => {
-            let saltResponse = response?.data;
-
-            if (saltResponse.code === 200) {
-              let hashAlg = saltResponse?.result[0]?.password_algorithm;
-              let salt = saltResponse?.result[0]?.password_salt;
-
-              if (hashAlg && salt) {
-                // Prepare password hashing
-                let algorithm = hashAlg;
-                if (hashAlg === "SHA256") algorithm = "SHA-256";
-
-                // Salt the password
-                const saltedPassword = formData.password + salt;
-                const encoder = new TextEncoder();
-                const data = encoder.encode(saltedPassword);
-
-                // Hash the salted password
-                const hashedBuffer = await crypto.subtle.digest(
-                  algorithm,
-                  data
-                );
-                const hashArray = Array.from(new Uint8Array(hashedBuffer));
-                const hashedPassword = hashArray
-                  .map((byte) => byte.toString(16).padStart(2, "0"))
-                  .join("");
-
-                // Prepare login object with profile data
-                const loginObject = {
-                  email: formData.email,
-                  password: hashedPassword,
-                };
-
-                // Login request
-                const loginResponse = await axios.post(
-                  "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/Login/EVERY-CIRCLE",
-                  loginObject
-                );
-
-                // console.log(loginResponse);
-                const { message, result } = loginResponse?.data;
-
-                switch (message) {
-                  case "Login successful":
-                    // console.log("Login successful", result?.user_uid);
-                    // navigate("/profileSetup", {
-                    //   state: { userId: result?.user_uid },
-                    // });
-                    const loginData = {
-                      userId: result?.user_uid,
-                      isUserLoggedIn: true,
-                    };
-                    updateUser( loginData);
-                    navigate("/profile", {
-                      state: { userId: result?.user_uid },
-                    });
-                    break;
-
-                  case "Incorrect password":
-                    alert("Incorrect password");
-                    break;
-
-                  case "Email not found":
-                    alert("Email doesn't exist");
-                    break;
-
-                  default:
-                    alert("An error occurred during login");
-                }
-              }
-            } else {
-              alert("Email doesn't exist");
-            }
-          });
+        await handleLogin(formData);
       } catch (error) {
         console.error("Login error:", error);
         alert("An error occurred during login");
       }
     }
-  };
-
-  const handleGoogleLogin = () => {
-    console.log("Google login clicked");
-    // Implement Google authentication
   };
 
   const handleAppleLogin = () => {
@@ -225,13 +142,13 @@ const LoginForm = () => {
         </div>
 
         <div className="social-auth">
-          <button onClick={handleGoogleLogin} className="social-button google">
-            {/* <GoogleIcon /> */}
+          {/* <button onClick={handleGoogleLogin} className="social-button google">
             <img
               src="https://cdn-icons-png.flaticon.com/256/1199/1199414.png"
               alt="Google"
             />
-          </button>
+          </button> */}
+          <GoogleLogin/>
           <button onClick={handleAppleLogin} className="social-button apple">
             <svg viewBox="0 0 384 512" width="24" height="24">
               <path

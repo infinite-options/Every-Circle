@@ -3,6 +3,8 @@ import "./SignupForm.css";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { useUserContext } from "../../contexts/UserContext";
+import GoogleSignup from "./GoogleSignup";
+import { useUserAuth } from '../authUtils/useUserAuth';
 
 const SignupForm = () => {
   const navigate = useNavigate();
@@ -18,6 +20,7 @@ const SignupForm = () => {
   const [errors, setErrors] = useState({});
   const [isFormValid, setIsFormValid] = useState(false);
   const { updateUser } = useUserContext();
+  const { handleUserSignUp } = useUserAuth();
 
   useEffect(() => {
     // Check if form is valid
@@ -95,49 +98,50 @@ const SignupForm = () => {
     e.preventDefault();
 
     if (validateForm()) {
+      handleUserSignUp(formData, 'email');
       // console.log("Form submitted:", formData);
 
-      const userExists = await checkIfUserExists(formData.email);
-      // let userObject = null;
+      // const userExists = await checkIfUserExists(formData.email);
+      // // let userObject = null;
 
-      // if(userExists){
-      //   userObject = {
-      //     ...user,
-      //     // isEmailSignup: false,
-      //   };
+      // // if(userExists){
+      // //   userObject = {
+      // //     ...user,
+      // //     // isEmailSignup: false,
+      // //   };
+      // // } else {
+      // //   userObject = {
+      // //     email: formData.email,
+      // //     password: formData.password,
+      // //     isEmailSignup: true,
+      // //   };
+      // // }
+
+      // let userObject = {
+      //   email: formData.email,
+      //   password: formData.password,
+      // };
+
+      // //console.log("Current User Info: ", user);
+
+      // if (userExists?.message !== "User EmailID doesnt exist") {
+      //   alert("Email already exists");
       // } else {
-      //   userObject = {
-      //     email: formData.email,
-      //     password: formData.password,
-      //     isEmailSignup: true,
+      //   const response = await axios.post(
+      //     `https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/CreateAccount/EVERY-CIRCLE`,
+      //     userObject
+      //   );
+
+      //   const loginData = {
+      //     userId: response?.data?.user_uid ,
+      //     isUserLoggedIn: true,
       //   };
+      //   updateUser( loginData);
+
+      //   navigate(`/profileSetup`, {
+      //     state: { userId: response?.data?.user_uid },
+      //   });
       // }
-
-      let userObject = {
-        email: formData.email,
-        password: formData.password,
-      };
-
-      //console.log("Current User Info: ", user);
-
-      if (userExists?.message !== "User EmailID doesnt exist") {
-        alert("Email already exists");
-      } else {
-        const response = await axios.post(
-          `https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/CreateAccount/EVERY-CIRCLE`,
-          userObject
-        );
-
-        const loginData = {
-          userId: response?.data?.user_uid ,
-          isUserLoggedIn: true,
-        };
-        updateUser( loginData);
-
-        navigate(`/profileSetup`, {
-          state: { userId: response?.data?.user_uid },
-        });
-      }
     }
   };
 
@@ -238,12 +242,13 @@ const SignupForm = () => {
         </div>
 
         <div className="social-auth">
-          <button onClick={handleGoogleSignup} className="social-button google">
+          {/* <button onClick={handleGoogleSignup} className="social-button google">
             <img
               src="https://cdn-icons-png.flaticon.com/256/1199/1199414.png"
               alt="Google"
             />
-          </button>
+          </button> */}
+          <GoogleSignup/>
           <button onClick={handleAppleSignup} className="social-button apple">
             <svg viewBox="0 0 384 512" width="24" height="24">
               <path
