@@ -10,6 +10,9 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 import CircleButton from "../common/CircleButton";
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate';
+import { useUserContext } from "../contexts/UserContext";
+import axios from "axios";
+import DialogBox from "../common/DialogBox";
 
 const StyledButton = styled(Button)(({ width, height }) => ({
     width: width,
@@ -27,7 +30,7 @@ const StyledButton = styled(Button)(({ width, height }) => ({
 
 
 export default function RecommendationForm() {
-    const [formData, setFormData] = useState({
+    const initialFormData = {
         businessName: "",
         location: "",
         rating: 0,
@@ -38,17 +41,48 @@ export default function RecommendationForm() {
         yelpUrl: "",
         websiteUrl: "",
         email: "",
-    });
+    };
+    const [formData, setFormData] = useState(initialFormData);
+    const { user } = useUserContext();
+    const { userId } = user
+    const [dialogOpen, setDialogOpen] = useState(false);
 
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData({ ...formData, [name]: value });
+    const handleOpen = () => setDialogOpen(true);
+    const handleClose = () => setDialogOpen(false);
+
+    const resetForm = () => {
+        setFormData(initialFormData);
     };
 
-    const handleSubmit = (e) => {
-        console.log('inside')
+    const handleSubmit = async (e) => {
         e.preventDefault();
         console.log(formData);
+        try {
+        const form = new FormData();
+        form.append('user_uid', userId);
+        form.append('rating_star', formData.rating);
+        form.append('rating_description', formData.review);
+        // form.append('rating_location', formData.location);
+        // form.append('rating_owner', formData.owner);
+        // form.append('rating_business_name',formData.businessName);
+        // form.append('rating_phonenumber', formData.phoneNumber);
+        // form.append('', formData.yelpUrl);
+        // form.append('', formData.websiteUrl);
+        // form.append('', formData.email);
+        // form.append('', formData.lastInteraction.format("MM-DD-YYYY"));
+
+        const response = await axios.post(`https://ioec2testsspm.infiniteoptions.com/ratings`, form);
+        console.log(response)
+        if (response.status === 200) {
+            handleOpen();
+            resetForm();
+        } else {
+            console.log('Cannot add recommendation')
+        }           
+    } catch(error){
+        console.log("Error occured when adding recommendation", error);
+    }
+
     };
 
     return (
@@ -129,10 +163,10 @@ export default function RecommendationForm() {
                             width={100}
                             height={100}
                             sx={{
-                                display: "flex",              
-                                alignItems: "center",        
-                                justifyContent: "center",     
-                                textAlign: "center",                    
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                textAlign: "center",
                             }}
                         >
                             <input
@@ -144,9 +178,17 @@ export default function RecommendationForm() {
                             Upload Receipt
                         </StyledButton>
 
-                        <CircleButton width={100} height={100} text="Save" onClick={handleSubmit}/>
+                        <CircleButton width={100} height={100} text="Save" onClick={handleSubmit} />
                     </Box>
                 </form>
+                <DialogBox
+                    open={dialogOpen}
+                    title="Success"
+                    content="Thank you for adding your recommendation!"
+                    button1Text="Ok"
+                    button1Action={handleClose}
+                    handleClose={handleClose}
+                />
             </Box>
             <NavigationBar />
         </StyledContainer>
