@@ -9,19 +9,21 @@ import { useUserContext } from '../../contexts/UserContext';
 export const useUserAuth = () => {
     const navigate = useNavigate();
     const { updateUser } = useUserContext();
+    let GOOGLE_LOGIN_PASSWORD = process.env.REACT_APP_GOOGLE_LOGIN;
 
-    const handleUserSignUp = async (formData, signupType) => {
-        console.log('formdata', formData);
+    const handleUserSignUp = async (userData, signupType) => {
+        console.log('userData', userData);
         if (signupType === "email") {
             // Check if the user exists
-            const userExists = await checkIfUserExists(formData.email);
+            const userExists = await checkIfUserExists(userData.email);
             console.log('User exists:', userExists);
-            if (userExists?.message !== 'User EmailID doesnt exist') {
-                handleLogin(formData);
+            if (userExists?.message !== 'User email does not exist') {
+                handleLogin(userData);
             } else {
+                console.log('creating a new user from sign up')
                 let userObject = {
-                    email: formData.email,
-                    password: formData.password,
+                    email: userData.email,
+                    password: userData.password,
                 };
 
                 const response = await axios.post(
@@ -42,84 +44,36 @@ export const useUserAuth = () => {
         } else {
             // Make the signup API call to Googe signup
             const response = await axios.post(
-                'https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialSignUp/MYSPACE',
-                formData
+                'https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialSignUp/EVERY-CIRCLE',
+                userData
             );
-            console.log('response from social signup', response);
+            console.log('response from social signup', response, response.data);
+            if (response.data.message === "User already exists") {
+                const userId = "100-000048";
+                await getRedirection(userId);
+            } else {
+                const loginData = {
+                    userId: response?.data?.user_uid,
+                    isUserLoggedIn: true,
+                };
+                updateUser(loginData);
+
+                navigate(`/profileSetup`, {
+                    state: { userId: response?.data?.user_uid },
+                });
+            }
         }
-
-
-
-
-
-        // if (signupType === "email") {
-        //     // Check if the user exists
-        //     const userExists = await checkIfUserExists(formData.email);
-        //     console.log('User exists:', userExists);
-
-        //     if (userExists?.message !== 'User EmailID doesnt exist') {
-        //         const userId = userExists?.result;
-        //         console.log('user id is', userId);
-        //         try {
-        //             // Check if the profile exists, redirect to profile dashboard page
-        //             const profileResponse = await checkIfProfileExists(userId);
-        //             if (profileResponse.code === 200 && profileResponse.result.length == 1) {
-        //                 const loginData = {
-        //                     userId: userId,
-        //                     isUserLoggedIn: true,
-        //                 };
-        //                 updateUser(loginData);
-        //                 navigate("/profile");
-        //             }
-        //         } catch (error) {
-        //             //If no profile, redirect to profile setup page
-        //             console.error('Error fetching profile:', error, error.response?.data?.message);
-        //             const loginData = {
-        //                 userId: userId,
-        //                 isUserLoggedIn: true,
-        //             };
-        //             updateUser(loginData);
-        //             navigate(`/profileSetup`, {
-        //                 state: { userId },
-        //             });
-        //         }
-        //     } else {
-        //         // Make the signup API call
-        //         const response = await axios.post(
-        //             'https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/signup',
-        //             formData
-        //         );
-
-        //         console.log('Signup successful:', response.data);
-        //         const loginData = {
-        //             userId: response?.data?.user_uid,
-        //             isUserLoggedIn: true,
-        //         };
-        //         updateUser(loginData);
-        //         navigate(`/profileSetup`, {
-        //             state: { userId: response?.data?.user_uid },
-        //         });
-        //     }
-        // } else {
-        //     // Make the signup API call to Googe signup
-        //     const response = await axios.post(
-        //         'https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialSignUp/MYSPACE',
-        //         formData
-        //     );
-        //     console.log('response from social signup', response);
-        // }
-
     };
 
 
-    const handleLogin = async (formData) => {
+    const handleLogin = async (userData) => {
         try {
             // First API call to get salt
             axios
                 .post(
                     "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AccountSalt/EVERY-CIRCLE",
                     {
-                        email: formData.email,
+                        email: userData.email,
                     }
                 )
                 .then(async (response) => {
@@ -135,7 +89,7 @@ export const useUserAuth = () => {
                             if (hashAlg === "SHA256") algorithm = "SHA-256";
 
                             // Salt the password
-                            const saltedPassword = formData.password + salt;
+                            const saltedPassword = userData.password + salt;
                             const encoder = new TextEncoder();
                             const data = encoder.encode(saltedPassword);
 
@@ -151,7 +105,7 @@ export const useUserAuth = () => {
 
                             // Prepare login object with profile data
                             const loginObject = {
-                                email: formData.email,
+                                email: userData.email,
                                 password: hashedPassword,
                             };
 
@@ -166,30 +120,12 @@ export const useUserAuth = () => {
 
                             switch (message) {
                                 case "Login successful":
-                                    // console.log("Login successful", result?.user_uid);
-                                    // navigate("/profileSetup", {
-                                    //   state: { userId: result?.user_uid },
-                                    // });
                                     const loginData = {
                                         userId: result?.user_uid,
                                         isUserLoggedIn: true,
                                     };
                                     updateUser(loginData);
-                                    //Check if profile exists
-
-                                    try {
-                                        // Check if the profile exists, redirect to profile dashboard page
-                                        const profileResponse = await checkIfProfileExists(result?.user_uid);
-                                        if (profileResponse.code === 200 && profileResponse.result.length == 1) {
-                                            navigate("/profile");
-                                        }
-                                    } catch (error) {
-                                        //If no profile, redirect to profile setup page
-                                        console.error('Error fetching profile:', error, error.response?.data?.message);
-                                        navigate(`/profileSetup`, {
-                                            state: { userId: result?.user_uid },
-                                        });
-                                    }
+                                    await getRedirection(result?.user_uid);
                                     break;
 
                                 case "Incorrect password":
@@ -216,5 +152,79 @@ export const useUserAuth = () => {
         }
     };
 
-    return { handleUserSignUp, handleLogin };
+    const getRedirection = async (userId) => {
+        try {
+            // Check if the profile exists, redirect to profile dashboard page
+            const profileResponse = await checkIfProfileExists(userId);
+            if (profileResponse.code === 200 && profileResponse.result.length == 1) {
+                const loginData = {
+                    userId: userId,
+                    isUserLoggedIn: true,
+                };
+                updateUser(loginData);
+                navigate("/profile");
+            }
+        } catch (error) {
+            //If no profile, redirect to profile setup page
+            console.error('Error fetching profile:', error, error.response?.data?.message);
+            const loginData = {
+                userId: userId,
+                isUserLoggedIn: true,
+            };
+            updateUser(loginData);
+            navigate(`/profileSetup`, {
+                state: { userId },
+            });
+        }
+    };
+
+    const handleGoogleLogin = async (email, socialId, firstName, lastName, authToken, refreshToken, expiresIn) => {
+        console.log('handleGoogleLogin called');
+        try {
+            const { data } = await axios.get(
+                `https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialLogin/EVERY-CIRCLE/${email}`
+            );
+
+            console.log('data from UserSocialLogin', data)
+            if (data.message === "User email does not exist") {
+                // alert("User does not exist. Please Signup.");
+                // navigate("/signup");
+                const user = {
+                    email: email,
+                    password: GOOGLE_LOGIN_PASSWORD,
+                    first_name: firstName,
+                    last_name: lastName,
+                    google_auth_token: authToken,
+                    google_refresh_token: refreshToken,
+                    social_id: socialId,
+                    access_expires_in: String(expiresIn),
+                    phone_number: "",
+                    role: "",
+                };
+                await handleUserSignUp(user, "google");
+                return;
+            } else {
+                const user = data.result;
+                const user_id = user[0];
+                sessionStorage.setItem("authToken", user.access_token);
+                sessionStorage.setItem("refreshToken", user.refresh_token);
+
+                // Update Access Token
+                const url = `https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UpdateAccessToken/EVERY-CIRCLE/${user_id}`;
+                await axios.post(url, { google_auth_token: authToken });
+
+                const loginData = {
+                    userId: user_id,
+                    isUserLoggedIn: true,
+                };
+                updateUser(loginData);
+
+                getRedirection(user_id);
+            }
+        } catch (err) {
+            console.error("Error in handleGoogleLogin:", err);
+        }
+    }
+
+    return { handleUserSignUp, handleLogin, handleGoogleLogin };
 };

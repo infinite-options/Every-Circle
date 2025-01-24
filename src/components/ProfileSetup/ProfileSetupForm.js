@@ -32,7 +32,7 @@ const ProfileSetupForm = () => {
     template: '',
   });
 
-  // console.log("userId", userId);
+  console.log("userId in profile setup", userId);
 
   const handleChange = (e) => {
     const { name, value } = e.target;

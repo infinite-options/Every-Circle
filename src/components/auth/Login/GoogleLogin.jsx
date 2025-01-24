@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
-import { useUserContext } from '../../contexts/UserContext';
+import { useUserAuth } from '../authUtils/useUserAuth';
 
 let CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 let CLIENT_SECRET = process.env.REACT_APP_GOOGLE_CLIENT_SECRET;
@@ -14,23 +13,13 @@ const GoogleLogin = (props) => {
     const [refreshToken, setRefreshToken] = useState("");
     const [accessToken, setAccessToken] = useState("");
     const [accessExpiresIn, setAccessExpiresIn] = useState("");
-    const navigate = useNavigate();
-    const { updateUser } = useUserContext();
+    const { handleGoogleLogin } = useUserAuth();
     let codeClient = {};
 
     function getAuthorizationCode() {
         // Request authorization code and obtain user consent,  method of the code client to trigger the user flow
         codeClient.requestCode();
     }
-
-    const socialGoogle = async (e, u) => {
-        const loginData = {
-            userId: u.result.user.user_uid,
-            isUserLoggedIn: true,
-        };
-        updateUser(loginData);
-        navigate('/profile');
-    };
 
     useEffect(() => {
         /* global google */
@@ -85,54 +74,21 @@ const GoogleLogin = (props) => {
                                 //  use ACCESS token, to get email and other account info
                                 axios
                                     .get("https://www.googleapis.com/oauth2/v2/userinfo?alt=json&access_token=" + at)
-                                    .then((response) => {
+                                    .then(async (response) => {
                                         let data = response.data;
 
                                         let e = data["email"];
                                         let si = data["id"];
+                                        let fn = data["given_name"];
+                                        let ln = data["family_name"];
 
                                         setEmail(e);
                                         setSocialId(si);
-                                        axios
-                                            .get(
-                                                `https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialLogin/MYSPACE/${e}`
-                                            )
-                                            .then(async ({ data }) => {
-                                                console.log('data is------', data["message"])
-                                                if (
-                                                    data["message"] === "Email ID does not exist"
-                                                ) {
-                                                    alert('User does not exist. Please Signup.')
-                                                    navigate("/signup")
-                                                    return;
-                                                } else if (data["message"] === "Login with email") {
-                                                    alert(data["message"]);
-                                                } else {
-                                                    let user = data.result;
-                                                    let user_id = data.result.user.user_uid;
-                                                    setAccessToken(at);
-                                                    sessionStorage.setItem('authToken', user.access_token);
-                                                    sessionStorage.setItem('refreshToken', user.refresh_token)
-
-                                                    let url = `https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UpdateAccessToken/MYSPACE/${user_id}`;
-                                                    axios
-                                                        .post(url, {
-                                                            google_auth_token: at,
-                                                        })
-                                                        .then((response) => {
-                                                            socialGoogle(email, user);
-                                                        })
-                                                        .catch((err) => {
-                                                            console.log(err);
-                                                        });
-                                                    return accessToken;
-                                                }
-                                            });
+                                        await handleGoogleLogin(e, si, fn, ln, at, rt, ax);
                                     })
                                     .catch((error) => {
                                         console.log(error);
                                     });
-                                return accessToken, refreshToken, accessExpiresIn, email, socialId;
                             })
                             .catch((err) => {
                                 console.log(err);

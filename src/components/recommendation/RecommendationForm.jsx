@@ -46,6 +46,7 @@ export default function RecommendationForm() {
     };
 
     const handleSubmit = (e) => {
+        console.log('inside')
         e.preventDefault();
         console.log(formData);
     };
@@ -54,7 +55,7 @@ export default function RecommendationForm() {
         <StyledContainer>
             <Header title="Recommendation" />
             <Box sx={{ width: '100%', padding: "10px 40px" }}>
-                <form onSubmit={handleSubmit}>
+                <form>
                     <InputField
                         label="Business Name"
                         value={formData.businessName}
@@ -143,7 +144,7 @@ export default function RecommendationForm() {
                             Upload Receipt
                         </StyledButton>
 
-                        <CircleButton width={100} height={100} text="Save" />
+                        <CircleButton width={100} height={100} text="Save" onClick={handleSubmit}/>
                     </Box>
                 </form>
             </Box>

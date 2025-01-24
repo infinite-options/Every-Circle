@@ -2,14 +2,19 @@ import React, { useState, useEffect } from "react";
 import axios from 'axios';
 import {useNavigate} from 'react-router-dom'; 
 import { useUserAuth } from '../authUtils/useUserAuth';
+import { checkIfUserExists, checkIfProfileExists } from '../authUtils/AuthUtils';
 
 let CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
+// let CLIENT_ID = process.env.REACT_APP_GOOGLE_LOGIN;
 let CLIENT_SECRET = process.env.REACT_APP_GOOGLE_CLIENT_SECRET;
-const GOOGLE_LOGIN_PASSWORD = process.env.REACT_APP_GOOGLE_LOGIN;
-let SCOPES = "https://www.googleapis.com/auth/userinfo.profile email";
+// const GOOGLE_LOGIN_PASSWORD = "googleSocialLogin1"
+let GOOGLE_LOGIN_PASSWORD = process.env.REACT_APP_GOOGLE_LOGIN;
+let SCOPES = "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.profile ";
 
 
 const GoogleSignup = (props) => {
+    console.log('GOOGLE_LOGIN_PASSWORD', GOOGLE_LOGIN_PASSWORD)
+    console.log('CLIENT_ID', CLIENT_ID)
     const { handleUserSignUp } = useUserAuth();
     const [email, setEmail] = useState("");
     const [socialId, setSocialId] = useState("");
@@ -21,16 +26,12 @@ const GoogleSignup = (props) => {
 
     function getAuthorizationCode() {
         // Request authorization code and obtain user consent,  method of the code client to trigger the user flow
-        console.log('in getAuthorizationCode')
         codeClient.requestCode();
     }
 
     useEffect(() => {
         /* global google */
         if (google) {
-            console.log('global google', google)
-            console.log('code client', codeClient)
-            console.log('code client', CLIENT_ID)
             // initialize a code client for the authorization code flow.
             codeClient = google.accounts.oauth2.initCodeClient({
                 client_id: CLIENT_ID,
@@ -94,6 +95,7 @@ const GoogleSignup = (props) => {
                                             const user = {
                                                 email: e,
                                                 password: GOOGLE_LOGIN_PASSWORD,
+                                                // password: '',
                                                 first_name: data["given_name"],
                                                 last_name: data["family_name"],
                                                 google_auth_token: at,
@@ -101,31 +103,23 @@ const GoogleSignup = (props) => {
                                                 social_id: si,
                                                 access_expires_in: String(ax),
                                                 phone_number: "",
+                                                role: "",
                                             };
-                                            // const userObj = {
-                                            //     email: e,
-                                            //     password: GOOGLE_LOGIN_PASSWORD,
-                                            // }
-                                            handleUserSignUp(user, 'google');
-                                            // if(response.message = "Email already exists"){
-
-                                            // }
-                                            // console.log('response from signup', response);
-                                            // // navigate("/profileSetup", {
-                                            // //     state: {
-                                            // //         user: user,
-                                            // //     },
-                                            // // });
+                                            console.log('checking user from google', user)
+                                            const userExist = await checkIfUserExists(e);
+                                            console.log('user Exists', userExist)
+                                            
+                                            await handleUserSignUp(user, 'google');
                                         };
                                         socialGoogle();
                                     })
                                     .catch((error) => {
-                                        //console.log(error);
+                                        console.log(error);
                                     });
                                 return accessToken, refreshToken, accessExpiresIn, email, socialId;
                             })
                             .catch((err) => {
-                                //console.log(err);
+                                console.log(err);
                             });
                     }
                 },
