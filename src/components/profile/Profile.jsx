@@ -18,6 +18,8 @@ import EditIcon from '@mui/icons-material/Edit';
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useUserContext } from "../contexts/UserContext";
+import { DataValidationUtils } from "../auth/authUtils/DataValidationUtils";
+import DialogBox from "../common/DialogBox";
 
 const FormBox = styled(Box)({
   padding: "0 16px",
@@ -26,7 +28,7 @@ const FormBox = styled(Box)({
 export default function Profile() {
   const location = useLocation();
   const { editMode: initialEditMode = false } = location.state || {};
-  const {user, updateUser} = useUserContext();
+  const { user, updateUser } = useUserContext();
   // console.log('user data', user);
   const userId = user.userId;
   const [formData, setFormData] = useState({
@@ -46,6 +48,11 @@ export default function Profile() {
   });
   const [profileId, setProfileId] = useState("");
   const [editMode, setEditMode] = useState(initialEditMode);
+  const [errors, setErrors] = useState({});
+  const { isValidPhoneNumber } = DataValidationUtils;
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
   const navigate = useNavigate();
 
   const templateMap = {
@@ -54,6 +61,9 @@ export default function Profile() {
     3: "split",
     4: "creative",
   }
+
+  const handleOpen = () => setDialogOpen(true);
+  const handleClose = () => setDialogOpen(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -68,6 +78,7 @@ export default function Profile() {
               firstName: user.profile_first_name || "",
               lastName: user.profile_last_name || "",
               phoneNumber: user.profile_phone || "",
+              location: user.profile_location || "",
               tagLine: user.profile_tag_line || "",
               shortBio: user.profile_short_bio || "",
               images: user.profile_images || [],
@@ -80,7 +91,7 @@ export default function Profile() {
               weHelp: user.profile_how_can_we_help ? JSON.parse(user.profile_how_can_we_help) : ["", "", "", ""],
               profileId: user.profile_uid,
             });
-          updateUser({profileId:user.profile_uid})
+          updateUser({ profileId: user.profile_uid })
           setProfileId(user.profile_uid);
         } else {
           console.log("Error fetching profile: ", response.status);
@@ -92,33 +103,67 @@ export default function Profile() {
     fetchProfile();
   }, [userId]);
 
+  const validateRequiredFields = () => {
+    const newErrors = {};
+    ["firstName", "lastName", "location", "phoneNumber"].forEach((field) => {
+      if (!formData[field]) {
+        newErrors[field] = `${field} is required`;
+      }
+    });
+
+    if (isValidPhoneNumber(formData.phoneNumber) === false) {
+      newErrors["phoneNumber"] = "Invalid phone number format";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+    } else {
+      setErrors({});
+    }
+    console.log('The errors are', errors)
+    return Object.keys(newErrors).length === 0;
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const form = new FormData();
-    form.append("profile_first_name", formData.firstName);
-    form.append("profile_last_name", formData.lastName);
-    form.append("profile_phone", formData.phoneNumber);
-    form.append("profile_tag_line", formData.tagLine);
-    form.append("profile_short_bio", formData.shortBio);
-    // form.append("profile_images", formData.images);
-    form.append("profile_facebook_link", formData.facebookLink);
-    form.append("profile_twitter_link", formData.twitterLink);
-    form.append("profile_linkedin_link", formData.linkedinLink);
-    form.append("profile_youtube_link", formData.youtubeLink);
-    form.append("profile_template", formData.template);
-    form.append("profile_how_can_we_help", JSON.stringify(formData.weHelp));
-    form.append("profile_how_can_you_help", JSON.stringify(formData.youHelp));
-    form.append("profile_uid", profileId);
-    try {
-      const response = await axios.put(`${APIConfig.baseURL.dev}/profile`, form);
-      console.log("Profile updated successfully", response);
-      if (response.data.code === 200) {
-        alert("Profile updated successfully");
-      } else {
-        alert("Error updating profile");
+    if (validateRequiredFields()) {
+      const form = new FormData();
+      form.append("profile_first_name", formData.firstName);
+      form.append("profile_last_name", formData.lastName);
+      form.append("profile_phone", formData.phoneNumber);
+      // form.append("profile_location", formData.location);
+      form.append("profile_tag_line", formData.tagLine);
+      form.append("profile_short_bio", formData.shortBio);
+      // form.append("profile_images", formData.images);
+      form.append("profile_facebook_link", formData.facebookLink);
+      form.append("profile_twitter_link", formData.twitterLink);
+      form.append("profile_linkedin_link", formData.linkedinLink);
+      form.append("profile_youtube_link", formData.youtubeLink);
+      form.append("profile_template", formData.template);
+      form.append("profile_how_can_we_help", JSON.stringify(formData.weHelp));
+      form.append("profile_how_can_you_help", JSON.stringify(formData.youHelp));
+      form.append("profile_uid", profileId);
+      try {
+        const response = await axios.put(`${APIConfig.baseURL.dev}/profile`, form);
+        console.log("Profile updated successfully", response);
+        if (response.data.code === 200) {
+          setEditMode(false);
+          setTitle("Success");
+          setContent("Profile has been updated successfully.")
+          handleOpen();
+          // alert("Profile updated successfully");
+        } else {
+          setTitle("Error");
+          setContent("Cannot update the profile.")
+          handleOpen();
+          // alert("Error updating profile");
+        }
+      } catch (error) {
+        setTitle("Error");
+        setContent("Cannot update the profile.")
+        handleOpen();
+        console.error("Error updating profile:", error);
       }
-    } catch (error) {
-      console.error("Error updating profile:", error);
     }
   };
 
@@ -128,27 +173,34 @@ export default function Profile() {
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', padding: '0px 30px', width: '100%', }}>
         <EditIcon
           onClick={() => setEditMode(!editMode)}
-          sx={{ cursor: 'pointer' }}
+          sx={{ cursor: 'pointer', color: editMode && "red" }}
         />
       </Box>
       <Box sx={{ borderRadius: '10px', margin: "10px 25px" }}>
         <form>
           <FormBox>
             <InputField
+              required
               label="First Name"
               value={formData.firstName}
               onChange={(value) => setFormData({ ...formData, firstName: value })}
               disabled={!editMode}
               backgroundColor={editMode ? 'white' : '#e0e0e0'}
+              error={errors.firstName}
+              helperText={errors.firstName}
             />
             <InputField
+              required
               label="Last Name"
               value={formData.lastName}
               onChange={(value) => setFormData({ ...formData, lastName: value })}
               disabled={!editMode}
               backgroundColor={editMode ? 'white' : '#e0e0e0'}
+              error={errors.lastName}
+              helperText={errors.lastName}
             />
             <InputField
+              required
               label="Phone Number"
               value={formData.phoneNumber}
               onChange={(value) =>
@@ -156,6 +208,18 @@ export default function Profile() {
               }
               disabled={!editMode}
               backgroundColor={editMode ? 'white' : '#e0e0e0'}
+              error={errors.phoneNumber}
+              helperText={errors.phoneNumber}
+            />
+            <InputField
+              required
+              label="Location"
+              value={formData.location}
+              onChange={(value) => setFormData({ ...formData, location: value })}
+              disabled={!editMode}
+              backgroundColor={editMode ? 'white' : '#e0e0e0'}
+              error={errors.location}
+              helperText={errors.location}
             />
             <InputField
               label="Tag Line"
@@ -300,9 +364,16 @@ export default function Profile() {
             )}
           </FormBox>
         </form>
+        <DialogBox
+          open={dialogOpen}
+          title={title}
+          content={content}
+          button1Text="Ok"
+          button1Action={handleClose}
+          handleClose={handleClose}
+        />
         <NavigationBar />
       </Box>
-
     </StyledContainer>
   );
 };

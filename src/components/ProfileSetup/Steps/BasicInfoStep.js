@@ -1,7 +1,7 @@
 import { Box, Typography, TextField } from '@mui/material';
 import { StyledTextField } from '../StyledComponents';
 
-const BasicInfoStep = ({ formData, handleChange }) => {
+const BasicInfoStep = ({ formData, handleChange, errors }) => {
   return (
     <Box sx={{ width: '100%' }}>
       <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
@@ -14,7 +14,8 @@ const BasicInfoStep = ({ formData, handleChange }) => {
         value={formData.firstName}
         onChange={handleChange}
         margin="normal"
-        required
+        error={errors.firstName}
+        helperText={errors.firstName}
       />
       <StyledTextField
         fullWidth
@@ -23,7 +24,8 @@ const BasicInfoStep = ({ formData, handleChange }) => {
         value={formData.lastName}
         onChange={handleChange}
         margin="normal"
-        required
+        error={errors.lastName}
+        helperText={errors.lastName}
       />
 
       <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
@@ -37,14 +39,9 @@ const BasicInfoStep = ({ formData, handleChange }) => {
         value={formData.location}
         onChange={handleChange}
         margin="normal"
+        error={errors.location}
+        helperText={errors.location}
       />
-
-{/* <TextField
-          required
-          id="outlined-required"
-          label="Required"
-          defaultValue="Hello World"
-        /> */}
 
       <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
         Your phone number (this info is private)
@@ -56,7 +53,8 @@ const BasicInfoStep = ({ formData, handleChange }) => {
         value={formData.phoneNumber}
         onChange={handleChange}
         margin="normal"
-        required
+        error={errors.phoneNumber}
+        helperText={errors.phoneNumber}
       />
     </Box>
   );

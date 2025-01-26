@@ -1,6 +1,6 @@
 import { TextField, styled } from '@mui/material';
 
-export const StyledTextField = styled(TextField)(({ multiline }) => ({
+export const StyledTextField = styled(TextField)(({ multiline, required }) => ({
   '& .MuiInputBase-root': {
     backgroundColor: '#fff',
     borderRadius: '8px',

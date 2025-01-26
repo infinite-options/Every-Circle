@@ -9,12 +9,15 @@ import TemplateStep from './Steps/TemplateStep';
 import ResponsiveContainer from '../Layout/ResponsiveContainer';
 import axios from 'axios';
 import APIConfig from '../../APIConfig';
+import { DataValidationUtils } from '../auth/authUtils/DataValidationUtils';
 
 const ProfileSetupForm = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const userId = location.state?.userId ? location.state.userId : null;
   const [activeStep, setActiveStep] = useState(0);
+  const {isValidPhoneNumber} = DataValidationUtils;
+  const [errors, setErrors] = useState({});
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: '',
@@ -48,6 +51,26 @@ const ProfileSetupForm = () => {
       [`image${index}`]: file
     }));
   };
+
+  const validateRequiredFields = () => {
+    const newErrors = {};
+    ["firstName", "lastName", "location", "phoneNumber"].forEach((field) => {
+      if (!formData[field]) {
+        newErrors[field] = `${field} is required`;
+      }
+    });
+
+    if (isValidPhoneNumber(formData.phoneNumber) === false){
+      newErrors["phoneNumber"] = "Invalid phone number format";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+    } else {
+      setErrors({});
+    }
+    return Object.keys(newErrors).length === 0;
+  }
 
   const handleNext = async () => {
     // console.log("activeStep", activeStep);
@@ -85,6 +108,10 @@ const ProfileSetupForm = () => {
       } catch (error) {
         console.log("Error updating profile data", error);
       }
+    } else if (activeStep === 0) {
+      if( validateRequiredFields()){
+        setActiveStep((prev) => prev + 1);
+      }
     }
     else {
       setActiveStep((prev) => prev + 1);
@@ -105,7 +132,7 @@ const ProfileSetupForm = () => {
 
   const steps = [
     {
-      component: <BasicInfoStep formData={formData} handleChange={handleChange} />,
+      component: <BasicInfoStep formData={formData} handleChange={handleChange} errors={errors}/>,
       title: "Welcome to Every Circle!",
       subtitle: "Let's Build Your Profile Page!"
     },

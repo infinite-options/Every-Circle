@@ -13,24 +13,17 @@ export const InputField = ({
   width,
   backgroundColor,
   disabled,
+  required,
+  error,
+  helperText,
 }) => {
   const navigate = useNavigate();
   return (
     <Box sx={{ mb: 3 }}>
       <Box sx={{ display: "flex", alignItems: "center", mb: 0.5 }}>
         <Typography variant="caption" sx={{ ml: 1, mr: 1 }}>
-          {label}
+        {label} {required && <span style={{ color: "red" }}>*</span>}
         </Typography>
-        {label === "Template" && (
-          <IconButton size="small" sx={{ p: 0 }} 
-          onClick={() => {
-            navigate("/selectTemplate");
-          }}
-          disabled={disabled}
-          >
-            <VisibilityIcon fontSize="small" />
-          </IconButton>
-        )}
       </Box>
       <TextField
         fullWidth
@@ -41,6 +34,9 @@ export const InputField = ({
         onChange={(e) => onChange?.(e.target.value)}
         placeholder={`${label} ${optional ? "(optional)" : ""}`}
         disabled={disabled}
+        required={required}
+        error={error}
+        helperText={helperText}
         sx={{
           backgroundColor: backgroundColor || "#e0e0e0",
           borderRadius: 2,
@@ -48,7 +44,6 @@ export const InputField = ({
             borderRadius: 2,
           },
           width: width || "100%",
-
         }}
       />
     </Box>
