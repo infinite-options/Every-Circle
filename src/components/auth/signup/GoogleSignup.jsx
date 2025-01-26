@@ -89,13 +89,11 @@ const GoogleSignup = (props) => {
                                         let si = data["id"];
 
                                         setEmail(e);
-
                                         setSocialId(si);
                                         const socialGoogle = async () => {
                                             const user = {
                                                 email: e,
                                                 password: GOOGLE_LOGIN_PASSWORD,
-                                                // password: '',
                                                 first_name: data["given_name"],
                                                 last_name: data["family_name"],
                                                 google_auth_token: at,

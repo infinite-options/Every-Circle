@@ -13,55 +13,70 @@ export const useUserAuth = () => {
 
     const handleUserSignUp = async (userData, signupType) => {
         console.log('userData', userData);
-        if (signupType === "email") {
-            // Check if the user exists
-            const userExists = await checkIfUserExists(userData.email);
-            console.log('User exists:', userExists);
-            if (userExists?.message !== 'User email does not exist') {
-                handleLogin(userData);
+        try {
+            if (signupType === "email") {
+                // Check if the user exists
+                const userExists = await checkIfUserExists(userData.email);
+                console.log('User exists:', userExists);
+                if (userExists?.message !== 'User email does not exist') {
+                    handleLogin(userData);
+                } else {
+                    console.log('creating a new user from sign up')
+                    await createAccount(userData);
+                }
             } else {
-                console.log('creating a new user from sign up')
-                let userObject = {
-                    email: userData.email,
-                    password: userData.password,
-                };
-
+                // Make the signup API call to Googe signup
                 const response = await axios.post(
-                    `https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/CreateAccount/EVERY-CIRCLE`,
-                    userObject
+                    'https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialSignUp/EVERY-CIRCLE',
+                    userData
                 );
+                console.log('response from social signup', response);
+                if (response.data.message === "User already exists") {
+                    const userId = response.data.user_uid;
+                    await getRedirection(userId);
+                } else {
+                    const loginData = {
+                        userId: response?.data?.user_uid,
+                        isUserLoggedIn: true,
+                    };
+                    updateUser(loginData);
 
-                const loginData = {
-                    userId: response?.data?.user_uid,
-                    isUserLoggedIn: true,
-                };
-                updateUser(loginData);
-
-                navigate(`/profileSetup`, {
-                    state: { userId: response?.data?.user_uid },
-                });
+                    navigate(`/profileSetup`, {
+                        state: { userId: response?.data?.user_uid },
+                    });
+                }
             }
-        } else {
-            // Make the signup API call to Googe signup
+        } catch (error) {
+            console.error("Error in handleUserSignUp:", error.message || error);
+        }
+    };
+
+
+    const createAccount = async (userData) => {
+        const userObject = {
+            email: userData.email,
+            password: userData.password,
+        };
+
+        try {
             const response = await axios.post(
-                'https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialSignUp/EVERY-CIRCLE',
-                userData
+                "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/CreateAccount/EVERY-CIRCLE",
+                userObject
             );
-            console.log('response from social signup', response, response.data);
-            if (response.data.message === "User already exists") {
-                const userId = "100-000048";
-                await getRedirection(userId);
-            } else {
-                const loginData = {
-                    userId: response?.data?.user_uid,
-                    isUserLoggedIn: true,
-                };
-                updateUser(loginData);
+            const userId = response?.data?.user_uid;
 
-                navigate(`/profileSetup`, {
-                    state: { userId: response?.data?.user_uid },
-                });
-            }
+            const loginData = {
+                userId,
+                isUserLoggedIn: true,
+            };
+            updateUser(loginData);
+
+            navigate("/profileSetup", {
+                state: { userId },
+            });
+        } catch (error) {
+            console.error("Error in createAndLoginUser:", error.message || error);
+            throw error;
         }
     };
 
