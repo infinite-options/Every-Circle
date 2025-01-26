@@ -33,17 +33,9 @@ export const useUserAuth = () => {
                 console.log('response from social signup', response);
                 if (response.data.message === "User already exists") {
                     const userId = response.data.user_uid;
-                    await getRedirection(userId);
+                    await performRedirection(userId);
                 } else {
-                    const loginData = {
-                        userId: response?.data?.user_uid,
-                        isUserLoggedIn: true,
-                    };
-                    updateUser(loginData);
-
-                    navigate(`/profileSetup`, {
-                        state: { userId: response?.data?.user_uid },
-                    });
+                    redirectToProfileSetup(response.data.user_uid);
                 }
             }
         } catch (error) {
@@ -64,16 +56,7 @@ export const useUserAuth = () => {
                 userObject
             );
             const userId = response?.data?.user_uid;
-
-            const loginData = {
-                userId,
-                isUserLoggedIn: true,
-            };
-            updateUser(loginData);
-
-            navigate("/profileSetup", {
-                state: { userId },
-            });
+            redirectToProfileSetup(userId);
         } catch (error) {
             console.error("Error in createAndLoginUser:", error.message || error);
             throw error;
@@ -135,12 +118,7 @@ export const useUserAuth = () => {
 
                             switch (message) {
                                 case "Login successful":
-                                    const loginData = {
-                                        userId: result?.user_uid,
-                                        isUserLoggedIn: true,
-                                    };
-                                    updateUser(loginData);
-                                    await getRedirection(result?.user_uid);
+                                    await performRedirection(result?.user_uid);
                                     break;
 
                                 case "Incorrect password":
@@ -167,30 +145,42 @@ export const useUserAuth = () => {
         }
     };
 
-    const getRedirection = async (userId) => {
+    const performRedirection = async (userId) => {
         try {
-            // Check if the profile exists, redirect to profile dashboard page
+            // Check if the profile exists
             const profileResponse = await checkIfProfileExists(userId);
-            if (profileResponse.code === 200 && profileResponse.result.length == 1) {
-                const loginData = {
-                    userId: userId,
-                    isUserLoggedIn: true,
-                };
-                updateUser(loginData);
-                navigate("/profile");
+    
+            if (profileResponse?.code === 200 && profileResponse.result?.length === 1) {
+                redirectToProfile(userId);
+            } else {
+                redirectToProfileSetup(userId);
             }
         } catch (error) {
-            //If no profile, redirect to profile setup page
-            console.error('Error fetching profile:', error, error.response?.data?.message);
-            const loginData = {
-                userId: userId,
-                isUserLoggedIn: true,
-            };
-            updateUser(loginData);
-            navigate(`/profileSetup`, {
-                state: { userId },
-            });
+            console.error("Error fetching profile:", error.message || error, error.response?.data?.message);
+            redirectToProfileSetup(userId);
         }
+    };
+    
+
+    const redirectToProfile = (userId) => {
+        const loginData = {
+            userId,
+            isUserLoggedIn: true,
+        };
+        updateUser(loginData);
+        navigate("/profile");
+    };
+    
+
+    const redirectToProfileSetup = (userId) => {
+        const loginData = {
+            userId,
+            isUserLoggedIn: true,
+        };
+        updateUser(loginData);
+        navigate("/profileSetup", {
+            state: { userId },
+        });
     };
 
     const handleGoogleLogin = async (email, socialId, firstName, lastName, authToken, refreshToken, expiresIn) => {
@@ -228,13 +218,7 @@ export const useUserAuth = () => {
                 const url = `https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UpdateAccessToken/EVERY-CIRCLE/${user_id}`;
                 await axios.post(url, { google_auth_token: authToken });
 
-                const loginData = {
-                    userId: user_id,
-                    isUserLoggedIn: true,
-                };
-                updateUser(loginData);
-
-                getRedirection(user_id);
+                performRedirection(user_id);
             }
         } catch (err) {
             console.error("Error in handleGoogleLogin:", err);
