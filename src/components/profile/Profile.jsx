@@ -21,6 +21,8 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useUserContext } from "../contexts/UserContext";
 import { DataValidationUtils } from "../auth/authUtils/DataValidationUtils";
 import DialogBox from "../common/DialogBox";
+import Backdrop from '@mui/material/Backdrop';
+import CircularProgress from '@mui/material/CircularProgress';
 
 const FormBox = styled(Box)({
   padding: "0 16px",
@@ -52,12 +54,13 @@ export default function Profile() {
   const [profileId, setProfileId] = useState("");
   const [editMode, setEditMode] = useState(initialEditMode);
   const [errors, setErrors] = useState({});
-  const { isValidPhoneNumber } = DataValidationUtils;
+  const { isValidPhoneNumber, formatPhoneNumber } = DataValidationUtils;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [selectedImages, setSelectedImages] = useState([]);
   const [deletedImages, setDeletedImages] = useState([]);
+  const [showSpinner, setShowSpinner] = useState(false);
   const navigate = useNavigate();
 
   const templateMap = {
@@ -73,6 +76,7 @@ export default function Profile() {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
+        setShowSpinner(true);
         const response = await axios.get(`https://ioec2testsspm.infiniteoptions.com/profile/${userId}`);
         console.log("Profile GET response", response);
         if (response.status === 200) {
@@ -105,6 +109,8 @@ export default function Profile() {
         }
       } catch (error) {
         console.error("Error fetching profile:", error);
+      } finally {
+        setShowSpinner(false);
       }
     };
     fetchProfile();
@@ -219,6 +225,7 @@ export default function Profile() {
 
       form.append("profile_uid", profileId);
       try {
+        setShowSpinner(true);
         const response = await axios.put(`${APIConfig.baseURL.dev}/profile`, form);
         console.log("Profile updated successfully", response);
         if (response.data.code === 200) {
@@ -233,6 +240,8 @@ export default function Profile() {
         setContent("Cannot update the profile.")
         handleOpen();
         console.error("Error updating profile:", error);
+      } finally {
+        setShowSpinner(false);
       }
     } else {
       setTitle("Error");
@@ -244,6 +253,9 @@ export default function Profile() {
 
   return (
     <StyledContainer>
+      <Backdrop sx={{ color: '#fff', zIndex: 1 }} open={showSpinner}>
+        <CircularProgress color="inherit" />
+      </Backdrop>
       <Header title="Profile" />
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', padding: '0px 30px', width: '100%', }}>
         <EditIcon
@@ -279,7 +291,7 @@ export default function Profile() {
               label="Phone Number"
               value={formData.phoneNumber}
               onChange={(value) =>
-                setFormData({ ...formData, phoneNumber: value })
+                setFormData({ ...formData, phoneNumber: formatPhoneNumber(value) })
               }
               disabled={!editMode}
               backgroundColor={editMode ? 'white' : '#e0e0e0'}

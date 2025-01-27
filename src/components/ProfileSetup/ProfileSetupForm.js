@@ -16,7 +16,7 @@ const ProfileSetupForm = () => {
   const navigate = useNavigate();
   const userId = location.state?.userId ? location.state.userId : null;
   const [activeStep, setActiveStep] = useState(0);
-  const { isValidPhoneNumber } = DataValidationUtils;
+  const { isValidPhoneNumber, formatPhoneNumber } = DataValidationUtils;
   const [errors, setErrors] = useState({});
   const [formData, setFormData] = useState({
     firstName: "",
@@ -40,7 +40,8 @@ const ProfileSetupForm = () => {
   console.log("userId in profile setup", userId);
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+    const { name, value: rawValue } = e.target;
+    const value = name === "phoneNumber" ? formatPhoneNumber(rawValue) : rawValue;
     setFormData(prev => ({
       ...prev,
       [name]: value
@@ -76,7 +77,7 @@ const ProfileSetupForm = () => {
   }
 
   const handleFavImage = (imageUrl) => {
-    const updatedImages = formData.selectedImages.map((img) => ({...img, coverPhoto: img.file.name === imageUrl.name}));
+    const updatedImages = formData.selectedImages.map((img) => ({ ...img, coverPhoto: img.file.name === imageUrl.name }));
     setFormData((prev) => ({
       ...prev,
       selectedImages: updatedImages,

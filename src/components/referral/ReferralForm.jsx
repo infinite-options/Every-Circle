@@ -2,12 +2,8 @@ import React, { useState } from "react";
 import StyledContainer from "../common/StyledContainer";
 import Header from "../common/Header";
 import NavigationBar from "../navigation/NavigationBar";
-import { Box, Rating, Typography } from "@mui/material";
+import { Box } from "@mui/material";
 import { InputField } from "../common/InputField";
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import dayjs from 'dayjs';
 import CircleButton from "../common/CircleButton";
 import { DataValidationUtils } from "../auth/authUtils/DataValidationUtils";
 import Radio from '@mui/material/Radio';
@@ -108,7 +104,7 @@ export default function ReferralForm() {
 
     return (
         <StyledContainer>
-            <Backdrop sx={{ color: '#fff', zIndex: 2 }} open={showSpinner}>
+            <Backdrop sx={{ color: '#fff', zIndex: 1 }} open={showSpinner}>
                 <CircularProgress color="inherit" />
             </Backdrop>
             <Header title="Join My Circle" />
@@ -134,7 +130,6 @@ export default function ReferralForm() {
                     <FormControl sx={{ ml: 8, mt: 4 }}>
                         <FormLabel id="message"></FormLabel>
                         <RadioGroup
-                            aria-labelledby="radio-buttons-message"
                             defaultValue="message1"
                             name="radio-buttons-group"
                             sx={{ gap: 5 }}
