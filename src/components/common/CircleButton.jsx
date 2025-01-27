@@ -8,7 +8,7 @@ const StyledButton = styled(Button)(({ width, height })=>({
     borderRadius: "50%",
     backgroundColor: "#FF9500",
     color: "#fff",
-    margin: "14px auto",
+    margin: "8px auto",
     display: "block",
     "&:hover": {
       backgroundColor: "#ffb300",

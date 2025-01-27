@@ -19,6 +19,8 @@ export default function SelectTemplate() {
         firstName: data.firstName,
         lastName: data.lastName,
         shortBio: data.shortBio,
+        location: data.location,
+        phoneNumber: data.phoneNumber,
         image1: null,
     }
 

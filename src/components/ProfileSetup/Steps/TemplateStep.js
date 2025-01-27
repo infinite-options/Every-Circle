@@ -52,7 +52,7 @@ const TemplateStep = ({ formData, handleTemplateSelect }) => {
       justifyContent: 'center',
       gap: 2,
       width: '100%',
-      my: 4 
+      my: 2
     }}>
       {/* Previous Arrow */}
       <IconButton 
