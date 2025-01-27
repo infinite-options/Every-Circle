@@ -1,6 +1,6 @@
 import { Box, Typography } from '@mui/material';
 import { StyledTextField } from '../StyledComponents';
-import ImageUpload from '../ImageUpload';
+import ImageUpload from '../../common/ImageUpload';
 
 const OptionalInfoStep = ({ formData, handleChange, handleImageUpload, handleDeleteImage, handleFavImage }) => {
   return (
@@ -41,6 +41,8 @@ const OptionalInfoStep = ({ formData, handleChange, handleImageUpload, handleDel
             handleDeleteImage={(imageUrl)=>handleDeleteImage(imageUrl)}
             handleFavImage={(imageUrl)=>handleFavImage(imageUrl)}
             isDisabled={index > 0 && !formData.selectedImages[index - 1]}
+            size={100}
+            shape="square"
           />
         ))}
       </Box>

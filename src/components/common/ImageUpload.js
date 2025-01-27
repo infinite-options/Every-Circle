@@ -1,11 +1,11 @@
-import { Box, IconButton } from '@mui/material';
+import { Box, IconButton, Typography } from '@mui/material';
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate';
 import CloseIcon from '@mui/icons-material/Close';
 import FavoriteIcon from "@mui/icons-material/Favorite";
 import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
 
-const ImageUpload = ({ onImageUpload, image, imageUrl, handleDeleteImage, isDisabled, handleFavImage, favImage }) => {
-  console.log("imageUrl is", imageUrl, typeof (imageUrl))
+const ImageUpload = ({ onImageUpload, image, imageUrl, handleDeleteImage, isDisabled, handleFavImage, favImage, shape }) => {
+  console.log("imageUrl is", imageUrl, typeof (imageUrl), isDisabled)
   console.log("image", image, typeof (image))
   const handleImageChange = (event) => {
     const file = event.target.files[0];
@@ -17,21 +17,7 @@ const ImageUpload = ({ onImageUpload, image, imageUrl, handleDeleteImage, isDisa
   };
 
   return (
-    <Box
-      sx={{
-        width: 100,
-        height: 100,
-        bgcolor: '#fff',
-        borderRadius: '8px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        cursor: 'pointer',
-        position: 'relative',
-        overflow: 'hidden',
-        backgroundColor: isDisabled ? "#e0e0e0" : "white",
-      }}
-    >
+    <>
       {imageUrl ? (
         <div style={{ position: 'relative', width: '100%', height: '100%' }}>
           <img
@@ -40,42 +26,45 @@ const ImageUpload = ({ onImageUpload, image, imageUrl, handleDeleteImage, isDisa
             alt="Uploaded"
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />
-          <IconButton disabled={isDisabled} onClick={() => handleFavImage(imageUrl)}
-            style={{
-              position: 'absolute',
-              top: '1px',
-              right: '40px',
-              background: 'rgba(0, 0, 0, 0.5)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '50%',
-              width: '25px',
-              height: '25px',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}>
-            {favImage ? (
-              imageUrl === favImage ? (
+          {shape === "square" &&
+            <IconButton disabled={isDisabled} onClick={() => handleFavImage(imageUrl)}
+              style={{
+                position: 'absolute',
+                top: '1px',
+                right: '40px',
+                background: 'rgba(0, 0, 0, 0.5)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '50%',
+                width: '25px',
+                height: '25px',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}>
+              {favImage ? (
+                imageUrl === favImage ? (
+                  <FavoriteIcon color='primary' sx={{ color: "red" }} />
+                ) : (
+                  <FavoriteBorderIcon color='red' />
+                )
+              ) : image.coverPhoto ? (
                 <FavoriteIcon color='primary' sx={{ color: "red" }} />
               ) : (
                 <FavoriteBorderIcon color='red' />
-              )
-            ) : image.coverPhoto ? (
-              <FavoriteIcon color='primary' sx={{ color: "red" }} />
-            ) : (
-              <FavoriteBorderIcon color='red' />
-            )}
-          </IconButton>
+              )}
+            </IconButton>
+          }
           <CloseIcon disabled={isDisabled}
             onClick={() => {
-              if(isDisabled === null || isDisabled === false)
-              handleDeleteImage(imageUrl)}
+              if (!isDisabled)
+                handleDeleteImage(imageUrl)
+            }
             }
             style={{
               position: 'absolute',
-              top: '1px',
-              right: '8px',
+              top: shape === "square" ? '1px' : '10px',
+              right: shape === "square" ? '8px' : '14px',
               background: 'rgba(0, 0, 0, 0.5)',
               color: '#fff',
               border: 'none',
@@ -98,10 +87,11 @@ const ImageUpload = ({ onImageUpload, image, imageUrl, handleDeleteImage, isDisa
             onChange={handleImageChange}
             disabled={isDisabled}
           />
-          <AddPhotoAlternateIcon />
+          {shape === "square" ? <AddPhotoAlternateIcon />
+            : <Typography sx={{ color: "white", fontSize: "14px" }}>Upload Receipt</Typography>}
         </IconButton>
       )}
-    </Box>
+    </>
   );
 };
 

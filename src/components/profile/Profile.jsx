@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { Box, Typography, styled, IconButton, TextField } from "@mui/material";
 import { SocialLink } from "./SocialLink";
 import { InputField } from "../common/InputField";
-import ImageUpload from '../ProfileSetup/ImageUpload';
+// import ImageUpload from '../common/ImageUpload';
+import SquareImageUpload from '../common/SquareImageUpload';
 import { HelpItem } from "./HelpItem";
 import StyledContainer from "../common/StyledContainer";
 import Header from "../common/Header";
@@ -150,7 +151,7 @@ export default function Profile() {
       const updatedImages = formData.profileImages.filter((link) => link != imageUrl);
       setFormData((prev) => ({ ...prev, profileImages: updatedImages }));
       setDeletedImages((prev) => [...prev, imageUrl]);
-      const reassignedImages = selectedImages?.map((img, i) => ({...img, index: updatedImages.length+i}));
+      const reassignedImages = selectedImages?.map((img, i) => ({ ...img, index: updatedImages.length + i }));
       console.log('reassigned', reassignedImages);
       setSelectedImages(reassignedImages);
     } else {
@@ -208,11 +209,11 @@ export default function Profile() {
         }
       }
 
-      if (deletedImages.length > 0 ){
+      if (deletedImages.length > 0) {
         form.append("delete_images", JSON.stringify(deletedImages));
       }
 
-      if (formData.favImage){
+      if (formData.favImage) {
         form.append("profile_favorite_image", formData.favImage);
       }
 
@@ -226,7 +227,7 @@ export default function Profile() {
           setContent("Profile has been updated successfully.")
           handleOpen();
           // alert("Profile updated successfully");
-        } 
+        }
       } catch (error) {
         setTitle("Error");
         setContent("Cannot update the profile.")
@@ -234,10 +235,10 @@ export default function Profile() {
         console.error("Error updating profile:", error);
       }
     } else {
-        setTitle("Error");
-        setContent("Verify the required fields.")
-        handleOpen();
-        // alert("Error updating profile");
+      setTitle("Error");
+      setContent("Verify the required fields.")
+      handleOpen();
+      // alert("Error updating profile");
     }
   };
 
@@ -317,7 +318,7 @@ export default function Profile() {
             <Box sx={{ display: "flex", gap: 2, my: 3, justifyContent: "space-between" }}>
               {[0, 1, 2].map((index) => {
                 return (
-                  <ImageUpload
+                  <SquareImageUpload
                     key={index}
                     index={index}
                     onImageUpload={(file) => handleImageUpload(index, file)}
@@ -327,6 +328,8 @@ export default function Profile() {
                     handleFavImage={(imageUrl) => handleFavImage(imageUrl)}
                     favImage={formData.favImage}
                     isDisabled={!editMode}
+                    size={100}
+                    shape="square"
                   />
                 )
               })}

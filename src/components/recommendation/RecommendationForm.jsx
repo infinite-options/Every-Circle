@@ -9,25 +9,10 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs from 'dayjs';
 import CircleButton from "../common/CircleButton";
-import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate';
 import { useUserContext } from "../contexts/UserContext";
 import axios from "axios";
 import DialogBox from "../common/DialogBox";
-
-const StyledButton = styled(Button)(({ width, height }) => ({
-    width: width,
-    height: height,
-    borderRadius: "50%",
-    backgroundColor: "#FF9500",
-    color: "#fff",
-    margin: "14px auto",
-    display: "block",
-    "&:hover": {
-        backgroundColor: "#ffb300",
-    },
-    textTransform: "none",
-}));
-
+import CircleImageUpload from '../common/CircleImageUpload';
 
 export default function RecommendationForm() {
     const initialFormData = {
@@ -41,6 +26,7 @@ export default function RecommendationForm() {
         yelpUrl: "",
         websiteUrl: "",
         email: "",
+        receiptImage: null,
     };
     const [formData, setFormData] = useState(initialFormData);
     const { user } = useUserContext();
@@ -54,35 +40,54 @@ export default function RecommendationForm() {
         setFormData(initialFormData);
     };
 
+    const handleImageUpload = (file) => {
+        console.log('in file upload', file)
+        setFormData(prev => ({
+            ...prev,
+            receiptImage: file,
+        }));
+    };
+
+    const handleDeleteImage = (imageUrl) => {
+        setFormData((prev) => ({
+            ...prev,
+            receiptImage: null,
+        }));
+    }
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         console.log(formData);
         try {
-        const form = new FormData();
-        form.append('user_uid', userId);
-        form.append('rating_star', formData.rating);
-        form.append('rating_description', formData.review);
-        // form.append('rating_location', formData.location);
-        // form.append('rating_owner', formData.owner);
-        // form.append('rating_business_name',formData.businessName);
-        // form.append('rating_phonenumber', formData.phoneNumber);
-        // form.append('', formData.yelpUrl);
-        // form.append('', formData.websiteUrl);
-        // form.append('', formData.email);
-        // form.append('', formData.lastInteraction.format("MM-DD-YYYY"));
+            const form = new FormData();
+            form.append('user_uid', userId);
+            form.append('rating_star', formData.rating);
+            form.append('rating_description', formData.review);
+            // form.append('rating_location', formData.location);
+            // form.append('rating_owner', formData.owner);
+            // form.append('rating_business_name',formData.businessName);
+            // form.append('rating_phonenumber', formData.phoneNumber);
+            // form.append('ratings_yelp', formData.yelpUrl);
+            // form.append('ratings_website', formData.websiteUrl);
+            // form.append('ratings_email', formData.email);
+            form.append('rating_receipt_date', formData.lastInteraction.format("MM-DD-YYYY"));
 
-        const response = await axios.post(`https://ioec2testsspm.infiniteoptions.com/ratings`, form);
-        console.log(response)
-        if (response.status === 200) {
-            handleOpen();
-            resetForm();
-        } else {
-            console.log('Cannot add recommendation')
-        }           
-    } catch(error){
-        console.log("Error occured when adding recommendation", error);
-    }
+            //upload image
+            if (formData.receiptImage) {
+                form.append('img_0', formData.receiptImage);
+            }
 
+            const response = await axios.post(`https://ioec2testsspm.infiniteoptions.com/ratings`, form);
+            console.log("response from recommendations POST", response);
+            if (response.status === 200) {
+                handleOpen();
+                resetForm();
+            } else {
+                console.log('Cannot add recommendation')
+            }
+        } catch (error) {
+            console.log("Error occured when adding recommendation", error);
+        }
     };
 
     return (
@@ -157,26 +162,10 @@ export default function RecommendationForm() {
                         onChange={(value) => setFormData({ ...formData, email: value })}
                     />
 
-                    <Box sx={{ display: "flex" }}>
-                        <StyledButton
-                            component="label"
-                            width={100}
-                            height={100}
-                            sx={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                textAlign: "center",
-                            }}
-                        >
-                            <input
-                                type="file"
-                                hidden
-                                accept="image/*"
-                            // onChange={handleImageChange}
-                            />
-                            Upload Receipt
-                        </StyledButton>
+                    <Box sx={{ display: "flex", alignContent: "center", justifyContent: "space-evenly" }}>
+                        <CircleImageUpload onImageUpload={(file) => handleImageUpload(file)}
+                            handleDeleteImage={(imageUrl) => handleDeleteImage(imageUrl)}
+                            imageUrl={formData.receiptImage} />
 
                         <CircleButton width={100} height={100} text="Save" onClick={handleSubmit} />
                     </Box>
