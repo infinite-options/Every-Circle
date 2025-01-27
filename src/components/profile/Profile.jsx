@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Box, Typography, styled, IconButton, TextField } from "@mui/material";
 import { SocialLink } from "./SocialLink";
 import { InputField } from "../common/InputField";
-import { ImageUpload } from "../common/ImageUpload";
+import ImageUpload from '../ProfileSetup/ImageUpload';
 import { HelpItem } from "./HelpItem";
 import StyledContainer from "../common/StyledContainer";
 import Header from "../common/Header";
@@ -45,6 +45,8 @@ export default function Profile() {
     template: "",
     weHelp: ["", "", "", "", ""],
     youHelp: ["", "", "", ""],
+    profileImages: [],
+    favImage: "",
   });
   const [profileId, setProfileId] = useState("");
   const [editMode, setEditMode] = useState(initialEditMode);
@@ -53,6 +55,8 @@ export default function Profile() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [selectedImages, setSelectedImages] = useState([]);
+  const [deletedImages, setDeletedImages] = useState([]);
   const navigate = useNavigate();
 
   const templateMap = {
@@ -89,6 +93,8 @@ export default function Profile() {
               template: user.profile_template || "",
               youHelp: user.profile_how_can_you_help ? JSON.parse(user.profile_how_can_you_help) : ["", "", "", ""],
               weHelp: user.profile_how_can_we_help ? JSON.parse(user.profile_how_can_we_help) : ["", "", "", ""],
+              profileImages: user.profile_images_url ? JSON.parse(user.profile_images_url) : [],
+              favImage: user.profile_favorite_image,
               profileId: user.profile_uid,
             });
           updateUser({ profileId: user.profile_uid })
@@ -124,6 +130,54 @@ export default function Profile() {
     return Object.keys(newErrors).length === 0;
   }
 
+  const handleImageUpload = (index, file) => {
+    let currentIndex = formData.profileImages.length;
+    const fileObj = {
+      index: currentIndex,
+      file: file,
+      coverPhoto: currentIndex + index === 0 && !formData.favImage, // Only set the first new image as cover if there's no favorite image
+    };
+    setSelectedImages(prev => ([
+      ...prev,
+      fileObj,
+    ]));
+  };
+
+  const handleDeleteImage = (imageUrl) => {
+    console.log('imageUrl in del', imageUrl, selectedImages)
+    if (typeof (imageUrl) === "string") {
+      console.log('here', imageUrl)
+      const updatedImages = formData.profileImages.filter((link) => link != imageUrl);
+      setFormData((prev) => ({ ...prev, profileImages: updatedImages }));
+      setDeletedImages((prev) => [...prev, imageUrl]);
+      const reassignedImages = selectedImages?.map((img, i) => ({...img, index: updatedImages.length+i}));
+      console.log('reassigned', reassignedImages);
+      setSelectedImages(reassignedImages);
+    } else {
+      const updatedImages = selectedImages?.filter((img) => img.file.name != imageUrl.name);
+      setSelectedImages(updatedImages);
+    }
+  }
+
+  const handleFavImage = (imageUrl) => {
+    //type string for existing images 
+    if (typeof (imageUrl) === "string") {
+      const updatedImages = selectedImages?.map((img) => ({ ...img, coverPhoto: false }));
+      setSelectedImages(updatedImages);
+      setFormData((prev) => ({
+        ...prev,
+        favImage: imageUrl,
+      }));
+    } else {
+      const updatedImages = selectedImages.map((img) => ({ ...img, coverPhoto: img.file.name === imageUrl.name }));
+      setSelectedImages(updatedImages);
+      setFormData((prev) => ({
+        ...prev,
+        favImage: '',
+      }));
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (validateRequiredFields()) {
@@ -134,7 +188,6 @@ export default function Profile() {
       // form.append("profile_location", formData.location);
       form.append("profile_tag_line", formData.tagLine);
       form.append("profile_short_bio", formData.shortBio);
-      // form.append("profile_images", formData.images);
       form.append("profile_facebook_link", formData.facebookLink);
       form.append("profile_twitter_link", formData.twitterLink);
       form.append("profile_linkedin_link", formData.linkedinLink);
@@ -142,6 +195,27 @@ export default function Profile() {
       form.append("profile_template", formData.template);
       form.append("profile_how_can_we_help", JSON.stringify(formData.weHelp));
       form.append("profile_how_can_you_help", JSON.stringify(formData.youHelp));
+
+      //image related fields 
+      form.append("profile_images_url", JSON.stringify(formData.profileImages));
+
+      let i = 0;
+      for (const file of selectedImages) {
+        let key = `img_${i++}`;
+        form.append(key, file.file);
+        if (file.coverPhoto) {
+          form.append("img_favorite", key);
+        }
+      }
+
+      if (deletedImages.length > 0 ){
+        form.append("delete_images", JSON.stringify(deletedImages));
+      }
+
+      if (formData.favImage){
+        form.append("profile_favorite_image", formData.favImage);
+      }
+
       form.append("profile_uid", profileId);
       try {
         const response = await axios.put(`${APIConfig.baseURL.dev}/profile`, form);
@@ -152,18 +226,18 @@ export default function Profile() {
           setContent("Profile has been updated successfully.")
           handleOpen();
           // alert("Profile updated successfully");
-        } else {
-          setTitle("Error");
-          setContent("Cannot update the profile.")
-          handleOpen();
-          // alert("Error updating profile");
-        }
+        } 
       } catch (error) {
         setTitle("Error");
         setContent("Cannot update the profile.")
         handleOpen();
         console.error("Error updating profile:", error);
       }
+    } else {
+        setTitle("Error");
+        setContent("Verify the required fields.")
+        handleOpen();
+        // alert("Error updating profile");
     }
   };
 
@@ -241,17 +315,21 @@ export default function Profile() {
             />
 
             <Box sx={{ display: "flex", gap: 2, my: 3, justifyContent: "space-between" }}>
-              {[0, 1, 2].map((index) => (
-                <ImageUpload
-                  key={index}
-                  index={index}
-                  onUpload={(file) => {
-                    const newImages = [...formData.images];
-                    newImages[index] = file;
-                    setFormData({ ...formData, images: newImages });
-                  }}
-                />
-              ))}
+              {[0, 1, 2].map((index) => {
+                return (
+                  <ImageUpload
+                    key={index}
+                    index={index}
+                    onImageUpload={(file) => handleImageUpload(index, file)}
+                    image={formData.profileImages && formData.profileImages[index] ? formData.profileImages[index] : selectedImages?.find((img) => img.index == index)}
+                    imageUrl={formData.profileImages && formData.profileImages[index] ? formData.profileImages[index] : (selectedImages?.find((img) => img.index == index))?.file}
+                    handleDeleteImage={(imageUrl) => handleDeleteImage(imageUrl)}
+                    handleFavImage={(imageUrl) => handleFavImage(imageUrl)}
+                    favImage={formData.favImage}
+                    isDisabled={!editMode}
+                  />
+                )
+              })}
             </Box>
 
             <SocialLink

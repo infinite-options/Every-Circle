@@ -16,7 +16,7 @@ const ProfileSetupForm = () => {
   const navigate = useNavigate();
   const userId = location.state?.userId ? location.state.userId : null;
   const [activeStep, setActiveStep] = useState(0);
-  const {isValidPhoneNumber} = DataValidationUtils;
+  const { isValidPhoneNumber } = DataValidationUtils;
   const [errors, setErrors] = useState({});
   const [formData, setFormData] = useState({
     firstName: "",
@@ -25,14 +25,16 @@ const ProfileSetupForm = () => {
     location: '',
     tagLine: '',
     shortBio: '',
-    image1: null,
-    image2: null,
-    image3: null,
+    // image1: null,
+    // image2: null,
+    // image3: null,
     facebook: '',
     twitter: '',
     linkedin: '',
     youtube: '',
     template: '',
+    selectedImages: [],
+    favImage: '',
   });
 
   console.log("userId in profile setup", userId);
@@ -46,11 +48,41 @@ const ProfileSetupForm = () => {
   };
 
   const handleImageUpload = (index, file) => {
+    // const newSelectedImages = [...formData.selectedImages, file];
+    // setFormData(prev => ({
+    //   ...prev,
+    //   [`image${index}`]: file,
+    //   selectedImages: newSelectedImages,
+    // }));
+    let currentIndex = formData.selectedImages.length;
+    const fileObj = {
+      index: currentIndex,
+      file: file,
+      coverPhoto: currentIndex + index === 0 && !formData.favImage, // Only set the first new image as cover if there's no favorite image
+    };
+    const newSelectedImages = [...formData.selectedImages, fileObj];
     setFormData(prev => ({
       ...prev,
-      [`image${index}`]: file
+      selectedImages: newSelectedImages,
     }));
   };
+
+  const handleDeleteImage = (imageUrl) => {
+    const updatedImages = formData.selectedImages.filter((img) => img.file.name != imageUrl.name);
+    setFormData((prev) => ({
+      ...prev,
+      selectedImages: updatedImages,
+    }));
+  }
+
+  const handleFavImage = (imageUrl) => {
+    const updatedImages = formData.selectedImages.map((img) => ({...img, coverPhoto: img.file.name === imageUrl.name}));
+    setFormData((prev) => ({
+      ...prev,
+      selectedImages: updatedImages,
+    }));
+  }
+
 
   const validateRequiredFields = () => {
     const newErrors = {};
@@ -60,7 +92,7 @@ const ProfileSetupForm = () => {
       }
     });
 
-    if (isValidPhoneNumber(formData.phoneNumber) === false){
+    if (isValidPhoneNumber(formData.phoneNumber) === false) {
       newErrors["phoneNumber"] = "Invalid phone number format";
     }
 
@@ -89,8 +121,24 @@ const ProfileSetupForm = () => {
       data.append("profile_youtube_link", formData.youtube);
       data.append("profile_template", formData.template);
       data.append("referred_by_code", "12345");
-     
-      console.log("userId", userId);
+
+      // const imageFields = ["image1", "image2", "image3"];
+      // imageFields.forEach((field, index) => {
+      //   if (formData[field]) {
+      //     data.append(`img_${index}`, formData[field]);
+      //   }
+      // });
+
+      let i = 0;
+      for (const file of formData.selectedImages) {
+        let key = `img_${i++}`;
+        data.append(key, file.file);
+        if (file.coverPhoto) {
+          data.append("img_favorite", key);
+        }
+      }
+      // console.log("userId", formData.selectedImages);
+      // console.log('formdata is', formData);
       try {
         const response = await axios.post(`${APIConfig.baseURL.dev}/profile`, data, {
           headers: {
@@ -109,7 +157,7 @@ const ProfileSetupForm = () => {
         console.log("Error updating profile data", error);
       }
     } else if (activeStep === 0) {
-      if( validateRequiredFields()){
+      if (validateRequiredFields()) {
         setActiveStep((prev) => prev + 1);
       }
     }
@@ -132,7 +180,7 @@ const ProfileSetupForm = () => {
 
   const steps = [
     {
-      component: <BasicInfoStep formData={formData} handleChange={handleChange} errors={errors}/>,
+      component: <BasicInfoStep formData={formData} handleChange={handleChange} errors={errors} />,
       title: "Welcome to Every Circle!",
       subtitle: "Let's Build Your Profile Page!"
     },
@@ -141,6 +189,8 @@ const ProfileSetupForm = () => {
         formData={formData}
         handleChange={handleChange}
         handleImageUpload={handleImageUpload}
+        handleDeleteImage={handleDeleteImage}
+        handleFavImage={handleFavImage}
       />,
       title: "Optional Info"
     },
@@ -149,7 +199,7 @@ const ProfileSetupForm = () => {
       title: "Social Media Links"
     },
     {
-      component: <TemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect}/>,
+      component: <TemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect} />,
       title: "Select Your Template"
     }
   ];

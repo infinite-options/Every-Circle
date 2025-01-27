@@ -10,6 +10,7 @@ import {
 
 const TemplateStep = ({ formData, handleTemplateSelect }) => {
   const [currentTemplate, setCurrentTemplate] = useState(0);
+  const avatarUrl = formData.selectedImages?.find((image) => image.coverPhoto === true) || formData.selectedImages?.[0];
 
   const templates = [
     {
@@ -102,7 +103,7 @@ const TemplateStep = ({ formData, handleTemplateSelect }) => {
                 phoneNumber={formData.phoneNumber || ""}
                 bio={formData.shortBio || 'Your bio will appear here'}
                 location={formData.location || 'Location'}
-                avatarUrl={formData.image1 ? URL.createObjectURL(formData.image1) : null}
+                avatarUrl={avatarUrl ? URL.createObjectURL(avatarUrl.file) : null}
               />
             </Box>
           ))}
