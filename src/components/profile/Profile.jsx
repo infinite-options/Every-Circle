@@ -127,7 +127,7 @@ export default function Profile() {
     } else {
       setErrors({});
     }
-    console.log('The errors are', errors)
+    // console.log('The errors are', errors)
     return Object.keys(newErrors).length === 0;
   }
 

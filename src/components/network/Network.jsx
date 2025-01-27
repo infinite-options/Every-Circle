@@ -6,7 +6,8 @@ import NetworkData from "./NetworkData";
 import SearchBar from "../common/SearchBar";
 import { Box, Typography, styled, IconButton } from "@mui/material";
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
-import Diversity3Icon from '@mui/icons-material/Diversity3';
+import GroupAddIcon from '@mui/icons-material/GroupAdd';
+import AddShoppingCartIcon from '@mui/icons-material/AddShoppingCart';
 import { useNavigate } from "react-router-dom";
 
 const TotalLabel = styled(Typography)({
@@ -30,13 +31,13 @@ export default function Network() {
         <StyledContainer>
             <Header title="Network" />
             <Box sx={{ width: "100%", padding: "0px 16px 16px 16px" }}>
-                <Box sx={{ width: "100%", paddingX: "16px", display: "flex", justifyContent: "flex-end" }}>
+                <Box sx={{ width: "100%", paddingX: "16px", display: "flex", justifyContent: "space-between" }}>
                     <IconButton onClick={() => navigate("/referral")}>
-                        <Diversity3Icon />
+                        <GroupAddIcon />
                     </IconButton>
 
                     <IconButton onClick={() => navigate("/recommendation")}>
-                        <AddCircleOutlineIcon />
+                        <AddShoppingCartIcon />
                     </IconButton>
                 </Box>
                 <SearchBar />
