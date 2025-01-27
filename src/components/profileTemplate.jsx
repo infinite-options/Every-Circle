@@ -8,11 +8,11 @@ import {
   Paper,
   Box,
 } from "@mui/material";
-import { LocationOn, Person } from "@mui/icons-material";
+import { LocationOn, Person, PhoneAndroid } from "@mui/icons-material";
 
 // Template 1: Modern Card Layout
-const ModernTemplate = ({ name, username, bio, location, avatarUrl }) => (
-  <Card sx={{ width: "400px", height: "400px" }}>
+const ModernTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber }) => (
+  <Card sx={{ width: "450px", height: "450px" }}>
     <Box sx={{ position: "relative" }}>
       <Box
         sx={{
@@ -42,11 +42,31 @@ const ModernTemplate = ({ name, username, bio, location, avatarUrl }) => (
       <Typography color="text.secondary" variant="body2">
         @{username}
       </Typography>
-      <Typography
-        sx={{ mt: 2, fontSize: "0.9rem", maxHeight: "150px", overflow: "auto" }}
+      {tagLine &&
+        <Typography
+          sx={{ mt: 2, fontSize: "0.9rem", maxHeight: "150px", overflow: "auto" }}
+        >
+          {tagLine}
+        </Typography>
+      }
+      <Box sx={{ maxHeight: "100px", overflow: "auto" }}>
+        <Typography
+          sx={{ mt: 2, fontSize: "0.9rem" }}
+        >
+          {bio}
+        </Typography>
+      </Box>
+      <Box
+        sx={{
+          mt: 2,
+          display: "flex",
+          alignItems: "center",
+          color: "text.secondary",
+        }}
       >
-        {bio}
-      </Typography>
+        <PhoneAndroid sx={{ mr: 1, fontSize: 18 }} />
+        <Typography variant="body2">{phoneNumber}</Typography>
+      </Box>
       <Box
         sx={{
           mt: 2,
@@ -63,11 +83,11 @@ const ModernTemplate = ({ name, username, bio, location, avatarUrl }) => (
 );
 
 // Template 2: Minimalist Layout
-const MinimalistTemplate = ({ name, username, bio, location, avatarUrl }) => (
+const MinimalistTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber }) => (
   <Box
     sx={{
-      width: "400px",
-      height: "400px",
+      width: "450px",
+      height: "450px",
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
@@ -77,47 +97,65 @@ const MinimalistTemplate = ({ name, username, bio, location, avatarUrl }) => (
       p: 3,
     }}
   >
-    <Avatar src={avatarUrl} sx={{ width: 100, height: 100, mb: 2 }}>
+    <Avatar src={avatarUrl} sx={{ width: 80, height: 80, mb: 2 }}>
       {!avatarUrl && <Person />}
     </Avatar>
-    <Typography variant="h5" fontWeight="light" sx={{ mb: 1 }}>
+    <Typography color="text.secondary" variant="h6" sx={{ mb: 1 }}>
       {name}
     </Typography>
     <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
       @{username}
     </Typography>
     <Divider sx={{ width: 48, mb: 2 }} />
-    <Typography
-      sx={{
-        maxWidth: "320px",
-        textAlign: "center",
-        mb: 2,
-        fontSize: "0.9rem",
-        maxHeight: "120px",
-        overflow: "auto",
-      }}
-    >
-      {bio}
-    </Typography>
+    {tagLine &&
+      <Typography color="text.secondary" variant="body2"
+        sx={{ fontSize: "0.9rem", mb: 1 }}
+      >
+        {tagLine}
+      </Typography>
+    }
+    <Box sx={{ maxHeight: "150px", overflow: "auto" }}>
+      <Typography color="text.secondary" variant="body2"
+        sx={{
+          textAlign: "center",
+          mb: 2,
+          fontSize: "0.9rem",
+        }}
+      >
+        {bio}
+      </Typography>
+    </Box>
     <Box
       sx={{
+        mt: 2,
         display: "flex",
         alignItems: "center",
         color: "text.secondary",
       }}
     >
-      <LocationOn sx={{ mr: 1, fontSize: 18 }} />
+      <PhoneAndroid sx={{ mr: 1, fontSize: 18 }} />
+      <Typography variant="body2">{phoneNumber}</Typography>
+    </Box>
+    <Box
+      sx={{
+        mb: 1,
+        display: "flex",
+        alignItems: "center",
+        color: "text.secondary",
+      }}
+    >
+      <LocationOn sx={{ mr: 1, fontSize: 18, mb: 2 }} />
       <Typography variant="body2">{location}</Typography>
     </Box>
   </Box>
 );
 
 // Template 3: Split Layout with Gradient
-const SplitTemplate = ({ name, username, bio, location, avatarUrl }) => (
+const SplitTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber }) => (
   <Box
     sx={{
-      width: "400px",
-      height: "400px",
+      width: "450px",
+      height: "450px",
       bgcolor: "#1a1a1a",
       borderRadius: "8px",
       overflow: "hidden",
@@ -176,6 +214,10 @@ const SplitTemplate = ({ name, username, bio, location, avatarUrl }) => (
             @{username}
           </Typography>
           <Box sx={{ display: "flex", alignItems: "center", color: "#888" }}>
+            <PhoneAndroid sx={{ mr: 1, fontSize: 16 }} />
+            <Typography variant="body2">{phoneNumber}</Typography>
+          </Box>
+          <Box sx={{ display: "flex", alignItems: "center", color: "#888" }}>
             <LocationOn sx={{ mr: 1, fontSize: 16 }} />
             <Typography variant="body2">{location}</Typography>
           </Box>
@@ -201,6 +243,9 @@ const SplitTemplate = ({ name, username, bio, location, avatarUrl }) => (
           >
             About Me
           </Typography>
+          <Typography sx={{ color: "#00C7BE", mb: 1, fontSize: "0.85rem", }}>
+            {tagLine}
+          </Typography>
           <Typography
             sx={{
               color: "#ccc",
@@ -219,121 +264,123 @@ const SplitTemplate = ({ name, username, bio, location, avatarUrl }) => (
 );
 
 // Template 4: Creative Layout with Cards
-const CreativeTemplate = ({ name, username, bio, location, avatarUrl }) => (
-  <Box
+const CreativeTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber }) => (
+  <Paper
     sx={{
-      width: "400px",
-      height: "400px",
+      width: "450px",
+      height: "450px",
       background: "linear-gradient(45deg, #000851, #1CB5E0)",
       borderRadius: "8px",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
       p: 3,
+      radius: "8px"
     }}
   >
-    <Paper
+    <Box
       sx={{
         width: "100%",
-        height: "100%",
-        borderRadius: 3,
-        overflow: "hidden",
-        bgcolor: "rgba(255,255,255,0.1)",
-        backdropFilter: "blur(10px)",
-        border: "1px solid rgba(255,255,255,0.2)",
         display: "flex",
+        flexDirection: "column",
         alignItems: "center",
-        justifyContent: "center",
+        p: 3,
+        mt: 2
       }}
     >
       <Box
         sx={{
-          width: "100%",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          p: 3,
+          position: "relative",
+          mb: 3,
+          "&::before": {
+            content: '""',
+            position: "absolute",
+            top: -15,
+            left: -15,
+            right: -15,
+            bottom: -15,
+            background: "linear-gradient(45deg, #00C7BE, #1CB5E0)",
+            borderRadius: "50%",
+            opacity: 0.3,
+            animation: "pulse 2s infinite",
+          },
         }}
       >
-        <Box
+        <Avatar
+          src={avatarUrl}
           sx={{
+            width: 80,
+            height: 80,
+            border: "3px solid rgba(255,255,255,0.3)",
             position: "relative",
-            mb: 3,
-            "&::before": {
-              content: '""',
-              position: "absolute",
-              top: -15,
-              left: -15,
-              right: -15,
-              bottom: -15,
-              background: "linear-gradient(45deg, #00C7BE, #1CB5E0)",
-              borderRadius: "50%",
-              opacity: 0.3,
-              animation: "pulse 2s infinite",
-            },
           }}
         >
-          <Avatar
-            src={avatarUrl}
-            sx={{
-              width: 100,
-              height: 100,
-              border: "3px solid rgba(255,255,255,0.3)",
-              position: "relative",
-            }}
-          >
-            {!avatarUrl && <Person />}
-          </Avatar>
-        </Box>
-
-        <Typography
-          variant="h5"
-          sx={{ color: "#fff", textAlign: "center", mb: 1 }}
-        >
-          {name}
-        </Typography>
-        <Typography sx={{ color: "#00C7BE", mb: 2, fontSize: "0.9rem" }}>
-          @{username}
-        </Typography>
-
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            color: "rgba(255,255,255,0.7)",
-            mb: 2,
-          }}
-        >
-          <LocationOn sx={{ mr: 1, fontSize: 16 }} />
-          <Typography variant="body2">{location}</Typography>
-        </Box>
-
-        <Paper
-          sx={{
-            p: 2,
-            bgcolor: "rgba(0,0,0,0.2)",
-            borderRadius: 2,
-            maxWidth: "300px",
-            width: "100%",
-          }}
-        >
-          <Typography
-            sx={{
-              color: "#fff",
-              lineHeight: 1.6,
-              textAlign: "center",
-              fontStyle: "italic",
-              fontSize: "0.85rem",
-              maxHeight: "100px",
-              overflow: "auto",
-            }}
-          >
-            {bio}
-          </Typography>
-        </Paper>
+          {!avatarUrl && <Person />}
+        </Avatar>
       </Box>
-    </Paper>
-  </Box>
+
+      <Typography
+        variant="h5"
+        sx={{ color: "#fff", textAlign: "center", mb: 1 }}
+      >
+        {name}
+      </Typography>
+      <Typography sx={{ color: "#00C7BE", mb: 1, fontSize: "0.9rem" }}>
+        @{username}
+      </Typography>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          color: "rgba(255,255,255,0.7)",
+          mb: 1,
+        }}
+      >
+        <PhoneAndroid sx={{ mr: 1, fontSize: 16 }} />
+        <Typography variant="body2">{phoneNumber}</Typography>
+      </Box>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          color: "rgba(255,255,255,0.7)",
+          mb: 1,
+        }}
+      >
+        <LocationOn sx={{ mr: 1, fontSize: 16 }} />
+        <Typography variant="body2">{location}</Typography>
+      </Box>
+
+      {tagLine && <Typography sx={{ color: "#00C7BE", mb: 1, fontSize: "0.9rem" }}>
+        {tagLine}
+      </Typography>}
+
+      <Paper
+        sx={{
+          p: 2,
+          bgcolor: "rgba(0,0,0,0.2)",
+          borderRadius: 2,
+          maxWidth: "300px",
+          width: "100%",
+        }}
+      >
+        <Typography
+          sx={{
+            color: "#fff",
+            lineHeight: 1.6,
+            textAlign: "center",
+            fontStyle: "italic",
+            fontSize: "0.85rem",
+            maxHeight: "50px",
+            overflow: "auto",
+            mb: 1,
+          }}
+        >
+          {bio}
+        </Typography>
+      </Paper>
+    </Box>
+  </Paper>
 );
 
 export { ModernTemplate, MinimalistTemplate, SplitTemplate, CreativeTemplate };

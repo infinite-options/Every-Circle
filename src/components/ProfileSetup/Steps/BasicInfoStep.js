@@ -14,7 +14,7 @@ const BasicInfoStep = ({ formData, handleChange, errors }) => {
         value={formData.firstName}
         onChange={handleChange}
         margin="normal"
-        error={errors.firstName}
+        error={!!errors.firstName}
         helperText={errors.firstName}
       />
       <StyledTextField
@@ -24,7 +24,7 @@ const BasicInfoStep = ({ formData, handleChange, errors }) => {
         value={formData.lastName}
         onChange={handleChange}
         margin="normal"
-        error={errors.lastName}
+        error={!!errors.lastName}
         helperText={errors.lastName}
       />
 
@@ -39,7 +39,7 @@ const BasicInfoStep = ({ formData, handleChange, errors }) => {
         value={formData.location}
         onChange={handleChange}
         margin="normal"
-        error={errors.location}
+        error={!!errors.location}
         helperText={errors.location}
       />
 
@@ -53,7 +53,7 @@ const BasicInfoStep = ({ formData, handleChange, errors }) => {
         value={formData.phoneNumber}
         onChange={handleChange}
         margin="normal"
-        error={errors.phoneNumber}
+        error={!!errors.phoneNumber}
         helperText={errors.phoneNumber}
       />
     </Box>

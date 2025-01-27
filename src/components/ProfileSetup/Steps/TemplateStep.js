@@ -98,6 +98,8 @@ const TemplateStep = ({ formData, handleTemplateSelect }) => {
               <template.component
                 name={`${formData.firstName} ${formData.lastName}`}
                 username={formData.firstName?.toLowerCase() || 'username'}
+                tagLine={formData.tagLine || ''}
+                phoneNumber={formData.phoneNumber || ""}
                 bio={formData.shortBio || 'Your bio will appear here'}
                 location={formData.location || 'Location'}
                 avatarUrl={formData.image1 ? URL.createObjectURL(formData.image1) : null}
