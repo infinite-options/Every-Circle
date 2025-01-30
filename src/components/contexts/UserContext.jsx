@@ -6,6 +6,7 @@ const UserContext = createContext();
 export const UserProvider = ({ children, cookiesObj = new Cookies() }) => {
     const [cookies, setCookie] = useCookies(["user"]);
     const [user, setUser] = useState(cookies.user);
+    const [referralId, setReferralId] = useState('');
 
 
     const updateUser = (updates) => {
@@ -18,6 +19,11 @@ export const UserProvider = ({ children, cookiesObj = new Cookies() }) => {
           });
       };
 
+    const updateReferralId = (referrerId) => {
+        console.log('setting referral code', referrerId);
+        setReferralId(referrerId);
+    }
+
       const logout = () => {
         // //console.log("In logout as ", user);
         sessionStorage.clear();
@@ -26,7 +32,7 @@ export const UserProvider = ({ children, cookiesObj = new Cookies() }) => {
       };
 
     return (
-        <UserContext.Provider value={{ user, updateUser, logout }}>
+        <UserContext.Provider value={{ user, updateUser, logout, updateReferralId, referralId }}>
             {children}
         </UserContext.Provider>
     )

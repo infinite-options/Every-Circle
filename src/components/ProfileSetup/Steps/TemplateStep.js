@@ -104,6 +104,10 @@ const TemplateStep = ({ formData, handleTemplateSelect }) => {
                 bio={formData.shortBio || 'Your bio will appear here'}
                 location={formData.location || 'Location'}
                 avatarUrl={avatarUrl ? URL.createObjectURL(avatarUrl.file) : null}
+                facebook= {formData.facebook || ''}
+                twitter= {formData.twitter || ''}
+                linkedin= {formData.linkedin || ''}
+                youtube= {formData.youtube || ''}
               />
             </Box>
           ))}

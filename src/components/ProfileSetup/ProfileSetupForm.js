@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Typography, Button } from '@mui/material';
 import ProfileSetupStepper from './ProfileSetupStepper';
@@ -10,6 +10,7 @@ import ResponsiveContainer from '../Layout/ResponsiveContainer';
 import axios from 'axios';
 import APIConfig from '../../APIConfig';
 import { DataValidationUtils } from '../auth/authUtils/DataValidationUtils';
+import { useUserContext } from '../contexts/UserContext';
 
 const ProfileSetupForm = () => {
   const location = useLocation();
@@ -17,6 +18,7 @@ const ProfileSetupForm = () => {
   const userId = location.state?.userId ? location.state.userId : null;
   const [activeStep, setActiveStep] = useState(0);
   const { isValidPhoneNumber, formatPhoneNumber } = DataValidationUtils;
+  const { referralId, user } = useUserContext();
   const [errors, setErrors] = useState({});
   const [formData, setFormData] = useState({
     firstName: "",
@@ -37,7 +39,10 @@ const ProfileSetupForm = () => {
     favImage: '',
   });
 
-  console.log("userId in profile setup", userId);
+  useEffect(() => {
+    console.log('referralId', referralId)
+  }, [referralId])
+
 
   const handleChange = (e) => {
     const { name, value: rawValue } = e.target;
@@ -121,7 +126,7 @@ const ProfileSetupForm = () => {
       data.append("profile_linkedin_link", formData.linkedin);
       data.append("profile_youtube_link", formData.youtube);
       data.append("profile_template", formData.template);
-      data.append("referred_by_code", "12345");
+      data.append("referred_by_code", referralId);
 
       // const imageFields = ["image1", "image2", "image3"];
       // imageFields.forEach((field, index) => {

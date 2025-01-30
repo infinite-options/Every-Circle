@@ -1,8 +1,23 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import "./Home.css";
+import { useLocation } from "react-router-dom";
+import { useUserContext } from "./contexts/UserContext";
 
 const Home = () => {
+  const location = useLocation();
+  const { updateReferralId } = useUserContext();
+
+  useEffect(() => {
+    const queryParams = new URLSearchParams(location.search);
+    const referrerId = queryParams.get("referral_id");
+
+    if (referrerId) {
+      // console.log("Setting referral ID:", referrerId);
+      updateReferralId(referrerId);
+    }
+  }, [location.search]);
+
   return (
     <div className="home-container">
       <h1 className="home-title">It Pays To Be Connected!</h1>

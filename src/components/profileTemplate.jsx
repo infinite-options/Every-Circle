@@ -11,7 +11,7 @@ import {
 import { LocationOn, Person, PhoneAndroid } from "@mui/icons-material";
 
 // Template 1: Modern Card Layout
-const ModernTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber }) => (
+const ModernTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube }) => (
   <Card sx={{ width: "450px", height: "450px" }}>
     <Box sx={{ position: "relative" }}>
       <Box

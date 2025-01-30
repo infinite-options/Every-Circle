@@ -13,8 +13,8 @@ let SCOPES = "https://www.googleapis.com/auth/userinfo.email https://www.googlea
 
 
 const GoogleSignup = (props) => {
-    console.log('GOOGLE_LOGIN_PASSWORD', GOOGLE_LOGIN_PASSWORD)
-    console.log('CLIENT_ID', CLIENT_ID)
+    // console.log('GOOGLE_LOGIN_PASSWORD', GOOGLE_LOGIN_PASSWORD)
+    // console.log('CLIENT_ID', CLIENT_ID)
     const { handleUserSignUp } = useUserAuth();
     const [email, setEmail] = useState("");
     const [socialId, setSocialId] = useState("");
