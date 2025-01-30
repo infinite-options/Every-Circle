@@ -14,8 +14,11 @@ import axios from "axios";
 import dayjs from "dayjs";
 import Backdrop from '@mui/material/Backdrop';
 import CircularProgress from '@mui/material/CircularProgress';
+import { useUserContext } from "../contexts/UserContext";
 
 export default function Search() {
+  const { user } = useUserContext();
+  const userId = user.userId;
   const navigate = useNavigate();
   const location = useLocation();
   const [searchString, setSearchString] = useState('');
@@ -55,7 +58,8 @@ export default function Search() {
     setError(null);
     try {
       const response = await axios(
-        `https://ioec2testsspm.infiniteoptions.com/search/100-000026?category=${searchString}`
+        // `https://ioec2testsspm.infiniteoptions.com/search/100-000026?category=${searchString}`
+        `https://ioec2testsspm.infiniteoptions.com/search/${userId}?category=${searchString}`
       );
 
       if (response.status === 200) {
