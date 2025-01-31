@@ -36,7 +36,7 @@ export default function RecommendationForm() {
     };
     const [formData, setFormData] = useState(initialFormData);
     const { user } = useUserContext();
-    const { userId } = user
+    const { profileId } = user
     const [dialogOpen, setDialogOpen] = useState(false);
 
     const handleOpen = () => setDialogOpen(true);
@@ -90,7 +90,7 @@ export default function RecommendationForm() {
         console.log(formData);
         try {
             const form = new FormData();
-            form.append('user_uid', userId);
+            form.append('profile_uid', profileId);
             form.append('rating_business_name',formData.businessName);
             form.append('rating_location', formData.location);
             form.append('rating_star', formData.rating);

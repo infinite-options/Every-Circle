@@ -18,7 +18,7 @@ import { useUserContext } from "../contexts/UserContext";
 
 export default function Search() {
   const { user } = useUserContext();
-  const userId = user.userId;
+  const profileId = user.profileId;
   const navigate = useNavigate();
   const location = useLocation();
   const [searchString, setSearchString] = useState('');
@@ -59,7 +59,7 @@ export default function Search() {
     try {
       const response = await axios(
         // `https://ioec2testsspm.infiniteoptions.com/search/100-000026?category=${searchString}`
-        `https://ioec2testsspm.infiniteoptions.com/search/${userId}?category=${searchString}`
+        `https://ioec2testsspm.infiniteoptions.com/search/${profileId}?category=${searchString}`
       );
 
       if (response.status === 200) {
