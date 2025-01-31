@@ -13,6 +13,7 @@ import { useUserContext } from "../contexts/UserContext";
 import axios from "axios";
 import DialogBox from "../common/DialogBox";
 import CircleImageUpload from '../common/CircleImageUpload';
+import Autocomplete from "./AutoComplete";
 
 export default function RecommendationForm() {
     const initialFormData = {
@@ -27,6 +28,11 @@ export default function RecommendationForm() {
         websiteUrl: "",
         email: "",
         receiptImage: null,
+        googleId: "",
+        googleRating: "",
+        googlePhotos: [],
+        businessIcon: "",
+        priceLevel: "",
     };
     const [formData, setFormData] = useState(initialFormData);
     const { user } = useUserContext();
@@ -55,22 +61,51 @@ export default function RecommendationForm() {
         }));
     }
 
+    const getAutoCompleteData = (data) => {
+        console.log('data in get', data)
+        const photos = data?.photos.map((photo) => photo.getUrl());
+        console.log("photos--", photos);
+        setFormData(prev => ({
+            ...prev,
+            businessName: data.name,
+            location: data.formatted_address,
+            rating: 0,
+            lastInteraction: dayjs(),
+            review: "",
+            owner: "",
+            phoneNumber: data.formatted_phone_number,
+            yelpUrl: "",
+            websiteUrl: data.website,
+            email: "",
+            googleId: data.place_place_id,
+            googleRating: data.rating,
+            googlePhotos: photos,
+            businessIcon: data.icon,
+            priceLevel: data.price_level
+        }));
+    }
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         console.log(formData);
         try {
             const form = new FormData();
             form.append('user_uid', userId);
+            form.append('rating_business_name',formData.businessName);
+            form.append('rating_location', formData.location);
             form.append('rating_star', formData.rating);
-            form.append('rating_description', formData.review);
-            // form.append('rating_location', formData.location);
-            // form.append('rating_owner', formData.owner);
-            // form.append('rating_business_name',formData.businessName);
-            // form.append('rating_phonenumber', formData.phoneNumber);
-            // form.append('ratings_yelp', formData.yelpUrl);
-            // form.append('ratings_website', formData.websiteUrl);
-            // form.append('ratings_email', formData.email);
             form.append('rating_receipt_date', formData.lastInteraction.format("MM-DD-YYYY"));
+            form.append('rating_description', formData.review);
+            form.append('rating_owner', formData.owner);
+            form.append('rating_phonenumber', formData.phoneNumber);
+            form.append('ratings_yelp', formData.yelpUrl);
+            form.append('ratings_website', formData.websiteUrl);
+            form.append('ratings_email', formData.email);
+            form.append('ratings_googleId', formData.googleId);
+            form.append('ratings_googleRating', formData.googleRating);
+            form.append('ratings_googlePhotos', formData.googlePhotos);
+            form.append('ratings_businessIcon', formData.businessIcon);
+            form.append('ratings_priceLevel', formData.priceLevel);
 
             //upload image
             if (formData.receiptImage) {
@@ -95,11 +130,12 @@ export default function RecommendationForm() {
             <Header title="Recommendation" />
             <Box sx={{ width: '100%', padding: "10px 40px" }}>
                 <form>
-                    <InputField
+                    <Autocomplete getAutoCompleteData={getAutoCompleteData} />
+                    {/* <InputField
                         label="Business Name"
                         value={formData.businessName}
                         onChange={(value) => setFormData({ ...formData, businessName: value })}
-                    />
+                    /> */}
 
                     <InputField
                         label="Location"

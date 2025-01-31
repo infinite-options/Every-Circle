@@ -34,7 +34,7 @@ const ProfileSetupForm = () => {
     twitter: '',
     linkedin: '',
     youtube: '',
-    template: '',
+    template: '1',
     selectedImages: [],
     favImage: '',
   });

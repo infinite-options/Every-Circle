@@ -102,7 +102,7 @@ export default function Profile() {
               favImage: user.profile_favorite_image,
               profileId: user.profile_uid,
             });
-          updateUser({ profileId: user.profile_uid })
+          updateUser({ profileId: user.profile_uid, profile: user })
           setProfileId(user.profile_uid);
         } else {
           console.log("Error fetching profile: ", response.status);
