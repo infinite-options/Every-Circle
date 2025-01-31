@@ -1,6 +1,7 @@
 import { Box, Typography } from '@mui/material';
 import { StyledTextField } from '../StyledComponents';
-import ImageUpload from '../../common/ImageUpload';
+// import ImageUpload from '../../common/ImageUpload';
+import SquareImageUpload from '../../common/SquareImageUpload';
 
 const OptionalInfoStep = ({ formData, handleChange, handleImageUpload, handleDeleteImage, handleFavImage }) => {
   return (
@@ -27,19 +28,19 @@ const OptionalInfoStep = ({ formData, handleChange, handleImageUpload, handleDel
         rows={4}
       />
 
-      <Typography sx={{ color: '#fff', mt: 2, width: '100%', fontSize: "13px"  }}>
+      <Typography sx={{ color: '#fff', mt: 2, width: '100%', fontSize: "13px" }}>
         Show the world who you are (optional - this info is public)
       </Typography>
-      <Box sx={{ display: 'flex', gap: 2, mt: 2, width: '100%', justifyContent: 'space-between'}}>
+      <Box sx={{ display: 'flex', gap: 2, mt: 2, width: '100%', justifyContent: 'space-between' }}>
         {[0, 1, 2].map((index) => (
-          <ImageUpload
+          <SquareImageUpload
             key={index}
             onImageUpload={(imageUrl) => handleImageUpload(index, imageUrl)}
             // imageUrl={formData[`image${index}`]}
             image={formData.selectedImages[index]}
             imageUrl={formData.selectedImages[index]?.file}
-            handleDeleteImage={(imageUrl)=>handleDeleteImage(imageUrl)}
-            handleFavImage={(imageUrl)=>handleFavImage(imageUrl)}
+            handleDeleteImage={(imageUrl) => handleDeleteImage(imageUrl)}
+            handleFavImage={(imageUrl) => handleFavImage(imageUrl)}
             isDisabled={index > 0 && !formData.selectedImages[index - 1]}
             size={100}
             shape="square"

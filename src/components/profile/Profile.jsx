@@ -40,7 +40,6 @@ export default function Profile() {
     phoneNumber: "",
     tagLine: "",
     shortBio: "",
-    images: [],
     facebookLink: "",
     twitterLink: "",
     linkedinLink: "",
@@ -55,9 +54,11 @@ export default function Profile() {
   const [editMode, setEditMode] = useState(initialEditMode);
   const [errors, setErrors] = useState({});
   const { isValidPhoneNumber, formatPhoneNumber } = DataValidationUtils;
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
+  const [dialog, setDialog] = useState({
+    open: false,
+    title: "",
+    content: "",
+  });
   const [selectedImages, setSelectedImages] = useState([]);
   const [deletedImages, setDeletedImages] = useState([]);
   const [showSpinner, setShowSpinner] = useState(false);
@@ -70,49 +71,51 @@ export default function Profile() {
     4: "creative",
   }
 
-  const handleOpen = () => setDialogOpen(true);
-  const handleClose = () => setDialogOpen(false);
+  const handleOpen = (title, content) => {
+    setDialog({ open: true, title, content });
+  };
+
+  const handleClose =  () => {
+    setDialog({ open: false, title: "", content: "" });
+  };
+
+  const fetchProfile = async () => {
+    try {
+      setShowSpinner(true);
+      const response = await axios.get(`https://ioec2testsspm.infiniteoptions.com/profile/${userId}`);
+      if (response.status === 200) {
+        const user = response.data.result[0];
+        setFormData({
+          ...formData,
+          firstName: user.profile_first_name || "",
+          lastName: user.profile_last_name || "",
+          phoneNumber: user.profile_phone || "",
+          location: user.profile_location || "USA",
+          tagLine: user.profile_tag_line || "",
+          shortBio: user.profile_short_bio || "",
+          facebookLink: user.profile_facebook_link || "",
+          twitterLink: user.profile_twitter_link || "",
+          linkedinLink: user.profile_linkedin_link || "",
+          youtubeLink: user.profile_youtube_link || "",
+          template: user.profile_template || "",
+          youHelp: user.profile_how_can_you_help ? JSON.parse(user.profile_how_can_you_help) : ["", "", "", ""],
+          weHelp: user.profile_how_can_we_help ? JSON.parse(user.profile_how_can_we_help) : ["", "", "", ""],
+          profileImages: user.profile_images_url ? JSON.parse(user.profile_images_url) : [],
+          favImage: user.profile_favorite_image,
+          profileId: user.profile_uid,
+        });
+        //update data in context
+        updateUser({ profileId: user.profile_uid, profile: user });
+        setProfileId(user.profile_uid);
+      }
+    } catch (error) {
+      console.error("Error fetching profile:", error);
+    } finally {
+      setShowSpinner(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        setShowSpinner(true);
-        const response = await axios.get(`https://ioec2testsspm.infiniteoptions.com/profile/${userId}`);
-        console.log("Profile GET response", response);
-        if (response.status === 200) {
-          const user = response.data.result[0];
-          setFormData(
-            {
-              ...formData,
-              firstName: user.profile_first_name || "",
-              lastName: user.profile_last_name || "",
-              phoneNumber: user.profile_phone || "",
-              location: user.profile_location || "",
-              tagLine: user.profile_tag_line || "",
-              shortBio: user.profile_short_bio || "",
-              images: user.profile_images || [],
-              facebookLink: user.profile_facebook_link || "",
-              twitterLink: user.profile_twitter_link || "",
-              linkedinLink: user.profile_linkedin_link || "",
-              youtubeLink: user.profile_youtube_link || "",
-              template: user.profile_template || "",
-              youHelp: user.profile_how_can_you_help ? JSON.parse(user.profile_how_can_you_help) : ["", "", "", ""],
-              weHelp: user.profile_how_can_we_help ? JSON.parse(user.profile_how_can_we_help) : ["", "", "", ""],
-              profileImages: user.profile_images_url ? JSON.parse(user.profile_images_url) : [],
-              favImage: user.profile_favorite_image,
-              profileId: user.profile_uid,
-            });
-          updateUser({ profileId: user.profile_uid, profile: user })
-          setProfileId(user.profile_uid);
-        } else {
-          console.log("Error fetching profile: ", response.status);
-        }
-      } catch (error) {
-        console.error("Error fetching profile:", error);
-      } finally {
-        setShowSpinner(false);
-      }
-    };
     fetchProfile();
   }, [userId]);
 
@@ -153,13 +156,18 @@ export default function Profile() {
   const handleDeleteImage = (imageUrl) => {
     console.log('imageUrl in del', imageUrl, selectedImages)
     if (typeof (imageUrl) === "string") {
-      console.log('here', imageUrl)
       const updatedImages = formData.profileImages.filter((link) => link != imageUrl);
       setFormData((prev) => ({ ...prev, profileImages: updatedImages }));
       setDeletedImages((prev) => [...prev, imageUrl]);
       const reassignedImages = selectedImages?.map((img, i) => ({ ...img, index: updatedImages.length + i }));
-      console.log('reassigned', reassignedImages);
+      // console.log('reassigned', reassignedImages);
       setSelectedImages(reassignedImages);
+      if (imageUrl === formData.favImage) {
+        setFormData((prev) => ({
+          ...prev,
+          favImage: "",
+        }));
+      }
     } else {
       const updatedImages = selectedImages?.filter((img) => img.file.name != imageUrl.name);
       setSelectedImages(updatedImages);
@@ -221,6 +229,8 @@ export default function Profile() {
 
       if (formData.favImage) {
         form.append("profile_favorite_image", formData.favImage);
+      } else {
+        form.append("profile_favorite_image", "");
       }
 
       form.append("profile_uid", profileId);
@@ -229,24 +239,20 @@ export default function Profile() {
         const response = await axios.put(`${APIConfig.baseURL.dev}/profile`, form);
         console.log("Profile updated successfully", response);
         if (response.data.code === 200) {
+          // Fetch the latest profile data from the server
+          await fetchProfile();
           setEditMode(false);
-          setTitle("Success");
-          setContent("Profile has been updated successfully.")
-          handleOpen();
+          handleOpen("Success", "Profile has been updated successfully.");
           // alert("Profile updated successfully");
         }
       } catch (error) {
-        setTitle("Error");
-        setContent("Cannot update the profile.")
-        handleOpen();
+        handleOpen("Error", "Cannot update the profile.");
         console.error("Error updating profile:", error);
       } finally {
         setShowSpinner(false);
       }
     } else {
-      setTitle("Error");
-      setContent("Verify the required fields.")
-      handleOpen();
+      handleOpen("Error", "Cannot update the profile.");
       // alert("Error updating profile");
     }
   };
@@ -458,9 +464,9 @@ export default function Profile() {
           </FormBox>
         </form>
         <DialogBox
-          open={dialogOpen}
-          title={title}
-          content={content}
+          open={dialog.open}
+          title={dialog.title}
+          content={dialog.content}
           button1Text="Ok"
           button1Action={handleClose}
           handleClose={handleClose}

@@ -10,8 +10,9 @@ import {
 
 const TemplateStep = ({ formData, handleTemplateSelect }) => {
   const [currentTemplate, setCurrentTemplate] = useState(0);
-  const avatarUrl = formData.selectedImages?.find((image) => image.coverPhoto === true) || formData.selectedImages?.[0];
-
+  const avatarUrl = formData.selectedImages?.find((image) => image?.coverPhoto === true) || formData.favImage || formData.selectedImages?.[0];
+  // console.log('form data in template strp', formData)
+  // console.log('avatarUrl', avatarUrl, typeof avatarUrl)
   const templates = [
     {
       component: ModernTemplate,
@@ -103,7 +104,9 @@ const TemplateStep = ({ formData, handleTemplateSelect }) => {
                 phoneNumber={formData.phoneNumber || ""}
                 bio={formData.shortBio || 'Your bio will appear here'}
                 location={formData.location || 'Location'}
-                avatarUrl={avatarUrl ? URL.createObjectURL(avatarUrl.file) : null}
+                avatarUrl={avatarUrl instanceof File 
+                  ? URL.createObjectURL(avatarUrl) 
+                  : (typeof avatarUrl === "string" ? avatarUrl : null)}
                 facebook= {formData.facebook || ''}
                 twitter= {formData.twitter || ''}
                 linkedin= {formData.linkedin || ''}

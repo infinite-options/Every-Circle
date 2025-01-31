@@ -5,6 +5,9 @@ import FavoriteIcon from "@mui/icons-material/Favorite";
 import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
 
 const ImageUpload = ({ onImageUpload, image, imageUrl, handleDeleteImage, isDisabled, handleFavImage, favImage, shape }) => {
+  // console.log("Image--", image);
+  // console.log("ImageUrl--", imageUrl);
+  // console.log("favImage--", favImage);
   const handleImageChange = (event) => {
     const file = event.target.files[0];
     if (file && file.size <= 2.5 * 1024 * 1024) { // 2.5MB limit
@@ -46,7 +49,7 @@ const ImageUpload = ({ onImageUpload, image, imageUrl, handleDeleteImage, isDisa
                 ) : (
                   <FavoriteBorderIcon color='red' />
                 )
-              ) : image.coverPhoto ? (
+              ) : image?.coverPhoto ? (
                 <FavoriteIcon color='primary' sx={{ color: "red" }} />
               ) : (
                 <FavoriteBorderIcon color='red' />

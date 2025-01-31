@@ -3,6 +3,7 @@ import ImageUpload from './ImageUpload';
 
 const SquareImageUpload = ({
   onImageUpload,
+  image,
   imageUrl,
   handleDeleteImage,
   isDisabled,
@@ -26,6 +27,7 @@ const SquareImageUpload = ({
     >
       <ImageUpload
         onImageUpload={onImageUpload}
+        image={image}
         imageUrl={imageUrl}
         handleDeleteImage={handleDeleteImage}
         isDisabled={isDisabled}

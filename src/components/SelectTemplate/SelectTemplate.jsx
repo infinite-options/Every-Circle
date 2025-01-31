@@ -14,6 +14,7 @@ export default function SelectTemplate() {
     const navigate = useNavigate();
     const {data} = location.state || {};
     const [template, setTemplate] = useState(1);
+    // console.log('data in select template', data);
 
     const formData = {
         firstName: data.firstName,
@@ -21,7 +22,7 @@ export default function SelectTemplate() {
         shortBio: data.shortBio,
         location: data.location,
         phoneNumber: data.phoneNumber,
-        image1: null,
+        favImage: data.favImage || data.profileImages?.[0],
     }
 
     const handleTemplateSelect = (template) => {
