@@ -20,7 +20,7 @@ export default function RecommendationForm() {
         businessName: "",
         location: "",
         rating: 0,
-        lastInteraction: dayjs(),
+        lastInteraction: null,
         review: "",
         owner: "",
         phoneNumber: "",
@@ -31,7 +31,6 @@ export default function RecommendationForm() {
         googleId: "",
         googleRating: "",
         googlePhotos: [],
-        businessIcon: "",
         priceLevel: "",
     };
     const [formData, setFormData] = useState(initialFormData);
@@ -63,25 +62,26 @@ export default function RecommendationForm() {
 
     const getAutoCompleteData = (data) => {
         console.log('data in get', data)
-        const photos = data?.photos.map((photo) => photo.getUrl());
+        const photos = data?.photos?.map((photo) => photo.getUrl()) || [];
         console.log("photos--", photos);
         setFormData(prev => ({
             ...prev,
-            businessName: data.name,
-            location: data.formatted_address,
-            rating: 0,
-            lastInteraction: dayjs(),
-            review: "",
-            owner: "",
-            phoneNumber: data.formatted_phone_number,
-            yelpUrl: "",
-            websiteUrl: data.website,
-            email: "",
-            googleId: data.place_place_id,
-            googleRating: data.rating,
+            businessName: data.name || "",
+            location: data.formatted_address || "",
+            phoneNumber: data.formatted_phone_number || "",
+            websiteUrl: data.website || "",
+            googleId: data.place_id || "",
+            googleRating: data.rating || "",
             googlePhotos: photos,
-            businessIcon: data.icon,
-            priceLevel: data.price_level
+            priceLevel: data.price_level || "",
+            addressLine1: data.addressLine1 || "",
+            addressLine2: data.addressLine2 || "",
+            city: data.city || "",
+            state: data.state || "",
+            country: data.country || "",
+            zip: data.zip || "",
+            latitude: data.geometry.location.lat() || "",
+            longitude: data.geometry.location.lng() || ""
         }));
     }
 
@@ -91,21 +91,28 @@ export default function RecommendationForm() {
         try {
             const form = new FormData();
             form.append('profile_uid', profileId);
-            form.append('rating_business_name',formData.businessName);
-            form.append('rating_location', formData.location);
+            // form.append('rating_business_name',formData.businessName);
+            form.append('rating_business_address_line_1', formData.addressLine1);
+            form.append('rating_business_address_line_2', formData.addressLine2);
+            form.append('rating_business_city', formData.city);
+            form.append('rating_business_state', formData.state);
+            form.append('rating_business_country', formData.country);
+            form.append('rating_business_country', formData.country);
+            form.append('rating_business_zip_code', formData.zip);
+            form.append('rating_business_latitude', formData.latitude);
+            form.append('rating_business_longitude', formData.longitude);
+            form.append('rating_business_yelp', formData.yelpUrl);
+            form.append('rating_business_website', formData.websiteUrl);
             form.append('rating_star', formData.rating);
-            form.append('rating_receipt_date', formData.lastInteraction.format("MM-DD-YYYY"));
+            form.append('rating_receipt_date', formData.lastInteraction?.format("MM-DD-YYYY"));
             form.append('rating_description', formData.review);
-            form.append('rating_owner', formData.owner);
-            form.append('rating_phonenumber', formData.phoneNumber);
-            form.append('ratings_yelp', formData.yelpUrl);
-            form.append('ratings_website', formData.websiteUrl);
-            form.append('ratings_email', formData.email);
-            form.append('ratings_googleId', formData.googleId);
-            form.append('ratings_googleRating', formData.googleRating);
-            form.append('ratings_googlePhotos', formData.googlePhotos);
-            form.append('ratings_businessIcon', formData.businessIcon);
-            form.append('ratings_priceLevel', formData.priceLevel);
+            // form.append('rating_owner', formData.owner);
+            // form.append('rating_phonenumber', formData.phoneNumber);
+            // form.append('rating_email', formData.email);
+            form.append('rating_business_google_id', formData.googleId);
+            // form.append('rating_googleRating', formData.googleRating);
+            // form.append('rating_googlePhotos', formData.googlePhotos);
+            // form.append('rating_priceLevel', formData.priceLevel);
 
             //upload image
             if (formData.receiptImage) {
@@ -130,7 +137,7 @@ export default function RecommendationForm() {
             <Header title="Recommendation" />
             <Box sx={{ width: '100%', padding: "10px 40px" }}>
                 <form>
-                    <Autocomplete getAutoCompleteData={getAutoCompleteData} />
+                    <Autocomplete getAutoCompleteData={getAutoCompleteData} formData={formData} />
                     {/* <InputField
                         label="Business Name"
                         value={formData.businessName}
@@ -145,7 +152,7 @@ export default function RecommendationForm() {
 
                     <Box sx={{ mb: 3, display: "flex", flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                         <Typography variant="caption" sx={{ ml: 1, mb: 0.5, display: "block" }}>Rating (this info will be public)</Typography>
-                        <Rating name="size-medium" defaultValue={formData.rating} onChange={(e, value) => setFormData({ ...formData, rating: value })} />
+                        <Rating name="size-medium" value={formData.rating} onChange={(e, value) => setFormData({ ...formData, rating: value })} />
                     </Box>
 
                     <Box sx={{ mb: 3, display: "block", alignItems: "center" }}>
