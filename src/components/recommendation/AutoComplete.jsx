@@ -5,11 +5,10 @@ import { Typography, TextField, Box } from '@mui/material';
 
 const LIBRARIES = ["places"];
 
-function AutoComplete({ getAutoCompleteData, formData }) {
+const AutoComplete = memo(({ getAutoCompleteData, formData }) => {
     const apiKey = process.env.REACT_APP_GOOGLE_PLACES_API_KEY;
     const [autocomplete, setAutocomplete] = useState(null);
     const [businessName, setBusinessName] = useState(formData.businessName);
-    console.log('autocomplete name', formData.businessName)
 
     useEffect(() => {
         setBusinessName(formData.businessName);
@@ -106,7 +105,7 @@ function AutoComplete({ getAutoCompleteData, formData }) {
             </Box>
         </LoadScript>
     );
-}
+});
 
 
 export default AutoComplete;
