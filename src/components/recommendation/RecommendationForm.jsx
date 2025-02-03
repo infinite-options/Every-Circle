@@ -13,6 +13,7 @@ import { useUserContext } from "../contexts/UserContext";
 import axios from "axios";
 import DialogBox from "../common/DialogBox";
 import CircleImageUpload from '../common/CircleImageUpload';
+import SquareImageUpload from '../common/SquareImageUpload';
 import Autocomplete from "./AutoComplete";
 
 export default function RecommendationForm() {
@@ -37,6 +38,7 @@ export default function RecommendationForm() {
     const { user } = useUserContext();
     const { profileId } = user
     const [dialogOpen, setDialogOpen] = useState(false);
+    const [selectedImages, setSelectedImages] = useState([]);
 
     const handleOpen = () => setDialogOpen(true);
     const handleClose = () => setDialogOpen(false);
@@ -45,7 +47,7 @@ export default function RecommendationForm() {
         setFormData(initialFormData);
     };
 
-    const handleImageUpload = (file) => {
+    const handleReceiptUpload = (file) => {
         console.log('in file upload', file)
         setFormData(prev => ({
             ...prev,
@@ -53,12 +55,35 @@ export default function RecommendationForm() {
         }));
     };
 
-    const handleDeleteImage = (imageUrl) => {
+    const handleDeleteReceiptImage = () => {
         setFormData((prev) => ({
             ...prev,
             receiptImage: null,
         }));
     }
+
+    const handleImageUpload = (index, file) => {
+        let currentIndex = selectedImages.length;
+        const fileObj = {
+          index: currentIndex,
+          file: file,
+          coverPhoto: currentIndex + index === 0 
+        };
+        setSelectedImages(prev => ([
+          ...prev,
+          fileObj,
+        ]));
+      };
+    
+      const handleDeleteImage = (imageUrl) => {
+        const updatedImages = selectedImages.filter((img) => img.file.name != imageUrl.name);
+        setSelectedImages(updatedImages);
+      }
+    
+      const handleFavImage = (imageUrl) => {
+        const updatedImages = formData.selectedImages.map((img) => ({ ...img, coverPhoto: img.file.name === imageUrl.name }));
+        setSelectedImages(updatedImages);
+      }
 
     const getAutoCompleteData = (data) => {
         console.log('data in get', data)
@@ -91,7 +116,7 @@ export default function RecommendationForm() {
         try {
             const form = new FormData();
             form.append('profile_uid', profileId);
-            form.append('rating_business_name',formData.businessName);
+            form.append('rating_business_name', formData.businessName);
             form.append('rating_business_address_line_1', formData.addressLine1);
             form.append('rating_business_address_line_2', formData.addressLine2);
             form.append('rating_business_city', formData.city);
@@ -116,7 +141,16 @@ export default function RecommendationForm() {
 
             //upload image
             if (formData.receiptImage) {
-                form.append('img_0', formData.receiptImage);
+                form.append('img_receipt', formData.receiptImage);
+            }
+
+            let i = 0;
+            for (const file of selectedImages) {
+              let key = `img_${i++}`;
+              form.append(key, file.file);
+              if (file.coverPhoto) {
+                form.append("img_favorite", key);
+              }
             }
 
             const response = await axios.post(`https://ioec2testsspm.infiniteoptions.com/ratings`, form);
@@ -205,9 +239,27 @@ export default function RecommendationForm() {
                         onChange={(value) => setFormData({ ...formData, email: value })}
                     />
 
+                    <Box sx={{ display: "flex", gap: 2, my: 3, justifyContent: "space-between" }}>
+                        {[0, 1, 2].map((index) => {
+                            return (
+                                <SquareImageUpload
+                                    key={index}
+                                    index={index}
+                                    onImageUpload={(file) => handleImageUpload(index, file)}
+                                    image={selectedImages[index]}
+                                    imageUrl={selectedImages[index]?.file}
+                                    handleDeleteImage={(imageUrl) => handleDeleteImage(imageUrl)}
+                                    handleFavImage={(imageUrl) => handleFavImage(imageUrl)}
+                                    size={100}
+                                    shape="square"
+                                />
+                            )
+                        })}
+                    </Box>
+
                     <Box sx={{ display: "flex", alignContent: "center", justifyContent: "space-evenly" }}>
-                        <CircleImageUpload onImageUpload={(file) => handleImageUpload(file)}
-                            handleDeleteImage={(imageUrl) => handleDeleteImage(imageUrl)}
+                        <CircleImageUpload onImageUpload={(file) => handleReceiptUpload(file)}
+                            handleDeleteImage={(imageUrl) => handleDeleteReceiptImage(imageUrl)}
                             imageUrl={formData.receiptImage} />
 
                         <CircleButton width={100} height={100} text="Save" onClick={handleSubmit} />
