@@ -13,6 +13,7 @@ const TemplateStep = ({ formData, handleTemplateSelect }) => {
   const avatarUrl = formData.selectedImages?.find((image) => image?.coverPhoto === true) || formData.favImage || formData.selectedImages?.[0];
   // console.log('form data in template strp', formData)
   // console.log('avatarUrl', avatarUrl, typeof avatarUrl)
+
   const templates = [
     {
       component: ModernTemplate,
@@ -104,8 +105,8 @@ const TemplateStep = ({ formData, handleTemplateSelect }) => {
                 phoneNumber={formData.phoneNumber || ""}
                 bio={formData.shortBio || 'Your bio will appear here'}
                 location={formData.location || 'Location'}
-                avatarUrl={avatarUrl instanceof File 
-                  ? URL.createObjectURL(avatarUrl) 
+                avatarUrl={ typeof avatarUrl === "object" && avatarUrl !== null 
+                  ? URL.createObjectURL(avatarUrl.file) 
                   : (typeof avatarUrl === "string" ? avatarUrl : null)}
                 facebook= {formData.facebook || ''}
                 twitter= {formData.twitter || ''}

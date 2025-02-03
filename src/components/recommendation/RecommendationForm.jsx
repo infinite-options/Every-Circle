@@ -91,7 +91,7 @@ export default function RecommendationForm() {
         try {
             const form = new FormData();
             form.append('profile_uid', profileId);
-            // form.append('rating_business_name',formData.businessName);
+            form.append('rating_business_name',formData.businessName);
             form.append('rating_business_address_line_1', formData.addressLine1);
             form.append('rating_business_address_line_2', formData.addressLine2);
             form.append('rating_business_city', formData.city);
@@ -106,13 +106,13 @@ export default function RecommendationForm() {
             form.append('rating_star', formData.rating);
             form.append('rating_receipt_date', formData.lastInteraction?.format("MM-DD-YYYY"));
             form.append('rating_description', formData.review);
-            // form.append('rating_owner', formData.owner);
-            // form.append('rating_phonenumber', formData.phoneNumber);
-            // form.append('rating_email', formData.email);
+            form.append('rating_owner', formData.owner);
+            form.append('rating_phonenumber', formData.phoneNumber);
+            form.append('rating_email', formData.email);
             form.append('rating_business_google_id', formData.googleId);
-            // form.append('rating_googleRating', formData.googleRating);
-            // form.append('rating_googlePhotos', formData.googlePhotos);
-            // form.append('rating_priceLevel', formData.priceLevel);
+            form.append('rating_googleRating', formData.googleRating);
+            form.append('rating_googlePhotos', formData.googlePhotos);
+            form.append('rating_priceLevel', formData.priceLevel);
 
             //upload image
             if (formData.receiptImage) {
