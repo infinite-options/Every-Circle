@@ -23,6 +23,7 @@ const SignupForm = () => {
   const { updateUser } = useUserContext();
   const { handleUserSignUp } = useUserAuth();
   const location = useLocation();
+  const [role, setRole] = useState("");
 
 
   useEffect(() => {
@@ -31,6 +32,7 @@ const SignupForm = () => {
 
     if (role) {
       console.log("Setting role", role);
+      setRole(role);
       const data = {
         role,
       };
@@ -114,6 +116,7 @@ const SignupForm = () => {
     e.preventDefault();
 
     if (validateForm()) {
+      setFormData((prev) => ({...prev, role:role}))
       handleUserSignUp(formData, 'email');
       // console.log("Form submitted:", formData);
 
@@ -161,10 +164,10 @@ const SignupForm = () => {
     }
   };
 
-  const handleGoogleSignup = () => {
-    console.log("Google signup clicked");
-    // Implement Google authentication
-  };
+  // const handleGoogleSignup = () => {
+  //   console.log("Google signup clicked");
+  //   // Implement Google authentication
+  // };
 
   const handleAppleSignup = () => {
     console.log("Apple signup clicked");

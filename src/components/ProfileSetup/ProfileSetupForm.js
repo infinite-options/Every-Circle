@@ -212,7 +212,7 @@ const ProfileSetupForm = () => {
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <ResponsiveContainer>
+      <ResponsiveContainer role={user.role}>
         <Box
           sx={{
             padding: { xs: 3, sm: 4 },

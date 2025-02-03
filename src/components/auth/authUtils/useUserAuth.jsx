@@ -10,7 +10,7 @@ export const useUserAuth = () => {
     const navigate = useNavigate();
     const { updateUser, user } = useUserContext();
     let GOOGLE_LOGIN_PASSWORD = process.env.REACT_APP_GOOGLE_LOGIN;
-    const [role, setRole] = useState(user?.role || "user");
+    const [role, setRole] = useState(user?.role || "");
 
     const handleUserSignUp = async (userData, signupType) => {
         console.log('userData', userData);
@@ -34,9 +34,9 @@ export const useUserAuth = () => {
                 console.log('response from social signup', response);
                 if (response.data.message === "User already exists") {
                     const userId = response.data.user_uid;
-                    await performRedirection(userId);
+                    await performRedirection(userId, role);
                 } else {
-                    redirectToProfileSetup(response.data.user_uid);
+                    redirectToProfileSetup(response.data.user_uid, role);
                 }
             }
         } catch (error) {
@@ -49,7 +49,7 @@ export const useUserAuth = () => {
         const userObject = {
             email: userData.email,
             password: userData.password,
-            role:role,
+            role: userData.role,
         };
 
         try {
@@ -58,7 +58,7 @@ export const useUserAuth = () => {
                 userObject
             );
             const userId = response?.data?.user_uid;
-            redirectToProfileSetup(userId);
+            redirectToProfileSetup(userId, role);
         } catch (error) {
             console.error("Error in createAndLoginUser:", error.message || error);
             throw error;
@@ -115,13 +115,14 @@ export const useUserAuth = () => {
                                 loginObject
                             );
 
-                            console.log(loginResponse);
-                            setRole(loginResponse?.data?.result?.user_role);
+                            console.log('response from login endpoint', loginResponse);
+                            console.log('loginResponse?.data?.result?.user_role', loginResponse?.data?.result?.user_role)
+                            await setRole(loginResponse?.data?.result?.user_role);
                             const { message, result } = loginResponse?.data;
 
                             switch (message) {
                                 case "Login successful":
-                                    await performRedirection(result?.user_uid);
+                                    await performRedirection(result?.user_uid, result?.user_role);
                                     break;
 
                                 case "Incorrect password":
@@ -148,44 +149,51 @@ export const useUserAuth = () => {
         }
     };
 
-    const performRedirection = async (userId) => {
+    const performRedirection = async (userId, role) => {
         try {
             // Check if the profile exists
             const profileResponse = await checkIfProfileExists(userId);
-    
+
             if (profileResponse?.code === 200 && profileResponse.result?.length === 1) {
-                redirectToProfile(userId);
+                redirectToProfile(userId, role);
             } else {
-                redirectToProfileSetup(userId);
+                redirectToProfileSetup(userId, role);
             }
         } catch (error) {
             console.error("Error fetching profile:", error.message || error, error.response?.data?.message);
-            redirectToProfileSetup(userId);
+            redirectToProfileSetup(userId, role);
         }
     };
-    
 
-    const redirectToProfile = (userId) => {
+
+    const redirectToProfile = (userId, role) => {
         const loginData = {
             userId,
             isUserLoggedIn: true,
-            role:role,
+            role: role,
         };
         updateUser(loginData);
         navigate("/profile");
     };
-    
 
-    const redirectToProfileSetup = (userId) => {
+
+    const redirectToProfileSetup = (userId, role) => {
         const loginData = {
             userId,
             isUserLoggedIn: true,
-            role:role,
+            role: role,
         };
         updateUser(loginData);
-        navigate("/profileSetup", {
-            state: { userId },
-        });
+        console.log('role', role)
+        if (role === "user") {
+            navigate("/profileSetup", {
+                state: { userId },
+            });
+        } else {
+            navigate("/businessProfileSetup", {
+                state: { userId },
+            });
+        }
     };
 
     const handleGoogleLogin = async (email, socialId, firstName, lastName, authToken, refreshToken, expiresIn) => {
@@ -223,7 +231,7 @@ export const useUserAuth = () => {
                 const url = `https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UpdateAccessToken/EVERY-CIRCLE/${user_id}`;
                 await axios.post(url, { google_auth_token: authToken });
 
-                performRedirection(user_id);
+                performRedirection(user_id, role);
             }
         } catch (err) {
             console.error("Error in handleGoogleLogin:", err);

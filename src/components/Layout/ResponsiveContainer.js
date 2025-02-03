@@ -1,6 +1,6 @@
 import { Box, Paper } from '@mui/material';
 
-const ResponsiveContainer = ({ children }) => {
+const ResponsiveContainer = ({ children, role }) => {
   return (
     <Box
       sx={{
@@ -18,7 +18,7 @@ const ResponsiveContainer = ({ children }) => {
           height: '700px',
           borderRadius: '50%',
           overflow: 'hidden',
-          backgroundColor: '#1976d2',
+          backgroundColor: role === "user" ? '#1976d2' : '#00C721',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
