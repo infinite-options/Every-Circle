@@ -81,6 +81,14 @@
   line-height: 1.2;
 }
 
+.business-signup {
+  top: 5%;
+  right: 15%;
+  background-color: #00C721;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
 .connecting-lines {
   position: absolute;
   top: 0;

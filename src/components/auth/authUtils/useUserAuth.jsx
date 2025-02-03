@@ -8,8 +8,9 @@ import { useUserContext } from '../../contexts/UserContext';
 
 export const useUserAuth = () => {
     const navigate = useNavigate();
-    const { updateUser } = useUserContext();
+    const { updateUser, user } = useUserContext();
     let GOOGLE_LOGIN_PASSWORD = process.env.REACT_APP_GOOGLE_LOGIN;
+    const [role, setRole] = useState(user?.role || "user");
 
     const handleUserSignUp = async (userData, signupType) => {
         console.log('userData', userData);
@@ -48,6 +49,7 @@ export const useUserAuth = () => {
         const userObject = {
             email: userData.email,
             password: userData.password,
+            role:role,
         };
 
         try {
@@ -113,7 +115,8 @@ export const useUserAuth = () => {
                                 loginObject
                             );
 
-                            // console.log(loginResponse);
+                            console.log(loginResponse);
+                            setRole(loginResponse?.data?.result?.user_role);
                             const { message, result } = loginResponse?.data;
 
                             switch (message) {
@@ -166,6 +169,7 @@ export const useUserAuth = () => {
         const loginData = {
             userId,
             isUserLoggedIn: true,
+            role:role,
         };
         updateUser(loginData);
         navigate("/profile");
@@ -176,6 +180,7 @@ export const useUserAuth = () => {
         const loginData = {
             userId,
             isUserLoggedIn: true,
+            role:role,
         };
         updateUser(loginData);
         navigate("/profileSetup", {
@@ -204,7 +209,7 @@ export const useUserAuth = () => {
                     social_id: socialId,
                     access_expires_in: String(expiresIn),
                     phone_number: "",
-                    role: "",
+                    role: "user", //fall back to default role
                 };
                 await handleUserSignUp(user, "google");
                 return;

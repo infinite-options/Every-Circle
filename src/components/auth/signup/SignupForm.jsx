@@ -5,6 +5,7 @@ import axios from "axios";
 import { useUserContext } from "../../contexts/UserContext";
 import GoogleSignup from "./GoogleSignup";
 import { useUserAuth } from '../authUtils/useUserAuth';
+import { useLocation } from "react-router-dom";
 
 const SignupForm = () => {
   const navigate = useNavigate();
@@ -21,6 +22,21 @@ const SignupForm = () => {
   const [isFormValid, setIsFormValid] = useState(false);
   const { updateUser } = useUserContext();
   const { handleUserSignUp } = useUserAuth();
+  const location = useLocation();
+
+
+  useEffect(() => {
+    const queryParams = new URLSearchParams(location.search);
+    const role = queryParams.get("role");
+
+    if (role) {
+      console.log("Setting role", role);
+      const data = {
+        role,
+      };
+      updateUser(data);
+    }
+  }, [location.search]);
 
   useEffect(() => {
     // Check if form is valid
@@ -248,7 +264,7 @@ const SignupForm = () => {
               alt="Google"
             />
           </button> */}
-          <GoogleSignup/>
+          <GoogleSignup />
           <button onClick={handleAppleSignup} className="social-button apple">
             <svg viewBox="0 0 384 512" width="24" height="24">
               <path

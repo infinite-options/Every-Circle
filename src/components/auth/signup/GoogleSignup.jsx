@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import axios from 'axios';
 import {useNavigate} from 'react-router-dom'; 
 import { useUserAuth } from '../authUtils/useUserAuth';
-import { checkIfUserExists, checkIfProfileExists } from '../authUtils/AuthUtils';
+import { checkIfUserExists } from '../authUtils/AuthUtils';
+import { useUserContext } from "../../contexts/UserContext";
 
 let CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 // let CLIENT_ID = process.env.REACT_APP_GOOGLE_LOGIN;
@@ -23,6 +24,8 @@ const GoogleSignup = (props) => {
     const [accessExpiresIn, setAccessExpiresIn] = useState("");
     const navigate = useNavigate();
     let codeClient = {};
+    const { user } = useUserContext();
+    const role = user?.role || "";
 
     function getAuthorizationCode() {
         // Request authorization code and obtain user consent,  method of the code client to trigger the user flow
@@ -101,7 +104,7 @@ const GoogleSignup = (props) => {
                                                 social_id: si,
                                                 access_expires_in: String(ax),
                                                 phone_number: "",
-                                                role: "",
+                                                role: role,
                                             };
                                             console.log('checking user from google', user)
                                             const userExist = await checkIfUserExists(e);
