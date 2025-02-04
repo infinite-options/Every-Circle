@@ -23,7 +23,8 @@ export default function RecommendationForm() {
         rating: 0,
         lastInteraction: null,
         review: "",
-        owner: "",
+        ownerFname: "",
+        ownerLname: "",
         phoneNumber: "",
         yelpUrl: "",
         websiteUrl: "",
@@ -45,6 +46,7 @@ export default function RecommendationForm() {
 
     const resetForm = () => {
         setFormData(initialFormData);
+        setSelectedImages([]);
     };
 
     const handleReceiptUpload = (file) => {
@@ -65,30 +67,30 @@ export default function RecommendationForm() {
     const handleImageUpload = (index, file) => {
         let currentIndex = selectedImages.length;
         const fileObj = {
-          index: currentIndex,
-          file: file,
-          coverPhoto: currentIndex + index === 0 
+            index: currentIndex,
+            file: file,
+            coverPhoto: currentIndex + index === 0
         };
         setSelectedImages(prev => ([
-          ...prev,
-          fileObj,
+            ...prev,
+            fileObj,
         ]));
-      };
-    
-      const handleDeleteImage = (imageUrl) => {
+    };
+
+    const handleDeleteImage = (imageUrl) => {
         const updatedImages = selectedImages.filter((img) => img.file.name != imageUrl.name);
         setSelectedImages(updatedImages);
-      }
-    
-      const handleFavImage = (imageUrl) => {
+    }
+
+    const handleFavImage = (imageUrl) => {
         const updatedImages = formData.selectedImages.map((img) => ({ ...img, coverPhoto: img.file.name === imageUrl.name }));
         setSelectedImages(updatedImages);
-      }
+    }
 
     const getAutoCompleteData = (data) => {
         console.log('data in get', data)
         const photos = data?.photos?.map((photo) => photo.getUrl()) || [];
-        console.log("photos--", photos, typeof(photos));
+        console.log("photos--", photos, typeof (photos));
         setFormData(prev => ({
             ...prev,
             businessName: data.name || "",
@@ -130,13 +132,14 @@ export default function RecommendationForm() {
             form.append('rating_star', formData.rating);
             form.append('rating_receipt_date', formData.lastInteraction?.format("MM-DD-YYYY"));
             form.append('rating_description', formData.review);
-            form.append('rating_owner', formData.owner);
-            form.append('rating_phonenumber', formData.phoneNumber);
-            form.append('rating_email', formData.email);
+            // form.append('rating_business_owner_fn', formData.ownerFname);
+            // form.append('rating_business_owner_ln', formData.ownerLname);
+            form.append('rating_business_phone_number', formData.phoneNumber);
+            form.append('rating_business_email_id', formData.email);
             form.append('rating_business_google_id', formData.googleId);
-            form.append('rating_googleRating', formData.googleRating);
-            form.append('rating_googlePhotos', JSON.stringify(formData.googlePhotos));
-            form.append('rating_priceLevel', formData.priceLevel);
+            form.append('rating_business_google_rating', formData.googleRating);
+            form.append('rating_business_google_photos', JSON.stringify(formData.googlePhotos));
+            form.append('rating_business_price_level', formData.priceLevel);
 
             //upload image
             if (formData.receiptImage) {
@@ -145,11 +148,11 @@ export default function RecommendationForm() {
 
             let i = 0;
             for (const file of selectedImages) {
-              let key = `img_${i++}`;
-              form.append(key, file.file);
-              if (file.coverPhoto) {
-                form.append("img_favorite", key);
-              }
+                let key = `img_${i++}`;
+                form.append(key, file.file);
+                if (file.coverPhoto) {
+                    form.append("img_favorite", key);
+                }
             }
 
             const response = await axios.post(`https://ioec2testsspm.infiniteoptions.com/ratings`, form);
@@ -208,9 +211,15 @@ export default function RecommendationForm() {
                     />
 
                     <InputField
-                        label="Owner"
-                        value={formData.owner}
-                        onChange={(value) => setFormData({ ...formData, owner: value })}
+                        label="Owner First Name"
+                        value={formData.ownerFname}
+                        onChange={(value) => setFormData({ ...formData, ownerFname: value })}
+                    />
+
+                    <InputField
+                        label="Owner Last Name"
+                        value={formData.ownerLname}
+                        onChange={(value) => setFormData({ ...formData, ownerLname: value })}
                     />
 
 
