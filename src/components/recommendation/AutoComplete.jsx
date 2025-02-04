@@ -5,7 +5,7 @@ import { Typography, TextField, Box } from '@mui/material';
 
 const LIBRARIES = ["places"];
 
-const AutoComplete = memo(({ getAutoCompleteData, formData }) => {
+const AutoComplete = memo(({ getAutoCompleteData, formData, backgroundColor }) => {
     const apiKey = process.env.REACT_APP_GOOGLE_PLACES_API_KEY;
     const [autocomplete, setAutocomplete] = useState(null);
     const [businessName, setBusinessName] = useState(formData.businessName);
@@ -38,10 +38,10 @@ const AutoComplete = memo(({ getAutoCompleteData, formData }) => {
                 // Extract individual address parts
                 const addressLine1 = getAddressComponent("street_number") + " " + getAddressComponent("route");
                 const addressLine2 = getAddressComponent("subpremise");
-                const city = getAddressComponent("locality"); 
+                const city = getAddressComponent("locality");
                 const state = getAddressComponent("administrative_area_level_1");
-                const country = getAddressComponent("country"); 
-                const zip = getAddressComponent("postal_code"); 
+                const country = getAddressComponent("country");
+                const zip = getAddressComponent("postal_code");
                 getAutoCompleteData({
                     ...place,
                     addressLine1,
@@ -94,7 +94,7 @@ const AutoComplete = memo(({ getAutoCompleteData, formData }) => {
                         value={businessName}
                         onChange={(e) => setBusinessName(e.target.value)}
                         sx={{
-                            backgroundColor: "#e0e0e0",
+                            backgroundColor: backgroundColor || "#e0e0e0",
                             borderRadius: 2,
                             "& .MuiOutlinedInput-root": {
                                 borderRadius: 2,

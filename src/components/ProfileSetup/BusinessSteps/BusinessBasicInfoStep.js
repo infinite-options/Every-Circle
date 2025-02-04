@@ -1,37 +1,42 @@
 import { Box, Typography, TextField } from '@mui/material';
-import { StyledTextField } from '../StyledComponents';
+import Autocomplete from "../../recommendation/AutoComplete";
 
-const BasicInfoStep = ({ formData, handleChange, errors }) => {
+const BasicInfoStep = ({ formData, handleChange, errors, setFormData }) => {
+  const getAutoCompleteData = (data) => {
+    console.log('data in get', data)
+    const photos = data?.photos?.map((photo) => photo.getUrl()) || [];
+    console.log("photos--", photos);
+    setFormData(prev => ({
+      ...prev,
+      businessName: data.name || "",
+      location: data.formatted_address || "",
+      phoneNumber: data.formatted_phone_number || "",
+      websiteUrl: data.website || "",
+      googleId: data.place_id || "",
+      googleRating: data.rating || "",
+      googlePhotos: photos,
+      favImage: photos[0] || "",
+      priceLevel: data.price_level || "",
+      addressLine1: data.addressLine1 || "",
+      addressLine2: data.addressLine2 || "",
+      city: data.city || "",
+      state: data.state || "",
+      country: data.country || "",
+      zip: data.zip || "",
+      latitude: data.geometry.location.lat() || "",
+      longitude: data.geometry.location.lng() || "",
+      types: data.types || []
+    }));
+  }
+
   return (
     <Box sx={{ width: '100%' }}>
-      <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
-        Your full name (this info will be public)
-      </Typography>
-      <StyledTextField
-        fullWidth
-        placeholder="First Name"
-        name="firstName"
-        value={formData.firstName}
-        onChange={handleChange}
-        margin="normal"
-        error={!!errors.firstName}
-        helperText={errors.firstName}
-      />
-      <StyledTextField
-        fullWidth
-        placeholder="Last Name"
-        name="lastName"
-        value={formData.lastName}
-        onChange={handleChange}
-        margin="normal"
-        error={!!errors.lastName}
-        helperText={errors.lastName}
-      />
+      <Autocomplete getAutoCompleteData={getAutoCompleteData} formData={formData} backgroundColor={"#F5F5F5"} />
 
       <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
         Your location
       </Typography>
-      <StyledTextField
+      <TextField
         required
         fullWidth
         placeholder="Location"
@@ -41,12 +46,19 @@ const BasicInfoStep = ({ formData, handleChange, errors }) => {
         margin="normal"
         error={!!errors.location}
         helperText={errors.location}
+        sx={{
+          backgroundColor: "#F5F5F5",
+          borderRadius: 2,
+          "& .MuiOutlinedInput-root": {
+            borderRadius: 2,
+          },
+        }}
       />
 
       <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
-        Your phone number (this info is private)
+        Your phone number
       </Typography>
-      <StyledTextField
+      <TextField
         fullWidth
         placeholder="Phone Number"
         name="phoneNumber"
@@ -55,6 +67,13 @@ const BasicInfoStep = ({ formData, handleChange, errors }) => {
         margin="normal"
         error={!!errors.phoneNumber}
         helperText={errors.phoneNumber}
+        sx={{
+          backgroundColor: "#F5F5F5",
+          borderRadius: 2,
+          "& .MuiOutlinedInput-root": {
+            borderRadius: 2,
+          },
+        }}
       />
     </Box>
   );

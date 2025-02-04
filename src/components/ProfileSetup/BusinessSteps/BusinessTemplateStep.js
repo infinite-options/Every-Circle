@@ -10,9 +10,7 @@ import {
 
 const BusinessTemplateStep = ({ formData, handleTemplateSelect }) => {
   const [currentTemplate, setCurrentTemplate] = useState(0);
-  const avatarUrl = formData.selectedImages?.find((image) => image?.coverPhoto === true) || formData.favImage || formData.selectedImages?.[0];
-  // console.log('form data in template strp', formData)
-  // console.log('avatarUrl', avatarUrl, typeof avatarUrl)
+  const avatarUrl = formData.favImage;
 
   const templates = [
     {
@@ -99,15 +97,13 @@ const BusinessTemplateStep = ({ formData, handleTemplateSelect }) => {
               }}
             >
               <template.component
-                name={`${formData.firstName} ${formData.lastName}`}
-                username={formData.firstName?.toLowerCase() || 'username'}
+                name={`${formData.businessName}`}
+                username={formData.businessName?.toLowerCase() || 'businessname'}
                 tagLine={formData.tagLine || ''}
                 phoneNumber={formData.phoneNumber || ""}
                 bio={formData.shortBio || 'Your bio will appear here'}
                 location={formData.location || 'Location'}
-                avatarUrl={ typeof avatarUrl === "object" && avatarUrl !== null 
-                  ? URL.createObjectURL(avatarUrl.file) 
-                  : (typeof avatarUrl === "string" ? avatarUrl : null)}
+                avatarUrl={avatarUrl}
                 facebook= {formData.facebook || ''}
                 twitter= {formData.twitter || ''}
                 linkedin= {formData.linkedin || ''}

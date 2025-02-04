@@ -1,13 +1,39 @@
+
+import React, {useState} from 'react';
 import { Box, Typography } from '@mui/material';
 import { StyledTextField } from '../StyledComponents';
-// import ImageUpload from '../../common/ImageUpload';
-import SquareImageUpload from '../../common/SquareImageUpload';
+import DeleteIcon from '@mui/icons-material/Delete';
+import FavoriteIcon from '@mui/icons-material/Favorite';
+import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
+import IconButton from '@mui/material/IconButton';
+import ImageList from '@mui/material/ImageList';
+import ImageListItem from '@mui/material/ImageListItem';
 
-const OptionalBusinessInfoStep = ({ formData, handleChange, handleImageUpload, handleDeleteImage, handleFavImage }) => {
+const OptionalBusinessInfoStep = ({ formData, handleChange, setFormData }) => {
+  const [favoriteIcons, setFavoriteIcons] = useState(
+		formData?.googlePhotos ? formData?.googlePhotos.map((image, index) => index === 0): []);
+
+    const [deletedIcons, setDeletedIcons] = useState(
+      formData?.googlePhotos ? new Array(formData?.googlePhotos.length).fill(false) : []);
+
+  const handleDeleteImage = (idx) => {
+    const updatedGooglePhotos = formData.googlePhotos.filter((photo, index) => index !== idx);
+    // console.log(updatedGooglePhotos);
+    setFormData((prev) => ({...prev, googlePhotos : updatedGooglePhotos}));
+  }
+
+  const handleFavImage = (idx) => {
+    const newFav = formData.googlePhotos[idx];
+    setFormData((prev) => ({...prev, favImage: newFav}));
+    const updatedFavIcons = favoriteIcons.map((_, index) => index === idx ? true : false);
+    // console.log(updatedFavIcons, idx);
+    setFavoriteIcons(updatedFavIcons);
+  }
+
   return (
     <Box sx={{ width: '100%' }}>
       <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
-        Provide a short bio of yourself (this info is public)
+        Provide a short bio of your business (this info is public)
       </Typography>
       <StyledTextField
         fullWidth
@@ -31,22 +57,82 @@ const OptionalBusinessInfoStep = ({ formData, handleChange, handleImageUpload, h
       <Typography sx={{ color: '#fff', mt: 2, width: '100%', fontSize: "13px" }}>
         Show the world who you are (optional - this info is public)
       </Typography>
-      <Box sx={{ display: 'flex', gap: 2, mt: 2, width: '100%', justifyContent: 'space-between' }}>
-        {[0, 1, 2].map((index) => (
-          <SquareImageUpload
-            key={index}
-            onImageUpload={(imageUrl) => handleImageUpload(index, imageUrl)}
-            // imageUrl={formData[`image${index}`]}
-            image={formData.selectedImages[index]}
-            imageUrl={formData.selectedImages[index]?.file}
-            handleDeleteImage={(imageUrl) => handleDeleteImage(imageUrl)}
-            handleFavImage={(imageUrl) => handleFavImage(imageUrl)}
-            isDisabled={index > 0 && !formData.selectedImages[index - 1]}
-            size={100}
-            shape="square"
-          />
-        ))}
+      <Box
+        sx={{
+          display: 'flex',
+          overflowX: 'auto',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+          '&::-webkit-scrollbar': {
+            display: 'none',
+          },
+          maxWidth: "600px",
+        }}
+      >
+        <ImageList
+          // ref={scrollRef}
+          sx={{ display: 'flex', flexWrap: 'nowrap' }}
+          cols={5}
+        >
+          {formData.googlePhotos?.map((image, index) => (
+            <ImageListItem
+              key={index}
+              sx={{
+                width: 'auto',
+                flex: '0 0 auto',
+                border: '1px solid #ccc',
+                margin: '0 2px',
+                position: 'relative',
+              }}
+            >
+              <img
+                src={image}
+                alt={`place-${index}`}
+                style={{
+                  height: '120px',
+                  width: '120px',
+                  objectFit: 'cover',
+                }}
+              />
+              <Box sx={{ position: 'absolute', top: 0, right: 0 }}>
+                <IconButton
+                  onClick={() => handleDeleteImage(index)}
+                  sx={{
+                    color: deletedIcons[index] ? 'red' : 'black',
+                    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                    '&:hover': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                    },
+                    margin: '2px',
+                  }}
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </Box>
+              <Box sx={{ position: 'absolute', bottom: 0, left: 0 }}>
+                <IconButton
+                  onClick={() => handleFavImage(index)}
+                  sx={{
+                    color: favoriteIcons[index] ? 'red' : 'black',
+                    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                    '&:hover': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                    },
+                    margin: '2px',
+                  }}
+                >
+                  {favoriteIcons[index] ? (
+                    <FavoriteIcon />
+                  ) : (
+                    <FavoriteBorderIcon />
+                  )}
+                </IconButton>
+              </Box>
+            </ImageListItem>
+          ))}
+        </ImageList>
       </Box>
+
     </Box>
   );
 };

@@ -21,22 +21,29 @@ const BusinessProfileSetupForm = () => {
     const { referralId, user } = useUserContext();
     const [errors, setErrors] = useState({});
     const [formData, setFormData] = useState({
-        firstName: "",
-        lastName: '',
-        phoneNumber: '',
-        location: '',
-        tagLine: '',
-        shortBio: '',
-        // image1: null,
-        // image2: null,
-        // image3: null,
-        facebook: '',
-        twitter: '',
-        linkedin: '',
-        youtube: '',
-        template: '1',
-        selectedImages: [],
-        favImage: '',
+        businessName: "",
+        location: "",
+        addressLine1: "",
+        addressLine2: "",
+        city: "",
+        state: "",
+        country: "",
+        zip: "",
+        latitude: "",
+        longitude: "",
+        phoneNumber: "",
+        googleRating: "",
+        googlePhotos: [],
+        favImage: "",
+        priceLevel: "",
+        googleId: "",
+        types: [],
+        yelp: "",
+        google: "",
+        website: "",
+        tagline:"",
+        bio:"",
+        template: '1'
     });
 
     useEffect(() => {
@@ -53,46 +60,9 @@ const BusinessProfileSetupForm = () => {
         }));
     };
 
-    const handleImageUpload = (index, file) => {
-        // const newSelectedImages = [...formData.selectedImages, file];
-        // setFormData(prev => ({
-        //   ...prev,
-        //   [`image${index}`]: file,
-        //   selectedImages: newSelectedImages,
-        // }));
-        let currentIndex = formData.selectedImages.length;
-        const fileObj = {
-            index: currentIndex,
-            file: file,
-            coverPhoto: currentIndex + index === 0 && !formData.favImage, // Only set the first new image as cover if there's no favorite image
-        };
-        const newSelectedImages = [...formData.selectedImages, fileObj];
-        setFormData(prev => ({
-            ...prev,
-            selectedImages: newSelectedImages,
-        }));
-    };
-
-    const handleDeleteImage = (imageUrl) => {
-        const updatedImages = formData.selectedImages.filter((img) => img.file.name != imageUrl.name);
-        setFormData((prev) => ({
-            ...prev,
-            selectedImages: updatedImages,
-        }));
-    }
-
-    const handleFavImage = (imageUrl) => {
-        const updatedImages = formData.selectedImages.map((img) => ({ ...img, coverPhoto: img.file.name === imageUrl.name }));
-        setFormData((prev) => ({
-            ...prev,
-            selectedImages: updatedImages,
-        }));
-    }
-
-
     const validateRequiredFields = () => {
         const newErrors = {};
-        ["firstName", "lastName", "location", "phoneNumber"].forEach((field) => {
+        ["businessName"].forEach((field) => {
             if (!formData[field]) {
                 newErrors[field] = `${field} is required`;
             }
@@ -113,38 +83,32 @@ const BusinessProfileSetupForm = () => {
     const handleNext = async () => {
         // console.log("activeStep", activeStep);
         if (activeStep === steps.length - 1) {
+            console.log('form data before submission', formData);
             const data = new FormData();
-            data.append("user_uid", userId);
-            data.append("profile_first_name", formData.firstName);
-            data.append("profile_last_name", formData.lastName);
-            data.append("profile_phone", formData.phoneNumber);
-            // data.append("profile_location", formData.location);
-            data.append("profile_tag_line", formData.tagLine);
-            data.append("profile_short_bio", formData.shortBio);
-            data.append("profile_facebook_link", formData.facebook);
-            data.append("profile_twitter_link", formData.twitter);
-            data.append("profile_linkedin_link", formData.linkedin);
-            data.append("profile_youtube_link", formData.youtube);
-            data.append("profile_template", formData.template);
-            data.append("Profile_referred_by_user_id", referralId);
+            // data.append("profile_uid", userId);
+            data.append("profile_uid", "110-000007");
+            data.append("business_name", formData.businessName);
+            data.append("business_address_line_1", formData.addressLine1);
+            data.append("business_city", formData.city);
+            data.append("business_state", formData.state);
+            data.append("business_country", formData.country);
+            data.append("business_zip_code", formData.zip);
+            data.append("business_latitude", formData.latitude);
+            data.append("business_longitude", formData.longitude);
+            data.append("business_phone_number", formData.phoneNumber);
+            data.append("business_phone_number", formData.phoneNumber);
+            data.append("business_google_rating", formData.googleRating);
+            data.append("business_google_photos", formData.googlePhotos);
+            data.append("business_favorite_image", formData.favImage);
+            data.append("business_price_level", formData.priceLevel);
+            data.append("business_google_id", formData.googleId);
+            // data.append("business_types", formData.types);
+            // data.append("business_tag_line", formData.tagLine);
+            // data.append("business_short_bio", formData.shortBio);
+            data.append("business_yelp", formData.yelp);
+            // data.append("business_google", formData.google);
+            data.append("business_website", formData.website);
 
-            // const imageFields = ["image1", "image2", "image3"];
-            // imageFields.forEach((field, index) => {
-            //   if (formData[field]) {
-            //     data.append(`img_${index}`, formData[field]);
-            //   }
-            // });
-
-            let i = 0;
-            for (const file of formData.selectedImages) {
-                let key = `img_${i++}`;
-                data.append(key, file.file);
-                if (file.coverPhoto) {
-                    data.append("img_favorite", key);
-                }
-            }
-            // console.log("userId", formData.selectedImages);
-            // console.log('formdata is', formData);
             try {
                 const response = await axios.post(`${APIConfig.baseURL.dev}/business`, data, {
                     headers: {
@@ -153,9 +117,7 @@ const BusinessProfileSetupForm = () => {
                 });
                 console.log("response in business setup", response);
                 if (response.status === 200) {
-                    navigate("/profile", {
-                        state: { userId: userId },
-                    });
+                    navigate("/businessProfile");
                 } else {
                     console.log("Error finishing profile setup");
                 }
@@ -186,7 +148,7 @@ const BusinessProfileSetupForm = () => {
 
     const steps = [
         {
-            component: <BusinessBasicInfoStep formData={formData} handleChange={handleChange} errors={errors} />,
+            component: <BusinessBasicInfoStep formData={formData} handleChange={handleChange} errors={errors} setFormData={setFormData} />,
             title: "Welcome to Every Circle!",
             subtitle: "Let's Build Your Business Page!"
         },
@@ -194,9 +156,7 @@ const BusinessProfileSetupForm = () => {
             component: <OptionalBusinessInfoStep
                 formData={formData}
                 handleChange={handleChange}
-                handleImageUpload={handleImageUpload}
-                handleDeleteImage={handleDeleteImage}
-                handleFavImage={handleFavImage}
+                setFormData={setFormData}
             />,
             title: "Optional Info"
         },
