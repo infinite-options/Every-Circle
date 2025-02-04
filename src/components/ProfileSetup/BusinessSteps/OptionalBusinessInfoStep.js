@@ -70,7 +70,6 @@ const OptionalBusinessInfoStep = ({ formData, handleChange, setFormData }) => {
         }}
       >
         <ImageList
-          // ref={scrollRef}
           sx={{ display: 'flex', flexWrap: 'nowrap' }}
           cols={5}
         >

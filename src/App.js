@@ -17,6 +17,7 @@ import SelectTemplate from "./components/SelectTemplate/SelectTemplate";
 import MultiResult from "./components/search/MultiResult";
 import RecommendationForm from "./components/recommendation/RecommendationForm";
 import BusinessProfileSetupForm from "./components/ProfileSetup/BusinessProfileSetupForm";
+import BusinessProfile from "./components/BusinessProfile/BusinessProfile";
 
 const theme = createTheme({
   typography: {
@@ -46,6 +47,7 @@ function App() {
           <Route path='/profileSetup' element={<ProfileSetupForm />} />
           <Route path='/businessProfileSetup' element={<BusinessProfileSetupForm />} />
           <Route path='/profile' element={<Profile />} />
+          <Route path='/businessProfile' element={<BusinessProfile />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/account" element={<AccountDashboard />} />
           <Route path="/network" element={<Network />} />

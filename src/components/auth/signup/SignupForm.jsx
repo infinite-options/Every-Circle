@@ -116,8 +116,9 @@ const SignupForm = () => {
     e.preventDefault();
 
     if (validateForm()) {
-      setFormData((prev) => ({...prev, role:role}))
-      handleUserSignUp(formData, 'email');
+      const updatedData = {...formData, role}
+      setFormData(updatedData);
+      handleUserSignUp(updatedData, 'email');
       // console.log("Form submitted:", formData);
 
       // const userExists = await checkIfUserExists(formData.email);

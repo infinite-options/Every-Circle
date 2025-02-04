@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Typography, styled } from "@mui/material";
 
-const HeaderBox = styled(Box)({
+const HeaderBox = styled(Box)(({ backgroundColor }) => ({
     position: 'relative',
     width: '100%',
     height: '10vh',
@@ -24,10 +24,10 @@ const HeaderBox = styled(Box)({
         transform: 'scaleX(1.1)',
         zIndex: 0,
     },
-});
+}));
 
 
-export default function Header({ title }) {
+export default function Header({ title, backgroundColor }) {
     return (
         <HeaderBox>
             <Typography variant="h5" color="white" sx={{

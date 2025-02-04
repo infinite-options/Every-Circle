@@ -84,9 +84,11 @@ const BusinessProfileSetupForm = () => {
         // console.log("activeStep", activeStep);
         if (activeStep === steps.length - 1) {
             console.log('form data before submission', formData);
+            console.log('raw images', formData.googlePhotos);
+            console.log('JSON.stringify(formData.googlePhotos)', JSON.stringify(formData.googlePhotos))
             const data = new FormData();
             // data.append("profile_uid", userId);
-            data.append("profile_uid", "110-000007");
+            data.append("user_uid", userId);
             data.append("business_name", formData.businessName);
             data.append("business_address_line_1", formData.addressLine1);
             data.append("business_city", formData.city);
@@ -102,12 +104,13 @@ const BusinessProfileSetupForm = () => {
             data.append("business_favorite_image", formData.favImage);
             data.append("business_price_level", formData.priceLevel);
             data.append("business_google_id", formData.googleId);
-            // data.append("business_types", formData.types);
-            // data.append("business_tag_line", formData.tagLine);
-            // data.append("business_short_bio", formData.shortBio);
+            // data.append("business_types", JSON.stringify(formData.types));
+            data.append("business_tag_line", formData.tagLine);
+            data.append("business_short_bio", formData.shortBio);
             data.append("business_yelp", formData.yelp);
-            // data.append("business_google", formData.google);
+            data.append("business_google", formData.google);
             data.append("business_website", formData.website);
+            data.append("business_template", formData.template);
 
             try {
                 const response = await axios.post(`${APIConfig.baseURL.dev}/business`, data, {
