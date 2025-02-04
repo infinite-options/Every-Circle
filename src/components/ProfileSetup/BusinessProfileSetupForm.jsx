@@ -41,8 +41,8 @@ const BusinessProfileSetupForm = () => {
         yelp: "",
         google: "",
         website: "",
-        tagline:"",
-        bio:"",
+        tagline: "",
+        bio: "",
         template: '1'
     });
 
@@ -98,7 +98,7 @@ const BusinessProfileSetupForm = () => {
             data.append("business_phone_number", formData.phoneNumber);
             data.append("business_phone_number", formData.phoneNumber);
             data.append("business_google_rating", formData.googleRating);
-            data.append("business_google_photos", formData.googlePhotos);
+            data.append("business_google_photos", JSON.stringify(formData.googlePhotos));
             data.append("business_favorite_image", formData.favImage);
             data.append("business_price_level", formData.priceLevel);
             data.append("business_google_id", formData.googleId);

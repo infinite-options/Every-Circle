@@ -88,7 +88,7 @@ export default function RecommendationForm() {
     const getAutoCompleteData = (data) => {
         console.log('data in get', data)
         const photos = data?.photos?.map((photo) => photo.getUrl()) || [];
-        console.log("photos--", photos);
+        console.log("photos--", photos, typeof(photos));
         setFormData(prev => ({
             ...prev,
             businessName: data.name || "",
@@ -122,7 +122,6 @@ export default function RecommendationForm() {
             form.append('rating_business_city', formData.city);
             form.append('rating_business_state', formData.state);
             form.append('rating_business_country', formData.country);
-            form.append('rating_business_country', formData.country);
             form.append('rating_business_zip_code', formData.zip);
             form.append('rating_business_latitude', formData.latitude);
             form.append('rating_business_longitude', formData.longitude);
@@ -136,7 +135,7 @@ export default function RecommendationForm() {
             form.append('rating_email', formData.email);
             form.append('rating_business_google_id', formData.googleId);
             form.append('rating_googleRating', formData.googleRating);
-            form.append('rating_googlePhotos', formData.googlePhotos);
+            form.append('rating_googlePhotos', JSON.stringify(formData.googlePhotos));
             form.append('rating_priceLevel', formData.priceLevel);
 
             //upload image
