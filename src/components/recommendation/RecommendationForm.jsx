@@ -108,7 +108,8 @@ export default function RecommendationForm() {
             country: data.country || "",
             zip: data.zip || "",
             latitude: data.geometry.location.lat() || "",
-            longitude: data.geometry.location.lng() || ""
+            longitude: data.geometry.location.lng() || "",
+            types: data.types || []
         }));
     }
 
@@ -140,6 +141,7 @@ export default function RecommendationForm() {
             form.append('rating_business_google_rating', formData.googleRating);
             form.append('rating_business_google_photos', JSON.stringify(formData.googlePhotos));
             form.append('rating_business_price_level', formData.priceLevel);
+            // form.append('rating_business_types', JSON.stringify(formData.types))
 
             //upload image
             if (formData.receiptImage) {

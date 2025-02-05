@@ -33,6 +33,7 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
       boxShadow: 3,
       border: "1px solid rgba(255, 255, 255, 0.1)",
       overflowY: "auto",
+      flexGrow: 1, 
       "::-webkit-scrollbar": {
         width: "5px",
       },
@@ -223,7 +224,7 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
               display: "flex",
               justifyContent: "space-evenly",
               alignItems: "center",
-              mb: 3
+              mb: 3,
             }}
           >
             {/* Website Icon */}

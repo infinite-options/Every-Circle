@@ -18,9 +18,9 @@ import { useUserContext } from "../contexts/UserContext";
 export default function ShowTemplate() {
     const { state } = useLocation();
     const navigate = useNavigate();
-    const { data, searchString, searchResult } = state;
-    const [template, setTemplate] = useState(0);
-
+    const { data, searchString, searchResult, navigatingFrom } = state;
+    const [template, setTemplate] = useState(data.business_template || 0);
+    const otherImages = data?.business_google_photos ? JSON.parse(data.business_google_photos)?.filter((photo) => photo !== data.business_favorite_image) : [];
 
     const templates = [
         {
@@ -59,8 +59,8 @@ export default function ShowTemplate() {
 
     return (
         <StyledContainer>
-            <Header title="Business Info" />
-            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, mt: 2, width: "100%" }}>
+            {/* <Header title="Business Info" /> */}
+            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, width: "100%", height: "100%", flexGrow: 1 }}>
                 <Box sx={{ display: "flex", alignItems: "center", width: "100%", position: "relative", mt: 2 }}>
                     <IconButton sx={{ position: "absolute", left: 0 }} onClick={handleback}>
                         <ArrowBackIcon />
@@ -69,20 +69,26 @@ export default function ShowTemplate() {
                 <Box sx={{
                     width: '100%',
                     height: '100%',
-                    padding: "0px 20px"
+                    minHeight: '100%',
+                    // padding: "0px 20px",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    display: "flex",
+                    flexDirection: "column",
+                    flex: 1
                 }}>
                     <SelectedTemplate
                         name={data.business_name}
-                        tagLine={data.business_tagLine || ''}
+                        tagLine={data.business_tag_line || ''}
                         phoneNumber={data.business_phone_number || ""}
-                        bio={data.business_shortBio || 'Your bio will appear here'}
+                        bio={data.business_short_bio || 'Your bio will appear here'}
                         location={`${data.business_city || ''}, ${data.business_state || ''}, ${data.business_country || ''}` || 'Location'}
                         avatarUrl={data.business_favorite_image}
-                        imageList={data.business_google_photos}
+                        imageList={otherImages}
                         yelp={data.business_yelp}
                         google={data.business_google}
                         website={data.business_website}
-                        rating={data.rating_description}
+                        rating={navigatingFrom === "rating" ? data.rating_description : ""}
                         role={"business"} // display the details of the business
                     />
                 </Box>

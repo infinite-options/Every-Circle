@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { Box, Container, TextField, InputAdornment, Rating, Link } from "@mui/material";
+import { Box, Container, TextField, InputAdornment, Rating, Link, Typography, Button } from "@mui/material";
 import SearchIcon from '@mui/icons-material/Search';
 import Header from "../common/Header";
 import NavigationBar from "../navigation/NavigationBar";
@@ -83,47 +83,137 @@ export default function Search() {
       flex: 1,
       valueGetter: (params) => params?.row?.rating_updated_at_timestamp || "None"
     },
-    // {
-    //   field: 'name', headerName: 'Name', flex: 150,
-    //   renderCell: (params) => {
-    // // console.log(params.value);
-    // const directList = directData.filter(item => item.degree === 0);
-    // // console.log("directList is: ", directList);
-    // return <Link onClick={() => {
-    //   const directList = directData.filter(item => item.name === params.value);
-    //   console.log("directList is: ", directList);
-    //   if (directList.length == 1) {
-    //     navigate("/showTemplate", { state: { name: params.value } });
-    //   } else {
-    //     // navigate("/multiResult", { state: { data: directList } });
-    //     navigate("/showTemplate", { state: { name: params.value } });
-    //   }
-    // }} sx={{ cursor: "pointer" }}>{params.value}</Link>
-    //   }
-    // },
     {
       field: "business_name",
       headerName: "Name",
-      flex: 1,
+      flex: 2, // Adjust for more space
       renderCell: (params) => (
-        <Link
-          style={{ cursor: "pointer" }}
-          onClick={() => navigate("/showTemplate", { state: { data: params.row, searchResult: searchResult, searchString: searchString } })}
-        >
-          {params.value}
-        </Link>
+        <Box sx={{ display: "flex", flexDirection: "column", width: "100%", height: "100%" }}>
+          {/* Business Name as a Clickable Link */}
+          {/* <Box sx={{height:"50px"}}>
+            <Link
+              style={{
+                border: "1px solid green",
+                cursor: "pointer",
+                textDecoration: "none",
+                color: "#1976d2",
+                fontWeight: "bold",
+                whiteSpace: "normal", // Allow text to wrap
+                width: "100%", // Ensure it takes full width
+              }}
+              onClick={() =>
+                navigate("/showTemplate", {
+                  state: {
+                    data: params.row,
+                    searchResult: searchResult,
+                    searchString: searchString,
+                    navigatingFrom: "link",
+                  },
+                })
+              }
+            >
+              {params.value}
+            </Link>
+          </Box> */}
+
+          <Box sx={{ width: "100%" }}>
+            <Typography
+              sx={{
+                display: "block",
+              }}
+            >
+              <Link style={{
+                cursor: "pointer",
+                textDecoration: "none",
+                color: "#1976d2",
+                fontWeight: "bold",
+                whiteSpace: "normal",
+                width: "100%",
+              }}
+                onClick={() =>
+                  navigate("/showTemplate", {
+                    state: {
+                      data: params.row,
+                      searchResult: searchResult,
+                      searchString: searchString,
+                      navigatingFrom: "link",
+                    },
+                  })
+                }>
+                {params.value}
+              </Link>
+            </Typography>
+          </Box>
+
+          {/* Rating Below the Link */}
+          {params.row.rating_description && (
+            <Box sx={{ width: "100%" }}>
+              <Typography
+                sx={{
+                  display: "block",
+                  fontSize: "0.8rem",
+                  color: "#666",
+                  whiteSpace: "normal",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  width: "100%",
+                  mt: 1,
+                }}
+              >
+                {params.row.rating_description}
+              </Typography>
+            </Box>
+          )}
+
+          {/* Images Below the rating */}
+          {params.row.rating_images_url && (
+            <Box sx={{ display: "flex", gap: 1, mt: 1, flexWrap: "wrap" }}>
+              {JSON.parse(params.row.rating_images_url).map((imageUrl, index) => (
+                <Box
+                  key={index}
+                  sx={{
+                    width: 80, // Fixed width for square box
+                    height: 80, // Fixed height for square box
+                    borderRadius: 1, 
+                    overflow: "hidden",
+                    border: "1px solid #ddd", 
+                  }}
+                >
+                  <img
+                    src={imageUrl}
+                    alt={`Rating Image ${index + 1}`}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover", 
+                    }}
+                  />
+                </Box>
+              ))}
+            </Box>
+          )}
+        </Box>
       ),
     },
+
     {
       field: 'rating_star',
       headerName: 'Rating',
       flex: 1,
       renderCell: (params) => (
-        <Rating
-          value={params.value}
-          readOnly
-          size="small"
-        />
+        <Link
+          style={{ cursor: "pointer", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => navigate("/showTemplate", {
+            state: {
+              data: params.row,
+              searchResult: searchResult,
+              searchString: searchString,
+              navigatingFrom: "rating",
+            }
+          })}
+        >
+          <Rating value={params.value} readOnly size="small" sx={{ alignContent: "center", mt: 2 }} />
+        </Link>
       ),
     },
   ];
@@ -135,7 +225,7 @@ export default function Search() {
       columns={columns}
       getRowId={(row) => row.rating_uid}
       hideFooter
-      autoHeight
+      rowHeight={150}
       localeText={{
         noRowsLabel: "No Recommendations",
       }}
@@ -145,6 +235,9 @@ export default function Search() {
           border: "none",
           fontSize: "14px",
           color: "rgba(26, 26, 26, 0.8)",
+          display: "flex",
+          alignItems: "center", // Center content vertically
+          padding: "8px", // Add padding to cells
         },
         "& .MuiDataGrid-columnHeaders": {
           display: "none",
