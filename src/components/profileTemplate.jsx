@@ -8,7 +8,8 @@ import {
   Paper,
   Box,
 } from "@mui/material";
-import { LocationOn, Person, PhoneAndroid } from "@mui/icons-material";
+import { LocationOn, Person, PhoneAndroid  } from "@mui/icons-material";
+import CommentIcon from '@mui/icons-material/Comment';
 import yelpIcon from "../assets/yelp-icon-small.png";
 import GoogleIcon from "../assets/google-small-icon.webp";
 import websiteIcon from "../assets/website-black-icon.png";
@@ -21,7 +22,7 @@ import twitterIcon from "../assets/x-icon.webp";
 
 
 // Template 0: 
-const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList }) => (
+const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating }) => (
   <Card
     sx={{
       width: "100%",
@@ -33,19 +34,19 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
       border: "1px solid rgba(255, 255, 255, 0.1)",
       overflowY: "auto",
       "::-webkit-scrollbar": {
-        width: "5px", 
+        width: "5px",
       },
       "::-webkit-scrollbar-track": {
-        background: "rgba(255, 255, 255, 0.1)", 
+        background: "rgba(255, 255, 255, 0.1)",
         borderRadius: "10px",
       },
-     "::-webkit-scrollbar-thumb": {
-      background: "rgba(255, 255, 255, 0.3)", 
-      backdropFilter: "blur(5px)", 
-      "&:hover": {
-        background: "rgba(255, 255, 255, 0.6)", // Brighter on hover
+      "::-webkit-scrollbar-thumb": {
+        background: "rgba(255, 255, 255, 0.3)",
+        backdropFilter: "blur(5px)",
+        "&:hover": {
+          background: "rgba(255, 255, 255, 0.6)", // Brighter on hover
+        },
       },
-    },
     }}
   >
     <CardContent sx={{ pt: 3, px: 3, pb: 3 }}>
@@ -81,7 +82,7 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
           // src={imageList?.[0]}
           src={typeof imageList?.[0] === "object" && imageList?.[0] !== null
             ? URL.createObjectURL(imageList[0].file)
-            : (typeof imageList[0] === "string" ? imageList[0] : null)}
+            : (typeof imageList?.[0] === "string" ? imageList?.[0] : null)}
           sx={{
             width: 80,
             height: 80,
@@ -98,7 +99,7 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
         <Avatar
           src={typeof imageList?.[1] === "object" && imageList?.[1] !== null
             ? URL.createObjectURL(imageList[1].file)
-            : (typeof imageList[1] === "string" ? imageList[1] : null)}
+            : (typeof imageList?.[1] === "string" ? imageList?.[1] : null)}
           sx={{
             width: 80,
             height: 80,
@@ -167,6 +168,22 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
           display: "block",
         }}
       >
+        {rating && (
+          <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            color: "text.secondary",
+            mb: 2
+          }}
+        >
+          <CommentIcon sx={{ mr: 1, fontSize: 18, color: "#CAAC44" }} />
+          <Typography variant="body2" sx={{ color: "#FFFFFF" }}>
+            {rating}
+          </Typography>
+        </Box>
+        )}
+
         {/* Phone Number Section */}
         <Box
           sx={{
