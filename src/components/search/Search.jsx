@@ -224,7 +224,7 @@ export default function Search() {
             }
           })}
         >
-          <Rating value={params.value} readOnly size="small" sx={{ alignContent: "center", mt: 2 }} />
+          <Rating value={params.value} readOnly size="small" sx={{ alignContent: "center"}} />
         </Link>
       ),
     },
