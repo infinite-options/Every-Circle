@@ -10,20 +10,21 @@ import ImageList from '@mui/material/ImageList';
 import ImageListItem from '@mui/material/ImageListItem';
 
 const OptionalBusinessInfoStep = ({ formData, handleChange, setFormData }) => {
+  console.log('formData in optionalBusinessInfostep', formData);
   const [favoriteIcons, setFavoriteIcons] = useState(
-		formData?.googlePhotos ? formData?.googlePhotos.map((image, index) => index === 0): []);
+		formData?.businessGooglePhotos ? formData?.businessGooglePhotos.map((image, index) => index === 0): []);
 
     const [deletedIcons, setDeletedIcons] = useState(
-      formData?.googlePhotos ? new Array(formData?.googlePhotos.length).fill(false) : []);
+      formData?.businessGooglePhotos ? new Array(formData?.businessGooglePhotos.length).fill(false) : []);
 
   const handleDeleteImage = (idx) => {
-    const updatedGooglePhotos = formData.googlePhotos.filter((photo, index) => index !== idx);
+    const updatedGooglePhotos = formData.businessGooglePhotos.filter((photo, index) => index !== idx);
     // console.log(updatedGooglePhotos);
-    setFormData((prev) => ({...prev, googlePhotos : updatedGooglePhotos}));
+    setFormData((prev) => ({...prev, businessGooglePhotos : updatedGooglePhotos}));
   }
 
   const handleFavImage = (idx) => {
-    const newFav = formData.googlePhotos[idx];
+    const newFav = formData.businessGooglePhotos[idx];
     setFormData((prev) => ({...prev, favImage: newFav}));
     const updatedFavIcons = favoriteIcons.map((_, index) => index === idx ? true : false);
     // console.log(updatedFavIcons, idx);
@@ -73,7 +74,7 @@ const OptionalBusinessInfoStep = ({ formData, handleChange, setFormData }) => {
           sx={{ display: 'flex', flexWrap: 'nowrap' }}
           cols={5}
         >
-          {formData.googlePhotos?.map((image, index) => (
+          {formData.businessGooglePhotos?.map((image, index) => (
             <ImageListItem
               key={index}
               sx={{
