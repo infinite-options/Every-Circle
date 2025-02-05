@@ -81,7 +81,19 @@ export default function Search() {
       field: 'rating_updated_at_timestamp',
       headerName: 'Date',
       flex: 1,
-      valueGetter: (params) => params?.row?.rating_updated_at_timestamp || "None"
+      renderCell: (params) => (
+        <Typography
+          sx={{
+            fontSize: "14px",
+            color: "rgba(26, 26, 26, 0.8)",
+            whiteSpace: "nowrap", 
+            overflow: "hidden",
+            textOverflow: "ellipsis", 
+          }}
+        >
+          {params?.row?.rating_updated_at_timestamp ? dayjs(params.row.rating_updated_at_timestamp).format("MM-DD-YYYY") : "None"}
+        </Typography>
+      ),
     },
     {
       field: "business_name",
@@ -174,9 +186,9 @@ export default function Search() {
                   sx={{
                     width: 80, // Fixed width for square box
                     height: 80, // Fixed height for square box
-                    borderRadius: 1, 
+                    borderRadius: 1,
                     overflow: "hidden",
-                    border: "1px solid #ddd", 
+                    border: "1px solid #ddd",
                   }}
                 >
                   <img
@@ -185,7 +197,7 @@ export default function Search() {
                     style={{
                       width: "100%",
                       height: "100%",
-                      objectFit: "cover", 
+                      objectFit: "cover",
                     }}
                   />
                 </Box>
@@ -235,8 +247,8 @@ export default function Search() {
           border: "none",
           fontSize: "14px",
           color: "rgba(26, 26, 26, 0.8)",
-          display: "flex",
-          alignItems: "center", // Center content vertically
+          // display: "flex",
+          // alignItems: "center", // Center content vertically
           padding: "8px", // Add padding to cells
         },
         "& .MuiDataGrid-columnHeaders": {
