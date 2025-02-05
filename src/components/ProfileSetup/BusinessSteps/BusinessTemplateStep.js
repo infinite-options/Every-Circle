@@ -1,23 +1,23 @@
 import { Box, IconButton } from '@mui/material';
 import { ArrowBack, ArrowForward } from '@mui/icons-material';
 import { useState } from 'react';
-import { 
+import {
   DarkTemplate,
-  ModernTemplate, 
-  MinimalistTemplate, 
-  SplitTemplate, 
-  CreativeTemplate 
+  ModernTemplate,
+  MinimalistTemplate,
+  SplitTemplate,
+  CreativeTemplate
 } from '../../profileTemplate';
 
 const BusinessTemplateStep = ({ formData, handleTemplateSelect, role }) => {
+  console.log('form data in business template step', formData);
   const [currentTemplate, setCurrentTemplate] = useState(0);
   const avatarUrl = formData.favImage;
-  const businessGooglePhotos = formData.businessGooglePhotos.filter((photo) => photo != avatarUrl);
-  console.log('form data in business template step', formData);
+  const businessGooglePhotos = formData.businessGooglePhotos.filter((photo) => photo != formData.favImage);
   const templates = [
     {
       component: DarkTemplate,
-      value: 'modern',
+      value: 'Dark',
       id: 0,
     },
     {
@@ -51,9 +51,9 @@ const BusinessTemplateStep = ({ formData, handleTemplateSelect, role }) => {
     setCurrentTemplate((prev) => (prev - 1 + templates.length) % templates.length);
     handleTemplateSelect(templates[(currentTemplate - 1 + templates.length) % templates.length].id);
   };
-  
+
   return (
-    <Box sx={{ 
+    <Box sx={{
       position: 'relative',
       display: 'flex',
       alignItems: 'center',
@@ -63,9 +63,9 @@ const BusinessTemplateStep = ({ formData, handleTemplateSelect, role }) => {
       my: 1
     }}>
       {/* Previous Arrow */}
-      <IconButton 
+      <IconButton
         onClick={handlePrev}
-        sx={{ 
+        sx={{
           backgroundColor: 'rgba(255, 255, 255, 0.8)',
           '&:hover': {
             backgroundColor: 'rgba(255, 255, 255, 0.9)',
@@ -78,13 +78,15 @@ const BusinessTemplateStep = ({ formData, handleTemplateSelect, role }) => {
       </IconButton>
 
       {/* Template Container */}
-      <Box sx={{ 
+      <Box sx={{
         width: '400px',
-        height: '500px',
+        minHeight: '500px',
         position: 'relative',
         overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column'
       }}>
-        <Box sx={{ 
+        <Box sx={{
           position: 'absolute',
           display: 'flex',
           transition: 'transform 0.3s ease-in-out',
@@ -93,7 +95,7 @@ const BusinessTemplateStep = ({ formData, handleTemplateSelect, role }) => {
           height: '100%',
         }}>
           {templates.map((template, index) => (
-            <Box 
+            <Box
               key={index}
               sx={{
                 minWidth: '100%',
@@ -108,7 +110,7 @@ const BusinessTemplateStep = ({ formData, handleTemplateSelect, role }) => {
                 tagLine={formData.tagLine || ''}
                 phoneNumber={formData.phoneNumber || ""}
                 bio={formData.shortBio || 'Your bio will appear here'}
-                location={`${formData.city || ''} ${formData.state || ''} ${formData.country || ''}` || 'Location'}
+                location={`${formData.city || ''}, ${formData.state || ''}, ${formData.country || ''}` || 'Location'}
                 avatarUrl={avatarUrl}
                 imageList={businessGooglePhotos}
                 yelp={formData.yelp}
@@ -122,9 +124,9 @@ const BusinessTemplateStep = ({ formData, handleTemplateSelect, role }) => {
       </Box>
 
       {/* Next Arrow */}
-      <IconButton 
+      <IconButton
         onClick={handleNext}
-        sx={{ 
+        sx={{
           backgroundColor: 'rgba(255, 255, 255, 0.8)',
           '&:hover': {
             backgroundColor: 'rgba(255, 255, 255, 0.9)',

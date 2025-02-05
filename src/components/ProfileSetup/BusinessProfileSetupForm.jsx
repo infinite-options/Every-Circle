@@ -33,7 +33,7 @@ const BusinessProfileSetupForm = () => {
         longitude: "",
         phoneNumber: "",
         googleRating: "",
-        googlePhotos: [],
+        businessGooglePhotos: [],
         favImage: "",
         priceLevel: "",
         googleId: "",
@@ -84,8 +84,8 @@ const BusinessProfileSetupForm = () => {
         // console.log("activeStep", activeStep);
         if (activeStep === steps.length - 1) {
             console.log('form data before submission', formData);
-            console.log('raw images', formData.googlePhotos);
-            console.log('JSON.stringify(formData.googlePhotos)', JSON.stringify(formData.googlePhotos))
+            console.log('raw images', formData.businessGooglePhotos);
+            console.log('JSON.stringify(formData.businessGooglePhotos)', JSON.stringify(formData.businessGooglePhotos))
             const data = new FormData();
             // data.append("profile_uid", userId);
             data.append("user_uid", userId);
@@ -100,7 +100,7 @@ const BusinessProfileSetupForm = () => {
             data.append("business_phone_number", formData.phoneNumber);
             data.append("business_phone_number", formData.phoneNumber);
             data.append("business_google_rating", formData.googleRating);
-            data.append("business_google_photos", JSON.stringify(formData.googlePhotos));
+            data.append("business_google_photos", JSON.stringify(formData.businessGooglePhotos));
             data.append("business_favorite_image", formData.favImage);
             data.append("business_price_level", formData.priceLevel);
             data.append("business_google_id", formData.googleId);

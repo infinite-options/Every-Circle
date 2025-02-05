@@ -25,11 +25,27 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
   <Card
     sx={{
       width: "100%",
-      height: "100%",
+      minHeight: "100%",
+      maxHeight: "100%",
       background: "linear-gradient(135deg, #120F0E 0%, #263542 50%, #120F0E 100%)",
       borderRadius: 2,
       boxShadow: 3,
       border: "1px solid rgba(255, 255, 255, 0.1)",
+      overflowY: "auto",
+      "::-webkit-scrollbar": {
+        width: "5px", 
+      },
+      "::-webkit-scrollbar-track": {
+        background: "rgba(255, 255, 255, 0.1)", 
+        borderRadius: "10px",
+      },
+     "::-webkit-scrollbar-thumb": {
+      background: "rgba(255, 255, 255, 0.3)", 
+      backdropFilter: "blur(5px)", 
+      "&:hover": {
+        background: "rgba(255, 255, 255, 0.6)", // Brighter on hover
+      },
+    },
     }}
   >
     <CardContent sx={{ pt: 3, px: 3, pb: 3 }}>
@@ -63,8 +79,8 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
         {/* Left Avatar */}
         <Avatar
           // src={imageList?.[0]}
-          src={ typeof imageList?.[0] === "object" && imageList?.[0] !== null 
-            ? URL.createObjectURL(imageList[0].file) 
+          src={typeof imageList?.[0] === "object" && imageList?.[0] !== null
+            ? URL.createObjectURL(imageList[0].file)
             : (typeof imageList[0] === "string" ? imageList[0] : null)}
           sx={{
             width: 80,
@@ -80,9 +96,9 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
 
         {/* Right Avatar */}
         <Avatar
-         src={ typeof imageList?.[1] === "object" && imageList?.[1] !== null 
-          ? URL.createObjectURL(imageList[1].file) 
-          : (typeof imageList[1] === "string" ? imageList[1] : null)}
+          src={typeof imageList?.[1] === "object" && imageList?.[1] !== null
+            ? URL.createObjectURL(imageList[1].file)
+            : (typeof imageList[1] === "string" ? imageList[1] : null)}
           sx={{
             width: 80,
             height: 80,
@@ -240,7 +256,7 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
               <img
                 src={facebookIcon}
                 alt="Facebook"
-                style={{ width: 30, height: 30, cursor: "pointer", borderRadius:"50%" }}
+                style={{ width: 30, height: 30, cursor: "pointer", borderRadius: "50%" }}
               />
             </a>
 
@@ -250,7 +266,7 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
               <img
                 src={twitterIcon}
                 alt="Twitter"
-                style={{ width: 30, height: 30, cursor: "pointer", borderRadius:"50%" }}
+                style={{ width: 30, height: 30, cursor: "pointer", borderRadius: "50%" }}
               />
             </a>
 

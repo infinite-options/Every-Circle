@@ -14,7 +14,7 @@ const BasicInfoStep = ({ formData, handleChange, errors, setFormData }) => {
       website: data.website || "",
       googleId: data.place_id || "",
       googleRating: data.rating || "",
-      googlePhotos: photos,
+      businessGooglePhotos: photos,
       favImage: photos[0] || "",
       priceLevel: data.price_level || "",
       addressLine1: data.addressLine1 || "",
