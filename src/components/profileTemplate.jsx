@@ -9,6 +9,275 @@ import {
   Box,
 } from "@mui/material";
 import { LocationOn, Person, PhoneAndroid } from "@mui/icons-material";
+import yelpIcon from "../assets/yelp-icon-small.png";
+import GoogleIcon from "../assets/google-small-icon.webp";
+import websiteIcon from "../assets/website-black-icon.png";
+
+
+import facebookIcon from "../assets/fb-icon.png";
+import youtubeIcon from "../assets/yt-icon.png";
+import linkedinIcon from "../assets/linkedin-icon.webp";
+import twitterIcon from "../assets/x-icon.webp";
+
+
+// Template 0: 
+const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList }) => (
+  <Card
+    sx={{
+      width: "100%",
+      height: "100%",
+      background: "linear-gradient(135deg, #120F0E 0%, #263542 50%, #120F0E 100%)",
+      borderRadius: 2,
+      boxShadow: 3,
+      border: "1px solid rgba(255, 255, 255, 0.1)",
+    }}
+  >
+    <CardContent sx={{ pt: 3, px: 3, pb: 3 }}>
+      {/* Name Section */}
+      <Typography
+        variant="h5"
+        sx={{
+          mb: 0.5,
+          textAlign: "center",
+          color: "#CAAC44",
+          fontFamily: "'Playfair Display', serif",
+          fontWeight: "bold",
+          fontSize: "1.8rem",
+          letterSpacing: "0.05em",
+        }}
+      >
+        {name}
+      </Typography>
+
+      {/* Avatar Section */}
+      <Box
+        sx={{
+          position: "relative",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          gap: 5,
+          mt: 1
+        }}
+      >
+        {/* Left Avatar */}
+        <Avatar
+          // src={imageList?.[0]}
+          src={ typeof imageList?.[0] === "object" && imageList?.[0] !== null 
+            ? URL.createObjectURL(imageList[0].file) 
+            : (typeof imageList[0] === "string" ? imageList[0] : null)}
+          sx={{
+            width: 80,
+            height: 80,
+            border: 3,
+            borderColor: "white",
+            boxShadow: 3,
+            zIndex: 1,
+          }}
+        >
+          {!avatarUrl && <Person />} {/* Fallback icon if no avatar */}
+        </Avatar>
+
+        {/* Right Avatar */}
+        <Avatar
+         src={ typeof imageList?.[1] === "object" && imageList?.[1] !== null 
+          ? URL.createObjectURL(imageList[1].file) 
+          : (typeof imageList[1] === "string" ? imageList[1] : null)}
+          sx={{
+            width: 80,
+            height: 80,
+            border: 3,
+            borderColor: "white",
+            boxShadow: 3,
+            zIndex: 1,
+          }}
+        >
+          {!avatarUrl && <Person />} {/* Fallback icon if no avatar */}
+        </Avatar>
+
+        {/* Center Avatar (Overlapping) */}
+        <Avatar
+          src={avatarUrl}
+          sx={{
+            width: 80,
+            height: 80,
+            border: 3,
+            borderColor: "white",
+            boxShadow: 3,
+            position: "absolute",
+            zIndex: 2,
+          }}
+        >
+          {!avatarUrl && <Person />} {/* Fallback icon if no avatar */}
+        </Avatar>
+      </Box>
+
+      {/* Tagline Section */}
+      {tagLine && (
+        <Typography
+          sx={{
+            mt: 2,
+            fontSize: "0.9rem",
+            maxHeight: "150px",
+            overflow: "auto",
+            color: "#CAAC44",
+            fontFamily: "sans-serif",
+            lineHeight: 1.5,
+            textAlign: "center"
+          }}
+        >
+          {tagLine}
+        </Typography>
+      )}
+
+      {/* Bio Section */}
+      <Box>
+        <Typography
+          sx={{
+            mt: 2,
+            fontSize: "0.9rem",
+            color: "#FFFFFF",
+            fontFamily: "sans-serif",
+            lineHeight: 1.5,
+            textAlign: "justify"
+          }}
+        >
+          {bio}
+        </Typography>
+      </Box>
+      <Box
+        sx={{
+          mt: 2,
+          display: "block",
+        }}
+      >
+        {/* Phone Number Section */}
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            color: "text.secondary",
+            mb: 2
+          }}
+        >
+          <PhoneAndroid sx={{ mr: 1, fontSize: 18, color: "#CAAC44" }} />
+          <Typography variant="body2" sx={{ color: "#FFFFFF" }}>
+            {phoneNumber}
+          </Typography>
+        </Box>
+
+        {/* Location Section */}
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            color: "text.secondary",
+          }}
+        >
+          <LocationOn sx={{ mr: 1, fontSize: 18, color: "#CAAC44" }} />
+          <Typography variant="body2" sx={{ color: "#FFFFFF" }}>
+            {location}
+          </Typography>
+        </Box>
+      </Box>
+
+      {role === "business" ? (
+        <>
+          {/* Links Section */}
+          <Box
+            sx={{
+              mt: 3,
+              display: "flex",
+              justifyContent: "space-evenly",
+              alignItems: "center",
+              mb: 3
+            }}
+          >
+            {/* Website Icon */}
+            <a href={website} target="_blank" rel="noopener noreferrer">
+              <img
+                src={websiteIcon}
+                alt="Website"
+                style={{ width: 25, height: 25, cursor: "pointer" }}
+              />
+            </a>
+
+
+            {/* Yelp Icon */}
+            <a href={yelp} target="_blank" rel="noopener noreferrer">
+              <img
+                src={yelpIcon}
+                alt="Yelp"
+                style={{ width: 25, height: 25, cursor: "pointer" }}
+              />
+            </a>
+
+            {/* Google Icon */}
+            <a href={google} target="_blank" rel="noopener noreferrer">
+              <img
+                src={GoogleIcon}
+                alt="Google"
+                style={{ width: 25, height: 25, cursor: "pointer" }}
+              />
+            </a>
+
+          </Box>
+        </>
+      ) : (
+        <>
+          {/* Links Section */}
+          <Box
+            sx={{
+              mt: 3,
+              display: "flex",
+              justifyContent: "space-evenly",
+              alignItems: "center",
+              mb: 3
+            }}
+          >
+            {/* FB Icon */}
+            <a href={facebook} target="_blank" rel="noopener noreferrer">
+              <img
+                src={facebookIcon}
+                alt="Facebook"
+                style={{ width: 30, height: 30, cursor: "pointer", borderRadius:"50%" }}
+              />
+            </a>
+
+
+            {/* Twitter Icon */}
+            <a href={twitter} target="_blank" rel="noopener noreferrer">
+              <img
+                src={twitterIcon}
+                alt="Twitter"
+                style={{ width: 30, height: 30, cursor: "pointer", borderRadius:"50%" }}
+              />
+            </a>
+
+            {/* Linkedin Icon */}
+            <a href={linkedin} target="_blank" rel="noopener noreferrer">
+              <img
+                src={linkedinIcon}
+                alt="Linkedin"
+                style={{ width: 30, height: 30, cursor: "pointer" }}
+              />
+            </a>
+
+            {/* Linkedin Icon */}
+            <a href={youtube} target="_blank" rel="noopener noreferrer">
+              <img
+                src={youtubeIcon}
+                alt="YouTube"
+                style={{ width: 30, height: 30, cursor: "pointer" }}
+              />
+            </a>
+
+          </Box>
+        </>
+      )}
+    </CardContent>
+  </Card >
+);
 
 // Template 1: Modern Card Layout
 const ModernTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube }) => (
@@ -383,4 +652,4 @@ const CreativeTemplate = ({ name, username, bio, location, avatarUrl, tagLine, p
   </Paper>
 );
 
-export { ModernTemplate, MinimalistTemplate, SplitTemplate, CreativeTemplate };
+export { DarkTemplate, ModernTemplate, MinimalistTemplate, SplitTemplate, CreativeTemplate };

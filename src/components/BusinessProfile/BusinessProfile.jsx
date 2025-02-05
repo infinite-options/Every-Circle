@@ -391,7 +391,7 @@ export default function BusinessProfile() {
                                 </Typography>
                                 <IconButton size="small" sx={{ p: 0 }}
                                     onClick={() => {
-                                        navigate("/selectTemplate", { state: { data: formData } });
+                                        navigate("/selectBusinessTemplate", { state: { data: formData } });
                                     }}
                                     disabled={!editMode}
                                 >

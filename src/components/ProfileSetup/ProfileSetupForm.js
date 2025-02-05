@@ -205,7 +205,7 @@ const ProfileSetupForm = () => {
       title: "Social Media Links"
     },
     {
-      component: <TemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect} />,
+      component: <TemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect} role={"user"}/>,
       title: "Select Your Template"
     }
   ];

@@ -4,46 +4,49 @@ import Header from "../common/Header";
 import CircleButton from "../common/CircleButton";
 import NavigationBar from "../navigation/NavigationBar";
 import { Box } from "@mui/material";
-import TemplateStep from '../ProfileSetup/Steps/TemplateStep';
+import BusinessTemplateStep from '../ProfileSetup/BusinessSteps/BusinessTemplateStep';
 import { useLocation, useNavigate } from "react-router-dom";
 import axios from 'axios';
 import APIConfig from "../../APIConfig";
 
-export default function SelectTemplate() {
+export default function SelectBusinessTemplate() {
     const location = useLocation();
     const navigate = useNavigate();
     const {data} = location.state || {};
-    const [template, setTemplate] = useState(1);
-    console.log('data in select template', data);
-    const favImage = data.favImage || data.profileImages?.[0];
-    const otherImages = data.profileImages?.filter((img) => img != favImage) || [];
+    const [template, setTemplate] = useState(0);
+    console.log('data in select businesstemplate', data);
+
     const formData = {
-        firstName: data.firstName,
-        lastName: data.lastName,
-        shortBio: data.shortBio,
-        location: data.location,
+        businessName: data.businessName,
+        city: data.city,
+        state: data.state,
+        country: data.country,
+        email: data.email,
         phoneNumber: data.phoneNumber,
-        favImage: favImage,
-        profileImages: otherImages,
-        facebook: data.facebookLink,
-        twitter: data.twitterLink,
-        linkedin: data.linkedinLink,
-        youtube: data.youtubeLink
+        tagLine: data.tagLine,
+        shortBio: data.shortBio,
+        template: data.template,
+        website: data.website,
+        yelp: data.yelp,
+        google: data.google,
+        favImage: data.favImage || data.businessGooglePhotos?.[0],
+        businessGooglePhotos: data.businessGooglePhotos,
     }
 
     const handleTemplateSelect = (template) => {
+        console.log('selected Template is', template);
         setTemplate(template);
       }
 
     const handleSelectButton = async () => {
         const form = new FormData();
-        form.append("profile_template", template);
-        form.append("profile_uid", data.profileId);
+        form.append("business_template", template);
+        form.append("business_uid", data.businessId);
         try {
-            const response = await axios.put(`${APIConfig.baseURL.dev}/profile`, form);
+            const response = await axios.put(`${APIConfig.baseURL.dev}/business`, form);
             console.log("template updated successfully", response);
             if (response.data.code === 200) {
-                navigate("/profile", {state:{editMode: "true"}})
+                navigate("/businessProfile", {state:{editMode: "true"}})
             } else {
               alert("Error updating template");
             }
@@ -56,7 +59,7 @@ export default function SelectTemplate() {
         <StyledContainer>
             <Header title="Select Template" />
             <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                <TemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect}/>
+                <BusinessTemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect} role={"business"}/>
                 <CircleButton width={100} height={100} text="Select Template" onClick={handleSelectButton}/>
             </Box>
             <NavigationBar />

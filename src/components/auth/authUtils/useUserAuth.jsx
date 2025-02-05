@@ -2,7 +2,6 @@
 
 import { useNavigate } from 'react-router-dom';
 import { checkIfUserExists, checkIfProfileExists } from '../authUtils/AuthUtils';
-import React, { useState } from 'react';
 import axios from 'axios';
 import { useUserContext } from '../../contexts/UserContext';
 
@@ -10,7 +9,7 @@ export const useUserAuth = () => {
     const navigate = useNavigate();
     const { updateUser, user } = useUserContext();
     let GOOGLE_LOGIN_PASSWORD = process.env.REACT_APP_GOOGLE_LOGIN;
-    const [role, setRole] = useState(user?.role || "");
+    // const [role, setRole] = useState(user?.role || "");
 
     const handleUserSignUp = async (userData, signupType) => {
         console.log('userData', userData);
@@ -36,7 +35,7 @@ export const useUserAuth = () => {
                     const userId = response.data.user_uid;
                     await performRedirection(userId);
                 } else {
-                    redirectToProfileSetup(response.data.user_uid, role);
+                    redirectToProfileSetup(response.data.user_uid, userData.role);
                 }
             }
         } catch (error) {
@@ -59,7 +58,7 @@ export const useUserAuth = () => {
                 userObject
             );
             const userId = response?.data?.user_uid;
-            redirectToProfileSetup(userId, role);
+            redirectToProfileSetup(userId, userData.role);
         } catch (error) {
             console.error("Error in createAndLoginUser:", error.message || error);
             throw error;
@@ -118,7 +117,7 @@ export const useUserAuth = () => {
 
                             console.log('response from login endpoint', loginResponse);
                             console.log('loginResponse?.data?.result?.user_role', loginResponse?.data?.result?.user_role)
-                            await setRole(loginResponse?.data?.result?.user_role);
+                            // await setRole(loginResponse?.data?.result?.user_role);
                             const { message, result } = loginResponse?.data;
 
                             switch (message) {
@@ -151,13 +150,12 @@ export const useUserAuth = () => {
     };
 
     const performRedirection = async (userId) => {
+        // Check if the profile exists
+        const profileResponse = await checkIfProfileExists(userId);
+        console.log('response from profile exists endpoint', profileResponse);
+        const role = profileResponse.result?.[0].user_role;
+        console.log('getting role', role);
         try {
-            // Check if the profile exists
-            const profileResponse = await checkIfProfileExists(userId);
-
-            console.log('response from profile exists endpoint', profileResponse);
-            const role = profileResponse.result?.[0].user_role;
-            console.log('getting role', role);
             if (profileResponse.result?.[0].business_uid || profileResponse.result?.[0].profile_uid) {
                 redirectToProfile(userId, role);
             } else {

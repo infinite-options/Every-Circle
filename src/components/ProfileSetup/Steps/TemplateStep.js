@@ -2,19 +2,28 @@ import { Box, IconButton } from '@mui/material';
 import { ArrowBack, ArrowForward } from '@mui/icons-material';
 import { useState } from 'react';
 import { 
+  DarkTemplate,
   ModernTemplate, 
   MinimalistTemplate, 
   SplitTemplate, 
   CreativeTemplate 
 } from '../../profileTemplate';
 
-const TemplateStep = ({ formData, handleTemplateSelect }) => {
+const TemplateStep = ({ formData, handleTemplateSelect, role }) => {
   const [currentTemplate, setCurrentTemplate] = useState(0);
-  const avatarUrl = formData.selectedImages?.find((image) => image?.coverPhoto === true) || formData.favImage || formData.selectedImages?.[0];
-  // console.log('form data in template strp', formData)
-  // console.log('avatarUrl', avatarUrl, typeof avatarUrl)
+  const avatarUrl = formData.selectedImages?.find((image) => image?.coverPhoto === true) || formData.favImage;
+  console.log('form data in template step', formData)
+  console.log('avatarUrl', avatarUrl, typeof avatarUrl)
+  //when a profile is new, the images will be an instance of file else as links
+  const imageList = formData.selectedImages?.filter((image) => image?.coverPhoto === false) || formData.profileImages
+  console.log('imagelist', imageList);
 
   const templates = [
+    {
+      component: DarkTemplate,
+      value: 'Dark',
+      id: 0,
+    },
     {
       component: ModernTemplate,
       value: 'modern',
@@ -112,6 +121,8 @@ const TemplateStep = ({ formData, handleTemplateSelect }) => {
                 twitter= {formData.twitter || ''}
                 linkedin= {formData.linkedin || ''}
                 youtube= {formData.youtube || ''}
+                imageList={imageList}
+                role={role}
               />
             </Box>
           ))}

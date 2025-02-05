@@ -18,6 +18,7 @@ import MultiResult from "./components/search/MultiResult";
 import RecommendationForm from "./components/recommendation/RecommendationForm";
 import BusinessProfileSetupForm from "./components/ProfileSetup/BusinessProfileSetupForm";
 import BusinessProfile from "./components/BusinessProfile/BusinessProfile";
+import SelectBusinessTemplate from "./components/SelectTemplate/SelectBusinessTemplate";
 
 const theme = createTheme({
   typography: {
@@ -57,6 +58,7 @@ function App() {
           <Route path="/showTemplate" element={<ShowTemplate />} />
           <Route path="/multiResult" element={<MultiResult />} />
           <Route path="/selectTemplate" element={<SelectTemplate />} />
+          <Route path="/selectBusinessTemplate" element={<SelectBusinessTemplate />} />
           <Route path="/recommendation" element={<RecommendationForm/>} />
         </Routes>
       </Router>

@@ -11,7 +11,7 @@ const BasicInfoStep = ({ formData, handleChange, errors, setFormData }) => {
       businessName: data.name || "",
       location: data.formatted_address || "",
       phoneNumber: data.formatted_phone_number || "",
-      websiteUrl: data.website || "",
+      website: data.website || "",
       googleId: data.place_id || "",
       googleRating: data.rating || "",
       googlePhotos: photos,

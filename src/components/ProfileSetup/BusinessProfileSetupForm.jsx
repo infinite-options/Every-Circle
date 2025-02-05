@@ -42,7 +42,7 @@ const BusinessProfileSetupForm = () => {
         google: "",
         website: "",
         tagline: "",
-        bio: "",
+        shortBio: "",
         template: '1'
     });
 
@@ -168,7 +168,7 @@ const BusinessProfileSetupForm = () => {
             title: "Social Media Links"
         },
         {
-            component: <BusinessTemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect} />,
+            component: <BusinessTemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect} role={"business"}/>,
             title: "Select Your Template"
         }
     ];

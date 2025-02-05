@@ -2,17 +2,24 @@ import { Box, IconButton } from '@mui/material';
 import { ArrowBack, ArrowForward } from '@mui/icons-material';
 import { useState } from 'react';
 import { 
+  DarkTemplate,
   ModernTemplate, 
   MinimalistTemplate, 
   SplitTemplate, 
   CreativeTemplate 
 } from '../../profileTemplate';
 
-const BusinessTemplateStep = ({ formData, handleTemplateSelect }) => {
+const BusinessTemplateStep = ({ formData, handleTemplateSelect, role }) => {
   const [currentTemplate, setCurrentTemplate] = useState(0);
   const avatarUrl = formData.favImage;
-
+  const businessGooglePhotos = formData.businessGooglePhotos.filter((photo) => photo != avatarUrl);
+  console.log('form data in business template step', formData);
   const templates = [
+    {
+      component: DarkTemplate,
+      value: 'modern',
+      id: 0,
+    },
     {
       component: ModernTemplate,
       value: 'modern',
@@ -53,7 +60,7 @@ const BusinessTemplateStep = ({ formData, handleTemplateSelect }) => {
       justifyContent: 'center',
       gap: 2,
       width: '100%',
-      my: 2
+      my: 1
     }}>
       {/* Previous Arrow */}
       <IconButton 
@@ -73,7 +80,7 @@ const BusinessTemplateStep = ({ formData, handleTemplateSelect }) => {
       {/* Template Container */}
       <Box sx={{ 
         width: '400px',
-        height: '400px',
+        height: '500px',
         position: 'relative',
         overflow: 'hidden',
       }}>
@@ -98,16 +105,16 @@ const BusinessTemplateStep = ({ formData, handleTemplateSelect }) => {
             >
               <template.component
                 name={`${formData.businessName}`}
-                username={formData.businessName?.toLowerCase() || 'businessname'}
                 tagLine={formData.tagLine || ''}
                 phoneNumber={formData.phoneNumber || ""}
                 bio={formData.shortBio || 'Your bio will appear here'}
-                location={formData.location || 'Location'}
+                location={`${formData.city || ''} ${formData.state || ''} ${formData.country || ''}` || 'Location'}
                 avatarUrl={avatarUrl}
-                facebook= {formData.facebook || ''}
-                twitter= {formData.twitter || ''}
-                linkedin= {formData.linkedin || ''}
-                youtube= {formData.youtube || ''}
+                imageList={businessGooglePhotos}
+                yelp={formData.yelp}
+                google={formData.google}
+                website={formData.website}
+                role={role}
               />
             </Box>
           ))}
