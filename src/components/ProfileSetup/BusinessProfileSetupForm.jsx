@@ -43,7 +43,7 @@ const BusinessProfileSetupForm = () => {
         website: "",
         tagline: "",
         shortBio: "",
-        template: '1'
+        template: '0'
     });
 
     useEffect(() => {
@@ -97,7 +97,6 @@ const BusinessProfileSetupForm = () => {
             data.append("business_zip_code", formData.zip);
             data.append("business_latitude", formData.latitude);
             data.append("business_longitude", formData.longitude);
-            data.append("business_phone_number", formData.phoneNumber);
             data.append("business_phone_number", formData.phoneNumber);
             data.append("business_google_rating", formData.googleRating);
             data.append("business_google_photos", JSON.stringify(formData.businessGooglePhotos));

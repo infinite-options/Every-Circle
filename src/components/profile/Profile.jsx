@@ -65,6 +65,7 @@ export default function Profile() {
   const navigate = useNavigate();
 
   const templateMap = {
+    0: "dark",
     1: "modern",
     2: "minimalist",
     3: "split",

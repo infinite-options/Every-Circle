@@ -80,6 +80,7 @@ export default function BusinessProfile() {
     const navigate = useNavigate();
 
     const templateMap = {
+        0: "dark",
         1: "modern",
         2: "minimalist",
         3: "split",
@@ -133,7 +134,7 @@ export default function BusinessProfile() {
                     phoneNumber: business.business_phone_number || "",
                     tagLine: business.business_tag_line || "",
                     shortBio: business.business_short_bio || "",
-                    template: business.business_template || "",
+                    template: business.business_template || "0",
                     website: business.business_website || "",
                     yelp: business.business_yelp || "",
                     google: business.business_google || "",
@@ -184,71 +185,52 @@ export default function BusinessProfile() {
     }
 
 
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (validateRequiredFields()) {
+            const form = new FormData();
+            form.append("business_name", formData.businessName);
+            form.append("business_address_line_1", formData.addressLine1);
+            form.append("business_address_line_2", formData.addressLine2);
+            form.append("business_city", formData.city);
+            form.append("business_state", formData.state);
+            form.append("business_country", formData.country);
+            form.append("business_phone_number", formData.phoneNumber);
+            form.append("business_ein_number", formData.einNumber);
+            form.append("business_tag_line", formData.tagLine);
+            form.append("business_short_bio", formData.shortBio);
+            form.append("business_yelp", formData.yelp);
+            form.append("business_google", formData.google);
+            form.append("business_website", formData.website);
+            form.append("business_template", formData.template);
 
+            //image related fields 
+            form.append("business_google_photos", JSON.stringify(formData.businessGooglePhotos));
+            form.append("business_favorite_image", formData.favImage);
+            form.append("business_uid", businessId);
 
-    //   const handleSubmit = async (e) => {
-    //     e.preventDefault();
-    //     if (validateRequiredFields()) {
-    //       const form = new FormData();
-    //       form.append("profile_first_name", formData.firstName);
-    //       form.append("profile_last_name", formData.lastName);
-    //       form.append("profile_phone", formData.phoneNumber);
-    //       // form.append("profile_location", formData.location);
-    //       form.append("profile_tag_line", formData.tagLine);
-    //       form.append("profile_short_bio", formData.shortBio);
-    //       form.append("profile_facebook_link", formData.facebookLink);
-    //       form.append("profile_twitter_link", formData.twitterLink);
-    //       form.append("profile_linkedin_link", formData.linkedinLink);
-    //       form.append("profile_youtube_link", formData.youtubeLink);
-    //       form.append("profile_template", formData.template);
-    //       form.append("profile_how_can_we_help", JSON.stringify(formData.weHelp));
-    //       form.append("profile_how_can_you_help", JSON.stringify(formData.youHelp));
-
-    //       //image related fields 
-    //       form.append("profile_images_url", JSON.stringify(formData.profileImages));
-
-    //       let i = 0;
-    //       for (const file of selectedImages) {
-    //         let key = `img_${i++}`;
-    //         form.append(key, file.file);
-    //         if (file.coverPhoto) {
-    //           form.append("img_favorite", key);
-    //         }
-    //       }
-
-    //       if (deletedImages.length > 0) {
-    //         form.append("delete_images", JSON.stringify(deletedImages));
-    //       }
-
-    //       if (formData.favImage) {
-    //         form.append("profile_favorite_image", formData.favImage);
-    //       } else {
-    //         form.append("profile_favorite_image", "");
-    //       }
-
-    //       form.append("profile_uid", profileId);
-    //       try {
-    //         setShowSpinner(true);
-    //         const response = await axios.put(`${APIConfig.baseURL.dev}/profile`, form);
-    //         console.log("Profile updated successfully", response);
-    //         if (response.data.code === 200) {
-    //           // Fetch the latest profile data from the server
-    //           await fetchProfile();
-    //           setEditMode(false);
-    //           handleOpen("Success", "Profile has been updated successfully.");
-    //           // alert("Profile updated successfully");
-    //         }
-    //       } catch (error) {
-    //         handleOpen("Error", "Cannot update the profile.");
-    //         console.error("Error updating profile:", error);
-    //       } finally {
-    //         setShowSpinner(false);
-    //       }
-    //     } else {
-    //       handleOpen("Error", "Cannot update the profile.");
-    //       // alert("Error updating profile");
-    //     }
-    //   };
+            try {
+                setShowSpinner(true);
+                const response = await axios.put(`${APIConfig.baseURL.dev}/business`, form);
+                console.log("Business Profile updated successfully", response);
+                if (response.data.code === 200) {
+                    // Fetch the latest profile data from the server
+                    await fetchProfile();
+                    setEditMode(false);
+                    handleOpen("Success", "Business Profile has been updated successfully.");
+                    // alert("Profile updated successfully");
+                }
+            } catch (error) {
+                handleOpen("Error", "Cannot update the business profile.");
+                console.error("Error updating business profile:", error);
+            } finally {
+                setShowSpinner(false);
+            }
+        } else {
+            handleOpen("Error", "Cannot update the business profile.");
+            // alert("Error updating profile");
+        }
+    };
 
     return (
         <StyledContainer>
@@ -424,7 +406,7 @@ export default function BusinessProfile() {
                                     display: 'none',
                                 },
                                 maxWidth: "650px",
-                                mb:2
+                                mb: 2
                             }}
                         >
                             <ImageList
@@ -492,7 +474,7 @@ export default function BusinessProfile() {
 
                         {editMode && (
                             <CircleButton
-                                // onClick={handleSubmit}
+                                onClick={handleSubmit}
                                 width={135}
                                 height={135}
                                 text="Save"

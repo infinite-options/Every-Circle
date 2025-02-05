@@ -11,6 +11,7 @@ export default function ShowTemplate() {
     const { state } = useLocation();
     const navigate = useNavigate();
     const { data, searchString, searchResult } = state;
+    console.log('data in show template', data);
 
     const handleback = () => {
         navigate("/search", { state: { searchString, searchResult } })
