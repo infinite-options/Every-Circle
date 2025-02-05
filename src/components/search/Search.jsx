@@ -86,9 +86,9 @@ export default function Search() {
           sx={{
             fontSize: "14px",
             color: "rgba(26, 26, 26, 0.8)",
-            whiteSpace: "nowrap", 
+            whiteSpace: "nowrap",
             overflow: "hidden",
-            textOverflow: "ellipsis", 
+            textOverflow: "ellipsis",
           }}
         >
           {params?.row?.rating_updated_at_timestamp ? dayjs(params.row.rating_updated_at_timestamp).format("MM-DD-YYYY") : "None"}
@@ -237,7 +237,8 @@ export default function Search() {
       columns={columns}
       getRowId={(row) => row.rating_uid}
       hideFooter
-      rowHeight={150}
+      // rowHeight={150}
+      getRowHeight={() => "auto"}
       localeText={{
         noRowsLabel: "No Recommendations",
       }}
@@ -247,14 +248,27 @@ export default function Search() {
           border: "none",
           fontSize: "14px",
           color: "rgba(26, 26, 26, 0.8)",
-          // display: "flex",
-          // alignItems: "center", // Center content vertically
           padding: "8px", // Add padding to cells
         },
         "& .MuiDataGrid-columnHeaders": {
           display: "none",
         },
         minHeight: rows.length === 0 ? "150px" : "auto",
+        // Custom scrollbar styles
+        "& ::-webkit-scrollbar": {
+          width: "6px", // Thin scrollbar width
+        },
+        "& ::-webkit-scrollbar-track": {
+          background: "rgba(0, 0, 0, 0.1)", // Scrollbar track color
+          borderRadius: "3px", // Rounded corners for the track
+        },
+        "& ::-webkit-scrollbar-thumb": {
+          background: "rgba(0, 0, 0, 0.3)", // Scrollbar thumb color
+          borderRadius: "3px", // Rounded corners for the thumb
+          "&:hover": {
+            background: "rgba(0, 0, 0, 0.5)", // Darker thumb color on hover
+          },
+        },
       }}
     />
   );
