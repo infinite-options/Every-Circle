@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Typography, styled, IconButton, TextField } from "@mui/material";
+import { Box, Typography, styled, IconButton, TextField, FormControl, MenuItem, Select, InputLabel,} from "@mui/material";
 import { SocialLink } from "./SocialLink";
 import { InputField } from "../common/InputField";
 // import ImageUpload from '../common/ImageUpload';
@@ -61,6 +61,7 @@ export default function BusinessProfile() {
         favImage: "",
         googleId: "",
         businessId: "",
+        businessCategory: "",
     });
     const [businessId, setBusinessId] = useState("");
     const [editMode, setEditMode] = useState(initialEditMode);
@@ -86,6 +87,20 @@ export default function BusinessProfile() {
         3: "split",
         4: "creative",
     }
+
+    const businessCategories = [
+        { id: "000-000100", name: "Beauty & Personal Care" },
+        { id: "000-000200", name: "Health & Wellness" },
+        { id: "000-000300", name: "Home Services" },
+        { id: "000-000400", name: "Professional Services" },
+        { id: "000-000500", name: "Automotive" },
+        { id: "000-000600", name: "Education & Training" },
+        { id: "000-000700", name: "Events & Entertainment" },
+        { id: "000-000800", name: "Pet Services" },
+        { id: "000-000900", name: "Restaurants & Food" },
+        { id: "000-001000", name: "Retail & Shopping" },
+        { id: "000-001100", name: "Finance & Banking" },
+    ];
 
     const handleOpen = (title, content) => {
         setDialog({ open: true, title, content });
@@ -306,6 +321,15 @@ export default function BusinessProfile() {
                         />
 
                         <InputField
+                            label="Business Category"
+                            value={formData.businessCategory}
+                            onChange={(value) => setFormData({ ...formData, businessCategory: value })}
+                            options={businessCategories} // pass data for dropdown
+                            disabled={!editMode}
+                            backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                        />
+
+                        <InputField
                             label="Tag Line"
                             optional
                             value={formData.tagLine}
@@ -365,7 +389,7 @@ export default function BusinessProfile() {
                             backgroundColor={editMode ? 'white' : '#e0e0e0'}
                         />
 
-
+                        {/* for template */}
                         <Box sx={{ mb: 3 }}>
                             <Box sx={{ display: "flex", alignItems: "center", mb: 0.5 }}>
                                 <Typography variant="caption" sx={{ ml: 1, mr: 1 }}>
@@ -395,7 +419,8 @@ export default function BusinessProfile() {
                                 }}
                             />
                         </Box>
-
+                        
+                        {/* images */}
                         <Box
                             sx={{
                                 display: 'flex',

@@ -34,12 +34,27 @@ export default function RecommendationForm() {
         googleRating: "",
         googlePhotos: [],
         priceLevel: "",
+        businessCategory: "",
     };
     const [formData, setFormData] = useState(initialFormData);
     const { user } = useUserContext();
     const { profileId } = user
     const [dialogOpen, setDialogOpen] = useState(false);
     const [selectedImages, setSelectedImages] = useState([]);
+
+    const businessCategories = [
+        { id: "000-000100", name: "Beauty & Personal Care" },
+        { id: "000-000200", name: "Health & Wellness" },
+        { id: "000-000300", name: "Home Services" },
+        { id: "000-000400", name: "Professional Services" },
+        { id: "000-000500", name: "Automotive" },
+        { id: "000-000600", name: "Education & Training" },
+        { id: "000-000700", name: "Events & Entertainment" },
+        { id: "000-000800", name: "Pet Services" },
+        { id: "000-000900", name: "Restaurants & Food" },
+        { id: "000-001000", name: "Retail & Shopping" },
+        { id: "000-001100", name: "Finance & Banking" },
+    ];
 
     const handleOpen = () => setDialogOpen(true);
     const handleClose = () => setDialogOpen(false);
@@ -210,6 +225,13 @@ export default function RecommendationForm() {
                         onChange={(value) => setFormData({ ...formData, review: value })}
                         multiline={true}
                         rows={4}
+                    />
+
+                    <InputField
+                        label="Business Category"
+                        value={formData.businessCategory}
+                        onChange={(value) => setFormData({ ...formData, businessCategory: value })}
+                        options={businessCategories} // pass data for dropdown
                     />
 
                     <InputField

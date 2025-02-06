@@ -6,6 +6,7 @@ import ShareIcon from '@mui/icons-material/Share';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import { useUserContext } from "../contexts/UserContext";
 
 const StyledIconButton = styled(IconButton)({
   width: '60px',
@@ -14,6 +15,9 @@ const StyledIconButton = styled(IconButton)({
 
 const NavigationBar = () => {
   const navigate = useNavigate();
+  const { user } = useUserContext();
+  // console.log(user);
+
   return (
     <Box
       sx={{
@@ -23,7 +27,14 @@ const NavigationBar = () => {
         marginTop: "auto",
       }}
     >
-       <StyledIconButton aria-label="home" onClick={() => navigate('/profile')}>
+       <StyledIconButton aria-label="home" onClick={() => {
+          if(user.role === "business") {
+            navigate('/businessProfile')
+          }else{
+            navigate('/profile')
+          }
+        }}
+      >
         <AccountCircleIcon sx={{ width: '30px', height: '30px' }} />
       </StyledIconButton>
       <StyledIconButton aria-label="search" onClick={() => navigate('/settings')}>
