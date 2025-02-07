@@ -62,6 +62,7 @@ export default function BusinessProfile() {
         googleId: "",
         businessId: "",
         businessCategory: "",
+        businessTypes: [],
     });
     const [businessId, setBusinessId] = useState("");
     const [editMode, setEditMode] = useState(initialEditMode);
@@ -160,6 +161,7 @@ export default function BusinessProfile() {
                     favImage: business.business_favorite_image || "",
                     googleId: business.business_google_id || "",
                     businessId: business.business_uid,
+                    // businessTypes: business.business_types ? JSON.parse(business.business_types) : [],
                 });
                 setFavoriteIcons(googlePhotos ? googlePhotos.map((image, index) => index === 0) : []);
                 setDeletedIcons(googlePhotos ? new Array(googlePhotos.length).fill(false) : []);
@@ -220,6 +222,7 @@ export default function BusinessProfile() {
             form.append("business_template", formData.template);
 
             //image related fields 
+            form.append('business_types', JSON.stringify(formData.businessTypes))
             form.append("business_google_photos", JSON.stringify(formData.businessGooglePhotos));
             form.append("business_favorite_image", formData.favImage);
             form.append("business_uid", businessId);
@@ -316,6 +319,15 @@ export default function BusinessProfile() {
                             label="EIN Number"
                             value={formData.einNumber}
                             onChange={(value) => setFormData({ ...formData, einNumber: value })}
+                            disabled={!editMode}
+                            backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                        />
+
+                        <InputField
+                            label="Business Types"
+                            value={formData.businessTypes}
+                            onChange={(value) => setFormData({ ...formData, businessTypes: value })}
+                            isTagInput={true}
                             disabled={!editMode}
                             backgroundColor={editMode ? 'white' : '#e0e0e0'}
                         />

@@ -27,6 +27,12 @@ export default function Search() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if(error){
+      setError(null);
+    }
+  }, [searchString]);
+
+  useEffect(() => {
     //Retrieve data after we navigate back to search page
     console.log('location.state', location.state)
 
@@ -62,8 +68,16 @@ export default function Search() {
         `https://ioec2testsspm.infiniteoptions.com/search/${profileId}?category=${searchString}`
       );
 
+      // console.log("response", response);
       if (response.status === 200) {
+        if(response.data.message === "type not found") {
+          setError("No type found. Please search different type.");
+          setSearchResult([]);
+          return;
+        }
+
         setSearchResult(response.data.result);
+
       } else {
         setError("Failed to fetch results. Please try again.");
       }

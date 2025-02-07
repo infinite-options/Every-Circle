@@ -6,9 +6,16 @@ import {
   Avatar,
   Divider,
   Paper,
+  Stack,
+  Button,
   Box,
 } from "@mui/material";
-import { LocationOn, Person, PhoneAndroid  } from "@mui/icons-material";
+import { LocationOn, Person, PhoneAndroid, Facebook,
+  Instagram,
+  Add as AddIcon,
+  Twitter,
+  Message as MessageIcon,  
+  X} from "@mui/icons-material";
 import CommentIcon from '@mui/icons-material/Comment';
 import yelpIcon from "../assets/yelp-icon-small.png";
 import GoogleIcon from "../assets/google-small-icon.webp";
@@ -25,7 +32,8 @@ import twitterIcon from "../assets/x-icon.webp";
 const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating }) => (
   <Card
     sx={{
-      width: "100%",
+      width: "250px",
+      height: "400px",
       minHeight: "100%",
       maxHeight: "100%",
       background: "linear-gradient(135deg, #120F0E 0%, #263542 50%, #120F0E 100%)",
@@ -314,76 +322,170 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
 );
 
 // Template 1: Modern Card Layout
-const ModernTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube }) => (
-  <Card sx={{ width: "450px", height: "450px" }}>
-    <Box sx={{ position: "relative" }}>
-      <Box
+
+const ModernTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating }) => {
+  return (
+    <Card 
+      sx={{ 
+        width: 250,
+        height: 400,
+        position: 'relative',
+        cursor: 'pointer',
+        overflow: 'visible',
+        '&:hover': {
+          transform: 'scale(1.02)',
+          transition: 'transform 0.2s ease-in-out'
+        }
+      }}
+    >
+      {/* Background Image */}
+      <Box 
         sx={{
-          height: 100,
-          background: "linear-gradient(to right, #1976d2, #9c27b0)",
-        }}
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundImage: `${avatarUrl}`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          bgcolor: "black"
+        }} 
       />
-      <Avatar
-        src={avatarUrl}
-        sx={{
-          width: 80,
-          height: 80,
-          border: 3,
-          borderColor: "white",
-          position: "absolute",
-          bottom: -40,
-          left: 32,
-        }}
-      >
-        {!avatarUrl && <Person />}
-      </Avatar>
-    </Box>
-    <CardContent sx={{ pt: 6, px: 3, pb: 3 }}>
-      <Typography variant="h5" fontWeight="bold" sx={{ mb: 0.5 }}>
-        {name}
-      </Typography>
-      <Typography color="text.secondary" variant="body2">
-        @{username}
-      </Typography>
-      {tagLine &&
-        <Typography
-          sx={{ mt: 2, fontSize: "0.9rem", maxHeight: "150px", overflow: "auto" }}
-        >
+
+      {/* Content */}
+      <Box sx={{ position: 'absolute', p: 2, bgcolor: 'white', bottom: 0, right: 0, width: "100%"}}>
+        {/* Profile Section */}
+        <Stack direction="row" justifyContent={"space-between"} sx={{ mt: 1, mb: 1.5 }}>
+          <Box sx={{display: "flex", flexDirection: "row"}}>
+            <Avatar sx={{ width: 30, height: 30, bgcolor: '#333', mr: 1}} />
+            <Avatar sx={{ width: 30, height: 30, bgcolor: '#333' }} />
+          </Box>
+          <Box sx={{display: "flex", flexDirection: "column"}}>
+            <Box
+              sx={{
+                bgcolor: '#FF1493',
+                color: 'white',
+                mb: 0.5,
+                borderRadius: '4px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                width: "70px",
+                height: "100%",
+                fontSize: '10px',
+                fontWeight: 'bold',
+                '&:hover': {
+                  opacity: 0.9
+                }
+              }}
+            >
+              <span style={{textAlign: "center", width: "100%"}}>Add To Circle</span>
+            </Box>
+            <Box
+              sx={{
+                bgcolor: 'white',
+                color: 'black',
+                borderRadius: '4px',
+                border: "1px solid black",
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                width: "70px",
+                height: "100%",
+                fontSize: '10px',
+                fontWeight: 'bold',
+                '&:hover': {
+                  opacity: 0.9
+                }
+              }}
+            >
+              <span style={{textAlign: "center", width: "100%"}}>Message</span>
+            </Box>
+          </Box>
+        </Stack>
+
+        <Box sx={{ display: 'flex', flexDirection:"row", justifyContent: 'space-between', mb: 1, mt: 1 }}>
+            <Typography sx={{fontSize: "12px", fontWeight: 'bold', mb: 0.2}}>
+              {name}
+            </Typography>
+            <Typography sx={{fontSize: "12px", color: 'grey.500' }}>
+              City, State
+            </Typography>
+        </Box>
+
+        <Typography sx={{ fontSize: "10px", color: 'grey.400', display: 'block', mb: 1 }}>
           {tagLine}
         </Typography>
-      }
-      <Box sx={{ maxHeight: "100px", overflow: "auto" }}>
-        <Typography
-          sx={{ mt: 2, fontSize: "0.9rem" }}
-        >
+
+        <Typography sx={{ fontSize: "10px", color: 'grey.400', display: 'block', mb: 1.2 }}>
           {bio}
         </Typography>
+
+        {/* Buttons as Boxes */}
+        <Stack spacing={1} sx={{ mb: 2}}>
+          <Box
+            sx={{
+              bgcolor: '#FF1493',
+              color: 'white',
+              borderRadius: '4px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              px: 0.2,
+              py: 0.2,
+              fontSize: '10px',
+              fontWeight: 'bold',
+              '&:hover': {
+                opacity: 0.9
+              }
+            }}
+          >
+            <span>How can I help you !</span>
+            <AddIcon fontSize="10px"/>
+          </Box>
+          <Box
+            sx={{
+              bgcolor: '#FF1493',
+              color: 'white',
+              borderRadius: '4px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              px: 0.2,
+              py: 0.2,
+              fontSize: '10px',
+              fontWeight: 'bold',
+              '&:hover': {
+                opacity: 0.9
+              }
+            }}
+          >
+            <span>How can you help me !</span>
+            <AddIcon fontSize="10px"/>
+          </Box>
+        </Stack>
+
+        {/* Social Icons as Box */}
+        <Stack direction="row" justifyContent="space-evenly" spacing={1}>
+          <Box sx={{ width: 15, height: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'black' }}>
+            <Facebook fontSize="small" />
+          </Box>
+          <Box sx={{ width: 15, height: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'black' }}>
+            <Instagram fontSize="small" />
+          </Box>
+          <Box sx={{ width: 15, height: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'black' }}>
+            <Twitter fontSize="small" />
+          </Box>
+          <Box sx={{ width: 15, height: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'black' }}>
+            <X fontSize="small" />
+          </Box>
+        </Stack>
       </Box>
-      <Box
-        sx={{
-          mt: 2,
-          display: "flex",
-          alignItems: "center",
-          color: "text.secondary",
-        }}
-      >
-        <PhoneAndroid sx={{ mr: 1, fontSize: 18 }} />
-        <Typography variant="body2">{phoneNumber}</Typography>
-      </Box>
-      <Box
-        sx={{
-          mt: 2,
-          display: "flex",
-          alignItems: "center",
-          color: "text.secondary",
-        }}
-      >
-        <LocationOn sx={{ mr: 1, fontSize: 18 }} />
-        <Typography variant="body2">{location}</Typography>
-      </Box>
-    </CardContent>
-  </Card>
-);
+    </Card>
+  );
+};
+
 
 // Template 2: Minimalist Layout
 const MinimalistTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber }) => (

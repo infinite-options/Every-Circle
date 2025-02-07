@@ -35,6 +35,7 @@ export default function RecommendationForm() {
         googlePhotos: [],
         priceLevel: "",
         businessCategory: "",
+        businessTypes: [],
     };
     const [formData, setFormData] = useState(initialFormData);
     const { user } = useUserContext();
@@ -124,7 +125,7 @@ export default function RecommendationForm() {
             zip: data.zip || "",
             latitude: data.geometry.location.lat() || "",
             longitude: data.geometry.location.lng() || "",
-            types: data.types || []
+            businessTypes: data.types || []
         }));
     }
 
@@ -156,7 +157,7 @@ export default function RecommendationForm() {
             form.append('rating_business_google_rating', formData.googleRating);
             form.append('rating_business_google_photos', JSON.stringify(formData.googlePhotos));
             form.append('rating_business_price_level', formData.priceLevel);
-            // form.append('rating_business_types', JSON.stringify(formData.types))
+            form.append('rating_business_types', JSON.stringify(formData.businessTypes))
 
             //upload image
             if (formData.receiptImage) {
@@ -228,6 +229,13 @@ export default function RecommendationForm() {
                     />
 
                     <InputField
+                        label="Business Types"
+                        value={formData.businessTypes}
+                        onChange={(value) => setFormData({ ...formData, businessTypes: value })}
+                        isTagInput={true}
+                    />
+
+                    <InputField
                         label="Business Category"
                         value={formData.businessCategory}
                         onChange={(value) => setFormData({ ...formData, businessCategory: value })}
@@ -245,7 +253,6 @@ export default function RecommendationForm() {
                         value={formData.ownerLname}
                         onChange={(value) => setFormData({ ...formData, ownerLname: value })}
                     />
-
 
                     <InputField
                         label="Phone Number"

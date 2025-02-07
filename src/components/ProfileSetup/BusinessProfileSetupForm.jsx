@@ -20,6 +20,7 @@ const BusinessProfileSetupForm = () => {
     const { isValidPhoneNumber, formatPhoneNumber } = DataValidationUtils;
     const { referralId, user } = useUserContext();
     const [errors, setErrors] = useState({});
+    const [isClaimed, setIsClaimed] = useState(false);
     const [formData, setFormData] = useState({
         businessName: "",
         location: "",
@@ -43,7 +44,8 @@ const BusinessProfileSetupForm = () => {
         website: "",
         tagline: "",
         shortBio: "",
-        template: '0'
+        template: '0',
+        einNumber: "",
     });
 
     useEffect(() => {
@@ -136,6 +138,10 @@ const BusinessProfileSetupForm = () => {
         }
     };
 
+    const handleClaimed = async () => {
+        console.log('form data before submission', formData);
+    };
+
     const handleBack = () => {
         setActiveStep((prev) => prev - 1);
     };
@@ -150,7 +156,7 @@ const BusinessProfileSetupForm = () => {
 
     const steps = [
         {
-            component: <BusinessBasicInfoStep formData={formData} handleChange={handleChange} errors={errors} setFormData={setFormData} />,
+            component: <BusinessBasicInfoStep formData={formData} handleChange={handleChange} errors={errors} setFormData={setFormData} isClaimed={isClaimed} setIsClaimed={setIsClaimed}/>,
             title: "Welcome to Every Circle!",
             subtitle: "Let's Build Your Business Page!"
         },
@@ -267,7 +273,7 @@ const BusinessProfileSetupForm = () => {
                 )}
                 <Button
                     variant="contained"
-                    onClick={handleNext}
+                    onClick={isClaimed ? handleClaimed : handleNext}
                     sx={{
                         width: '100px',
                         height: '100px',
@@ -283,7 +289,7 @@ const BusinessProfileSetupForm = () => {
                         justifyContent: 'center',
                     }}
                 >
-                    {activeStep === steps.length - 1 ? 'Finish' : 'Continue'}
+                    {isClaimed ? "Claimed" : activeStep === steps.length - 1 ? 'Finish' : 'Continue'}
                 </Button>
             </Box>
         </Box>

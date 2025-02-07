@@ -1,8 +1,15 @@
 import { Box, Typography, TextField } from '@mui/material';
+import React, { useState } from "react";
+import Backdrop from '@mui/material/Backdrop';
+import CircularProgress from '@mui/material/CircularProgress';
 import Autocomplete from "../../recommendation/AutoComplete";
+import axios from "axios";
 
-const BasicInfoStep = ({ formData, handleChange, errors, setFormData }) => {
-  const getAutoCompleteData = (data) => {
+const BasicInfoStep = ({ formData, handleChange, errors, setFormData, isClaimed, setIsClaimed }) => {
+  const [showSpinner, setShowSpinner] = useState(false);
+  
+
+  const getAutoCompleteData = async (data) => {
     console.log('data in get', data)
     const photos = data?.photos?.map((photo) => photo.getUrl()) || [];
     console.log("photos--", photos);
@@ -27,10 +34,36 @@ const BasicInfoStep = ({ formData, handleChange, errors, setFormData }) => {
       longitude: data.geometry.location.lng() || "",
       types: data.types || []
     }));
+
+    await fetchProfile(data.place_id);
   }
+
+  const fetchProfile = async (googlePlaceId) => {
+    try {
+        setShowSpinner(true);
+        const response = await axios.get(`https://ioec2testsspm.infiniteoptions.com/business/${googlePlaceId}`);
+        // console.log('response from business endpoint', response);
+        if (response.status === 200) {
+            const business = response.data?.result?.[0];
+            console.log('business data is', business);
+            setIsClaimed(true);
+        }else{
+            setIsClaimed(false);
+        }
+    } catch (error) {
+        setIsClaimed(false);
+        console.error("Error fetching Business profile:", error);
+    } finally {
+        setShowSpinner(false);
+    }
+  };
 
   return (
     <Box sx={{ width: '100%' }}>
+      <Backdrop sx={{ color: '#fff', zIndex: 1 }} open={showSpinner}>
+          <CircularProgress color="inherit" />
+      </Backdrop>
+
       <Autocomplete getAutoCompleteData={getAutoCompleteData} formData={formData} backgroundColor={"#F5F5F5"} />
 
       <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
@@ -75,6 +108,26 @@ const BasicInfoStep = ({ formData, handleChange, errors, setFormData }) => {
           },
         }}
       />
+
+      {isClaimed && <>
+        <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
+          EIN Number
+        </Typography>
+        <TextField
+          fullWidth
+          placeholder="EIN Number"
+          name="einNumber"
+          onChange={handleChange}
+          margin="normal"
+          sx={{
+            backgroundColor: "#F5F5F5",
+            borderRadius: 2,
+            "& .MuiOutlinedInput-root": {
+              borderRadius: 2,
+            },
+          }}
+        />
+      </>}
     </Box>
   );
 };
