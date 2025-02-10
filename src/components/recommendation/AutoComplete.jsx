@@ -63,6 +63,7 @@ const AutoComplete = memo(({ getAutoCompleteData, formData, backgroundColor }) =
                 onLoad={onLoad}
                 onPlaceChanged={onPlaceChanged}
                 options={{
+                    includedPrimaryTypes: ["restaurant", "cafe", "bar"], 
                     fields: [
                         "place_id",
                         "name",

@@ -5,21 +5,36 @@ import {
   Typography,
   Avatar,
   Divider,
+  Grid,
+  Chip,
   Paper,
   Stack,
+  IconButton,
   Button,
   Box,
 } from "@mui/material";
-import { LocationOn, Person, PhoneAndroid, Facebook,
+
+import { 
+  LocationOn, 
+  Person, 
+  PhoneAndroid, 
+  Facebook,
   Instagram,
+  YouTube,
   Add as AddIcon,
   Twitter,
   Message as MessageIcon,  
-  X} from "@mui/icons-material";
+  X,
+  Translate,
+  Send,
+} from "@mui/icons-material";
+
+import SendIcon from '@mui/icons-material/Send';
 import CommentIcon from '@mui/icons-material/Comment';
 import yelpIcon from "../assets/yelp-icon-small.png";
 import GoogleIcon from "../assets/google-small-icon.webp";
 import websiteIcon from "../assets/website-black-icon.png";
+// import { makeStyles } from '@mui/core/styles';
 
 
 import facebookIcon from "../assets/fb-icon.png";
@@ -322,351 +337,432 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
 );
 
 // Template 1: Modern Card Layout
-
-const ModernTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating }) => {
+const ModernTemplate = () => {
   return (
-    <Card 
-      sx={{ 
+    <Box 
+      sx={{
+        width: '250px',
+        height: '400px',
+        borderRadius: '10px',
+        overflow: 'hidden',
+        position: 'relative',
+        backgroundImage: `url('https://media.istockphoto.com/id/1342155703/photo/synth-wave-portrait-cyberpunk-man-neon-light-blue.jpg?s=612x612&w=0&k=20&c=aZV1dh8bUx2hmz6VF3UzE93LY5gc7X_UHlFEDkmk_fk=')`,
+        backgroundSize: "cover",
+      }}
+    >
+
+      {/* Main Content Area */}
+      <Box 
+        sx={{
+          position: 'absolute',
+          bottom: 15,
+          left: 7,
+          right: 7,
+          bgcolor: 'white',
+          borderRadius: '10px',
+          p: 1,
+        }}
+      >
+        {/* Profile Section */}
+        <Box sx={{ display: 'flex', justifyContent: "space-between", alignItems: 'center', mb: 1 }}>
+          <Avatar
+            src="https://media.istockphoto.com/id/1342155703/photo/synth-wave-portrait-cyberpunk-man-neon-light-blue.jpg?s=612x612&w=0&k=20&c=aZV1dh8bUx2hmz6VF3UzE93LY5gc7X_UHlFEDkmk_fk="
+            sx={{
+              width: 45,
+              height: 45,
+              bgcolor: 'black'
+            }}
+          />
+          
+          <Box 
+            sx={{
+              // width: "50%",
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              mb: 1
+            }}
+          >
+            <Box 
+              sx={{
+                px: 1,
+                mr: 1,
+                py: 0.5,
+                width: "60px",
+                textAlign: "center",
+                borderRadius: 20,
+                border: "1px solid black",
+                fontSize: "8px",
+              }}
+            >
+              Message
+            </Box>
+            <Box sx={{
+              bgcolor: '#EE214E',
+              color: 'white',
+              width : "60px",
+              textAlign: "center",
+              px: 1,
+              py: 0.5,
+              borderRadius: 20,
+              fontSize: '8px'
+            }}>
+              Follow
+            </Box>
+          </Box>
+        </Box>
+
+        {/* Profile Info */}
+        <Typography sx={{ fontWeight: 'bold', mb: 0.1, fontSize: "14px"}}>
+          Design Profile
+        </Typography>
+        <Typography color="#DEDDDF" sx={{fontSize: "10px", mb: 0.5 }}>
+          Designer
+        </Typography>
+        <Typography color="text.secondary" sx={{fontSize: "10px", mb: 2 }}>
+          Creative designer focused on crafting beautiful digital experiences
+        </Typography>
+
+        {/* Stats */}
+        <Box 
+          sx={{
+            width: "100%",
+            position: "relative",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            bgcolor: '#EE214E',
+            borderRadius: "20px",
+            display: 'flex',
+            justifyContent: "space-evenly",
+            // textAlign: 'center',
+            mt: 1,
+            p: 1,
+          }}
+        >
+          {[Facebook, Instagram, Twitter, YouTube].map((Icon, index) => (
+            <Icon key={index} sx={{ color: "white", fontSize: 12, }} />
+          ))}
+        </Box>
+      </Box>
+    </Box>
+  );
+};
+
+// Template 2: Minimalist Layout
+const MinimalistTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber }) => {
+  const helpTags = ["Web Dev","Marketing", "Design", "SEO"];
+  const needHelpTags = ["Networking", "Mentorship", "Collab", "Investment"];
+
+  return (
+    <Box
+      sx={{
+        width: '250px',
+        height: '400px',
+        position: 'relative',
+        overflow: 'hidden',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        bgcolor: 'white',
+      }}
+    >
+      {/* Background Image (Black Area) */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundImage: `url('https://i.redd.it/q8aw8rul6rr81.jpg')`,
+          backgroundSize: "cover",
+          clipPath: 'polygon(0 0, 100% 0, 100% 40%, 0 25%)',
+          zIndex: 0,
+        }}
+      />
+
+      {/* Centered Content (Avatar + Card) */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: '13%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          zIndex: 2,
+        }}
+      >
+        {/* Card Container */}
+        <Box
+          sx={{
+            position: 'relative',
+            width: 220,
+            height: "100%",
+            bgcolor: 'white',
+            borderRadius: 2,
+            boxShadow: '0px 4px 20px rgba(0,0,0,0.08)',
+          }}
+        >
+          {/* Profile Avatar */}
+          <Avatar
+            src= "https://images.rawpixel.com/image_800/cHJpdmF0ZS9sci9pbWFnZXMvd2Vic2l0ZS8yMDIyLTA4L2pvYjEwMzktZWxlbWVudC0yNi0zOTNfMS5qcGc.jpg"
+            sx={{
+              position: 'absolute',
+              top: "-27%",
+              left: "50%",
+              transform: 'translateX(-50%)',
+              width: 50,
+              height: 50,
+              bgcolor: '#e0e0e0',
+              boxShadow: '0px 2px 4px rgba(0,0,0,0.1)',
+            }}
+          />
+
+          <Box sx={{ textAlign: "center", mt: 2, p: 1 }}>
+            <Typography sx={{ fontSize: "14px", fontWeight: "bold"}}>
+              Dianna Leen
+            </Typography>
+            <Typography sx={{fontSize: "10px", fontWeight: "100"}} color="text.secondary">
+              Lorem ipsum dolor sit amet consectetur adipisicing elit.
+            </Typography>
+            <Box sx={{display: "flex", flexDirection: "row", justifyContent: "space-around", mt: "15px"}}>
+              <Button variant= "contained" sx={{width: "60%", height: "20px", fontSize: "10px", bgcolor: "#16629a", color: "white", boxShadow: "none", borderRadius: 2 }}>
+                Follow
+              </Button>
+              <IconButton sx={{bgcolor: "#C7ddea", width: "30%", height: "25px", borderRadius: 2}}>
+                <SendIcon sx={{color: "#3d83b0", fontSize: "14px"}}></SendIcon>
+              </IconButton>
+            </Box>
+          </Box>
+
+        </Box>
+
+        {/* Social Media Links & Help Sections */}
+        <Grid container sx={{mt: 2, width: "100%"}}>
+          {/* Social Media Section */}
+          <Grid item xs={2} sx={{ bgcolor: "#AE323E", p: 1, textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "space-evenly", alignItems: "center"}}>
+            {[Facebook, Instagram, Twitter, YouTube].map((Icon, index) => (
+              <Icon key={index} sx={{ color: "white", fontSize: 16, mb: 0.5 }} />
+            ))}
+          </Grid>
+
+          {/* Help Sections */}
+          <Grid item xs={10} sx={{ p: 1 }}>
+            <Typography sx={{fontSize: "12px", fontWeight: "bold"}}>
+              How can I help you!!
+            </Typography>
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mb: 1.2, mt: 0.6}}>
+              {helpTags.map((tag, index) => (
+                <Chip key={index} label={tag} size="small" sx={{ fontSize: "8px", borderRadius: "7px", border: "1px solid #16629a", backgroundColor: "transparent", color: "#16629a"}} />
+              ))}
+            </Box>
+
+            <Typography sx={{fontSize: "12px", fontWeight: "bold"}}>
+              How can you help me!!
+            </Typography>
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.6}}>
+              {needHelpTags.map((tag, index) => (
+                <Chip key={index} label={tag} size="small" sx={{ fontSize: "8px", borderRadius: "7px", backgroundColor: "#C7ddea", color: "#16629a"}} />
+              ))}
+            </Box>
+          </Grid>
+        </Grid>
+
+      </Box>
+    </Box>
+  );
+};
+
+// Template 3: Split Layout with Gradient
+const SplitTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber }) => {
+  const helpTags = ["Web Dev","Marketing", "SEO", "Design"];
+  const needHelpTags = ["Networking", "Mentorship", "Investment", "Collab"];
+
+  return (
+    <Box 
+      sx={{
         width: 250,
         height: 400,
         position: 'relative',
-        cursor: 'pointer',
-        overflow: 'visible',
-        '&:hover': {
-          transform: 'scale(1.02)',
-          transition: 'transform 0.2s ease-in-out'
-        }
+        bgcolor: "white",
+        borderRadius: "10px"
       }}
     >
-      {/* Background Image */}
-      <Box 
-        sx={{
+      {/* background image header  */}
+      <Box sx={{
+        width: '100%',
+        height: '45%',
+        position: 'relative',
+        borderRadius: '16px',
+        overflow: 'hidden',
+        borderRadius: "10px",
+        borderBottomLeftRadius: "0px",
+        borderBottomRightRadius: "30px"
+      }}>
+        {/* Background Layer */}
+        <Box sx={{
           position: 'absolute',
           top: 0,
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundImage: `${avatarUrl}`,
+          backgroundImage: `url('https://static.vecteezy.com/system/resources/thumbnails/026/945/935/small/business-man-on-black-background-free-photo.jpg')`,
           backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          bgcolor: "black"
-        }} 
-      />
+          // bgcolor: '#000000',
+        }}/>
 
-      {/* Content */}
-      <Box sx={{ position: 'absolute', p: 2, bgcolor: 'white', bottom: 0, right: 0, width: "100%"}}>
-        {/* Profile Section */}
-        <Stack direction="row" justifyContent={"space-between"} sx={{ mt: 1, mb: 1.5 }}>
-          <Box sx={{display: "flex", flexDirection: "row"}}>
-            <Avatar sx={{ width: 30, height: 30, bgcolor: '#333', mr: 1}} />
-            <Avatar sx={{ width: 30, height: 30, bgcolor: '#333' }} />
-          </Box>
-          <Box sx={{display: "flex", flexDirection: "column"}}>
-            <Box
+        {/* Content Wrapper */}
+        <Box 
+          sx={{
+            position: 'relative',
+            height: '100%',
+            zIndex: 1,
+            color: 'white',
+          }}
+        >
+          {/* Header with Logo and Button */}
+          <Box 
+            sx={{
+              position: "absolute",
+              top: 1,
+              right: 1,
+              display: 'flex',
+              justifyContent: 'space-between',
+              flexDirection: 'column',
+              alignItems: 'center',
+              p: 2
+            }}
+          >
+            {/* Action Button */}
+            <Box 
               sx={{
-                bgcolor: '#FF1493',
-                color: 'white',
-                mb: 0.5,
-                borderRadius: '4px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                width: "70px",
-                height: "100%",
-                fontSize: '10px',
-                fontWeight: 'bold',
+                width: "100%",
+                bgcolor: 'rgba(255, 255, 255, 0.1)',
+                px: 2,
+                textAlign: "center",
+                py: 0.5,
+                mb: 1,
+                borderRadius: '5px',
+                fontSize: '8px',
+                cursor: 'pointer',
                 '&:hover': {
-                  opacity: 0.9
+                  bgcolor: 'rgba(255, 255, 255, 0.2)'
                 }
               }}
             >
-              <span style={{textAlign: "center", width: "100%"}}>Add To Circle</span>
+              Follow
             </Box>
-            <Box
+            <Box 
               sx={{
-                bgcolor: 'white',
-                color: 'black',
-                borderRadius: '4px',
-                border: "1px solid black",
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                width: "70px",
-                height: "100%",
-                fontSize: '10px',
-                fontWeight: 'bold',
+                width: "100%",
+                bgcolor: 'rgba(255, 255, 255, 0.1)',
+                px: 2,
+                py: 0.5,
+                mb: 1,
+                borderRadius: '5px',
+                fontSize: '8px',
+                cursor: 'pointer',
                 '&:hover': {
-                  opacity: 0.9
+                  bgcolor: 'rgba(255, 255, 255, 0.2)'
                 }
               }}
             >
-              <span style={{textAlign: "center", width: "100%"}}>Message</span>
+              Message
             </Box>
           </Box>
-        </Stack>
 
-        <Box sx={{ display: 'flex', flexDirection:"row", justifyContent: 'space-between', mb: 1, mt: 1 }}>
-            <Typography sx={{fontSize: "12px", fontWeight: 'bold', mb: 0.2}}>
-              {name}
+          {/* Bottom Content */}
+          <Box 
+            sx={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              p: 3,
+            }}
+          >
+            <Typography sx={{
+              fontSize: '16px',
+              fontWeight: 700,
+              mb: 1,
+              lineHeight: 0.5
+            }}>
+              Test
             </Typography>
-            <Typography sx={{fontSize: "12px", color: 'grey.500' }}>
-              City, State
+
+            <Typography sx={{
+              fontSize: '16px',
+              fontWeight: 700,
+              mb: 1,
+              lineHeight: 1
+            }}>
+              Williamson
             </Typography>
+
+            <Typography sx={{
+              fontSize: '10px',
+              color: 'rgba(255, 255, 255, 0.7)',
+              lineHeight: 1.4
+            }}>
+              Actor, comedian, musician and writer
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
+
+      {/* card content */}
+      <Grid item xs={10} sx={{ p: 1, position: "relative" }}>
+        <Typography sx={{ fontSize: "10px", fontWeight: "bold", mb: 0.6 }}>
+          About
+        </Typography>
+        <Typography sx={{ fontSize: "10px", fontWeight: "100", mb: 1 }} color="text.secondary">
+          Lorem ipsum dolor sit amet consectetur adipisicing elit. Lorem ipsum conitue with random ways.
+        </Typography>
+
+        <Typography sx={{ fontSize: "10px", fontWeight: "bold" }}>
+          How can I help you!!
+        </Typography>
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mb: 1, mt: 0.6 }}>
+          {helpTags.map((tag, index) => (
+            <Chip key={index} label={tag} size="small" sx={{ fontSize: "8px", borderRadius: "7px", border: "1px solid #333", color: "#333", backgroundColor: "transparent" }} />
+          ))}
         </Box>
 
-        <Typography sx={{ fontSize: "10px", color: 'grey.400', display: 'block', mb: 1 }}>
-          {tagLine}
+        <Typography sx={{ fontSize: "10px", fontWeight: "bold" }}>
+          How can you help me!!
         </Typography>
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.6 }}>
+          {needHelpTags.map((tag, index) => (
+            <Chip key={index} label={tag} size="small" sx={{ fontSize: "8px", borderRadius: "7px", border: "1px solid #333", color: "#333", backgroundColor: "transparent"}} />
+          ))}
+        </Box>
 
-        <Typography sx={{ fontSize: "10px", color: 'grey.400', display: 'block', mb: 1.2 }}>
-          {bio}
-        </Typography>
-
-        {/* Buttons as Boxes */}
-        <Stack spacing={1} sx={{ mb: 2}}>
-          <Box
-            sx={{
-              bgcolor: '#FF1493',
-              color: 'white',
-              borderRadius: '4px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              px: 0.2,
-              py: 0.2,
-              fontSize: '10px',
-              fontWeight: 'bold',
-              '&:hover': {
-                opacity: 0.9
-              }
-            }}
-          >
-            <span>How can I help you !</span>
-            <AddIcon fontSize="10px"/>
-          </Box>
-          <Box
-            sx={{
-              bgcolor: '#FF1493',
-              color: 'white',
-              borderRadius: '4px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              px: 0.2,
-              py: 0.2,
-              fontSize: '10px',
-              fontWeight: 'bold',
-              '&:hover': {
-                opacity: 0.9
-              }
-            }}
-          >
-            <span>How can you help me !</span>
-            <AddIcon fontSize="10px"/>
-          </Box>
-        </Stack>
-
-        {/* Social Icons as Box */}
-        <Stack direction="row" justifyContent="space-evenly" spacing={1}>
-          <Box sx={{ width: 15, height: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'black' }}>
-            <Facebook fontSize="small" />
-          </Box>
-          <Box sx={{ width: 15, height: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'black' }}>
-            <Instagram fontSize="small" />
-          </Box>
-          <Box sx={{ width: 15, height: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'black' }}>
-            <Twitter fontSize="small" />
-          </Box>
-          <Box sx={{ width: 15, height: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'black' }}>
-            <X fontSize="small" />
-          </Box>
-        </Stack>
-      </Box>
-    </Card>
+        {/* Social media - Centered */}
+        <Box
+          sx={{
+            bgcolor: 'black',
+            borderRadius: "20px",
+            position: "relative", // Changed from absolute
+            width: "80%",
+            p: 1,
+            display: "flex",
+            justifyContent: "space-evenly",
+            alignItems: "center",
+            mx: "auto", // Centers the box horizontally
+            mt: 2, // Adds spacing from content above
+          }}
+        >
+          {[Facebook, Instagram, Twitter, YouTube].map((Icon, index) => (
+            <Icon key={index} sx={{ color: "white", fontSize: 12, }} />
+          ))}
+        </Box>
+      </Grid>
+    </Box>
   );
 };
-
-
-// Template 2: Minimalist Layout
-const MinimalistTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber }) => (
-  <Box
-    sx={{
-      width: "450px",
-      height: "450px",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      bgcolor: "#fff",
-      borderRadius: "8px",
-      p: 3,
-    }}
-  >
-    <Avatar src={avatarUrl} sx={{ width: 80, height: 80, mb: 2 }}>
-      {!avatarUrl && <Person />}
-    </Avatar>
-    <Typography color="text.secondary" variant="h6" sx={{ mb: 1 }}>
-      {name}
-    </Typography>
-    <Typography color="text.secondary" variant="body2" sx={{ mb: 2 }}>
-      @{username}
-    </Typography>
-    <Divider sx={{ width: 48, mb: 2 }} />
-    {tagLine &&
-      <Typography color="text.secondary" variant="body2"
-        sx={{ fontSize: "0.9rem", mb: 1 }}
-      >
-        {tagLine}
-      </Typography>
-    }
-    <Box sx={{ maxHeight: "150px", overflow: "auto" }}>
-      <Typography color="text.secondary" variant="body2"
-        sx={{
-          textAlign: "center",
-          mb: 2,
-          fontSize: "0.9rem",
-        }}
-      >
-        {bio}
-      </Typography>
-    </Box>
-    <Box
-      sx={{
-        mt: 2,
-        display: "flex",
-        alignItems: "center",
-        color: "text.secondary",
-      }}
-    >
-      <PhoneAndroid sx={{ mr: 1, fontSize: 18 }} />
-      <Typography variant="body2">{phoneNumber}</Typography>
-    </Box>
-    <Box
-      sx={{
-        mb: 1,
-        display: "flex",
-        alignItems: "center",
-        color: "text.secondary",
-      }}
-    >
-      <LocationOn sx={{ mr: 1, fontSize: 18, mb: 2 }} />
-      <Typography variant="body2">{location}</Typography>
-    </Box>
-  </Box>
-);
-
-// Template 3: Split Layout with Gradient
-const SplitTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber }) => (
-  <Box
-    sx={{
-      width: "450px",
-      height: "450px",
-      bgcolor: "#1a1a1a",
-      borderRadius: "8px",
-      overflow: "hidden",
-    }}
-  >
-    <Paper
-      sx={{
-        height: "100%",
-        background: "linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)",
-        boxShadow: "none",
-      }}
-    >
-      <Box
-        sx={{
-          height: "100%",
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-        }}
-      >
-        <Box
-          sx={{
-            p: 3,
-            position: "relative",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-start",
-            justifyContent: "center",
-            "&::after": {
-              content: '""',
-              position: "absolute",
-              top: "10%",
-              right: 0,
-              width: "1px",
-              height: "80%",
-              background:
-                "linear-gradient(to bottom, transparent, #444, transparent)",
-            },
-          }}
-        >
-          <Avatar
-            src={avatarUrl}
-            sx={{
-              width: 90,
-              height: 90,
-              border: "3px solid #333",
-              boxShadow: "0 0 20px rgba(0,0,0,0.3)",
-              mb: 2,
-            }}
-          >
-            {!avatarUrl && <Person sx={{ fontSize: 40 }} />}
-          </Avatar>
-          <Typography variant="h6" sx={{ color: "#fff", mb: 0.5 }}>
-            {name}
-          </Typography>
-          <Typography sx={{ color: "#00C7BE", mb: 1, fontSize: "0.9rem" }}>
-            @{username}
-          </Typography>
-          <Box sx={{ display: "flex", alignItems: "center", color: "#888" }}>
-            <PhoneAndroid sx={{ mr: 1, fontSize: 16 }} />
-            <Typography variant="body2">{phoneNumber}</Typography>
-          </Box>
-          <Box sx={{ display: "flex", alignItems: "center", color: "#888" }}>
-            <LocationOn sx={{ mr: 1, fontSize: 16 }} />
-            <Typography variant="body2">{location}</Typography>
-          </Box>
-        </Box>
-
-        <Box
-          sx={{
-            p: 3,
-            bgcolor: "rgba(255,255,255,0.03)",
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-          }}
-        >
-          <Typography
-            variant="h6"
-            sx={{
-              color: "#fff",
-              mb: 2,
-              pb: 1,
-              borderBottom: "2px solid #00C7BE",
-            }}
-          >
-            About Me
-          </Typography>
-          <Typography sx={{ color: "#00C7BE", mb: 1, fontSize: "0.85rem", }}>
-            {tagLine}
-          </Typography>
-          <Typography
-            sx={{
-              color: "#ccc",
-              lineHeight: 1.6,
-              fontSize: "0.85rem",
-              maxHeight: "200px",
-              overflow: "auto",
-            }}
-          >
-            {bio}
-          </Typography>
-        </Box>
-      </Box>
-    </Paper>
-  </Box>
-);
 
 // Template 4: Creative Layout with Cards
 const CreativeTemplate = ({ name, username, bio, location, avatarUrl, tagLine, phoneNumber }) => (

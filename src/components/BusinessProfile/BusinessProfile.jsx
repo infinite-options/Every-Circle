@@ -372,8 +372,6 @@ export default function BusinessProfile() {
                             helperText={errors.phoneNumber}
                         />
 
-
-
                         <SocialLink
                             iconSrc={yelp}
                             alt="Yelp"
