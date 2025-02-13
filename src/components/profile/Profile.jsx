@@ -148,6 +148,7 @@ export default function Profile() {
       file: file,
       coverPhoto: currentIndex + index === 0 && !formData.favImage, // Only set the first new image as cover if there's no favorite image
     };
+    console.log(fileObj)
     setSelectedImages(prev => ([
       ...prev,
       fileObj,
@@ -336,6 +337,7 @@ export default function Profile() {
 
             <Box sx={{ display: "flex", gap: 2, my: 3, justifyContent: "space-between" }}>
               {[0, 1, 2].map((index) => {
+                console.log("Rendering index:", index);
                 return (
                   <SquareImageUpload
                     key={index}

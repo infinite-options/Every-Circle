@@ -65,7 +65,10 @@ export default function Search() {
     try {
       const response = await axios(
         // `https://ioec2testsspm.infiniteoptions.com/search/100-000026?category=${searchString}`
-        `https://ioec2testsspm.infiniteoptions.com/search/${profileId}?category=${searchString}`
+        // `https://ioec2testsspm.infiniteoptions.com/search/${profileId}?type=${searchString}`
+        // `https://ioec2testsspm.infiniteoptions.com/search/${profileId}?category=${searchString}`
+        `https://ioec2testsspm.infiniteoptions.com/api/v2/search/${profileId}?category=${searchString}`
+
       );
 
       // console.log("response", response);
@@ -106,6 +109,44 @@ export default function Search() {
           }}
         >
           {params?.row?.rating_updated_at_timestamp ? dayjs(params.row.rating_updated_at_timestamp).format("MM-DD-YYYY") : "None"}
+        </Typography>
+      ),
+    },
+    {
+      field: 'rating_profile_id',
+      headerName: "Rate By",
+      flex: 1,
+      renderCell: (params) => (
+        <Link
+          style={{ cursor: "pointer", textDecoration: "none", fontWeight: "bold", display: "flex", alignItems: "center"}}
+          onClick={() => {navigate("/showTemplate", {
+            state: {
+              data: params.row,
+              searchResult: searchResult,
+              searchString: searchString,
+              navigatingFrom: "profileId",
+            }
+          })}}
+        >
+          {params.value}
+        </Link>
+      ),
+    },
+    {
+      field: 'rating_uid',
+      headerName: "Rate Id",
+      flex: 1,
+      renderCell: (params) => (
+        <Typography
+          sx={{
+            fontSize: "14px",
+            color: "rgba(26, 26, 26, 0.8)",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {params.value}
         </Typography>
       ),
     },
@@ -221,7 +262,6 @@ export default function Search() {
         </Box>
       ),
     },
-
     {
       field: 'rating_star',
       headerName: 'Rating',

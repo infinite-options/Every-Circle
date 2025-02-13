@@ -6,10 +6,10 @@ import Header from "../common/Header";
 import NavigationBar from "../navigation/NavigationBar";
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import {
-    DarkTemplate,
-    ModernTemplate,
-    MinimalistTemplate,
-    SplitTemplate,
+    DarkShowTemplate,
+    ModernShowTemplate,
+    MinimalistShowTemplate,
+    SplitShowTemplate,
     CreativeTemplate
 } from '../profileTemplate';
 import { useUserContext } from "../contexts/UserContext";
@@ -18,28 +18,30 @@ import { useUserContext } from "../contexts/UserContext";
 export default function ShowTemplate() {
     const { state } = useLocation();
     const navigate = useNavigate();
+    const { user } = useUserContext();
+    console.log(user.profile)
     const { data, searchString, searchResult, navigatingFrom } = state;
-    const [template, setTemplate] = useState(data.business_template || 0);
+    const [template, setTemplate] = useState(navigatingFrom === "profileId" ? parseInt(user.profile.profile_template) : data.business_template || 0);
     const otherImages = data?.business_google_photos ? JSON.parse(data.business_google_photos)?.filter((photo) => photo !== data.business_favorite_image) : [];
 
     const templates = [
         {
-            component: DarkTemplate,
+            component: DarkShowTemplate,
             value: 'Dark',
             id: 0,
         },
         {
-            component: ModernTemplate,
+            component: ModernShowTemplate,
             value: 'modern',
             id: 1,
         },
         {
-            component: MinimalistTemplate,
+            component: MinimalistShowTemplate,
             value: 'minimalist',
             id: 2,
         },
         {
-            component: SplitTemplate,
+            component: SplitShowTemplate,
             value: 'split',
             id: 3,
         },
@@ -77,7 +79,7 @@ export default function ShowTemplate() {
                     flexDirection: "column",
                     flex: 1
                 }}>
-                    <SelectedTemplate
+                    {navigatingFrom !== "profileId" ? <SelectedTemplate
                         name={data.business_name}
                         tagLine={data.business_tag_line || ''}
                         phoneNumber={data.business_phone_number || ""}
@@ -90,7 +92,24 @@ export default function ShowTemplate() {
                         website={data.business_website}
                         rating={navigatingFrom === "rating" ? data.rating_description : ""}
                         role={"business"} // display the details of the business
-                    />
+                    /> : 
+                    <SelectedTemplate
+                        name={user.profile.profile_first_name + " " + user.profile.profile_last_name}
+                        tagLine={user.profile.profile_tag_line || ''}
+                        phoneNumber={user.profile.profile_phone || ""}
+                        bio={user.profile.profile_short_bio || 'Your bio will appear here'}
+                        location={`${user.profile.profile_city || ''}, ${user.profile.profile_state || ''}, ${user.profile.profile_country || ''}` || 'Location'}
+                        avatarUrl={data.business_favorite_image}
+                        imageList={otherImages}
+                        youtube={user.profile.profile_youtube_link || ""}
+                        twitter={user.profile.profile_twitter_link || ""}
+                        linkedin={user.profile.profile_linkedin_link || ""}
+                        facebook={user.profile.profile_facebook_link || ""}
+                        needHelpTags={user.profile.profile_how_can_we_help ? JSON.parse(user.profile.profile_how_can_we_help) : []}
+                        helpTags={user.profile.profile_how_can_you_help ? JSON.parse(user.profile.profile_how_can_you_help) : []}
+                        rating={navigatingFrom === "rating" ? data.rating_description : ""}
+                        role={"user"}
+                    />}
                 </Box>
             </Box>
             <NavigationBar />

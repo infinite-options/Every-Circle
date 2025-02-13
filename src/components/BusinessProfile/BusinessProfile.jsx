@@ -62,6 +62,8 @@ export default function BusinessProfile() {
         googleId: "",
         businessId: "",
         businessCategory: "",
+        subCategory: "",
+        subSubCategory: "",
         businessTypes: [],
     });
     const [businessId, setBusinessId] = useState("");
@@ -78,6 +80,30 @@ export default function BusinessProfile() {
     const [showSpinner, setShowSpinner] = useState(false);
     const [favoriteIcons, setFavoriteIcons] = useState([]);
     const [deletedIcons, setDeletedIcons] = useState([]);
+    const [allCategories, setAllCategories] = useState([])
+    const [mainCategories, setMainCategories] = useState([]);
+    const [subCategories, setSubCategories] = useState([]);
+    const [SubSubCategory, setSubSubCategories] = useState([]);
+
+    useEffect(() => {
+        const fetchCategories = async () => {
+            try {
+                const response = await axios.get("https://ioEC2testsspm.infiniteoptions.com/category_list/all");
+                setAllCategories(response.data.result);
+
+                const mainCategories = response.data.result
+                    .filter(cat => cat.category_parent_id === null)
+                    .map(cat => ({ id: cat.category_uid, name: cat.category_name }));
+                
+
+                setMainCategories(mainCategories);
+            } catch (error) {
+                console.error("Error fetching categories:", error);
+            }
+        };
+
+        fetchCategories();
+    }, []);
 
     const navigate = useNavigate();
 
@@ -89,19 +115,77 @@ export default function BusinessProfile() {
         4: "creative",
     }
 
-    const businessCategories = [
-        { id: "000-000100", name: "Beauty & Personal Care" },
-        { id: "000-000200", name: "Health & Wellness" },
-        { id: "000-000300", name: "Home Services" },
-        { id: "000-000400", name: "Professional Services" },
-        { id: "000-000500", name: "Automotive" },
-        { id: "000-000600", name: "Education & Training" },
-        { id: "000-000700", name: "Events & Entertainment" },
-        { id: "000-000800", name: "Pet Services" },
-        { id: "000-000900", name: "Restaurants & Food" },
-        { id: "000-001000", name: "Retail & Shopping" },
-        { id: "000-001100", name: "Finance & Banking" },
-    ];
+    // const businessCategories = [
+    //     { id: "000-000100", name: "Beauty & Personal Care" },
+    //     { id: "000-000200", name: "Health & Wellness" },
+    //     { id: "000-000300", name: "Home Services" },
+    //     { id: "000-000400", name: "Professional Services" },
+    //     { id: "000-000500", name: "Automotive" },
+    //     { id: "000-000600", name: "Education & Training" },
+    //     { id: "000-000700", name: "Events & Entertainment" },
+    //     { id: "000-000800", name: "Pet Services" },
+    //     { id: "000-000900", name: "Restaurants & Food" },
+    //     { id: "000-001000", name: "Retail & Shopping" },
+    //     { id: "000-001100", name: "Finance & Banking" },
+    // ];
+
+    const handleMainCategoryChange = (value) => {
+        // Find the selected category object
+        const selectedCategoryObj = allCategories.find(cat => cat.category_uid === value);
+        
+        if (!selectedCategoryObj) return;
+    
+        setFormData(prevFormData => ({
+            ...prevFormData,
+            businessCategory: value, // Store the category ID
+            subCategory: "",
+            businessTypes: [...(prevFormData.businessTypes || []), selectedCategoryObj.category_name] // Append category name
+        }));
+    
+        // Filter subcategories based on selected main category
+        const subCats = allCategories
+            .filter(cat => cat.category_parent_id === value)
+            .map(cat => ({ id: cat.category_uid, name: cat.category_name }));
+    
+        setSubCategories(subCats);
+    };
+    
+    const handleSubCategoryChange = (value) => {
+        // Find the selected sub-category object
+        const selectedSubCategoryObj = allCategories.find(cat => cat.category_uid === value);
+        
+        if (!selectedSubCategoryObj) return;
+    
+        // console.log(value);
+        
+        setFormData(prevFormData => ({
+            ...prevFormData,
+            subCategory: value, // Store the sub-category ID
+            businessTypes: [...(prevFormData.businessTypes || []), selectedSubCategoryObj.category_name] // Append sub-category name
+        }));
+    
+        // Filter sub-subcategories based on selected sub-category
+        const subSubCats = allCategories
+            .filter(cat => cat.category_parent_id === value)
+            .map(cat => ({ id: cat.category_uid, name: cat.category_name }));
+    
+        setSubSubCategories(subSubCats);
+    };
+
+    const handleSubSubCategoryChange = (value) => {
+        // Find the selected sub-category object
+        const selectedSubCategoryObj = allCategories.find(cat => cat.category_uid === value);
+        
+        if (!selectedSubCategoryObj) return;
+    
+        // console.log(value);
+        
+        setFormData(prevFormData => ({
+            ...prevFormData,
+            subSubCategory: value,
+            businessTypes: [...(prevFormData.businessTypes || []), selectedSubCategoryObj.category_name] // Append sub-category name
+        }));
+    };
 
     const handleOpen = (title, content) => {
         setDialog({ open: true, title, content });
@@ -328,18 +412,28 @@ export default function BusinessProfile() {
                             value={formData.businessTypes}
                             onChange={(value) => setFormData({ ...formData, businessTypes: value })}
                             isTagInput={true}
-                            disabled={!editMode}
-                            backgroundColor={editMode ? 'white' : '#e0e0e0'}
                         />
-
+    
                         <InputField
                             label="Business Category"
                             value={formData.businessCategory}
-                            onChange={(value) => setFormData({ ...formData, businessCategory: value })}
-                            options={businessCategories} // pass data for dropdown
-                            disabled={!editMode}
-                            backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                            onChange={handleMainCategoryChange}
+                            options={mainCategories} // pass data for dropdown
                         />
+    
+                        {formData.businessCategory?.length > 0 && <InputField
+                            label="Business SubCategory"
+                            value={formData.subCategory}
+                            onChange={handleSubCategoryChange}
+                            options={subCategories} // pass data for dropdown
+                        />}
+
+                        {formData.subCategory?.length > 0 && <InputField
+                            label="Business SubSubCategory"
+                            value={formData.subSubCategory}
+                            onChange={handleSubSubCategoryChange}
+                            options={SubSubCategory} // pass data for dropdown
+                        />}
 
                         <InputField
                             label="Tag Line"
