@@ -47,10 +47,10 @@ export default function Search() {
 
   // Memoize filtered results to avoid recomputing on every render
   const { yourRec, direct, oneAway, twoAway } = useMemo(() => {
-    const yourRec = searchResult.filter((data) => data.connection_degree === 0);
-    const direct = searchResult.filter((data) => data.connection_degree === 1);
-    const oneAway = searchResult.filter((data) => data.connection_degree === 2);
-    const twoAway = searchResult.filter((data) => data.connection_degree === 3);
+    const yourRec = searchResult?.filter((data) => data.connection_degree === 0);
+    const direct = searchResult?.filter((data) => data.connection_degree === 1);
+    const oneAway = searchResult?.filter((data) => data.connection_degree === 2);
+    const twoAway = searchResult?.filter((data) => data.connection_degree === 3);
     return { yourRec, direct, oneAway, twoAway };
   }, [searchResult]);
 

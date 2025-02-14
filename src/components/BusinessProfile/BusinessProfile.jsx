@@ -82,6 +82,7 @@ export default function BusinessProfile() {
     const [deletedIcons, setDeletedIcons] = useState([]);
     const [allCategories, setAllCategories] = useState([])
     const [mainCategories, setMainCategories] = useState([]);
+    const [selectedCategories, setSelectedCategories] = useState([]);
     const [subCategories, setSubCategories] = useState([]);
     const [SubSubCategory, setSubSubCategories] = useState([]);
 
@@ -132,6 +133,7 @@ export default function BusinessProfile() {
     const handleMainCategoryChange = (value) => {
         // Find the selected category object
         const selectedCategoryObj = allCategories.find(cat => cat.category_uid === value);
+        setSelectedCategories((prevCategories) => [...prevCategories, selectedCategoryObj.name]);
         
         if (!selectedCategoryObj) return;
     
@@ -139,7 +141,7 @@ export default function BusinessProfile() {
             ...prevFormData,
             businessCategory: value, // Store the category ID
             subCategory: "",
-            businessTypes: [...(prevFormData.businessTypes || []), selectedCategoryObj.category_name] // Append category name
+            businessTypes: [...(prevFormData.businessTypes || []), value] // Append category name
         }));
     
         // Filter subcategories based on selected main category
@@ -155,13 +157,15 @@ export default function BusinessProfile() {
         const selectedSubCategoryObj = allCategories.find(cat => cat.category_uid === value);
         
         if (!selectedSubCategoryObj) return;
+
+        setSelectedCategories((prevCategories) => [...prevCategories, selectedSubCategoryObj.name]);
     
         // console.log(value);
         
         setFormData(prevFormData => ({
             ...prevFormData,
             subCategory: value, // Store the sub-category ID
-            businessTypes: [...(prevFormData.businessTypes || []), selectedSubCategoryObj.category_name] // Append sub-category name
+            businessTypes: [...(prevFormData.businessTypes || []), value] // Append sub-category name
         }));
     
         // Filter sub-subcategories based on selected sub-category
@@ -177,13 +181,15 @@ export default function BusinessProfile() {
         const selectedSubCategoryObj = allCategories.find(cat => cat.category_uid === value);
         
         if (!selectedSubCategoryObj) return;
+
+        setSelectedCategories((prevCategories) => [...prevCategories, selectedSubCategoryObj.name]);
     
         // console.log(value);
         
         setFormData(prevFormData => ({
             ...prevFormData,
             subSubCategory: value,
-            businessTypes: [...(prevFormData.businessTypes || []), selectedSubCategoryObj.category_name] // Append sub-category name
+            businessTypes: [...(prevFormData.businessTypes || []), value] // Append sub-category name
         }));
     };
 
@@ -306,14 +312,15 @@ export default function BusinessProfile() {
             form.append("business_template", formData.template);
 
             //image related fields 
-            form.append('business_types', JSON.stringify(formData.businessTypes))
+            // console.log(formData.businessTypes)
+            form.append('business_categories_uid', JSON.stringify(formData.businessTypes))
             form.append("business_google_photos", JSON.stringify(formData.businessGooglePhotos));
             form.append("business_favorite_image", formData.favImage);
             form.append("business_uid", businessId);
 
             try {
                 setShowSpinner(true);
-                const response = await axios.put(`${APIConfig.baseURL.dev}/business`, form);
+                const response = await axios.put(`${APIConfig.baseURL.dev}/api/v2/business`, form);
                 console.log("Business Profile updated successfully", response);
                 if (response.data.code === 200) {
                     // Fetch the latest profile data from the server
@@ -408,13 +415,15 @@ export default function BusinessProfile() {
                         />
 
                         <InputField
+                            disabled={!editMode}
                             label="Business Types"
-                            value={formData.businessTypes}
+                            value={selectedCategories}
                             onChange={(value) => setFormData({ ...formData, businessTypes: value })}
                             isTagInput={true}
                         />
     
                         <InputField
+                            disabled={!editMode}
                             label="Business Category"
                             value={formData.businessCategory}
                             onChange={handleMainCategoryChange}
@@ -422,6 +431,7 @@ export default function BusinessProfile() {
                         />
     
                         {formData.businessCategory?.length > 0 && <InputField
+                            disabled={!editMode}
                             label="Business SubCategory"
                             value={formData.subCategory}
                             onChange={handleSubCategoryChange}
@@ -429,6 +439,7 @@ export default function BusinessProfile() {
                         />}
 
                         {formData.subCategory?.length > 0 && <InputField
+                            disabled={!editMode}
                             label="Business SubSubCategory"
                             value={formData.subSubCategory}
                             onChange={handleSubSubCategoryChange}
@@ -501,9 +512,18 @@ export default function BusinessProfile() {
                                 </Typography>
                                 <IconButton size="small" sx={{ p: 0 }}
                                     onClick={() => {
-                                        navigate("/selectBusinessTemplate", { state: { data: formData } });
+                                        if(!editMode){
+                                            navigate("/showTemplate", {
+                                              state: {
+                                                data: user,
+                                                navigatingFrom: "businessProfile",
+                                              }
+                                            })
+                                          }else{
+                                            // navigate("/selectTemplate", { state: { data: formData } });
+                                            navigate("/selectBusinessTemplate", { state: { data: formData } });
+                                          }
                                     }}
-                                    disabled={!editMode}
                                 >
                                     <VisibilityIcon fontSize="small" />
                                 </IconButton>

@@ -19,8 +19,12 @@ export default function ShowTemplate() {
     const { state } = useLocation();
     const navigate = useNavigate();
     const { user } = useUserContext();
-    console.log(user.profile)
-    const { data, searchString, searchResult, navigatingFrom } = state;
+    // console.log(user)
+    let { data, searchString, searchResult, navigatingFrom } = state;
+    // console.log(data)
+    if(navigatingFrom === "businessProfile"){
+        data = data.business;
+    }
     const [template, setTemplate] = useState(navigatingFrom === "profileId" || navigatingFrom === "profilePage" ? parseInt(user.profile.profile_template) : data.business_template || 0);
     const otherImages = data?.business_google_photos ? JSON.parse(data.business_google_photos)?.filter((photo) => photo !== data.business_favorite_image) : [];
 
@@ -58,6 +62,8 @@ export default function ShowTemplate() {
     const handleback = () => {
         if(navigatingFrom === "profilePage"){
             navigate("/profile");
+        }else if(navigatingFrom === "businessProfile"){
+            navigate("/businessProfile");
         }else if(searchResult !== null){
             navigate("/search", { state: { searchString, searchResult } })
         }
@@ -86,7 +92,7 @@ export default function ShowTemplate() {
                         name={data.business_name}
                         tagLine={data.business_tag_line || ''}
                         phoneNumber={data.business_phone_number || ""}
-                        bio={data.business_short_bio || 'Your bio will appear here'}
+                        bio={data.business_short_bio || ''}
                         location={`${data.business_city || ''}, ${data.business_state || ''}, ${data.business_country || ''}` || 'Location'}
                         avatarUrl={data.business_favorite_image}
                         imageList={otherImages}
@@ -100,7 +106,7 @@ export default function ShowTemplate() {
                         name={user.profile.profile_first_name + " " + user.profile.profile_last_name}
                         tagLine={user.profile.profile_tag_line || ''}
                         phoneNumber={user.profile.profile_phone || ""}
-                        bio={user.profile.profile_short_bio || 'Your bio will appear here'}
+                        bio={user.profile.profile_short_bio || ''}
                         location={`${user.profile.profile_city || ''}, ${user.profile.profile_state || ''}, ${user.profile.profile_country || ''}` || 'Location'}
                         avatarUrl={user.profile.profile_favorite_image}
                         imageList={user.profile.profile_images_url ? JSON.parse(user.profile.profile_images_url) : []}

@@ -109,25 +109,24 @@ const BasicInfoStep = ({ formData, handleChange, errors, setFormData, isClaimed,
         }}
       />
 
-      {isClaimed && <>
-        <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
-          EIN Number
-        </Typography>
-        <TextField
-          fullWidth
-          placeholder="EIN Number"
-          name="einNumber"
-          onChange={handleChange}
-          margin="normal"
-          sx={{
-            backgroundColor: "#F5F5F5",
+      <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
+        EIN Number
+      </Typography>
+      <TextField
+        fullWidth
+        required
+        placeholder="EIN Number"
+        name="einNumber"
+        onChange={handleChange}
+        margin="normal"
+        sx={{
+          backgroundColor: "#F5F5F5",
+          borderRadius: 2,
+          "& .MuiOutlinedInput-root": {
             borderRadius: 2,
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 2,
-            },
-          }}
-        />
-      </>}
+          },
+        }}
+      />
     </Box>
   );
 };

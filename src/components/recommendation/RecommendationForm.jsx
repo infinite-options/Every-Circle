@@ -82,7 +82,7 @@ export default function RecommendationForm() {
             ...prevFormData,
             businessCategory: value, // Store the category ID
             subCategory: "",
-            businessTypes: [...(prevFormData.businessTypes || []), selectedCategoryObj.category_name] // Append category name
+            businessTypes: [...(prevFormData.businessTypes || []), value] // Append category name
         }));
     
         // Filter subcategories based on selected main category
@@ -104,7 +104,7 @@ export default function RecommendationForm() {
         setFormData(prevFormData => ({
             ...prevFormData,
             subCategory: value, // Store the sub-category ID
-            businessTypes: [...(prevFormData.businessTypes || []), selectedSubCategoryObj.category_name] // Append sub-category name
+            businessTypes: [...(prevFormData.businessTypes || []), value] // Append sub-category name
         }));
     
         // Filter sub-subcategories based on selected sub-category
@@ -126,7 +126,7 @@ export default function RecommendationForm() {
         setFormData(prevFormData => ({
             ...prevFormData,
             subSubCategory: value,
-            businessTypes: [...(prevFormData.businessTypes || []), selectedSubCategoryObj.category_name] // Append sub-category name
+            businessTypes: [...(prevFormData.businessTypes || []), value] // Append sub-category name
         }));
     };
 
@@ -226,7 +226,7 @@ export default function RecommendationForm() {
             form.append('rating_business_google_rating', formData.googleRating);
             form.append('rating_business_google_photos', JSON.stringify(formData.googlePhotos));
             form.append('rating_business_price_level', formData.priceLevel);
-            form.append('rating_business_category', JSON.stringify(formData.businessTypes))
+            form.append('rating_business_categories_uid', JSON.stringify(formData.businessTypes))
 
             //upload image
             if (formData.receiptImage) {
@@ -242,7 +242,7 @@ export default function RecommendationForm() {
                 }
             }
 
-            const response = await axios.post(`https://ioec2testsspm.infiniteoptions.com/ratings`, form);
+            const response = await axios.post(`https://ioec2testsspm.infiniteoptions.com//api/v2/ratings`, form);
             console.log("response from recommendations POST", response);
             if (response.status === 200) {
                 handleOpen();

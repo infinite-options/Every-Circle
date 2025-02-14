@@ -110,6 +110,7 @@ const BusinessProfileSetupForm = () => {
             data.append("business_short_bio", formData.shortBio);
             data.append("business_yelp", formData.yelp);
             data.append("business_google", formData.google);
+            data.append("business_ein_number", formData.einNumber);
             data.append("business_website", formData.website);
             data.append("business_template", formData.template);
 

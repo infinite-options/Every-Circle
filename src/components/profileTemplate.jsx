@@ -122,24 +122,24 @@ const DarkShowTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber
     }} />
     
     <CardContent sx={{ zIndex: 2, textAlign: "center", maxWidth: "80%" }}>
-      <Typography sx={{ fontFamily: "serif", fontWeight: "bold", mb: 2, fontSize: "1.6rem" }}>{name || "Liceria & Co."}</Typography>
+      <Typography sx={{ fontFamily: "serif", fontWeight: "bold", mb: 2, fontSize: "3rem" }}>{name || "Liceria & Co."}</Typography>
       
       {/* Images */}
       <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", mt: 7}}>
         <Box sx={{ width: 210, height: 210, borderRadius: "50%", overflow: "hidden", border: "2px solid white", position: "absolute", left: "17%", zIndex: 1 }}>
-          <img src= {imageList[0] ? imageList[0] : "https://images.pexels.com/photos/1581384/pexels-photo-1581384.jpeg?cs=srgb&dl=pexels-reneterp-1581384.jpg&fm=jpg"} alt="Spring Rolls" width="100%" height="100%" />
+          <img src= {imageList[0] ? imageList[0] : "https://images.pexels.com/photos/1581384/pexels-photo-1581384.jpeg?cs=srgb&dl=pexels-reneterp-1581384.jpg&fm=jpg"} alt="Spring Rolls" width="100%" height="100%" style={{ objectFit: "cover" }}/>
         </Box>
-        <Box sx={{ width: 230, height: 230, borderRadius: "50%", overflow: "hidden", border: "3px solid white", zIndex: 2 }}>
-          <img src= { imageList[1] ? imageList[1] : "https://images.pexels.com/photos/3434523/pexels-photo-3434523.jpeg?cs=srgb&dl=pexels-bemistermister-3434523.jpg&fm=jpg"} alt="Main Dish" width="100%" height="100%" />
+        <Box sx={{ width: 260, height: 260, borderRadius: "50%", overflow: "hidden", border: "3px solid white", zIndex: 2 }}>
+          <img src= { imageList[1] ? imageList[1] : "https://images.pexels.com/photos/3434523/pexels-photo-3434523.jpeg?cs=srgb&dl=pexels-bemistermister-3434523.jpg&fm=jpg"} alt="Main Dish" width="100%" height="100%" style={{ objectFit: "cover" }} />
         </Box>
         <Box sx={{ width: 210, height: 210, borderRadius: "50%", overflow: "hidden", border: "2px solid white", position: "absolute", right: "17%", zIndex: 1 }}>
-          <img src={imageList[2] ? imageList[2] : "https://images.pexels.com/photos/995743/pexels-photo-995743.jpeg?cs=srgb&dl=pexels-michelle-riach-276396-995743.jpg&fm=jpg"} alt="Noodles" width="100%" height="100%" />
+          <img src={imageList[2] ? imageList[2] : "https://images.pexels.com/photos/995743/pexels-photo-995743.jpeg?cs=srgb&dl=pexels-michelle-riach-276396-995743.jpg&fm=jpg"} alt="Noodles" width="100%" height="100%" style={{ objectFit: "cover" }}/>
         </Box>
       </Box>
       
-      <Typography sx={{ fontFamily: "cursive", mt: 3.5, color: "gold", fontSize: "2rem" }}>{tagLine || "Chinese Restaurant"}</Typography>
-      <Typography variant="h6" sx={{ fontWeight: "bold", color: "white", mt: 1 }}>FOOD MENU</Typography>
-      <Typography sx={{ px: 3, mt: 1, fontSize: "1rem", opacity: "0.7" }}>{bio || "Treat yourself to our exquisite cuisine, where every dish tells a story!"}</Typography>
+      <Typography sx={{ fontFamily: "cursive", mt: 3.5, color: "gold", fontSize: "2rem" }}>{tagLine || ""}</Typography>
+      {/* <Typography variant="h6" sx={{ fontWeight: "bold", color: "white", mt: 1 }}>FOOD MEN</Typography> */}
+      <Typography sx={{ px: 3, mt: 1, fontSize: "1rem", opacity: "0.7" }}>{bio || ""}</Typography>
       
       <Box sx={{ display: "flex", flexDirection: "row", justifyContent: "center", alignItems: "Center", mt: 3, gap: 4 }}>
         <a href={yelp} target="_blank" rel="noopener noreferrer">
@@ -1371,7 +1371,7 @@ const CreativeShowTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNu
           fontSize: "1.6rem", 
           textAlign: "center",
         }}>
-          {name || "Air Kitchen"}
+          {name || ""}
         </Typography>
       </Box>
     </Box>
@@ -1379,13 +1379,13 @@ const CreativeShowTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNu
     {/* Middle right yellow circle */}
     <Box sx={{
       position: 'absolute',
-      width: '50%',
-      height: '50%',
+      width: '500px',
+      height: '500px',
       backgroundColor: '#fdd835',
       border: "7px solid black",
       borderRadius: '50%',
-      top: '8%',
-      right: '-15%',
+      top: '-3%',
+      right: '-30%',
       backgroundImage: `url(${imageList[0] ? imageList[0] : 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRTdVokvqSsvBSn7vkPA_v9dFUUgyaR-9abWg&s'})`,
       backgroundSize: "cover"
     }} />
@@ -1403,8 +1403,7 @@ const CreativeShowTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNu
         fontSize: "2rem",
         opacity: 0.6 
       }}>
-        # <br/>
-        {tagLine || "Best American Cuisine"}
+        {tagLine || ""}
       </Typography>
       <Box sx={{
         display: "flex", 
