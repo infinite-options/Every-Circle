@@ -10,7 +10,7 @@ import {
     ModernShowTemplate,
     MinimalistShowTemplate,
     SplitShowTemplate,
-    CreativeTemplate
+    CreativeShowTemplate
 } from '../profileTemplate';
 import { useUserContext } from "../contexts/UserContext";
 
@@ -21,7 +21,7 @@ export default function ShowTemplate() {
     const { user } = useUserContext();
     console.log(user.profile)
     const { data, searchString, searchResult, navigatingFrom } = state;
-    const [template, setTemplate] = useState(navigatingFrom === "profileId" ? parseInt(user.profile.profile_template) : data.business_template || 0);
+    const [template, setTemplate] = useState(navigatingFrom === "profileId" || navigatingFrom === "profilePage" ? parseInt(user.profile.profile_template) : data.business_template || 0);
     const otherImages = data?.business_google_photos ? JSON.parse(data.business_google_photos)?.filter((photo) => photo !== data.business_favorite_image) : [];
 
     const templates = [
@@ -46,7 +46,7 @@ export default function ShowTemplate() {
             id: 3,
         },
         {
-            component: CreativeTemplate,
+            component: CreativeShowTemplate,
             value: 'creative',
             id: 4
         }
@@ -56,7 +56,11 @@ export default function ShowTemplate() {
 
 
     const handleback = () => {
-        navigate("/search", { state: { searchString, searchResult } })
+        if(navigatingFrom === "profilePage"){
+            navigate("/profile");
+        }else if(searchResult !== null){
+            navigate("/search", { state: { searchString, searchResult } })
+        }
     }
 
     return (
@@ -72,14 +76,13 @@ export default function ShowTemplate() {
                     width: '100%',
                     height: '100%',
                     minHeight: '100%',
-                    // padding: "0px 20px",
                     justifyContent: "center",
                     alignItems: "center",
                     display: "flex",
                     flexDirection: "column",
                     flex: 1
                 }}>
-                    {navigatingFrom !== "profileId" ? <SelectedTemplate
+                    {navigatingFrom !== "profileId" && navigatingFrom !== "profilePage" ? <SelectedTemplate
                         name={data.business_name}
                         tagLine={data.business_tag_line || ''}
                         phoneNumber={data.business_phone_number || ""}
@@ -99,8 +102,8 @@ export default function ShowTemplate() {
                         phoneNumber={user.profile.profile_phone || ""}
                         bio={user.profile.profile_short_bio || 'Your bio will appear here'}
                         location={`${user.profile.profile_city || ''}, ${user.profile.profile_state || ''}, ${user.profile.profile_country || ''}` || 'Location'}
-                        avatarUrl={data.business_favorite_image}
-                        imageList={otherImages}
+                        avatarUrl={user.profile.profile_favorite_image}
+                        imageList={user.profile.profile_images_url ? JSON.parse(user.profile.profile_images_url) : []}
                         youtube={user.profile.profile_youtube_link || ""}
                         twitter={user.profile.profile_twitter_link || ""}
                         linkedin={user.profile.profile_linkedin_link || ""}

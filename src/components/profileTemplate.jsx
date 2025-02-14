@@ -38,598 +38,142 @@ import websiteIcon from "../assets/website-black-icon.png";
 // import { makeStyles } from '@mui/core/styles';
 
 
-import facebookIcon from "../assets/fb-icon.png";
-import youtubeIcon from "../assets/yt-icon.png";
-import linkedinIcon from "../assets/linkedin-icon.webp";
-import twitterIcon from "../assets/x-icon.webp";
-
-
-// Template 0: 
+// Template 0: Dark
 const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating }) => (
-  <Card
-    sx={{
-      width: "250px",
-      height: "400px",
-      minHeight: "100%",
-      maxHeight: "100%",
-      background: "linear-gradient(135deg, #120F0E 0%, #263542 50%, #120F0E 100%)",
-      borderRadius: 2,
-      boxShadow: 3,
-      border: "1px solid rgba(255, 255, 255, 0.1)",
-      overflowY: "auto",
-      flexGrow: 1, 
-      "::-webkit-scrollbar": {
-        width: "5px",
-      },
-      "::-webkit-scrollbar-track": {
-        background: "rgba(255, 255, 255, 0.1)",
-        borderRadius: "10px",
-      },
-      "::-webkit-scrollbar-thumb": {
-        background: "rgba(255, 255, 255, 0.3)",
-        backdropFilter: "blur(5px)",
-        "&:hover": {
-          background: "rgba(255, 255, 255, 0.6)", // Brighter on hover
-        },
-      },
-    }}
-  >
-    <CardContent sx={{ pt: 3, px: 3, pb: 3 }}>
-      {/* Name Section */}
-      <Typography
-        variant="h5"
-        sx={{
-          mb: 0.5,
-          textAlign: "center",
-          color: "#CAAC44",
-          fontFamily: "'Playfair Display', serif",
-          fontWeight: "bold",
-          fontSize: "1.8rem",
-          letterSpacing: "0.05em",
-        }}
-      >
-        {name}
-      </Typography>
-
-      {/* Avatar Section */}
-      <Box
-        sx={{
-          position: "relative",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          gap: 5,
-          mt: 1
-        }}
-      >
-        {/* Left Avatar */}
-        <Avatar
-          // src={imageList?.[0]}
-          src={typeof imageList?.[0] === "object" && imageList?.[0] !== null
-            ? URL.createObjectURL(imageList[0].file)
-            : (typeof imageList?.[0] === "string" ? imageList?.[0] : null)}
-          sx={{
-            width: 80,
-            height: 80,
-            border: 3,
-            borderColor: "white",
-            boxShadow: 3,
-            zIndex: 1,
-          }}
-        >
-          {!avatarUrl && <Person />} {/* Fallback icon if no avatar */}
-        </Avatar>
-
-        {/* Right Avatar */}
-        <Avatar
-          src={typeof imageList?.[1] === "object" && imageList?.[1] !== null
-            ? URL.createObjectURL(imageList[1].file)
-            : (typeof imageList?.[1] === "string" ? imageList?.[1] : null)}
-          sx={{
-            width: 80,
-            height: 80,
-            border: 3,
-            borderColor: "white",
-            boxShadow: 3,
-            zIndex: 1,
-          }}
-        >
-          {!avatarUrl && <Person />} {/* Fallback icon if no avatar */}
-        </Avatar>
-
-        {/* Center Avatar (Overlapping) */}
-        <Avatar
-          src={avatarUrl}
-          sx={{
-            width: 80,
-            height: 80,
-            border: 3,
-            borderColor: "white",
-            boxShadow: 3,
-            position: "absolute",
-            zIndex: 2,
-          }}
-        >
-          {!avatarUrl && <Person />} {/* Fallback icon if no avatar */}
-        </Avatar>
-      </Box>
-
-      {/* Tagline Section */}
-      {tagLine && (
-        <Typography
-          sx={{
-            mt: 2,
-            fontSize: "0.9rem",
-            maxHeight: "150px",
-            overflow: "auto",
-            color: "#CAAC44",
-            fontFamily: "sans-serif",
-            lineHeight: 1.5,
-            textAlign: "center"
-          }}
-        >
-          {tagLine}
-        </Typography>
-      )}
-
-      {/* Bio Section */}
-      <Box>
-        <Typography
-          sx={{
-            mt: 2,
-            fontSize: "0.9rem",
-            color: "#FFFFFF",
-            fontFamily: "sans-serif",
-            lineHeight: 1.5,
-            textAlign: "justify"
-          }}
-        >
-          {bio}
-        </Typography>
-      </Box>
-      <Box
-        sx={{
-          mt: 2,
-          display: "block",
-        }}
-      >
-        {rating && (
-          <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            color: "text.secondary",
-            mb: 2
-          }}
-        >
-          <CommentIcon sx={{ mr: 1, fontSize: 18, color: "#CAAC44" }} />
-          <Typography variant="body2" sx={{ color: "#FFFFFF" }}>
-            {rating}
-          </Typography>
+  <Card sx={{ width: 250, height: 400, backgroundColor: "#1a1a1a", color: "white", position: "relative", textAlign: "center", borderRadius: "15px", overflow: "hidden" }}>
+    <Box sx={{ position: "absolute", width: "100%", height: "100%", backgroundImage: "url('https://images.unsplash.com/photo-1590846406792-0adc7f938f1d?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTF8fHJlc3RhdXJhbnR8ZW58MHx8MHx8fDA%3D')", backgroundSize: "cover", backgroundPosition: "center", opacity: 0.15 }} />
+    <CardContent>
+      <Typography sx={{ fontFamily: "serif", fontWeight: "bold", mb: 1, fontSize: "1rem"}}>Liceria & Co.</Typography>
+      
+      {/* images */}
+      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", mt: 2 }}>
+        <Box sx={{ width: 60, height: 60, borderRadius: "50%", overflow: "hidden", border: "1px solid white", position: "absolute", left: 42, zIndex: 1}}>
+          <img src="https://images.pexels.com/photos/1581384/pexels-photo-1581384.jpeg?cs=srgb&dl=pexels-reneterp-1581384.jpg&fm=jpg" alt="Spring Rolls" width="100%" height="100%" />
         </Box>
-        )}
-
-        {/* Phone Number Section */}
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            color: "text.secondary",
-            mb: 2
-          }}
-        >
-          <PhoneAndroid sx={{ mr: 1, fontSize: 18, color: "#CAAC44" }} />
-          <Typography variant="body2" sx={{ color: "#FFFFFF" }}>
-            {phoneNumber}
-          </Typography>
+        <Box sx={{ width: 90, height: 90, borderRadius: "50%", overflow: "hidden", border: "2px solid white", zIndex: 2 }}>
+          <img src="https://images.pexels.com/photos/3434523/pexels-photo-3434523.jpeg?cs=srgb&dl=pexels-bemistermister-3434523.jpg&fm=jpg" alt="Main Dish" width="100%" height="100%" />
         </Box>
-
-        {/* Location Section */}
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            color: "text.secondary",
-          }}
-        >
-          <LocationOn sx={{ mr: 1, fontSize: 18, color: "#CAAC44" }} />
-          <Typography variant="body2" sx={{ color: "#FFFFFF" }}>
-            {location}
-          </Typography>
+        <Box sx={{ width: 60, height: 60, borderRadius: "50%", overflow: "hidden", border: "1px solid white",  position: "absolute", right: 42, zIndex: 1 }}>
+          <img src="https://images.pexels.com/photos/995743/pexels-photo-995743.jpeg?cs=srgb&dl=pexels-michelle-riach-276396-995743.jpg&fm=jpg" alt="Noodles" width="100%" height="100%" />
         </Box>
       </Box>
 
-      {role === "business" ? (
-        <>
-          {/* Links Section */}
-          <Box
-            sx={{
-              mt: 3,
-              display: "flex",
-              justifyContent: "space-evenly",
-              alignItems: "center",
-              mb: 3,
-            }}
-          >
-            {/* Website Icon */}
-            <a href={website} target="_blank" rel="noopener noreferrer">
-              <img
-                src={websiteIcon}
-                alt="Website"
-                style={{ width: 25, height: 25, cursor: "pointer" }}
-              />
-            </a>
+      <Typography sx={{ fontFamily: "cursive", mt: 2, color: "gold", fontSize: "1rem" }}>Chinese Restaurant</Typography>
+      <Typography variant="h6" sx={{ fontWeight: "bold", color: "white" }}>FOOD MENU</Typography>
+      <Typography sx={{ px: 2, mt: 1, fontSize: "0.87rem" }}>Treat yourself to our exquisite cuisine, where every dish tells a story!</Typography>
+      
+      <Box sx={{display: "flex", flexDirection: "row", justifyContent: "center", alignItems: "Center", mt: 2}}>
+        <a href={yelp} target="_blank" rel="noopener noreferrer" style={{marginRight: 20}}>
+          <img
+            src={yelpIcon}
+            alt="Yelp"
+            style={{ width: 20, height: 20, cursor: "pointer" }}
+          />
+        </a>
 
+        {/* Google Icon */}
+        <a href={google} target="_blank" rel="noopener noreferrer">
+          <img
+            src={GoogleIcon}
+            alt="Google"
+            style={{ width: 20, height: 20, cursor: "pointer" }}
+          />
+        </a>
+      </Box>
 
-            {/* Yelp Icon */}
-            <a href={yelp} target="_blank" rel="noopener noreferrer">
-              <img
-                src={yelpIcon}
-                alt="Yelp"
-                style={{ width: 25, height: 25, cursor: "pointer" }}
-              />
-            </a>
-
-            {/* Google Icon */}
-            <a href={google} target="_blank" rel="noopener noreferrer">
-              <img
-                src={GoogleIcon}
-                alt="Google"
-                style={{ width: 25, height: 25, cursor: "pointer" }}
-              />
-            </a>
-
-          </Box>
-        </>
-      ) : (
-        <>
-          {/* Links Section */}
-          <Box
-            sx={{
-              mt: 3,
-              display: "flex",
-              justifyContent: "space-evenly",
-              alignItems: "center",
-              mb: 3
-            }}
-          >
-            {/* FB Icon */}
-            <a href={facebook} target="_blank" rel="noopener noreferrer">
-              <img
-                src={facebookIcon}
-                alt="Facebook"
-                style={{ width: 30, height: 30, cursor: "pointer", borderRadius: "50%" }}
-              />
-            </a>
-
-
-            {/* Twitter Icon */}
-            <a href={twitter} target="_blank" rel="noopener noreferrer">
-              <img
-                src={twitterIcon}
-                alt="Twitter"
-                style={{ width: 30, height: 30, cursor: "pointer", borderRadius: "50%" }}
-              />
-            </a>
-
-            {/* Linkedin Icon */}
-            <a href={linkedin} target="_blank" rel="noopener noreferrer">
-              <img
-                src={linkedinIcon}
-                alt="Linkedin"
-                style={{ width: 30, height: 30, cursor: "pointer" }}
-              />
-            </a>
-
-            {/* Linkedin Icon */}
-            <a href={youtube} target="_blank" rel="noopener noreferrer">
-              <img
-                src={youtubeIcon}
-                alt="YouTube"
-                style={{ width: 30, height: 30, cursor: "pointer" }}
-              />
-            </a>
-
-          </Box>
-        </>
-      )}
+      <Box sx={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", justifyContent: "space-evenly", alignItems: "center", flexDirection: "row", gap: 1 }}>
+        <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "row"}}>
+          <PhoneAndroid fontSize="9px" sx={{ opacity: 0.6 }} /> 
+          <Typography fontSize="10px" sx={{opacity: 0.6}}>123-456-7890</Typography>  
+        </Box>
+        <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "row"}}>
+          <LocationOn fontSize="9px" sx={{ opacity: 0.6 }} /> 
+          <Typography fontSize="10px" sx={{ opacity: 0.6 }}>123 Anywhere St, Any City</Typography>
+        </Box>
+      </Box>
     </CardContent>
-  </Card >
+  </Card>
 );
 
 const DarkShowTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating }) => (
-  <Card
-    sx={{
-      width: "100%",
-      height: "100%",
-      minHeight: "100%",
-      maxHeight: "100%",
-      background: "linear-gradient(135deg, #120F0E 0%, #263542 50%, #120F0E 100%)",
-      borderRadius: 2,
-      boxShadow: 3,
-      border: "1px solid rgba(255, 255, 255, 0.1)",
-      overflowY: "auto",
-      flexGrow: 1, 
-      "::-webkit-scrollbar": {
-        width: "5px",
-      },
-      "::-webkit-scrollbar-track": {
-        background: "rgba(255, 255, 255, 0.1)",
-        borderRadius: "10px",
-      },
-      "::-webkit-scrollbar-thumb": {
-        background: "rgba(255, 255, 255, 0.3)",
-        backdropFilter: "blur(5px)",
-        "&:hover": {
-          background: "rgba(255, 255, 255, 0.6)", // Brighter on hover
-        },
-      },
-    }}
-  >
-    <CardContent sx={{ pt: 3, px: 3, pb: 3 }}>
-      {/* Name Section */}
-      <Typography
-        variant="h5"
-        sx={{
-          mb: 2,
-          textAlign: "center",
-          color: "#CAAC44",
-          fontFamily: "'Playfair Display', serif",
-          fontWeight: "bold",
-          fontSize: "2rem",
-          letterSpacing: "0.05em",
-        }}
-      >
-        {name}
-      </Typography>
-
-      {/* Avatar Section */}
-      <Box
-        sx={{
-          position: "relative",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          gap: 5,
-          mt: 5
-        }}
-      >
-        {/* Left Avatar */}
-        <Avatar
-          // src={imageList?.[0]}
-          src={typeof imageList?.[0] === "object" && imageList?.[0] !== null
-            ? URL.createObjectURL(imageList[0].file)
-            : (typeof imageList?.[0] === "string" ? imageList?.[0] : null)}
-          sx={{
-            width: 120,
-            height: 120,
-            border: 3,
-            borderColor: "white",
-            boxShadow: 3,
-            zIndex: 1,
-          }}
-        >
-          {!avatarUrl && <Person />} {/* Fallback icon if no avatar */}
-        </Avatar>
-
-        {/* Right Avatar */}
-        <Avatar
-          src={typeof imageList?.[1] === "object" && imageList?.[1] !== null
-            ? URL.createObjectURL(imageList[1].file)
-            : (typeof imageList?.[1] === "string" ? imageList?.[1] : null)}
-          sx={{
-            width: 120,
-            height: 120,
-            border: 3,
-            borderColor: "white",
-            boxShadow: 3,
-            zIndex: 1,
-          }}
-        >
-          {!avatarUrl && <Person />} {/* Fallback icon if no avatar */}
-        </Avatar>
-
-        {/* Center Avatar (Overlapping) */}
-        <Avatar
-          src={avatarUrl}
-          sx={{
-            width: 120,
-            height: 120,
-            border: 3,
-            borderColor: "white",
-            boxShadow: 3,
-            position: "absolute",
-            zIndex: 2,
-          }}
-        >
-          {!avatarUrl && <Person />} {/* Fallback icon if no avatar */}
-        </Avatar>
-      </Box>
-
-      {/* Tagline Section */}
-      {tagLine && (
-        <Typography
-          sx={{
-            mt: 4,
-            fontSize: "1.5rem",
-            maxHeight: "150px",
-            overflow: "auto",
-            color: "#CAAC44",
-            fontFamily: "sans-serif",
-            lineHeight: 1.5,
-            textAlign: "center"
-          }}
-        >
-          {tagLine}
-        </Typography>
-      )}
-
-      {/* Bio Section */}
-      <Box
-        sx={{
-          mt: role === "user" ? 3 : 5,
-          display: "block",
-        }}
-      >
-        <Box>
-          <Typography
-            sx={{
-              mb: 2,
-              fontSize: "1rem",
-              color: "#FFFFFF",
-              fontFamily: "sans-serif",
-              lineHeight: 1.5,
-              textAlign: "justify"
-            }}
-          >
-            {bio}
-          </Typography>
+  <Card sx={{ 
+    width: '100%', 
+    height: '97vh', 
+    backgroundColor: "#1a1a1a", 
+    color: "white", 
+    position: "relative", 
+    textAlign: "center", 
+    borderRadius: "0px", 
+    overflow: "hidden", 
+    display: "flex", 
+    flexDirection: "column", 
+    justifyContent: "center", 
+    alignItems: "center"
+  }}>
+    
+    <Box sx={{ 
+      position: "absolute", 
+      width: "100%", 
+      height: "100%", 
+      backgroundImage: "url('https://images.unsplash.com/photo-1590846406792-0adc7f938f1d?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTF8fHJlc3RhdXJhbnR8ZW58MHx8MHx8fDA%3D')", 
+      backgroundSize: "cover", 
+      backgroundPosition: "center", 
+      opacity: 0.15 
+    }} />
+    
+    <CardContent sx={{ zIndex: 2, textAlign: "center", maxWidth: "80%" }}>
+      <Typography sx={{ fontFamily: "serif", fontWeight: "bold", mb: 2, fontSize: "1.6rem" }}>{name || "Liceria & Co."}</Typography>
+      
+      {/* Images */}
+      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", mt: 7}}>
+        <Box sx={{ width: 210, height: 210, borderRadius: "50%", overflow: "hidden", border: "2px solid white", position: "absolute", left: "17%", zIndex: 1 }}>
+          <img src= {imageList[0] ? imageList[0] : "https://images.pexels.com/photos/1581384/pexels-photo-1581384.jpeg?cs=srgb&dl=pexels-reneterp-1581384.jpg&fm=jpg"} alt="Spring Rolls" width="100%" height="100%" />
         </Box>
-
-        {rating && (
-          <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            color: "text.secondary",
-            mb: 2
-          }}
-        >
-          <CommentIcon sx={{ mr: 1, fontSize: 18, color: "#CAAC44" }} />
-          <Typography variant="body2" sx={{ color: "#FFFFFF" }}>
-            {rating}
-          </Typography>
+        <Box sx={{ width: 230, height: 230, borderRadius: "50%", overflow: "hidden", border: "3px solid white", zIndex: 2 }}>
+          <img src= { imageList[1] ? imageList[1] : "https://images.pexels.com/photos/3434523/pexels-photo-3434523.jpeg?cs=srgb&dl=pexels-bemistermister-3434523.jpg&fm=jpg"} alt="Main Dish" width="100%" height="100%" />
         </Box>
-        )}
-
-        {/* Phone Number Section */}
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            color: "text.secondary",
-            mb: 2
-          }}
-        >
-          <PhoneAndroid sx={{ mr: 1, fontSize: 25, color: "#CAAC44" }} />
-          <Typography sx={{ color: "#FFFFFF", fontSize: "1rem" }}>
-            {phoneNumber}
-          </Typography>
-        </Box>
-
-        {/* Location Section */}
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            color: "text.secondary",
-          }}
-        >
-          <LocationOn sx={{ mr: 1, fontSize: 25, color: "#CAAC44" }} />
-          <Typography sx={{ color: "#FFFFFF", fontSize: "1rem"}}>
-            {location}
-          </Typography>
+        <Box sx={{ width: 210, height: 210, borderRadius: "50%", overflow: "hidden", border: "2px solid white", position: "absolute", right: "17%", zIndex: 1 }}>
+          <img src={imageList[2] ? imageList[2] : "https://images.pexels.com/photos/995743/pexels-photo-995743.jpeg?cs=srgb&dl=pexels-michelle-riach-276396-995743.jpg&fm=jpg"} alt="Noodles" width="100%" height="100%" />
         </Box>
       </Box>
-
-      {role === "business" ? (
-        <>
-          {/* Links Section */}
-          <Box
-            sx={{
-              mt: 7,
-              display: "flex",
-              justifyContent: "space-evenly",
-              alignItems: "center",
-              mb: 3,
-            }}
-          >
-            {/* Website Icon */}
-            <a href={website} target="_blank" rel="noopener noreferrer">
-              <img
-                src={websiteIcon}
-                alt="Website"
-                style={{ width: 40, height: 40, cursor: "pointer" }}
-              />
-            </a>
-
-
-            {/* Yelp Icon */}
-            <a href={yelp} target="_blank" rel="noopener noreferrer">
-              <img
-                src={yelpIcon}
-                alt="Yelp"
-                style={{ width: 40, height: 40, cursor: "pointer" }}
-              />
-            </a>
-
-            {/* Google Icon */}
-            <a href={google} target="_blank" rel="noopener noreferrer">
-              <img
-                src={GoogleIcon}
-                alt="Google"
-                style={{ width: 40, height: 40, cursor: "pointer" }}
-              />
-            </a>
-
-          </Box>
-        </>
-      ) : (
-        <>
-          {/* Links Section */}
-          <Box
-            sx={{
-              mt: 7,
-              display: "flex",
-              justifyContent: "space-evenly",
-              alignItems: "center",
-              mb: 3
-            }}
-          >
-            {/* FB Icon */}
-            <a href={facebook} target="_blank" rel="noopener noreferrer">
-              <img
-                src={facebookIcon}
-                alt="Facebook"
-                style={{ width: 40, height: 40, cursor: "pointer", borderRadius: "50%" }}
-              />
-            </a>
-
-
-            {/* Twitter Icon */}
-            <a href={twitter} target="_blank" rel="noopener noreferrer">
-              <img
-                src={twitterIcon}
-                alt="Twitter"
-                style={{ width: 40, height: 40, cursor: "pointer", borderRadius: "50%" }}
-              />
-            </a>
-
-            {/* Linkedin Icon */}
-            <a href={linkedin} target="_blank" rel="noopener noreferrer">
-              <img
-                src={linkedinIcon}
-                alt="Linkedin"
-                style={{ width: 40, height: 40, cursor: "pointer" }}
-              />
-            </a>
-
-            {/* Linkedin Icon */}
-            <a href={youtube} target="_blank" rel="noopener noreferrer">
-              <img
-                src={youtubeIcon}
-                alt="YouTube"
-                style={{ width: 40, height: 40, cursor: "pointer" }}
-              />
-            </a>
-
-          </Box>
-        </>
-      )}
+      
+      <Typography sx={{ fontFamily: "cursive", mt: 3.5, color: "gold", fontSize: "2rem" }}>{tagLine || "Chinese Restaurant"}</Typography>
+      <Typography variant="h6" sx={{ fontWeight: "bold", color: "white", mt: 1 }}>FOOD MENU</Typography>
+      <Typography sx={{ px: 3, mt: 1, fontSize: "1rem", opacity: "0.7" }}>{bio || "Treat yourself to our exquisite cuisine, where every dish tells a story!"}</Typography>
+      
+      <Box sx={{ display: "flex", flexDirection: "row", justifyContent: "center", alignItems: "Center", mt: 3, gap: 4 }}>
+        <a href={yelp} target="_blank" rel="noopener noreferrer">
+          <img src={yelpIcon} alt="Yelp" style={{ width: 40, height: 40, cursor: "pointer" }} />
+        </a>
+        <a href={google} target="_blank" rel="noopener noreferrer">
+          <img src={GoogleIcon} alt="Google" style={{ width: 40, height: 40, cursor: "pointer" }} />
+        </a>
+      </Box>
+      
+      <Box sx={{ 
+        position: "absolute", 
+        bottom: 15, 
+        left: 0, 
+        right: 0, 
+        display: "flex", 
+        justifyContent: "space-evenly", 
+        alignItems: "center", 
+        flexDirection: "row", 
+        gap: 3,
+        px: 3
+      }}>
+        <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "row" }}>
+          <PhoneAndroid fontSize="small" sx={{ opacity: 0.6 }} /> 
+          <Typography fontSize="1rem" sx={{ opacity: 0.6, ml: 1 }}>{phoneNumber || "123-456-7890"}</Typography>  
+        </Box>
+        <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "row" }}>
+          <LocationOn fontSize="small" sx={{ opacity: 0.6 }} /> 
+          <Typography fontSize="1rem" sx={{ opacity: 0.6, ml: 1 }}>{location !== ", , " ? location : "Address"}</Typography>
+        </Box>
+      </Box>
     </CardContent>
-  </Card >
+  </Card>
 );
-
 
 // Template 1: Modern Card Layout
 const ModernTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating }) => {
@@ -755,7 +299,7 @@ const ModernShowTemplate = ({ name, bio, location, avatarUrl, helpTags, needHelp
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        backgroundImage: `url('https://media.istockphoto.com/id/1342155703/photo/synth-wave-portrait-cyberpunk-man-neon-light-blue.jpg?s=612x612&w=0&k=20&c=aZV1dh8bUx2hmz6VF3UzE93LY5gc7X_UHlFEDkmk_fk=')`,
+        backgroundImage: `url(${imageList[0] ? imageList[0] : 'https://media.istockphoto.com/id/1342155703/photo/synth-wave-portrait-cyberpunk-man-neon-light-blue.jpg?s=612x612&w=0&k=20&c=aZV1dh8bUx2hmz6VF3UzE93LY5gc7X_UHlFEDkmk_fk='})`,
         backgroundSize: "cover",
         backgroundPosition: "center",
       }}
@@ -782,7 +326,7 @@ const ModernShowTemplate = ({ name, bio, location, avatarUrl, helpTags, needHelp
         }}>
           <Box sx={{display: "flex", flexDirection: "row", justifyContent: "space-between", width : "20%"}}>
             <Avatar
-              src={avatarUrl || "https://media.istockphoto.com/id/1342155703/photo/synth-wave-portrait-cyberpunk-man-neon-light-blue.jpg?s=612x612&w=0&k=20&c=aZV1dh8bUx2hmz6VF3UzE93LY5gc7X_UHlFEDkmk_fk="}
+              src={imageList[2] || "https://media.istockphoto.com/id/1342155703/photo/synth-wave-portrait-cyberpunk-man-neon-light-blue.jpg?s=612x612&w=0&k=20&c=aZV1dh8bUx2hmz6VF3UzE93LY5gc7X_UHlFEDkmk_fk="}
               sx={{
                 width: { xs: 48, sm: 56 },
                 height: { xs: 48, sm: 56 },
@@ -790,7 +334,7 @@ const ModernShowTemplate = ({ name, bio, location, avatarUrl, helpTags, needHelp
               }}
             />
             <Avatar
-              src={avatarUrl || "https://media.istockphoto.com/id/1342155703/photo/synth-wave-portrait-cyberpunk-man-neon-light-blue.jpg?s=612x612&w=0&k=20&c=aZV1dh8bUx2hmz6VF3UzE93LY5gc7X_UHlFEDkmk_fk="}
+              src={imageList[1] || "https://media.istockphoto.com/id/1342155703/photo/synth-wave-portrait-cyberpunk-man-neon-light-blue.jpg?s=612x612&w=0&k=20&c=aZV1dh8bUx2hmz6VF3UzE93LY5gc7X_UHlFEDkmk_fk="}
               sx={{
                 width: { xs: 48, sm: 56 },
                 height: { xs: 48, sm: 56 },
@@ -1091,7 +635,7 @@ const MinimalistShowTemplate = ({ name, bio, location, avatarUrl, helpTags, need
           left: 0,
           width: '100%',
           height: '100%',
-          backgroundImage: `url('https://i.redd.it/q8aw8rul6rr81.jpg')`,
+          backgroundImage: `url(${imageList[0] ? imageList[0] : 'https://i.redd.it/q8aw8rul6rr81.jpg'})`,
           backgroundSize: "cover",
           backgroundPosition: "center",
           clipPath: 'polygon(0 0, 100% 0, 100% 50%, 0 35%)',
@@ -1135,6 +679,7 @@ const MinimalistShowTemplate = ({ name, bio, location, avatarUrl, helpTags, need
               width: { xs: 50, sm: 80 },
               height: { xs: 50, sm: 80 },
               bgcolor: '#e0e0e0',
+              border: "1px solid black",
               boxShadow: '0px 2px 4px rgba(0,0,0,0.1)',
             }}
           />
@@ -1496,7 +1041,7 @@ const SplitShowTemplate = ({ name, bio, location, avatarUrl, helpTags, needHelpT
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundImage: `url(${avatarUrl || 'https://static.vecteezy.com/system/resources/thumbnails/026/945/935/small/business-man-on-black-background-free-photo.jpg'})`,
+          backgroundImage: `url(${imageList[0] || 'https://static.vecteezy.com/system/resources/thumbnails/026/945/935/small/business-man-on-black-background-free-photo.jpg'})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
         }}/>
@@ -1532,7 +1077,7 @@ const SplitShowTemplate = ({ name, bio, location, avatarUrl, helpTags, needHelpT
             />
 
             <Avatar
-              src={avatarUrl || "https://static.vecteezy.com/system/resources/thumbnails/026/945/935/small/business-man-on-black-background-free-photo.jpg"}
+              src={imageList[1] || "https://static.vecteezy.com/system/resources/thumbnails/026/945/935/small/business-man-on-black-background-free-photo.jpg"}
               sx={{
                 width: { xs: 50, sm: 60 },
                 height: { xs: 50, sm: 60 },
@@ -1624,7 +1169,7 @@ const SplitShowTemplate = ({ name, bio, location, avatarUrl, helpTags, needHelpT
           How can I help you!!
         </Typography>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.2, mb: 2 }}>
-          {helpTags.map((tag, index) => (
+          {helpTags?.map((tag, index) => (
             tag && <Chip 
               key={index} 
               label={tag} 
@@ -1638,7 +1183,7 @@ const SplitShowTemplate = ({ name, bio, location, avatarUrl, helpTags, needHelpT
           How can you help me!!
         </Typography>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1.2, mb: 2 }}>
-          {needHelpTags.map((tag, index) => (
+          {needHelpTags?.map((tag, index) => (
             tag && <Chip 
               key={index} 
               label={tag} 
@@ -1677,123 +1222,298 @@ const SplitShowTemplate = ({ name, bio, location, avatarUrl, helpTags, needHelpT
 };
 
 // Template 4: Creative Layout with Cards
+
 const CreativeTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating }) => (
-  <Paper
-    sx={{
-      width: "450px",
-      height: "450px",
-      background: "linear-gradient(45deg, #000851, #1CB5E0)",
-      borderRadius: "8px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      p: 3,
-      radius: "8px"
-    }}
-  >
-    <Box
-      sx={{
-        width: "100%",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        p: 3,
-        mt: 2
-      }}
-    >
-      <Box
-        sx={{
-          position: "relative",
-          mb: 3,
-          "&::before": {
-            content: '""',
-            position: "absolute",
-            top: -15,
-            left: -15,
-            right: -15,
-            bottom: -15,
-            background: "linear-gradient(45deg, #00C7BE, #1CB5E0)",
-            borderRadius: "50%",
-            opacity: 0.3,
-            animation: "pulse 2s infinite",
-          },
-        }}
-      >
-        <Avatar
-          src={avatarUrl}
-          sx={{
-            width: 80,
-            height: 80,
-            border: "3px solid rgba(255,255,255,0.3)",
-            position: "relative",
-          }}
-        >
-          {!avatarUrl && <Person />}
-        </Avatar>
-      </Box>
-
-      <Typography
-        variant="h5"
-        sx={{ color: "#fff", textAlign: "center", mb: 1 }}
-      >
-        {name}
-      </Typography>
-      <Typography sx={{ color: "#00C7BE", mb: 1, fontSize: "0.9rem" }}>
-        @{name}
-      </Typography>
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          color: "rgba(255,255,255,0.7)",
-          mb: 1,
-        }}
-      >
-        <PhoneAndroid sx={{ mr: 1, fontSize: 16 }} />
-        <Typography variant="body2">{phoneNumber}</Typography>
-      </Box>
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          color: "rgba(255,255,255,0.7)",
-          mb: 1,
-        }}
-      >
-        <LocationOn sx={{ mr: 1, fontSize: 16 }} />
-        <Typography variant="body2">{location}</Typography>
-      </Box>
-
-      {tagLine && <Typography sx={{ color: "#00C7BE", mb: 1, fontSize: "0.9rem" }}>
-        {tagLine}
-      </Typography>}
-
-      <Paper
-        sx={{
-          p: 2,
-          bgcolor: "rgba(0,0,0,0.2)",
-          borderRadius: 2,
-          maxWidth: "300px",
-          width: "100%",
-        }}
-      >
-        <Typography
-          sx={{
-            color: "#fff",
-            lineHeight: 1.6,
-            textAlign: "center",
-            fontStyle: "italic",
-            fontSize: "0.85rem",
-            maxHeight: "50px",
-            overflow: "auto",
-            mb: 1,
-          }}
-        >
-          {bio}
+  <Box sx={{
+    position: 'relative',
+    width: '250px',
+    height: '400px',
+    backgroundColor: '#fff',
+    overflow: 'hidden'
+  }}>
+    {/* Top yellow circle */}
+    <Box sx={{
+      position: 'absolute',
+      width: '144px',
+      height: '144px',
+      backgroundColor: '#fdd835',
+      borderRadius: '50%',
+      top: -32,
+      left: -32
+    }}>
+      <Box sx={{ position: 'absolute', top: 45, left: 40, width: "50px"}}>
+        <Typography sx={{ fontWeight: 'bold', mt: 0.5, fontSize: "1.2rem", textAlign: "center",}}>
+          Air Kitchen
         </Typography>
-      </Paper>
+      </Box>
     </Box>
-  </Paper>
+
+    {/* Middle right yellow circle */}
+    <Box 
+      sx={{
+        position: 'absolute',
+        width: '144px',
+        height: '144px',
+        backgroundColor: '#fdd835',
+        border: "7px solid black",
+        borderRadius: '50%',
+        top: '18%',
+        right: -38,
+        backgroundImage: `url('https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRTdVokvqSsvBSn7vkPA_v9dFUUgyaR-9abWg&s')`,
+        backgroundSize: "cover"
+      }} 
+    />
+
+    {/* Content section */}
+    <Box sx={{ position: 'absolute', top: '32%', left: 18, width: "150px" }}>
+      <Typography sx={{ mb: 1.5, fontFamily: "cursive", fontSize: "1rem" }}>
+        Best American Cuisine
+      </Typography>
+      <Box sx={{display: "flex", flexDirection: "row", justifyContent: "start", alignItems: "Center", mt: 1.5}}>
+        <a href={yelp} target="_blank" rel="noopener noreferrer" style={{marginRight: 20}}>
+          <img
+            src={yelpIcon}
+            alt="Yelp"
+            style={{ width: 20, height: 20, cursor: "pointer" }}
+          />
+        </a>
+
+        {/* Google Icon */}
+        <a href={google} target="_blank" rel="noopener noreferrer">
+          <img
+            src={GoogleIcon}
+            alt="Google"
+            style={{ width: 20, height: 20, cursor: "pointer" }}
+          />
+        </a>
+      </Box>
+    </Box>
+
+    {/* First black circle */}
+    <Box sx={{
+      position: 'absolute',
+      width: '400px',
+      height: '400px',
+      backgroundColor: '#000',
+      border: "7px solid #fdd835",
+      borderRadius: '50%',
+      top: '57%',
+      left: -64
+    }}>
+      <Box sx={{width: "250px", position: 'absolute', top: 34, left: 96, display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-evenly"}}>
+        <Box sx={{width: "110px"}}>
+          <Typography sx={{fontSize: "1rem", fontWeight: "bold", color: '#C1C122' }}>
+            About Us
+          </Typography>
+          <Typography sx={{fontSize: "0.5rem", color: 'white', opacity: 0.6}}>
+            Lorem ipsum dolor sit amet consectetur adipisicing elit. Nulla obcaecati illum at officia
+          </Typography>
+        </Box>
+        <Box sx={{
+          width: '64px',
+          height: '64px',
+          backgroundColor: '#e0e0e0',
+          borderRadius: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          mt: 1,
+          ml: 1,
+          mr: 6,
+          border: "1px solid white",
+          backgroundImage: `url('https://media.istockphoto.com/id/1162911786/photo/the-team-of-cooks-backs-in-the-work-in-the-modern-kitchen-the-workflow-of-the-restaurant-in.jpg?s=612x612&w=0&k=20&c=Nn1xO1gbUGnEzTHp4Sitg_ouob_co3jY5hDv_kHWzxE=')`,
+          backgroundSize: "cover",
+        }}/>
+      </Box>
+    </Box>
+
+    <Box sx={{ display: 'flex', gap: 1.5, mt: 1.5, bgcolor: "#fdd835", position: "absolute", bottom: 0, left: 0, right: 0, height: "30px", justifyContent: "space-evenly", alignItems: "center"}}>
+      <Typography variant="caption" sx={{ color: '#fff' }}>
+        Phone Number
+      </Typography>
+      <Typography variant="caption" sx={{ color: '#fff' }}>
+        Address
+      </Typography>
+    </Box>
+  </Box>
 );
 
-export { DarkTemplate, ModernTemplate, MinimalistTemplate, SplitTemplate, CreativeTemplate, SplitShowTemplate, DarkShowTemplate, ModernShowTemplate, MinimalistShowTemplate };
+const CreativeShowTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating }) => (
+  <Box sx={{
+    position: 'relative',
+    width: '100%',
+    height: '97vh',  // Full height of viewport
+    maxHeight: '100vh',  // Ensures minimum height
+    backgroundColor: '#fff',
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden'
+  }}>
+    {/* Top yellow circle */}
+    <Box sx={{
+      position: 'absolute',
+      width: '35%',
+      height: '35%',
+      backgroundColor: '#fdd835',
+      borderRadius: '50%',
+      top: '-10%',
+      left: '-10%'
+    }}>
+      <Box sx={{ 
+        position: 'absolute', 
+        top: '47%', 
+        left: '40%', 
+        width: "40%" 
+      }}>
+        <Typography sx={{ 
+          fontWeight: 'bold', 
+          mt: '2%', 
+          fontSize: "1.6rem", 
+          textAlign: "center",
+        }}>
+          {name || "Air Kitchen"}
+        </Typography>
+      </Box>
+    </Box>
+
+    {/* Middle right yellow circle */}
+    <Box sx={{
+      position: 'absolute',
+      width: '50%',
+      height: '50%',
+      backgroundColor: '#fdd835',
+      border: "7px solid black",
+      borderRadius: '50%',
+      top: '8%',
+      right: '-15%',
+      backgroundImage: `url(${imageList[0] ? imageList[0] : 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRTdVokvqSsvBSn7vkPA_v9dFUUgyaR-9abWg&s'})`,
+      backgroundSize: "cover"
+    }} />
+
+    {/* Content section */}
+    <Box sx={{ 
+      position: 'absolute', 
+      top: '31%', 
+      left: '7%', 
+      width: "60%" 
+    }}>
+      <Typography sx={{ 
+        mb: '4%', 
+        fontFamily: "cursive", 
+        fontSize: "2rem",
+        opacity: 0.6 
+      }}>
+        # <br/>
+        {tagLine || "Best American Cuisine"}
+      </Typography>
+      <Box sx={{
+        display: "flex", 
+        flexDirection: "row", 
+        justifyContent: "start", 
+        alignItems: "center", 
+        mt: '4%'
+      }}>
+        <a href={yelp} target="_blank" rel="noopener noreferrer" style={{marginRight: '8%'}}>
+          <img
+            src={yelpIcon}
+            alt="Yelp"
+            style={{ 
+              width: '35px', 
+              height: '35px', 
+              cursor: "pointer" 
+            }}
+          />
+        </a>
+        <a href={google} target="_blank" rel="noopener noreferrer">
+          <img
+            src={GoogleIcon}
+            alt="Google"
+            style={{ 
+              width: '35px', 
+              height: '35px', 
+              cursor: "pointer" 
+            }}
+          />
+        </a>
+      </Box>
+    </Box>
+
+    {/* First black circle */}
+    <Box sx={{
+      position: 'absolute',
+      width: '140%',
+      height: '120%',
+      backgroundColor: '#000',
+      border: "7px solid #fdd835",
+      borderRadius: '50%',
+      top: '57%',
+      left: '-20%'
+    }}>
+      <Box sx={{
+        width: "700px", 
+        position: 'absolute', 
+        top: '8%', 
+        left: '15%', 
+        display: "flex", 
+        flexDirection: "row", 
+        alignItems: "center", 
+        justifyContent: "space-evenly"
+      }}>
+        <Box sx={{width: "35%"}}>
+          <Typography sx={{
+            fontSize: "1.2rem", 
+            fontWeight: "bold", 
+            color: '#C1C122'
+          }}>
+            About Us
+          </Typography>
+          <Typography sx={{
+            fontSize: "1rem", 
+            color: 'white', 
+            opacity: 0.6
+          }}>
+            {bio || "Lorem ipsum dolor sit amet consectetur adipisicing elit. Nulla obcaecati illum at officia"}
+          </Typography>
+        </Box>
+        <Box sx={{
+          width: '120px',
+          height: "120px",
+          aspectRatio: '1',
+          backgroundColor: '#e0e0e0',
+          borderRadius: '8%',
+          mt: '2%',
+          mr: 6,
+          border: "1px solid white",
+          backgroundImage: `url(${imageList[1] ? imageList[1] : 'https://media.istockphoto.com/id/1162911786/photo/the-team-of-cooks-backs-in-the-work-in-the-modern-kitchen-the-workflow-of-the-restaurant-in.jpg?s=612x612&w=0&k=20&c=Nn1xO1gbUGnEzTHp4Sitg_ouob_co3jY5hDv_kHWzxE='})`,
+          backgroundSize: "cover",
+        }}/>
+      </Box>
+    </Box>
+
+    {/* Footer */}
+    <Box sx={{ 
+      display: 'flex', 
+      gap: '5%', 
+      bgcolor: "#fdd835", 
+      position: "absolute", 
+      bottom: 0, 
+      left: 0, 
+      right: 0, 
+      height: "8%", 
+      color: "white",
+      justifyContent: "space-evenly", 
+      alignItems: "center"
+    }}>
+      <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "row"}}>
+        <PhoneAndroid fontSize="0.875rem"/> 
+        <Typography fontSize="0.875rem" sx={{ml:1}}>{phoneNumber || "Phone Number"}</Typography>  
+      </Box>
+      <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "row"}}>
+        <LocationOn fontSize="0.875rem"/> 
+        <Typography fontSize="0.875rem" sx={{ml:1}}>{location !== ", , " ? location : "Address"}</Typography>
+      </Box>
+    </Box>
+  </Box>
+);
+
+export { DarkTemplate, ModernTemplate, MinimalistTemplate, SplitTemplate, CreativeTemplate, SplitShowTemplate, DarkShowTemplate, ModernShowTemplate, MinimalistShowTemplate, CreativeShowTemplate };

@@ -214,7 +214,7 @@ export default function Profile() {
       form.append("profile_how_can_you_help", JSON.stringify(formData.youHelp));
 
       //image related fields 
-      form.append("profile_images_url", JSON.stringify(formData.profileImages));
+      // form.append("profile_images_url", JSON.stringify(formData.profileImages));
 
       let i = 0;
       for (const file of selectedImages) {
@@ -399,9 +399,17 @@ export default function Profile() {
                 </Typography>
                 <IconButton size="small" sx={{ p: 0 }}
                   onClick={() => {
-                    navigate("/selectTemplate", { state: { data: formData } });
+                    if(!editMode){
+                      navigate("/showTemplate", {
+                        state: {
+                          data: user,
+                          navigatingFrom: "profilePage",
+                        }
+                      })
+                    }else{
+                      navigate("/selectTemplate", { state: { data: formData } });
+                    }
                   }}
-                  disabled={!editMode}
                 >
                   <VisibilityIcon fontSize="small" />
                 </IconButton>

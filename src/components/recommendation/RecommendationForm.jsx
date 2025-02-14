@@ -226,7 +226,7 @@ export default function RecommendationForm() {
             form.append('rating_business_google_rating', formData.googleRating);
             form.append('rating_business_google_photos', JSON.stringify(formData.googlePhotos));
             form.append('rating_business_price_level', formData.priceLevel);
-            form.append('rating_business_types', JSON.stringify(formData.businessTypes))
+            form.append('rating_business_category', JSON.stringify(formData.businessTypes))
 
             //upload image
             if (formData.receiptImage) {

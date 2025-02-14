@@ -47,10 +47,10 @@ export default function Search() {
 
   // Memoize filtered results to avoid recomputing on every render
   const { yourRec, direct, oneAway, twoAway } = useMemo(() => {
-    const yourRec = searchResult.filter((data) => data.degree === 0);
-    const direct = searchResult.filter((data) => data.degree === 1);
-    const oneAway = searchResult.filter((data) => data.degree === 2);
-    const twoAway = searchResult.filter((data) => data.degree === 3);
+    const yourRec = searchResult.filter((data) => data.connection_degree === 0);
+    const direct = searchResult.filter((data) => data.connection_degree === 1);
+    const oneAway = searchResult.filter((data) => data.connection_degree === 2);
+    const twoAway = searchResult.filter((data) => data.connection_degree === 3);
     return { yourRec, direct, oneAway, twoAway };
   }, [searchResult]);
 
@@ -340,6 +340,7 @@ export default function Search() {
       }}>
         <SearchBar setSearchString={setSearchString} handleSearch={handleSearch} />
         {error && <p style={{ color: "red" }}>{error}</p>}
+
         <SectionTitle sx={{ margin: "20px 0px 10px 0px" }}>Your Recommendations</SectionTitle>
         {renderDataGrid(yourRec)}
 
