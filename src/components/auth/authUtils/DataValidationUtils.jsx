@@ -28,5 +28,22 @@ export const DataValidationUtils = {
             3,
             6
         )}-${phoneNumber.slice(6, 10)}`;
+    },
+
+    isValidEinNumber: (number) => {
+        const einRegex = /^\d{2}-\d{7}$/;
+        return einRegex.test(number);
+    },
+
+    formatEIN: (value) => {
+        if (!value) return value;
+
+        const EIN = value.replace(/[^\d]/g, "");
+
+        const EINLength = EIN.length;
+
+        if (EINLength < 3) return EIN;
+
+        return `${EIN.slice(0, 2)}-${EIN.slice(2,9)}`;
     }
 };

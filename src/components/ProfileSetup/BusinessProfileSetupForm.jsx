@@ -17,7 +17,7 @@ const BusinessProfileSetupForm = () => {
     const navigate = useNavigate();
     const userId = location.state?.userId ? location.state.userId : null;
     const [activeStep, setActiveStep] = useState(0);
-    const { isValidPhoneNumber, formatPhoneNumber } = DataValidationUtils;
+    const { isValidPhoneNumber, formatPhoneNumber, formatEIN, isValidEinNumber } = DataValidationUtils;
     const { referralId, user } = useUserContext();
     const [errors, setErrors] = useState({});
     const [isClaimed, setIsClaimed] = useState(false);
@@ -53,9 +53,11 @@ const BusinessProfileSetupForm = () => {
     }, [referralId])
 
 
+
     const handleChange = (e) => {
         const { name, value: rawValue } = e.target;
-        const value = name === "phoneNumber" ? formatPhoneNumber(rawValue) : rawValue;
+        const value = name === "phoneNumber" ? formatPhoneNumber(rawValue) : name === "einNumber" ? formatEIN(rawValue) : rawValue;
+
         setFormData(prev => ({
             ...prev,
             [name]: value
@@ -72,6 +74,10 @@ const BusinessProfileSetupForm = () => {
 
         if (isValidPhoneNumber(formData.phoneNumber) === false) {
             newErrors["phoneNumber"] = "Invalid phone number format";
+        }
+
+        if (isValidEinNumber(formData.einNumber) === false) {
+            newErrors["einNumber"] = "Invalid EIN number";
         }
 
         if (Object.keys(newErrors).length > 0) {

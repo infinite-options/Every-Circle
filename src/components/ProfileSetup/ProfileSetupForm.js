@@ -11,6 +11,8 @@ import axios from 'axios';
 import APIConfig from '../../APIConfig';
 import { DataValidationUtils } from '../auth/authUtils/DataValidationUtils';
 import { useUserContext } from '../contexts/UserContext';
+import HowCanIHelp from './Steps/HowCanIHelp';
+import HowCanYouHelp from './Steps/HowCanYouHelp';
 
 const ProfileSetupForm = () => {
   const location = useLocation();
@@ -37,6 +39,14 @@ const ProfileSetupForm = () => {
     template: '1',
     selectedImages: [],
     favImage: '',
+    howCanIHelp0: '',
+    howCanIHelp1: '',
+    howCanIHelp2: '',
+    howCanIHelp3: '',
+    howCanYouHelp0: '',
+    howCanYouHelp1: '',
+    howCanYouHelp2: '',
+    howCanYouHelp3: '',
   });
 
   useEffect(() => {
@@ -47,10 +57,12 @@ const ProfileSetupForm = () => {
   const handleChange = (e) => {
     const { name, value: rawValue } = e.target;
     const value = name === "phoneNumber" ? formatPhoneNumber(rawValue) : rawValue;
+
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
+
   };
 
   const handleImageUpload = (index, file) => {
@@ -135,6 +147,21 @@ const ProfileSetupForm = () => {
       //   }
       // });
 
+      const howCanIHelp = [];
+      const howCanYouHelp = [];
+
+      Object.keys(formData).forEach((key) => {
+        if (key.startsWith("howCanIHelp")) {
+          howCanIHelp.push(formData[key]);
+
+        } else if (key.startsWith("howCanYouHelp")) {
+          howCanYouHelp.push(formData[key]);
+        }
+      });
+
+      data.append("profile_how_can_we_help", JSON.stringify(howCanIHelp));
+      data.append("profile_how_can_you_help", JSON.stringify(howCanYouHelp));
+
       let i = 0;
       for (const file of formData.selectedImages) {
         let key = `img_${i++}`;
@@ -143,8 +170,7 @@ const ProfileSetupForm = () => {
           data.append("img_favorite", key);
         }
       }
-      // console.log("userId", formData.selectedImages);
-      // console.log('formdata is', formData);
+
       try {
         const response = await axios.post(`${APIConfig.baseURL.dev}/profile`, data, {
           headers: {
@@ -168,6 +194,7 @@ const ProfileSetupForm = () => {
       }
     }
     else {
+      console.log(formData)
       setActiveStep((prev) => prev + 1);
     }
   };
@@ -203,6 +230,14 @@ const ProfileSetupForm = () => {
     {
       component: <SocialLinksStep formData={formData} handleChange={handleChange} />,
       title: "Social Media Links"
+    },
+    {
+      component: <HowCanIHelp formData={formData} handleChange={handleChange} setFormData={setFormData}/>,
+      title: "How Can I Help"
+    },
+    {
+      component: <HowCanYouHelp formData={formData} handleChange={handleChange} setFormData={setFormData}/>,
+      title: "How Can You Help"
     },
     {
       component: <TemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect} role={"user"}/>,

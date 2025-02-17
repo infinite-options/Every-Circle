@@ -1266,7 +1266,7 @@ const CreativeTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber
 
     {/* Content section */}
     <Box sx={{ position: 'absolute', top: '32%', left: 18, width: "150px" }}>
-      <Typography sx={{ mb: 1.5, fontFamily: "cursive", fontSize: "1rem" }}>
+      <Typography sx={{ mb: 1.5, fontFamily: "cursive", fontSize: "1rem", color: "black"}}>
         Best American Cuisine
       </Typography>
       <Box sx={{display: "flex", flexDirection: "row", justifyContent: "start", alignItems: "Center", mt: 1.5}}>

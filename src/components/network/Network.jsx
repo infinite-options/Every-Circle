@@ -1,14 +1,16 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Header from "../common/Header";
 import NavigationBar from "../navigation/NavigationBar";
 import StyledContainer from "../common/StyledContainer";
 import NetworkData from "./NetworkData";
 import SearchBar from "../common/SearchBar";
 import { Box, Typography, styled, IconButton } from "@mui/material";
-import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import GroupAddIcon from '@mui/icons-material/GroupAdd';
 import AddShoppingCartIcon from '@mui/icons-material/AddShoppingCart';
 import { useNavigate } from "react-router-dom";
+import { useUserContext } from "../contexts/UserContext";
+import axios from "axios";
+import APIConfig from "../../APIConfig";
 
 const TotalLabel = styled(Typography)({
     color: "#1a1a1a",
@@ -20,12 +22,32 @@ const TotalLabel = styled(Typography)({
 
 export default function Network() {
     const navigate = useNavigate();
-    const data = [
-        { id: 1, count: "1", label: "You", value: "2" },
-        { id: 2, count: "19", label: "Direct", value: "9" },
-        { id: 3, count: "70", label: "1 Away", value: "32" },
-        { id: 4, count: "350", label: "2 Away", value: "240" },
-    ];
+    const [data, setData] = useState([]);
+
+    const { user, updateUser } = useUserContext();
+
+    useEffect(()=>{
+        const fetchNetworkData = async () => {
+            try {
+                const response = await axios.get(`${APIConfig.baseURL.dev}/api/v1/connections/${user.profileId}`);
+
+                console.log(response.data.result)
+                setData(response.data.result.map((item, index) => ({
+                    id: index + 1,  
+                    ...item         
+                })));
+                
+
+                // setMainCategories(mainCategories);
+            } catch (error) {
+                console.error("Error fetching categories:", error);
+            }
+        };
+
+        if(user.role === "user"){
+            fetchNetworkData();
+        }
+    }, [])
 
     return (
         <StyledContainer>

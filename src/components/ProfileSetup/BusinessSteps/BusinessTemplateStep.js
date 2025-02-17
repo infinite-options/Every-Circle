@@ -21,21 +21,6 @@ const BusinessTemplateStep = ({ formData, handleTemplateSelect, role }) => {
       id: 0,
     },
     {
-      component: ModernTemplate,
-      value: 'modern',
-      id: 1,
-    },
-    {
-      component: MinimalistTemplate,
-      value: 'minimalist',
-      id: 2,
-    },
-    {
-      component: SplitTemplate,
-      value: 'split',
-      id: 3,
-    },
-    {
       component: CreativeTemplate,
       value: 'creative',
       id: 4

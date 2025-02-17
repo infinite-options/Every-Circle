@@ -117,7 +117,10 @@ const BasicInfoStep = ({ formData, handleChange, errors, setFormData, isClaimed,
         required
         placeholder="EIN Number"
         name="einNumber"
+        value={formData.einNumber}
+        error={!!errors.einNumber}
         onChange={handleChange}
+        helperText={errors.einNumber}
         margin="normal"
         sx={{
           backgroundColor: "#F5F5F5",

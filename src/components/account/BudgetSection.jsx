@@ -1,13 +1,15 @@
-import * as React from "react";
-import { Box, Typography, Paper } from "@mui/material";
+import React, { useEffect, useState } from "react";
+import { Box, Typography, Paper, IconButton } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import { DataGrid } from "@mui/x-data-grid";
 import Grid from '@mui/material/Grid2';
+import EditIcon from "@mui/icons-material/Edit";
+import CheckIcon from "@mui/icons-material/Check";
 
 const BudgetContainer = styled(Paper)({
   width: "100%",
   marginTop: "10px",
-  // backgroundColor: "transparent",
+  backgroundColor: "transparent",
 });
 
 const BudgetHeader = styled(Box)({
@@ -25,74 +27,129 @@ const BudgetCell = styled(Typography)({
   paddingLeft: "10px",
 });
 
-export function BudgetSection() {
-  const budgetItems = [
-    { id: 1, label: "per Impression", cost: "$0.01", cap: "$10.00", spend: "$ 0.50" },
-    { id: 2, label: "per Click", cost: "$0.10", cap: "$10.00", spend: "$ 7.20" },
-    { id: 3, label: "per Request", cost: "$1.00", cap: "$10.00", spend: "$ 3.00" },
-  ];
+export function BudgetSection({budgetItems}) {
+  const { costs, monthly_caps, current_spend, max_monthly_spend, total_cur_spend} = budgetItems;
+  const [isEditing, setIsEditing] = useState(false);
+  const [budgetRows, setBudgetRows] = useState([]);
+
+  useEffect(() => {
+    setBudgetRows([
+      {
+        id: 1,
+        type: "Per Click",
+        cost: formatNumber(costs?.per_click || 0),
+        monthlyCap: formatNumber(monthly_caps?.click || 0),
+        currentSpent: formatNumber(current_spend?.click || 0.0),
+      },
+      {
+        id: 2,
+        type: "Per Request",
+        cost: formatNumber(costs?.per_request || 0),
+        monthlyCap: formatNumber(monthly_caps?.request || 0),
+        currentSpent: formatNumber(current_spend?.request || 0.0),
+      },
+      {
+        id: 3,
+        type: "Per Impression",
+        cost: formatNumber(costs?.per_impression || 0),
+        monthlyCap: formatNumber(monthly_caps?.impression || 0),
+        currentSpent: formatNumber(current_spend?.impression || 0.0),
+      },
+    ]);
+  }, [budgetItems]);
+
+  const formatNumber = (num) => parseFloat(num).toFixed(2);
+
+  const toggleEditMode = () => setIsEditing((prev) => !prev);
+
+  const handleProcessRowUpdate = (newRow, oldRow) => {
+    try {
+      const updatedRow = { ...newRow, cost: formatNumber(newRow.cost), monthlyCap: formatNumber(newRow.monthlyCap) };
+      setBudgetRows((prevRows) =>
+        prevRows.map((row) => (row.id === newRow.id ? updatedRow : row))
+      );
+      return updatedRow;
+    } catch (error) {
+      console.error("Error updating row:", error);
+      throw error; // Required for MUI X to catch the error
+    }
+  };
+
+  const handleProcessRowUpdateError = (error) => {
+    console.error("Row update failed:", error);
+  };
 
   const columns = [
-    { field: "label", headerName: "", flex: 1 },
-    { field: "cost", headerName: "Cost Per", flex: 1 },
-    { field: "cap", headerName: "Monthly Cap", flex: 1 },
-    { field: "spend", headerName: "Current Spend", flex: 1 },
+    { field: "type", headerName: "Type", flex: 1 },
+    {
+      field: "cost",
+      headerName: "Cost",
+      flex: 1,
+      editable: isEditing,
+      valueFormatter: (params) => `$${params}`,
+      cellClassName: isEditing ? "editable-cell" : "",
+    },
+    {
+      field: "monthlyCap",
+      headerName: "Monthly Cap",
+      flex: 1,
+      editable: isEditing,
+      valueFormatter: (params) => `$${params}`,
+      cellClassName: isEditing ? "editable-cell" : "",
+    },
+    {
+      field: "currentSpent",
+      headerName: "Current Spent",
+      flex: 1,
+      valueFormatter: (params) => `$${params}`,
+    },
   ];
 
   return (
     <Box sx={{ width: "100%", marginTop: "10px" }}>
-      <BudgetHeader>
-        <Typography
-          variant="h2"
-          sx={{
-            fontSize: "16px",
-            color: "rgba(26, 26, 26, 1)",
-            fontWeight: 700,
-            letterSpacing: "-0.64px",
-            lineHeight: 1,
-            margin: 0,
-          }}
-        >
-          Budget
-        </Typography>
-      </BudgetHeader>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+        <Typography variant="h6">Budget</Typography>
+        <IconButton onClick={toggleEditMode}>
+          {isEditing ? <CheckIcon color="success" /> : <EditIcon />}
+        </IconButton>
+      </Box>
+
       <BudgetContainer>
         <DataGrid
-          rows={budgetItems}
+          rows={budgetRows}
           columns={columns}
           getRowId={(row) => row.id}
-          autoSize
+          processRowUpdate={handleProcessRowUpdate}
+          onProcessRowUpdateError={handleProcessRowUpdateError}
           hideFooter
           sx={{
-            // border: "none",
+            border: "none",
             "& .MuiDataGrid-cell": {
-              // border: "none",
               alignItems: "center",
               fontSize: "12px",
               color: "rgba(26, 26, 26, 0.5)",
               fontWeight: 400,
             },
+            "& .editable-cell": {
+              backgroundColor: "#fff !important",
+              color: "black",
+            },
             "& .MuiDataGrid-columnHeaderTitle": {
               fontSize: "12px",
               color: "rgba(26, 26, 26, 0.5)",
               fontWeight: 700,
-              // border: "none",
-              backgroundColor: "transparent",
             },
-            // "& .MuiDataGrid-columnHeader": {
-            //   backgroundColor: "#f5f5f5",
-            // },
-          }} />
-
-        <Grid container sx={{ padding: "16px 0px"}}>
+          }}
+        />
+        <Grid container sx={{ padding: "16px 0px", borderTop: "1px solid #e0e0e0" }}>
           <Grid size={6}>
-            <BudgetCell sx={{ fontWeight: 700 }}>Max Monthly Spend:</BudgetCell>
+            <BudgetCell sx={{ fontWeight: 700, width: "100%"}}>Max Monthly Spend:</BudgetCell>
           </Grid>
           <Grid size={3}>
-            <BudgetCell>$30.00</BudgetCell>
+            <BudgetCell>$ {max_monthly_spend ? parseFloat(max_monthly_spend).toFixed(2) : 0.00}</BudgetCell>
           </Grid>
           <Grid size={3}>
-            <BudgetCell>$30.00</BudgetCell>
+            <BudgetCell>$ {total_cur_spend ? parseFloat(total_cur_spend).toFixed(2) : 0.00}</BudgetCell>
           </Grid>
         </Grid>
       </BudgetContainer>

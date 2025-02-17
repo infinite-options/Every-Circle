@@ -20,11 +20,6 @@ const TemplateStep = ({ formData, handleTemplateSelect, role }) => {
 
   const templates = [
     {
-      component: DarkTemplate,
-      value: 'Dark',
-      id: 0,
-    },
-    {
       component: ModernTemplate,
       value: 'modern',
       id: 1,
@@ -38,11 +33,6 @@ const TemplateStep = ({ formData, handleTemplateSelect, role }) => {
       component: SplitTemplate,
       value: 'split',
       id: 3,
-    },
-    {
-      component: CreativeTemplate,
-      value: 'creative',
-      id: 4
     }
   ];
 

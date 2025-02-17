@@ -6,9 +6,7 @@ import { InputField } from "../common/InputField";
 import SquareImageUpload from '../common/SquareImageUpload';
 import StyledContainer from "../common/StyledContainer";
 import Header from "../common/Header";
-import yelp from "../../assets/yelp.png";
-import google from "../../assets/Google.png";
-import website from "../../assets/website.png";
+import website from "../../assets/web.png";
 import CircleButton from "../common/CircleButton";
 import NavigationBar from "../navigation/NavigationBar";
 import axios from "axios";
@@ -478,7 +476,7 @@ export default function BusinessProfile() {
                         />
 
                         <SocialLink
-                            iconSrc={yelp}
+                            iconSrc={"https://s3-media0.fl.yelpcdn.com/assets/public/cookbook.yji-0a2bf1d9c330d8747446.svg"}
                             alt="Yelp"
                             value={formData.yelp}
                             onChange={(value) => setFormData({ ...formData, yelp: value })}
@@ -487,7 +485,7 @@ export default function BusinessProfile() {
                         />
 
                         <SocialLink
-                            iconSrc={google}
+                            iconSrc={"https://loodibee.com/wp-content/uploads/Google-Logo.png"}
                             alt="Google"
                             value={formData.google}
                             onChange={(value) => setFormData({ ...formData, google: value })}

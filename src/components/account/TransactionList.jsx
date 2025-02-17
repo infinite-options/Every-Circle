@@ -16,14 +16,16 @@ const TransactionHeader = styled(Box)({
 });
 
 const columns = [
-  { field: "date", headerName: "Date", width: 100 },
-  { field: "name", headerName: "Description", width: 200, flex: 1 },
+  { field: "date", headerName: "Date", width: 100, flex: 1 },
+  { field: "reason", headerName: "Description", width: 100, flex: 1},
   {
     field: "amount",
     headerName: "Amount",
     width: 100,
     align: "right",
     headerAlign: "right",
+    flex: 1,
+    valueFormatter: (params) => params.toFixed(2),
   },
 ];
 
@@ -44,26 +46,30 @@ export function TransactionList({ transactions }) {
           Transaction History
         </Typography>
       </TransactionHeader>
-      <Paper>
-      <DataGrid
-        rows={transactions}
-        columns={columns}
-        autoHeight
-        hideFooter
-        sx={{
-          border: "none",
-          "& .MuiDataGrid-cell": {
-            // border: "none",
-            alignItems: "center",
-            fontSize: "12px",
-            color: "rgba(26, 26, 26, 0.5)",
-            fontWeight: 400,
-          },
-          "& .MuiDataGrid-columnHeaders": {
-            display: "none",
-          },
-        }}
-      />
+      <Paper sx={{backgroundColor: "transparent"}}>
+        <DataGrid
+          rows={transactions}
+          columns={columns}
+          getRowId={(row) => row.date}
+          autoHeight
+          hideFooter
+          sx={{
+            border: "none",
+            "& .MuiDataGrid-cell": {
+              // border: "none",
+              alignItems: "center",
+              backgroundColor: "transparent",
+              fontSize: "12px",
+              color: "rgba(26, 26, 26, 0.5)",
+              fontWeight: 400,
+            },
+            "& .MuiDataGrid-columnHeaderTitle": {
+                fontSize: "12px",
+                color: "rgba(26, 26, 26, 0.5)",
+                fontWeight: 700,
+              },
+          }}
+        />
       </Paper>
     </TransactionSection>
   );
