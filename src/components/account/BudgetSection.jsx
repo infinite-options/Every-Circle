@@ -36,17 +36,17 @@ export function BudgetSection({budgetItems}) {
     setBudgetRows([
       {
         id: 1,
+        type: "Per Transactions",
+        cost: formatNumber(costs?.per_request || 0),
+        monthlyCap: formatNumber(monthly_caps?.request || 0),
+        currentSpent: formatNumber(current_spend?.request || 0.0),
+      },
+      {
+        id: 2,
         type: "Per Click",
         cost: formatNumber(costs?.per_click || 0),
         monthlyCap: formatNumber(monthly_caps?.click || 0),
         currentSpent: formatNumber(current_spend?.click || 0.0),
-      },
-      {
-        id: 2,
-        type: "Per Request",
-        cost: formatNumber(costs?.per_request || 0),
-        monthlyCap: formatNumber(monthly_caps?.request || 0),
-        currentSpent: formatNumber(current_spend?.request || 0.0),
       },
       {
         id: 3,

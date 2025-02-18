@@ -233,11 +233,11 @@ const ProfileSetupForm = () => {
     },
     {
       component: <HowCanIHelp formData={formData} handleChange={handleChange} setFormData={setFormData}/>,
-      title: "How Can I Help"
+      title: "How Can I Help Others"
     },
     {
       component: <HowCanYouHelp formData={formData} handleChange={handleChange} setFormData={setFormData}/>,
-      title: "How Can You Help"
+      title: "How Can You Help Me"
     },
     {
       component: <TemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect} role={"user"}/>,

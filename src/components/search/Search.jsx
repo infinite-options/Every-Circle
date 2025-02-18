@@ -121,7 +121,7 @@ export default function Search() {
           style={{ cursor: "pointer", textDecoration: "none", fontWeight: "bold", display: "flex", alignItems: "center"}}
           onClick={() => {navigate("/showTemplate", {
             state: {
-              data: params.row,
+              profileId: params.row.rating_profile_id,
               searchResult: searchResult,
               searchString: searchString,
               navigatingFrom: "profileId",
@@ -200,9 +200,10 @@ export default function Search() {
                 onClick={() =>
                   navigate("/showTemplate", {
                     state: {
-                      data: params.row,
+                      profileId: params.row.rating_business_id,
                       searchResult: searchResult,
                       searchString: searchString,
+                      recommendBy: params.row.rating_profile_id,
                       navigatingFrom: "link",
                     },
                   })
@@ -271,10 +272,10 @@ export default function Search() {
           style={{ cursor: "pointer", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={() => navigate("/showTemplate", {
             state: {
-              data: params.row,
+              profileId: params.row.rating_business_id,
               searchResult: searchResult,
               searchString: searchString,
-              navigatingFrom: "rating",
+              navigatingFrom: "link",
             }
           })}
         >

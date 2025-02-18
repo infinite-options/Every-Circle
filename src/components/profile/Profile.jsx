@@ -402,7 +402,7 @@ export default function Profile() {
                     if(!editMode){
                       navigate("/showTemplate", {
                         state: {
-                          data: user,
+                          profileId: user.profileId,
                           navigatingFrom: "profilePage",
                         }
                       })

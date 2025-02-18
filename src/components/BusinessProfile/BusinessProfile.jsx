@@ -513,7 +513,7 @@ export default function BusinessProfile() {
                                         if(!editMode){
                                             navigate("/showTemplate", {
                                               state: {
-                                                data: user,
+                                                profileId: businessId,
                                                 navigatingFrom: "businessProfile",
                                               }
                                             })

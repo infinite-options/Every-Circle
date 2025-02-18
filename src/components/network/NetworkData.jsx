@@ -1,6 +1,7 @@
-import * as React from "react";
-import { Box, Typography, } from "@mui/material";
+import React, { useState } from "react";
+import { Box, Typography, List, ListItem, ListItemText, Collapse, Grid} from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
+import { useNavigate } from "react-router-dom";
 
 export default function NetworkData({ data }) {
   // const [nbRows, setNbRows] = React.useState(3);
@@ -14,84 +15,80 @@ export default function NetworkData({ data }) {
     3: "2-Away"
   };
 
-  const columns = [
-    {
-      field: "label",
-      headerName: "Label",
-      flex: 1,
-      renderCell: (params) => (
-        <Box 
-          sx={{
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Box
-            sx={{
-              width: 50,
-              height: 50,
-              borderRadius: "50%",
-              backgroundColor: "#ff9500",
-              color: "#fff",
-              textAlign: "center",
-              fontSize: 12,
-              fontWeight: 500,
-            }}
-          >
-            {params.value}
-          </Box>
-        </Box>
-      ),
-    },
-    { 
-      field: "count", 
-      headerName: "Count", 
-      flex: 1,
-      renderCell: (params) => {
-        <Box
-          sx={{
-            width: "100%",
-          }}
-        >
-          {params.value}
-        </Box>
-      }
-     },
-  ]
+  const [openIndex, setOpenIndex] = useState(null);
+  const navigate = useNavigate();
 
-  const rows = data.map((item) => ({
-    id: item.id,
-    count: item.connection_count,
-    label: degreeLabels[item.degree] || "Unknown",
-  }));
+  const handleToggle = (index) => {
+    setOpenIndex(openIndex === index ? null : index);
+  };
 
   return (
     <Box sx={{ width: "100%", minHeight: "300px", marginTop: "16px" }}>
-      {data?.length > 0 ? (<DataGrid
-        rows={rows}
-        columns={columns}
-        getRowId={(row) => row.id}
-        hideFooter
-        autoHeight
-        sx={{
-          flexGrow: 1,
-          "& .MuiDataGrid-columnHeaders": {
-            display: "none",
-          },
-          "& .MuiDataGrid-cell": {
-            alignItems: "center",
-            textAlign: "center"
-          },
-        }}
-      />) : (
+      {data?.length > 0 ? (
+        <List>
+          {data.map((item, index) => (
+            <Box key={index}>
+              <ListItem button onClick={() => handleToggle(index)} sx={{ cursor: "pointer" }}>
+                <Grid container alignItems="center" textAlign="center">
+                  <Grid item xs={6}>
+                    <Box
+                      sx={{
+                        width: 60,
+                        height: 60,
+                        borderRadius: "50%",
+                        backgroundColor: "#ff9500",
+                        color: "#fff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        margin: "auto",
+                        fontSize: 12,
+                        fontWeight: 500,
+                      }}
+                    >
+                      {degreeLabels[item.degree] || "Unknown"}
+                    </Box>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography>{item.connection_count}</Typography>
+                  </Grid>
+                </Grid>
+              </ListItem>
+              <Collapse in={openIndex === index} timeout="auto" unmountOnExit>
+                <Box sx={{ backgroundColor: "#f5f5f5", padding: 2 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: "bold", marginBottom: 1, textAlign: "center" }}>
+                    Users
+                  </Typography>
+                  <List component="div" disablePadding>
+                    {JSON.parse(item.profile_id).map((id) => (
+                      <ListItem 
+                        key={id} 
+                        sx={{ textAlign: "center", cursor: "pointer" }}
+                        onClick={() => {
+                          navigate("/showTemplate", {
+                            state: {
+                              profileId: id,
+                              navigatingFrom: "networkPage",
+                            },
+                          });
+                        }}
+                      >
+                        <ListItemText primary={id} />
+                      </ListItem>
+                    ))}
+                  </List>
+                </Box>
+              </Collapse>
+            </Box>
+          ))}
+        </List>
+      ) : (
         <Box
           sx={{
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
-            width: "100%"
+            width: "100%",
           }}
         >
           No Network
