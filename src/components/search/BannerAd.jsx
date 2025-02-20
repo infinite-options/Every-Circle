@@ -6,23 +6,9 @@ const StyledPaper = styled(Paper)(({ theme }) => ({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  padding: theme.spacing(2),
   marginTop: "20px",
   width: '100%',
   backgroundColor: theme.palette.background.paper,
-}));
-
-const ImageContainer = styled(Box)(({ theme }) => ({
-  width: 96,
-  height: 96,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  '& img': {
-    maxWidth: '100%',
-    maxHeight: '100%',
-    objectFit: 'contain',
-  },
 }));
 
 const ContentContainer = styled(Box)(({ theme }) => ({
@@ -38,35 +24,45 @@ const BannerAd = ({
   bio 
 }) => {
   return (
-    <StyledPaper elevation={1}>
+    <StyledPaper elevation={0}>
       {/* Left Image */}
-      <ImageContainer>
-        <img 
-          src={leftImage} 
-          alt="Left banner"
-        />
-      </ImageContainer>
+      <Box 
+        sx={{
+          width: "100px",
+          height: "100px",
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <img src={leftImage} alt="Left Image" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </Box>
 
       {/* Center Content */}
       <ContentContainer>
-        <Typography variant="h5" component="h1" gutterBottom={0.5}>
+        <Typography sx={{fontSize: "1.5rem", fontWeight: "bold"}}>
           {businessName}
         </Typography>
-        <Typography variant="h6" color="text.secondary" gutterBottom={0.5}>
+        <Typography sx={{fontSize: "1rem"}} color="text.secondary">
           {tagline}
         </Typography>
-        <Typography variant="body1" color="text.secondary">
+        <Typography sx={{fontSize: "0.875rem"}} color="text.secondary">
           {bio}
         </Typography>
       </ContentContainer>
 
       {/* Right Image */}
-      <ImageContainer>
-        <img 
-          src={rightImage} 
-          alt="Right banner"
-        />
-      </ImageContainer>
+      <Box
+        sx={{
+          width: "100px",
+          height: "100px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <img src={rightImage} alt="Right Image" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </Box>
     </StyledPaper>
   );
 };

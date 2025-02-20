@@ -122,12 +122,12 @@ const BusinessProfileSetupForm = () => {
             data.append("business_ein_number", formData.einNumber);
             data.append("business_website", formData.website);
             data.append("business_template", formData.template);
-            data.append('business_category_id', JSON.stringify(formData.categories))
-            data.append('business_additional_tags', JSON.stringify(formData.customTags))
+            // data.append('business_categories_uid', JSON.stringify(formData.categories))
+            // data.append('business_additional_tags', JSON.stringify(formData.customTags))
             // 
 
             try {
-                const response = await axios.post(`${APIConfig.baseURL.dev}/business`, data, {
+                const response = await axios.post(`${APIConfig.baseURL.dev}/api/v3/business_v3`, data, {
                     headers: {
                         "Content-Type": "multipart/form-data",
                     },
@@ -241,6 +241,11 @@ const BusinessProfileSetupForm = () => {
                             flexDirection: "column",
                             alignItems: "center",
                             width: '100%',
+                            height: '500px',
+                            overflowY: "scroll",
+                            "&::-webkit-scrollbar": {
+                                display: "none",
+                            },
                         }}
                     >
                         {steps[activeStep].component}

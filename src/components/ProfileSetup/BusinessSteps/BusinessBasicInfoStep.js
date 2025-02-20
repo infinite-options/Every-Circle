@@ -110,7 +110,7 @@ const BasicInfoStep = ({ formData, handleChange, errors, setFormData, isClaimed,
       />
 
       <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
-        EIN Number
+        EIN Number (EIN is required to register your business, EIN number will not be public)
       </Typography>
       <TextField
         fullWidth

@@ -67,7 +67,8 @@ export default function Search() {
         // `https://ioec2testsspm.infiniteoptions.com/search/100-000026?category=${searchString}`
         // `https://ioec2testsspm.infiniteoptions.com/search/${profileId}?type=${searchString}`
         // `https://ioec2testsspm.infiniteoptions.com/search/${profileId}?category=${searchString}`
-        `https://ioec2testsspm.infiniteoptions.com/api/v2/search/${profileId}?category=${searchString}`
+        // `https://ioec2testsspm.infiniteoptions.com/api/v2/search/${profileId}?category=${searchString}`
+        `https://ioec2testsspm.infiniteoptions.com/api/v2/AITagSearch/${profileId}?query=${searchString}`
 
       );
 
@@ -78,8 +79,8 @@ export default function Search() {
           setSearchResult([]);
           return;
         }
-
-        setSearchResult(response.data.result);
+        console.log("response.data.result", response);
+        setSearchResult(response.data.business_results.businesses);
 
       } else {
         setError("Failed to fetch results. Please try again.");
@@ -354,7 +355,7 @@ export default function Search() {
         <SectionTitle sx={{ margin: "20px 0px 0px 0px" }}>2 - Away</SectionTitle>
         {renderDataGrid(twoAway)}
 
-        <BannerAd />
+        <BannerAd  leftImage = "https://www.allrecipes.com/thmb/xVGw1xqe1jDcc9jYmNZkY621atQ=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/ar-burger-king-getty-4x3-2-25772f696b734be5b78cb73cc4529ec7.jpg" rightImage = "https://www.foodandwine.com/thmb/K_t1B_xBKIKYm_ZoNIEqaBvuXcQ=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/Burger-King-Everything-Seasoned-Bun-FT-BLOG0922-c8c7859b9c794c42af7700b5b957a874.jpg" businessName = "Burger King" tagline= "Best Burgers in Town" bio="Lorem ipsum dolor sit amet consectetur adipisicing elit." />
       </Box>
       <NavigationBar />
     </StyledContainerComponent>

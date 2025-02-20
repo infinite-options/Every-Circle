@@ -290,6 +290,12 @@ const ProfileSetupForm = () => {
               flexDirection: "column",
               alignItems: "center",
               width: '100%',
+              height: '500px',
+              overflowY: "scroll",
+              "&::-webkit-scrollbar": {
+                  display: "none",
+              },
+              // overflowY: "scroll",
             }}
           >
             {steps[activeStep].component}

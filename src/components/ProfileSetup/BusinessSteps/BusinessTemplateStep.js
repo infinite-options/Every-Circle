@@ -6,7 +6,10 @@ import {
   ModernTemplate,
   MinimalistTemplate,
   SplitTemplate,
-  CreativeTemplate
+  CreativeTemplate,
+  CompanyProfile,
+  HouseOfMintProfile,
+  SculptyLanding
 } from '../../profileTemplate';
 
 const BusinessTemplateStep = ({ formData, handleTemplateSelect, role }) => {
@@ -24,7 +27,22 @@ const BusinessTemplateStep = ({ formData, handleTemplateSelect, role }) => {
       component: CreativeTemplate,
       value: 'creative',
       id: 4
-    }
+    },
+    {
+      component: CompanyProfile,
+      value: 'company',
+      id: 5
+    },
+    {
+      component: HouseOfMintProfile,
+      value: 'HouseOfMint',
+      id: 6,
+    },
+    {
+      component: SculptyLanding,
+      value: 'SculptyLanding',
+      id: 7,
+    },
   ];
 
   const handleNext = () => {

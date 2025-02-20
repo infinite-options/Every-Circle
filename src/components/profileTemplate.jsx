@@ -11,11 +11,18 @@ import {
   Stack,
   IconButton,
   Button,
+  List, 
+  ListItem,
+  Rating,
   Box,
+  AppBar, 
+  Toolbar 
 } from "@mui/material";
 
 import { 
-  LocationOn, 
+  LocationOn,
+  LocationOnOutlined,
+  PhoneOutlined, 
   Person, 
   PhoneAndroid, 
   Facebook,
@@ -24,9 +31,6 @@ import {
   Add as AddIcon,
   Twitter,
   Message as MessageIcon,  
-  X,
-  Translate,
-  Send,
   LinkedIn,
 } from "@mui/icons-material";
 
@@ -1509,4 +1513,543 @@ const CreativeShowTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNu
   </Box>
 );
 
-export { DarkTemplate, ModernTemplate, MinimalistTemplate, SplitTemplate, CreativeTemplate, SplitShowTemplate, DarkShowTemplate, ModernShowTemplate, MinimalistShowTemplate, CreativeShowTemplate };
+// Template 5: Company Profile Black Background
+const CircularHeading = ({ children }) => (
+  <Box sx={{ 
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: '1px solid rgba(255, 255, 255, 0.8)',
+    borderRadius: '50px',
+    px: 1,
+    py: 0.2,
+    mb: 1
+  }}>
+    <Typography sx={{ fontWeight: 'bold', fontSize: '0.6rem' }}>
+      {children}
+    </Typography>
+  </Box>
+);
+
+const CompanyProfile = ({name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating}) => {
+  return (
+    <Card sx={{ 
+      width: 250, 
+      height: 400, 
+      bgcolor: '#1a1a1a', 
+      color: 'white',
+      borderRadius: 2,
+      overflow: 'hidden'
+    }}>
+      <CardContent sx={{ p: 0 }}>
+        {/* Header */}
+        <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6" sx={{ color: 'white' }}>
+            {name || "Company Name"}
+          </Typography>
+          <Box 
+            sx={{ 
+              width: 24, 
+              height: 24, 
+              borderRadius: '50%', 
+              bgcolor: 'transparent',
+              border: '2px solid white',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <Box sx={{ 
+              height: "100%",
+              width: "100%",
+              backgroundImage: `url(${imageList[0] ? imageList[0] : ''})`,
+              backgroundSize: "cover",
+              borderRadius: "50%"
+            }} />
+          </Box>
+        </Box>
+
+        {/* Image */}
+        <Box 
+          sx={{ 
+            height: 90,
+            mb: 2,
+            px : 2
+          }}
+        >
+          <img src={imageList[1] ? imageList[1] : ''} width="100%" height="100%" />
+        </Box>
+        
+        <Box
+          sx={{
+            width: "100%",
+            display: "flex",
+            flexDirection: "row",
+            justifyContent: "space-between",
+          }}
+        >
+          {/* About Us Section */}
+          <Box sx={{ px: 2, mb: 2, flex: 1 }}>
+            <CircularHeading>About Us</CircularHeading>
+            <Typography sx={{ mb: 2, fontSize: "0.5rem" }}>
+              {bio || "Your Bio"}
+            </Typography>
+            <Typography sx={{ fontStyle: 'italic', textAlign: 'center', fontSize: "1rem", fontFamily: "cursive"}}>
+              &gt; {tagLine || "Tag"} &lt;
+            </Typography>
+          </Box>
+          
+          <Box sx={{flex: 2, display: "flex", flexDirection: "column", alignItems: "end"}}>
+            {/* Our Advantages Section */}
+            <Box sx={{ px: 0, mb: 2 }}>
+              <CircularHeading>Our Advantages</CircularHeading>
+              <List sx={{ p: 0 }}>
+                <ListItem sx={{ py: 0 }}>
+                  <Typography sx={{fontSize: "0.5rem"}}>• Consistent quality</Typography>
+                </ListItem>
+                <ListItem sx={{ py: 0 }}>
+                  <Typography sx={{fontSize: "0.5rem"}}>• Innovative solutions</Typography>
+                </ListItem>
+                <ListItem sx={{ py: 0 }}>
+                  <Typography sx={{fontSize: "0.5rem"}}>• Reliable service</Typography>
+                </ListItem>
+              </List>
+            </Box>
+
+            {/* Why Choose Us Section */}
+            <Box sx={{ px: 0, mb: 2 }}>
+              <CircularHeading sx={{p: 0}}>Why Choose Us</CircularHeading>
+              <List sx={{ p: 0 }}>
+                <ListItem sx={{ py: 0 }}>
+                  <Typography sx={{fontSize: "0.5rem"}}>• Unsurpassed durability</Typography>
+                </ListItem>
+                <ListItem sx={{ py: 0 }}>
+                  <Typography sx={{fontSize: "0.5rem"}}>• Increased efficiency</Typography>
+                </ListItem>
+                <ListItem sx={{ py: 0 }}>
+                  <Typography sx={{fontSize: "0.5rem"}}>• Cost reduction</Typography>
+                </ListItem>
+              </List>
+            </Box>
+          </Box>
+        </Box>
+
+        {/* Contact Section */}
+        <Box 
+          sx={{ 
+            p: 1.5,
+            bgcolor: 'rgba(255, 255, 255, 0.1)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            mt: 'auto'
+          }}
+        >
+          {/* <CircularHeading>Contact Us</CircularHeading> */}
+          <Box sx={{fontSize: "0.875rem", fontWeight: "bold"}}>Contact Us</Box>
+          <Box>
+            <Typography sx={{ textAlign: 'right', fontSize: "0.5rem"}}>
+              {phoneNumber || "Phone Number"}
+            </Typography>
+            <Typography sx={{ textAlign: 'right', fontSize: "0.5rem"}}>
+              {website || "Website"}
+            </Typography>
+          </Box>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+};
+
+
+// Template 6: House of mints
+const HouseOfMintProfile = ({name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating}) => {
+  return (
+    <Box sx={{ 
+      width: 250,
+      height: 400,
+      bgcolor: '#ffffff',
+      borderRadius: 2,
+      overflow: 'hidden',
+      p: 1.5,
+      display: 'flex',
+      flexDirection: 'column'
+    }}>
+      {/* Header with Profile Image and Details */}
+      <Box sx={{ display: 'flex', gap: 1.5, mb: 1.5 }}>
+        {/* Profile Image */}
+        <Box
+          sx={{
+            width: 60,
+            height: 60,
+            borderRadius: '50%',
+            overflow: 'hidden',
+            flexShrink: 0,
+            bgcolor: '#f5f5f5'
+          }}
+        >
+          <img 
+            src={imageList[0] ? imageList[0] : ''}
+            alt="House of Mint"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        </Box>
+        
+        {/* Company Details */}
+        <Box>
+          <Typography 
+            sx={{ 
+              fontSize: '0.875rem', 
+              fontWeight: 600,
+              color: '#000000',
+              mb: 0.25
+            }}
+          >
+            {name || "Company Name"}
+          </Typography>
+          
+          <Typography 
+            sx={{ 
+              color: '#666666',
+              fontSize: '0.6rem',
+              mb: 0.25
+            }}
+          >
+            {tagLine || "Tag Line"}
+          </Typography>
+          
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Rating 
+              value={4.8} 
+              readOnly 
+              precision={0.1}
+              size="small"
+              sx={{ fontSize: '0.75rem' }}
+            />
+            <Typography  
+              sx={{ 
+                color: '#666666',
+                fontSize: '0.65rem'
+              }}
+            >
+              (2k)
+            </Typography>
+          </Box>
+        </Box>
+
+      </Box>
+
+      {/* Message Button */}
+      <Button
+        fullWidth
+        variant="filled"
+        sx={{
+          mb: 1.5,
+          py: 0.75,
+          color: '#000000',
+          bgcolor: '#e8eef2',
+          fontSize: '0.65rem',
+        }}
+      >
+        Message
+      </Button>
+
+      {/* Image Gallery */}
+      <Box sx={{ 
+        display: 'grid',
+        height: "100%",
+        gridTemplateColumns: '1fr 1fr',
+        gap: 1,
+        mb: 1.5,
+        flex: 1
+      }}>
+        <Box 
+          sx={{ 
+            borderRadius: 2,
+            overflow: 'hidden',
+            height: '120px'
+          }}
+        >
+          <img 
+            src={imageList[1] ? imageList[1] : ''}
+            alt="Interior design"
+            style={{ 
+              width: '100%',
+              height: '120px',
+              objectFit: 'cover'
+            }}
+          />
+        </Box>
+        <Box 
+          sx={{ 
+            borderRadius: 2,
+            overflow: 'hidden',
+            height: '120px'
+          }}
+        >
+          <img 
+            src={imageList[2] ? imageList[2] : ''}
+            alt="Interior design"
+            style={{ 
+              width: '100%',
+              height: '60px',
+              borderRadius: 2,
+              objectFit: 'cover'
+            }}
+          />
+          <img 
+            src={imageList[3] ? imageList[3] : ''}
+            alt="Interior design"
+            style={{ 
+              width: '100%',
+              height: '60px',
+              borderRadius: 2,
+              objectFit: 'cover'
+            }}
+          />
+        </Box>
+      </Box>
+
+      {/* Description */}
+      <Typography 
+        sx={{ 
+          color: '#333333',
+          fontSize: '0.65rem',
+          lineHeight: 1.4
+        }}
+      >
+        {bio || "Your Bio"}
+      </Typography>
+
+      {/* Contact */}
+      <Box sx={{ my: 1.5 }}>
+        {/* Location */}
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'flex-start', 
+          gap: 1, 
+          mb: 1,
+          px: 0.5
+        }}>
+          <Box
+            sx={{
+              width: 40, 
+              height: 40,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#f5f5f5", 
+              borderRadius: 2, 
+            }}
+          >
+            <LocationOnOutlined sx={{ fontSize: "1rem" }} />
+          </Box>
+          <Box>
+            <Typography 
+              sx={{ 
+                color: '#333333',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                mb: 0.25
+              }}
+            >
+              Location
+            </Typography>
+            <Typography 
+              sx={{ 
+                color: '#666666',
+                fontSize: '0.65rem'
+              }}
+            >
+              {location !== ", , " ? location : "Address"}
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* Phone Number */}
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1,
+          px: 0.5
+        }}>
+          <Box
+            sx={{
+              width: 40,  // Adjust the size
+              height: 40,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#f5f5f5", 
+              borderRadius: 2, 
+            }}
+          >
+            <PhoneOutlined sx={{ fontSize: "1rem" }} />
+          </Box>
+          <Box>
+            <Typography 
+              sx={{ 
+                color: '#333333',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                mb: 0.25
+              }}
+            >
+              Phone Number
+            </Typography>
+            <Typography 
+              sx={{ 
+                color: '#666666',
+                fontSize: '0.65rem'
+              }}
+            >
+              {phoneNumber || "Phone Number"}
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
+    </Box>
+  );
+};
+
+
+// Template 7: Sculpty Template
+const SculptyLanding = ({name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating}) => {
+  return (
+    <Box sx={{ 
+      width: 250,
+      height: 400,
+      bgcolor: '#fffef4',
+      color: '#000000',
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column'
+    }}>
+      {/* Navigation Bar */}
+      <Box sx={{ 
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        p: 1.5,
+        borderBottom: '1px solid #1a1a1a'
+      }}>
+        {/* Logo */}
+        <Typography 
+          sx={{ 
+            fontSize: '1rem',
+            fontWeight: 600,
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif'
+          }}
+        >
+          {name || "Company Name"}
+        </Typography>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {/* Free Trial Button */}
+          <Button
+            variant="outlined"
+            size="small"
+            sx={{
+              color: '#ffffff',
+              borderColor: '#000000',
+              bgcolor: '#000000',
+              borderRadius: 4,
+              px: 1,
+              py: 0.25,
+              fontSize: '0.5rem',
+            }}
+          >
+            Start Free Trial
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Main Content */}
+      <Box 
+        sx={{ 
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          flex: 1,
+          px: 1,
+          textAlign: 'center',
+          mt: 3
+        }}
+      >
+        <Typography 
+          sx={{
+            fontSize: '1.2rem',
+            fontWeight: 700,
+            mb: 1.5,
+            lineHeight: 1.2,
+            maxWidth: "180px",
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif'
+          }}
+        >
+          {tagLine || "tag Line"}
+        </Typography>
+
+        <Typography 
+          sx={{
+            fontSize: '0.75rem',
+            color: '#888888',
+            mb: 2,
+            lineHeight: 1.5,
+            maxWidth: '220px'
+          }}
+        >
+          {bio || "Your Bio"}
+        </Typography>
+
+        <Button
+          variant="contained"
+          sx={{
+            bgcolor: '#000000',
+            color: '#ffffff',
+            borderRadius: 4,
+            textTransform: 'none',
+            px: 3,
+            py: 0.5,
+            fontSize: '0.65rem',
+            fontWeight: 600,
+          }}
+        >
+          Follow
+        </Button>
+        
+        {/* Horizontal images */}
+        <Box
+          sx={{
+            width: "100%",
+            overflowX: "auto",
+            display: "flex",
+            gap: 0.5,
+            py: 1,
+            px: 0.5,
+            mt: 4,
+            "&::-webkit-scrollbar": { display: "none" }, // Hide scrollbar for better UX
+            scrollbarWidth: "none",
+          }}
+        >
+          {imageList.map((src, index) => (
+            <Box
+              key={index}
+              component="img"
+              src={src}
+              alt={`Image ${index + 1}`}
+              sx={{
+                width: "100px",
+                height: "100px",
+                borderRadius: 2,
+              }}
+            />
+          ))}
+        </Box>
+      </Box>
+
+    </Box>
+  );
+};
+
+export { DarkTemplate, ModernTemplate, MinimalistTemplate, SplitTemplate, CreativeTemplate, SplitShowTemplate, DarkShowTemplate, ModernShowTemplate, MinimalistShowTemplate, CreativeShowTemplate, CompanyProfile, HouseOfMintProfile, SculptyLanding };

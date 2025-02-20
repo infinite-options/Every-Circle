@@ -28,6 +28,37 @@ const CategorySelector = ({setFormData, formData}) => {
                 console.error("Error fetching categories:", error);
             }
         };
+
+        const fetchTags = async () => {
+            try {
+
+                const payload = {
+                    business_name: formData.businessName,
+                    business_city: formData.city,
+                    business_state: formData.state,
+                    ...(formData.shortBio && { business_description: formData.shortBio }) // Add only if shortBio exists
+                };
+                
+                const response = await axios.post(
+                    "https://ioEC2testsspm.infiniteoptions.com/api/v1/taggenerator",
+                    payload, 
+                    {
+                        headers: {
+                            "Content-Type": "application/json"
+                        }
+                    }
+                );
+                
+                if (response.data?.tags) {
+                    setCustomTags(response.data.tags); // Save tags in state
+                }
+                
+            } catch (error) {
+                console.error("Error fetching categories:", error);
+            }
+        };
+
+        fetchTags();
         fetchCategories();
     }, []);
 
@@ -53,7 +84,7 @@ const CategorySelector = ({setFormData, formData}) => {
     };
 
     const removeCustomTag = (tagToRemove) => {
-        setCustomTags(customTags.filter(tag => tag !== tagToRemove));
+        setCustomTags((prevTags) => prevTags.filter((tag) => tag !== tagToRemove));
     };
 
     useEffect(() => {

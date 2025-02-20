@@ -226,7 +226,7 @@ export default function RecommendationForm() {
             form.append('rating_business_google_rating', formData.googleRating);
             form.append('rating_business_google_photos', JSON.stringify(formData.googlePhotos));
             form.append('rating_business_price_level', formData.priceLevel);
-            form.append('rating_business_categories_uid', JSON.stringify(formData.businessTypes))
+            // form.append('rating_business_categories_uid', JSON.stringify(formData.businessTypes))
 
             //upload image
             if (formData.receiptImage) {
@@ -242,7 +242,7 @@ export default function RecommendationForm() {
                 }
             }
 
-            const response = await axios.post(`https://ioec2testsspm.infiniteoptions.com//api/v2/ratings`, form);
+            const response = await axios.post(`https://ioec2testsspm.infiniteoptions.com/api/v2/ratings`, form);
             console.log("response from recommendations POST", response);
             if (response.status === 200) {
                 handleOpen();
