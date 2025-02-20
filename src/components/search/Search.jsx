@@ -4,7 +4,7 @@ import { Box, Container, TextField, InputAdornment, Rating, Link, Typography, Bu
 import SearchIcon from '@mui/icons-material/Search';
 import Header from "../common/Header";
 import NavigationBar from "../navigation/NavigationBar";
-import { BannerAd } from "./BannerAd";
+import BannerAd from "./BannerAd";
 import StyledContainerComponent from "../common/StyledContainer";
 import { DataGrid } from '@mui/x-data-grid';
 import SectionTitle from "./SectionTitle";

@@ -15,7 +15,7 @@ const ResponsiveContainer = ({ children, role }) => {
         elevation={3}
         sx={{
           width: '700px',
-          height: '700px',
+          height: '100%',
           borderRadius: '50%',
           overflow: 'hidden',
           backgroundColor: role === "user" ? '#1976d2' : '#00C721',

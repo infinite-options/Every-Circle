@@ -22,13 +22,16 @@ export default function SelectTemplate() {
         lastName: data.lastName,
         shortBio: data.shortBio,
         location: data.location,
+        tagline: data.tagLine,
         phoneNumber: data.phoneNumber,
         favImage: favImage,
         profileImages: otherImages,
         facebook: data.facebookLink,
         twitter: data.twitterLink,
         linkedin: data.linkedinLink,
-        youtube: data.youtubeLink
+        youtube: data.youtubeLink,
+        weHelp: data.weHelp,
+        youHelp: data.youHelp
     }
 
     const handleTemplateSelect = (template) => {

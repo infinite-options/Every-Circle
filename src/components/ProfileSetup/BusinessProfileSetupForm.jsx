@@ -11,6 +11,7 @@ import axios from 'axios';
 import APIConfig from '../../APIConfig';
 import { DataValidationUtils } from '../auth/authUtils/DataValidationUtils';
 import { useUserContext } from '../contexts/UserContext';
+import BusinessCategoryStep from "./BusinessSteps/BusinessCategoryStep";
 
 const BusinessProfileSetupForm = () => {
     const location = useLocation();
@@ -46,6 +47,8 @@ const BusinessProfileSetupForm = () => {
         shortBio: "",
         template: '0',
         einNumber: "",
+        categories: [],
+        customTags: []
     });
 
     useEffect(() => {
@@ -119,6 +122,9 @@ const BusinessProfileSetupForm = () => {
             data.append("business_ein_number", formData.einNumber);
             data.append("business_website", formData.website);
             data.append("business_template", formData.template);
+            data.append('business_category_id', JSON.stringify(formData.categories))
+            data.append('business_additional_tags', JSON.stringify(formData.customTags))
+            // 
 
             try {
                 const response = await axios.post(`${APIConfig.baseURL.dev}/business`, data, {
@@ -174,6 +180,11 @@ const BusinessProfileSetupForm = () => {
                 setFormData={setFormData}
             />,
             title: "Optional Info"
+        },
+        {
+            component: <BusinessCategoryStep formData={formData} handleChange={handleChange} errors={errors} setFormData={setFormData}/>,
+            title: "Select Category",
+            subtitle: "Select Tags for your business"
         },
         {
             component: <BusinessSocialLinksStep formData={formData} handleChange={handleChange} />,

@@ -72,12 +72,15 @@ export default function ShowTemplate() {
         };
         
         const clickCharge = async () => {
+            // Need to check if user has already visited this website or not
+            // console.log(user.profileId)
             try {
                 const endpoint = `${APIConfig.baseURL.dev}/charges`;
- 
+                
                 const chargeData = {
                     charge_business_id: profileId,
-                    charge_caused_by_user_id: state.recommendBy
+                    charge_caused_by_user_id: user.profileId,
+                    charge_recommendation_user_id: state.recommendBy,
                 };
    
                 const response = await axios.post(endpoint, chargeData);
@@ -135,7 +138,7 @@ export default function ShowTemplate() {
                         <ArrowBackIcon />
                     </IconButton>
                 </Box>
-                <Box sx={{ width: '100%', height: '100%', minHeight: '100%', justifyContent: "center", alignItems: "center", display: "flex", flexDirection: "column", flex: 1 }}>
+                <Box sx={{ width: '100%', height: '100%', maxHeight: '97vh', minHeight: '90vh', justifyContent: "center", alignItems: "center", display: "flex", flexDirection: "column", flex: 1 }}>
                     <SelectedTemplate
                         name={data.business_name || `${data.profile_first_name} ${data.profile_last_name}`}
                         tagLine={data.business_tag_line || data.profile_tag_line || ''}

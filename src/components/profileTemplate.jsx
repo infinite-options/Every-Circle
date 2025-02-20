@@ -43,24 +43,23 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
   <Card sx={{ width: 250, height: 400, backgroundColor: "#1a1a1a", color: "white", position: "relative", textAlign: "center", borderRadius: "15px", overflow: "hidden" }}>
     <Box sx={{ position: "absolute", width: "100%", height: "100%", backgroundImage: "url('https://images.unsplash.com/photo-1590846406792-0adc7f938f1d?fm=jpg&q=60&w=3000&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTF8fHJlc3RhdXJhbnR8ZW58MHx8MHx8fDA%3D')", backgroundSize: "cover", backgroundPosition: "center", opacity: 0.15 }} />
     <CardContent>
-      <Typography sx={{ fontFamily: "serif", fontWeight: "bold", mb: 1, fontSize: "1rem"}}>Liceria & Co.</Typography>
+      <Typography sx={{ fontFamily: "serif", fontWeight: "bold", mb: 1, fontSize: "1rem"}}>{name || "Company Name"}</Typography>
       
       {/* images */}
       <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", mt: 2 }}>
         <Box sx={{ width: 60, height: 60, borderRadius: "50%", overflow: "hidden", border: "1px solid white", position: "absolute", left: 42, zIndex: 1}}>
-          <img src="https://images.pexels.com/photos/1581384/pexels-photo-1581384.jpeg?cs=srgb&dl=pexels-reneterp-1581384.jpg&fm=jpg" alt="Spring Rolls" width="100%" height="100%" />
+          <img src={imageList[0] ? imageList[0] : ""} alt="Spring Rolls" width="100%" height="100%" />
         </Box>
         <Box sx={{ width: 90, height: 90, borderRadius: "50%", overflow: "hidden", border: "2px solid white", zIndex: 2 }}>
-          <img src="https://images.pexels.com/photos/3434523/pexels-photo-3434523.jpeg?cs=srgb&dl=pexels-bemistermister-3434523.jpg&fm=jpg" alt="Main Dish" width="100%" height="100%" />
+          <img src={imageList[1] ? imageList[1] : ""} alt="Main Dish" width="100%" height="100%" />
         </Box>
         <Box sx={{ width: 60, height: 60, borderRadius: "50%", overflow: "hidden", border: "1px solid white",  position: "absolute", right: 42, zIndex: 1 }}>
-          <img src="https://images.pexels.com/photos/995743/pexels-photo-995743.jpeg?cs=srgb&dl=pexels-michelle-riach-276396-995743.jpg&fm=jpg" alt="Noodles" width="100%" height="100%" />
+          <img src={imageList[2] ? imageList[2] : ""} alt="Noodles" width="100%" height="100%" />
         </Box>
       </Box>
 
-      <Typography sx={{ fontFamily: "cursive", mt: 2, color: "gold", fontSize: "1rem" }}>Chinese Restaurant</Typography>
-      <Typography variant="h6" sx={{ fontWeight: "bold", color: "white" }}>FOOD MENU</Typography>
-      <Typography sx={{ px: 2, mt: 1, fontSize: "0.87rem" }}>Treat yourself to our exquisite cuisine, where every dish tells a story!</Typography>
+      <Typography sx={{ fontFamily: "cursive", mt: 2, color: "gold", fontSize: "1rem" }}>{tagLine || ""}</Typography>
+      <Typography sx={{ px: 2, mt: 1, fontSize: "0.87rem" }}>{bio || ""}</Typography>
       
       <Box sx={{display: "flex", flexDirection: "row", justifyContent: "center", alignItems: "Center", mt: 2}}>
         <a href={yelp} target="_blank" rel="noopener noreferrer" style={{marginRight: 20}}>
@@ -84,11 +83,11 @@ const DarkTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, fa
       <Box sx={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", justifyContent: "space-evenly", alignItems: "center", flexDirection: "row", gap: 1 }}>
         <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "row"}}>
           <PhoneAndroid fontSize="9px" sx={{ opacity: 0.6 }} /> 
-          <Typography fontSize="10px" sx={{opacity: 0.6}}>123-456-7890</Typography>  
+          <Typography fontSize="10px" sx={{opacity: 0.6}}>{phoneNumber || "Phone Number"}</Typography>  
         </Box>
         <Box sx={{display: "flex", justifyContent: "center", alignItems: "center", flexDirection: "row"}}>
           <LocationOn fontSize="9px" sx={{ opacity: 0.6 }} /> 
-          <Typography fontSize="10px" sx={{ opacity: 0.6 }}>123 Anywhere St, Any City</Typography>
+          <Typography fontSize="10px" sx={{ opacity: 0.6 }}>{location !== ", , " ? location : "Address"}</Typography>
         </Box>
       </Box>
     </CardContent>
@@ -185,7 +184,7 @@ const ModernTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, 
         borderRadius: '10px',
         overflow: 'hidden',
         position: 'relative',
-        backgroundImage: `url('https://media.istockphoto.com/id/1342155703/photo/synth-wave-portrait-cyberpunk-man-neon-light-blue.jpg?s=612x612&w=0&k=20&c=aZV1dh8bUx2hmz6VF3UzE93LY5gc7X_UHlFEDkmk_fk=')`,
+        backgroundImage: `url(${imageList[0] ? imageList[0] : 'https://media.istockphoto.com/id/1342155703/photo/synth-wave-portrait-cyberpunk-man-neon-light-blue.jpg?s=612x612&w=0&k=20&c=aZV1dh8bUx2hmz6VF3UzE93LY5gc7X_UHlFEDkmk_fk='})`,
         backgroundSize: "cover",
       }}
     >
@@ -205,7 +204,7 @@ const ModernTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, 
         {/* Profile Section */}
         <Box sx={{ display: 'flex', justifyContent: "space-between", alignItems: 'center', mb: 1 }}>
           <Avatar
-            src="https://media.istockphoto.com/id/1342155703/photo/synth-wave-portrait-cyberpunk-man-neon-light-blue.jpg?s=612x612&w=0&k=20&c=aZV1dh8bUx2hmz6VF3UzE93LY5gc7X_UHlFEDkmk_fk="
+            src={imageList[1] || ""}
             sx={{
               width: 45,
               height: 45,
@@ -253,13 +252,13 @@ const ModernTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, 
 
         {/* Profile Info */}
         <Typography sx={{ fontWeight: 'bold', mb: 0.1, fontSize: "14px"}}>
-          Design Profile
+          {name || "Your Bio"}
         </Typography>
         <Typography color="#DEDDDF" sx={{fontSize: "10px", mb: 0.5 }}>
-          Designer
+          {tagLine || "Tag"}
         </Typography>
         <Typography color="text.secondary" sx={{fontSize: "10px", mb: 2 }}>
-          Creative designer focused on crafting beautiful digital experiences
+          {bio || "Your Bio"}
         </Typography>
 
         {/* Stats */}
@@ -485,9 +484,7 @@ const ModernShowTemplate = ({ name, bio, location, avatarUrl, helpTags, needHelp
 }
 
 // Template 2: Minimalist Layout
-const MinimalistTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating }) => {
-  const helpTags = ["Web Dev","Marketing", "Design", "SEO"];
-  const needHelpTags = ["Networking", "Mentorship", "Collab", "Investment"];
+const MinimalistTemplate = ({ name, bio, location, avatarUrl, tagLine, helpTags, needHelpTags, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating }) => {
 
   return (
     <Box
@@ -510,7 +507,7 @@ const MinimalistTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumb
           left: 0,
           width: '100%',
           height: '100%',
-          backgroundImage: `url('https://i.redd.it/q8aw8rul6rr81.jpg')`,
+          backgroundImage: `url(${imageList[0] ? imageList[0] : ''})`,
           backgroundSize: "cover",
           clipPath: 'polygon(0 0, 100% 0, 100% 40%, 0 25%)',
           zIndex: 0,
@@ -543,7 +540,7 @@ const MinimalistTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumb
         >
           {/* Profile Avatar */}
           <Avatar
-            src= "https://images.rawpixel.com/image_800/cHJpdmF0ZS9sci9pbWFnZXMvd2Vic2l0ZS8yMDIyLTA4L2pvYjEwMzktZWxlbWVudC0yNi0zOTNfMS5qcGc.jpg"
+            src={avatarUrl || ""}
             sx={{
               position: 'absolute',
               top: "-27%",
@@ -558,10 +555,10 @@ const MinimalistTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumb
 
           <Box sx={{ textAlign: "center", mt: 2, p: 1 }}>
             <Typography sx={{ fontSize: "14px", fontWeight: "bold"}}>
-              Dianna Leen
+              {name || "Name"}
             </Typography>
             <Typography sx={{fontSize: "10px", fontWeight: "100"}} color="text.secondary">
-              Lorem ipsum dolor sit amet consectetur adipisicing elit.
+              {bio || "Your Bio"}
             </Typography>
             <Box sx={{display: "flex", flexDirection: "row", justifyContent: "space-around", mt: "15px"}}>
               <Button variant= "contained" sx={{width: "60%", height: "20px", fontSize: "10px", bgcolor: "#16629a", color: "white", boxShadow: "none", borderRadius: 2 }}>
@@ -822,10 +819,7 @@ const MinimalistShowTemplate = ({ name, bio, location, avatarUrl, helpTags, need
 };
 
 // Template 3: Split Layout with Gradient
-const SplitTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating }) => {
-  const helpTags = ["Web Dev","Marketing", "SEO", "Design"];
-  const needHelpTags = ["Networking", "Mentorship", "Investment", "Collab"];
-
+const SplitTemplate = ({ name, bio, location, avatarUrl, tagLine, helpTags, needHelpTags, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating }) => {
   return (
     <Box 
       sx={{
@@ -854,7 +848,7 @@ const SplitTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, f
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundImage: `url('https://static.vecteezy.com/system/resources/thumbnails/026/945/935/small/business-man-on-black-background-free-photo.jpg')`,
+          backgroundImage: `url(${imageList[0] || ''})`,
           backgroundSize: 'cover',
           // bgcolor: '#000000',
         }}/>
@@ -935,7 +929,7 @@ const SplitTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, f
               mb: 1,
               lineHeight: 0.5
             }}>
-              Test
+              {name?.split(' ')[0] || 'Name'}
             </Typography>
 
             <Typography sx={{
@@ -944,7 +938,7 @@ const SplitTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, f
               mb: 1,
               lineHeight: 1
             }}>
-              Williamson
+              {name?.split(' ')[1] || 'Last Name'}
             </Typography>
 
             <Typography sx={{
@@ -952,7 +946,7 @@ const SplitTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, f
               color: 'rgba(255, 255, 255, 0.7)',
               lineHeight: 1.4
             }}>
-              Actor, comedian, musician and writer
+              {tagLine || ''}
             </Typography>
           </Box>
         </Box>
@@ -964,7 +958,7 @@ const SplitTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, f
           About
         </Typography>
         <Typography sx={{ fontSize: "10px", fontWeight: "100", mb: 1 }} color="text.secondary">
-          Lorem ipsum dolor sit amet consectetur adipisicing elit. Lorem ipsum conitue with random ways.
+          {bio || ''}
         </Typography>
 
         <Typography sx={{ fontSize: "10px", fontWeight: "bold" }}>
@@ -1243,7 +1237,7 @@ const CreativeTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber
     }}>
       <Box sx={{ position: 'absolute', top: 45, left: 40, width: "50px"}}>
         <Typography sx={{ fontWeight: 'bold', mt: 0.5, fontSize: "1.2rem", textAlign: "center",}}>
-          Air Kitchen
+          {name || ""}
         </Typography>
       </Box>
     </Box>
@@ -1259,7 +1253,7 @@ const CreativeTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber
         borderRadius: '50%',
         top: '18%',
         right: -38,
-        backgroundImage: `url('https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRTdVokvqSsvBSn7vkPA_v9dFUUgyaR-9abWg&s')`,
+        backgroundImage: `url(${imageList[0] ? imageList[0] : ''})`,
         backgroundSize: "cover"
       }} 
     />
@@ -1267,7 +1261,7 @@ const CreativeTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber
     {/* Content section */}
     <Box sx={{ position: 'absolute', top: '32%', left: 18, width: "150px" }}>
       <Typography sx={{ mb: 1.5, fontFamily: "cursive", fontSize: "1rem", color: "black"}}>
-        Best American Cuisine
+        {tagLine || ""}
       </Typography>
       <Box sx={{display: "flex", flexDirection: "row", justifyContent: "start", alignItems: "Center", mt: 1.5}}>
         <a href={yelp} target="_blank" rel="noopener noreferrer" style={{marginRight: 20}}>
@@ -1306,7 +1300,7 @@ const CreativeTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber
             About Us
           </Typography>
           <Typography sx={{fontSize: "0.5rem", color: 'white', opacity: 0.6}}>
-            Lorem ipsum dolor sit amet consectetur adipisicing elit. Nulla obcaecati illum at officia
+          {bio || "Your Bio"}
           </Typography>
         </Box>
         <Box sx={{
@@ -1321,7 +1315,7 @@ const CreativeTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber
           ml: 1,
           mr: 6,
           border: "1px solid white",
-          backgroundImage: `url('https://media.istockphoto.com/id/1162911786/photo/the-team-of-cooks-backs-in-the-work-in-the-modern-kitchen-the-workflow-of-the-restaurant-in.jpg?s=612x612&w=0&k=20&c=Nn1xO1gbUGnEzTHp4Sitg_ouob_co3jY5hDv_kHWzxE=')`,
+          backgroundImage: `url(${imageList[1] ? imageList[1] : ''})`,
           backgroundSize: "cover",
         }}/>
       </Box>
@@ -1329,10 +1323,10 @@ const CreativeTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber
 
     <Box sx={{ display: 'flex', gap: 1.5, mt: 1.5, bgcolor: "#fdd835", position: "absolute", bottom: 0, left: 0, right: 0, height: "30px", justifyContent: "space-evenly", alignItems: "center"}}>
       <Typography variant="caption" sx={{ color: '#fff' }}>
-        Phone Number
+        {phoneNumber || "Phone Number"}
       </Typography>
       <Typography variant="caption" sx={{ color: '#fff' }}>
-        Address
+        {location !== ", , " ? location : "Address"}
       </Typography>
     </Box>
   </Box>

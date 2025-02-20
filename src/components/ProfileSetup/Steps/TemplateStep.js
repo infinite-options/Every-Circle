@@ -100,7 +100,7 @@ const TemplateStep = ({ formData, handleTemplateSelect, role }) => {
               <template.component
                 name={`${formData.firstName} ${formData.lastName}`}
                 username={formData.firstName?.toLowerCase() || 'username'}
-                tagLine={formData.tagLine || ''}
+                tagLine={formData.tagline || ''}
                 phoneNumber={formData.phoneNumber || ""}
                 bio={formData.shortBio || 'Your bio will appear here'}
                 location={formData.location || 'Location'}
@@ -112,6 +112,8 @@ const TemplateStep = ({ formData, handleTemplateSelect, role }) => {
                 linkedin= {formData.linkedin || ''}
                 youtube= {formData.youtube || ''}
                 imageList={imageList}
+                helpTags= {formData.weHelp || []} 
+                needHelpTags = {formData.youHelp || []}
                 role={role}
               />
             </Box>

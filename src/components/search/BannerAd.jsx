@@ -1,31 +1,74 @@
-import * as React from "react";
-import { Box, Typography } from "@mui/material";
+import React from 'react';
+import { Paper, Box, Typography } from '@mui/material';
+import { styled } from '@mui/material/styles';
 
-export function BannerAd() {
+const StyledPaper = styled(Paper)(({ theme }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: theme.spacing(2),
+  marginTop: "20px",
+  width: '100%',
+  backgroundColor: theme.palette.background.paper,
+}));
+
+const ImageContainer = styled(Box)(({ theme }) => ({
+  width: 96,
+  height: 96,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  '& img': {
+    maxWidth: '100%',
+    maxHeight: '100%',
+    objectFit: 'contain',
+  },
+}));
+
+const ContentContainer = styled(Box)(({ theme }) => ({
+  flex: 1,
+  padding: theme.spacing(0, 4),
+}));
+
+const BannerAd = ({ 
+  leftImage, 
+  rightImage, 
+  businessName, 
+  tagline, 
+  bio 
+}) => {
   return (
-    <Box
-      sx={{
-        width: "100%",
-        bgcolor: "#d9d9d9",
-        alignSelf: "center",
-        mt: 4.25,
-        textAlign: "center",
-        py: "11px 26px",
-        px: 8.75,
-      }}
-    >
-      <Typography
-        sx={{
-          color: "#000",
-          letterSpacing: "-0.64px",
-          fontFamily: "Lexend, sans-serif",
-          fontSize: "16px",
-          fontWeight: 700,
-          lineHeight: 2,
-        }}
-      >
-        Relevant Banner Ad
-      </Typography>
-    </Box>
+    <StyledPaper elevation={1}>
+      {/* Left Image */}
+      <ImageContainer>
+        <img 
+          src={leftImage} 
+          alt="Left banner"
+        />
+      </ImageContainer>
+
+      {/* Center Content */}
+      <ContentContainer>
+        <Typography variant="h5" component="h1" gutterBottom={0.5}>
+          {businessName}
+        </Typography>
+        <Typography variant="h6" color="text.secondary" gutterBottom={0.5}>
+          {tagline}
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          {bio}
+        </Typography>
+      </ContentContainer>
+
+      {/* Right Image */}
+      <ImageContainer>
+        <img 
+          src={rightImage} 
+          alt="Right banner"
+        />
+      </ImageContainer>
+    </StyledPaper>
   );
-}
+};
+
+export default BannerAd;
