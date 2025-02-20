@@ -242,7 +242,7 @@ export default function RecommendationForm() {
                 }
             }
 
-            const response = await axios.post(`https://ioec2testsspm.infiniteoptions.com/api/v2/ratings`, form);
+            const response = await axios.post(`https://ioec2testsspm.infiniteoptions.com/api/v3/ratings_v3`, form);
             console.log("response from recommendations POST", response);
             if (response.status === 200) {
                 handleOpen();
