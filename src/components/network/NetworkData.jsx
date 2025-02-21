@@ -60,20 +60,20 @@ export default function NetworkData({ data }) {
                     Users
                   </Typography>
                   <List component="div" disablePadding>
-                    {JSON.parse(item.profile_id).map((id) => (
+                    {JSON.parse(item.profiles).map((user) => (
                       <ListItem 
-                        key={id} 
+                        key={user.user_id} 
                         sx={{ textAlign: "center", cursor: "pointer" }}
                         onClick={() => {
                           navigate("/showTemplate", {
                             state: {
-                              profileId: id,
+                              profileId: user.user_id,
                               navigatingFrom: "networkPage",
                             },
                           });
                         }}
                       >
-                        <ListItemText primary={id} />
+                        <ListItemText primary={user.first_name + " " + user.last_name + " " + "(" + user.user_id + ")"} />
                       </ListItem>
                     ))}
                   </List>

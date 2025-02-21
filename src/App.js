@@ -20,6 +20,7 @@ import BusinessProfileSetupForm from "./components/ProfileSetup/BusinessProfileS
 import BusinessProfile from "./components/BusinessProfile/BusinessProfile";
 import SelectBusinessTemplate from "./components/SelectTemplate/SelectBusinessTemplate";
 import { LoadScript } from "@react-google-maps/api";
+import EditRecommendation from "./components/recommendation/EditRecommendation";
 
 const LIBRARIES = ["places"];
 
@@ -66,6 +67,7 @@ function App() {
             <Route path="/selectTemplate" element={<SelectTemplate />} />
             <Route path="/selectBusinessTemplate" element={<SelectBusinessTemplate />} />
             <Route path="/recommendation" element={<RecommendationForm/>} />
+            <Route path="/editRecommendation" element={<EditRecommendation/>} />
           </Routes>
         </Router>
       </ThemeProvider>

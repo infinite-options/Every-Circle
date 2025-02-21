@@ -1530,7 +1530,6 @@ const CircularHeading = ({ children }) => (
     </Typography>
   </Box>
 );
-
 const CompanyProfile = ({name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating}) => {
   return (
     <Card sx={{ 
@@ -1660,6 +1659,194 @@ const CompanyProfile = ({name, bio, location, avatarUrl, tagLine, phoneNumber, f
     </Card>
   );
 };
+
+const CircularHeadingShow = ({ children }) => (
+  <Box sx={{ 
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: '1px solid rgba(255, 255, 255, 0.8)',
+    borderRadius: '50px',
+    px: 3,
+    py: 0.2,
+    mb: 1
+  }}>
+    <Typography sx={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
+      {children}
+    </Typography>
+  </Box>
+);
+const CompanyProfileShow = ({name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating}) => {
+  return (
+    <Card sx={{ 
+      width: '100%', 
+      height: '97vh', 
+      bgcolor: '#1a1a1a', 
+      color: 'white',
+      borderRadius: 2,
+      overflow: 'hidden'
+    }}>
+      <CardContent sx={{ 
+        p: 0,
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        '&:last-child': { pb: 0 } // Override Material UI's default padding
+      }}>
+        {/* Header */}
+        <Box 
+          sx={{ 
+            p: { xs: 2, sm: 3, md: 4 }, 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center' 
+          }}
+        >
+          <Typography 
+            sx={{ 
+              color: 'white',
+              fontSize: "2rem"
+            }}
+          >
+            {name || "Company Name"}
+          </Typography>
+          <Box sx={{ 
+            width: "70px",
+            height: "70px",
+            borderRadius: '50%',
+            bgcolor: 'transparent',
+            border: '2px solid white',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden'
+          }}>
+            <Box sx={{ 
+              height: "100%",
+              width: "100%",
+              backgroundImage: `url(${imageList?.[0] || ''})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              borderRadius: "50%"
+            }} />
+          </Box>
+        </Box>
+
+        {/* Image */}
+        <Box sx={{ 
+          height: "170px",
+          mb: 4,
+          px: 3
+        }}>
+          <Box 
+            component="img" 
+            src={imageList?.[1] || ''} 
+            sx={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover'
+            }}
+          />
+        </Box>
+        
+        <Box sx={{
+          display: "flex",
+          flexDirection: "row",
+          justifyContent: "space-between",
+          px: 3,
+          gap: 3
+        }}>
+          {/* About Us Section */}
+          <Box sx={{ flex: 2 }}>
+            <CircularHeadingShow>About Us</CircularHeadingShow>
+            <Typography sx={{ 
+              mb: 2,
+              fontSize: "1rem"
+            }}>
+              {bio || "Your Bio"}
+            </Typography>
+            <Typography 
+              sx={{ 
+                fontStyle: 'italic', 
+                textAlign: 'center',
+                fontSize: "1.5rem",
+                fontFamily: "cursive"
+              }}
+            >
+              &gt; {tagLine || "Tag"} &lt;
+            </Typography>
+          </Box>
+          
+          <Box sx={{ flex: 1.5, display: "flex", flexDirection: "column", alignItems: "flex-start", ml: 15}}>
+            {/* Our Advantages Section */}
+            <Box sx={{ mb: 2 }}>
+              <CircularHeadingShow>Our Advantages</CircularHeadingShow>
+              <List sx={{ p: 0 }}>
+                {['Consistent quality', 'Innovative solutions', 'Reliable service'].map((item, index) => (
+                  <ListItem key={index} sx={{ 
+                    py: 0,
+                    fontSize: "1rem"
+                  }}>
+                    <Typography sx={{ fontSize: 'inherit' }}>• {item}</Typography>
+                  </ListItem>
+                ))}
+              </List>
+            </Box>
+
+            {/* Why Choose Us Section */}
+            <Box sx={{ mb: 2 }}>
+              <CircularHeadingShow>Why Choose Us</CircularHeadingShow>
+              <List sx={{ p: 0 }}>
+                {['Unsurpassed durability', 'Increased efficiency', 'Cost reduction'].map((item, index) => (
+                  <ListItem key={index} sx={{ 
+                    py: 0,
+                    fontSize: "1rem"
+                  }}>
+                    <Typography sx={{ fontSize: 'inherit' }}>• {item}</Typography>
+                  </ListItem>
+                ))}
+              </List>
+            </Box>
+          </Box>
+        </Box>
+
+        {/* Contact Section */}
+        <Box 
+          sx={{ 
+            p: 3,
+            bgcolor: 'rgba(255, 255, 255, 0.1)',
+            mt: 'auto',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}
+        >
+
+          <Typography sx={{ 
+            fontSize: "1.2rem",
+            fontWeight: 'bold'
+          }}>
+            Contact Us
+          </Typography>
+          <Box>
+            <Typography sx={{ 
+              textAlign: 'right',
+              fontSize: "0.875rem"
+            }}>
+              {phoneNumber || "Phone Number"}
+            </Typography>
+            <Typography sx={{ 
+              textAlign: 'right',
+              fontSize: "0.875rem"
+            }}>
+              {website || "Website"}
+            </Typography>
+          </Box>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+}
 
 
 // Template 6: House of mints
@@ -1912,6 +2099,251 @@ const HouseOfMintProfile = ({name, bio, location, avatarUrl, tagLine, phoneNumbe
   );
 };
 
+const HouseOfMintProfileShow = ({name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating}) => {
+  return (
+    <Box sx={{ 
+      width: '100%', // Take up full width of parent
+      height: '97vh', // Take up 97% of viewport height
+      bgcolor: '#ffffff',
+      borderRadius: 2,
+      overflow: 'hidden',
+      p: 2, // Added padding for better spacing
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
+      {/* Header with Profile Image and Details */}
+      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+        {/* Profile Image */}
+        <Box
+          sx={{
+            width: '12vw', // Dynamic width based on viewport width
+            height: '12vw', // Keep the aspect ratio square
+            borderRadius: '50%',
+            overflow: 'hidden',
+            flexShrink: 0,
+            bgcolor: '#f5f5f5'
+          }}
+        >
+          <img 
+            src={imageList[0] ? imageList[0] : ''}
+            alt="House of Mint"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          />
+        </Box>
+        
+        {/* Company Details */}
+        <Box sx={{ flex: 1 }}>
+          <Typography 
+            sx={{ 
+              fontSize: '1.2rem', // Adjusted font size for larger view
+              fontWeight: 600,
+              color: '#000000',
+              mb: 0.5
+            }}
+          >
+            {name || "Company Name"}
+          </Typography>
+          
+          <Typography 
+            sx={{ 
+              color: '#666666',
+              fontSize: '1rem', // Adjusted font size for larger view
+              mb: 0.5
+            }}
+          >
+            {tagLine || "Tag Line"}
+          </Typography>
+          
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Rating 
+              value={rating || 4.8} 
+              readOnly 
+              precision={0.1}
+              size="small"
+              sx={{ fontSize: '1.1rem' }} // Adjusted rating icon size
+            />
+            <Typography  
+              sx={{ 
+                color: '#666666',
+                fontSize: '1rem'
+              }}
+            >
+              ({rating ? `${rating}k` : '2k'})
+            </Typography>
+          </Box>
+        </Box>
+
+      </Box>
+
+      {/* Message Button */}
+      <Button
+        fullWidth
+        variant="filled"
+        sx={{
+          mb: 2,
+          py: 1,
+          color: '#000000',
+          bgcolor: '#e8eef2',
+          fontSize: '1rem',
+        }}
+      >
+        Message
+      </Button>
+
+      {/* Image Gallery */}
+      <Box sx={{ 
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        gap: 2,
+        mb: 2,
+        flex: 1,
+      }}>
+        <Box 
+          sx={{ 
+            borderRadius: 2,
+            overflow: 'hidden',
+            height: '25vh', // Adjusted height based on viewport
+          }}
+        >
+          <img 
+            src={imageList[1] ? imageList[1] : ''}
+            alt="Interior design"
+            style={{ 
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover'
+            }}
+          />
+        </Box>
+        <Box 
+          sx={{ 
+            borderRadius: 2,
+            overflow: 'hidden',
+            height: '25vh', 
+          }}
+        >
+          <img 
+            src={imageList[2] ? imageList[2] : ''}
+            alt="Interior design"
+            style={{ 
+              width: '100%',
+              height: '50%',
+              objectFit: 'cover'
+            }}
+          />
+          <img 
+            src={imageList[3] ? imageList[3] : ''}
+            alt="Interior design"
+            style={{ 
+              width: '100%',
+              height: '50%',
+              objectFit: 'cover'
+            }}
+          />
+        </Box>
+      </Box>
+
+      {/* Description */}
+      <Typography 
+        sx={{ 
+          color: '#333333',
+          fontSize: '1rem',
+          lineHeight: 1.5
+        }}
+      >
+        
+        {bio || "Your bio will appear here. This is a placeholder text. You can add your own bio here."}
+      </Typography>
+
+      {/* Contact */}
+      <Box sx={{ my: 2 }}>
+        {/* Location */}
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'flex-start', 
+          gap: 1, 
+          mb: 1,
+        }}>
+          <Box
+            sx={{
+              width: '8vw', 
+              height: '8vw',
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#f5f5f5", 
+              borderRadius: 2, 
+            }}
+          >
+            <LocationOnOutlined sx={{ fontSize: "1.5rem" }} />
+          </Box>
+          <Box>
+            <Typography 
+              sx={{ 
+                color: '#333333',
+                fontSize: '1.1rem',
+                fontWeight: 700,
+                mb: 0.5
+              }}
+            >
+              Location
+            </Typography>
+            <Typography 
+              sx={{ 
+                color: '#666666',
+                fontSize: '1rem'
+              }}
+            >
+              {location !== ", , " ? location : "Address"}
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* Phone Number */}
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1
+        }}>
+          <Box
+            sx={{
+              width: '8vw',
+              height: '8vw',
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "#f5f5f5", 
+              borderRadius: 2, 
+            }}
+          >
+            <PhoneOutlined sx={{ fontSize: "1.5rem" }} />
+          </Box>
+          <Box>
+            <Typography 
+              sx={{ 
+                color: '#333333',
+                fontSize: '1.1rem',
+                fontWeight: 700,
+                mb: 0.5
+              }}
+            >
+              Phone Number
+            </Typography>
+            <Typography 
+              sx={{ 
+                color: '#666666',
+                fontSize: '1rem'
+              }}
+            >
+              {phoneNumber || "Phone Number"}
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
+    </Box>
+  );
+};
+
 
 // Template 7: Sculpty Template
 const SculptyLanding = ({name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating}) => {
@@ -2052,4 +2484,144 @@ const SculptyLanding = ({name, bio, location, avatarUrl, tagLine, phoneNumber, f
   );
 };
 
-export { DarkTemplate, ModernTemplate, MinimalistTemplate, SplitTemplate, CreativeTemplate, SplitShowTemplate, DarkShowTemplate, ModernShowTemplate, MinimalistShowTemplate, CreativeShowTemplate, CompanyProfile, HouseOfMintProfile, SculptyLanding };
+const SculptyLandingShow = ({name, bio, location, avatarUrl, tagLine, phoneNumber, facebook, twitter, linkedin, youtube, website, yelp, google, role, imageList, rating}) => {
+  return (
+    <Box sx={{ 
+      width: '100%',
+      height: '97vh',
+      bgcolor: '#fffef4',
+      color: '#000000',
+      overflow: 'hidden',
+      display: 'flex',
+      flexDirection: 'column'
+    }}>
+      {/* Navigation Bar */}
+      <Box sx={{ 
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        p: 2,
+        borderBottom: '1px solid #1a1a1a',
+        maxWidth: '100%',
+      }}>
+        {/* Logo */}
+        <Typography 
+          sx={{ 
+            fontSize: '1.7rem',
+            fontWeight: 600,
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+            maxWidth: '100%',
+          }}
+        >
+          {name || "Company Name"}
+        </Typography>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {/* Free Trial Button */}
+          <Button
+            variant="outlined"
+            size="small"
+            sx={{
+              color: '#ffffff',
+              borderColor: '#000000',
+              bgcolor: '#000000',
+              borderRadius: 4,
+              px: 2,
+              py: 0.5,
+              fontSize: '0.75rem',
+            }}
+          >
+            Start Free Trial
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Main Content */}
+      <Box 
+        sx={{ 
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'flex-start',
+          flex: 1,
+          px: 3,
+          textAlign: 'center',
+          mt: 4,
+        }}
+      >
+        <Typography 
+          sx={{
+            fontSize: '2rem', // Adjusted for larger screens
+            fontWeight: 700,
+            mb: 2,
+            lineHeight: 1.2,
+            maxWidth: "85%",
+            fontFamily: '"SF Pro Display", -apple-system, sans-serif',
+          }}
+        >
+          {tagLine || "Tag Line"}
+        </Typography>
+
+        <Typography 
+          sx={{
+            fontSize: '1rem', // Adjusted font size
+            color: '#888888',
+            mb: 3,
+            lineHeight: 1.5,
+            maxWidth: '80%',
+          }}
+        >
+          {bio || "Your Bio"}
+        </Typography>
+
+        <Button
+          variant="contained"
+          sx={{
+            bgcolor: '#000000',
+            color: '#ffffff',
+            borderRadius: 4,
+            textTransform: 'none',
+            px: 5,
+            py: 1,
+            fontSize: '0.875rem', // Adjusted for better appearance
+            fontWeight: 600,
+          }}
+        >
+          Follow
+        </Button>
+        
+        {/* Horizontal images */}
+        <Box
+          sx={{
+            width: '100%',
+            overflowX: 'auto',
+            display: 'flex',
+            gap: 1,
+            py: 2,
+            px: 1,
+            mt: 13,
+            "&::-webkit-scrollbar": { display: 'none' }, 
+            scrollbarWidth: 'none',
+          }}
+        >
+          {imageList.map((src, index) => (
+            <Box
+              key={index}
+              component="img"
+              src={src}
+              alt={`Image ${index + 1}`}
+              sx={{
+                width: "160px", // Adjusted image size for larger screen
+                height: "160px",
+                borderRadius: 2,
+              }}
+            />
+          ))}
+        </Box>
+      </Box>
+    </Box>
+  );
+};
+
+
+export { DarkTemplate, ModernTemplate, MinimalistTemplate, SplitTemplate, CreativeTemplate, SplitShowTemplate, DarkShowTemplate, ModernShowTemplate, MinimalistShowTemplate, CreativeShowTemplate, CompanyProfile, CompanyProfileShow, HouseOfMintProfile, HouseOfMintProfileShow, SculptyLanding, SculptyLandingShow };

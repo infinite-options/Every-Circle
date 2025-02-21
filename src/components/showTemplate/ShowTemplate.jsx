@@ -11,7 +11,10 @@ import {
     ModernShowTemplate,
     MinimalistShowTemplate,
     SplitShowTemplate,
-    CreativeShowTemplate
+    CreativeShowTemplate,
+    CompanyProfileShow,
+    HouseOfMintProfileShow,
+    SculptyLandingShow
 } from '../profileTemplate';
 import APIConfig from "../../APIConfig";
 import { useUserContext } from "../contexts/UserContext";
@@ -21,7 +24,10 @@ const templates = [
     { component: ModernShowTemplate, value: 'modern', id: 1 },
     { component: MinimalistShowTemplate, value: 'minimalist', id: 2 },
     { component: SplitShowTemplate, value: 'split', id: 3 },
-    { component: CreativeShowTemplate, value: 'creative', id: 4 }
+    { component: CreativeShowTemplate, value: 'creative', id: 4 },
+    { component: CompanyProfileShow, value: 'company', id: 5 },
+    { component: HouseOfMintProfileShow, value: 'housemint', id: 6 },
+    { component: SculptyLandingShow, value: 'sculpty', id: 7 }
 ];
 
 const columns = [

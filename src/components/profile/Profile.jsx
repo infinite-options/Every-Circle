@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { Box, Typography, styled, IconButton, TextField } from "@mui/material";
+import { Box, Typography, styled, IconButton, TextField, Rating } from "@mui/material";
 import { SocialLink } from "./SocialLink";
 import { InputField } from "../common/InputField";
+import { DataGrid } from '@mui/x-data-grid';
 // import ImageUpload from '../common/ImageUpload';
 import SquareImageUpload from '../common/SquareImageUpload';
 import { HelpItem } from "./HelpItem";
@@ -23,6 +24,7 @@ import { DataValidationUtils } from "../auth/authUtils/DataValidationUtils";
 import DialogBox from "../common/DialogBox";
 import Backdrop from '@mui/material/Backdrop';
 import CircularProgress from '@mui/material/CircularProgress';
+import dayjs from 'dayjs';
 
 const FormBox = styled(Box)({
   padding: "0 16px",
@@ -63,6 +65,7 @@ export default function Profile() {
   const [deletedImages, setDeletedImages] = useState([]);
   const [showSpinner, setShowSpinner] = useState(false);
   const navigate = useNavigate();
+  const [ratings, setRatings] = useState(null);
 
   const templateMap = {
     0: "dark",
@@ -105,6 +108,9 @@ export default function Profile() {
           favImage: user.profile_favorite_image,
           profileId: user.profile_uid,
         });
+
+        // console.log('ratings', response.data['ratings result']);
+        setRatings(response.data['ratings result']);
         //update data in context
         updateUser({ profileId: user.profile_uid, profile: user });
         setProfileId(user.profile_uid);
@@ -258,6 +264,71 @@ export default function Profile() {
       // alert("Error updating profile");
     }
   };
+
+  const handleRowClick = (row) => {
+    const formattedData = {
+        ratingid: row.rating_uid || "",
+        businessName: row.business_name || "",
+        location: row.business_address_line_1 + ", " + row.business_city + ", " + row.business_state || "",
+        rating: row.rating_star || 0,
+        lastInteraction: row.rating_receipt_date ? row.rating_receipt_date: null,
+        review: row.rating_description || "",
+        businessTypes: row.business_types || [],
+        ownerFname: row.owner_first_name || "",
+        ownerLname: row.owner_last_name || "",
+        phoneNumber: row.business_phone_number || "",
+        yelpUrl: row.business_yelp || "",
+        websiteUrl: row.business_website || "",
+        email: row.business_email_id || "",
+        receiptImage: row.rating_receipt_url || "",
+        selectedImages: JSON.parse(row.rating_images_url) || [],
+    };
+    // console.log('formattedData', formattedData);
+
+    navigate("/editRecommendation", { state: { formData: formattedData } });
+  };
+
+  const columns = [
+    { 
+      field: 'business_name', 
+      headerName: 'Business Name', 
+      width: 150,
+      renderCell: (params) => {
+          return (
+              <span 
+                  style={{ color: "blue", cursor: "pointer", textDecoration: "underline" }} 
+                  onClick={() => handleRowClick(params.row)}
+              >
+                  {params.value}
+              </span>
+          );
+      }
+    },
+    { 
+        field: 'rating_business_id', 
+        headerName: 'Business ID', 
+        width: 150,
+        renderCell: (params) => {
+            return (
+                <span 
+                    style={{ color: "blue", cursor: "pointer", textDecoration: "underline" }} 
+                    onClick={() => handleRowClick(params.row)}
+                >
+                    {params.value}
+                </span>
+            );
+        }
+    },
+    {
+        field: 'rating_star',
+        headerName: 'Rating',
+        width: 180,
+        renderCell: (params) => {
+          return <Rating value={params.value} readOnly />;
+        },
+    },
+    { field: 'rating_description', headerName: 'Description', width: 200 },
+  ];
 
   return (
     <StyledContainer>
@@ -474,6 +545,17 @@ export default function Profile() {
             )}
           </FormBox>
         </form>
+
+        {/* ratings */}
+        <Box sx={{ width: '100%', my: 3 }}>
+            <Typography variant="h6" align="center" sx={{ mb: 2 }}>
+                Recommendations
+            </Typography>
+            <div style={{ height: 400, width: '100%' }}>
+                <DataGrid rows={ratings} columns={columns} pageSize={5} getRowId={(row) => row.rating_uid}/>
+            </div>
+        </Box>
+
         <DialogBox
           open={dialog.open}
           title={dialog.title}

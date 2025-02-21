@@ -43,6 +43,7 @@ export default function RecommendationForm() {
     const { user } = useUserContext();
     const { profileId } = user
     const [dialogOpen, setDialogOpen] = useState(false);
+    const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
     const [selectedImages, setSelectedImages] = useState([]);
     const [allCategories, setAllCategories] = useState([])
     const [mainCategories, setMainCategories] = useState([]);
@@ -71,6 +72,9 @@ export default function RecommendationForm() {
 
     const handleOpen = () => setDialogOpen(true);
     const handleClose = () => setDialogOpen(false);
+
+    const handleRatingOpen = () => setRatingDialogOpen(true);
+    const handleRatingClose = () => setRatingDialogOpen(false);
 
     const handleMainCategoryChange = (value) => {
         // Find the selected category object
@@ -200,7 +204,11 @@ export default function RecommendationForm() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        console.log(formData);
+        // console.log(formData);
+        if(formData.rating === 0) {
+            handleRatingOpen();
+            return;
+        }
         try {
             const form = new FormData();
             form.append('profile_uid', profileId);
@@ -356,7 +364,7 @@ export default function RecommendationForm() {
                     />
 
                     <InputField
-                        label="Email"
+                        label="Business Email"
                         value={formData.email}
                         onChange={(value) => setFormData({ ...formData, email: value })}
                     />
@@ -394,6 +402,14 @@ export default function RecommendationForm() {
                     button1Text="Ok"
                     button1Action={handleClose}
                     handleClose={handleClose}
+                />
+                <DialogBox
+                    open={ratingDialogOpen}
+                    title="Error"
+                    content="Please rate the business before submitting."
+                    button1Text="Ok"
+                    button1Action={handleRatingClose}
+                    handleClose={handleRatingClose}
                 />
             </Box>
             <NavigationBar />

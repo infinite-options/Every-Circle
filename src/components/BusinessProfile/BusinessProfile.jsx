@@ -112,6 +112,9 @@ export default function BusinessProfile() {
         2: "minimalist",
         3: "split",
         4: "creative",
+        5: "company",
+        6: "housemint",
+        7: "sculpty",
     }
 
     // const businessCategories = [
