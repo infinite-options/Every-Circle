@@ -196,7 +196,7 @@ const CategorySelector = ({setFormData, formData}) => {
                 sx={{backgroundColor: "white"}} 
                 value={newTag} 
                 onChange={(e) => setNewTag(e.target.value)} 
-                placeholder="Add custom tag" 
+                placeholder="Add custom tag (After each tag press 'enter' )" 
                 fullWidth 
                 onKeyDown={(e) => {
                     if (e.key === 'Enter') {

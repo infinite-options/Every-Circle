@@ -224,7 +224,7 @@ export const InputField = ({
           {!disabled && (<TextField
             variant="outlined"
             onKeyDown={handleKeyDown}
-            placeholder="Add tag..."
+            placeholder="Add tag (after each tag press 'enter')..."
             // sx={{ minWidth: "100px", flexGrow: 1 }}
             sx={{
               border: "none",

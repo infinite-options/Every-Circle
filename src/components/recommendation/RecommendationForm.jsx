@@ -234,7 +234,7 @@ export default function RecommendationForm() {
             form.append('rating_business_google_rating', formData.googleRating);
             form.append('rating_business_google_photos', JSON.stringify(formData.googlePhotos));
             form.append('rating_business_price_level', formData.priceLevel);
-            // form.append('rating_business_categories_uid', JSON.stringify(formData.businessTypes))
+            form.append('rating_business_custom_tags', JSON.stringify(formData.businessTypes))
 
             //upload image
             if (formData.receiptImage) {
@@ -306,7 +306,7 @@ export default function RecommendationForm() {
                     />
 
                     <InputField
-                        label="Business Types"
+                        label="Business Tags"
                         value={formData.businessTypes}
                         onChange={(value) => setFormData({ ...formData, businessTypes: value })}
                         isTagInput={true}
