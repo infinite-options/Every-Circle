@@ -138,7 +138,7 @@ const ProfileSetupForm = () => {
       data.append("profile_linkedin_link", formData.linkedin);
       data.append("profile_youtube_link", formData.youtube);
       data.append("profile_template", formData.template);
-      data.append("Profile_referred_by_user_id", referralId);
+      data.append("profile_referred_by_user_id", referralId);
 
       // const imageFields = ["image1", "image2", "image3"];
       // imageFields.forEach((field, index) => {

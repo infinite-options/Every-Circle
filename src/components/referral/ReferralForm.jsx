@@ -71,7 +71,7 @@ export default function ReferralForm() {
             if (validateFields()) {
                 setShowSpinner(true);
                 const data = {
-                    user_uid: userId,
+                    profile_uid: user.profileId,
                     ...(formData.email && { user_referred_email: formData.email }),
                     ...(formData.phoneNumber && { user_referred_number: formData.phoneNumber }),
                     message: formData.message,

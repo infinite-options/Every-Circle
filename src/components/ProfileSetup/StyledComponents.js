@@ -25,6 +25,7 @@ export const StyledTextField = styled(TextField)(({ multiline, required }) => ({
   '& input:-webkit-autofill:focus': {
     WebkitBoxShadow: '0 0 0 1000px #fff inset', // Ensures consistency on focus
     backgroundColor: '#fff',
+    borderColor: 'transparent',
     height: multiline ? 'auto' : '10px'
   },
   '& input:-webkit-autofill:hover': {

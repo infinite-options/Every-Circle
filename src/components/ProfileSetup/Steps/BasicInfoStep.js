@@ -29,7 +29,7 @@ const BasicInfoStep = ({ formData, handleChange, errors }) => {
       />
 
       <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
-        Your location
+        Your location (city, state)
       </Typography>
       <StyledTextField
         required
