@@ -224,7 +224,7 @@ export default function BusinessProfile() {
             console.log('response from business endpoint', response);
             if (response.status === 200) {
                 const business = response.data?.result?.[0];
-                console.log('business data is', business);
+                console.log('business data is', business.business_google_photos);
                 const googlePhotos = business?.business_google_photos ? JSON.parse(business.business_google_photos) : [];
                 // console.log('parsed google images', googlePhotos);
                 setFormData({

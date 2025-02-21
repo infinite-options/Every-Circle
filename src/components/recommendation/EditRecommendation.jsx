@@ -18,22 +18,35 @@ import Header from "../common/Header";
 const EditRecommendation = ({ prevData, onSave }) => {
     const location = useLocation();
     const [formData, setFormData] = useState(location.state?.formData || {});
-    const [selectedImages, setSelectedImages] = useState(formData?.selectedImages || []);
+    const [selectedImages, setSelectedImages] = useState([]);
     const [dialogOpen, setDialogOpen] = useState(false);
     const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
     const navigate = useNavigate();
 
     useEffect(() => {
-        if (prevData) {
-            setFormData(prevData); // Populate form with previous data
+        if (location?.state?.formData) {
+            setSelectedImages(formData?.selectedImages);
+            console.log("selected images", location?.state?.formData?.selectedImages);  
         }
-    }, [prevData]);
+    }, [location?.state?.formData]);
 
     const handleImageUpload = (index, file) => {
-        const updatedImages = [...selectedImages];
-        updatedImages[index] = file;
-        setSelectedImages(updatedImages);
+        let currentIndex = selectedImages.length;
+        const fileObj = {
+            index: currentIndex,
+            file: file,
+            coverPhoto: currentIndex + index === 0
+        };
+        setSelectedImages(prev => ([
+            ...prev,
+            fileObj,
+        ]));
     };
+
+    const handleDeleteImage = (imageUrl) => {
+        const updatedImages = selectedImages.filter((img) => img.file != imageUrl);
+        setSelectedImages(updatedImages);
+    }
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -43,26 +56,32 @@ const EditRecommendation = ({ prevData, onSave }) => {
         }
         try {
             const form = new FormData();
-            form.append('rating_business_yelp', formData.yelpUrl);
-            form.append('rating_business_website', formData.websiteUrl);
+            // form.append('rating_business_yelp', formData.yelpUrl);
+            // form.append('rating_business_website', formData.websiteUrl);
             form.append('rating_star', formData.rating);
             form.append('rating_receipt_date', formData.lastInteraction ? dayjs(formData.lastInteraction).format("MM-DD-YYYY") : "");
             form.append('rating_description', formData.review);
             form.append('rating_uid', formData.ratingid);
-            form.append('rating_business_phone_number', formData.phoneNumber);
-            form.append('rating_business_email_id', formData.email);
+            // form.append('rating_business_phone_number', formData.phoneNumber);
+            // form.append('rating_business_email_id', formData.email);
 
             //upload image
             if (formData.receiptImage) {
                 form.append('img_receipt', formData.receiptImage);
             }
 
+
             let i = 0;
+            let index = 0;
             for (const file of selectedImages) {
-                let key = `img_${i++}`;
-                form.append(key, file.file);
-                if (file.coverPhoto) {
-                    form.append("img_favorite", key);
+                if(file.file !== formData.selectedImages[i]?.file){
+                    let key = `img_${index++}`;
+                    form.append(key, file.file);
+                    if (file.coverPhoto) {
+                        form.append("img_favorite", key);
+                    }
+                }else{
+                    i++;
                 }
             }
 
@@ -126,36 +145,42 @@ const EditRecommendation = ({ prevData, onSave }) => {
                     />
 
                     <InputField
+                        disabled
                         label="Owner First Name"
                         value={formData.ownerFname}
                         onChange={(value) => setFormData({ ...formData, ownerFname: value })}
                     />
 
                     <InputField
+                        disabled
                         label="Owner Last Name"
                         value={formData.ownerLname}
                         onChange={(value) => setFormData({ ...formData, ownerLname: value })}
                     />
 
                     <InputField
+                        disabled
                         label="Phone Number"
                         value={formData.phoneNumber}
                         onChange={(value) => setFormData({ ...formData, phoneNumber: value })}
                     />
 
                     <InputField
+                        disabled
                         label="Yelp Link"
                         value={formData.yelpUrl}
                         onChange={(value) => setFormData({ ...formData, yelpUrl: value })}
                     />
 
                     <InputField
+                        disabled
                         label="Website Link"
                         value={formData.websiteUrl}
                         onChange={(value) => setFormData({ ...formData, websiteUrl: value })}
                     />
 
                     <InputField
+                        disabled
                         label="Business Email"
                         value={formData.email}
                         onChange={(value) => setFormData({ ...formData, email: value })}
@@ -169,7 +194,7 @@ const EditRecommendation = ({ prevData, onSave }) => {
                                 onImageUpload={(file) => handleImageUpload(index, file)}
                                 image={selectedImages[index]}
                                 imageUrl={selectedImages[index]?.file}
-                                handleDeleteImage={() => handleImageUpload(index, null)}
+                                handleDeleteImage={(imageUrl) => handleDeleteImage(imageUrl)}
                                 size={100}
                                 shape="square"
                             />

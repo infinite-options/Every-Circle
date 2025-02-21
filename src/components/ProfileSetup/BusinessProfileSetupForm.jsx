@@ -123,7 +123,7 @@ const BusinessProfileSetupForm = () => {
             data.append("business_website", formData.website);
             data.append("business_template", formData.template);
             // data.append('business_categories_uid', JSON.stringify(formData.categories))
-            // data.append('business_additional_tags', JSON.stringify(formData.customTags))
+            data.append('business_tags', JSON.stringify(formData.customTags))
             // 
 
             try {

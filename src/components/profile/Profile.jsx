@@ -266,6 +266,15 @@ export default function Profile() {
   };
 
   const handleRowClick = (row) => {
+    const imageUrls = JSON.parse(row.rating_images_url) || [];
+
+    // Convert into required object format
+    const selectedImages = imageUrls.map((url, index) => ({
+        index: index,
+        file: url,
+        coverPhoto: index === 0, 
+    }));
+
     const formattedData = {
         ratingid: row.rating_uid || "",
         businessName: row.business_name || "",
@@ -281,9 +290,10 @@ export default function Profile() {
         websiteUrl: row.business_website || "",
         email: row.business_email_id || "",
         receiptImage: row.rating_receipt_url || "",
-        selectedImages: JSON.parse(row.rating_images_url) || [],
+        selectedImages: selectedImages,
     };
-    // console.log('formattedData', formattedData);
+    
+    console.log('formattedData', formattedData);
 
     navigate("/editRecommendation", { state: { formData: formattedData } });
   };
