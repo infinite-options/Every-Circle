@@ -31,6 +31,13 @@ export default function SearchBar({ setSearchString = () => {}, handleSearch = (
         label="Search..."
         onChange={(e) => setSearchString(e.target.value)}
         onKeyDown={handleKeyDown}
+        sx={{
+          '& input:focus': {
+            outline: 'none !important',
+            border: 'none !important', // Ensure no border on focus
+            boxShadow: 'none !important',
+          },
+        }}
         InputProps={{
           endAdornment: (
             <InputAdornment position="end">

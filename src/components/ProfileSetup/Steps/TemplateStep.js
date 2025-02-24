@@ -14,8 +14,20 @@ const TemplateStep = ({ formData, handleTemplateSelect, role }) => {
   const avatarUrl = formData.selectedImages?.find((image) => image?.coverPhoto === true) || formData.favImage;
   console.log('form data in template step', formData)
   console.log('avatarUrl', avatarUrl, typeof avatarUrl)
+  const howCanIHelp = [];
+  const howCanYouHelp = [];
+
+  // Iterate over the object and classify values into respective arrays
+  for (const key in formData) {
+      if (key.startsWith("howCanIHelp")) {
+          howCanIHelp.push(formData[key]);
+      } else if (key.startsWith("howCanYouHelp")) {
+          howCanYouHelp.push(formData[key]);
+      }
+  }
+
   //when a profile is new, the images will be an instance of file else as links
-  const imageList = formData.selectedImages?.filter((image) => image?.coverPhoto === false) || formData.profileImages
+  const imageList = formData.selectedImages?.filter((image) => image?.coverPhoto === false) || formData.profileImages;
   console.log('imagelist', imageList);
 
   const templates = [
@@ -100,7 +112,7 @@ const TemplateStep = ({ formData, handleTemplateSelect, role }) => {
               <template.component
                 name={`${formData.firstName} ${formData.lastName}`}
                 username={formData.firstName?.toLowerCase() || 'username'}
-                tagLine={formData.tagline || ''}
+                tagLine={formData.tagLine || ''}
                 phoneNumber={formData.phoneNumber || ""}
                 bio={formData.shortBio || 'Your bio will appear here'}
                 location={formData.location || 'Location'}
@@ -112,8 +124,8 @@ const TemplateStep = ({ formData, handleTemplateSelect, role }) => {
                 linkedin= {formData.linkedin || ''}
                 youtube= {formData.youtube || ''}
                 imageList={imageList}
-                helpTags= {formData.weHelp || []} 
-                needHelpTags = {formData.youHelp || []}
+                helpTags= {formData.weHelp|| howCanIHelp || []} 
+                needHelpTags = {formData.youHelp || howCanYouHelp || []}
                 role={role}
               />
             </Box>

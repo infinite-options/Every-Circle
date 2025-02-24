@@ -188,7 +188,8 @@ const ModernTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, 
         borderRadius: '10px',
         overflow: 'hidden',
         position: 'relative',
-        backgroundImage: `url(${imageList[0] ? imageList[0] : 'https://media.istockphoto.com/id/1342155703/photo/synth-wave-portrait-cyberpunk-man-neon-light-blue.jpg?s=612x612&w=0&k=20&c=aZV1dh8bUx2hmz6VF3UzE93LY5gc7X_UHlFEDkmk_fk='})`,
+        backgroundColor: "#1a1a1a",
+        backgroundImage: `url(${imageList[0] ? imageList[0] : ''})`,
         backgroundSize: "cover",
       }}
     >
@@ -235,6 +236,7 @@ const ModernTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, 
                 borderRadius: 20,
                 border: "1px solid black",
                 fontSize: "8px",
+                color: "black",
               }}
             >
               Message
@@ -255,10 +257,10 @@ const ModernTemplate = ({ name, bio, location, avatarUrl, tagLine, phoneNumber, 
         </Box>
 
         {/* Profile Info */}
-        <Typography sx={{ fontWeight: 'bold', mb: 0.1, fontSize: "14px"}}>
+        <Typography sx={{ fontWeight: 'bold', mb: 0.1, fontSize: "14px", color: "black"}}>
           {name || "Your Bio"}
         </Typography>
-        <Typography color="#DEDDDF" sx={{fontSize: "10px", mb: 0.5 }}>
+        <Typography color="#DEDDDF" sx={{fontSize: "10px", mb: 0.5,  }}>
           {tagLine || "Tag"}
         </Typography>
         <Typography color="text.secondary" sx={{fontSize: "10px", mb: 2 }}>
@@ -511,6 +513,7 @@ const MinimalistTemplate = ({ name, bio, location, avatarUrl, tagLine, helpTags,
           left: 0,
           width: '100%',
           height: '100%',
+          backgroundColor: "#1a1a1a",
           backgroundImage: `url(${imageList[0] ? imageList[0] : ''})`,
           backgroundSize: "cover",
           clipPath: 'polygon(0 0, 100% 0, 100% 40%, 0 25%)',
@@ -558,7 +561,7 @@ const MinimalistTemplate = ({ name, bio, location, avatarUrl, tagLine, helpTags,
           />
 
           <Box sx={{ textAlign: "center", mt: 2, p: 1 }}>
-            <Typography sx={{ fontSize: "14px", fontWeight: "bold"}}>
+            <Typography sx={{ fontSize: "14px", fontWeight: "bold", color: "black"}}>
               {name || "Name"}
             </Typography>
             <Typography sx={{fontSize: "10px", fontWeight: "100"}} color="text.secondary">
@@ -587,7 +590,7 @@ const MinimalistTemplate = ({ name, bio, location, avatarUrl, tagLine, helpTags,
 
           {/* Help Sections */}
           <Grid item xs={10} sx={{ p: 1 }}>
-            <Typography sx={{fontSize: "12px", fontWeight: "bold"}}>
+            <Typography sx={{fontSize: "12px", fontWeight: "bold", color: "black"}}>
               How can I help you!!
             </Typography>
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mb: 1.2, mt: 0.6}}>
@@ -596,7 +599,7 @@ const MinimalistTemplate = ({ name, bio, location, avatarUrl, tagLine, helpTags,
               ))}
             </Box>
 
-            <Typography sx={{fontSize: "12px", fontWeight: "bold"}}>
+            <Typography sx={{fontSize: "12px", fontWeight: "bold", color: "black"}}>
               How can you help me!!
             </Typography>
             <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.6}}>
@@ -842,6 +845,7 @@ const SplitTemplate = ({ name, bio, location, avatarUrl, tagLine, helpTags, need
         borderRadius: '16px',
         overflow: 'hidden',
         borderRadius: "10px",
+        backgroundColor: "#1a1a1a",
         borderBottomLeftRadius: "0px",
         borderBottomRightRadius: "30px"
       }}>
@@ -958,14 +962,14 @@ const SplitTemplate = ({ name, bio, location, avatarUrl, tagLine, helpTags, need
 
       {/* card content */}
       <Grid item xs={10} sx={{ p: 1, position: "relative" }}>
-        <Typography sx={{ fontSize: "10px", fontWeight: "bold", mb: 0.6 }}>
+        <Typography sx={{ fontSize: "10px", fontWeight: "bold", mb: 0.6, color: "black" }}>
           About
         </Typography>
         <Typography sx={{ fontSize: "10px", fontWeight: "100", mb: 1 }} color="text.secondary">
           {bio || ''}
         </Typography>
 
-        <Typography sx={{ fontSize: "10px", fontWeight: "bold" }}>
+        <Typography sx={{ fontSize: "10px", fontWeight: "bold", color: "black" }}>
           How can I help you!!
         </Typography>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mb: 1, mt: 0.6 }}>
@@ -974,7 +978,7 @@ const SplitTemplate = ({ name, bio, location, avatarUrl, tagLine, helpTags, need
           ))}
         </Box>
 
-        <Typography sx={{ fontSize: "10px", fontWeight: "bold" }}>
+        <Typography sx={{ fontSize: "10px", fontWeight: "bold", color: "black" }}>
           How can you help me!!
         </Typography>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.6 }}>

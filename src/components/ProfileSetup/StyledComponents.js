@@ -16,6 +16,14 @@ export const StyledTextField = styled(TextField)(({ multiline, required }) => ({
     '&.Mui-focused fieldset': {
       borderColor: 'transparent',
     },
+    '&.Mui-focused': {
+      boxShadow: 'none !important', // Remove default Material-UI focus effect
+    },
+  },
+  '& input:focus': {
+    outline: 'none !important', // Override any default outline
+    border: 'none !important', // Ensure no border on focus
+    boxShadow: 'none !important', // Remove any box shadow
   },
   '& input:-webkit-autofill': {
     WebkitBoxShadow: '0 0 0 1000px #fff inset', // Ensures the background stays white
