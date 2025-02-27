@@ -148,36 +148,41 @@ export default function Profile() {
   }
 
   const handleImageUpload = (index, file) => {
-    let currentIndex = formData.profileImages.length;
     const fileObj = {
-      index: currentIndex,
+      index: index, // Use the passed index instead of current length
       file: file,
-      coverPhoto: currentIndex + index === 0 && !formData.favImage, // Only set the first new image as cover if there's no favorite image
+      coverPhoto: index === 0 && !formData.favImage
     };
-    console.log(fileObj)
-    setSelectedImages(prev => ([
-      ...prev,
-      fileObj,
-    ]));
+    
+    // Check if there's already an image at this index and replace it
+    const updatedImages = [...selectedImages];
+    const existingIndex = updatedImages.findIndex(img => img.index === index);
+    
+    if (existingIndex !== -1) {
+      // Replace existing image
+      updatedImages[existingIndex] = fileObj;
+    } else {
+      // Add new image
+      updatedImages.push(fileObj);
+    }
+    
+    setSelectedImages(updatedImages);
   };
 
   const handleDeleteImage = (imageUrl) => {
-    console.log('imageUrl in del', imageUrl, selectedImages)
-    if (typeof (imageUrl) === "string") {
-      const updatedImages = formData.profileImages.filter((link) => link != imageUrl);
-      setFormData((prev) => ({ ...prev, profileImages: updatedImages }));
-      setDeletedImages((prev) => [...prev, imageUrl]);
-      const reassignedImages = selectedImages?.map((img, i) => ({ ...img, index: updatedImages.length + i }));
-      // console.log('reassigned', reassignedImages);
-      setSelectedImages(reassignedImages);
+    if (typeof imageUrl === "string") {
+      // Delete existing image
+      const updatedImages = formData.profileImages.filter(link => link != imageUrl);
+      setFormData(prev => ({ ...prev, profileImages: updatedImages }));
+      setDeletedImages(prev => [...prev, imageUrl]);
+      
+      // No need to reassign indices for selectedImages since we're using fixed positions
       if (imageUrl === formData.favImage) {
-        setFormData((prev) => ({
-          ...prev,
-          favImage: "",
-        }));
+        setFormData(prev => ({ ...prev, favImage: "" }));
       }
     } else {
-      const updatedImages = selectedImages?.filter((img) => img.file.name != imageUrl.name);
+      // Delete newly uploaded image
+      const updatedImages = selectedImages?.filter(img => img.file.name != imageUrl.name);
       setSelectedImages(updatedImages);
     }
   }
@@ -418,14 +423,20 @@ export default function Profile() {
 
             <Box sx={{ display: "flex", gap: 2, my: 3, justifyContent: "space-between" }}>
               {[0, 1, 2].map((index) => {
-                console.log("Rendering index:", index);
+                // Determine which image to show in this position
+                const existingImage = formData.profileImages && formData.profileImages[index];
+                const newUploadedImage = selectedImages?.find(img => img.index === index);
+                
+                // Determine the image URL to display
+                const imageToDisplay = existingImage || (newUploadedImage?.file);
+                
                 return (
                   <SquareImageUpload
                     key={index}
                     index={index}
                     onImageUpload={(file) => handleImageUpload(index, file)}
-                    image={formData.profileImages && formData.profileImages[index] ? formData.profileImages[index] : selectedImages?.find((img) => img.index == index)}
-                    imageUrl={formData.profileImages && formData.profileImages[index] ? formData.profileImages[index] : (selectedImages?.find((img) => img.index == index))?.file}
+                    image={newUploadedImage || (existingImage ? { index, file: existingImage } : null)}
+                    imageUrl={imageToDisplay}
                     handleDeleteImage={(imageUrl) => handleDeleteImage(imageUrl)}
                     handleFavImage={(imageUrl) => handleFavImage(imageUrl)}
                     favImage={formData.favImage}
