@@ -104,7 +104,9 @@ export default function Profile() {
           template: user.profile_template || "",
           youHelp: user.profile_how_can_you_help ? JSON.parse(user.profile_how_can_you_help) : ["", "", "", ""],
           weHelp: user.profile_how_can_we_help ? JSON.parse(user.profile_how_can_we_help) : ["", "", "", ""],
-          profileImages: user.profile_images_url ? JSON.parse(user.profile_images_url) : [],
+          profileImages: user.profile_images_url 
+            ? JSON.parse(user.profile_images_url).filter(img => img !== user.profile_favorite_image) 
+            : [],
           favImage: user.profile_favorite_image,
           profileId: user.profile_uid,
         });

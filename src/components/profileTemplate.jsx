@@ -1043,7 +1043,7 @@ const SplitShowTemplate = ({ name, bio, location, avatarUrl, helpTags, needHelpT
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundImage: `url(${imageList[0] || 'https://static.vecteezy.com/system/resources/thumbnails/026/945/935/small/business-man-on-black-background-free-photo.jpg'})`,
+          backgroundImage: `url(${avatarUrl || 'https://static.vecteezy.com/system/resources/thumbnails/026/945/935/small/business-man-on-black-background-free-photo.jpg'})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
         }}/>
@@ -1067,7 +1067,7 @@ const SplitShowTemplate = ({ name, bio, location, avatarUrl, helpTags, needHelpT
             }}
           >
             <Avatar
-              src={avatarUrl || "https://images.rawpixel.com/image_800/cHJpdmF0ZS9sci9pbWFnZXMvd2Vic2l0ZS8yMDIyLTA4L2pvYjEwMzktZWxlbWVudC0yNi0zOTNfMS5qcGc.jpg"}
+              src={imageList[0] || "https://images.rawpixel.com/image_800/cHJpdmF0ZS9sci9pbWFnZXMvd2Vic2l0ZS8yMDIyLTA4L2pvYjEwMzktZWxlbWVudC0yNi0zOTNfMS5qcGc.jpg"}
               sx={{
                 width: { xs: 50, sm: 60 },
                 height: { xs: 50, sm: 60 },
