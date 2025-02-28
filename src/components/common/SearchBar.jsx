@@ -1,21 +1,22 @@
-import React, { useState } from "react";
-import { Box, TextField, InputAdornment, IconButton, Dialog, DialogTitle, DialogContent, Typography, Button } from "@mui/material";
-import SearchIcon from "@mui/icons-material/Search";
-import ChatIcon from "@mui/icons-material/Chat";
-import CloseIcon from "@mui/icons-material/Close";
+import React, { useState } from "react"; 
+import { Box, TextField, InputAdornment, IconButton, Dialog, DialogTitle, DialogContent, Typography, Button } from "@mui/material"; 
+import SearchIcon from "@mui/icons-material/Search"; 
+import ChatIcon from "@mui/icons-material/Chat"; 
+import CloseIcon from "@mui/icons-material/Close"; 
+import FilterButton from '../search/FilterButton'; //new  
 
 export default function SearchBar({ setSearchString = () => {}, handleSearch = () => {} }) {
   const [chatOpen, setChatOpen] = useState(false);
   const [messages, setMessages] = useState([
     { text: "How can I assist you today?", options: ["Order Status", "Support", "Pricing"] },
   ]);
-
+  
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && handleSearch) {
       handleSearch();
     }
   };
-
+  
   const handleOptionClick = (option) => {
     setMessages([...messages, { text: option, isUser: true }]);
     // Simulate AI response (modify this for backend integration)
@@ -23,7 +24,7 @@ export default function SearchBar({ setSearchString = () => {}, handleSearch = (
       setMessages((prev) => [...prev, { text: `You selected: ${option}`, options: ["Back", "Main Menu"] }]);
     }, 500);
   };
-
+  
   return (
     <Box sx={{ width: "100%" }}>
       <TextField
@@ -45,6 +46,8 @@ export default function SearchBar({ setSearchString = () => {}, handleSearch = (
               <IconButton onClick={handleSearch}>
                 <SearchIcon />
               </IconButton>
+              {/* Filter Button */}
+              <FilterButton />
               {/* Chatbot Icon */}
               <IconButton onClick={() => setChatOpen(true)}>
                 <ChatIcon />
@@ -53,7 +56,7 @@ export default function SearchBar({ setSearchString = () => {}, handleSearch = (
           ),
         }}
       />
-
+      
       {/* Chatbot Popup */}
       <Dialog open={chatOpen} onClose={() => setChatOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
