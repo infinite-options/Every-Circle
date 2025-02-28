@@ -21,6 +21,9 @@ import BusinessProfile from "./components/BusinessProfile/BusinessProfile";
 import SelectBusinessTemplate from "./components/SelectTemplate/SelectBusinessTemplate";
 import { LoadScript } from "@react-google-maps/api";
 import EditRecommendation from "./components/recommendation/EditRecommendation";
+import PrivacyPolicy from "./components/settings/PrivacyPolicy";
+import TermsAndConditions from "./components/settings/TermsAndConditions";
+
 
 const LIBRARIES = ["places"];
 
@@ -68,6 +71,12 @@ function App() {
             <Route path="/selectBusinessTemplate" element={<SelectBusinessTemplate />} />
             <Route path="/recommendation" element={<RecommendationForm/>} />
             <Route path="/editRecommendation" element={<EditRecommendation/>} />
+            
+            {/* Added Privacy Policy Route */}
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/terms" element={<TermsAndConditions />} />
+
+            
           </Routes>
         </Router>
       </ThemeProvider>
