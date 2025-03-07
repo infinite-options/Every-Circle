@@ -1,3 +1,5 @@
+
+/////profile save errror 
 import React, { useState, useEffect } from "react";
 import { Box, Typography, styled, IconButton, TextField, Rating, Button } from "@mui/material";
 import { SocialLink } from "./SocialLink";
@@ -30,6 +32,9 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import FileUploadIcon from '@mui/icons-material/FileUpload';
 import ProfileCard from "./ProfileCard"; // Import the new CSS file
+import ProfileView from './ProfileView';
+import moneyBag from "../../assets/moneybag.png";
+import verifiedIcon from "../../assets/VerifiedProfile.png";
 
 const FormBox = styled(Box)({
   padding: "0 16px",
@@ -39,8 +44,42 @@ const SectionHeader = styled(Box)({
   display: "flex",
   justifyContent: "space-between",
   alignItems: "center",
-  marginTop: "30px",
+  marginBottom: "10px",
+});
+
+const SectionContainer = styled(Box)({
   marginBottom: "20px",
+  backgroundColor: "white",
+  borderRadius: "8px",
+  padding: "15px",
+});
+
+const PublicLabel = styled(Button)({
+  color: "#666",
+  fontSize: "14px",
+  textTransform: "none",
+  padding: "0",
+  minWidth: "60px",
+  '&:hover': {
+    background: 'none',
+    opacity: 0.8
+  }
+});
+
+const UploadButton = styled(Button)({
+  border: "2px dashed #ccc",
+  borderRadius: "8px",
+  padding: "15px",
+  width: "100%",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  backgroundColor: "white",
+  '&:hover': {
+    backgroundColor: "#f5f5f5",
+    borderColor: "#999"
+  }
 });
 
 const SectionItem = styled(Box)({
@@ -56,11 +95,44 @@ const ItemActions = styled(Box)({
   display: "flex",
 });
 
+const BannerSection = styled(Box)({
+  backgroundColor: '#e0e0e0',
+  borderRadius: '8px',
+  padding: '16px 20px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  marginBottom: '24px',
+});
+
+const BusinessCard = styled(Box)({
+  backgroundColor: 'white',
+  borderRadius: '16px',
+  padding: '20px',
+  marginBottom: '16px',
+  border: '1px solid #e0e0e0',
+});
+///////////////////////
+
+// Add these utility functions at the top level
+const countWords = (str) => {
+  return str.trim().split(/\s+/).filter(Boolean).length;
+};
+
+const truncateToWordLimit = (str, wordLimit) => {
+  const words = str.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= wordLimit) return str;
+  return words.slice(0, wordLimit).join(' ');
+};
+
+
+
+
 export default function Profile() {
   const location = useLocation();
   const { editMode: initialEditMode = false } = location.state || {};
   const { user, updateUser } = useUserContext();
-  // console.log('user data', user);
+  //console.log('user data', user);
   const userId = user.userId;
   const [formData, setFormData] = useState({
     firstName: "",
@@ -77,9 +149,11 @@ export default function Profile() {
     favImage: "",
     experience: [{ company: "", title: "", startDate: "", endDate: "" }],
     education: [{ school: "", degree: "", startDate: "", endDate: "" }],
-    expertise: ["", "", "", "", ""],
-    wishes: ["", "", ""],
+    expertise: [{ headline: "", description: "", cost: "", bounty: "" }],
+    wishes: [{ helpNeeds: "", details: "" }],
     resume: null,
+    businesses: [{ name: "", role: "" }],
+    allowBannerAds: true,
   });
   const [profileId, setProfileId] = useState("");
   const [editMode, setEditMode] = useState(initialEditMode);
@@ -95,6 +169,23 @@ export default function Profile() {
   const [showSpinner, setShowSpinner] = useState(false);
   const navigate = useNavigate();
   const [ratings, setRatings] = useState(null);
+  const [publicFields, setPublicFields] = useState({
+    profile_personal_email_is_public: 1,
+    profile_personal_phone_number_is_public: 1,
+    profile_personal_location_is_public: 1,
+    profile_personal_image_is_public: 1,
+    profile_personal_tag_line_is_public: 1,
+    profile_personal_short_bio_is_public: 1,
+    profile_personal_resume_is_public: 1,
+    profile_personal_experience_is_public: 1,
+    profile_personal_education_is_public: 1,
+    profile_personal_expertise_is_public: 1,
+    profile_personal_wishes_is_public: 1
+  });
+  const [deletedExperience, setDeletedExperience] = useState([]);
+  const [deletedEducation, setDeletedEducation] = useState([]);
+  const [deletedExpertise, setDeletedExpertise] = useState([]);
+  const [deletedWishes, setDeletedWishes] = useState([]);
 
   const templateMap = {
     0: "dark",
@@ -115,44 +206,120 @@ export default function Profile() {
   const fetchProfile = async () => {
     try {
       setShowSpinner(true);
-      const response = await axios.get(`https://ioec2testsspm.infiniteoptions.com/profile/${userId}`);
+      const response = await axios.get(`https://ioec2testsspm.infiniteoptions.com/api/v1/userprofileinfo/${userId}`);
       if (response.status === 200) {
-        const user = response.data.result[0];
-        setFormData({
-          ...formData,
-          firstName: user.profile_first_name || "",
-          lastName: user.profile_last_name || "",
-          phoneNumber: user.profile_phone || "",
-          location: user.profile_location || "USA",
-          tagLine: user.profile_tag_line || "",
-          shortBio: user.profile_short_bio || "",
-          facebookLink: user.profile_facebook_link || "",
-          twitterLink: user.profile_twitter_link || "",
-          linkedinLink: user.profile_linkedin_link || "",
-          youtubeLink: user.profile_youtube_link || "",
-          template: user.profile_template || "",
-          profileImages: user.profile_images_url 
-            ? JSON.parse(user.profile_images_url).filter(img => img !== user.profile_favorite_image) 
-            : [],
-          favImage: user.profile_favorite_image,
-          profileId: user.profile_uid,
-          // Initialize placeholder data for new sections
-          experience: [
-            { company: "", title: "", startDate: "", endDate: "" }
-          ],
-          education: [
-            { school: "", degree: "", startDate: "", endDate: "" }
-          ],
-          expertise: [" ", " ", " ", " ", " "],
-          wishes: ["", "", ""],
-          resume: user.profile_resume || null,
+        const { personal_info, links_info, expertise_info, wishes_info, experience_info, education_info } = response.data;
+        const user_email = response.data.user_email || "";
+        // Set public fields from personal info
+        setPublicFields({
+          profile_personal_email_is_public: personal_info.profile_personal_email_is_public,
+          profile_personal_phone_number_is_public: personal_info.profile_personal_phone_number_is_public,
+          profile_personal_location_is_public: personal_info.profile_personal_location_is_public,
+          profile_personal_image_is_public: personal_info.profile_personal_image_is_public,
+          profile_personal_tag_line_is_public: personal_info.profile_personal_tag_line_is_public,
+          profile_personal_short_bio_is_public: personal_info.profile_personal_short_bio_is_public,
+          profile_personal_resume_is_public: personal_info.profile_personal_resume_is_public,
+          profile_personal_experience_is_public: personal_info.profile_personal_experience_is_public, // Default to public if not specified
+          profile_personal_education_is_public: personal_info.profile_personal_education_is_public,
+          profile_personal_expertise_is_public: personal_info.profile_personal_expertise_is_public,
+          profile_personal_wishes_is_public: personal_info.profile_personal_wishes_is_public
         });
 
-        // console.log('ratings', response.data['ratings result']);
-        setRatings(response.data['ratings result']);
-        //update data in context
-        updateUser({ profileId: user.profile_uid, profile: user });
-        setProfileId(user.profile_uid);
+        // Map social links from links_info
+        const socialLinks = links_info.reduce((acc, link) => {
+          switch(link.social_link_name) {
+            case 'facebook':
+              acc.facebookLink = link.profile_link_url;
+              break;
+            case 'twitter':
+              acc.twitterLink = link.profile_link_url;
+              break;
+            case 'linkedin':
+              acc.linkedinLink = link.profile_link_url;
+              break;
+            case 'youtube':
+              acc.youtubeLink = link.profile_link_url;
+              break;
+          }
+          return acc;
+        }, {});
+
+        // Map expertise from expertise_info
+        const expertise = expertise_info.map(exp => ({
+          uid: exp.profile_expertise_uid, // This is the correct property name
+          headline: exp.profile_expertise_title,
+          description: exp.profile_expertise_description,
+          cost: exp.profile_expertise_cost,
+          bounty: exp.profile_expertise_bounty
+        }));
+
+        const wishes = wishes_info.map(wish => ({
+          uid: wish.profile_wish_uid,
+          helpNeeds: wish.profile_wish_title,
+          details: wish.profile_wish_description,
+          bounty: wish.profile_wish_bounty || "Free" // Make sure to extract the bounty
+        }));
+
+        // Map experience from experience_info
+        const experience = experience_info.map(exp => ({
+          uid: exp.profile_experience_uid,
+          company: exp.profile_experience_company_name,
+          title: exp.profile_experience_position,
+          startDate: exp.profile_experience_start_date,
+          endDate: exp.profile_experience_end_date || ""
+        }));
+
+        // Map education from education_info
+        const education = education_info.map(edu => ({
+          uid: edu.profile_education_uid,
+          school: edu.profile_education_school_name,
+          degree: edu.profile_education_degree,
+          startDate: edu.profile_education_start_date,
+          endDate: edu.profile_education_end_date
+        }));
+
+        // Handle profile images
+        let profileImages = [];
+        if (personal_info.profile_personal_image) {
+          try {
+            profileImages = [personal_info.profile_personal_image];
+          } catch (e) {
+            console.error("Error handling profile image:", e);
+          }
+        }
+        //console.log()
+
+        setFormData({
+          firstName: personal_info.profile_personal_first_name || "",
+          user_email: user_email,
+          lastName: personal_info.profile_personal_last_name || "",
+          phoneNumber: personal_info.profile_personal_phone_number || "",
+          location: personal_info.profile_personal_country || "USA",
+          tagLine: personal_info.profile_personal_tag_line || "",
+          shortBio: personal_info.profile_personal_short_bio || "",
+          ...socialLinks,
+          template: personal_info.profile_template || "",
+          profileImages,
+          favImage: "",
+          profileId: personal_info.profile_personal_uid,
+          experience: experience.length > 0 ? experience : [{ company: "", title: "", startDate: "", endDate: "" }],
+          education: education.length > 0 ? education : [{ school: "", degree: "", startDate: "", endDate: "" }],
+          expertise: expertise.length > 0 ? expertise : [{ headline: "", description: "", cost: "", bounty: "" }],
+          wishes: wishes.length > 0 ? wishes : [{ helpNeeds: "", details: "" }],
+          resume: personal_info.profile_personal_resume || null,
+          businesses: [{ name: "", role: "" }],
+          allowBannerAds: true
+          
+        });
+
+        setSelectedImages([]);  // Clear selected images after fetch
+        setDeletedImages([]);   // Clear deleted images after fetch
+        
+        updateUser({ 
+          profileId: personal_info.profile_personal_uid, 
+          profile: personal_info 
+        });
+        setProfileId(personal_info.profile_personal_uid);
       }
     } catch (error) {
       console.error("Error fetching profile:", error);
@@ -167,67 +334,134 @@ export default function Profile() {
 
   const validateRequiredFields = () => {
     const newErrors = {};
+    
+    // Required fields validation
     ["firstName", "lastName", "phoneNumber"].forEach((field) => {
       if (!formData[field]) {
         newErrors[field] = `${field} is required`;
       }
     });
-
-    // Removing location validation since the field doesn't exist in the database
     
     if (isValidPhoneNumber(formData.phoneNumber) === false) {
       newErrors["phoneNumber"] = "Invalid phone number format";
     }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-    } else {
-      setErrors({});
-    }
     
-    console.log('Validation errors:', newErrors);
-    return Object.keys(newErrors).length === 0;
-  }
+    // Link validation - ensure they start with https://
+    const linkFields = ["facebookLink", "twitterLink", "linkedinLink", "youtubeLink"];
+    linkFields.forEach(field => {
+      const link = formData[field];
+      // Only validate if the link is not empty
+      if (link && !link.startsWith("https://")) {
+        newErrors[field] = "Link must start with https://";
+      }
+    });
+    
+    // Set the errors state
+    setErrors(newErrors);
+    
+    // Return both a boolean indicating validity and the errors object
+    return { isValid: Object.keys(newErrors).length === 0, errors: newErrors };
+  };
 
   const handleImageUpload = (index, file) => {
+    // Create file object for tracking
     const fileObj = {
-      index: index, // Use the passed index instead of current length
+      index: index,
       file: file,
-      coverPhoto: index === 0 && !formData.favImage
+      coverPhoto: true
     };
     
-    // Check if there's already an image at this index and replace it
-    const updatedImages = [...selectedImages];
-    const existingIndex = updatedImages.findIndex(img => img.index === index);
-    
-    if (existingIndex !== -1) {
-      // Replace existing image
-      updatedImages[existingIndex] = fileObj;
-    } else {
-      // Add new image
-      updatedImages.push(fileObj);
-    }
-    
-    setSelectedImages(updatedImages);
-  };
+    // Update selectedImages - only keep the latest image
+    setSelectedImages([fileObj]);
+
+    // Update formData.profileImages - only keep the latest image
+    setFormData(prev => ({
+      ...prev,
+      profileImages: [file],  // Only keep the latest image
+      favImage: ""  // Clear favImage when uploading new image
+    }));
+
+    // Clear deleted images when uploading new image
+    setDeletedImages([]);
+
+    // Log the upload for debugging
+    console.log("Image upload:", {
+      file: file.name,
+      size: file.size,
+      type: file.type
+    });
+  };  
 
   const handleDeleteImage = (imageUrl) => {
     if (typeof imageUrl === "string") {
       // Delete existing image
-      const updatedImages = formData.profileImages.filter(link => link != imageUrl);
-      setFormData(prev => ({ ...prev, profileImages: updatedImages }));
+      const updatedImages = formData.profileImages.filter(link => link !== imageUrl);
+      setFormData(prev => ({ 
+        ...prev, 
+        profileImages: updatedImages,
+        favImage: imageUrl === prev.favImage ? "" : prev.favImage 
+      }));
+      // Add the image URL to deletedImages array
       setDeletedImages(prev => [...prev, imageUrl]);
-      
-      // No need to reassign indices for selectedImages since we're using fixed positions
-      if (imageUrl === formData.favImage) {
-        setFormData(prev => ({ ...prev, favImage: "" }));
-      }
     } else {
       // Delete newly uploaded image
-      const updatedImages = selectedImages?.filter(img => img.file.name != imageUrl.name);
-      setSelectedImages(updatedImages);
+      setFormData(prev => ({
+        ...prev,
+        profileImages: []
+      }));
+      setSelectedImages([]);
     }
+  };
+
+
+  /*const handleDeleteExperience = (index) => {
+  const updatedExperience = [...formData.experience];
+  const removedItem = updatedExperience[index];
+  
+  // If the item has a UID (exists in backend), add it to deletedExperience array
+  if (removedItem.uid) {
+    setDeletedExperience(prev => [...prev, removedItem.uid]);
   }
+  
+  updatedExperience.splice(index, 1);
+  setFormData(prev => ({
+    ...prev,
+    experience: updatedExperience
+  }));
+}; */
+
+
+  const handleDeleteExperience = (index) => {
+    const updatedExperience = [...formData.experience];
+    const removedItem = updatedExperience[index];
+    console.log("DELETING EXPERTISE ITEM:", removedItem);
+    console.log("ITEM HAS UID:", !!removedItem.uid);
+    
+    // If the item has a UID (exists in backend), add it to deletedExperience array
+    if (removedItem.uid) {
+      setDeletedExperience(prev => [...prev, removedItem.uid]);
+    }
+    
+    updatedExperience.splice(index, 1);
+    setFormData(prev => ({
+      ...prev,
+      experience: updatedExperience
+    }));
+  };
+  const handleDeleteExpertise = (index) => {
+    const newExpertise = [...formData.expertise];
+    const removedItem = newExpertise[index];
+    
+    if (removedItem.uid) {
+      setDeletedExpertise(prev => [...prev, removedItem.uid]);
+    }
+    
+    newExpertise.splice(index, 1);
+    setFormData(prev => ({
+      ...prev,
+      expertise: newExpertise
+    }));
+  };
 
   const handleFavImage = (imageUrl) => {
     //type string for existing images 
@@ -255,14 +489,6 @@ export default function Profile() {
     }));
   };
 
-  const handleDeleteExperience = (index) => {
-    const updatedExperience = [...formData.experience];
-    updatedExperience.splice(index, 1);
-    setFormData(prev => ({
-      ...prev,
-      experience: updatedExperience
-    }));
-  };
 
   const handleExperienceChange = (index, field, value) => {
     const updatedExperience = [...formData.experience];
@@ -287,8 +513,23 @@ export default function Profile() {
     }));
   };
 
+  /*const handleDeleteEducation = (index) => {
+    const updatedEducation = [...formData.education];
+    updatedEducation.splice(index, 1);
+    setFormData(prev => ({
+      ...prev,
+      education: updatedEducation
+    }));
+  }; */
+
   const handleDeleteEducation = (index) => {
     const updatedEducation = [...formData.education];
+    const removedItem = updatedEducation[index];
+    
+    if (removedItem.uid) {
+      setDeletedEducation(prev => [...prev, removedItem.uid]);
+    }
+    
     updatedEducation.splice(index, 1);
     setFormData(prev => ({
       ...prev,
@@ -311,24 +552,49 @@ export default function Profile() {
     }));
   };
 
-  const handleExpertiseChange = (index, value) => {
+  const handleExpertiseChange = (index, field, value) => {
     const newExpertise = [...formData.expertise];
-    newExpertise[index] = value;
+    if (!newExpertise[index]) {
+      newExpertise[index] = { headline: "", description: "", cost: "", bounty: "" };
+    }
+    newExpertise[index] = {
+      ...newExpertise[index],
+      [field]: value
+    };
     setFormData(prev => ({
       ...prev,
       expertise: newExpertise
     }));
   };
 
-  const handleWishChange = (index, value) => {
+  const handleWishChange = (index, field, value) => {
     const newWishes = [...formData.wishes];
-    newWishes[index] = value;
+    if (!newWishes[index]) {
+      newWishes[index] = { helpNeeds: "", details: "" };
+    }
+    newWishes[index] = {
+      ...newWishes[index],
+      [field]: value
+    };
     setFormData(prev => ({
       ...prev,
       wishes: newWishes
     }));
   };
-
+  const handleDeleteWish = (index) => {
+    const newWishes = [...formData.wishes];
+    const removedItem = newWishes[index];
+    
+    if (removedItem.uid) {
+      setDeletedWishes(prev => [...prev, removedItem.uid]);
+    }
+    
+    newWishes.splice(index, 1);
+    setFormData(prev => ({
+      ...prev,
+      wishes: newWishes
+    }));
+  };
   const handleResumeUpload = (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -340,78 +606,455 @@ export default function Profile() {
     }
   };
 
-  const handleSubmit = async (e) => {
+
+
+  // Replace the handleSubmit function with this optimized version
+
+
+
+
+
+  // Replace the handleSubmit function with this optimized version
+  /*const handleSubmit = async (e) => {
     e.preventDefault();
     if (validateRequiredFields()) {
       const form = new FormData();
-      form.append("profile_first_name", formData.firstName);
-      form.append("profile_last_name", formData.lastName);
-      form.append("profile_phone", formData.phoneNumber);
-      form.append("profile_tag_line", formData.tagLine);
-      form.append("profile_short_bio", formData.shortBio);
-      form.append("profile_facebook_link", formData.facebookLink);
-      form.append("profile_twitter_link", formData.twitterLink);
-      form.append("profile_linkedin_link", formData.linkedinLink);
-      form.append("profile_youtube_link", formData.youtubeLink);
-      form.append("profile_template", formData.template);
-      //form.append("profile_how_can_we_help", JSON.stringify(formData.weHelp));
-      //form.append("profile_how_can_you_help", JSON.stringify(formData.youHelp));
       
-      // Not sending experience, education, expertise, and wishes to the database
-      // These sections are just UI placeholders
+      // Personal Info
+      form.append("profile_uid", profileId);
+      form.append("profile_personal_first_name", formData.firstName);
+      form.append("profile_personal_last_name", formData.lastName);
+      form.append("profile_personal_phone_number", formData.phoneNumber);
+      form.append("profile_personal_phone_number_is_public", publicFields.profile_personal_phone_number_is_public);
+      form.append("profile_personal_tag_line", formData.tagLine || "");
+      form.append("profile_personal_tag_line_is_public", publicFields.profile_personal_tag_line_is_public);
+      form.append("profile_personal_short_bio", formData.shortBio || "");
+      form.append("profile_personal_short_bio_is_public", publicFields.profile_personal_short_bio_is_public);
+      form.append("profile_personal_image_is_public", publicFields.profile_personal_image_is_public);
+      form.append("profile_personal_resume_is_public", publicFields.profile_personal_resume_is_public);
       
-      //image related fields 
-      let i = 0;
-      for (const file of selectedImages) {
-        let key = `img_${i++}`;
-        form.append(key, file.file);
-        if (file.coverPhoto) {
-          form.append("img_favorite", key);
+      // Add deleted image to form data if exists
+      if (deletedImages.length > 0 && 
+          !(formData.profileImages.length > 0 && typeof formData.profileImages[0] !== 'string')) {
+        // This flag tells the backend to delete the profile image
+        form.append("delete_profile_image", deletedImages[0]);
+        console.log("Deleting profile image:", deletedImages[0]);
+      } else {
+        console.log("Skipping profile image deletion - either no image to delete or uploading new image");
+      }
+
+      // Add deleted UIDs to form data
+      if (deletedExperience.length > 0) {
+        form.append("delete_experiences", JSON.stringify(deletedExperience));
+      }
+      
+      if (deletedEducation.length > 0) {
+        form.append("delete_educations", JSON.stringify(deletedEducation));
+      }
+      
+      if (deletedExpertise.length > 0) {
+        form.append("delete_expertises", JSON.stringify(deletedExpertise));
+      }
+      
+      if (deletedWishes.length > 0) {
+        form.append("delete_wishes", JSON.stringify(deletedWishes));
+      }
+
+      // Social Links - only include non-empty links
+      const socialLinks = {
+        ...(formData.facebookLink && { facebook: formData.facebookLink }),
+        ...(formData.twitterLink && { twitter: formData.twitterLink }),
+        ...(formData.linkedinLink && { linkedin: formData.linkedinLink }),
+        ...(formData.youtubeLink && { youtube: formData.youtubeLink })
+      };
+      form.append("social_links", JSON.stringify(socialLinks));
+
+      // Handle image upload
+      if (formData.profileImages[0]) {
+        if (typeof formData.profileImages[0] === 'string') {
+          form.append("profile_personal_image", formData.profileImages[0]);
+        } else {
+          form.append("profile_personal_image", formData.profileImages[0]);
+        }
+      }
+      
+      // With this updated code:
+      
+      // Handle image upload
+      if (formData.profileImages.length > 0) {
+        if (typeof formData.profileImages[0] !== 'string') {
+          // If it's a File object (new upload), use profile_image
+          form.append("profile_image", formData.profileImages[0]);
+          console.log("Uploading new profile image file:", formData.profileImages[0].name);
+        }
+        // Don't send back existing image URLs - server already has them
+      }
+
+      // Handle resume upload
+      if (formData.resume) {
+        if (typeof formData.resume === 'string') {
+          form.append("profile_resume", formData.resume);
+        } else {
+          form.append("profile_resume", formData.resume);
         }
       }
 
-      if (deletedImages.length > 0) {
-        form.append("delete_images", JSON.stringify(deletedImages));
-      }
+      // Experience - include UIDs for existing entries
+      const experiences = formData.experience
+        .filter(exp => exp.company || exp.title || exp.startDate || exp.endDate)
+        .map(exp => ({
+          ...(exp.uid && { uid: exp.uid }),
+          company_name: exp.company,
+          position: exp.title,
+          start_date: exp.startDate,
+          end_date: exp.endDate
+        }));
+      form.append("experiences", JSON.stringify(experiences));
+      form.append("profile_personal_experience_is_public", publicFields.profile_personal_experience_is_public);
 
-      if (formData.favImage) {
-        form.append("profile_favorite_image", formData.favImage);
-      } else {
-        form.append("profile_favorite_image", "");
-      }
+      // Education - include UIDs for existing entries
+      const educations = formData.education
+        .filter(edu => edu.school || edu.degree || edu.startDate || edu.endDate)
+        .map(edu => ({
+          ...(edu.uid && { uid: edu.uid }),
+          school_name: edu.school,
+          degree: edu.degree,
+          course: edu.degree,
+          start_date: edu.startDate,
+          end_date: edu.endDate
+        }));
+      form.append("educations", JSON.stringify(educations));
+      form.append("profile_personal_education_is_public", publicFields.profile_personal_education_is_public);
 
-      // Add resume if it exists
-      if (formData.resume && typeof formData.resume !== 'string') {
-        form.append("resume", formData.resume);
-      }
+      // Expertise - include UIDs for existing entries
+      const expertises = formData.expertise
+        .filter(exp => exp.headline || exp.description || exp.cost || exp.bounty)
+        .map(exp => ({
+          ...(exp.uid && { uid: exp.uid }),
+          title: exp.headline,
+          description: exp.description,
+          cost: exp.cost,
+          bounty: exp.bounty
+        }));
+      form.append("expertises", JSON.stringify(expertises));
+      form.append("profile_personal_expertise_is_public", publicFields.profile_personal_expertise_is_public);
 
-      form.append("profile_uid", profileId);
+      // Wishes - include UIDs for existing entries
+      const wishes = formData.wishes
+      .filter(wish => wish.helpNeeds || wish.details)
+      .map(wish => ({
+        ...(wish.uid && { uid: wish.uid }),
+        title: wish.helpNeeds,
+        description: wish.details,
+        bounty: wish.bounty || "Free" // Properly save the bounty amount
+      }));
+    form.append("wishes", JSON.stringify(wishes));
+    form.append("profile_personal_wishes_is_public", publicFields.profile_personal_wishes_is_public);
+    
+  //////
       try {
         setShowSpinner(true);
-        const response = await axios.put(`${APIConfig.baseURL.dev}/profile`, form);
-        console.log("Profile updated successfully", response);
-        if (response.data.code === 200) {
-          // First set edit mode to false immediately
+        
+        // Log form data for debugging
+        for (let pair of form.entries()) {
+          console.log(pair[0] + ': ' + pair[1]);
+        }
+      
+        const response = await axios.put(`https://ioec2testsspm.infiniteoptions.com/api/v1/userprofileinfo`, form, {
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          }
+        });
+        
+        console.log("Profile update response:", response);
+      
+        // Check both response.data.code AND response.status
+        if (response.data.code === 200 || response.status === 200) {
+          // Clear deleted items arrays after successful update
+          setDeletedExperience([]);
+          setDeletedEducation([]);
+          setDeletedExpertise([]);
+          setDeletedWishes([]);
+          setDeletedImages([]);
+          
           setEditMode(false);
-          // Then fetch the latest profile data from the server
-          await fetchProfile();
-          handleOpen("Success", "Profile has been updated successfully.");
+          setTimeout(async () => {
+            await fetchProfile();
+            handleOpen("Success", "Profile has been updated successfully.");
+            setShowSpinner(false);
+          }, 1000);
         } else {
-          // Handle non-200 response codes
-          handleOpen("Error", "Unable to update profile. Please try again.");
-          console.error("Error response:", response.data);
+          console.error("Error in response:", response.data);
+          handleOpen("Error", response.data.message || "Unable to update profile. Please try again.");
+          setShowSpinner(false);
         }
       } catch (error) {
-        handleOpen("Error", "Cannot update the profile.");
         console.error("Error updating profile:", error);
-      } finally {
+        
+        // Check if there's a response in the error object
+        if (error.response) {
+          console.error("Server response:", error.response.data);
+          handleOpen("Error", error.response.data.message || "Cannot update the profile. Server error.");
+        } else if (error.request) {
+          // The request was made but no response was received
+          console.error("No response received:", error.request);
+          handleOpen("Error", "Cannot connect to the server. Please check your internet connection.");
+        } else {
+          // Something happened in setting up the request
+          handleOpen("Error", error.message || "Cannot update the profile. Please try again.");
+        }
+        
         setShowSpinner(false);
       }
+
+      /////
     } else {
       handleOpen("Error", "Please fill in all required fields.");
     }
+  };  */
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Run validation
+    const validateRequiredFields = () => {
+      const newErrors = {};
+      
+      // Required fields validation
+      ["firstName", "lastName", "phoneNumber"].forEach((field) => {
+        if (!formData[field]) {
+          newErrors[field] = `${field} is required`;
+        }
+      });
+      
+      if (isValidPhoneNumber(formData.phoneNumber) === false) {
+        newErrors["phoneNumber"] = "Invalid phone number format";
+      }
+      
+      // Link validation - ensure they start with https://
+      const linkFields = ["facebookLink", "twitterLink", "linkedinLink", "youtubeLink"];
+      linkFields.forEach(field => {
+        const link = formData[field];
+        // Only validate if the link is not empty
+        if (link && !link.startsWith("https://")) {
+          newErrors[field] = "Link must start with https://";
+        }
+      });
+      
+      // Set the errors state
+      setErrors(newErrors);
+      
+      // Return both a boolean indicating validity and the errors object
+      return { isValid: Object.keys(newErrors).length === 0, errors: newErrors };
+    };
+  
+    // Perform validation
+    const { isValid, errors } = validateRequiredFields();
+    
+    if (isValid) {
+      const form = new FormData();
+      
+      // Personal Info
+      form.append("profile_uid", profileId);
+      form.append("profile_personal_first_name", formData.firstName);
+      form.append("profile_personal_last_name", formData.lastName);
+      form.append("profile_personal_phone_number", formData.phoneNumber);
+      form.append("profile_personal_phone_number_is_public", publicFields.profile_personal_phone_number_is_public);
+      form.append("profile_personal_tag_line", formData.tagLine || "");
+      form.append("profile_personal_tag_line_is_public", publicFields.profile_personal_tag_line_is_public);
+      form.append("profile_personal_short_bio", formData.shortBio || "");
+      form.append("profile_personal_short_bio_is_public", publicFields.profile_personal_short_bio_is_public);
+      form.append("profile_personal_image_is_public", publicFields.profile_personal_image_is_public);
+      form.append("profile_personal_resume_is_public", publicFields.profile_personal_resume_is_public);
+      
+      // Add deleted image to form data if exists
+      if (deletedImages.length > 0 && 
+          !(formData.profileImages.length > 0 && typeof formData.profileImages[0] !== 'string')) {
+        // This flag tells the backend to delete the profile image
+        form.append("delete_profile_image", deletedImages[0]);
+        console.log("Deleting profile image:", deletedImages[0]);
+      } else {
+        console.log("Skipping profile image deletion - either no image to delete or uploading new image");
+      }
+  
+      // Add deleted UIDs to form data
+      if (deletedExperience.length > 0) {
+        form.append("delete_experiences", JSON.stringify(deletedExperience));
+      }
+      
+      if (deletedEducation.length > 0) {
+        form.append("delete_educations", JSON.stringify(deletedEducation));
+      }
+      
+      if (deletedExpertise.length > 0) {
+        form.append("delete_expertises", JSON.stringify(deletedExpertise));
+      }
+      
+      if (deletedWishes.length > 0) {
+        form.append("delete_wishes", JSON.stringify(deletedWishes));
+      }
+  
+      // Social Links - only include non-empty links
+// Modified code for social links
+      const socialLinks = {
+        facebook: formData.facebookLink || "", // Always include the property, even if empty
+        twitter: formData.twitterLink || "",
+        linkedin: formData.linkedinLink || "",
+        youtube: formData.youtubeLink || ""
+      };
+      form.append("social_links", JSON.stringify(socialLinks));
+  
+      // Handle image upload
+      if (formData.profileImages.length > 0) {
+        if (typeof formData.profileImages[0] !== 'string') {
+          // If it's a File object (new upload), use profile_image
+          form.append("profile_image", formData.profileImages[0]);
+          console.log("Uploading new profile image file:", formData.profileImages[0].name);
+        }
+        // Don't send back existing image URLs - server already has them
+      }
+  
+      // Handle resume upload
+      if (formData.resume) {
+        if (typeof formData.resume === 'string') {
+          form.append("profile_resume", formData.resume);
+        } else {
+          form.append("profile_resume", formData.resume);
+        }
+      }
+  
+      // Experience - include UIDs for existing entries
+      const experiences = formData.experience
+        .filter(exp => exp.company || exp.title || exp.startDate || exp.endDate)
+        .map(exp => ({
+          ...(exp.uid && { uid: exp.uid }),
+          company_name: exp.company,
+          position: exp.title,
+          start_date: exp.startDate,
+          end_date: exp.endDate
+        }));
+      form.append("experiences", JSON.stringify(experiences));
+      form.append("profile_personal_experience_is_public", publicFields.profile_personal_experience_is_public);
+  
+      // Education - include UIDs for existing entries
+      const educations = formData.education
+        .filter(edu => edu.school || edu.degree || edu.startDate || edu.endDate)
+        .map(edu => ({
+          ...(edu.uid && { uid: edu.uid }),
+          school_name: edu.school,
+          degree: edu.degree,
+          course: edu.degree,
+          start_date: edu.startDate,
+          end_date: edu.endDate
+        }));
+      form.append("educations", JSON.stringify(educations));
+      form.append("profile_personal_education_is_public", publicFields.profile_personal_education_is_public);
+  
+      // Expertise - include UIDs for existing entries
+      const expertises = formData.expertise
+        .filter(exp => exp.headline || exp.description || exp.cost || exp.bounty)
+        .map(exp => ({
+          ...(exp.uid && { uid: exp.uid }),
+          title: exp.headline,
+          description: exp.description,
+          cost: exp.cost,
+          bounty: exp.bounty
+        }));
+      form.append("expertises", JSON.stringify(expertises));
+      form.append("profile_personal_expertise_is_public", publicFields.profile_personal_expertise_is_public);
+  
+      // Wishes - include UIDs for existing entries
+      const wishes = formData.wishes
+        .filter(wish => wish.helpNeeds || wish.details)
+        .map(wish => ({
+          ...(wish.uid && { uid: wish.uid }),
+          title: wish.helpNeeds,
+          description: wish.details,
+          bounty: wish.bounty || "Free" // Properly save the bounty amount
+        }));
+      form.append("wishes", JSON.stringify(wishes));
+      form.append("profile_personal_wishes_is_public", publicFields.profile_personal_wishes_is_public);
+      
+      try {
+        setShowSpinner(true);
+        
+        // Log form data for debugging
+        for (let pair of form.entries()) {
+          console.log(pair[0] + ': ' + pair[1]);
+        }
+      
+        const response = await axios.put(`https://ioec2testsspm.infiniteoptions.com/api/v1/userprofileinfo`, form, {
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          }
+        });
+        
+        console.log("Profile update response:", response);
+      
+        // Check both response.data.code AND response.status
+        if (response.data.code === 200 || response.status === 200) {
+          // Clear deleted items arrays after successful update
+          setDeletedExperience([]);
+          setDeletedEducation([]);
+          setDeletedExpertise([]);
+          setDeletedWishes([]);
+          setDeletedImages([]);
+          
+          setEditMode(false);
+          setTimeout(async () => {
+            await fetchProfile();
+            handleOpen("Success", "Profile has been updated successfully.");
+            setShowSpinner(false);
+          }, 1000);
+        } else {
+          console.error("Error in response:", response.data);
+          handleOpen("Error", response.data.message || "Unable to update profile. Please try again.");
+          setShowSpinner(false);
+        }
+      } catch (error) {
+        console.error("Error updating profile:", error);
+        
+        // Check if there's a response in the error object
+        if (error.response) {
+          console.error("Server response:", error.response.data);
+          handleOpen("Error", error.response.data.message || "Cannot update the profile. Server error.");
+        } else if (error.request) {
+          // The request was made but no response was received
+          console.error("No response received:", error.request);
+          handleOpen("Error", "Cannot connect to the server. Please check your internet connection.");
+        } else {
+          // Something happened in setting up the request
+          handleOpen("Error", error.message || "Cannot update the profile. Please try again.");
+        }
+        
+        setShowSpinner(false);
+      }
+    } else {
+      // Create an error message from all validation errors
+      let errorMessage = "Please fix the following issues:\n\n";
+      
+      // Format field names to be more readable
+      const formatFieldName = (field) => {
+        // Remove "Link" suffix from social media fields
+        if (field.endsWith("Link")) {
+          const socialPlatform = field.replace("Link", "");
+          return socialPlatform.charAt(0).toUpperCase() + socialPlatform.slice(1);
+        }
+        
+        // Convert camelCase to Title Case with spaces
+        return field
+          .replace(/([A-Z])/g, ' $1')
+          .replace(/^./, (str) => str.toUpperCase());
+      };
+      
+      // Add each error to the message
+      Object.entries(errors).forEach(([field, message]) => {
+        errorMessage += `• ${formatFieldName(field)}: ${message}\n`;
+      });
+      
+      // Show the dialog with validation errors
+      handleOpen("Validation Error", errorMessage);
+    }
   };
-
   const handleRowClick = (row) => {
     const imageUrls = JSON.parse(row.rating_images_url) || [];
 
@@ -488,6 +1131,61 @@ export default function Profile() {
     { field: 'rating_description', headerName: 'Description', width: 200 },
   ];
 
+  const handlePublicToggle = (field) => {
+    if (!editMode) return;
+    
+    const fieldMapping = {
+        'email': 'profile_personal_email_is_public',
+        'phoneNumber': 'profile_personal_phone_number_is_public',
+        'location': 'profile_personal_location_is_public',
+        'profileImage': 'profile_personal_image_is_public',
+        'tagLine': 'profile_personal_tag_line_is_public',
+        'shortBio': 'profile_personal_short_bio_is_public',
+        'resume': 'profile_personal_resume_is_public',
+        'experience': 'profile_personal_experience_is_public',
+        'education': 'profile_personal_education_is_public',
+        'expertise': 'profile_personal_expertise_is_public',
+        'wishes': 'profile_personal_wishes_is_public'
+    };
+    console.log("PublicFields in render:", publicFields);
+    const apiField = fieldMapping[field];
+    if (apiField) {
+        setPublicFields(prev => ({
+            ...prev,
+            [apiField]: prev[apiField] === 1 ? 0 : 1
+        }));
+    }
+  };
+
+  if (!editMode) {
+    return (
+      <ProfileView 
+        formData={formData}
+        publicFields={publicFields}
+        onEditClick={(e) => {
+          // Prevent any form event behaviors
+          if (e) {
+            e.preventDefault && e.preventDefault();
+            e.stopPropagation && e.stopPropagation();
+          }
+          
+          // Ensure no dialogs are showing when switching modes
+          setDialog({ open: false, title: "", content: "" });
+          
+          // Set edit mode to true
+          setEditMode(true);
+        }}
+        verifiedIcon={verifiedIcon}
+      />
+    );
+  }
+
+ /////////////
+
+ // This section shows where to make changes in the Profile component's render method
+
+  // ...existing code...
+
   return (
     <StyledContainer>
       <Backdrop sx={{ color: '#fff', zIndex: 1 }} open={showSpinner}>
@@ -496,17 +1194,20 @@ export default function Profile() {
       <Header title="Profile" />
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', padding: '0px 30px', width: '100%', }}>
         <EditIcon
-          onClick={() => setEditMode(!editMode)}
-          sx={{ cursor: 'pointer', color: editMode && "red" }}
+          onClick={() => setEditMode(false)}
+          sx={{ cursor: 'pointer', color: "red" }}
         />
       </Box>
+      
+      
+      
       <Box sx={{ borderRadius: '10px', margin: "10px 25px" }}>
         <form>
           <FormBox>
             <InputField
               required
-              label="First Name"
-              value={formData.firstName}
+              label="First Name (Public)"
+              value={formData.firstName}     /////
               onChange={(value) => setFormData({ ...formData, firstName: value })}
               disabled={!editMode}
               backgroundColor={editMode ? 'white' : '#e0e0e0'}
@@ -515,7 +1216,7 @@ export default function Profile() {
             />
             <InputField
               required
-              label="Last Name"
+              label="Last Name (Public)"
               value={formData.lastName}
               onChange={(value) => setFormData({ ...formData, lastName: value })}
               disabled={!editMode}
@@ -523,88 +1224,430 @@ export default function Profile() {
               error={errors.lastName}
               helperText={errors.lastName}
             />
+            <Box sx={{ position: 'relative', display: editMode || publicFields.profile_personal_phone_number_is_public === 1 ? 'block' : 'none' }}>
+              <InputField
+                required
+                label="Phone Number"
+                value={formData.phoneNumber}
+                onChange={(value) =>
+                  setFormData({ ...formData, phoneNumber: formatPhoneNumber(value) })
+                }
+                disabled={!editMode}
+                backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                error={errors.phoneNumber}
+                helperText={errors.phoneNumber}
+              />
+              <PublicLabel 
+                onClick={() => handlePublicToggle('phoneNumber')}
+                disabled={!editMode}
+                sx={{ position: 'absolute', right: 0, top: 0 }}
+              >
+                {publicFields.profile_personal_phone_number_is_public === 1 ? 'Public' : 'Private'}
+              </PublicLabel>
+            </Box>
+            <Box sx={{ position: 'relative', display: 'block' }}>
             <InputField
-              required
-              label="Phone Number"
-              value={formData.phoneNumber}
-              onChange={(value) =>
-                setFormData({ ...formData, phoneNumber: formatPhoneNumber(value) })
-              }
-              disabled={!editMode}
-              backgroundColor={editMode ? 'white' : '#e0e0e0'}
-              error={errors.phoneNumber}
-              helperText={errors.phoneNumber}
+              label="Email"
+              value={formData.user_email || ""}
+              disabled={true} // Email is typically non-editable
+              backgroundColor={'#e0e0e0'}
             />
+            <PublicLabel 
+              onClick={() => handlePublicToggle('email')}
+              disabled={!editMode}
+              sx={{ position: 'absolute', right: 0, top: 0 }}
+            >
+              {publicFields.profile_personal_email_is_public === 1 ? 'Public' : 'Private'}
+            </PublicLabel>
+          </Box>
             <InputField
               required
               label="Location"
-              value={formData.location}
+              value={formData.profile_personal_country}
               onChange={(value) => setFormData({ ...formData, location: value })}
               disabled={!editMode}
               backgroundColor={editMode ? 'white' : '#e0e0e0'}
               error={errors.location}
               helperText={errors.location}
             />
-            <InputField
-              label="Tag Line"
-              optional
-              value={formData.tagLine}
-              onChange={(value) => setFormData({ ...formData, tagLine: value })}
-              disabled={!editMode}
-              backgroundColor={editMode ? 'white' : '#e0e0e0'}
-            />
-            <InputField
-              label="Short Bio"
-              optional
-              multiline
-              rows={4}
-              value={formData.shortBio}
-              onChange={(value) => setFormData({ ...formData, shortBio: value })}
-              disabled={!editMode}
-              backgroundColor={editMode ? 'white' : '#e0e0e0'}
-            />
 
-            <Box sx={{ display: "flex", gap: 2, my: 3, justifyContent: "space-between" }}>
-              {[0, 1, 2].map((index) => {
-                // Determine which image to show in this position
-                const existingImage = formData.profileImages && formData.profileImages[index];
-                const newUploadedImage = selectedImages?.find(img => img.index === index);
-                
-                // Determine the image URL to display
-                const imageToDisplay = existingImage || (newUploadedImage?.file);
-                
-                return (
-                  <SquareImageUpload
-                    key={index}
-                    index={index}
-                    onImageUpload={(file) => handleImageUpload(index, file)}
-                    image={newUploadedImage || (existingImage ? { index, file: existingImage } : null)}
-                    imageUrl={imageToDisplay}
-                    handleDeleteImage={(imageUrl) => handleDeleteImage(imageUrl)}
-                    handleFavImage={(imageUrl) => handleFavImage(imageUrl)}
-                    favImage={formData.favImage}
-                    isDisabled={!editMode}
-                    size={100}
-                    shape="square"
+            {/* Profile Image Section */}
+            <Box sx={{ mb: 3, display: editMode || publicFields.profile_personal_image_is_public === 1 ? 'block' : 'none' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                <Typography variant="body1" color="text.secondary">
+                  Profile Image
+                </Typography>
+                <PublicLabel 
+                  onClick={() => handlePublicToggle('profileImage')}
+                  disabled={!editMode}
+                >
+                  {publicFields.profile_personal_image_is_public === 1 ? 'Public' : 'Private'}
+                </PublicLabel>
+              </Box>
+              {formData.profileImages[0] ? (
+                <Box 
+                  sx={{ 
+                    width: '100%',
+                    height: '120px',
+                    border: '2px dashed #ccc',
+                    borderRadius: '8px',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <img 
+                    src={typeof formData.profileImages[0] === 'string' ? formData.profileImages[0] : URL.createObjectURL(formData.profileImages[0])} 
+                    alt="Profile"
+                    style={{ 
+                      width: '100px',
+                      height: '100px',
+                      objectFit: 'cover',
+                      borderRadius: '4px'
+                    }}
                   />
-                )
-              })}
+                  {editMode && (
+                    <IconButton
+                      size="small"
+                      onClick={() => handleDeleteImage(formData.profileImages[0])}
+                      sx={{ 
+                        position: 'absolute', 
+                        right: 8, 
+                        top: 8, 
+                        bgcolor: 'rgba(255,255,255,0.8)',
+                        '&:hover': {
+                          bgcolor: 'rgba(255,255,255,0.9)'
+                        }
+                      }}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                </Box>
+              ) : (
+                <UploadButton
+                  component="label"
+                  disabled={!editMode}
+                >
+                  <FileUploadIcon sx={{ fontSize: 40, color: "#666", mb: 1 }} />
+                  <Typography variant="body2" color="textSecondary">
+                    Upload Image
+                  </Typography>
+                  <Typography variant="caption" color="textSecondary">
+                    (png, jpeg) &lt; 2.5MB
+                  </Typography>
+                  <input
+                    type="file"
+                    hidden
+                    accept=".png,.jpg,.jpeg"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        const file = e.target.files[0];
+                        handleImageUpload(0, file);
+                      }
+                    }}
+                    disabled={!editMode}
+                  />
+                </UploadButton>
+              )}
             </Box>
 
+            <Box sx={{ position: 'relative', display: editMode || publicFields.profile_personal_tag_line_is_public === 1 ? 'block' : 'none' }}>
+              <InputField
+                label="Tag Line (40 characters)"
+                value={formData.tagLine}
+                onChange={(value) => {
+                  // Limit to 40 characters
+                  const truncatedValue = value.slice(0, 40);
+                  setFormData(prev => ({ ...prev, tagLine: truncatedValue }));
+                }}
+                disabled={!editMode}
+                backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                helperText={`${formData.tagLine?.length || 0}/40 characters`}
+              />
+              <PublicLabel 
+                onClick={() => handlePublicToggle('tagLine')}
+                disabled={!editMode}
+                sx={{ position: 'absolute', right: 0, top: 0 }}
+              >
+                {publicFields.profile_personal_tag_line_is_public === 1 ? 'Public' : 'Private'}
+              </PublicLabel>
+            </Box>
 
+            {/* Mini Card */}
             <Box sx={{ padding: '0px 30px', width: '100%', marginBottom: '10px' }}>
               <ProfileCard
                 firstName={formData.firstName || ""}
                 lastName={formData.lastName || ""}
-                tagLine={formData.tagLine || ""}
-                imageUrl={formData.favImage || ""}
-                email={user && user.email ? user.email : ""}
-                phoneNumber={formData.phoneNumber || ""}
+                tagLine={publicFields.profile_personal_tag_line_is_public === 1 ? formData.tagLine || "" : ""}
+                imageUrl={publicFields.profile_personal_image_is_public === 1 ? (
+                  formData.profileImages[0] ? (
+                    typeof formData.profileImages[0] === 'string' 
+                      ? formData.profileImages[0] 
+                      : URL.createObjectURL(formData.profileImages[0])
+                  ) : formData.favImage || ""
+                ) : ""}
+                email={publicFields.profile_personal_email_is_public === 1 ? formData.user_email || "" : ""}
+                phoneNumber={publicFields.profile_personal_phone_number_is_public === 1 ? formData.phoneNumber || "" : ""}
                 selectedImages={selectedImages}
                 deletedImages={deletedImages}
               />
             </Box>
 
+            <Box sx={{ position: 'relative', display: editMode || publicFields.profile_personal_short_bio_is_public === 1 ? 'block' : 'none' }}>
+              <InputField
+                label="Short Bio (15 words)"
+                multiline
+                rows={4}
+                value={formData.shortBio}
+                onChange={(value) => {
+                  // Check if exceeds 15 words
+                  if (countWords(value) > 15) {
+                    const truncatedBio = truncateToWordLimit(value, 15);
+                    setFormData(prev => ({ ...prev, shortBio: truncatedBio }));
+                  } else {
+                    setFormData(prev => ({ ...prev, shortBio: value }));
+                  }
+                }}
+                disabled={!editMode}
+                backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                helperText={`${countWords(formData.shortBio || '')}/15 words`}
+              />
+              <PublicLabel 
+                onClick={() => handlePublicToggle('shortBio')}
+                disabled={!editMode}
+                sx={{ position: 'absolute', right: 0, top: 0 }}
+              >
+                {publicFields.profile_personal_short_bio_is_public === 1 ? 'Public' : 'Private'}
+              </PublicLabel>
+            </Box>
+
+            {/* Add a divider line here */}
+            <Box sx={{ borderBottom: '1px solid #e0e0e0', my: 3 }} />
+
+            {/* Resume Upload - Moved above Experience section */}
+            <SectionContainer>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">Resume</Typography>
+                <PublicLabel 
+                  onClick={() => handlePublicToggle('resume')}
+                  disabled={!editMode}
+                >
+                  {publicFields.profile_personal_resume_is_public === 1 ? 'Public' : 'Private'}
+                </PublicLabel>
+              </Box>
+              {editMode ? (
+                <>
+                  <UploadButton
+                    component="label"
+                    disabled={!editMode}
+                  >
+                    <FileUploadIcon sx={{ fontSize: 40, color: "#666", mb: 1 }} />
+                    <Typography variant="body2" color="textSecondary">
+                      {formData.resume ? 'Change Resume' : 'Upload Resume'}
+                    </Typography>
+                    <Typography variant="caption" color="textSecondary">
+                      (pdf, doc) &lt; 2.5MB
+                    </Typography>
+                    <input
+                      type="file"
+                      hidden
+                      accept=".pdf,.doc,.docx"
+                      onChange={handleResumeUpload}
+                      disabled={!editMode}
+                    />
+                  </UploadButton>
+                  {formData.resume && (
+                    <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">
+                        {typeof formData.resume === 'string' ? formData.resume.split('/').pop() : formData.resume.name}
+                      </Typography>
+                      <IconButton 
+                        size="small"
+                        onClick={() => setFormData(prev => ({ ...prev, resume: null }))}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  )}
+                </>
+              ) : formData.resume ? (
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="body2" component="a" 
+                    href={typeof formData.resume === 'string' ? formData.resume : '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    sx={{ 
+                      color: 'primary.main',
+                      textDecoration: 'none',
+                      '&:hover': {
+                        textDecoration: 'underline'
+                      }
+                    }}
+                  >
+                    {typeof formData.resume === 'string' ? formData.resume.split('/').pop() : formData.resume.name}
+                  </Typography>
+                </Box>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  No resume uploaded
+                </Typography>
+              )}
+            </SectionContainer>
+
+            {/* Experience Section */}
+            <SectionContainer sx={{ display: editMode || publicFields.profile_personal_experience_is_public === 1 ? 'block' : 'none' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">Experience :</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <PublicLabel 
+                    onClick={() => handlePublicToggle('experience')}
+                    disabled={!editMode}
+                    sx={{ mr: 2 }}
+                  >
+                    {publicFields.profile_personal_experience_is_public === 1 ? 'Public' : 'Private'}
+                  </PublicLabel>
+                  {editMode && (
+                    <IconButton onClick={handleAddExperience} size="small">
+                      <AddIcon />
+                    </IconButton>
+                  )}
+                </Box>
+              </Box>
+              
+              {formData.experience.map((exp, index) => (
+                <Box key={`exp-${index}`} sx={{ 
+                  position: 'relative',
+                  mb: 2,
+                  p: 2,
+                  backgroundColor: '#f5f5f5',
+                  borderRadius: '8px'
+                }}>
+                  {editMode && (
+                    <IconButton 
+                      size="small" 
+                      onClick={() => handleDeleteExperience(index)}
+                      sx={{ position: 'absolute', right: 8, top: 8 }}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                  <InputField
+                    label="Company"
+                    value={exp.company}
+                    placeholder="Conoco"
+                    onChange={(value) => handleExperienceChange(index, "company", value)}
+                    disabled={!editMode}
+                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                  />
+                  <InputField
+                    label="Title"
+                    value={exp.title}
+                    placeholder="Financial Analyst"
+                    onChange={(value) => handleExperienceChange(index, "title", value)}
+                    disabled={!editMode}
+                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                  />
+                  <Box sx={{ display: "flex", gap: 2 }}>
+                    <InputField
+                      label="Start Date"
+                      value={exp.startDate}
+                      placeholder="06/1988"
+                      onChange={(value) => handleExperienceChange(index, "startDate", value)}
+                      disabled={!editMode}
+                      backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                    />
+                    <InputField
+                      label="End Date"
+                      value={exp.endDate}
+                      placeholder="08/1991"
+                      onChange={(value) => handleExperienceChange(index, "endDate", value)}
+                      disabled={!editMode}
+                      backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                    />
+                  </Box>
+                </Box>
+              ))}
+            </SectionContainer>
+
+                        {/* Education Section */}
+                        <SectionContainer sx={{ display: editMode || publicFields.profile_personal_education_is_public === 1 ? 'block' : 'none' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">Education:</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <PublicLabel 
+                    onClick={() => handlePublicToggle('education')}
+                    disabled={!editMode}
+                    sx={{ mr: 2 }}
+                  >
+                    {publicFields.profile_personal_education_is_public === 1 ? 'Public' : 'Private'}
+                  </PublicLabel>
+                  {editMode && (
+                    <IconButton onClick={handleAddEducation} size="small">
+                      <AddIcon />
+                    </IconButton>
+                  )}
+                </Box>
+              </Box>
+              
+              {formData.education.map((edu, index) => (
+                <Box key={`edu-${index}`} sx={{ 
+                  position: 'relative',
+                  mb: 2,
+                  p: 2,
+                  backgroundColor: '#f5f5f5',
+                  borderRadius: '8px'
+                }}>
+                  {editMode && (
+                    <IconButton 
+                      size="small" 
+                      onClick={() => handleDeleteEducation(index)}
+                      sx={{ position: 'absolute', right: 8, top: 8 }}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                  <InputField
+                    label="School"
+                    value={edu.school}
+                    placeholder="University of Arizona"
+                    onChange={(value) => handleEducationChange(index, "school", value)}
+                    disabled={!editMode}
+                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                  />
+                  <InputField
+                    label="Degree"
+                    value={edu.degree}
+                    placeholder="MS Chemical Engineering"
+                    onChange={(value) => handleEducationChange(index, "degree", value)}
+                    disabled={!editMode}
+                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                  />
+                  <Box sx={{ display: "flex", gap: 2 }}>
+                    <InputField
+                      label="Start Date"
+                      value={edu.startDate}
+                      placeholder="08/1991"
+                      onChange={(value) => handleEducationChange(index, "startDate", value)}
+                      disabled={!editMode}
+                      backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                    />
+                    <InputField
+                      label="End Date"
+                      value={edu.endDate}
+                      placeholder="06/1994"
+                      onChange={(value) => handleEducationChange(index, "endDate", value)}
+                      disabled={!editMode}
+                      backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                    />
+                  </Box>
+                </Box>
+              ))}
+            </SectionContainer>
+
+            {/* Social Links Section */}
             <SocialLink
               iconSrc={facebook}
               alt="Facebook"
@@ -641,285 +1684,304 @@ export default function Profile() {
               backgroundColor={editMode ? 'white' : '#e0e0e0'}
             />
 
-            <Box sx={{ mb: 3 }}>
-              <Box sx={{ display: "flex", alignItems: "center", mb: 0.5 }}>
-                <Typography variant="caption" sx={{ ml: 1, mr: 1 }}>
-                  Template
-                </Typography>
-                <IconButton size="small" sx={{ p: 0 }}
+            {/* Banner Adds Section */}
+            <BannerSection>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="h6">Allow Banner Adds</Typography>
+                <img src={moneyBag} alt="Money Bag" style={{ width: '20px', height: '20px' }} />
+              </Box>
+              <Typography>Yes</Typography>
+            </BannerSection>
+
+            {/* Businesses Section */}
+            <Box sx={{ mt: 4, mb: 4 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">Businesses</Typography>
+                <IconButton 
                   onClick={() => {
-                    if(!editMode){
-                      navigate("/showTemplate", {
-                        state: {
-                          profileId: user.profileId,
-                          navigatingFrom: "profilePage",
-                        }
-                      })
-                    }else{
-                      navigate("/selectTemplate", { state: { data: formData } });
-                    }
-                  }}
+                    const newBusinesses = [...formData.businesses];
+                    newBusinesses.push({ name: "", role: "" });
+                    setFormData(prev => ({
+                      ...prev,
+                      businesses: newBusinesses
+                    }));
+                  }} 
+                  size="small"
                 >
-                  <VisibilityIcon fontSize="small" />
+                  <AddIcon />
                 </IconButton>
               </Box>
-              <TextField
-                fullWidth
-                variant="outlined"
-                value={templateMap[formData.template]}
-                placeholder="Template (Optional)"
-                disabled
-                sx={{
-                  backgroundColor: editMode ? 'white' : '#e0e0e0',
-                  borderRadius: 2,
-                  "& .MuiOutlinedInput-root": {
-                    borderRadius: 2,
-                  },
-                }}
-              />
+              
+              {formData.businesses.map((business, index) => (
+                <BusinessCard key={`business-${index}`}>
+                  <Box sx={{ position: 'relative' }}>
+                    {editMode && (
+                      <IconButton 
+                        size="small" 
+                        onClick={() => {
+                          const newBusinesses = [...formData.businesses];
+                          newBusinesses.splice(index, 1);
+                          setFormData(prev => ({
+                            ...prev,
+                            businesses: newBusinesses
+                          }));
+                        }}
+                        sx={{ position: 'absolute', right: -8, top: -8 }}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                    <Box sx={{ mb: 2 }}>
+                      <TextField
+                        fullWidth
+                        placeholder="Business Name"
+                        value={business.name}
+                        onChange={(e) => {
+                          const newBusinesses = [...formData.businesses];
+                          newBusinesses[index] = { ...business, name: e.target.value };
+                          setFormData(prev => ({
+                            ...prev,
+                            businesses: newBusinesses
+                          }));
+                        }}
+                        disabled={!editMode}
+                        sx={{
+                          backgroundColor: editMode ? 'white' : '#e0e0e0',
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: '8px',
+                          },
+                        }}
+                      />
+                    </Box>
+                    <Box>
+                      <TextField
+                        fullWidth
+                        placeholder="Role (Owner/Editor)"
+                        value={business.role}
+                        onChange={(e) => {
+                          const newBusinesses = [...formData.businesses];
+                          newBusinesses[index] = { ...business, role: e.target.value };
+                          setFormData(prev => ({
+                            ...prev,
+                            businesses: newBusinesses
+                          }));
+                        }}
+                        disabled={!editMode}
+                        sx={{
+                          backgroundColor: editMode ? 'white' : '#e0e0e0',
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: '8px',
+                          },
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                </BusinessCard>
+              ))}
             </Box>
 
-            {/* Experience Section */}
-            <SectionHeader>
-              <Typography variant="subtitle1" fontWeight="bold">
-                Experience
-              </Typography>
-              {editMode && (
-                <IconButton onClick={handleAddExperience}>
-                  <AddIcon />
-                </IconButton>
-              )}
-            </SectionHeader>
-            
-            {formData.experience.map((exp, index) => (
-              <SectionItem key={`exp-${index}`}>
-                {editMode && (
-                  <ItemActions>
-                    <IconButton size="small" onClick={() => handleDeleteExperience(index)}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </ItemActions>
-                )}
-                <InputField
-                  label="Company"
-                  optional
-                  value={exp.company}
-                  placeholder="Enter company name"
-                  onChange={(value) => handleExperienceChange(index, "company", value)}
-                  disabled={!editMode}
-                  backgroundColor={editMode ? 'white' : '#e0e0e0'}
-                />
-                  <InputField
-                    label="Title"
-                    optional
-                    value={exp.title}
-                    placeholder="Enter title name"
-                    onChange={(value) => handleExperienceChange(index, "title", value)}
-                    disabled={!editMode}
-                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
-                  />
-                <Box sx={{ display: "flex", gap: 2 }}>
-                  <InputField
-                    label="Start Date"
-                    optional
-                    value={exp.startDate}
-                    placeholder="MM/YY"
-                    onChange={(value) => handleExperienceChange(index, "startDate", value)}
-                    disabled={!editMode}
-                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
-                  />
-                  <InputField
-                    label="End Date"
-                    optional
-                    value={exp.endDate}
-                    placeholder="MM/YY"
-                    onChange={(value) => handleExperienceChange(index, "endDate", value)}
-                    disabled={!editMode}
-                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
-                  />
-                </Box>
-              </SectionItem>
-            ))}
+            {/* Rest of the component remains unchanged... */}
 
-            {/* Resume Upload */}
-            <Box sx={{ my: 3 }}>
-              <Typography variant="caption" sx={{ ml: 1, mb: 0.5, display: 'block' }}>
-                Resume (Optional)
-              </Typography>
-              <Button 
-                variant="outlined" 
-                component="label" 
-                fullWidth
-                startIcon={<FileUploadIcon />}
-                disabled={!editMode}
-                sx={{
-                  backgroundColor: editMode ? 'white' : '#e0e0e0',
-                  borderRadius: 2,
-                  padding: "10px 0",
-                  borderColor: "#ccc",
-                  '&:hover': {
-                    borderColor: "#999",
-                    backgroundColor: editMode ? '#f5f5f5' : '#e0e0e0'
-                  }
-                }}
-              >
-                {formData.resume ? 
-                  (typeof formData.resume === 'string' ? 
-                    'Resume Uploaded' : 
-                    formData.resume.name || 'Resume Selected') : 
-                  'Upload Resume'}
-                <input
-                  type="file"
-                  hidden
-                  accept=".pdf,.doc,.docx"
-                  onChange={handleResumeUpload}
-                  disabled={!editMode}
-                />
-              </Button>
-              {formData.resume && !editMode && (
-                <Typography variant="caption" sx={{ ml: 1, mt: 0.5, display: 'block', fontStyle: 'italic' }}>
-                  {typeof formData.resume === 'string' ? 'Resume file uploaded' : formData.resume.name}
-                </Typography>
-              )}
-            </Box>
 
-            {/* Education Section */}
-            <SectionHeader>
-              <Typography variant="subtitle1" fontWeight="bold">
-                Education
-              </Typography>
-              {editMode && (
-                <IconButton onClick={handleAddEducation}>
-                  <AddIcon />
-                </IconButton>
-              )}
-            </SectionHeader>
-            
-            {formData.education.map((edu, index) => (
-              <SectionItem key={`edu-${index}`}>
-                {editMode && (
-                  <ItemActions>
-                    <IconButton size="small" onClick={() => handleDeleteEducation(index)}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </ItemActions>
-                )}
-                <InputField
-                  label="School"
-                  optional
-                  value={edu.school}
-                  placeholder="Enter school name"
-                  onChange={(value) => handleEducationChange(index, "school", value)}
-                  disabled={!editMode}
-                  backgroundColor={editMode ? 'white' : '#e0e0e0'}
-                />
-                <InputField
-                  label="Degree"
-                  optional
-                  value={edu.degree}
-                  placeholder="Enter degree"
-                  onChange={(value) => handleEducationChange(index, "degree", value)}
-                  disabled={!editMode}
-                  backgroundColor={editMode ? 'white' : '#e0e0e0'}
-                />
-                <Box sx={{ display: "flex", gap: 2 }}>
-                  <InputField
-                    label="Start Date"
-                    optional
-                    value={edu.startDate}
-                    placeholder="MM/YY"
-                    onChange={(value) => handleEducationChange(index, "startDate", value)}
-                    disabled={!editMode}
-                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
-                  />
-                  <InputField
-                    label="End Date"
-                    optional
-                    value={edu.endDate}
-                    placeholder="MM/YY"
-                    onChange={(value) => handleEducationChange(index, "endDate", value)}
-                    disabled={!editMode}
-                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
-                  />
-                </Box>
-              </SectionItem>
-            ))}
+
+
+
+
 
             {/* Expertise Section */}
-            <SectionHeader>
-              <Typography variant="subtitle1" fontWeight="bold">
-                Expertise
-              </Typography>
-            </SectionHeader>
-            {formData.expertise.map((item, index) => (
-              <Box key={`expertise-${index}`} sx={{ position: "relative", mb: 2 }}>
-                {editMode && (
-                  <ItemActions>
+            <SectionContainer sx={{ display: editMode || publicFields.profile_personal_expertise_is_public === 1 ? 'block' : 'none' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6">Expertise</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <PublicLabel 
+                    onClick={() => handlePublicToggle('expertise')}
+                    disabled={!editMode}
+                    sx={{ mr: 2 }}
+                  >
+                    {publicFields.profile_personal_expertise_is_public === 1 ? 'Public' : 'Private'}
+                  </PublicLabel>
+                  {editMode && (
+                    <IconButton onClick={() => {
+                      const newExpertise = [...formData.expertise];
+                      newExpertise.push({ headline: "", description: "", cost: "", bounty: "" });
+                      setFormData(prev => ({
+                        ...prev,
+                        expertise: newExpertise
+                      }));
+                    }} size="small">
+                      <AddIcon />
+                    </IconButton>
+                  )}
+                </Box>
+              </Box>
+              
+              {formData.expertise.map((item, index) => (
+                <Box key={`expertise-${index}`} sx={{ 
+                  position: 'relative',
+                  mb: 2,
+                  p: 2,
+                  backgroundColor: '#f5f5f5',
+                  borderRadius: '8px'
+                }}>
+                  {editMode && (
                     <IconButton 
                       size="small" 
-                      onClick={() => {
-                        const newExpertise = [...formData.expertise];
-                        newExpertise[index] = "";
-                        setFormData(prev => ({
-                          ...prev,
-                          expertise: newExpertise
-                        }));
-                      }}
+                      onClick={() => handleDeleteExpertise(index)}
+                      sx={{ position: 'absolute', right: 8, top: 8 }}
                     >
                       <DeleteIcon fontSize="small" />
                     </IconButton>
-                  </ItemActions>
-                )}
-                <InputField
-                  label={`Expertise ${index + 1}`}
-                  optional
-                  value={item}
-                  placeholder="Enter your expertise"
-                  onChange={(value) => handleExpertiseChange(index, value)}
-                  disabled={!editMode}
-                  backgroundColor={editMode ? 'white' : '#e0e0e0'}
-                />
-              </Box>
-            ))}
-
-            {/* Wishes Section */}
-            <SectionHeader>
-              <Typography variant="subtitle1" fontWeight="bold">
-                3 Wishes
-              </Typography>
-            </SectionHeader>
-            {formData.wishes.map((item, index) => (
-              <Box key={`wish-${index}`} sx={{ position: "relative", mb: 2, display: "flex", alignItems: "center" }}>
-                <EmojiEventsIcon sx={{ mr: 1, color: "#FFD700" }} />
-                <Box sx={{ flexGrow: 1 }}>
+                  )}
                   <InputField
-                    label={`Wish ${index + 1}`}
-                    optional
-                    value={item}
-                    placeholder="Enter your wish"
-                    onChange={(value) => handleWishChange(index, value)}
+                    label="Headline"
+                    value={item.headline || ""}
+                    placeholder="Enter expertise headline"
+                    onChange={(value) => handleExpertiseChange(index, "headline", value)}
                     disabled={!editMode}
                     backgroundColor={editMode ? 'white' : '#e0e0e0'}
                   />
+                  <InputField
+                    label="Description"
+                    value={item.description || ""}
+                    placeholder="Enter expertise description"
+                    onChange={(value) => handleExpertiseChange(index, "description", value)}
+                    disabled={!editMode}
+                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                    multiline
+                    rows={2}
+                  />
+                  <Box sx={{ display: 'flex', alignItems: 'center', mt: 1, gap: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mr: 1, minWidth: '40px' }}>
+                        Cost
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        placeholder="Free"
+                        value={item.cost || ""}
+                        onChange={(e) => handleExpertiseChange(index, "cost", e.target.value)}
+                        disabled={!editMode}
+                        sx={{
+                          backgroundColor: editMode ? 'white' : '#e0e0e0',
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: 1,
+                          },
+                        }}
+                      />
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+                      <img src={moneyBag} alt="Cost" style={{ width: '20px', height: '20px', marginRight: '8px' }} />
+                      <TextField
+                        fullWidth
+                        size="small"
+                        placeholder="Free"
+                        value={item.bounty || ""}
+                        onChange={(e) => handleExpertiseChange(index, "bounty", e.target.value)}
+                        disabled={!editMode}
+                        sx={{
+                          backgroundColor: editMode ? 'white' : '#e0e0e0',
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: 1,
+                          },
+                        }}
+                      />
+                    </Box>
+                  </Box>
                 </Box>
-                {editMode && (
-                  <IconButton 
-                    size="small" 
-                    sx={{ ml: 1 }}
-                    onClick={() => {
-                      const newWishes = [...formData.wishes];
-                      newWishes[index] = "";
-                      setFormData(prev => ({
-                        ...prev,
-                        wishes: newWishes
-                      }));
-                    }}
-                  >
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                )}
+              ))}
+            </SectionContainer>
+
+            {/* Wishes Section */}
+        {/*     f    */ }
+
+        {/* Wishes Section */}
+        {/* Wishes Section */}
+
+        <SectionContainer sx={{ display: editMode || publicFields.profile_personal_wishes_is_public === 1 ? 'block' : 'none' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6">Wishes</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <PublicLabel 
+                onClick={() => handlePublicToggle('wishes')}
+                disabled={!editMode}
+                sx={{ mr: 2 }}
+              >
+                {publicFields.profile_personal_wishes_is_public === 1 ? 'Public' : 'Private'}
+              </PublicLabel>
+              {editMode && (
+                <IconButton onClick={() => {
+                  const newWishes = [...formData.wishes];
+                  newWishes.push({ helpNeeds: "", details: "", bounty: "Free" });
+                  setFormData(prev => ({
+                    ...prev,
+                    wishes: newWishes
+                  }));
+                }} size="small">
+                  <AddIcon />
+                </IconButton>
+              )}
+            </Box>
+          </Box>
+          
+          {formData.wishes.map((item, index) => (
+            <Box key={`wish-${index}`} sx={{ 
+              position: 'relative',
+              mb: 2,
+              p: 2,
+              backgroundColor: '#f5f5f5',
+              borderRadius: '8px'
+            }}>
+              {editMode && (
+                <IconButton 
+                  size="small" 
+                  onClick={() => handleDeleteWish(index)}
+                  sx={{ position: 'absolute', right: 8, top: 8 }}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              )}
+              <InputField
+                label="Title"
+                value={item.helpNeeds || ""}
+                placeholder="What help do you need?"
+                onChange={(value) => handleWishChange(index, "helpNeeds", value)}
+                disabled={!editMode}
+                backgroundColor={editMode ? 'white' : '#e0e0e0'}
+              />
+              <InputField
+                label="Help Needed (15 words)"
+                value={item.details || ""}
+                placeholder="Enter details about your need"
+                onChange={(value) => handleWishChange(index, "details", value)}
+                disabled={!editMode}
+                backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                multiline
+                rows={2}
+              />
+              <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
+                <img src={moneyBag} alt="Money Bag" style={{ width: '20px', height: '20px', marginRight: '8px' }} />
+                <TextField
+                  size="small"
+                  placeholder="Free"
+                  value={item.bounty || "Free"}
+                  onChange={(e) => handleWishChange(index, "bounty", e.target.value)}
+                  disabled={!editMode}
+                  sx={{
+                    maxWidth: '120px',
+                    backgroundColor: editMode ? 'white' : '#f5f5f5',
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: '8px',
+                    },
+                    '& .MuiInputBase-input': {
+                      padding: '8px 12px',
+                    }
+                  }}
+                />
               </Box>
-            ))}
+            </Box>
+          ))}
+        </SectionContainer>
 
             {editMode && (
               <CircleButton

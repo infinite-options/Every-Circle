@@ -3,19 +3,20 @@ import { Box, Typography, styled, Paper } from "@mui/material";
 import PersonIcon from '@mui/icons-material/Person';
 
 const CardContainer = styled(Paper)({
-  display: "flex",
-  padding: "20px",
+  padding: "15px",
   marginBottom: "20px",
   borderRadius: "10px",
-  boxShadow: "0px 2px 10px rgba(0, 0, 0, 0.1)"
+  boxShadow: "0px 2px 6px rgba(0, 0, 0, 0.08)",
+  backgroundColor: "#f9f9f9",
+  border: "1px solid #e0e0e0"
 });
 
 const ImageContainer = styled(Box)({
-  width: "80px",
-  height: "80px",
-  borderRadius: "8px",
+  width: "60px",
+  height: "60px",
+  borderRadius: "50%", // Changed to circle
   overflow: "hidden",
-  marginRight: "20px",
+  marginRight: "15px",
   border: "1px solid #e0e0e0",
   display: "flex",
   justifyContent: "center",
@@ -29,15 +30,23 @@ const DetailsContainer = styled(Box)({
   justifyContent: "center"
 });
 
-const ProfileCard = ({ 
-  firstName, 
-  lastName, 
-  tagLine, 
-  imageUrl, 
-  email, 
-  phoneNumber, 
-  selectedImages = [], 
-  deletedImages = [] 
+const MiniCardContent = styled(Box)({
+  display: "flex",
+  padding: "10px",
+  border: "1px solid #e0e0e0",
+  borderRadius: "8px",
+  backgroundColor: "white"
+});
+
+const ProfileCard = ({
+  firstName,
+  lastName,
+  tagLine,
+  imageUrl,
+  email,
+  phoneNumber,
+  selectedImages = [],
+  deletedImages = []
 }) => {
   const [displayImage, setDisplayImage] = useState("");
   
@@ -79,32 +88,38 @@ const ProfileCard = ({
 
   return (
     <CardContainer>
-      <ImageContainer>
-        {displayImage ? (
-          <img 
-            src={displayImage} 
-            alt="Profile" 
-            style={{ width: "100%", height: "100%", objectFit: "cover" }} 
-            onError={() => setDisplayImage("")} // Handle image load errors
-          />
-        ) : (
-          <PersonIcon style={{ fontSize: 40, color: "#bdbdbd" }} />
-        )}
-      </ImageContainer>
-      <DetailsContainer>
-        <Typography variant="subtitle1" fontWeight="bold">
-          {firstName || "First"} {lastName || "Last"}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          {tagLine || "Your professional headline"}
-        </Typography>
-        <Typography variant="caption" color="text.secondary" display="block">
-          {email || "email@example.com"}
-        </Typography>
-        <Typography variant="caption" color="text.secondary" display="block">
-          {phoneNumber || "Phone Number"}
-        </Typography>
-      </DetailsContainer>
+      <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+        Mini Card (how you'll appear in searches)
+      </Typography>
+      
+      <MiniCardContent>
+        <ImageContainer>
+          {displayImage ? (
+            <img
+              src={displayImage}
+              alt="Profile"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              onError={() => setDisplayImage("")} // Handle image load errors
+            />
+          ) : (
+            <PersonIcon style={{ fontSize: 30, color: "#bdbdbd" }} />
+          )}
+        </ImageContainer>
+        <DetailsContainer>
+          <Typography variant="body2" fontWeight="medium">
+            {firstName || "First"} {lastName || "Last"}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {tagLine || "Your professional headline"}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: '0.7rem' }}>
+            {email || ""}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: '0.7rem' }}>
+            {phoneNumber || ""}
+          </Typography>
+        </DetailsContainer>
+      </MiniCardContent>
     </CardContainer>
   );
 };

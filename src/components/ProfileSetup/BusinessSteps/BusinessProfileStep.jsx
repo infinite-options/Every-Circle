@@ -1,24 +1,24 @@
 import React from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box, Typography, styled } from '@mui/material';
 import SocialField from '../../common/SocialField';
+import website from "../../../assets/web.png";
 import yelp from "../../../assets/yelp.png";
 import google from "../../../assets/Google.png";
-// import website from "../../../assets/website.png";
-import website from "../../../assets/web.png";
 
-const BusinessSocialLinksStep = ({ formData, handleChange }) => {
-  const socialLinks = [
-    { name: 'yelp', img: "https://s3-media0.fl.yelpcdn.com/assets/public/cookbook.yji-0a2bf1d9c330d8747446.svg", label: 'Yelp'},
-    { name: 'google', img: "https://loodibee.com/wp-content/uploads/Google-Logo.png", label: 'Google' },
-    { name: 'website', img: website, label: 'Website' },
-  ];
+const StepContainer = styled(Box)({
+  width: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '16px',
+});
 
+export default function BusinessProfileStep({ formData, handleChange }) {
   return (
-    <Box sx={{ width: '100%' }}>
-      <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px", textAlign: "center", mb: 3 }}>
-        Provide links to your Social Media (this info is public)
+    <StepContainer>
+      <Typography variant="h6" sx={{ color: '#fff', textAlign: 'center', mb: 2 }}>
+        Add Your Business Social Links
       </Typography>
-
+      
       <SocialField
         icon={website}
         placeholder="Website URL"
@@ -42,8 +42,6 @@ const BusinessSocialLinksStep = ({ formData, handleChange }) => {
         onChange={(value) => handleChange({ target: { name: 'google', value }})}
         name="google"
       />
-    </Box>
+    </StepContainer>
   );
-};
-
-export default BusinessSocialLinksStep; 
+} 
