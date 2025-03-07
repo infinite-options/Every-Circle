@@ -46,10 +46,10 @@ const Home = () => {
         </div>
 
         {/* Business Signup */}
-        <Link to="/signup?role=business" className="circle business-signup">
+        {/* <Link to="/signup?role=business" className="circle business-signup">
           <span>Business</span>
           <span>Signup</span>
-        </Link>
+        </Link> */}
 
         {/* SVG for connecting lines */}
         <svg
@@ -64,7 +64,8 @@ const Home = () => {
           <line className="connector" x1="25%" y1="65%" x2="45%" y2="55%" />
           {/* Line from Main Circle to How It Works */}
           <line className="connector" x1="55%" y1="50%" x2="80%" y2="65%" />
-          <line className="connector" x1="55%" y1="40%" x2="70%" y2="20%" />
+          {/* Line from Business Signup to Main Circle */}
+          {/* <line className="connector" x1="55%" y1="40%" x2="70%" y2="20%" /> */}
         </svg>
       </div>
     </div>

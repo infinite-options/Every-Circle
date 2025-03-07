@@ -127,18 +127,18 @@ const ProfileSetupForm = () => {
     if (activeStep === steps.length - 1) {
       const data = new FormData();
       data.append("user_uid", userId);
-      data.append("profile_first_name", formData.firstName);
-      data.append("profile_last_name", formData.lastName);
-      data.append("profile_phone", formData.phoneNumber);
+      data.append("profile_personal_first_name", formData.firstName);
+      data.append("profile_personal_last_name", formData.lastName);
+      data.append("profile_personal_phone_number", formData.phoneNumber);
       // data.append("profile_location", formData.location);
-      data.append("profile_tag_line", formData.tagLine);
-      data.append("profile_short_bio", formData.shortBio);
-      data.append("profile_facebook_link", formData.facebook);
-      data.append("profile_twitter_link", formData.twitter);
-      data.append("profile_linkedin_link", formData.linkedin);
-      data.append("profile_youtube_link", formData.youtube);
-      data.append("profile_template", formData.template);
-      data.append("profile_referred_by_user_id", referralId);
+      // data.append("profile_tag_line", formData.tagLine);
+      // data.append("profile_short_bio", formData.shortBio);
+      // data.append("profile_facebook_link", formData.facebook);
+      // data.append("profile_twitter_link", formData.twitter);
+      // data.append("profile_linkedin_link", formData.linkedin);
+      // data.append("profile_youtube_link", formData.youtube);
+      // data.append("profile_template", formData.template);
+      data.append("profile_personal_referred_by", referralId);
 
       // const imageFields = ["image1", "image2", "image3"];
       // imageFields.forEach((field, index) => {
@@ -172,7 +172,7 @@ const ProfileSetupForm = () => {
       }
 
       try {
-        const response = await axios.post(`${APIConfig.baseURL.dev}/profile`, data, {
+        const response = await axios.post(`${APIConfig.baseURL.dev}/api/v1/userprofileinfo`, data, {
           headers: {
             "Content-Type": "multipart/form-data",
           },
@@ -217,32 +217,32 @@ const ProfileSetupForm = () => {
       title: "Welcome to Every Circle!",
       subtitle: "Let's Build Your Profile Page!"
     },
-    {
-      component: <OptionalInfoStep
-        formData={formData}
-        handleChange={handleChange}
-        handleImageUpload={handleImageUpload}
-        handleDeleteImage={handleDeleteImage}
-        handleFavImage={handleFavImage}
-      />,
-      title: "Optional Info"
-    },
-    {
-      component: <SocialLinksStep formData={formData} handleChange={handleChange} />,
-      title: "Social Media Links"
-    },
-    {
-      component: <HowCanIHelp formData={formData} handleChange={handleChange} setFormData={setFormData}/>,
-      title: "How Can I Help Others"
-    },
-    {
-      component: <HowCanYouHelp formData={formData} handleChange={handleChange} setFormData={setFormData}/>,
-      title: "How Can You Help Me"
-    },
-    {
-      component: <TemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect} role={"user"}/>,
-      title: "Select Your Template"
-    }
+    // {
+    //   component: <OptionalInfoStep
+    //     formData={formData}
+    //     handleChange={handleChange}
+    //     handleImageUpload={handleImageUpload}
+    //     handleDeleteImage={handleDeleteImage}
+    //     handleFavImage={handleFavImage}
+    //   />,
+    //   title: "Optional Info"
+    // },
+    // {
+    //   component: <SocialLinksStep formData={formData} handleChange={handleChange} />,
+    //   title: "Social Media Links"
+    // },
+    // {
+    //   component: <HowCanIHelp formData={formData} handleChange={handleChange} setFormData={setFormData}/>,
+    //   title: "How Can I Help Others"
+    // },
+    // {
+    //   component: <HowCanYouHelp formData={formData} handleChange={handleChange} setFormData={setFormData}/>,
+    //   title: "How Can You Help Me"
+    // },
+    // {
+    //   component: <TemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect} role={"user"}/>,
+    //   title: "Select Your Template"
+    // }
   ];
 
   return (

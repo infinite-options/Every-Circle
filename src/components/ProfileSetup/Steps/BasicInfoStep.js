@@ -28,7 +28,7 @@ const BasicInfoStep = ({ formData, handleChange, errors }) => {
         helperText={errors.lastName}
       />
 
-      <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
+      {/* <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
         Your location (city, state)
       </Typography>
       <StyledTextField
@@ -41,7 +41,7 @@ const BasicInfoStep = ({ formData, handleChange, errors }) => {
         margin="normal"
         error={!!errors.location}
         helperText={errors.location}
-      />
+      /> */}
 
       <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
         Your phone number (this info is private)
