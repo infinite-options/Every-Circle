@@ -46,17 +46,7 @@ const MiniCard = styled(Paper)({
   backgroundColor: '#f5f5f5',
 });
 
-const MiniCardImage = styled(Box)({
-  width: '50px',
-  height: '50px',
-  borderRadius: '4px',
-  overflow: 'hidden',
-  '& img': {
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-  }
-});
+
 
 const SectionContainer = styled(Box)({
   marginBottom: '20px',

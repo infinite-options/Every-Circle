@@ -28,6 +28,8 @@ import ImageListItem from '@mui/material/ImageListItem';
 import BusinessProfileView from './BusinessProfileView';
 import moneyBag from "../../assets/moneybag.png";
 import youtube from "../../assets/youtube-icon.png";
+import BusinessCategoryDropdown from './BusinessCategoryDropdown';
+import BusinessCardMini from "./BusinessCardMini";
 
 const FormBox = styled(Box)({
     padding: "0 16px",
@@ -631,6 +633,56 @@ export default function BusinessProfile() {
                                 </PublicLabel>
                             </Box>
                         </InputWrapper>
+
+                        <Box sx={{ marginTop: '20px' }}>
+            {/* <SectionTitle variant="subtitle1">
+              Mini Card (how you'll appear in searches)
+            </SectionTitle>
+            
+            <BusinessMiniCard
+              businessName={businessData.business_name}
+              tagLine={businessData.business_tag_line}
+              email={businessData.business_email_id}
+              phoneNumber={businessData.business_phone_number}
+              imageUrl={businessData.business_favorite_image}
+              businessImages={businessData.business_images_url}
+              publicFields={publicFields}
+            /> */}
+        <Box sx={{ marginTop: '20px' }}>
+
+            
+            <BusinessCardMini
+              businessName={formData.business_name}
+              tagLine={formData.business_tag_line}
+              email={formData.business_email_id}
+              phoneNumber={formData.business_phone_number}
+              imageUrl={formData.business_favorite_image}
+              businessImages={formData.business_images_url}
+              publicFields={publicFields}
+            />
+          </Box>
+          </Box> 
+            <InputWrapper>
+            <BusinessCategoryDropdown
+                label="Primary Business Category"
+                value={formData.businessCategory || ""}
+                onChange={(value) => handleMainCategoryChange(value)}
+                options={mainCategories}
+                disabled={!editMode}
+                placeholder="Retail" // Default placeholder
+            />
+            </InputWrapper>
+
+            <InputWrapper>
+            <BusinessCategoryDropdown
+                label="Secondary Business Category"
+                value={formData.subCategory || ""}
+                onChange={(value) => handleSubCategoryChange(value)}
+                options={subCategories}
+                disabled={!editMode || !formData.businessCategory}
+                placeholder="Hardware" // Default placeholder
+            />
+            </InputWrapper>
 
                         <InputWrapper>
                             <Box sx={{ position: 'relative', display: editMode || publicFields.business_short_bio_is_public === 1 ? 'block' : 'none' }}>

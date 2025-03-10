@@ -16,7 +16,7 @@ import BusinessCategoryStep from "./BusinessSteps/BusinessCategoryStep";
 const BusinessProfileSetupForm = () => {
     const location = useLocation();
     const navigate = useNavigate();
-    const userId = location.state?.userId ? location.state.userId : null;
+    const userId = location.state?.userId ? location.state.userId : "100-000098";
     const [activeStep, setActiveStep] = useState(0);
     const { isValidPhoneNumber, formatPhoneNumber, formatEIN, isValidEinNumber } = DataValidationUtils;
     const { referralId, user } = useUserContext();
@@ -189,11 +189,11 @@ const BusinessProfileSetupForm = () => {
         {
             component: <BusinessSocialLinksStep formData={formData} handleChange={handleChange} />,
             title: "Social Media Links"
-        },
-        {
-            component: <BusinessTemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect} role={"business"}/>,
-            title: "Select Your Template"
         }
+        // {
+        //     component: <BusinessTemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect} role={"business"}/>,
+        //     title: "Select Your Template"
+        // }
     ];
 
     return (

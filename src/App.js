@@ -23,7 +23,7 @@ import { LoadScript } from "@react-google-maps/api";
 import EditRecommendation from "./components/recommendation/EditRecommendation";
 import PrivacyPolicy from "./components/settings/PrivacyPolicy";
 import TermsAndConditions from "./components/settings/TermsAndConditions";
-
+import AccountSeletion from "./components/AccountSelection";
 
 const LIBRARIES = ["places"];
 
@@ -56,6 +56,7 @@ function App() {
             <Route path='/signup' element={<SignupForm />} />
             <Route path='/login' element={<LoginForm />} />
             <Route path='/profileSetup' element={<ProfileSetupForm />} />
+            <Route path='/accountSeletion' element={<AccountSeletion />} />
             <Route path='/businessProfileSetup' element={<BusinessProfileSetupForm />} />
             <Route path='/profile' element={<Profile />} />
             <Route path='/businessProfile' element={<BusinessProfile />} />

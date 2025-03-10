@@ -1,4 +1,4 @@
-////save
+////resume addd
 import React from 'react';
 import { Box, Typography, styled, IconButton, Paper, TextField, Button, Rating } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
@@ -286,6 +286,73 @@ export default function ProfileView({ formData, publicFields, onEditClick, verif
     </SectionContainer>
   );
 
+  // Add this new function alongside your other render functions
+const renderResume = () => {
+  // If resume is not set to public, don't show this section
+  if (publicFields.profile_personal_resume_is_public !== 1 || !formData.resume) {
+    return null;
+  }
+  
+  // Get the filename if it's a string URL or if it's a File object
+  const fileName = typeof formData.resume === 'string' 
+    ? formData.resume.split('/').pop() 
+    : formData.resume.name || 'Resume';
+  
+  // Determine if we can get a resume URL for downloading/viewing
+  const resumeUrl = typeof formData.resume === 'string' ? formData.resume : null;
+
+  return (
+    <SectionContainer sx={{ 
+      display: 'flex', 
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: '20px'
+    }}>
+      <Box>
+        <Typography variant="h6" sx={{ color: '#888', fontWeight: 'normal' }}>
+          Resume
+        </Typography>
+        <Typography 
+          variant="body1" 
+          sx={{ 
+            color: resumeUrl ? 'primary.main' : '#888', 
+            mt: 1,
+            textDecoration: resumeUrl ? 'underline' : 'none',
+            cursor: resumeUrl ? 'pointer' : 'default'
+          }}
+          component={resumeUrl ? "a" : "p"}
+          href={resumeUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {fileName}
+        </Typography>
+      </Box>
+      <Box 
+        sx={{ 
+          width: '100px',
+          height: '100px',
+          border: '1px solid #e0e0e0',
+          borderRadius: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: '#f5f5f5',
+          cursor: resumeUrl ? 'pointer' : 'default'
+        }}
+        component={resumeUrl ? "a" : "div"}
+        href={resumeUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <Typography variant="body2" color="text.secondary">
+          Resume
+        </Typography>
+      </Box>
+    </SectionContainer>
+  );
+};
   const renderEducation = (edu) => (
     <SectionContainer>
       <Typography variant="subtitle1" sx={{ color: '#888', fontWeight: 'normal' }}>
@@ -558,9 +625,10 @@ export default function ProfileView({ formData, publicFields, onEditClick, verif
                   {formData.phoneNumber || ""}
                 </Typography>
               )}
+              {publicFields.profile_personal_email_is_public === 1 && (
               <Typography variant="body2" sx={{ mt: 1, color: '#888' }}>
                 {formData.user_email || ""}
-              </Typography>
+              </Typography>)}
             </ProfileInfo>
             
             {publicFields.profile_personal_image_is_public === 1 && (
@@ -589,15 +657,14 @@ export default function ProfileView({ formData, publicFields, onEditClick, verif
 
           <MiniCard>
             <MiniCardImage>
-              {formData.profileImages[0] ? (
+              {formData.profileImages[0] && publicFields.profile_personal_image_is_public ==1 ? (
                 <img 
                   src={typeof formData.profileImages[0] === 'string' 
                     ? formData.profileImages[0] 
                     : URL.createObjectURL(formData.profileImages[0])} 
                   alt="Profile"
                 />
-              ) : (
-                <img 
+              ) : <img 
                   src={noProfileImage}
                   alt="No Profile"
                   style={{ 
@@ -606,21 +673,25 @@ export default function ProfileView({ formData, publicFields, onEditClick, verif
                     objectFit: 'cover'
                   }}
                 />
-              )}
+                }
             </MiniCardImage>
             <Box>
+              
               <Typography variant="subtitle2">
                 {formData.firstName || ""} {formData.lastName || ""}
               </Typography>
+              {publicFields.profile_personal_tag_line_is_public === 1 && (
               <Typography variant="body2" color="#888">
                 {formData.tagLine || ""}
-              </Typography>
+              </Typography>)}
+              {publicFields.profile_personal_phone_number_is_public === 1 && (
               <Typography variant="caption" color="#888" display="block">
                 {formData.phoneNumber || ""}
-              </Typography>
+              </Typography>)}
+              {publicFields.profile_personal_email_is_public === 1 && (
               <Typography variant="caption" color="#888" display="block">
                 {formData.user_email || ""}
-              </Typography>
+              </Typography>)}
             </Box>
           </MiniCard>
         </ProfileHeader>
@@ -640,6 +711,13 @@ export default function ProfileView({ formData, publicFields, onEditClick, verif
           </Box>
         )}
 
+{/* Add this new block right after the experience section and before education section */}
+{publicFields.profile_personal_resume_is_public === 1 && formData.resume && (
+  <Box sx={{ mt: 4 }}>
+    <Typography variant="h5" sx={{ mb: 2, fontWeight: 'normal', color: '#888',paddingLeft: '20px' }}>Resume</Typography>
+    {renderResume()}
+  </Box>
+)}
         {publicFields.profile_personal_education_is_public === 1 && (
           <Box sx={{ mt: 4 }}>
             <Typography variant="h5" sx={{ mb: 2, fontWeight: 'normal', color: '#888',paddingLeft: '20px'}}>Education</Typography>

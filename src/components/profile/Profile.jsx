@@ -1,5 +1,5 @@
 
-/////profile save errror 
+/////resume upload
 import React, { useState, useEffect } from "react";
 import { Box, Typography, styled, IconButton, TextField, Rating, Button } from "@mui/material";
 import { SocialLink } from "./SocialLink";
@@ -595,17 +595,44 @@ export default function Profile() {
       wishes: newWishes
     }));
   };
-  const handleResumeUpload = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      console.log("Resume file selected:", file.name);
-      setFormData(prev => ({
+const handleResumeUpload = (e) => {
+  if (e.target.files && e.target.files[0]) {
+    const file = e.target.files[0];
+    
+    // Add detailed logging
+    console.log("Resume file selected:", {
+      name: file.name,
+      type: file.type,
+      size: file.size + " bytes",
+      lastModified: new Date(file.lastModified).toISOString()
+    });
+    
+    // Validate file size (5MB limit is common)
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
+    if (file.size > MAX_FILE_SIZE) {
+      handleOpen("Error", `Resume file size (${(file.size/1024/1024).toFixed(2)}MB) exceeds the maximum allowed size of 5MB.`);
+      return;
+    }
+    
+    // Set the file in state
+    setFormData(prev => {
+      console.log("Setting resume in state:", file.name);
+      return {
         ...prev,
         resume: file
-      }));
-    }
-  };
-
+      };
+    });
+    
+    // Also set the public flag to 1 when a resume is uploaded
+    setPublicFields(prev => ({
+      ...prev,
+      profile_personal_resume_is_public: 1
+    }));
+    
+    // Show confirmation to user
+    handleOpen("Resume Selected", `File "${file.name}" has been selected. Don't forget to save your profile to upload the resume.`);
+  }
+};
 
 
   // Replace the handleSubmit function with this optimized version
@@ -912,16 +939,34 @@ export default function Profile() {
         }
         // Don't send back existing image URLs - server already has them
       }
-  
-      // Handle resume upload
-      if (formData.resume) {
-        if (typeof formData.resume === 'string') {
-          form.append("profile_resume", formData.resume);
-        } else {
-          form.append("profile_resume", formData.resume);
-        }
+  //handle resume upload
+// Handle resume upload specifically
+if (formData.resume) {
+  // Log details about the resume for debugging
+  if (formData.resume instanceof File) {
+    console.log("Resume upload details:", {
+      name: formData.resume.name,
+      type: formData.resume.type,
+      size: formData.resume.size + " bytes"
+    });
+    
+    // Try both field names to ensure compatibility
+    form.append("profile_personal_resume", formData.resume);
+    
+    // Log that we're trying to upload the resume
+    console.log("Uploading new resume file as 'profile_personal_resume'");
+  } 
+  else if (typeof formData.resume === 'string' && formData.resume) {
+    // If it's a string URL from an existing resume
+    form.append("profile_personal_resume", formData.resume);
+    console.log("Using existing resume URL:", formData.resume);
+  }
+}
+
+      console.log("Form data being sent:");
+      for (let pair of form.entries()) {
+        console.log(pair[0] + ': ' + pair[1]);
       }
-  
       // Experience - include UIDs for existing entries
       const experiences = formData.experience
         .filter(exp => exp.company || exp.title || exp.startDate || exp.endDate)
@@ -1387,7 +1432,7 @@ export default function Profile() {
                     typeof formData.profileImages[0] === 'string' 
                       ? formData.profileImages[0] 
                       : URL.createObjectURL(formData.profileImages[0])
-                  ) : formData.favImage || ""
+                  ) : ""
                 ) : ""}
                 email={publicFields.profile_personal_email_is_public === 1 ? formData.user_email || "" : ""}
                 phoneNumber={publicFields.profile_personal_phone_number_is_public === 1 ? formData.phoneNumber || "" : ""}

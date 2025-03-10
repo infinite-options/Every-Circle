@@ -179,7 +179,7 @@ const ProfileSetupForm = () => {
         });
         console.log("response in profile setup", response);
         if (response.status === 200) {
-          navigate("/profile", {
+          navigate("/accountSeletion", {
             state: { userId: userId },
           });
         } else {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Box, Typography, styled, Paper } from "@mui/material";
 import PersonIcon from '@mui/icons-material/Person';
+import noProfileImage from "../../assets/NoProfiePlaceHolder.png";
 
 const CardContainer = styled(Paper)({
   padding: "15px",
@@ -101,16 +102,23 @@ const ProfileCard = ({
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
               onError={() => setDisplayImage("")} // Handle image load errors
             />
-          ) : (
-            <PersonIcon style={{ fontSize: 30, color: "#bdbdbd" }} />
-          )}
+          ) :  <img 
+          src={noProfileImage}
+          alt="No Profile"
+          style={{ 
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover'
+          }}
+        />
+          }
         </ImageContainer>
         <DetailsContainer>
           <Typography variant="body2" fontWeight="medium">
             {firstName || "First"} {lastName || "Last"}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            {tagLine || "Your professional headline"}
+            {tagLine || ""}
           </Typography>
           <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: '0.7rem' }}>
             {email || ""}
