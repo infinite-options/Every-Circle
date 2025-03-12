@@ -1,3 +1,5 @@
+///varibale
+
 import React from 'react';
 import { Box, Typography, styled, Paper } from '@mui/material';
 import noProfileImage from "../../assets/NoProfiePlaceHolder.png";
@@ -45,15 +47,15 @@ const BusinessCardMini = ({
   publicFields = {}
 }) => {
   // Determine which image to display
-  const displayImage = imageUrl || 
+  const displayImage = imageUrl ||
     (businessImages && businessImages.length > 0 ? businessImages[0] : null);
-
+    
   return (
     <MiniCard>
       <MiniCardImage>
         {displayImage ? (
           <img 
-            src={displayImage} 
+            src={displayImage}
             alt="Business"
             onError={(e) => {
               e.target.onerror = null;
@@ -64,7 +66,7 @@ const BusinessCardMini = ({
           <img 
             src={noProfileImage}
             alt="No Business Image"
-            style={{ 
+            style={{
               width: '100%',
               height: '100%',
               objectFit: 'cover'

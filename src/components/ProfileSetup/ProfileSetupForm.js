@@ -49,6 +49,9 @@ const ProfileSetupForm = () => {
     howCanYouHelp3: '',
   });
 
+  console.log("In ProfileSetupForm.jsx location.state.userID: ", location.state.userId)
+
+
   useEffect(() => {
     console.log('referralId', referralId)
   }, [referralId])

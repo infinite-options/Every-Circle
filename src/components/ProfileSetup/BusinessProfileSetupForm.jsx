@@ -13,10 +13,11 @@ import { DataValidationUtils } from '../auth/authUtils/DataValidationUtils';
 import { useUserContext } from '../contexts/UserContext';
 import BusinessCategoryStep from "./BusinessSteps/BusinessCategoryStep";
 
+
 const BusinessProfileSetupForm = () => {
     const location = useLocation();
     const navigate = useNavigate();
-    const userId = location.state?.userId ? location.state.userId : "100-000098";
+    const userId = location.state?.userId ? location.state.userId : null; // change this now
     const [activeStep, setActiveStep] = useState(0);
     const { isValidPhoneNumber, formatPhoneNumber, formatEIN, isValidEinNumber } = DataValidationUtils;
     const { referralId, user } = useUserContext();
@@ -50,6 +51,9 @@ const BusinessProfileSetupForm = () => {
         categories: [],
         customTags: []
     });
+
+   //console.log("In BusinessProfileSetupForm.jsx location.state.userID: ", location.state.userId)
+
 
     useEffect(() => {
         console.log('referralId', referralId)

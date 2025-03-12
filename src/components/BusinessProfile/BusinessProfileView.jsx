@@ -1,3 +1,4 @@
+// coupon box
 import React from 'react';
 import { Box, Typography, styled, IconButton, Paper } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
@@ -10,6 +11,7 @@ import google from "../../assets/Google.png";
 import youtube from "../../assets/youtube-icon.png";
 import noProfileImage from "../../assets/NoProfiePlaceHolder.png";
 import moneyBag from "../../assets/moneybag.png";
+import axios from "axios";
 
 const ViewContainer = styled(Box)({
   padding: '20px',
@@ -17,6 +19,7 @@ const ViewContainer = styled(Box)({
   borderRadius: '10px',
   width:'100%'
 });
+
 
 const ProfileHeader = styled(Box)({
   display: 'flex',
@@ -126,6 +129,7 @@ const CouponBox = styled(Box)({
   }
 });
 
+
 const BannerSection = styled(Box)({
   backgroundColor: '#e0e0e0',
   padding: '16px',
@@ -134,23 +138,68 @@ const BannerSection = styled(Box)({
 });
 
 export default function BusinessProfileView({ formData, publicFields, onEditClick }) {
-  const renderSocialLink = (icon, link, placeholder) => (
-    <SocialLinkContainer>
-      <img src={icon} alt={placeholder} />
-      <SocialLinkText>
-        {link || `${placeholder} (optional)`}
-      </SocialLinkText>
-    </SocialLinkContainer>
-  );
+
+  const handleCouponClick = async () => {
+    try {
+      const payload = {
+        "buyer_id": "110-000002",
+        "recommender_id": "110-000003",
+        "bs_id": formData.businessId 
+      };
+      
+      const response = await axios.post(
+        "https://ioEC2testsspm.infiniteoptions.com/api/v1/transactions", 
+        payload
+      );
+      
+      console.log("Coupon redeemed successfully:", response.data);
+      
+    } catch (error) {
+      console.error("Error redeeming coupon:", error);
+    }
+  };
+  const renderSocialLink = (icon, link, placeholder) => {
+    // Only render if link exists and is not empty
+    if (!link || link.trim() === '') {
+      return null;
+    }
+    
+    return (
+      <SocialLinkContainer
+        component="a"
+        href={link}
+        target="_blank"
+        rel="noopener noreferrer"
+        sx={{
+          textDecoration: 'none',
+          cursor: 'pointer',
+          '&:hover': {
+            backgroundColor: '#e8e8e8'
+          }
+        }}
+      >
+        <img src={icon} alt={placeholder} />
+        <SocialLinkText>
+          {link}
+        </SocialLinkText>
+      </SocialLinkContainer>
+    );
+  };
 
   return (
     <StyledContainer sx = {{backgroundColor:'white'}}>
       <Header title="Business Profile" />
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', padding: '0px 30px', width: '100%' }}>
-        <EditIcon
-          onClick={onEditClick}
-          sx={{ cursor: 'pointer' }}
-        />
+            <IconButton 
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onEditClick();
+        }}
+        sx={{ cursor: 'pointer' }}
+      >
+        <EditIcon />
+      </IconButton>
       </Box>
       <ViewContainer>
         <ProfileHeader>
@@ -161,21 +210,29 @@ export default function BusinessProfileView({ formData, publicFields, onEditClic
               </Typography>
               {publicFields.business_tag_line_is_public === 1 && (
               <Typography variant="subtitle1" sx={{ color: '#666', mt: 1 }}>
-                {formData.tagLine || "Tag line"}
+                {formData.tagLine || ""}
               </Typography>)}
               {publicFields.business_short_bio_is_public === 1 && (
               <Typography variant="body1" sx={{ mt: 2 }}>
-                {formData.shortBio || "Add your business description"}
+                {formData.shortBio || ""}
               </Typography>)}
               <Typography variant="body2" sx={{ mt: 1 }}>
                 {formData.phoneNumber || "Add business phone number"}
               </Typography>
-              <Typography variant="body2">
-                {formData.addressLine1} {formData.addressLine2}
-                {formData.city && `, ${formData.city}`}
-                {formData.state && `, ${formData.state}`} {formData.zip}
-              </Typography>
+                {/* Email - only show if public and exists */}
+                  {publicFields.business_email_id_is_public === 1 && formData.email &&  (
+                    <Typography variant="body2" sx={{ color: '#666', mt: 1 }}>
+                    {formData.email || "email"}
+                    </Typography>
+                  )}
+              {/* Always show location if it exists */}
+              {formData.location && (
+                <Typography variant="body2">
+                  {formData.location}
+                </Typography>
+              )}
             </BusinessInfo>
+
           </HeaderContent>
         </ProfileHeader>
 
@@ -193,11 +250,16 @@ export default function BusinessProfileView({ formData, publicFields, onEditClic
 
         {/* Social Links Section */}
         <Box sx={{ mt: 4, mb: 4 }}>
-          {renderSocialLink(website, formData.website, "Website")}
-          {renderSocialLink(yelp, formData.yelp, "Yelp")}
-          {renderSocialLink(google, formData.google, "Google Business")}
-          {renderSocialLink(youtube, formData.youtube, "YouTube")}
-        </Box>
+  {/* Only display section heading if any links exist */}
+  {(formData.website || formData.yelp || formData.google || formData.youtube) && (
+    <Typography variant="h6" sx={{ mb: 2 }}>Social Links</Typography>
+  )}
+  
+  {formData.website && renderSocialLink(website, formData.website, "Website")}
+  {formData.yelp && renderSocialLink(yelp, formData.yelp, "Yelp")}
+  {formData.google && renderSocialLink(google, formData.google, "Google Business")}
+  {formData.youtube && renderSocialLink(youtube, formData.youtube, "YouTube")}
+</Box>
 
         {/* Business Photos */}
         <Box sx={{ mt: 4, mb: 4 }}>
@@ -212,11 +274,11 @@ export default function BusinessProfileView({ formData, publicFields, onEditClic
         </Box>
 
         {/* Coupon Section */}
-        <CouponBox>
-          <Typography>
-            Click for a $5 Coupon
-          </Typography>
-        </CouponBox>
+        <CouponBox onClick={handleCouponClick}>
+  <Typography>
+    Click for a $5 Coupon
+  </Typography>
+</CouponBox>
 
         {/* Banner Section */}
         <BannerSection>

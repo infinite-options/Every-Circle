@@ -1,4 +1,4 @@
-///edit
+/// take email from user
 import React, { useState, useEffect } from "react";
 import { Box, Typography, styled, IconButton, TextField, FormControl, MenuItem, Select, InputLabel, Paper, Switch } from "@mui/material";
 import { SocialLink } from "./SocialLink";
@@ -30,11 +30,18 @@ import moneyBag from "../../assets/moneybag.png";
 import youtube from "../../assets/youtube-icon.png";
 import BusinessCategoryDropdown from './BusinessCategoryDropdown';
 import BusinessCardMini from "./BusinessCardMini";
+import yelp from "../../assets/yelp.png";
+import google from "../../assets/Google.png";
 
 const FormBox = styled(Box)({
     padding: "0 16px",
     width: "100%",
 });
+
+const isValidEmail = (email) => {
+    const re = /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+    return re.test(String(email).toLowerCase());
+};
 
 const InputWrapper = styled(Box)({
     width: '100%',
@@ -66,7 +73,7 @@ const PublicLabel = styled(Typography)({
     textTransform: 'none',
     position: 'absolute',
     right: 16,
-    top: 8,
+    top: -3,
     '&:hover': {
         opacity: 0.8
     }
@@ -127,6 +134,7 @@ export default function BusinessProfile() {
         businessTypes: [],
         location: "",
         allowBanner: false,
+        
     });
     const [businessId, setBusinessId] = useState("");
     const [editMode, setEditMode] = useState(initialEditMode);
@@ -154,7 +162,9 @@ export default function BusinessProfile() {
         business_images_is_public: 1,
         business_tag_line_is_public: 1,
         business_short_bio_is_public: 1,
-        business_banner_ads_is_public: 1
+        business_banner_ads_is_public: 1,
+        business_email_id_is_public: 1
+
     });
 
     useEffect(() => {
@@ -293,10 +303,10 @@ export default function BusinessProfile() {
     const fetchProfile = async () => {
         try {
             setShowSpinner(true);
-            const response = await axios.get(`https://ioec2testsspm.infiniteoptions.com/business/${userId}`);
+            const response = await axios.get(`https://ioec2testsspm.infiniteoptions.com/api/v1/businessinfo/${userId}`);
             console.log('response from business endpoint', response);
             if (response.status === 200) {
-                const business = response.data?.result?.[0];
+                const business = response.data?.result?.[0] || response.data?.business;  /////////// //////
                 console.log('business data is', business);
                 const googlePhotos = business?.business_google_photos ? JSON.parse(business.business_google_photos) : [];
                 
@@ -322,6 +332,7 @@ export default function BusinessProfile() {
                     favImage: business.business_favorite_image || "",
                     googleId: business.business_google_id || "",
                     businessId: business.business_uid,
+                    businessId: business.business_uid,
                     //allowBanner: business.business_allow_banner || false,
                 });
 
@@ -330,10 +341,12 @@ export default function BusinessProfile() {
                     //business_name_is_public: business.business_name_is_public ?? 1,
                     business_location_is_public: business.business_location_is_public ?? 1,
                     business_phone_number_is_public: business.business_phone_number_is_public ?? 1,
+                    business_email_id_is_public: parseInt(business.business_email_id_is_public || 1, 10),
                     business_images_is_public: business.business_images_is_public ?? 1,
                     business_tag_line_is_public: business.business_tag_line_is_public ?? 1,
                     business_short_bio_is_public: business.business_short_bio_is_public ?? 1,
                     business_banner_ads_is_public: business.business_banner_ads_is_public ?? 1
+
                 });
 
                 setFavoriteIcons(googlePhotos ? googlePhotos.map((image, index) => index === 0) : []);
@@ -362,6 +375,9 @@ export default function BusinessProfile() {
 
         if (isValidPhoneNumber(formData.phoneNumber) === false) {
             newErrors["phoneNumber"] = "Invalid phone number format";
+        }
+        if (formData.email && !isValidEmail(formData.email)) {
+            newErrors["email"] = "Invalid email format";
         }
     // Link validation - ensure they start with https://
     const linkFields = ["yelp", "google", "website"];
@@ -392,12 +408,14 @@ export default function BusinessProfile() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (validateRequiredFields()) {
+            
             const form = new FormData();
             
             // Basic business info
             form.append("business_name", formData.businessName);
             form.append("business_country", formData.location);
             form.append("business_phone_number", formData.phoneNumber);
+            form.append("business_email_id", formData.email || "");
             form.append("business_ein_number", formData.einNumber);
             form.append("business_tag_line", formData.tagLine);
             form.append("business_short_bio", formData.shortBio);
@@ -420,11 +438,12 @@ export default function BusinessProfile() {
             form.append("business_tag_line_is_public", publicFields.business_tag_line_is_public);
             form.append("business_short_bio_is_public", publicFields.business_short_bio_is_public);
             form.append("business_banner_ads_is_public", publicFields.business_banner_ads_is_public);
+            form.append("business_email_id_is_public", publicFields.business_email_id_is_public); 
 
             try {
                 setShowSpinner(true);
                 console.log("Submitting form data:", Object.fromEntries(form));
-                const response = await axios.put(`${APIConfig.baseURL.dev}/api/v2/business`, form, {
+                const response = await axios.put(`${APIConfig.baseURL.dev}/api/v1/businessinfo`, form, {
                     headers: {
                         'Content-Type': 'multipart/form-data'
                     }
@@ -450,13 +469,16 @@ export default function BusinessProfile() {
 
     if (!editMode) {
         return (
-            <BusinessProfileView 
-                formData={formData}
-                publicFields={publicFields}
-                onEditClick={() => setEditMode(true)}
-            />
+          <BusinessProfileView 
+            formData={formData}
+            publicFields={publicFields}
+            onEditClick={() => {
+              setEditMode(true);
+              setDialog({ open: false, title: "", content: "" });
+            }}
+          />
         );
-    }
+      }
 
     return (
         <StyledContainer>
@@ -477,7 +499,7 @@ export default function BusinessProfile() {
                             <Box sx={{ position: 'relative', display: editMode}}>
                                 <InputField
                                     required
-                                    label="Business Name"
+                                    label="Business Name (Public)"
                                     value={formData.businessName}
                                     onChange={(value) => setFormData({ ...formData, businessName: value })}
                                     disabled={!editMode}
@@ -486,29 +508,20 @@ export default function BusinessProfile() {
                                     helperText={errors.businessName}
                                     fullWidth
                                 />
-                                <PublicLabel 
-                                    onClick={() => handlePublicToggle('business_name_is_public')}
-                                >
-                                    {publicFields.business_name_is_public === 1 ? 'Public' : 'Private'}
-                                </PublicLabel>
+
                             </Box>
                         </InputWrapper>
 
                         <InputWrapper>
                             <Box sx={{ position: 'relative', display: editMode || publicFields.business_location_is_public === 1 ? 'block' : 'none' }}>
                                 <InputField
-                                    label="Location"
+                                    label="Location (Public)"
                                     value={formData.location}
                                     onChange={(value) => setFormData({ ...formData, location: value })}
                                     disabled={!editMode}
                                     backgroundColor={editMode ? 'white' : '#e0e0e0'}
                                     fullWidth
                                 />
-                                <PublicLabel 
-                                    onClick={() => handlePublicToggle('business_location_is_public')}
-                                >
-                                    {publicFields.business_location_is_public === 1 ? 'Public' : 'Private'}
-                                </PublicLabel>
                             </Box>
                         </InputWrapper>
 
@@ -531,6 +544,26 @@ export default function BusinessProfile() {
                                 </PublicLabel>
                             </Box>
                         </InputWrapper>
+                        <InputWrapper>
+                        <Box sx={{ position: 'relative', display: editMode || publicFields.business_email_id_is_public === 1 ? 'block' : 'none' }}>
+                            <InputField
+                                label="Email"
+                                value={formData.email || ""}
+                                onChange={(value) => setFormData({ ...formData, email: value })}
+                                disabled={!editMode}
+                                backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                                error={errors.email}
+                                helperText={errors.email}
+                                fullWidth
+                            />
+                            <PublicLabel 
+                                onClick={() => handlePublicToggle('business_email_id_is_public')}
+                                disabled={!editMode}
+                            >
+                                {publicFields.business_email_id_is_public === 1 ? 'Public' : 'Private'}
+                            </PublicLabel>
+                        </Box>
+                    </InputWrapper>
 
                         <InputWrapper>
                             <Box sx={{ position: 'relative', display: editMode || publicFields.business_images_is_public === 1 ? 'block' : 'none' }}>
@@ -648,19 +681,17 @@ export default function BusinessProfile() {
               businessImages={businessData.business_images_url}
               publicFields={publicFields}
             /> */}
-        <Box sx={{ marginTop: '20px' }}>
-
-            
+            <Box sx={{ marginTop: '20px' }}>
             <BusinessCardMini
-              businessName={formData.business_name}
-              tagLine={formData.business_tag_line}
-              email={formData.business_email_id}
-              phoneNumber={formData.business_phone_number}
-              imageUrl={formData.business_favorite_image}
-              businessImages={formData.business_images_url}
-              publicFields={publicFields}
+                businessName={formData.businessName}
+                tagLine={formData.tagLine}
+                email={formData.email}
+                phoneNumber={formData.phoneNumber}
+                imageUrl={formData.favImage}
+                businessImages={formData.businessGooglePhotos}
+                publicFields={publicFields}
             />
-          </Box>
+            </Box>
           </Box> 
             <InputWrapper>
             <BusinessCategoryDropdown
@@ -669,7 +700,7 @@ export default function BusinessProfile() {
                 onChange={(value) => handleMainCategoryChange(value)}
                 options={mainCategories}
                 disabled={!editMode}
-                placeholder="Retail" // Default placeholder
+                placeholder="Category" // Default placeholder
             />
             </InputWrapper>
 
@@ -680,7 +711,7 @@ export default function BusinessProfile() {
                 onChange={(value) => handleSubCategoryChange(value)}
                 options={subCategories}
                 disabled={!editMode || !formData.businessCategory}
-                placeholder="Hardware" // Default placeholder
+                placeholder="Sub Category" // Default placeholder
             />
             </InputWrapper>
 

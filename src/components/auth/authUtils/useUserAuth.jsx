@@ -191,6 +191,7 @@ export const useUserAuth = () => {
         };
         updateUser(loginData);
         console.log('role', role)
+        console.log('userId :', userId)
         if (role === "user") {
             navigate("/profileSetup", {
                 state: { userId },
@@ -200,6 +201,8 @@ export const useUserAuth = () => {
                 state: { userId },
             });
         }
+        // console.log("In userUserAuth.jsx location.state.userID: ", location.state.userId)
+
     };
 
     const handleGoogleLogin = async (email, socialId, firstName, lastName, authToken, refreshToken, expiresIn) => {

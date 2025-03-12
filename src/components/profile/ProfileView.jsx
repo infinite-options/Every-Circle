@@ -1,4 +1,4 @@
-////resume addd
+////render social media links
 import React from 'react';
 import { Box, Typography, styled, IconButton, Paper, TextField, Button, Rating } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
@@ -461,14 +461,32 @@ const renderResume = () => {
     );
   };
 
-  const renderSocialLink = (icon, link, placeholder) => (
-    <SocialLinkContainer>
-      <img src={icon} alt={placeholder} />
-      <SocialLinkText>
-        {link || ``}
-      </SocialLinkText>
-    </SocialLinkContainer>
-  );
+  const renderSocialLink = (icon, link, placeholder) => {
+    // Only render if the link is not empty
+    if (!link) return null;
+    
+    return (
+      <SocialLinkContainer>
+        <img src={icon} alt={placeholder} />
+        <SocialLinkText
+          component="a"
+          href={link}
+          target="_blank"
+          rel="noopener noreferrer"
+          sx={{
+            color: '#888',
+            textDecoration: 'none',
+            '&:hover': {
+              color: '#555',
+              textDecoration: 'underline'
+            }
+          }}
+        >
+          {link}
+        </SocialLinkText>
+      </SocialLinkContainer>
+    );
+  };
 
   const editButton = (section) => (
     <EditButton
@@ -479,20 +497,28 @@ const renderResume = () => {
     </EditButton>
   );
 
-  const renderBannerSection = () => (
-    <Box sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h6" sx={{ color: '#888', mb: 2, fontWeight: 'normal',paddingLeft: '20px'  }}>
-        Banner Adds
-      </Typography>
-      <Box sx={{ 
-        backgroundColor: '#fff',
-        borderRadius: '8px',
-        height: '60px',
-        width: '100%',
-        border: '1px solid #eee'
-      }} />
-    </Box>
-  );
+  const renderBannerSection = () => {
+    // Only show if banner ads are allowed (public)
+    if (publicFields.profile_personal_allow_banner_ads !== 1) {
+      return null;
+    }
+    
+    return (
+      <Box sx={{ mt: 4, mb: 4 }}>
+        <Typography variant="h5" sx={{ color: '#888', mb: 2, fontWeight: 'normal', paddingLeft: '20px' }}>
+          Banner Ads
+        </Typography>
+        <Box sx={{ 
+          backgroundColor: '#fff',
+          borderRadius: '8px',
+          marginLeft: '30px',
+          height: '60px',
+          width: '90%',
+          border: '1px solid #eee'
+        }} />
+      </Box>
+    );
+  };
 
   const renderBusinesses = () => (
     <Box sx={{ mt: 4, mb: 4 }}>
@@ -734,12 +760,13 @@ const renderResume = () => {
         )}
         
         {/* Social Links Section - Positioned exactly after Education */}
+        {(formData.facebookLink || formData.twitterLink || formData.linkedinLink || formData.youtubeLink) && (
         <Box sx={{ mt: 4, mb: 4 }}>
           {renderSocialLink(facebook, formData.facebookLink, "facebook")}
           {renderSocialLink(twitter, formData.twitterLink, "twitter")}
           {renderSocialLink(linkedin, formData.linkedinLink, "linkedin")}
           {renderSocialLink(youtube, formData.youtubeLink, "youtube")}
-        </Box>
+        </Box>)}
         
         {/* Banner Adds Section */}
         {renderBannerSection()}

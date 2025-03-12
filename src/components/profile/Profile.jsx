@@ -1,5 +1,5 @@
 
-/////resume upload
+/////banner add
 import React, { useState, useEffect } from "react";
 import { Box, Typography, styled, IconButton, TextField, Rating, Button } from "@mui/material";
 import { SocialLink } from "./SocialLink";
@@ -154,6 +154,7 @@ export default function Profile() {
     resume: null,
     businesses: [{ name: "", role: "" }],
     allowBannerAds: true,
+    bannerAdsBounty: "",
   });
   const [profileId, setProfileId] = useState("");
   const [editMode, setEditMode] = useState(initialEditMode);
@@ -180,7 +181,8 @@ export default function Profile() {
     profile_personal_experience_is_public: 1,
     profile_personal_education_is_public: 1,
     profile_personal_expertise_is_public: 1,
-    profile_personal_wishes_is_public: 1
+    profile_personal_wishes_is_public: 1,
+    profile_personal_allow_banner_ads: 1
   });
   const [deletedExperience, setDeletedExperience] = useState([]);
   const [deletedEducation, setDeletedEducation] = useState([]);
@@ -222,7 +224,8 @@ export default function Profile() {
           profile_personal_experience_is_public: personal_info.profile_personal_experience_is_public, // Default to public if not specified
           profile_personal_education_is_public: personal_info.profile_personal_education_is_public,
           profile_personal_expertise_is_public: personal_info.profile_personal_expertise_is_public,
-          profile_personal_wishes_is_public: personal_info.profile_personal_wishes_is_public
+          profile_personal_wishes_is_public: personal_info.profile_personal_wishes_is_public,
+          profile_personal_allow_banner_ads: personal_info.profile_personal_allow_banner_ads 
         });
 
         // Map social links from links_info
@@ -308,7 +311,8 @@ export default function Profile() {
           wishes: wishes.length > 0 ? wishes : [{ helpNeeds: "", details: "" }],
           resume: personal_info.profile_personal_resume || null,
           businesses: [{ name: "", role: "" }],
-          allowBannerAds: true
+          allowBannerAds: true,
+          bannerAdsBounty: personal_info.profile_personal_banner_ads_bounty || "", //////asad
           
         });
 
@@ -892,6 +896,11 @@ const handleResumeUpload = (e) => {
       form.append("profile_personal_short_bio_is_public", publicFields.profile_personal_short_bio_is_public);
       form.append("profile_personal_image_is_public", publicFields.profile_personal_image_is_public);
       form.append("profile_personal_resume_is_public", publicFields.profile_personal_resume_is_public);
+      // Make sure this line is present in your form.append section
+      form.append("profile_personal_email_is_public", publicFields.profile_personal_email_is_public);
+      form.append("profile_personal_allow_banner_ads", publicFields.profile_personal_allow_banner_ads);
+      form.append("profile_personal_banner_ads_bounty", formData.bannerAdsBounty || "");
+      
       
       // Add deleted image to form data if exists
       if (deletedImages.length > 0 && 
@@ -1045,6 +1054,7 @@ if (formData.resume) {
           setDeletedImages([]);
           
           setEditMode(false);
+          window.scrollTo(0, 0);
           setTimeout(async () => {
             await fetchProfile();
             handleOpen("Success", "Profile has been updated successfully.");
@@ -1190,7 +1200,8 @@ if (formData.resume) {
         'experience': 'profile_personal_experience_is_public',
         'education': 'profile_personal_education_is_public',
         'expertise': 'profile_personal_expertise_is_public',
-        'wishes': 'profile_personal_wishes_is_public'
+        'wishes': 'profile_personal_wishes_is_public',
+        'bannerAds': 'profile_personal_allow_banner_ads'
     };
     console.log("PublicFields in render:", publicFields);
     const apiField = fieldMapping[field];
@@ -1201,6 +1212,24 @@ if (formData.resume) {
         }));
     }
   };
+
+  const handleYesToggle = (field) => {
+    if (!editMode) return;
+    
+    const fieldMapping = {
+
+        'bannerAds': 'profile_personal_allow_banner_ads'
+    };
+    console.log("PublicFields in render:", publicFields);
+    const apiField = fieldMapping[field];
+    if (apiField) {
+        setPublicFields(prev => ({
+            ...prev,
+            [apiField]: prev[apiField] === 1 ? 0 : 1
+        }));
+    }
+  };
+  
 
   if (!editMode) {
     return (
@@ -1731,12 +1760,36 @@ if (formData.resume) {
 
             {/* Banner Adds Section */}
             <BannerSection>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Typography variant="h6">Allow Banner Adds</Typography>
-                <img src={moneyBag} alt="Money Bag" style={{ width: '20px', height: '20px' }} />
-              </Box>
-              <Typography>Yes</Typography>
-            </BannerSection>
+  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+    <Typography variant="h6">Allow Banner Ads</Typography>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      <img src={moneyBag} alt="Money Bag" style={{ width: '20px', height: '20px' }} />
+      <TextField
+        size="small"
+        placeholder="Bounty Amount"
+        value={formData.bannerAdsBounty}
+        onChange={(e) => setFormData(prev => ({ ...prev, bannerAdsBounty: e.target.value }))}
+        disabled={!editMode}
+        sx={{
+          maxWidth: '120px',
+          backgroundColor: editMode ? 'white' : '#f5f5f5',
+          '& .MuiOutlinedInput-root': {
+            borderRadius: '8px',
+          },
+          '& .MuiInputBase-input': {
+            padding: '8px 12px',
+          }
+        }}
+      />
+    </Box>
+  </Box>
+  <PublicLabel 
+    onClick={() => handleYesToggle('bannerAds')}
+    disabled={!editMode}
+  >
+    {publicFields.profile_personal_allow_banner_ads === 1 ? 'Yes' : 'No'}
+  </PublicLabel>
+</BannerSection>
 
             {/* Businesses Section */}
             <Box sx={{ mt: 4, mb: 4 }}>

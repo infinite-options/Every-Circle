@@ -1,14 +1,32 @@
 import { Box, Typography, Button } from "@mui/material";
-import { useNavigate } from "react-router-dom";
+//import { useNavigate } from "react-router-dom";
+
+import { useNavigate, useLocation } from "react-router-dom";
+
 
 const AccountSelection = () => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleSelection = (accountType) => {
     if (accountType === "personal") {
       navigate("/profile"); // Leads to personal profile setup
     } else {
-      navigate("/businessProfileSetup"); // ✅ Should lead to the three-step business profile flow
+
+      //console.log("In AccountSelection.jsx location.state.userID: ", location.state.userId)
+      const userId = location.state.userId
+      //console.log("userID Account selection:", userId)
+      //state: { userId }
+
+      
+      navigate("/businessProfileSetup", {
+        state: { userId },
+    }); // ✅ Should lead to the three-step business profile flow
+
+    //   navigate("/profileSetup", {
+    //     state: { userId },
+    // });
+
     }
   };
 
