@@ -1,4 +1,4 @@
-// coupon box
+// product added 
 import React from 'react';
 import { Box, Typography, styled, IconButton, Paper } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
@@ -12,6 +12,7 @@ import youtube from "../../assets/youtube-icon.png";
 import noProfileImage from "../../assets/NoProfiePlaceHolder.png";
 import moneyBag from "../../assets/moneybag.png";
 import axios from "axios";
+import BusinessProducts from './BusinessProducts';
 
 const ViewContainer = styled(Box)({
   padding: '20px',
@@ -279,6 +280,13 @@ export default function BusinessProfileView({ formData, publicFields, onEditClic
     Click for a $5 Coupon
   </Typography>
 </CouponBox>
+{/* Business Products Section */}
+<BusinessProducts 
+  editMode={false}
+  businessId={formData.businessId}
+  products={formData.businessServices || []}
+  onProductsChange={() => {}}
+/>
 
         {/* Banner Section */}
         <BannerSection>

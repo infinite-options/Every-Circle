@@ -1,4 +1,4 @@
-/// take email from user
+/// product text box
 import React, { useState, useEffect } from "react";
 import { Box, Typography, styled, IconButton, TextField, FormControl, MenuItem, Select, InputLabel, Paper, Switch } from "@mui/material";
 import { SocialLink } from "./SocialLink";
@@ -32,6 +32,8 @@ import BusinessCategoryDropdown from './BusinessCategoryDropdown';
 import BusinessCardMini from "./BusinessCardMini";
 import yelp from "../../assets/yelp.png";
 import google from "../../assets/Google.png";
+
+import BusinessProducts from './BusinessProducts';
 
 const FormBox = styled(Box)({
     padding: "0 16px",
@@ -133,6 +135,7 @@ export default function BusinessProfile() {
         subSubCategory: "",
         businessTypes: [],
         location: "",
+        businessServices: [],
         allowBanner: false,
         
     });
@@ -308,6 +311,27 @@ export default function BusinessProfile() {
             if (response.status === 200) {
                 const business = response.data?.result?.[0] || response.data?.business;  /////////// //////
                 console.log('business data is', business);
+            let businessServices = [];
+            if (response.data.services && Array.isArray(response.data.services)) {
+                // Map services from the API response format to our component format
+                businessServices = response.data.services.map(service => ({
+                    bs_uid: service.bs_uid,
+                    bs_service_name: service.bs_service_name || "",
+                    bs_bounty: service.bs_bounty || "50.00",
+                    bs_cost: service.bs_cost || ""  // This might be missing in the API response
+                }));
+                
+                console.log("Mapped services:", businessServices);
+            } else {
+                // Try parsing business_services if available
+                try {
+                    if (business.business_services) {
+                        businessServices = JSON.parse(business.business_services);
+                    }
+                } catch (e) {
+                    console.error("Error parsing business services:", e);
+                }
+            }
                 const googlePhotos = business?.business_google_photos ? JSON.parse(business.business_google_photos) : [];
                 
                 // Update form data
@@ -333,6 +357,7 @@ export default function BusinessProfile() {
                     googleId: business.business_google_id || "",
                     businessId: business.business_uid,
                     businessId: business.business_uid,
+                    businessServices: businessServices,
                     //allowBanner: business.business_allow_banner || false,
                 });
 
@@ -351,7 +376,10 @@ export default function BusinessProfile() {
 
                 setFavoriteIcons(googlePhotos ? googlePhotos.map((image, index) => index === 0) : []);
                 setDeletedIcons(googlePhotos ? new Array(googlePhotos.length).fill(false) : []);
-                updateUser({ businessId: business.business_uid, business: business });
+                updateUser({ businessId: business.business_uid,                 business: {
+                    ...business,
+                    business_services: businessServices
+                }});
                 setBusinessId(business.business_uid);
             }
         } catch (error) {
@@ -439,6 +467,10 @@ export default function BusinessProfile() {
             form.append("business_short_bio_is_public", publicFields.business_short_bio_is_public);
             form.append("business_banner_ads_is_public", publicFields.business_banner_ads_is_public);
             form.append("business_email_id_is_public", publicFields.business_email_id_is_public); 
+
+            if (formData.businessServices && formData.businessServices.length > 0) {
+                form.append("business_services", JSON.stringify(formData.businessServices));
+              }
 
             try {
                 setShowSpinner(true);
@@ -745,6 +777,15 @@ export default function BusinessProfile() {
                                 </PublicLabel>
                             </Box>
                         </InputWrapper>
+
+                        <BusinessProducts 
+  editMode={editMode}
+  businessId={businessId}
+  products={formData.businessServices}
+  onProductsChange={(newProducts) => 
+    setFormData(prev => ({ ...prev, businessServices: newProducts }))
+  }
+/>
 
                         <Box sx={{ width: '100%' }}>
                             <SocialLink
