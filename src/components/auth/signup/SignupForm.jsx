@@ -177,7 +177,7 @@ const SignupForm = () => {
 
   return (
     <div className="signup-container">
-      <div className="banner">
+      <div className="signup-page banner">
         <h1>Welcome to Every Circle!</h1>
       </div>
 

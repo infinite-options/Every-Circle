@@ -28,19 +28,22 @@ const BusinessSocialLinksStep = ({ formData, handleChange }) => {
       />
       
       <SocialField
-        icon={yelp}
+        icon="https://s3-media0.fl.yelpcdn.com/assets/public/cookbook.yji-0a2bf1d9c330d8747446.svg"
         placeholder="Yelp Profile URL"
         value={formData.yelp}
         onChange={(value) => handleChange({ target: { name: 'yelp', value }})}
         name="yelp"
+        
       />
       
       <SocialField
-        icon={google}
+        icon="https://loodibee.com/wp-content/uploads/Google-Logo.png"
         placeholder="Google Business URL"
         value={formData.google}
         onChange={(value) => handleChange({ target: { name: 'google', value }})}
         name="google"
+        
+        
       />
     </Box>
   );

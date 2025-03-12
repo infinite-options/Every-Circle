@@ -5,13 +5,13 @@ import ProfileSetupStepper from './ProfileSetupStepper';
 import BusinessBasicInfoStep from './BusinessSteps/BusinessBasicInfoStep';
 import OptionalBusinessInfoStep from './BusinessSteps/OptionalBusinessInfoStep';
 import BusinessSocialLinksStep from './BusinessSteps/BusinessSocialLinksStep';
-import BusinessTemplateStep from './BusinessSteps/BusinessTemplateStep';
+import BusinessCategoryStep from "./BusinessSteps/BusinessCategoryStep";
 import ResponsiveContainer from '../Layout/ResponsiveContainer';
 import axios from 'axios';
 import APIConfig from '../../APIConfig';
 import { DataValidationUtils } from '../auth/authUtils/DataValidationUtils';
 import { useUserContext } from '../contexts/UserContext';
-import BusinessCategoryStep from "./BusinessSteps/BusinessCategoryStep";
+
 
 const BusinessProfileSetupForm = () => {
     const location = useLocation();
@@ -25,37 +25,13 @@ const BusinessProfileSetupForm = () => {
     const [formData, setFormData] = useState({
         businessName: "",
         location: "",
-        addressLine1: "",
-        addressLine2: "",
-        city: "",
-        state: "",
-        country: "",
-        zip: "",
-        latitude: "",
-        longitude: "",
         phoneNumber: "",
-        googleRating: "",
-        businessGooglePhotos: [],
-        favImage: "",
-        priceLevel: "",
-        googleId: "",
-        types: [],
-        yelp: "",
-        google: "",
-        website: "",
-        tagline: "",
-        shortBio: "",
-        template: '0',
-        einNumber: "",
-        categories: [],
-        customTags: []
+        einNumber: ""
     });
 
     useEffect(() => {
-        console.log('referralId', referralId)
-    }, [referralId])
-
-
+        console.log('referralId', referralId);
+    }, [referralId]);
 
     const handleChange = (e) => {
         const { name, value: rawValue } = e.target;
@@ -69,120 +45,45 @@ const BusinessProfileSetupForm = () => {
 
     const validateRequiredFields = () => {
         const newErrors = {};
-        ["businessName"].forEach((field) => {
-            if (!formData[field]) {
-                newErrors[field] = `${field} is required`;
-            }
-        });
-
-        if (isValidPhoneNumber(formData.phoneNumber) === false) {
-            newErrors["phoneNumber"] = "Invalid phone number format";
+        if (!formData.businessName) {
+            newErrors.businessName = "Business name is required";
         }
-
-        if (isValidEinNumber(formData.einNumber) === false) {
-            newErrors["einNumber"] = "Invalid EIN number";
+        if (!isValidPhoneNumber(formData.phoneNumber)) {
+            newErrors.phoneNumber = "Invalid phone number format";
         }
-
-        if (Object.keys(newErrors).length > 0) {
-            setErrors(newErrors);
-        } else {
-            setErrors({});
+        if (!isValidEinNumber(formData.einNumber)) {
+            newErrors.einNumber = "Invalid EIN number";
         }
+        setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
-    }
-
-    const handleNext = async () => {
-        // console.log("activeStep", activeStep);
-        if (activeStep === steps.length - 1) {
-            console.log('form data before submission', formData);
-            console.log('raw images', formData.businessGooglePhotos);
-            console.log('JSON.stringify(formData.businessGooglePhotos)', JSON.stringify(formData.businessGooglePhotos))
-            const data = new FormData();
-            // data.append("profile_uid", userId);
-            data.append("user_uid", userId);
-            data.append("business_name", formData.businessName);
-            data.append("business_address_line_1", formData.addressLine1);
-            data.append("business_city", formData.city);
-            data.append("business_state", formData.state);
-            data.append("business_country", formData.country);
-            data.append("business_zip_code", formData.zip);
-            data.append("business_latitude", formData.latitude);
-            data.append("business_longitude", formData.longitude);
-            data.append("business_phone_number", formData.phoneNumber);
-            data.append("business_google_rating", formData.googleRating);
-            data.append("business_google_photos", JSON.stringify(formData.businessGooglePhotos));
-            data.append("business_favorite_image", formData.favImage);
-            data.append("business_price_level", formData.priceLevel);
-            data.append("business_google_id", formData.googleId);
-            // data.append("business_types", JSON.stringify(formData.types));
-            data.append("business_tag_line", formData.tagLine);
-            data.append("business_short_bio", formData.shortBio);
-            data.append("business_yelp", formData.yelp);
-            data.append("business_google", formData.google);
-            data.append("business_ein_number", formData.einNumber);
-            data.append("business_website", formData.website);
-            data.append("business_template", formData.template);
-            // data.append('business_categories_uid', JSON.stringify(formData.categories))
-            data.append('business_tags', JSON.stringify(formData.customTags))
-            // 
-
-            try {
-                const response = await axios.post(`${APIConfig.baseURL.dev}/api/v3/business_v3`, data, {
-                    headers: {
-                        "Content-Type": "multipart/form-data",
-                    },
-                });
-                console.log("response in business setup", response);
-                if (response.status === 200) {
-                    navigate("/businessProfile");
-                } else {
-                    console.log("Error finishing profile setup");
-                }
-            } catch (error) {
-                console.log("Error updating profile data", error);
-            }
-        } else if (activeStep === 0) {
-            if (validateRequiredFields()) {
-                setActiveStep((prev) => prev + 1);
-            }
-        }
-        else {
-            setActiveStep((prev) => prev + 1);
-        }
     };
 
-    const handleClaimed = async () => {
-        console.log('form data before submission', formData);
+    const handleNext = async () => {
+        if (activeStep === steps.length - 1) {
+            navigate("/businessProfile");
+        } else {
+            if (validateRequiredFields()) {
+                setActiveStep(prev => prev + 1);
+            }
+        }
     };
 
     const handleBack = () => {
-        setActiveStep((prev) => prev - 1);
-    };
-
-    const handleTemplateSelect = (template) => {
-        // console.log('template---', template)
-        setFormData((prev) => ({
-            ...prev,
-            template: template,
-        }));
+        setActiveStep(prev => prev - 1);
     };
 
     const steps = [
         {
-            component: <BusinessBasicInfoStep formData={formData} handleChange={handleChange} errors={errors} setFormData={setFormData} isClaimed={isClaimed} setIsClaimed={setIsClaimed}/>,
+            component: <BusinessBasicInfoStep formData={formData} handleChange={handleChange} errors={errors} setFormData={setFormData} isClaimed={isClaimed} setIsClaimed={setIsClaimed} />,
             title: "Welcome to Every Circle!",
             subtitle: "Let's Build Your Business Page!"
         },
         {
-            component: <OptionalBusinessInfoStep
-                formData={formData}
-                handleChange={handleChange}
-                setFormData={setFormData}
-            />,
+            component: <OptionalBusinessInfoStep formData={formData} handleChange={handleChange} setFormData={setFormData} />,
             title: "Optional Info"
         },
         {
-            component: <BusinessCategoryStep formData={formData} handleChange={handleChange} errors={errors} setFormData={setFormData}/>,
+            component: <BusinessCategoryStep formData={formData} handleChange={handleChange} errors={errors} setFormData={setFormData} />,
             title: "Select Category",
             subtitle: "Select Tags for your business"
         },
@@ -190,133 +91,94 @@ const BusinessProfileSetupForm = () => {
             component: <BusinessSocialLinksStep formData={formData} handleChange={handleChange} />,
             title: "Social Media Links"
         }
-        // {
-        //     component: <BusinessTemplateStep formData={formData} handleTemplateSelect={handleTemplateSelect} role={"business"}/>,
-        //     title: "Select Your Template"
-        // }
     ];
 
     return (
-        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <ResponsiveContainer role={user.role}>
-                <Box
-                    sx={{
-                        padding: { xs: 3, sm: 4 },
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        color: '#fff',
-                    }}
-                >
-                    {/* For Title */}
-                    <Typography
-                        variant="h5"
-                        component="h3"
-                        sx={{
-                            mb: (steps[activeStep].subtitle ? 1.5 : 2),
-                            fontWeight: 'bold',
-                            textAlign: 'center',
-                        }}
-                    >
-                        {steps[activeStep].title}
-                    </Typography>
+        <Box sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "100vh",
+            position: "relative",
+            paddingBottom: "100px" // Ensure space for the Continue button
+        }}>
+            {/* Properly Positioned Green Circle (Lowered Slightly) */}
+            <Box sx={{
+                width: "200%",  // Larger width for a proper circular effect
+                height: "100vh", // Prevents it from getting cut off
+                maxWidth: "800px", // Prevents stretching
+                maxHeight: "800px",
+                backgroundColor: "#00A82D",
+                borderRadius: "50%",
+                position: "absolute",
+                top: "8vh", // Moves the circle slightly lower so it covers all fields
+                left: "50%",
+                transform: "translateX(-50%)",
+                zIndex: -1
+            }} />
 
-                    {/* For subtitle */}
-                    {steps[activeStep].subtitle && (
-                        <Typography
-                            variant="subtitle1"
-                            sx={{
-                                mb: 2,
-                                textAlign: 'center',
-                            }}
-                        >
-                            {steps[activeStep].subtitle}
-                        </Typography>
-                    )}
-
-                    <Box
-                        component="form"
-                        sx={{
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            width: '100%',
-                            height: '500px',
-                            overflowY: "scroll",
-                            "&::-webkit-scrollbar": {
-                                display: "none",
-                            },
-                        }}
-                    >
-                        {steps[activeStep].component}
-
-                        <Box sx={{ mt: 4 }}>
-                            <ProfileSetupStepper
-                                activeStep={activeStep}
-                                steps={steps.length}
-                            />
-                        </Box>
-
-                    </Box>
-                </Box>
-            </ResponsiveContainer>
             <Box
                 sx={{
-                    display: 'flex',
-                    gap: 2,
-                    mt: 3,
-                    width: '100%',
-                    justifyContent: 'center',
-                    position: "relative",
-                    paddingBottom: "10px",
+                    width: "90%", maxWidth: 400,
+                    textAlign: "center",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    marginTop: "-10vh" // Ensures form fields stay inside the circle
                 }}
             >
-                {activeStep > 0 && (
-                    <Button
-                        variant="contained"
-                        onClick={handleBack}
-                        sx={{
-                            width: '100px',
-                            height: '100px',
-                            borderRadius: '50%',
-                            minWidth: 'unset',
-                            backgroundColor: '#000000',
-                            color: '#fff',
-                            '&:hover': {
-                                backgroundColor: '#333333',
-                            },
-                            padding: 0,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                        }}
-                    >
-                        Back
-                    </Button>
+                {/* Title Section */}
+                <Typography variant="h5" sx={{ fontWeight: "bold", color: "#fff", mb: 1 }}>
+                    {steps[activeStep].title}
+                </Typography>
+                {steps[activeStep].subtitle && (
+                    <Typography variant="subtitle1" sx={{ mb: 2, color: "#fff" }}>
+                        {steps[activeStep].subtitle}
+                    </Typography>
                 )}
-                <Button
-                    variant="contained"
-                    onClick={isClaimed ? handleClaimed : handleNext}
-                    sx={{
-                        width: '100px',
-                        height: '100px',
-                        borderRadius: '50%',
-                        backgroundColor: '#FF9500',
-                        color: '#fff',
-                        '&:hover': {
-                            backgroundColor: '#e68600',
-                        },
-                        padding: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                    }}
-                >
-                    {isClaimed ? "Claimed" : activeStep === steps.length - 1 ? 'Finish' : 'Continue'}
+
+                {/* Form Fields */}
+                <Box sx={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    {steps[activeStep].component}
+                </Box>
+
+                {/* Step Indicator */}
+                <Box sx={{ display: "flex", justifyContent: "center", mt: 3 }}>
+                    {[...Array(steps.length)].map((_, index) => (
+                        <Box key={index} sx={{
+                            width: 14,  // Make the dot bigger
+                            height: 14, // Make the dot bigger
+                            borderRadius: "50%",
+                            backgroundColor: index === activeStep ? "#00C7F2" : "#A0A0A0", // Change active color to blue
+                            marginX: 1,
+                            transition: "background-color 0.3s ease-in-out"
+                            
+                        }} />
+                    ))}
+                </Box>
+            </Box>
+
+            {/* Navigation Buttons (Continue button outside the green circle) */}
+            <Box sx={{
+                display: "flex",
+                justifyContent: "center",
+                mt: 3,
+                position: "absolute",
+                bottom: 150,
+                width: "100%"
+            }}>
+                
+                <Button variant="contained" onClick={handleNext} sx={{
+                    width: 120, height: 120, borderRadius: "50%",fontSize: "18px",
+                    backgroundColor: "#FF9500", color: "#fff",
+                    fontWeight: "bold"
+                }}>
+                    {activeStep === steps.length - 1 ? 'Finish' : 'Continue'}
                 </Button>
             </Box>
         </Box>
     );
 };
 
-export default BusinessProfileSetupForm; 
+export default BusinessProfileSetupForm;

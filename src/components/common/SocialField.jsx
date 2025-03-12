@@ -9,8 +9,12 @@ const SocialFieldContainer = styled(Box)({
 });
 
 const SocialIcon = styled('img')({
-  width: '24px',
-  height: '24px',
+  width: '52px',    // Adjust width to prevent compression
+  height: '52px',   // Keep it uniform
+  objectFit: 'contain', // Ensures the image keeps its aspect ratio
+  flexShrink: 0, // Prevents the icon from shrinking inside flexbox
+  backgroundColor: 'transparent'
+  
 });
 
 const StyledTextField = styled(TextField)({
