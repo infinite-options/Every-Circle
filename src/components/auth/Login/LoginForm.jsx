@@ -82,7 +82,7 @@ const LoginForm = () => {
 
   return (
     <div className="login-container">
-      <div className="banner">
+      <div className="login-page banner">
         <h1 style={{ paddingBottom: "10px" }}>Welcome Back!</h1>
       </div>
 
