@@ -1,4 +1,4 @@
-// add product coupun click
+// public/private coupon individual s
 import React from 'react';
 import { Box, Typography, styled, IconButton, Paper } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
@@ -169,7 +169,8 @@ export default function BusinessProfileView({ formData, publicFields,userId ,onE
                               service.bs_service_name && service.bs_service_name.trim() !== '');
     
     // Rest of your component code (handleCouponClick, renderSocialLink, etc.)
-
+// Check if services should be displayed based on the public flag
+const shouldShowServices = publicFields.business_services_is_public === 1;
 
   const handleCouponClick = async (serviceUid) => {
   try {
@@ -312,21 +313,24 @@ export default function BusinessProfileView({ formData, publicFields,userId ,onE
         {/* Coupon Section */}
 {/* Replace your single coupon box with this */}
 {/* Replace your existing single CouponBox with this */}
-{hasValidServices && (
+{hasValidServices && shouldShowServices && (
   <Box sx={{ mt: 4, mb: 4 }}>
-    <Typography variant="h6" sx={{ mb: 2 }}>Available Coupons</Typography>
+    <Typography variant="h6" sx={{ mb: 2 }}>Available Products</Typography>
     
     {formData.businessServices.map((service, index) => {
-      // Only show coupon box for services with a name
-      if (!service.bs_service_name || service.bs_service_name.trim() === '') return null;
-      
+      // Only show coupon box for services with a name AND bs_is_visible = 1
+      if (!service.bs_service_name || 
+        service.bs_service_name.trim() === '' || 
+        parseInt(service.bs_is_visible || 0, 10) !== 1) {
+      return null;
+    }
       return (
         <CouponBox 
           key={index} 
           onClick={() => handleCouponClick(service.bs_uid)}
         >
           <Typography>
-            {service.bs_service_name} - ${parseFloat(service.bs_bounty || 0).toFixed(2)} Coupon
+            {service.bs_service_name} - ${parseFloat(service.bs_cost|| 0).toFixed(2)} Coupon
           </Typography>
         </CouponBox>
       );

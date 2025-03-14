@@ -1,5 +1,7 @@
+// closed eye
+import eyeIcon from "../../assets/eye.png";
+import closedEyeIcon from "../../assets/closedEye.png";
 
-/////fwifh edw
 import React, { useState, useEffect } from 'react';
 import { 
   Box, Typography, styled, IconButton, 
@@ -24,14 +26,17 @@ const ProductCard = styled(Box)({
   borderRadius: '8px'
 });
 
-function BusinessProducts({ editMode, businessId, products = [], onProductsChange }) {
+function BusinessProducts({ editMode, businessId, products = [], onProductsChange, publicFieldValue, onPublicToggle, PublicLabelComponent }) {
+  
+    console.log("In businessProducts:", products)
+
   // Initialize with default empty products if none are provided
   useEffect(() => {
     if (products.length === 0 && editMode) {
       // Add two default empty product entries
       onProductsChange([
-        { bs_service_name: "", bs_cost: "", bs_bounty: "50.00" },
-        { bs_service_name: "", bs_cost: "", bs_bounty: "50.00" }
+        { bs_service_name: "", bs_cost: "", bs_bounty: "", bs_service_desc: "", bs_is_visible: 1 },
+        { bs_service_name: "", bs_cost: "", bs_bounty: "", bs_service_desc: "", bs_is_visible: 1 }
       ]);
     }
   }, [editMode]);
@@ -45,7 +50,9 @@ function BusinessProducts({ editMode, businessId, products = [], onProductsChang
     const newProduct = {
       bs_service_name: "",
       bs_cost: "",
-      bs_bounty: "50.00"
+      bs_bounty: "",
+      bs_service_desc: "",
+      bs_is_visible: 1
     };
     onProductsChange([...products, newProduct]);
   };
@@ -57,15 +64,16 @@ function BusinessProducts({ editMode, businessId, products = [], onProductsChang
   };
 
   const handleProductChange = (index, field, value) => {
+    console.log(`Before update - Product at index ${index}:`, products[index]);
+    console.log(`Changing ${field} from ${products[index][field]} to ${value}`);
+    
     const updatedProducts = [...products];
     updatedProducts[index] = {
       ...updatedProducts[index],
       [field]: value
     };
     
-    // Add debug logging
-    console.log(`Updated field ${field} to ${value} for product at index ${index}`);
-    console.log("Updated product:", updatedProducts[index]);
+    console.log(`After update - Updated product:`, updatedProducts[index]);
     
     onProductsChange(updatedProducts);
   };
@@ -75,19 +83,40 @@ function BusinessProducts({ editMode, businessId, products = [], onProductsChang
 
   return (
     <Box sx={{ mt: 4, mb: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <SectionTitle variant="h6">
-          Products & Services
-        </SectionTitle>
-        {editMode && (
-          <IconButton 
-            color="primary" 
-            onClick={handleAddProduct}
-          >
-            <AddIcon />
-          </IconButton>
-        )}
-      </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <SectionTitle variant="h6">
+                Products
+            </SectionTitle>
+            
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                {/* Public/Private toggle on the right */}
+                <Typography
+                    onClick={editMode ? onPublicToggle : undefined}
+                    sx={{
+                        color: '#666',
+                        fontSize: '14px',
+                        cursor: editMode ? 'pointer' : 'default',
+                        textTransform: 'none',
+                        marginRight: '16px',
+                        '&:hover': {
+                            opacity: editMode ? 0.8 : 1
+                        }
+                    }}
+                >
+                    {publicFieldValue === 1 ? 'Public' : 'Private'}
+                </Typography>
+                
+                {/* Add button */}
+                {editMode && (
+                    <IconButton 
+                        color="primary" 
+                        onClick={handleAddProduct}
+                    >
+                        <AddIcon />
+                    </IconButton>
+                )}
+            </Box>
+        </Box>
 
       {!displayProducts ? (
         <Typography color="text.secondary" align="center" sx={{ my: 2 }}>
@@ -118,7 +147,23 @@ function BusinessProducts({ editMode, businessId, products = [], onProductsChang
               }}
             />
             
+            <TextField
+              fullWidth
+              label="Product Description"
+              value={product.bs_service_desc || ""}
+              onChange={(e) => handleProductChange(index, "bs_service_desc", e.target.value)}
+              disabled={!editMode}
+              multiline
+              rows={2}
+              sx={{ 
+                mb: 2,
+                backgroundColor: editMode ? 'white' : '#e0e0e0',
+              }}
+            />
+            
+            {/* Row with Cost, Bounty, Eye icon, and Trash */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              {/* Cost field */}
               <Box sx={{ flex: 1 }}>
                 <TextField
                   fullWidth
@@ -134,16 +179,21 @@ function BusinessProducts({ editMode, businessId, products = [], onProductsChang
                 />
               </Box>
               
-              <Box sx={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+              {/* Money bag icon */}
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <img 
                   src={moneyBag} 
                   alt="Bounty" 
-                  style={{ width: '24px', height: '24px', marginRight: '8px' }} 
+                  style={{ width: '24px', height: '24px' }} 
                 />
+              </Box>
+              
+              {/* Bounty field */}
+              <Box sx={{ flex: 1 }}>
                 <TextField
                   fullWidth
                   label="Bounty ($)"
-                  value={product.bs_bounty || "50.00"}
+                  value={product.bs_bounty || ""}
                   onChange={(e) => handleProductChange(index, "bs_bounty", e.target.value)}
                   disabled={!editMode}
                   type="number"
@@ -153,6 +203,82 @@ function BusinessProducts({ editMode, businessId, products = [], onProductsChang
                   }}
                 />
               </Box>
+              
+              {/* Eye icon */}
+              {/* <Box 
+  onClick={() => {
+    if (editMode) {
+      // Force the value to be a number
+      const currentValue = parseInt(product.bs_is_visible || 0, 10);
+      // Toggle between 0 and 1
+      const newValue = currentValue === 1 ? 0 : 1;
+      console.log(`Changing bs_is_visible from ${currentValue} to ${newValue}`);
+      handleProductChange(index, "bs_is_visible", newValue);
+    }
+  }}
+  sx={{ 
+    cursor: editMode ? 'pointer' : 'default',
+    opacity: parseInt(product.bs_is_visible || 0, 10) === 1 ? 1 : 0.3,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ml: 1,
+    padding: '4px',
+    border: parseInt(product.bs_is_visible || 0, 10) === 1 ? 'none' : '1px solid #ddd',
+    borderRadius: '50%',
+  }}
+>
+                <img 
+                  src={eyeIcon} 
+                  alt="Visibility" 
+                  style={{ 
+                    width: '24px', 
+                    height: '24px',
+                  }}
+                />
+              </Box> */}
+
+              {/* Eye icon */}
+<Box 
+  onClick={() => {
+    if (editMode) {
+      // Force the value to be a number
+      const currentValue = parseInt(product.bs_is_visible || 0, 10);
+      // Toggle between 0 and 1
+      const newValue = currentValue === 1 ? 0 : 1;
+      console.log(`Changing bs_is_visible from ${currentValue} to ${newValue}`);
+      handleProductChange(index, "bs_is_visible", newValue);
+    }
+  }}
+  sx={{ 
+    cursor: editMode ? 'pointer' : 'default',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ml: 1,
+    padding: '4px',
+  }}
+>
+  <img 
+    src={parseInt(product.bs_is_visible || 0, 10) === 1 ? eyeIcon : closedEyeIcon} 
+    alt={parseInt(product.bs_is_visible || 0, 10) === 1 ? "Visible" : "Hidden"} 
+    style={{ 
+      width: '24px', 
+      height: '24px',
+    }}
+  />
+</Box>
+              
+              {/* Trash icon (only in edit mode) */}
+              {editMode && (
+                <IconButton 
+                  size="small" 
+                  onClick={() => handleDeleteProduct(index)}
+                  sx={{ ml: 1 }}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              )}
             </Box>
             
             {!editMode && product.bs_service_name && (

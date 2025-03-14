@@ -1,4 +1,4 @@
-/// add product fix cost ffs
+/// add visibility
 import React, { useState, useEffect } from "react";
 import { Box, Typography, styled, IconButton, TextField, FormControl, MenuItem, Select, InputLabel, Paper, Switch } from "@mui/material";
 import { SocialLink } from "./SocialLink";
@@ -33,6 +33,11 @@ import BusinessCardMini from "./BusinessCardMini";
 import yelp from "../../assets/yelp.png";
 import google from "../../assets/Google.png";
 import BusinessProducts from './BusinessProducts';
+
+import RelatedBusinessMinicard from './RelatedBusinessMinicard';
+
+//import VisibilityIcon from "@mui/icons-material/Visibility";
+
 
 const FormBox = styled(Box)({
     padding: "0 16px",
@@ -165,7 +170,8 @@ export default function BusinessProfile() {
         business_tag_line_is_public: 1,
         business_short_bio_is_public: 1,
         business_banner_ads_is_public: 1,
-        business_email_id_is_public: 1
+        business_email_id_is_public: 1,
+        business_services_is_public: 1
 
     });
 
@@ -311,17 +317,21 @@ export default function BusinessProfile() {
                 const business = response.data?.result?.[0] || response.data?.business;  /////////// //////
                 console.log('business data is', business);
                 let businessServices = [];
-        if (response.data.services && Array.isArray(response.data.services)) {
-            // Map services from the API response format to our component format
-            businessServices = response.data.services.map(service => ({
-                bs_uid: service.bs_uid,
-                bs_service_name: service.bs_service_name || "",
-                bs_bounty: service.bs_bounty || "",
-                bs_cost: service.bs_cost || "0"  // This might be missing in the API response
-            }));
-    
-    console.log("Mapped services:", businessServices);
-} else {
+                if (response.data.services && Array.isArray(response.data.services)) {
+                    // Map services from the API response format to our component format
+                    businessServices = response.data.services.map(service => {
+                        console.log(`Service ${service.bs_service_name} visibility from API: ${service.bs_is_visible}` , typeof service.bs_is_visible);
+                        return {
+                            bs_uid: service.bs_uid,
+                            bs_service_name: service.bs_service_name || "",
+                            bs_bounty: service.bs_bounty || "",
+                            bs_cost: service.bs_cost || "0",
+                            bs_service_desc: service.bs_service_desc || "",
+                            bs_is_visible: service.bs_is_visible
+                        };
+                    });
+                }
+                else {
     // Try parsing business_services if available
     try {
         if (business.business_services) {
@@ -368,7 +378,8 @@ export default function BusinessProfile() {
                     business_images_is_public: business.business_images_is_public ?? 1,
                     business_tag_line_is_public: business.business_tag_line_is_public ?? 1,
                     business_short_bio_is_public: business.business_short_bio_is_public ?? 1,
-                    business_banner_ads_is_public: business.business_banner_ads_is_public ?? 1
+                    business_banner_ads_is_public: business.business_banner_ads_is_public ?? 1,
+                    business_services_is_public: business.business_services_is_public ?? 1
 
                 });
 
@@ -457,18 +468,41 @@ export default function BusinessProfile() {
             // }
 
 
+            // if (formData.businessServices && formData.businessServices.length > 0) {
+            //     const formattedServices = formData.businessServices.map(service => ({
+            //       bs_uid: service.bs_uid,
+            //       bs_service_desc: service.bs_service_desc || "",
+            //       bs_service_name: service.bs_service_name || "",
+            //       bs_bounty: service.bs_bounty || "",
+            //       bs_cost: service.bs_cost || "0" ,
+            //       bs_is_visible: parseInt(service.bs_is_visible, 10) === 0 ? 0 : 1
+            //     }));
+                
+            //     console.log("Services being saved:", formattedServices);
+            //     form.append("business_services", JSON.stringify(formattedServices));
+            //   }
             if (formData.businessServices && formData.businessServices.length > 0) {
-                const formattedServices = formData.businessServices.map(service => ({
-                  bs_uid: service.bs_uid,
-                  bs_service_name: service.bs_service_name || "",
-                  bs_bounty: service.bs_bounty || "",
-                  bs_cost: service.bs_cost || "0" 
-                }));
+                console.log(formData.businessServices)
+                const formattedServices = formData.businessServices.map(service => {
+                    console.log(`Service Before: ${service.bs_service_name}`, service.bs_is_visible, typeof service.bs_is_visible);
+
+                    //console.log(`Service Before:, ${service.bs_service_name}`, service.bs_is_visible, type(service.bs_is_visible))
+                  const visibilityValue = service.bs_is_visible;
+                  console.log(`Service 1 ${service.bs_service_name} visibility being submitted: ${visibilityValue}`);
+                  
+                  return {
+                    bs_uid: service.bs_uid,
+                    bs_service_desc: service.bs_service_desc || "",
+                    bs_service_name: service.bs_service_name || "",
+                    bs_bounty: service.bs_bounty || "",
+                    bs_cost: service.bs_cost || "0",
+                    bs_is_visible: service.bs_is_visible
+                  };
+                });
                 
                 console.log("Services being saved:", formattedServices);
                 form.append("business_services", JSON.stringify(formattedServices));
-              }
-
+            }
             // Image related fields 
             form.append("business_google_photos", JSON.stringify(formData.businessGooglePhotos));
             form.append("business_favorite_image", formData.favImage);
@@ -482,6 +516,7 @@ export default function BusinessProfile() {
             form.append("business_short_bio_is_public", publicFields.business_short_bio_is_public);
             form.append("business_banner_ads_is_public", publicFields.business_banner_ads_is_public);
             form.append("business_email_id_is_public", publicFields.business_email_id_is_public); 
+            form.append("business_services_is_public", publicFields.business_services_is_public); 
 
             try {
                 setShowSpinner(true);
@@ -493,6 +528,8 @@ export default function BusinessProfile() {
                 });
                 console.log("Business Profile updated successfully", response);
                 if (response.data.code === 200) {
+                    console.log("Response from server 1:", response.data);
+                    console.log("Products:", response.data)
                     await fetchProfile();
                     setEditMode(false);
                     handleOpen("Success", "Business Profile has been updated successfully.");
@@ -789,15 +826,47 @@ export default function BusinessProfile() {
                                 </PublicLabel>
                             </Box>
                         </InputWrapper>
+                        <Box>
+    <BusinessProducts 
+        editMode={editMode}
+        businessId={businessId}
+        products={formData.businessServices}
+        onProductsChange={(newProducts) => 
+            setFormData(prev => ({ ...prev, businessServices: newProducts }))
+        }
+        publicFieldValue={publicFields.business_services_is_public}
+        onPublicToggle={() => handlePublicToggle('business_services_is_public')}
+        PublicLabelComponent={PublicLabel} // If using the first approach
+    />
+    {/* Remove the original PublicLabel from here */}
+</Box>
 
-                        <BusinessProducts 
-    editMode={editMode}
-    businessId={businessId}
-    products={formData.businessServices}
-    onProductsChange={(newProducts) => 
-        setFormData(prev => ({ ...prev, businessServices: newProducts }))
-    }
-/>
+<InputWrapper>
+                            <Box sx={{ position: 'relative', display: editMode || publicFields.business_banner_ads_is_public === 1 ? 'block' : 'none' }}>
+                                <Box sx={{ position: 'relative', width: '100%' }}>
+                                    <BannerContainer>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                            <Typography>Allow Banner Adds</Typography>
+                                            <img 
+                                                src={moneyBag} 
+                                                alt="Money Bag" 
+                                                style={{ width: '24px', height: '24px' }} 
+                                            />
+                                        </Box>
+                                        <YesText
+                                            onClick={() => !editMode ? null : setFormData({ ...formData, allowBanner: !formData.allowBanner })}
+                                            sx={{ 
+                                                opacity: editMode ? 1 : 0.5,
+                                                pointerEvents: editMode ? 'auto' : 'none'
+                                            }}
+                                        >
+                                            Yes
+                                        </YesText>
+                                    </BannerContainer>
+
+                                </Box>
+                            </Box>
+                        </InputWrapper>
 
                         <Box sx={{ width: '100%' }}>
                             <SocialLink
@@ -841,41 +910,19 @@ export default function BusinessProfile() {
                             />
                         </Box>
 
-                        <InputWrapper>
-                            <Box sx={{ position: 'relative', display: editMode || publicFields.business_banner_ads_is_public === 1 ? 'block' : 'none' }}>
-                                <Box sx={{ position: 'relative', width: '100%' }}>
-                                    <BannerContainer>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                            <Typography>Allow Banner Adds</Typography>
-                                            <img 
-                                                src={moneyBag} 
-                                                alt="Money Bag" 
-                                                style={{ width: '24px', height: '24px' }} 
-                                            />
-                                        </Box>
-                                        <YesText
-                                            onClick={() => !editMode ? null : setFormData({ ...formData, allowBanner: !formData.allowBanner })}
-                                            sx={{ 
-                                                opacity: editMode ? 1 : 0.5,
-                                                pointerEvents: editMode ? 'auto' : 'none'
-                                            }}
-                                        >
-                                            Yes
-                                        </YesText>
-                                    </BannerContainer>
-                                    <PublicLabel 
-                                        onClick={() => handlePublicToggle('business_banner_ads_is_public')}
-                                        sx={{ 
-                                            position: 'absolute',
-                                            top: -12,
-                                            right: 0
-                                        }}
-                                    >
-                                        {publicFields.business_banner_ads_is_public === 1 ? 'Public' : 'Private'}
-                                    </PublicLabel>
-                                </Box>
-                            </Box>
-                        </InputWrapper>
+
+
+{/* Add the RelatedBusinessMinicard component here */}
+<RelatedBusinessMinicard editMode={editMode} />
+
+{/* Then continue with your next section (Banner section) */}
+<InputWrapper>
+    <Box sx={{ position: 'relative', display: editMode || publicFields.business_banner_ads_is_public === 1 ? 'block' : 'none' }}>
+        {/* Banner section content */}
+    </Box>
+</InputWrapper>
+
+                        
 
                         {editMode && (
                             <CircleButton
