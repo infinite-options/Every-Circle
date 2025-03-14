@@ -1,4 +1,4 @@
-// coupon box
+// public/private coupon individual s
 import React from 'react';
 import { Box, Typography, styled, IconButton, Paper } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
@@ -137,27 +137,64 @@ const BannerSection = styled(Box)({
   marginTop: '24px',
 });
 
-export default function BusinessProfileView({ formData, publicFields, onEditClick }) {
+export default function BusinessProfileView({ formData, publicFields,userId ,onEditClick }) {
 
-  const handleCouponClick = async () => {
-    try {
-      const payload = {
-        "buyer_id": "110-000002",
-        "recommender_id": "110-000003",
-        "bs_id": formData.businessId 
-      };
+  // const handleCouponClick = async () => {
+  //   try {
+  //     const payload = {
+  //       "buyer_id": "110-000002",
+  //       "recommender_id": "110-000003",
+  //       "bs_id": formData.bs_uid 
+  //     };
       
-      const response = await axios.post(
-        "https://ioEC2testsspm.infiniteoptions.com/api/v1/transactions", 
-        payload
-      );
+  //     const response = await axios.post(
+  //       "https://ioEC2testsspm.infiniteoptions.com/api/v1/transactions", 
+  //       payload
+  //     );
       
-      console.log("Coupon redeemed successfully:", response.data);
+  //     console.log("Coupon redeemed successfully:", response.data);
       
-    } catch (error) {
-      console.error("Error redeeming coupon:", error);
-    }
-  };
+  //   } catch (error) {
+  //     console.error("Error redeeming coupon:", error);
+  //   }
+  // };
+  // Update your coupon click handler
+
+    // Your existing state and other declarations
+    
+    // Add this check for valid services
+    const hasValidServices = formData.businessServices && 
+                            Array.isArray(formData.businessServices) &&
+                            formData.businessServices.some(service => 
+                              service.bs_service_name && service.bs_service_name.trim() !== '');
+    
+    // Rest of your component code (handleCouponClick, renderSocialLink, etc.)
+// Check if services should be displayed based on the public flag
+const shouldShowServices = publicFields.business_services_is_public === 1;
+
+  const handleCouponClick = async (serviceUid) => {
+  try {
+    const payload = {
+      "buyer_id": "110-000002", ///  to change
+      "recommender_id": "110-000003",
+      "bs_id": serviceUid // Use the passed service ID
+    };
+    
+    console.log("Redeeming coupon for service:", serviceUid);
+    
+    const response = await axios.post(
+      "https://ioEC2testsspm.infiniteoptions.com/api/v1/transactions", 
+      payload
+    );
+    
+    console.log("Coupon redeemed successfully:", response.data);
+    
+  } catch (error) {
+    console.error("Error redeeming coupon:", error);
+  }
+};
+  
+  
   const renderSocialLink = (icon, link, placeholder) => {
     // Only render if link exists and is not empty
     if (!link || link.trim() === '') {
@@ -274,11 +311,32 @@ export default function BusinessProfileView({ formData, publicFields, onEditClic
         </Box>
 
         {/* Coupon Section */}
-        <CouponBox onClick={handleCouponClick}>
-  <Typography>
-    Click for a $5 Coupon
-  </Typography>
-</CouponBox>
+{/* Replace your single coupon box with this */}
+{/* Replace your existing single CouponBox with this */}
+{hasValidServices && shouldShowServices && (
+  <Box sx={{ mt: 4, mb: 4 }}>
+    <Typography variant="h6" sx={{ mb: 2 }}>Available Products</Typography>
+    
+    {formData.businessServices.map((service, index) => {
+      // Only show coupon box for services with a name AND bs_is_visible = 1
+      if (!service.bs_service_name || 
+        service.bs_service_name.trim() === '' || 
+        parseInt(service.bs_is_visible || 0, 10) !== 1) {
+      return null;
+    }
+      return (
+        <CouponBox 
+          key={index} 
+          onClick={() => handleCouponClick(service.bs_uid)}
+        >
+          <Typography>
+            {service.bs_service_name} - ${parseFloat(service.bs_cost|| 0).toFixed(2)} Coupon
+          </Typography>
+        </CouponBox>
+      );
+    })}
+  </Box>
+)}
 
         {/* Banner Section */}
         <BannerSection>

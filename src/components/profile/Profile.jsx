@@ -1316,7 +1316,10 @@ if (formData.resume) {
                 disabled={!editMode}
                 sx={{ position: 'absolute', right: 0, top: 0 }}
               >
-                {publicFields.profile_personal_phone_number_is_public === 1 ? 'Public' : 'Private'}
+                {publicFields.profile_personal_phone_number_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
+
               </PublicLabel>
             </Box>
             <Box sx={{ position: 'relative', display: 'block' }}>
@@ -1331,7 +1334,9 @@ if (formData.resume) {
               disabled={!editMode}
               sx={{ position: 'absolute', right: 0, top: 0 }}
             >
-              {publicFields.profile_personal_email_is_public === 1 ? 'Public' : 'Private'}
+              {publicFields.profile_personal_email_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
             </PublicLabel>
           </Box>
             <InputField
@@ -1355,7 +1360,9 @@ if (formData.resume) {
                   onClick={() => handlePublicToggle('profileImage')}
                   disabled={!editMode}
                 >
-                  {publicFields.profile_personal_image_is_public === 1 ? 'Public' : 'Private'}
+                  {publicFields.profile_personal_image_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                 </PublicLabel>
               </Box>
               {formData.profileImages[0] ? (
@@ -1446,7 +1453,9 @@ if (formData.resume) {
                 disabled={!editMode}
                 sx={{ position: 'absolute', right: 0, top: 0 }}
               >
-                {publicFields.profile_personal_tag_line_is_public === 1 ? 'Public' : 'Private'}
+                {publicFields.profile_personal_tag_line_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
               </PublicLabel>
             </Box>
 
@@ -1494,7 +1503,9 @@ if (formData.resume) {
                 disabled={!editMode}
                 sx={{ position: 'absolute', right: 0, top: 0 }}
               >
-                {publicFields.profile_personal_short_bio_is_public === 1 ? 'Public' : 'Private'}
+                {publicFields.profile_personal_short_bio_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
               </PublicLabel>
             </Box>
 
@@ -1509,7 +1520,9 @@ if (formData.resume) {
                   onClick={() => handlePublicToggle('resume')}
                   disabled={!editMode}
                 >
-                  {publicFields.profile_personal_resume_is_public === 1 ? 'Public' : 'Private'}
+                  {publicFields.profile_personal_resume_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                 </PublicLabel>
               </Box>
               {editMode ? (
@@ -1581,7 +1594,9 @@ if (formData.resume) {
                     disabled={!editMode}
                     sx={{ mr: 2 }}
                   >
-                    {publicFields.profile_personal_experience_is_public === 1 ? 'Public' : 'Private'}
+                    {publicFields.profile_personal_experience_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                   </PublicLabel>
                   {editMode && (
                     <IconButton onClick={handleAddExperience} size="small">
@@ -1656,7 +1671,9 @@ if (formData.resume) {
                     disabled={!editMode}
                     sx={{ mr: 2 }}
                   >
-                    {publicFields.profile_personal_education_is_public === 1 ? 'Public' : 'Private'}
+                    {publicFields.profile_personal_education_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                   </PublicLabel>
                   {editMode && (
                     <IconButton onClick={handleAddEducation} size="small">
@@ -1896,7 +1913,9 @@ if (formData.resume) {
                     disabled={!editMode}
                     sx={{ mr: 2 }}
                   >
-                    {publicFields.profile_personal_expertise_is_public === 1 ? 'Public' : 'Private'}
+                    {publicFields.profile_personal_expertise_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                   </PublicLabel>
                   {editMode && (
                     <IconButton onClick={() => {
@@ -2005,7 +2024,9 @@ if (formData.resume) {
                 disabled={!editMode}
                 sx={{ mr: 2 }}
               >
-                {publicFields.profile_personal_wishes_is_public === 1 ? 'Public' : 'Private'}
+                {publicFields.profile_personal_wishes_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
               </PublicLabel>
               {editMode && (
                 <IconButton onClick={() => {
