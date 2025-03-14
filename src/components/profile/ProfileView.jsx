@@ -520,7 +520,13 @@ const renderResume = () => {
     );
   };
 
-  const renderBusinesses = () => (
+  const renderBusinesses = () => { 
+
+    if (publicFields.profile_personal_allow_banner_ads !== 1) {
+      return null;
+    }
+
+    return( 
     <Box sx={{ mt: 4, mb: 4 }}>
       <SectionHeader>
         <Typography variant="h5" sx={{ color: '#888', fontWeight: 'normal', padding :'20px' }}>
@@ -583,7 +589,7 @@ const renderResume = () => {
         </BusinessCard>
       )}
     </Box>
-  );
+  ); };
 
   return (
     <StyledContainer sx={{ backgroundColor: 'transparent', padding: 0, maxWidth: '100%' }}>
@@ -621,8 +627,8 @@ const renderResume = () => {
       
       <ViewContainer>
         <ProfileHeader>
-          <HeaderContent>
-            <ProfileInfo sx={{ paddingLeft: '20px' }}>
+          <HeaderContent sx={{ padding: '20px' }}>
+            <ProfileInfo sx={{ paddingLeft: '0px' }}>
               <Typography 
                 variant="h4" 
                 sx={{ 
@@ -658,7 +664,7 @@ const renderResume = () => {
             </ProfileInfo>
             
             {publicFields.profile_personal_image_is_public === 1 && (
-              <ProfileImage>
+              <ProfileImage sx={{ paddingRight: '0px' }} >
                 {formData.profileImages[0] ? (
                   <img 
                     src={typeof formData.profileImages[0] === 'string' 
