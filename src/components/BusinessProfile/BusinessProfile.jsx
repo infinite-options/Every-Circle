@@ -1,4 +1,7 @@
-/// add visibility
+/////////
+
+
+/// delete product  chanege 
 import React, { useState, useEffect } from "react";
 import { Box, Typography, styled, IconButton, TextField, FormControl, MenuItem, Select, InputLabel, Paper, Switch } from "@mui/material";
 import { SocialLink } from "./SocialLink";
@@ -33,16 +36,20 @@ import BusinessCardMini from "./BusinessCardMini";
 import yelp from "../../assets/yelp.png";
 import google from "../../assets/Google.png";
 import BusinessProducts from './BusinessProducts';
+import EnhancedProductDisplay from './EnhancedProductDisplay'; 
 
 import RelatedBusinessMinicard from './RelatedBusinessMinicard';
 
 //import VisibilityIcon from "@mui/icons-material/Visibility";
 
 
+
+
 const FormBox = styled(Box)({
     padding: "0 16px",
     width: "100%",
 });
+
 
 const isValidEmail = (email) => {
     const re = /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
@@ -107,6 +114,7 @@ export default function BusinessProfile() {
     const location = useLocation();
     const { editMode: initialEditMode = false } = location.state || {};
     const { user, updateUser } = useUserContext();
+    
     // console.log('user data', user);
     const userId = user.userId;
     const [formData, setFormData] = useState({
@@ -154,6 +162,7 @@ export default function BusinessProfile() {
     });
     const [selectedImages, setSelectedImages] = useState([]);
     const [deletedImages, setDeletedImages] = useState([]);
+    const [deletedProducts, setDeletedProducts] = useState([]);
     const [showSpinner, setShowSpinner] = useState(false);
     const [favoriteIcons, setFavoriteIcons] = useState([]);
     const [deletedIcons, setDeletedIcons] = useState([]);
@@ -162,6 +171,7 @@ export default function BusinessProfile() {
     const [selectedCategories, setSelectedCategories] = useState([]);
     const [subCategories, setSubCategories] = useState([]);
     const [SubSubCategory, setSubSubCategories] = useState([]);
+
     const [publicFields, setPublicFields] = useState({
         business_name_is_public: 1,
         business_location_is_public: 1,
@@ -174,6 +184,9 @@ export default function BusinessProfile() {
         business_services_is_public: 1
 
     });
+    useEffect(() => {
+        console.log("deletedProducts state updated:", deletedProducts);
+    }, [deletedProducts]);
 
     useEffect(() => {
         const fetchCategories = async () => {
@@ -341,6 +354,11 @@ export default function BusinessProfile() {
         console.error("Error parsing business services:", e);
     }
 }
+if (deletedProducts.length > 0) {
+    businessServices = businessServices.filter(service => 
+        !deletedProducts.includes(service.bs_uid)
+    );
+}
                 const googlePhotos = business?.business_google_photos ? JSON.parse(business.business_google_photos) : [];
                 
                 // Update form data
@@ -398,6 +416,7 @@ export default function BusinessProfile() {
     useEffect(() => {
         fetchProfile();
     }, [userId]);
+    
 
     const validateRequiredFields = () => {
         const newErrors = {};
@@ -439,6 +458,8 @@ export default function BusinessProfile() {
         }));
     };
 
+
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (validateRequiredFields()) {
@@ -459,28 +480,21 @@ export default function BusinessProfile() {
             //form.append("business_youtube", formData.youtube);
             //form.append("business_allow_banner", formData.allowBanner ? 1 : 0);
             form.append("business_uid", businessId);
-            // if (formData.businessServices && formData.businessServices.length > 0) {
 
-
-            //         console.log("Mapped services:", businessServices);
-
-            //     form.append("business_services", JSON.stringify(formData.businessServices));
-            // }
-
-
-            // if (formData.businessServices && formData.businessServices.length > 0) {
-            //     const formattedServices = formData.businessServices.map(service => ({
-            //       bs_uid: service.bs_uid,
-            //       bs_service_desc: service.bs_service_desc || "",
-            //       bs_service_name: service.bs_service_name || "",
-            //       bs_bounty: service.bs_bounty || "",
-            //       bs_cost: service.bs_cost || "0" ,
-            //       bs_is_visible: parseInt(service.bs_is_visible, 10) === 0 ? 0 : 1
-            //     }));
-                
-            //     console.log("Services being saved:", formattedServices);
-            //     form.append("business_services", JSON.stringify(formattedServices));
+            // if (deletedProducts.length > 0) {
+            //     form.append("delete_services", JSON.stringify(deletedProducts));
+            //     console.log("Products to delete:", deletedProducts);
             //   }
+            if (deletedProducts.length > 0) {
+                // Make sure deleted IDs are properly formatted as strings in an array
+                const formattedDeletedProducts = deletedProducts.map(id => id.toString());
+                // Log for debugging
+                console.log("Deleted products to send:", formattedDeletedProducts);
+                form.append("delete_business_services", JSON.stringify(formattedDeletedProducts));
+            }
+    
+    
+
             if (formData.businessServices && formData.businessServices.length > 0) {
                 console.log(formData.businessServices)
                 const formattedServices = formData.businessServices.map(service => {
@@ -488,7 +502,7 @@ export default function BusinessProfile() {
 
                     //console.log(`Service Before:, ${service.bs_service_name}`, service.bs_is_visible, type(service.bs_is_visible))
                   const visibilityValue = service.bs_is_visible;
-                  console.log(`Service 1 ${service.bs_service_name} visibility being submitted: ${visibilityValue}`);
+                  //onsole.log(`Service 1 ${service.bs_service_name} visibility being submitted: ${visibilityValue}`);
                   
                   return {
                     bs_uid: service.bs_uid,
@@ -518,6 +532,8 @@ export default function BusinessProfile() {
             form.append("business_email_id_is_public", publicFields.business_email_id_is_public); 
             form.append("business_services_is_public", publicFields.business_services_is_public); 
 
+            
+
             try {
                 setShowSpinner(true);
                 console.log("Submitting form data:", Object.fromEntries(form));
@@ -528,6 +544,7 @@ export default function BusinessProfile() {
                 });
                 console.log("Business Profile updated successfully", response);
                 if (response.data.code === 200) {
+                    setDeletedProducts([]);
                     console.log("Response from server 1:", response.data);
                     console.log("Products:", response.data)
                     await fetchProfile();
@@ -621,7 +638,9 @@ export default function BusinessProfile() {
                                 <PublicLabel 
                                     onClick={() => handlePublicToggle('business_phone_number_is_public')}
                                 >
-                                    {publicFields.business_phone_number_is_public === 1 ? 'Public' : 'Private'}
+                                    {publicFields.business_phone_number_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                                 </PublicLabel>
                             </Box>
                         </InputWrapper>
@@ -641,7 +660,9 @@ export default function BusinessProfile() {
                                 onClick={() => handlePublicToggle('business_email_id_is_public')}
                                 disabled={!editMode}
                             >
-                                {publicFields.business_email_id_is_public === 1 ? 'Public' : 'Private'}
+                                {publicFields.business_email_id_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                             </PublicLabel>
                         </Box>
                     </InputWrapper>
@@ -653,7 +674,9 @@ export default function BusinessProfile() {
                                     <PublicLabel 
                                         onClick={() => handlePublicToggle('business_images_is_public')}
                                     >
-                                        {publicFields.business_images_is_public === 1 ? 'Public' : 'Private'}
+                                        {publicFields.business_images_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                                     </PublicLabel>
                                 </Box>
                                 <Box
@@ -743,7 +766,9 @@ export default function BusinessProfile() {
                                 <PublicLabel 
                                     onClick={() => handlePublicToggle('business_tag_line_is_public')}
                                 >
-                                    {publicFields.business_tag_line_is_public === 1 ? 'Public' : 'Private'}
+                                    {publicFields.business_tag_line_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                                 </PublicLabel>
                             </Box>
                         </InputWrapper>
@@ -822,22 +847,29 @@ export default function BusinessProfile() {
                                 <PublicLabel 
                                     onClick={() => handlePublicToggle('business_short_bio_is_public')}
                                 >
-                                    {publicFields.business_short_bio_is_public === 1 ? 'Public' : 'Private'}
+                                    {publicFields.business_short_bio_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                                 </PublicLabel>
                             </Box>
                         </InputWrapper>
                         <Box>
-    <BusinessProducts 
-        editMode={editMode}
-        businessId={businessId}
-        products={formData.businessServices}
-        onProductsChange={(newProducts) => 
-            setFormData(prev => ({ ...prev, businessServices: newProducts }))
-        }
-        publicFieldValue={publicFields.business_services_is_public}
-        onPublicToggle={() => handlePublicToggle('business_services_is_public')}
-        PublicLabelComponent={PublicLabel} // If using the first approach
-    />
+                        <Box>
+                        <BusinessProducts 
+  editMode={editMode}
+  businessId={businessId}
+  products={formData.businessServices}
+  onProductsChange={(newProducts) => 
+    setFormData(prev => ({ ...prev, businessServices: newProducts }))
+  }
+  onDeleteProduct={(productId) => {
+    setDeletedProducts(prev => [...prev, productId]);
+  }}
+  publicFieldValue={publicFields.business_services_is_public}
+  onPublicToggle={() => handlePublicToggle('business_services_is_public')}
+  PublicLabelComponent={PublicLabel}
+/>
+</Box>
     {/* Remove the original PublicLabel from here */}
 </Box>
 

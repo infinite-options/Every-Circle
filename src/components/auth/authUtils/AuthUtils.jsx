@@ -1,3 +1,5 @@
+
+// original 
 import axios from 'axios';
 
 export const checkIfUserExists = async (email) => {
@@ -7,9 +9,3 @@ export const checkIfUserExists = async (email) => {
   return response?.data;
 };
 
-export const checkIfProfileExists = async (userId) => {
-    console.log('inside check profile', userId)
-    const response = await axios.get(`https://ioec2testsspm.infiniteoptions.com/profile/${userId}`);
-    console.log('resp from prof', response)
-    return response?.data;
-  };

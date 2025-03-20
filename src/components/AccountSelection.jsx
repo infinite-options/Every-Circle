@@ -1,8 +1,30 @@
 import { Box, Typography, Button } from "@mui/material";
-//import { useNavigate } from "react-router-dom";
-
 import { useNavigate, useLocation } from "react-router-dom";
 
+const Banner = () => {
+  return (
+    <Box
+      sx={{
+        width: "105%",
+        height: "80px",
+        backgroundColor: "#007AFF",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        borderRadius: "0 0 50% 50%",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      <Typography
+        variant="h6"
+        sx={{ color: "white", fontWeight: "bold" }}
+      >
+        Choose Your Account
+      </Typography>
+    </Box>
+  );
+};
 
 const AccountSelection = () => {
   const navigate = useNavigate();
@@ -10,23 +32,10 @@ const AccountSelection = () => {
 
   const handleSelection = (accountType) => {
     if (accountType === "personal") {
-      navigate("/profile"); // Leads to personal profile setup
+      navigate("/profile");
     } else {
-
-      //console.log("In AccountSelection.jsx location.state.userID: ", location.state.userId)
-      const userId = location.state.userId
-      //console.log("userID Account selection:", userId)
-      //state: { userId }
-
-      
-      navigate("/businessProfileSetup", {
-        state: { userId },
-    }); // ✅ Should lead to the three-step business profile flow
-
-    //   navigate("/profileSetup", {
-    //     state: { userId },
-    // });
-
+      const userId = location.state?.userId;
+      navigate("/businessProfileSetup", { state: { userId } });
     }
   };
 
@@ -39,21 +48,11 @@ const AccountSelection = () => {
         justifyContent: "flex-start",
         minHeight: "100vh",
         bgcolor: "white",
-        padding: "20px",
-        paddingTop: "40px",
+        paddingTop: "0px",
       }}
     >
-      <Typography
-        variant="h6"
-        sx={{
-          color: "#007AFF",
-          marginBottom: "20px",
-          textAlign: "center",
-          fontWeight: "bold",
-        }}
-      >
-        Choose Your Account
-      </Typography>
+      {/* Add the Banner at the top */}
+      <Banner />
 
       <Box
         sx={{
@@ -63,13 +62,14 @@ const AccountSelection = () => {
           alignItems: "center",
           width: "100%",
           maxWidth: "300px",
+          marginTop: "40px",
         }}
       >
         <Button
           onClick={() => handleSelection("personal")}
           sx={{
             width: "100%",
-            maxWidth: "200px",
+            maxWidth: "327px",
             aspectRatio: "1",
             borderRadius: "50%",
             backgroundColor: "#FF9500",
@@ -77,12 +77,11 @@ const AccountSelection = () => {
             fontSize: "24px",
             fontWeight: "bold",
             textTransform: "none",
-            "&:hover": {
-              backgroundColor: "#e68600",
-            },
+            "&:hover": { backgroundColor: "#e68600" },
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            marginLeft: "260px",
           }}
         >
           Personal
@@ -92,7 +91,7 @@ const AccountSelection = () => {
           onClick={() => handleSelection("business")}
           sx={{
             width: "100%",
-            maxWidth: "200px",
+            maxWidth: "327px",
             aspectRatio: "1",
             borderRadius: "50%",
             backgroundColor: "#4CAF50",
@@ -100,12 +99,12 @@ const AccountSelection = () => {
             fontSize: "24px",
             fontWeight: "bold",
             textTransform: "none",
-            "&:hover": {
-              backgroundColor: "#388E3C",
-            },
+            "&:hover": { backgroundColor: "#388E3C" },
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
+            marginRight: "260px",
+            marginTop: "-90px"
           }}
         >
           Business

@@ -6,7 +6,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import StyledContainer from '../common/StyledContainer';
 import Header from '../common/Header';
-import NavigationBar from '../navigation/NavigationBar';
+import NavigationBar from "../navigation/NavigationBar";
 import facebook from "../../assets/facebook-icon.png";
 import youtube from "../../assets/youtube-icon.png";
 import linkedin from "../../assets/linkedin-icon.png";

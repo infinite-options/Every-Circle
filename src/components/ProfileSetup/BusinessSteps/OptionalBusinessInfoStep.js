@@ -32,7 +32,7 @@ const OptionalBusinessInfoStep = ({ formData, handleChange, setFormData }) => {
   }
 
   return (
-    <Box sx={{ width: '100%' }}>
+    <Box sx={{ width: '355px' }}>
       <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
         Provide a short bio of your business (this info is public)
       </Typography>

@@ -1,6 +1,7 @@
 
-/////banner add
-import React, { useState, useEffect } from "react";
+/////mobile view better  banner new
+
+import React, { useState, useEffect, useRef } from "react";
 import { Box, Typography, styled, IconButton, TextField, Rating, Button } from "@mui/material";
 import { SocialLink } from "./SocialLink";
 import { InputField } from "../common/InputField";
@@ -37,7 +38,11 @@ import moneyBag from "../../assets/moneybag.png";
 import verifiedIcon from "../../assets/VerifiedProfile.png";
 
 const FormBox = styled(Box)({
-  padding: "0 16px",
+  padding: "0",
+  maxWidth: "355px",
+  margin: "0 auto",
+  boxSizing: "border-box",
+  width: "100%"
 });
 
 const SectionHeader = styled(Box)({
@@ -48,10 +53,10 @@ const SectionHeader = styled(Box)({
 });
 
 const SectionContainer = styled(Box)({
-  marginBottom: "20px",
+  marginBottom: "16px",
   backgroundColor: "white",
   borderRadius: "8px",
-  padding: "15px",
+  padding: "12px 10px",
 });
 
 const PublicLabel = styled(Button)({
@@ -98,11 +103,15 @@ const ItemActions = styled(Box)({
 const BannerSection = styled(Box)({
   backgroundColor: '#e0e0e0',
   borderRadius: '8px',
-  padding: '16px 20px',
+  padding: '12px 10px',
   display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  marginBottom: '24px',
+  flexDirection: 'row', // Changed to row
+  justifyContent: 'space-between', // This will push the "No" to the right
+  alignItems: 'center', // This will vertically center the elements
+  marginBottom: '16px',
+  width: "100%",
+  maxWidth: "355px",
+  boxSizing: "border-box"
 });
 
 const BusinessCard = styled(Box)({
@@ -196,10 +205,12 @@ export default function Profile() {
     3: "split",
     4: "creative",
   }
-
+  const [fetchCount, setFetchCount] = useState(0);
+  const hasFetchedRef = useRef(false);
   const handleOpen = (title, content) => {
     setDialog({ open: true, title, content });
   };
+  
 
   const handleClose =  () => {
     setDialog({ open: false, title: "", content: "" });
@@ -332,8 +343,18 @@ export default function Profile() {
     }
   };
 
+  // useEffect(() => {
+  //   fetchProfile();
+  //   console.log("Inside useEffect")
+  // }, [userId]);
+
   useEffect(() => {
-    fetchProfile();
+    if (!hasFetchedRef.current && userId) {
+      hasFetchedRef.current = true;
+      fetchProfile();
+      setFetchCount(prev => prev + 1);
+      console.log("Inside useEffect - fetch #", fetchCount + 1);
+    }
   }, [userId]);
 
   const validateRequiredFields = () => {
@@ -1057,6 +1078,7 @@ if (formData.resume) {
           window.scrollTo(0, 0);
           setTimeout(async () => {
             await fetchProfile();
+            console.log("Inside ==200")
             handleOpen("Success", "Profile has been updated successfully.");
             setShowSpinner(false);
           }, 1000);
@@ -1259,19 +1281,19 @@ if (formData.resume) {
  // This section shows where to make changes in the Profile component's render method
 
   // ...existing code...
-
+///sdhugd
   return (
-    <StyledContainer>
+    <StyledContainer sx={{ maxWidth: "1000px", display: 'flex', margin: "0 auto", padding: 0, boxSizing: "border-box" }}>
       <Backdrop sx={{ color: '#fff', zIndex: 1 }} open={showSpinner}>
         <CircularProgress color="inherit" />
       </Backdrop>
       <Header title="Profile" />
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', padding: '0px 30px', width: '100%', }}>
-        <EditIcon
-          onClick={() => setEditMode(false)}
-          sx={{ cursor: 'pointer', color: "red" }}
-        />
-      </Box>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', padding: '0px 10px', width: '100%', maxWidth: "355px", margin: "0 auto" }}>
+  <EditIcon
+    onClick={() => setEditMode(false)}
+    sx={{ cursor: 'pointer', color: "red" }}
+  />
+</Box>
       
       
       
@@ -1322,6 +1344,7 @@ if (formData.resume) {
 
               </PublicLabel>
             </Box>
+            
             <Box sx={{ position: 'relative', display: 'block' }}>
             <InputField
               label="Email"
@@ -1584,27 +1607,26 @@ if (formData.resume) {
               )}
             </SectionContainer>
 
-            {/* Experience Section */}
+            {/* Experince section */}
             <SectionContainer sx={{ display: editMode || publicFields.profile_personal_experience_is_public === 1 ? 'block' : 'none' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6">Experience :</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <PublicLabel 
-                    onClick={() => handlePublicToggle('experience')}
-                    disabled={!editMode}
-                    sx={{ mr: 2 }}
-                  >
-                    {publicFields.profile_personal_experience_is_public === 1 ? ('Public') : (
-  <span style={{ color: 'orange' }}>Private</span>
-)}
-                  </PublicLabel>
-                  {editMode && (
-                    <IconButton onClick={handleAddExperience} size="small">
-                      <AddIcon />
-                    </IconButton>
-                  )}
-                </Box>
-              </Box>
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+      <Typography variant="h6">Experience</Typography>
+      {editMode && (
+        <IconButton onClick={handleAddExperience} size="small">
+          <AddIcon />
+        </IconButton>
+      )}
+    </Box>
+    <PublicLabel 
+      onClick={() => handlePublicToggle('experience')}
+      disabled={!editMode}
+    >
+      {publicFields.profile_personal_experience_is_public === 1 ? ('Public') : (
+        <span style={{ color: 'orange' }}>Private</span>
+      )}
+    </PublicLabel>
+  </Box>
               
               {formData.experience.map((exp, index) => (
                 <Box key={`exp-${index}`} sx={{ 
@@ -1661,27 +1683,26 @@ if (formData.resume) {
               ))}
             </SectionContainer>
 
-                        {/* Education Section */}
-                        <SectionContainer sx={{ display: editMode || publicFields.profile_personal_education_is_public === 1 ? 'block' : 'none' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6">Education:</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              {/* Education Section */}
+              <SectionContainer sx={{ display: editMode || publicFields.profile_personal_education_is_public === 1 ? 'block' : 'none' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Typography variant="h6">Education:</Typography>
+                    {editMode && (
+                      <IconButton onClick={handleAddEducation} size="small">
+                        <AddIcon />
+                      </IconButton>
+                    )}
+                  </Box>
                   <PublicLabel 
                     onClick={() => handlePublicToggle('education')}
                     disabled={!editMode}
-                    sx={{ mr: 2 }}
                   >
                     {publicFields.profile_personal_education_is_public === 1 ? ('Public') : (
-  <span style={{ color: 'orange' }}>Private</span>
-)}
+                      <span style={{ color: 'orange' }}>Private</span>
+                    )}
                   </PublicLabel>
-                  {editMode && (
-                    <IconButton onClick={handleAddEducation} size="small">
-                      <AddIcon />
-                    </IconButton>
-                  )}
                 </Box>
-              </Box>
               
               {formData.education.map((edu, index) => (
                 <Box key={`edu-${index}`} sx={{ 
@@ -1776,25 +1797,46 @@ if (formData.resume) {
             />
 
             {/* Banner Adds Section */}
-            <BannerSection>
-  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-    <Typography variant="h6">Allow Banner Ads</Typography>
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+
+
+
+<BannerSection>
+  <Box sx={{ 
+    display: 'flex', 
+    alignItems: 'center'
+  }}>
+    <Typography 
+      variant="body1" 
+      sx={{ 
+        fontSize: '14px', 
+        whiteSpace: 'nowrap', 
+        mr: 1
+      }}
+    >
+      Allow Banner Ads
+    </Typography>
+    <Box sx={{ 
+      display: 'flex',
+      alignItems: 'center',
+      ml: 1
+    }}>
       <img src={moneyBag} alt="Money Bag" style={{ width: '20px', height: '20px' }} />
       <TextField
         size="small"
-        placeholder="Bounty Amount"
+        placeholder="Bounty"
         value={formData.bannerAdsBounty}
         onChange={(e) => setFormData(prev => ({ ...prev, bannerAdsBounty: e.target.value }))}
         disabled={!editMode}
         sx={{
-          maxWidth: '120px',
+          width: '80px', // Reduced width
+          ml: 1,
           backgroundColor: editMode ? 'white' : '#f5f5f5',
           '& .MuiOutlinedInput-root': {
             borderRadius: '8px',
           },
           '& .MuiInputBase-input': {
-            padding: '8px 12px',
+            padding: '6px 8px',
+            fontSize: '12px'
           }
         }}
       />
@@ -1803,29 +1845,41 @@ if (formData.resume) {
   <PublicLabel 
     onClick={() => handleYesToggle('bannerAds')}
     disabled={!editMode}
+    sx={{ 
+      fontSize: '14px',
+      minWidth: 'auto',
+      ml: 1
+    }}
   >
-    {publicFields.profile_personal_allow_banner_ads === 1 ? 'Yes' : 'No'}
+    {publicFields.profile_personal_allow_banner_ads === 1 ? ('Yes') : (
+      <span style={{ color: 'orange' }}>No</span>
+    )}
   </PublicLabel>
 </BannerSection>
 
-            {/* Businesses Section */}
-            <Box sx={{ mt: 4, mb: 4 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6">Businesses</Typography>
-                <IconButton 
-                  onClick={() => {
-                    const newBusinesses = [...formData.businesses];
-                    newBusinesses.push({ name: "", role: "" });
-                    setFormData(prev => ({
-                      ...prev,
-                      businesses: newBusinesses
-                    }));
-                  }} 
-                  size="small"
-                >
-                  <AddIcon />
-                </IconButton>
-              </Box>
+{/* Businesses Section */}
+<Box sx={{ mt: 4, mb: 4 }}>
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+      <Typography variant="h6">Businesses</Typography>
+      {editMode && (
+        <IconButton 
+          onClick={() => {
+            const newBusinesses = [...formData.businesses];
+            newBusinesses.push({ name: "", role: "" });
+            setFormData(prev => ({
+              ...prev,
+              businesses: newBusinesses
+            }));
+          }} 
+          size="small"
+        >
+          <AddIcon />
+        </IconButton>
+      )}
+    </Box>
+    {/* Any other controls you need on the right side */}
+  </Box>
               
               {formData.businesses.map((business, index) => (
                 <BusinessCard key={`business-${index}`}>
@@ -1905,32 +1959,31 @@ if (formData.resume) {
 
             {/* Expertise Section */}
             <SectionContainer sx={{ display: editMode || publicFields.profile_personal_expertise_is_public === 1 ? 'block' : 'none' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6">Expertise</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <PublicLabel 
-                    onClick={() => handlePublicToggle('expertise')}
-                    disabled={!editMode}
-                    sx={{ mr: 2 }}
-                  >
-                    {publicFields.profile_personal_expertise_is_public === 1 ? ('Public') : (
-  <span style={{ color: 'orange' }}>Private</span>
-)}
-                  </PublicLabel>
-                  {editMode && (
-                    <IconButton onClick={() => {
-                      const newExpertise = [...formData.expertise];
-                      newExpertise.push({ headline: "", description: "", cost: "", bounty: "" });
-                      setFormData(prev => ({
-                        ...prev,
-                        expertise: newExpertise
-                      }));
-                    }} size="small">
-                      <AddIcon />
-                    </IconButton>
-                  )}
-                </Box>
-              </Box>
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+      <Typography variant="h6">Expertise</Typography>
+      {editMode && (
+        <IconButton onClick={() => {
+          const newExpertise = [...formData.expertise];
+          newExpertise.push({ headline: "", description: "", cost: "", bounty: "" });
+          setFormData(prev => ({
+            ...prev,
+            expertise: newExpertise
+          }));
+        }} size="small">
+          <AddIcon />
+        </IconButton>
+      )}
+    </Box>
+    <PublicLabel 
+      onClick={() => handlePublicToggle('expertise')}
+      disabled={!editMode}
+    >
+      {publicFields.profile_personal_expertise_is_public === 1 ? ('Public') : (
+        <span style={{ color: 'orange' }}>Private</span>
+      )}
+    </PublicLabel>
+  </Box>
               
               {formData.expertise.map((item, index) => (
                 <Box key={`expertise-${index}`} sx={{ 
@@ -2016,32 +2069,31 @@ if (formData.resume) {
         {/* Wishes Section */}
 
         <SectionContainer sx={{ display: editMode || publicFields.profile_personal_wishes_is_public === 1 ? 'block' : 'none' }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6">Wishes</Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <PublicLabel 
-                onClick={() => handlePublicToggle('wishes')}
-                disabled={!editMode}
-                sx={{ mr: 2 }}
-              >
-                {publicFields.profile_personal_wishes_is_public === 1 ? ('Public') : (
-  <span style={{ color: 'orange' }}>Private</span>
-)}
-              </PublicLabel>
-              {editMode && (
-                <IconButton onClick={() => {
-                  const newWishes = [...formData.wishes];
-                  newWishes.push({ helpNeeds: "", details: "", bounty: "Free" });
-                  setFormData(prev => ({
-                    ...prev,
-                    wishes: newWishes
-                  }));
-                }} size="small">
-                  <AddIcon />
-                </IconButton>
-              )}
-            </Box>
-          </Box>
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+      <Typography variant="h6">Wishes</Typography>
+      {editMode && (
+        <IconButton onClick={() => {
+          const newWishes = [...formData.wishes];
+          newWishes.push({ helpNeeds: "", details: "", bounty: "Free" });
+          setFormData(prev => ({
+            ...prev,
+            wishes: newWishes
+          }));
+        }} size="small">
+          <AddIcon />
+        </IconButton>
+      )}
+    </Box>
+    <PublicLabel 
+      onClick={() => handlePublicToggle('wishes')}
+      disabled={!editMode}
+    >
+      {publicFields.profile_personal_wishes_is_public === 1 ? ('Public') : (
+        <span style={{ color: 'orange' }}>Private</span>
+      )}
+    </PublicLabel>
+  </Box>
           
           {formData.wishes.map((item, index) => (
             <Box key={`wish-${index}`} sx={{ 

@@ -17,7 +17,7 @@ import EnhancedProductDisplay from './EnhancedProductDisplay';
 
 
 // Add this component after your imports but before the BusinessProfileView component
-const SimpleProductDisplay = ({ products = [], onProductClick }) => {
+const SimpleProductDisplay = ({ products = [] }) => {
   const ProductCard = styled(Paper)({
     display: 'flex',
     borderRadius: '24px',
@@ -25,12 +25,7 @@ const SimpleProductDisplay = ({ products = [], onProductClick }) => {
     marginBottom: '16px',
     padding: '12px',
     width: '100%',
-    backgroundColor: 'white',
-    cursor: 'pointer',
-    '&:hover': {
-      backgroundColor: '#f9f9f9',
-      boxShadow: '0 4px 8px rgba(0,0,0,0.15)',
-    }
+    backgroundColor: 'white'
   });
 
   const ImageBox = styled(Box)({
@@ -86,11 +81,7 @@ const SimpleProductDisplay = ({ products = [], onProductClick }) => {
       <Typography variant="h6" sx={{ mb: 2 }}>Available Products</Typography>
       
       {visibleProducts.map((product, index) => (
-        <ProductCard 
-          key={index} 
-          elevation={1}
-          onClick={() => onProductClick(product.bs_uid)}
-        >
+        <ProductCard key={index} elevation={1}>
           <ImageBox>
             <Typography align="center" sx={{ color: '#888' }}>
               Upload
@@ -425,13 +416,10 @@ const shouldShowServices = publicFields.business_services_is_public === 1;
 {/* Replace your existing single CouponBox with this */}
 {/* Enhanced Product Display Section */}
 {/* Product Display Section */}
-{/* Product Display Section */}
 {shouldShowServices && (
-  <SimpleProductDisplay 
-    products={formData.businessServices} 
-    onProductClick={handleCouponClick}
-  />
+  <SimpleProductDisplay products={formData.businessServices} />
 )}
+
         {/* Banner Section */}
         <BannerSection>
           <Typography variant="h6" sx={{ color: '#333' }}>

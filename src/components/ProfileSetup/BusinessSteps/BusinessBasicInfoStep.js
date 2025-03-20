@@ -59,7 +59,7 @@ const BasicInfoStep = ({ formData, handleChange, errors, setFormData, isClaimed,
   };
 
   return (
-    <Box sx={{ width: '100%' }}>
+    <Box sx={{ width: '355px' }}>
       <Backdrop sx={{ color: '#fff', zIndex: 1 }} open={showSpinner}>
           <CircularProgress color="inherit" />
       </Backdrop>
