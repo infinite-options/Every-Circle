@@ -1,4 +1,13 @@
-////render social media links
+////business fetch 
+
+/// resume name display
+
+
+//// delete resume 
+
+// clickable business
+
+
 import React from 'react';
 import { Box, Typography, styled, IconButton, Paper, TextField, Button, Rating } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
@@ -13,6 +22,8 @@ import linkedin from "../../assets/linkedin-icon.png";
 import twitter from "../../assets/twitter-icon.png";
 import moneyBag from "../../assets/moneybag.png";
 import noProfileImage from "../../assets/NoProfiePlaceHolder.png";
+import { useNavigate } from "react-router-dom";
+
 
 const ViewContainer = styled(Box)({
   backgroundColor: '#fff',
@@ -55,7 +66,6 @@ const ProfileImage = styled(Box)({
 const MiniCard = styled(Paper)({
   padding: '20px',
   marginTop: '20px',
-  marginLeft: '30px',
   marginBottom: '20px',
   borderRadius: '8px',
   boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
@@ -65,6 +75,9 @@ const MiniCard = styled(Paper)({
   backgroundColor: '#fff',
   border: '1px solid #eee',
   width: '90%',
+  maxWidth: '800px',
+  marginLeft: 'auto',
+  marginRight: 'auto'
 });
 
 const MiniCardImage = styled(Box)({
@@ -81,12 +94,13 @@ const MiniCardImage = styled(Box)({
 
 const SectionContainer = styled(Box)({
   marginBottom: '20px',
-  padding: '20px',
+  padding: '10px',
   borderRadius: '8px',
   backgroundColor: '#fff',
+  
   border: '1px solid #eee',
-  marginLeft: '30px',
-  width: '90%',
+  marginLeft: '10px',
+  width: '100%',
   
 });
 
@@ -110,13 +124,14 @@ const SocialLinkContainer = styled(Box)({
   backgroundColor: '#f5f5f5',
   borderRadius: '8px',
   marginBottom: '12px',
-  marginLeft: '30px',
   width: '90%',
+  maxWidth: '800px',
+  marginLeft: 'auto',
+  marginRight: 'auto',
   '& img': {
     width: '28px',
     height: '28px',
     marginRight: '16px',
-    
   }
 });
 
@@ -129,11 +144,11 @@ const SocialLinkText = styled(Typography)({
 const ExpertiseCard = styled(Box)(({ theme }) => ({
   backgroundColor: 'white',
   borderRadius: '24px',
-  padding: '24px',
-  marginLeft: '30px',
+  //padding: '24px',
+  //marginLeft: '10px',
   width: '90%',
   marginBottom: '16px',
-  border: '1px solid #e0e0e0',
+  //border: '1px solid #e0e0e0',
 }));
 
 const ExpertiseTitle = styled(Typography)({
@@ -182,6 +197,7 @@ const SectionTitle = styled(Typography)({
   fontSize: '24px',
   color: '#333',
   marginBottom: '12px',
+  
 });
 
 const EditButton = styled(IconButton)({
@@ -191,9 +207,9 @@ const EditButton = styled(IconButton)({
 const WishCard = styled(Box)(({ theme }) => ({
   backgroundColor: 'white',
   borderRadius: '16px',
-  padding: '20px',
+  //padding: '20px',
   marginBottom: '16px',
-  border: '2px solid #1976d2',
+  //border: '2px solid black',
   marginLeft: '30px',
   width: '90%',
 }));
@@ -272,6 +288,7 @@ const VerifiedBadge = styled('img')({
 });
 
 export default function ProfileView({ formData, publicFields, onEditClick, verifiedIcon }) {
+  const navigate = useNavigate(); 
   const renderExperience = (exp) => (
     <SectionContainer>
       <Typography variant="subtitle1" sx={{ color: '#888', fontWeight: 'normal' }}>
@@ -287,72 +304,105 @@ export default function ProfileView({ formData, publicFields, onEditClick, verif
   );
 
   // Add this new function alongside your other render functions
-const renderResume = () => {
-  // If resume is not set to public, don't show this section
-  if (publicFields.profile_personal_resume_is_public !== 1 || !formData.resume) {
-    return null;
-  }
+  const renderResume = () => {
+    // If resume is not set to public, don't show this section
+    if (publicFields.profile_personal_resume_is_public !== 1 || !formData.resume) {
+      return null;
+    }
+    
+    // Extract resume details
+    let fileName = "";
+    let resumeUrl = "";
+    
+    try {
+      // Handle resume data stored as JSON string array
+      if (typeof formData.resume === 'string') {
+        try {
+          // Try to parse as JSON first (for the array format)
+          const resumeData = JSON.parse(formData.resume);
+          if (Array.isArray(resumeData) && resumeData.length > 0) {
+            fileName = resumeData[0].filename || "Resume";
+            resumeUrl = resumeData[0].link || "";
+          } else {
+            // Fallback to treating as a direct URL
+            fileName = formData.resume.split('/').pop();
+            resumeUrl = formData.resume;
+          }
+        } catch (e) {
+          // If parsing fails, treat as direct URL
+          fileName = formData.resume.split('/').pop();
+          resumeUrl = formData.resume;
+        }
+      } 
+      // If we have resumeDetails, use that
+      else if (formData.resumeDetails && formData.resumeDetails.fileName) {
+        fileName = formData.resumeDetails.fileName;
+        // For File objects, we don't have a URL
+        resumeUrl = typeof formData.resume === 'string' ? formData.resume : null;
+      }
+      // Fallback for File objects
+      else if (formData.resume instanceof File) {
+        fileName = formData.resume.name;
+        resumeUrl = null;
+      }
+    } catch (e) {
+      console.error("Error processing resume data:", e);
+      fileName = "Resume";
+      resumeUrl = null;
+    }
   
-  // Get the filename if it's a string URL or if it's a File object
-  const fileName = typeof formData.resume === 'string' 
-    ? formData.resume.split('/').pop() 
-    : formData.resume.name || 'Resume';
-  
-  // Determine if we can get a resume URL for downloading/viewing
-  const resumeUrl = typeof formData.resume === 'string' ? formData.resume : null;
-
-  return (
-    <SectionContainer sx={{ 
-      display: 'flex', 
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      padding: '20px'
-    }}>
-      <Box>
-        <Typography variant="h6" sx={{ color: '#888', fontWeight: 'normal' }}>
-          Resume
-        </Typography>
-        <Typography 
-          variant="body1" 
+    return (
+      <SectionContainer sx={{ 
+        display: 'flex', 
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '20px'
+      }}>
+        <Box>
+          <Typography variant="h6" sx={{ color: '#888', fontWeight: 'normal' }}>
+            Resume
+          </Typography>
+          <Typography 
+            variant="body1" 
+            sx={{ 
+              color: resumeUrl ? 'primary.main' : '#888', 
+              mt: 1,
+              textDecoration: resumeUrl ? 'underline' : 'none',
+              cursor: resumeUrl ? 'pointer' : 'default'
+            }}
+            component={resumeUrl ? "a" : "p"}
+            href={resumeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {fileName}
+          </Typography>
+        </Box>
+        <Box 
           sx={{ 
-            color: resumeUrl ? 'primary.main' : '#888', 
-            mt: 1,
-            textDecoration: resumeUrl ? 'underline' : 'none',
+            width: '100px',
+            height: '100px',
+            border: '1px solid #e0e0e0',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#f5f5f5',
             cursor: resumeUrl ? 'pointer' : 'default'
           }}
-          component={resumeUrl ? "a" : "p"}
+          component={resumeUrl ? "a" : "div"}
           href={resumeUrl}
           target="_blank"
           rel="noopener noreferrer"
         >
-          {fileName}
-        </Typography>
-      </Box>
-      <Box 
-        sx={{ 
-          width: '100px',
-          height: '100px',
-          border: '1px solid #e0e0e0',
-          borderRadius: '8px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: '#f5f5f5',
-          cursor: resumeUrl ? 'pointer' : 'default'
-        }}
-        component={resumeUrl ? "a" : "div"}
-        href={resumeUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        <Typography variant="body2" color="text.secondary">
-          Resume
-        </Typography>
-      </Box>
-    </SectionContainer>
-  );
-};
+          <Typography variant="body2" color="text.secondary">
+            Resume
+          </Typography>
+        </Box>
+      </SectionContainer>
+    );
+  };
   const renderEducation = (edu) => (
     <SectionContainer>
       <Typography variant="subtitle1" sx={{ color: '#888', fontWeight: 'normal' }}>
@@ -372,7 +422,12 @@ const renderResume = () => {
 
     return (
       <Box>
-        <Typography variant="h5" sx={{ color: '#888', mb: 3, fontWeight: 'normal',paddingLeft: '20px' }}>
+        <Typography variant="h5" sx={{ fontFamily: 'Lexend',
+    //fontSize: '16px',
+    fontWeight: 'bold',
+    lineHeight: '18px',
+    letterSpacing: '0',
+    mb: 3,color: '#888', paddingLeft: '20px' }}>
           Expertise
         </Typography>
         {expertise.map((item, index) => (
@@ -384,8 +439,9 @@ const renderResume = () => {
               {item.description || ""}
             </ExpertiseDescription>
             <ExpertiseFooter>
+            Cost: 
               <CostDisplay>
-                Cost: {item.cost && item.cost !== "0" ? `$${item.cost}/hr` : "Free"}
+                {item.cost && item.cost !== "0" ? `$${item.cost}/hr` : "Free"}
               </CostDisplay>
               <ActionButton>
                 Book a Session
@@ -402,7 +458,12 @@ const renderResume = () => {
   
     return (
       <Box>
-        <Typography variant="h5" sx={{ color: '#888', mb: 3, fontWeight: 'normal',paddingLeft: '20px'  }}>
+        <Typography variant="h5" sx={{ fontFamily: 'Lexend',
+    //fontSize: '16px',
+    fontWeight: 'bold',
+    lineHeight: '18px',
+    letterSpacing: '0',
+    mb: 3,color: '#888',paddingLeft: '20px'  }}>
           Wishes
         </Typography>
         {wishes.map((wish, index) => (
@@ -413,7 +474,7 @@ const renderResume = () => {
               borderRadius: '16px',
               padding: '20px',
               marginBottom: '16px',
-              border: '1px solid #e0e0e0',
+              //border: '1px solid black',
               marginLeft: '30px',
               width: '90%',
             }}
@@ -520,79 +581,181 @@ const renderResume = () => {
     );
   };
 
-  const renderBusinesses = () => { 
-
-    if (publicFields.profile_personal_allow_banner_ads !== 1) {
+  const renderBusinesses = () => {
+    if (!formData.businesses || formData.businesses.length === 0 || 
+        (formData.businesses.length === 1 && !formData.businesses[0].name)) {
       return null;
     }
+  
+    // Helper function to get business image with fallback logic
+    const getBusinessImage = (business) => {
+      // First check business_favorite_image
+      if (business.business_favorite_image) {
+        return business.business_favorite_image;
+      }
+      
+      // Then check business_images_url
+      if (business.business_images_url) {
+        return business.business_images_url;
+      }
+      
+      // Finally, try to get the first image from business_google_photos
+      if (business.business_google_photos) {
+        try {
+          // If it's a string, try to parse it as JSON
+          if (typeof business.business_google_photos === 'string') {
+            const photos = JSON.parse(business.business_google_photos);
+            if (photos && photos.length > 0) {
+              return photos[0];
+            }
+          } 
+          // If it's already an array
+          else if (Array.isArray(business.business_google_photos) && business.business_google_photos.length > 0) {
+            return business.business_google_photos[0];
+          }
+        } catch (e) {
+          console.error("Error parsing business_google_photos:", e);
+        }
+      }
+      
+      // Default: return null if no image found
+      return null;
+    };
 
-    return( 
-    <Box sx={{ mt: 4, mb: 4 }}>
-      <SectionHeader>
-        <Typography variant="h5" sx={{ color: '#888', fontWeight: 'normal', padding :'20px' }}>
+    const handleBusinessClick = (business) => {
+      // Navigate to the business profile edit page with the selected business data
+      navigate('/businessProfile', { 
+        state: { 
+          editMode: true,
+          selectedBusinessId: business.uid,
+          fromProfile: true
+        } 
+      });
+      // Log navigation for debugging
+      console.log(`Navigating to business profile for: ${business.name}, ID: ${business.uid}`);
+    };
+
+    return (
+      <Box sx={{ mt: 4, mb: 4 }}>
+        <Typography variant="h5" sx={{ 
+          color: '#888', 
+          fontWeight: 'normal', 
+          mb: 2,
+          paddingLeft: '20px' 
+        }}>
           Related Businesses
         </Typography>
-      </SectionHeader>
-      {formData.businesses && formData.businesses.length > 0 ? (
-        formData.businesses.map((business, index) => (
-          <BusinessCard key={index}>
-            <Box sx={{ display: 'flex', gap: 3 }}>
+        
+        {formData.businesses.map((business, index) => {
+          const businessImage = getBusinessImage(business);
+          
+          return (
+            <Box 
+              key={index}
+              onClick={() => handleBusinessClick(business)}
+              sx={{ 
+                backgroundColor: 'white',
+                borderRadius: '12px',
+                border: '1px solid #e0e0e0',
+                padding: '16px',
+                marginBottom: '16px',
+                width: '90%',
+                maxWidth: '800px',
+                marginLeft: 'auto',
+                marginRight: 'auto',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '16px',
+                cursor: 'pointer', // Make it look clickable
+                transition: 'all 0.2s ease-in-out',
+                '&:hover': {
+                  backgroundColor: '#f9f9f9',
+                  boxShadow: '0 4px 8px rgba(0,0,0,0.15)',
+                  transform: 'translateY(-2px)'
+                },
+                '&:active': {
+                  transform: 'translateY(0px)',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                }
+              }}
+            >
+              {/* Business image */}
               <Box sx={{ 
-                width: '100px', 
-                height: '100px', 
+                width: '80px', 
+                height: '80px', 
                 backgroundColor: '#f5f5f5', 
                 borderRadius: '8px',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                border: '1px solid #eee',
+                overflow: 'hidden'
               }}>
-                <Typography variant="body2" color="text.secondary">
-                  image
-                </Typography>
+                {businessImage ? (
+                  <img 
+                    src={businessImage} 
+                    alt={business.name || "Business"}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover'
+                    }}
+                  />
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    image
+                  </Typography>
+                )}
               </Box>
+              
+              {/* Business details */}
               <Box sx={{ flex: 1 }}>
-                <Typography variant="h6" sx={{ mb: 1 }}>
+                <Typography variant="h6" sx={{ 
+                  mb: 0.5,
+                  color: '#666',
+                  fontSize: '18px',
+                  fontWeight: 'medium'
+                }}>
                   {business.name || ""}
                 </Typography>
-                <Typography variant="body1" color="text.secondary">
-                  {business.role || ""}
+                
+                <Typography variant="body2" sx={{ 
+                  color: '#888',
+                  fontSize: '14px'
+                }}>
+                  {business.business_tag_line || ""}
+                </Typography>
+                
+                <Typography variant="body2" sx={{ 
+                  color: '#888',
+                  fontSize: '14px',
+                  mt: 0.5
+                }}>
+                  {business.business_email_id || ""}
+                </Typography>
+                
+                <Typography variant="body2" sx={{ 
+                  color: '#888',
+                  fontSize: '14px'
+                }}>
+                  {business.business_phone_number || ""}
                 </Typography>
               </Box>
             </Box>
-          </BusinessCard>
-        ))
-      ) : (
-        <BusinessCard>
-          <Box sx={{ display: 'flex', gap: 3 }}>
-            <Box sx={{ 
-              width: '100px', 
-              height: '100px', 
-              backgroundColor: '#f5f5f5', 
-              borderRadius: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <Typography variant="body2" color="text.secondary">
-                image
-              </Typography>
-            </Box>
-            <Box sx={{ flex: 1 }}>
-              <Typography variant="h6" sx={{ mb: 1 }}>
-                {/* Empty by design */}
-              </Typography>
-              <Typography variant="body1" color="text.secondary">
-                {/* Empty by design */}
-              </Typography>
-            </Box>
-          </Box>
-        </BusinessCard>
-      )}
-    </Box>
-  ); };
+          );
+        })}
+      </Box>
+    );
+  };
+  
+
+  
+ 
 
   return (
-    <StyledContainer sx={{ backgroundColor: 'transparent', padding: 0, maxWidth: '100%' }}>
+    <StyledContainer sx={{ backgroundColor: 'transparent', padding: 0, maxWidth: '100%',  display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center' }}>
       <Header title="Profile" />
       
       {/* Icons row */}
@@ -729,8 +892,23 @@ const renderResume = () => {
         </ProfileHeader>
 
         {publicFields.profile_personal_experience_is_public === 1 && (
-          <Box sx={{ mt: 4 }}>
-            <Typography variant="h5" sx={{ mb: 2, fontWeight: 'normal', color: '#888',paddingLeft: '20px' }}>Experience</Typography>
+          <Box sx={{ 
+            mt: 4, 
+            mb: 4,
+            border: '1px solid black',
+            borderRadius: '8px',
+            padding: '20px',
+            width: '90%',
+            maxWidth: '800px',
+            marginLeft: 'auto',
+            marginRight: 'auto'
+          }}>
+            <Typography variant="h5" sx={{ fontFamily: 'Lexend',
+    //fontSize: '16px',
+    fontWeight: 'bold',
+    lineHeight: '18px',
+    letterSpacing: '0',
+    mb: 3,  color: '#888',paddingLeft: '20px' }}>Experience</Typography>
             {formData.experience.length > 0 ? (
               formData.experience.map((exp, index) => (
                 <Box key={`exp-${index}`}>
@@ -751,8 +929,23 @@ const renderResume = () => {
   </Box>
 )}
         {publicFields.profile_personal_education_is_public === 1 && (
-          <Box sx={{ mt: 4 }}>
-            <Typography variant="h5" sx={{ mb: 2, fontWeight: 'normal', color: '#888',paddingLeft: '20px'}}>Education</Typography>
+          <Box sx={{ 
+              mt: 4, 
+              mb: 4,
+              border: '1px solid black',
+              borderRadius: '8px',
+              padding: '20px',
+              width: '90%',
+              maxWidth: '800px',
+              marginLeft: 'auto',
+              marginRight: 'auto'
+            }}>
+            <Typography variant="h5" sx={{fontFamily: 'Lexend',
+    //fontSize: '16px',
+    fontWeight: 'bold',
+    lineHeight: '18px',
+    letterSpacing: '0',
+    mb: 3, color: '#888',paddingLeft: '20px'}}>Education</Typography>
             {formData.education.length > 0 ? (
               formData.education.map((edu, index) => (
                 <Box key={`edu-${index}`}>
@@ -778,13 +971,33 @@ const renderResume = () => {
         {renderBannerSection()}
 
         {publicFields.profile_personal_expertise_is_public === 1 && (
-          <Box sx={{ mt: 4 }}>
+          <Box sx={{ 
+            mt: 4, 
+            mb: 4,
+            border: '1px solid black',
+            borderRadius: '8px',
+            padding: '20px',
+            width: '90%',
+            maxWidth: '800px',
+            marginLeft: 'auto',
+            marginRight: 'auto'
+          }}>
             {renderExpertise(formData.expertise)}
           </Box>
         )}
 
         {publicFields.profile_personal_wishes_is_public === 1 && (
-          <Box sx={{ mt: 4 }}>
+          <Box sx={{ 
+            mt: 4, 
+            mb: 4,
+            border: '1px solid black',
+            borderRadius: '8px',
+            padding: '20px',
+            width: '90%',
+            maxWidth: '800px',
+            marginLeft: 'auto',
+            marginRight: 'auto'
+          }}>
             {renderWishes(formData.wishes)}
           </Box>
         )}

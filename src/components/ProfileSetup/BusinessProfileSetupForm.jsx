@@ -1,3 +1,5 @@
+//print userID change to
+
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from "react-router-dom";
 import { Box, Typography, Button } from '@mui/material';
@@ -15,9 +17,19 @@ import BusinessCategoryStep from "./BusinessSteps/BusinessCategoryStep";
 
 
 const BusinessProfileSetupForm = () => {
+
+    console.log("We are in business profile steup form:")
+
+    
+
     const location = useLocation();
     const navigate = useNavigate();
-    const userId = location.state?.userId ? location.state.userId : null; // change this now
+     // Extract userId from both location state and URL query parameters
+     const queryParams = new URLSearchParams(location.search);
+     const urlUserId = queryParams.get('userId');
+     const stateUserId = location.state?.userId;   
+     const userId = urlUserId || stateUserId || null;
+    //const userId = location.state?.userId ? location.state.userId : null; // change this now
     const [activeStep, setActiveStep] = useState(0);
     const { isValidPhoneNumber, formatPhoneNumber, formatEIN, isValidEinNumber } = DataValidationUtils;
     const { referralId, user } = useUserContext();
@@ -44,7 +56,7 @@ const BusinessProfileSetupForm = () => {
         yelp: "",
         google: "",
         website: "",
-        tagline: "",
+        tagLine: "",
         shortBio: "",
         template: '0',
         einNumber: "",
@@ -53,9 +65,10 @@ const BusinessProfileSetupForm = () => {
     });
 
    //console.log("In BusinessProfileSetupForm.jsx location.state.userID: ", location.state.userId)
-
+   console.log("business data: ",userId)
 
     useEffect(() => {
+        window.scrollTo(0, 0);
         console.log('referralId', referralId)
     }, [referralId])
 
@@ -94,9 +107,10 @@ const BusinessProfileSetupForm = () => {
         }
         return Object.keys(newErrors).length === 0;
     }
-
+    console.log("before handle next")
     const handleNext = async () => {
-        // console.log("activeStep", activeStep);
+        console.log("activeStep", activeStep);
+        console.log("StepLength", steps.length);
         if (activeStep === steps.length - 1) {
             console.log('form data before submission', formData);
             console.log('raw images', formData.businessGooglePhotos);
@@ -104,6 +118,9 @@ const BusinessProfileSetupForm = () => {
             const data = new FormData();
             // data.append("profile_uid", userId);
             data.append("user_uid", userId);
+            
+            console.log("userId from form data BPSF : ", userId)
+            
             data.append("business_name", formData.businessName);
             data.append("business_address_line_1", formData.addressLine1);
             data.append("business_city", formData.city);
@@ -129,7 +146,7 @@ const BusinessProfileSetupForm = () => {
             // data.append('business_categories_uid', JSON.stringify(formData.categories))
             data.append('business_tags', JSON.stringify(formData.customTags))
             // 
-
+            console.log("Data info:", data)
             try {
                 const response = await axios.post(`${APIConfig.baseURL.dev}/api/v3/business_v3`, data, {
                     headers: {
@@ -138,7 +155,11 @@ const BusinessProfileSetupForm = () => {
                 });
                 console.log("response in business setup", response);
                 if (response.status === 200) {
-                    navigate("/businessProfile");
+                    console.log(" ahahhahah",response.data.business_uid)
+
+                    const newBusinessId = response.data.business_uid
+                    //navigate("/businessProfile");
+                    navigate(`/businessProfile?newBusinessId=${newBusinessId}&fromProfile=true`);
                 } else {
                     console.log("Error finishing profile setup");
                 }
@@ -170,7 +191,7 @@ const BusinessProfileSetupForm = () => {
             template: template,
         }));
     };
-
+    console.log("Form data getting passed:", formData)
     const steps = [
         {
             component: <BusinessBasicInfoStep formData={formData} handleChange={handleChange} errors={errors} setFormData={setFormData} isClaimed={isClaimed} setIsClaimed={setIsClaimed}/>,
@@ -179,7 +200,9 @@ const BusinessProfileSetupForm = () => {
         },
         {
             component: <OptionalBusinessInfoStep
+
                 formData={formData}
+                
                 handleChange={handleChange}
                 setFormData={setFormData}
             />,
@@ -316,7 +339,7 @@ const BusinessProfileSetupForm = () => {
                         justifyContent: 'center',
                     }}
                 >
-                    {isClaimed ? "Claimed" : activeStep === steps.length - 1 ? 'Finish' : 'Continue'}
+                    {isClaimed ? "Claimed" : activeStep === steps.length - 1 ? 'Finish' : 'Continue!!'}
                 </Button>
             </Box>
         </Box>
