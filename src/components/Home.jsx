@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from "react";
+//connecting lines 
+
+import React, { useEffect } from "react";
 import { Link } from "react-router-dom";
-import "./Home.css";
 import { useLocation } from "react-router-dom";
 import { useUserContext } from "./contexts/UserContext";
+import "./Home.css";
 
 const Home = () => {
   const location = useLocation();
@@ -13,10 +15,9 @@ const Home = () => {
     const referrerId = queryParams.get("referral_id");
 
     if (referrerId) {
-      // console.log("Setting referral ID:", referrerId);
       updateReferralId(referrerId);
     }
-  }, [location.search]);
+  }, [location.search, updateReferralId]);
 
   return (
     <div className="home-container">
@@ -45,12 +46,6 @@ const Home = () => {
           <span>Works</span>
         </div>
 
-        {/* Business Signup */}
-        {/* <Link to="/signup?role=business" className="circle business-signup">
-          <span>Business</span>
-          <span>Signup</span>
-        </Link> */}
-
         {/* SVG for connecting lines */}
         <svg
           className="connecting-lines"
@@ -59,13 +54,13 @@ const Home = () => {
           preserveAspectRatio="none"
         >
           {/* Line from Sign Up to Main Circle */}
-          <line className="connector" x1="25%" y1="20%" x2="45%" y2="45%" />
+          <line className="connector" x1="90" y1="100" x2="280" y2="270" />
+          
           {/* Line from Login to Main Circle */}
-          <line className="connector" x1="25%" y1="65%" x2="45%" y2="55%" />
+          <line className="connector" x1="100" y1="500" x2="280" y2="310" />
+          
           {/* Line from Main Circle to How It Works */}
-          <line className="connector" x1="55%" y1="50%" x2="80%" y2="65%" />
-          {/* Line from Business Signup to Main Circle */}
-          {/* <line className="connector" x1="55%" y1="40%" x2="70%" y2="20%" /> */}
+          <line className="connector" x1="315" y1="280" x2="315" y2="500" />
         </svg>
       </div>
     </div>

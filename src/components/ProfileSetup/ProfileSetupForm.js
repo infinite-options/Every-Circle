@@ -1,18 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Box, Typography, Button } from '@mui/material';
-import ProfileSetupStepper from './ProfileSetupStepper';
-import BasicInfoStep from './Steps/BasicInfoStep';
-import OptionalInfoStep from './Steps/OptionalInfoStep';
-import SocialLinksStep from './Steps/SocialLinksStep';
-import TemplateStep from './Steps/TemplateStep';
-import ResponsiveContainer from '../Layout/ResponsiveContainer';
-import axios from 'axios';
-import APIConfig from '../../APIConfig';
-import { DataValidationUtils } from '../auth/authUtils/DataValidationUtils';
-import { useUserContext } from '../contexts/UserContext';
-import HowCanIHelp from './Steps/HowCanIHelp';
-import HowCanYouHelp from './Steps/HowCanYouHelp';
+import { Box, Typography, Button } from "@mui/material";
+import ProfileSetupStepper from "./ProfileSetupStepper";
+import BasicInfoStep from "./Steps/BasicInfoStep";
+import OptionalInfoStep from "./Steps/OptionalInfoStep";
+import SocialLinksStep from "./Steps/SocialLinksStep";
+import TemplateStep from "./Steps/TemplateStep";
+import ResponsiveContainer from "../Layout/ResponsiveContainer";
+import axios from "axios";
+import APIConfig from "../../APIConfig";
+import { DataValidationUtils } from "../auth/authUtils/DataValidationUtils";
+import { useUserContext } from "../contexts/UserContext";
+import HowCanIHelp from "./Steps/HowCanIHelp";
+import HowCanYouHelp from "./Steps/HowCanYouHelp";
 
 const ProfileSetupForm = () => {
   const location = useLocation();
@@ -24,48 +24,45 @@ const ProfileSetupForm = () => {
   const [errors, setErrors] = useState({});
   const [formData, setFormData] = useState({
     firstName: "",
-    lastName: '',
-    phoneNumber: '',
-    location: '',
-    tagLine: '',
-    shortBio: '',
+    lastName: "",
+    phoneNumber: "",
+    location: "",
+    tagLine: "",
+    shortBio: "",
     // image1: null,
     // image2: null,
     // image3: null,
-    facebook: '',
-    twitter: '',
-    linkedin: '',
-    youtube: '',
-    template: '1',
+    facebook: "",
+    twitter: "",
+    linkedin: "",
+    youtube: "",
+    template: "1",
     selectedImages: [],
-    favImage: '',
-    howCanIHelp0: '',
-    howCanIHelp1: '',
-    howCanIHelp2: '',
-    howCanIHelp3: '',
-    howCanYouHelp0: '',
-    howCanYouHelp1: '',
-    howCanYouHelp2: '',
-    howCanYouHelp3: '',
+    favImage: "",
+    howCanIHelp0: "",
+    howCanIHelp1: "",
+    howCanIHelp2: "",
+    howCanIHelp3: "",
+    howCanYouHelp0: "",
+    howCanYouHelp1: "",
+    howCanYouHelp2: "",
+    howCanYouHelp3: "",
   });
 
-  console.log("In ProfileSetupForm.jsx location.state.userID: ", location.state.userId)
-
+  console.log("In ProfileSetupForm.jsx location.state.userID: ", location.state.userId);
 
   useEffect(() => {
-    console.log('referralId', referralId)
-  }, [referralId])
-
+    console.log("referralId", referralId);
+  }, [referralId]);
 
   const handleChange = (e) => {
     const { name, value: rawValue } = e.target;
     const value = name === "phoneNumber" ? formatPhoneNumber(rawValue) : rawValue;
 
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
-
   };
 
   const handleImageUpload = (index, file) => {
@@ -82,7 +79,7 @@ const ProfileSetupForm = () => {
       coverPhoto: currentIndex + index === 0 && !formData.favImage, // Only set the first new image as cover if there's no favorite image
     };
     const newSelectedImages = [...formData.selectedImages, fileObj];
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       selectedImages: newSelectedImages,
     }));
@@ -94,7 +91,7 @@ const ProfileSetupForm = () => {
       ...prev,
       selectedImages: updatedImages,
     }));
-  }
+  };
 
   const handleFavImage = (imageUrl) => {
     const updatedImages = formData.selectedImages.map((img) => ({ ...img, coverPhoto: img.file.name === imageUrl.name }));
@@ -102,8 +99,7 @@ const ProfileSetupForm = () => {
       ...prev,
       selectedImages: updatedImages,
     }));
-  }
-
+  };
 
   const validateRequiredFields = () => {
     const newErrors = {};
@@ -123,7 +119,7 @@ const ProfileSetupForm = () => {
       setErrors({});
     }
     return Object.keys(newErrors).length === 0;
-  }
+  };
 
   const handleNext = async () => {
     // console.log("activeStep", activeStep);
@@ -156,7 +152,6 @@ const ProfileSetupForm = () => {
       Object.keys(formData).forEach((key) => {
         if (key.startsWith("howCanIHelp")) {
           howCanIHelp.push(formData[key]);
-
         } else if (key.startsWith("howCanYouHelp")) {
           howCanYouHelp.push(formData[key]);
         }
@@ -182,7 +177,7 @@ const ProfileSetupForm = () => {
         });
         console.log("response in profile setup", response);
         if (response.status === 200) {
-          navigate("/accountSeletion", {
+          navigate("/accountSelection", {
             state: { userId: userId },
           });
         } else {
@@ -195,9 +190,8 @@ const ProfileSetupForm = () => {
       if (validateRequiredFields()) {
         setActiveStep((prev) => prev + 1);
       }
-    }
-    else {
-      console.log(formData)
+    } else {
+      console.log(formData);
       setActiveStep((prev) => prev + 1);
     }
   };
@@ -218,7 +212,7 @@ const ProfileSetupForm = () => {
     {
       component: <BasicInfoStep formData={formData} handleChange={handleChange} errors={errors} />,
       title: "Welcome to Every Circle!",
-      subtitle: "Let's Build Your Profile Page!"
+      subtitle: "Let's Build Your Profile Page!",
     },
     // {
     //   component: <OptionalInfoStep
@@ -254,20 +248,20 @@ const ProfileSetupForm = () => {
         <Box
           sx={{
             padding: { xs: 3, sm: 4 },
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            color: '#fff',
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            color: "#fff",
           }}
         >
           {/* For Title */}
           <Typography
-            variant="h5"
-            component="h3"
+            variant='h5'
+            component='h3'
             sx={{
-              mb: (steps[activeStep].subtitle ? 1.5 : 2),
-              fontWeight: 'bold',
-              textAlign: 'center',
+              mb: steps[activeStep].subtitle ? 1.5 : 2,
+              fontWeight: "bold",
+              textAlign: "center",
             }}
           >
             {steps[activeStep].title}
@@ -276,10 +270,10 @@ const ProfileSetupForm = () => {
           {/* For subtitle */}
           {steps[activeStep].subtitle && (
             <Typography
-              variant="subtitle1"
+              variant='subtitle1'
               sx={{
                 mb: 2,
-                textAlign: 'center',
+                textAlign: "center",
               }}
             >
               {steps[activeStep].subtitle}
@@ -287,16 +281,16 @@ const ProfileSetupForm = () => {
           )}
 
           <Box
-            component="form"
+            component='form'
             sx={{
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
-              width: '100%',
-              height: '500px',
+              width: "100%",
+              height: "500px",
               overflowY: "scroll",
               "&::-webkit-scrollbar": {
-                  display: "none",
+                display: "none",
               },
               // overflowY: "scroll",
             }}
@@ -304,72 +298,68 @@ const ProfileSetupForm = () => {
             {steps[activeStep].component}
 
             <Box sx={{ mt: 4 }}>
-              <ProfileSetupStepper
-                activeStep={activeStep}
-                steps={steps.length}
-              />
+              <ProfileSetupStepper activeStep={activeStep} steps={steps.length} />
             </Box>
-
           </Box>
         </Box>
       </ResponsiveContainer>
       <Box
         sx={{
-          display: 'flex',
+          display: "flex",
           gap: 2,
           mt: 3,
-          width: '100%',
-          justifyContent: 'center',
+          width: "100%",
+          justifyContent: "center",
           position: "relative",
           paddingBottom: "10px",
         }}
       >
         {activeStep > 0 && (
           <Button
-            variant="contained"
+            variant='contained'
             onClick={handleBack}
             sx={{
-              width: '100px',
-              height: '100px',
-              borderRadius: '50%',
-              minWidth: 'unset',
-              backgroundColor: '#000000',
-              color: '#fff',
-              '&:hover': {
-                backgroundColor: '#333333',
+              width: "100px",
+              height: "100px",
+              borderRadius: "50%",
+              minWidth: "unset",
+              backgroundColor: "#000000",
+              color: "#fff",
+              "&:hover": {
+                backgroundColor: "#333333",
               },
               padding: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
             Back
           </Button>
         )}
         <Button
-          variant="contained"
+          variant='contained'
           onClick={handleNext}
           sx={{
-            width: '100px',
-            height: '100px',
-            borderRadius: '50%',
-            backgroundColor: '#FF9500',
-            color: '#fff',
-            '&:hover': {
-              backgroundColor: '#e68600',
+            width: "100px",
+            height: "100px",
+            borderRadius: "50%",
+            backgroundColor: "#FF9500",
+            color: "#fff",
+            "&:hover": {
+              backgroundColor: "#e68600",
             },
             padding: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
-          {activeStep === steps.length - 1 ? 'Finish' : 'Continue'}
+          {activeStep === steps.length - 1 ? "Finish" : "Continue"}
         </Button>
       </Box>
     </Box>
   );
 };
 
-export default ProfileSetupForm; 
+export default ProfileSetupForm;

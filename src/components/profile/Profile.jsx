@@ -1,6 +1,12 @@
 
-/////banner add
-import React, { useState, useEffect } from "react";
+/////business data get from business page 
+
+///resume diaply name 
+
+
+// deleye resuem
+
+import React, { useState, useEffect, useRef } from "react";
 import { Box, Typography, styled, IconButton, TextField, Rating, Button } from "@mui/material";
 import { SocialLink } from "./SocialLink";
 import { InputField } from "../common/InputField";
@@ -36,9 +42,20 @@ import ProfileView from './ProfileView';
 import moneyBag from "../../assets/moneybag.png";
 import verifiedIcon from "../../assets/VerifiedProfile.png";
 
-const FormBox = styled(Box)({
-  padding: "0 16px",
-});
+const FormBox = styled(Box)(({ theme }) => ({
+  padding: "0",
+  maxWidth: '100%',
+  margin: "0 auto",
+  boxSizing: "border-box",
+  width: "100%",
+  backgroundColor: 'white',
+  [theme.breakpoints.down('sm')]: {
+    padding: "0 5px",
+  },
+  [theme.breakpoints.up('md')]: {
+    maxWidth: '800px',
+  }
+}));
 
 const SectionHeader = styled(Box)({
   display: "flex",
@@ -48,10 +65,13 @@ const SectionHeader = styled(Box)({
 });
 
 const SectionContainer = styled(Box)({
-  marginBottom: "20px",
+  marginBottom: "16px",
   backgroundColor: "white",
   borderRadius: "8px",
-  padding: "15px",
+  padding: "12px 10px",
+  width: "100%",
+  boxSizing: "border-box", 
+  overflow: "hidden"
 });
 
 const PublicLabel = styled(Button)({
@@ -95,15 +115,20 @@ const ItemActions = styled(Box)({
   display: "flex",
 });
 
-const BannerSection = styled(Box)({
+const BannerSection = styled(Box)(({ theme }) => ({
   backgroundColor: '#e0e0e0',
   borderRadius: '8px',
-  padding: '16px 20px',
+  padding: '12px 10px',
   display: 'flex',
-  alignItems: 'center',
+  flexDirection: { xs: 'column', sm: 'row' },
   justifyContent: 'space-between',
-  marginBottom: '24px',
-});
+  alignItems: { xs: 'flex-start', sm: 'center' },
+  marginBottom: '16px',
+  width: "100%",
+  maxWidth: "100%",
+  boxSizing: "border-box",
+  overflow: 'hidden'
+}));
 
 const BusinessCard = styled(Box)({
   backgroundColor: 'white',
@@ -134,6 +159,9 @@ export default function Profile() {
   const { user, updateUser } = useUserContext();
   //console.log('user data', user);
   const userId = user.userId;
+  // Map businesses from business_info
+
+  
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -152,6 +180,8 @@ export default function Profile() {
     expertise: [{ headline: "", description: "", cost: "", bounty: "" }],
     wishes: [{ helpNeeds: "", details: "" }],
     resume: null,
+    resumeDetails: null,  // New field to track resume metadata
+    previousResume: null, // Track if we're deleting a resume
     businesses: [{ name: "", role: "" }],
     allowBannerAds: true,
     bannerAdsBounty: "",
@@ -170,6 +200,7 @@ export default function Profile() {
   const [showSpinner, setShowSpinner] = useState(false);
   const navigate = useNavigate();
   const [ratings, setRatings] = useState(null);
+  
   const [publicFields, setPublicFields] = useState({
     profile_personal_email_is_public: 1,
     profile_personal_phone_number_is_public: 1,
@@ -196,10 +227,12 @@ export default function Profile() {
     3: "split",
     4: "creative",
   }
-
+  const [fetchCount, setFetchCount] = useState(0);
+  const hasFetchedRef = useRef(false);
   const handleOpen = (title, content) => {
     setDialog({ open: true, title, content });
   };
+  
 
   const handleClose =  () => {
     setDialog({ open: false, title: "", content: "" });
@@ -210,9 +243,45 @@ export default function Profile() {
       setShowSpinner(true);
       const response = await axios.get(`https://ioec2testsspm.infiniteoptions.com/api/v1/userprofileinfo/${userId}`);
       if (response.status === 200) {
-        const { personal_info, links_info, expertise_info, wishes_info, experience_info, education_info } = response.data;
+
+        console.log("Response", response.status)
+
+        const { personal_info, links_info, expertise_info, wishes_info, experience_info, education_info,business_info } = response.data;
+        //const business_info = response.data.business_info || [];
         const user_email = response.data.user_email || "";
         // Set public fields from personal info
+
+        let resumeUrl = null;
+      let resumeDetails = null;
+      
+      if (personal_info.profile_personal_resume) {
+        //resumeUrl = JSON.parse(personal_info.profile_personal_resume);
+        const parsed = JSON.parse(personal_info.profile_personal_resume);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        resumeUrl =parsed
+
+
+        console.log("Resume URL",resumeUrl, typeof(resumeUrl))
+        //console.log("Resume Name: ", resumeUrl[0]["filename"])
+
+        // Try to extract the filename from the URL
+        //const fileName =  resumeUrl[0]["filename"];
+        
+        resumeDetails = {
+          fileIndex:  "0",
+          fileName:  resumeUrl[0]["filename"] || "Resume",
+          contentType:  resumeUrl[0]["contentType"] || "pdf"
+        };
+
+        console.log("Resume details", resumeDetails)
+
+      }
+    }
+
+      //////////
+
+
+      
         setPublicFields({
           profile_personal_email_is_public: personal_info.profile_personal_email_is_public,
           profile_personal_phone_number_is_public: personal_info.profile_personal_phone_number_is_public,
@@ -256,11 +325,13 @@ export default function Profile() {
           bounty: exp.profile_expertise_bounty
         }));
 
+        
+
         const wishes = wishes_info.map(wish => ({
           uid: wish.profile_wish_uid,
           helpNeeds: wish.profile_wish_title,
           details: wish.profile_wish_description,
-          bounty: wish.profile_wish_bounty || "Free" // Make sure to extract the bounty
+          bounty: wish.profile_wish_bounty || "" // Make sure to extract the bounty
         }));
 
         // Map experience from experience_info
@@ -272,6 +343,18 @@ export default function Profile() {
           endDate: exp.profile_experience_end_date || ""
         }));
 
+        // Map businesses from business_info
+        const businesses = business_info.length > 0 
+          ? business_info.map(business => ({
+              uid: business.business_uid,
+              name: business.business_name,
+              role: business.business_uid, // Using business_uid as role for now
+              business_tag_line: business.business_tag_line || "",
+              business_email_id: business.business_email_id || "",
+              business_phone_number: business.business_phone_number || "",
+              business_favorite_image: business.business_favorite_image || ""
+            })) 
+          : [{ name: "", role: "" }];
         // Map education from education_info
         const education = education_info.map(edu => ({
           uid: edu.profile_education_uid,
@@ -309,8 +392,11 @@ export default function Profile() {
           education: education.length > 0 ? education : [{ school: "", degree: "", startDate: "", endDate: "" }],
           expertise: expertise.length > 0 ? expertise : [{ headline: "", description: "", cost: "", bounty: "" }],
           wishes: wishes.length > 0 ? wishes : [{ helpNeeds: "", details: "" }],
-          resume: personal_info.profile_personal_resume || null,
-          businesses: [{ name: "", role: "" }],
+          //resume: personal_info.profile_resume || null,
+          resume: resumeUrl,
+          resumeDetails: resumeDetails,
+          previousResume: null,
+          businesses: businesses,
           allowBannerAds: true,
           bannerAdsBounty: personal_info.profile_personal_banner_ads_bounty || "", //////asad
           
@@ -332,8 +418,18 @@ export default function Profile() {
     }
   };
 
+  // useEffect(() => {
+  //   fetchProfile();
+  //   console.log("Inside useEffect")
+  // }, [userId]);
+
   useEffect(() => {
-    fetchProfile();
+    if (!hasFetchedRef.current && userId) {
+      hasFetchedRef.current = true;
+      fetchProfile();
+      setFetchCount(prev => prev + 1);
+      console.log("Inside useEffect - fetch #", fetchCount + 1);
+    }
   }, [userId]);
 
   const validateRequiredFields = () => {
@@ -417,22 +513,122 @@ export default function Profile() {
     }
   };
 
+  const getResumeFileName = () => {
+    // Extract filename based on the resume data structure
+    if (formData.resumeDetails && formData.resumeDetails.fileName) {
+      return formData.resumeDetails.fileName;
+    } else if (typeof formData.resume === 'string') {
+      try {
+        // Try parsing as JSON array first
+        const resumeData = JSON.parse(formData.resume);
+        if (Array.isArray(resumeData) && resumeData.length > 0 && resumeData[0].filename) {
+          return resumeData[0].filename;
+        }
+      } catch (e) {
+        // If parsing fails, use the URL's filename
+        return formData.resume.split('/').pop();
+      }
+    } else if (formData.resume instanceof File) {
+      return formData.resume.name;
+    }
+    return "Resume file";
+  };
+  
+  const getResumeUrl = () => {
+    if (typeof formData.resume === 'string') {
+      try {
+        // Try parsing as JSON array first
+        const resumeData = JSON.parse(formData.resume);
+        if (Array.isArray(resumeData) && resumeData.length > 0 && resumeData[0].link) {
+          return resumeData[0].link;
+        }
+      } catch (e) {
+        // If parsing fails, use the string as URL
+        return formData.resume;
+      }
+    }
+    return '#';
+  };
 
-  /*const handleDeleteExperience = (index) => {
-  const updatedExperience = [...formData.experience];
-  const removedItem = updatedExperience[index];
+  // const handleDeleteResume = () => {
+  //   console.log("deleete resume function called")
+  //   console.log("Inside delete function ouside if ", formData.resume)
+  //   if (formData.resume) {
+  //     console.log("Inside delete function pouter if", formData.resume)
+  //     try {
+  //       console.log("Inside delete function try block", formData.resume)
+  //       let allResumeUrls = [];
+        
+  //       // If resume is a string (either JSON or direct URL)
+  //       if (typeof formData.resume === 'string') {
+  //         console.log("Inside delete function", formData.resume)
+  //         try {
+  //           // Try to parse as JSON array
+  //           const resumeData = JSON.parse(formData.resume);
+
+  //           console.log("resume data in delete functon")
+  //           if (Array.isArray(resumeData) && resumeData.length > 0) {
+  //             // Get ALL URLs to delete
+  //             allResumeUrls = resumeData.map(resume => resume.link);
+  //             console.log("All resumes to delete:", allResumeUrls);
+  //           } else {
+  //             allResumeUrls = [formData.resume];
+  //           }
+  //         } catch (e) {
+  //           // If parsing fails, use string directly
+  //           allResumeUrls = [formData.resume];
+  //         }
+  //       }
+        
+  //       // Store ALL URLs to delete
+  //       setFormData(prev => ({ 
+  //         ...prev, 
+  //         previousResume: allResumeUrls, // Store ALL URLs to delete
+  //         resume: null,
+  //         resumeDetails: null
+  //       }));
+        
+  //       console.log("All resumes marked for deletion:", allResumeUrls);
+  //       handleOpen("Resume Removed", "All resumes have been removed. Changes will be saved when you submit the form.");
+  //     } catch (error) {
+  //       console.error("Error in handleDeleteResume:", error);
+  //       handleOpen("Error", "Could not process resume deletion. Please try again.");
+  //     }
+  //   }
+  // };
+  ///////// /          /////////////
   
-  // If the item has a UID (exists in backend), add it to deletedExperience array
-  if (removedItem.uid) {
-    setDeletedExperience(prev => [...prev, removedItem.uid]);
-  }
+
+  const handleDeleteResume = () => {
+    console.log("Delete resume function called");
   
-  updatedExperience.splice(index, 1);
-  setFormData(prev => ({
-    ...prev,
-    experience: updatedExperience
-  }));
-}; */
+    if (Array.isArray(formData.resume) && formData.resume.length > 0) {
+      try {
+        // Extract all 'link' fields from resume objects
+        const allResumeUrls = formData.resume.map(resume => resume.link);
+        console.log("All resumes to delete:", allResumeUrls);
+  
+        // Update form data
+        setFormData(prev => ({
+          ...prev,
+          previousResume: allResumeUrls,
+          resume: null,
+          resumeDetails: null,
+        }));
+  
+        handleOpen(
+          "Resume Removed",
+          "All resumes have been removed. Changes will be saved when you submit the form."
+        );
+      } catch (error) {
+        console.error("Error in handleDeleteResume:", error);
+        handleOpen("Error", "Could not process resume deletion. Please try again.");
+      }
+    } else {
+      console.log("No resume data to delete.");
+    }
+  };
+  
 
 
   const handleDeleteExperience = (index) => {
@@ -517,14 +713,7 @@ export default function Profile() {
     }));
   };
 
-  /*const handleDeleteEducation = (index) => {
-    const updatedEducation = [...formData.education];
-    updatedEducation.splice(index, 1);
-    setFormData(prev => ({
-      ...prev,
-      education: updatedEducation
-    }));
-  }; */
+
 
   const handleDeleteEducation = (index) => {
     const updatedEducation = [...formData.education];
@@ -599,45 +788,83 @@ export default function Profile() {
       wishes: newWishes
     }));
   };
-const handleResumeUpload = (e) => {
-  if (e.target.files && e.target.files[0]) {
-    const file = e.target.files[0];
-    
-    // Add detailed logging
-    console.log("Resume file selected:", {
-      name: file.name,
-      type: file.type,
-      size: file.size + " bytes",
-      lastModified: new Date(file.lastModified).toISOString()
-    });
-    
-    // Validate file size (5MB limit is common)
-    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
-    if (file.size > MAX_FILE_SIZE) {
-      handleOpen("Error", `Resume file size (${(file.size/1024/1024).toFixed(2)}MB) exceeds the maximum allowed size of 5MB.`);
-      return;
-    }
-    
-    // Set the file in state
-    setFormData(prev => {
-      console.log("Setting resume in state:", file.name);
-      return {
-        ...prev,
-        resume: file
-      };
-    });
-    
-    // Also set the public flag to 1 when a resume is uploaded
-    setPublicFields(prev => ({
-      ...prev,
-      profile_personal_resume_is_public: 1
-    }));
-    
-    // Show confirmation to user
-    handleOpen("Resume Selected", `File "${file.name}" has been selected. Don't forget to save your profile to upload the resume.`);
-  }
-};
+  // / / // / 
 
+
+  ///////
+  const handleResumeUpload = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      
+      console.log("Resume file selected:", {
+        name: file.name,
+        type: file.type,
+        size: file.size + " bytes",
+        lastModified: new Date(file.lastModified).toISOString()
+      });
+      
+      // Validate file size
+      const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+      if (file.size > MAX_FILE_SIZE) {
+        handleOpen("Error", `Resume file size (${(file.size/1024/1024).toFixed(2)}MB) exceeds the maximum allowed size of 5MB.`);
+        return;
+      }
+      
+      // Extract ALL existing resumes for deletion (not just the first one)
+      let existingResumeUrls = [];
+      
+      if (formData.resume) {
+        try {
+          // If resume is a string (either JSON or direct URL)
+          if (typeof formData.resume === 'string') {
+            try {
+              // Try to parse as JSON array
+              const resumeData = JSON.parse(formData.resume);
+              if (Array.isArray(resumeData) && resumeData.length > 0) {
+                // Get ALL URLs to delete
+                existingResumeUrls = resumeData.map(resume => resume.link);
+                console.log("All existing resumes will be deleted:", existingResumeUrls);
+              } else {
+                existingResumeUrls = [formData.resume];
+              }
+            } catch (e) {
+              // If parsing fails, use string directly
+              existingResumeUrls = [formData.resume];
+            }
+          }
+        } catch (error) {
+          console.error("Error processing existing resumes for deletion:", error);
+        }
+      }
+      
+      // Create resume details with the exact format expected by the API
+      const resumeDetails = [{
+        fileIndex: 0,
+        fileName: file.name,
+        contentType: "Resume"
+      }];
+      
+      // Set both the file and its metadata in state, along with ALL resumes to delete
+      setFormData(prev => {
+        console.log("Setting resume in state:", file.name);
+        return {
+          ...prev,
+          resume: file,
+          resumeDetails: resumeDetails,
+          previousResume: existingResumeUrls // Store ALL URLs to delete
+        };
+      });
+      
+      // Set resume to be public
+      setPublicFields(prev => ({
+        ...prev,
+        profile_personal_resume_is_public: 1
+      }));
+      
+      handleOpen("Resume Selected", `File "${file.name}" has been selected. Your previous resume(s) will be replaced when you save your profile.`);
+    }
+  };
+  
 
   // Replace the handleSubmit function with this optimized version
 
@@ -949,27 +1176,42 @@ const handleResumeUpload = (e) => {
         // Don't send back existing image URLs - server already has them
       }
   //handle resume upload
-// Handle resume upload specifically
-if (formData.resume) {
-  // Log details about the resume for debugging
-  if (formData.resume instanceof File) {
-    console.log("Resume upload details:", {
-      name: formData.resume.name,
-      type: formData.resume.type,
-      size: formData.resume.size + " bytes"
-    });
-    
-    // Try both field names to ensure compatibility
-    form.append("profile_personal_resume", formData.resume);
-    
-    // Log that we're trying to upload the resume
-    console.log("Uploading new resume file as 'profile_personal_resume'");
-  } 
-  else if (typeof formData.resume === 'string' && formData.resume) {
-    // If it's a string URL from an existing resume
-    form.append("profile_personal_resume", formData.resume);
-    console.log("Using existing resume URL:", formData.resume);
+// Inside handleSubmit function, modify the resume upload section
+// Find this section around line 560-600
+
+// Handle resume upload - REPLACE THIS SECTION
+if (formData.resume instanceof File) {
+  // This is a new file being uploaded
+  console.log("Uploading new resume file:", formData.resume.name);
+  
+  // Attach the file with the key "file_0" as required by the API
+  form.append("file_0", formData.resume);
+  
+  // Create the resume details in the exact format expected by the API
+  const resumeDetailsArray = [{
+    fileIndex: 0,
+    fileName: formData.resume.name,
+    contentType: "Resume"
+  }];
+  
+  // Add the resume details array
+  form.append("profile_resume_details", JSON.stringify(resumeDetailsArray));
+  
+  console.log("Adding resume details:", JSON.stringify(resumeDetailsArray));
+
+  if (formData.previousResume && formData.previousResume.length > 0) {
+    console.log("Also deleting ALL previous resumes:", formData.previousResume);
+    form.append("delete_documents", JSON.stringify(formData.previousResume));
   }
+} 
+else if (formData.resume && typeof formData.resume === 'string') {
+  // We're keeping an existing resume URL - no need to send it back to the server
+  console.log("Keeping existing resume(s)");
+}
+else if (formData.previousResume && formData.previousResume.length > 0) {
+  // We're only deleting resume(s) without uploading a new one
+  console.log("Deleting ALL resumes:", formData.previousResume);
+  form.append("delete_documents", JSON.stringify(formData.previousResume));
 }
 
       console.log("Form data being sent:");
@@ -1057,6 +1299,7 @@ if (formData.resume) {
           window.scrollTo(0, 0);
           setTimeout(async () => {
             await fetchProfile();
+            console.log("Inside ==200")
             handleOpen("Success", "Profile has been updated successfully.");
             setShowSpinner(false);
           }, 1000);
@@ -1254,50 +1497,54 @@ if (formData.resume) {
     );
   }
 
- /////////////
-
- // This section shows where to make changes in the Profile component's render method
-
-  // ...existing code...
 
   return (
-    <StyledContainer>
+    <StyledContainer sx={{ maxWidth: '100%', display: 'flex', margin: "0 auto", padding: 0, boxSizing: "border-box" , backgroundColor:'white'}}>
       <Backdrop sx={{ color: '#fff', zIndex: 1 }} open={showSpinner}>
         <CircularProgress color="inherit" />
       </Backdrop>
       <Header title="Profile" />
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', padding: '0px 30px', width: '100%', }}>
-        <EditIcon
-          onClick={() => setEditMode(false)}
-          sx={{ cursor: 'pointer', color: "red" }}
-        />
-      </Box>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', padding: '0px 10px', width: '100%', maxWidth: "100%", margin: "0 auto" }}>
+  <EditIcon
+    onClick={() => setEditMode(false)}
+    sx={{ cursor: 'pointer', color: "red" }}
+  />
+</Box>
       
       
       
-      <Box sx={{ borderRadius: '10px', margin: "10px 25px" }}>
+      <Box sx={{ borderRadius: '10px', margin: "10px 25px", width: "calc(100% - 50px)" }}>
         <form>
-          <FormBox>
-            <InputField
-              required
-              label="First Name (Public)"
-              value={formData.firstName}     /////
-              onChange={(value) => setFormData({ ...formData, firstName: value })}
-              disabled={!editMode}
-              backgroundColor={editMode ? 'white' : '#e0e0e0'}
-              error={errors.firstName}
-              helperText={errors.firstName}
-            />
-            <InputField
-              required
-              label="Last Name (Public)"
-              value={formData.lastName}
-              onChange={(value) => setFormData({ ...formData, lastName: value })}
-              disabled={!editMode}
-              backgroundColor={editMode ? 'white' : '#e0e0e0'}
-              error={errors.lastName}
-              helperText={errors.lastName}
-            />
+        <FormBox>
+  {/* First Name field */}
+  <Box sx={{ width: '100%', boxSizing: 'border-box' }}>
+    <InputField
+      required
+      label="First Name (Public)"
+      value={formData.firstName}
+      onChange={(value) => setFormData({ ...formData, firstName: value })}
+      disabled={!editMode}
+      backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
+      error={errors.firstName}
+      helperText={errors.firstName}
+      width="100%"
+    />
+  </Box>
+  
+  {/* Last Name field */}
+  <Box sx={{ width: '100%', boxSizing: 'border-box' }}>
+    <InputField
+      required
+      label="Last Name (Public)"
+      value={formData.lastName}
+      onChange={(value) => setFormData({ ...formData, lastName: value })}
+      disabled={!editMode}
+      backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
+      error={errors.lastName}
+      helperText={errors.lastName}
+      width="100%"
+    />
+  </Box>
             <Box sx={{ position: 'relative', display: editMode || publicFields.profile_personal_phone_number_is_public === 1 ? 'block' : 'none' }}>
               <InputField
                 required
@@ -1307,7 +1554,7 @@ if (formData.resume) {
                   setFormData({ ...formData, phoneNumber: formatPhoneNumber(value) })
                 }
                 disabled={!editMode}
-                backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
                 error={errors.phoneNumber}
                 helperText={errors.phoneNumber}
               />
@@ -1322,12 +1569,13 @@ if (formData.resume) {
 
               </PublicLabel>
             </Box>
+            
             <Box sx={{ position: 'relative', display: 'block' }}>
             <InputField
               label="Email"
               value={formData.user_email || ""}
               disabled={true} // Email is typically non-editable
-              backgroundColor={'#e0e0e0'}
+              backgroundColor={'white'}
             />
             <PublicLabel 
               onClick={() => handlePublicToggle('email')}
@@ -1345,7 +1593,7 @@ if (formData.resume) {
               value={formData.profile_personal_country}
               onChange={(value) => setFormData({ ...formData, location: value })}
               disabled={!editMode}
-              backgroundColor={editMode ? 'white' : '#e0e0e0'}
+              backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
               error={errors.location}
               helperText={errors.location}
             />
@@ -1445,8 +1693,8 @@ if (formData.resume) {
                   setFormData(prev => ({ ...prev, tagLine: truncatedValue }));
                 }}
                 disabled={!editMode}
-                backgroundColor={editMode ? 'white' : '#e0e0e0'}
-                helperText={`${formData.tagLine?.length || 0}/40 characters`}
+                backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
+                //helperText={`${formData.tagLine?.length || 0}/40 characters`}
               />
               <PublicLabel 
                 onClick={() => handlePublicToggle('tagLine')}
@@ -1460,7 +1708,7 @@ if (formData.resume) {
             </Box>
 
             {/* Mini Card */}
-            <Box sx={{ padding: '0px 30px', width: '100%', marginBottom: '10px' }}>
+            <Box sx={{ padding: '0px 10px', width: '100%', marginBottom: '10px' }}>
               <ProfileCard
                 firstName={formData.firstName || ""}
                 lastName={formData.lastName || ""}
@@ -1495,8 +1743,8 @@ if (formData.resume) {
                   }
                 }}
                 disabled={!editMode}
-                backgroundColor={editMode ? 'white' : '#e0e0e0'}
-                helperText={`${countWords(formData.shortBio || '')}/15 words`}
+                backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
+                //helperText={`${countWords(formData.shortBio || '')}/15 words`}
               />
               <PublicLabel 
                 onClick={() => handlePublicToggle('shortBio')}
@@ -1513,106 +1761,118 @@ if (formData.resume) {
             <Box sx={{ borderBottom: '1px solid #e0e0e0', my: 3 }} />
 
             {/* Resume Upload - Moved above Experience section */}
-            <SectionContainer>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6">Resume</Typography>
-                <PublicLabel 
-                  onClick={() => handlePublicToggle('resume')}
-                  disabled={!editMode}
-                >
-                  {publicFields.profile_personal_resume_is_public === 1 ? ('Public') : (
-  <span style={{ color: 'orange' }}>Private</span>
-)}
-                </PublicLabel>
-              </Box>
-              {editMode ? (
-                <>
-                  <UploadButton
-                    component="label"
-                    disabled={!editMode}
-                  >
-                    <FileUploadIcon sx={{ fontSize: 40, color: "#666", mb: 1 }} />
-                    <Typography variant="body2" color="textSecondary">
-                      {formData.resume ? 'Change Resume' : 'Upload Resume'}
-                    </Typography>
-                    <Typography variant="caption" color="textSecondary">
-                      (pdf, doc) &lt; 2.5MB
-                    </Typography>
-                    <input
-                      type="file"
-                      hidden
-                      accept=".pdf,.doc,.docx"
-                      onChange={handleResumeUpload}
-                      disabled={!editMode}
-                    />
-                  </UploadButton>
-                  {formData.resume && (
-                    <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Typography variant="body2">
-                        {typeof formData.resume === 'string' ? formData.resume.split('/').pop() : formData.resume.name}
-                      </Typography>
-                      <IconButton 
-                        size="small"
-                        onClick={() => setFormData(prev => ({ ...prev, resume: null }))}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                  )}
-                </>
-              ) : formData.resume ? (
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="body2" component="a" 
-                    href={typeof formData.resume === 'string' ? formData.resume : '#'}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{ 
-                      color: 'primary.main',
-                      textDecoration: 'none',
-                      '&:hover': {
-                        textDecoration: 'underline'
-                      }
-                    }}
-                  >
-                    {typeof formData.resume === 'string' ? formData.resume.split('/').pop() : formData.resume.name}
-                  </Typography>
-                </Box>
-              ) : (
-                <Typography variant="body2" color="text.secondary">
-                  No resume uploaded
-                </Typography>
-              )}
-            </SectionContainer>
+            {/* Resume Upload - Fixed section for edit mode */}
+<SectionContainer>
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+    <Typography variant="h6">Resume</Typography>
+    <PublicLabel 
+      onClick={() => handlePublicToggle('resume')}
+      disabled={!editMode}
+    >
+      {publicFields.profile_personal_resume_is_public === 1 ? ('Public') : (
+        <span style={{ color: 'orange' }}>Private</span>
+      )}
+    </PublicLabel>
+  </Box>
+  
+  {editMode ? (
+    <>
+      <UploadButton
+        component="label"
+        disabled={!editMode}
+      >
+        <FileUploadIcon sx={{ fontSize: 40, color: "#666", mb: 1 }} />
+        <Typography variant="body2" color="textSecondary">
+          {formData.resume ? 'Change Resume' : 'Upload Resume'}
+        </Typography>
+        <Typography variant="caption" color="textSecondary">
+          (pdf, doc) &lt; 5MB
+        </Typography>
+        <input
+          type="file"
+          hidden
+          accept=".pdf,.doc,.docx"
+          onChange={handleResumeUpload}
+          disabled={!editMode}
+        />
+      </UploadButton>
+      
+      {formData.resume && (
+        <Box sx={{ 
+          mt: 2, 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          border: '1px solid #e0e0e0',
+          borderRadius: '8px',
+          padding: '8px 16px',
+          marginTop: '16px'
+        }}>
+          <Typography variant="body2">
+            {getResumeFileName()}
+          </Typography>
+          <IconButton 
+            size="small"
+            onClick={handleDeleteResume}
+          >
+            <DeleteIcon fontSize="small" />
+          </IconButton>
+        </Box>
+      )}
+    </>
+  ) : formData.resume ? (
+    <Box sx={{ mt: 2 }}>
+      <Typography variant="body2" component="a" 
+        href={getResumeUrl()}
+        target="_blank"
+        rel="noopener noreferrer"
+        sx={{ 
+          color: 'primary.main',
+          textDecoration: 'none',
+          '&:hover': {
+            textDecoration: 'underline'
+          }
+        }}
+      >
+        {getResumeFileName()}
+      </Typography>
+    </Box>
+  ) : (
+    <Typography variant="body2" color="text.secondary">
+      No resume uploaded
+    </Typography>
+  )}
+</SectionContainer>
 
-            {/* Experience Section */}
+            {/* Experince section */}
             <SectionContainer sx={{ display: editMode || publicFields.profile_personal_experience_is_public === 1 ? 'block' : 'none' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6">Experience :</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <PublicLabel 
-                    onClick={() => handlePublicToggle('experience')}
-                    disabled={!editMode}
-                    sx={{ mr: 2 }}
-                  >
-                    {publicFields.profile_personal_experience_is_public === 1 ? ('Public') : (
-  <span style={{ color: 'orange' }}>Private</span>
-)}
-                  </PublicLabel>
-                  {editMode && (
-                    <IconButton onClick={handleAddExperience} size="small">
-                      <AddIcon />
-                    </IconButton>
-                  )}
-                </Box>
-              </Box>
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+      <Typography variant="h6">Experience</Typography>
+      {editMode && (
+        <IconButton onClick={handleAddExperience} size="small">
+          <AddIcon />
+        </IconButton>
+      )}
+    </Box>
+    <PublicLabel 
+      onClick={() => handlePublicToggle('experience')}
+      disabled={!editMode}
+    >
+      {publicFields.profile_personal_experience_is_public === 1 ? ('Public') : (
+        <span style={{ color: 'orange' }}>Private</span>
+      )}
+    </PublicLabel>
+  </Box>
               
               {formData.experience.map((exp, index) => (
                 <Box key={`exp-${index}`} sx={{ 
                   position: 'relative',
                   mb: 2,
                   p: 2,
-                  backgroundColor: '#f5f5f5',
-                  borderRadius: '8px'
+                  backgroundColor: 'white',
+                  borderRadius: '8px',
+                  border: '1px solid black',
                 }}>
                   {editMode && (
                     <IconButton 
@@ -1629,7 +1889,7 @@ if (formData.resume) {
                     placeholder="Conoco"
                     onChange={(value) => handleExperienceChange(index, "company", value)}
                     disabled={!editMode}
-                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                    backgroundColor={editMode ? '#f5f5f5' : '#f5f5f5'}
                   />
                   <InputField
                     label="Title"
@@ -1637,7 +1897,7 @@ if (formData.resume) {
                     placeholder="Financial Analyst"
                     onChange={(value) => handleExperienceChange(index, "title", value)}
                     disabled={!editMode}
-                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                    backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
                   />
                   <Box sx={{ display: "flex", gap: 2 }}>
                     <InputField
@@ -1646,7 +1906,7 @@ if (formData.resume) {
                       placeholder="06/1988"
                       onChange={(value) => handleExperienceChange(index, "startDate", value)}
                       disabled={!editMode}
-                      backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                      backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
                     />
                     <InputField
                       label="End Date"
@@ -1654,41 +1914,41 @@ if (formData.resume) {
                       placeholder="08/1991"
                       onChange={(value) => handleExperienceChange(index, "endDate", value)}
                       disabled={!editMode}
-                      backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                      backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
                     />
                   </Box>
                 </Box>
               ))}
             </SectionContainer>
 
-                        {/* Education Section */}
-                        <SectionContainer sx={{ display: editMode || publicFields.profile_personal_education_is_public === 1 ? 'block' : 'none' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6">Education:</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              {/* Education Section */}
+              <SectionContainer sx={{ display: editMode || publicFields.profile_personal_education_is_public === 1 ? 'block' : 'none' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Typography variant="h6">Education:</Typography>
+                    {editMode && (
+                      <IconButton onClick={handleAddEducation} size="small">
+                        <AddIcon />
+                      </IconButton>
+                    )}
+                  </Box>
                   <PublicLabel 
                     onClick={() => handlePublicToggle('education')}
                     disabled={!editMode}
-                    sx={{ mr: 2 }}
                   >
                     {publicFields.profile_personal_education_is_public === 1 ? ('Public') : (
-  <span style={{ color: 'orange' }}>Private</span>
-)}
+                      <span style={{ color: 'orange' }}>Private</span>
+                    )}
                   </PublicLabel>
-                  {editMode && (
-                    <IconButton onClick={handleAddEducation} size="small">
-                      <AddIcon />
-                    </IconButton>
-                  )}
                 </Box>
-              </Box>
               
               {formData.education.map((edu, index) => (
                 <Box key={`edu-${index}`} sx={{ 
                   position: 'relative',
                   mb: 2,
                   p: 2,
-                  backgroundColor: '#f5f5f5',
+                  backgroundColor: 'white',
+                  border: '1px solid black',
                   borderRadius: '8px'
                 }}>
                   {editMode && (
@@ -1706,7 +1966,7 @@ if (formData.resume) {
                     placeholder="University of Arizona"
                     onChange={(value) => handleEducationChange(index, "school", value)}
                     disabled={!editMode}
-                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                    backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
                   />
                   <InputField
                     label="Degree"
@@ -1714,7 +1974,7 @@ if (formData.resume) {
                     placeholder="MS Chemical Engineering"
                     onChange={(value) => handleEducationChange(index, "degree", value)}
                     disabled={!editMode}
-                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                    backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
                   />
                   <Box sx={{ display: "flex", gap: 2 }}>
                     <InputField
@@ -1723,7 +1983,7 @@ if (formData.resume) {
                       placeholder="08/1991"
                       onChange={(value) => handleEducationChange(index, "startDate", value)}
                       disabled={!editMode}
-                      backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                      backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
                     />
                     <InputField
                       label="End Date"
@@ -1731,7 +1991,7 @@ if (formData.resume) {
                       placeholder="06/1994"
                       onChange={(value) => handleEducationChange(index, "endDate", value)}
                       disabled={!editMode}
-                      backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                      backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
                     />
                   </Box>
                 </Box>
@@ -1745,7 +2005,7 @@ if (formData.resume) {
               value={formData.facebookLink}
               onChange={(value) => setFormData({ ...formData, facebookLink: value })}
               disabled={!editMode}
-              backgroundColor={editMode ? 'white' : '#e0e0e0'}
+              backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
             />
 
             <SocialLink
@@ -1754,7 +2014,7 @@ if (formData.resume) {
               value={formData.twitterLink}
               onChange={(value) => setFormData({ ...formData, twitterLink: value })}
               disabled={!editMode}
-              backgroundColor={editMode ? 'white' : '#e0e0e0'}
+              backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
             />
 
             <SocialLink
@@ -1763,7 +2023,7 @@ if (formData.resume) {
               value={formData.linkedinLink}
               onChange={(value) => setFormData({ ...formData, linkedinLink: value })}
               disabled={!editMode}
-              backgroundColor={editMode ? 'white' : '#e0e0e0'}
+              backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
             />
 
             <SocialLink
@@ -1772,29 +2032,55 @@ if (formData.resume) {
               value={formData.youtubeLink}
               onChange={(value) => setFormData({ ...formData, youtubeLink: value })}
               disabled={!editMode}
-              backgroundColor={editMode ? 'white' : '#e0e0e0'}
+              backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
             />
 
             {/* Banner Adds Section */}
+
+
+
             <BannerSection>
-  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-    <Typography variant="h6">Allow Banner Ads</Typography>
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+  <Box sx={{ 
+    display: 'flex', 
+    flexDirection: { xs: 'column', sm: 'row' },
+    alignItems: { xs: 'flex-start', sm: 'center' },
+    width: '100%'
+  }}>
+    <Typography 
+      variant="body1" 
+      sx={{ 
+        fontSize: '14px', 
+        whiteSpace: 'nowrap', 
+        mr: 1,
+        mb: { xs: 1, sm: 0 }
+      }}
+    >
+      Allow Banner Ads
+    </Typography>
+    <Box sx={{ 
+      display: 'flex',
+      alignItems: 'center',
+      ml: { xs: 0, sm: 1 },
+      width: { xs: '100%', sm: 'auto' }
+    }}>
       <img src={moneyBag} alt="Money Bag" style={{ width: '20px', height: '20px' }} />
       <TextField
         size="small"
-        placeholder="Bounty Amount"
+        placeholder="Bounty"
         value={formData.bannerAdsBounty}
         onChange={(e) => setFormData(prev => ({ ...prev, bannerAdsBounty: e.target.value }))}
         disabled={!editMode}
         sx={{
-          maxWidth: '120px',
+          flex: 1,
+          width: { xs: '100%', sm: '80px' },
+          ml: 1,
           backgroundColor: editMode ? 'white' : '#f5f5f5',
           '& .MuiOutlinedInput-root': {
             borderRadius: '8px',
           },
           '& .MuiInputBase-input': {
-            padding: '8px 12px',
+            padding: '6px 8px',
+            fontSize: '12px'
           }
         }}
       />
@@ -1803,96 +2089,109 @@ if (formData.resume) {
   <PublicLabel 
     onClick={() => handleYesToggle('bannerAds')}
     disabled={!editMode}
+    sx={{ 
+      fontSize: '14px',
+      minWidth: 'auto',
+      ml: { xs: 0, sm: 1 },
+      mt: { xs: 1, sm: 0 },
+      alignSelf: 'flex-end'
+    }}
   >
-    {publicFields.profile_personal_allow_banner_ads === 1 ? 'Yes' : 'No'}
+    {publicFields.profile_personal_allow_banner_ads === 1 ? ('Yes') : (
+      <span style={{ color: 'orange' }}>No</span>
+    )}
   </PublicLabel>
 </BannerSection>
 
-            {/* Businesses Section */}
-            <Box sx={{ mt: 4, mb: 4 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6">Businesses</Typography>
-                <IconButton 
-                  onClick={() => {
-                    const newBusinesses = [...formData.businesses];
-                    newBusinesses.push({ name: "", role: "" });
-                    setFormData(prev => ({
-                      ...prev,
-                      businesses: newBusinesses
-                    }));
-                  }} 
-                  size="small"
-                >
-                  <AddIcon />
-                </IconButton>
-              </Box>
+{/* Businesses Section */}
+<Box sx={{ mt: 4, mb: 4 }}>
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+      <Typography variant="h6">Businesses</Typography>
+      {editMode && (
+      <IconButton 
+        onClick={() => {
+          // Get the user ID from your user context or formData
+          const userId = formData.profile_personal_user_id || user.userId;
+          
+          // Navigate with userId as a query parameter
+          navigate(`/businessProfileSetup?userId=${userId}&fromProfile=true`);
+        }} 
+        size="small"
+      >
+        <AddIcon />
+      </IconButton>
+      )}
+    </Box>
+    {/* Any other controls you need on the right side */}
+  </Box>
               
-              {formData.businesses.map((business, index) => (
-                <BusinessCard key={`business-${index}`}>
-                  <Box sx={{ position: 'relative' }}>
-                    {editMode && (
-                      <IconButton 
-                        size="small" 
-                        onClick={() => {
-                          const newBusinesses = [...formData.businesses];
-                          newBusinesses.splice(index, 1);
-                          setFormData(prev => ({
-                            ...prev,
-                            businesses: newBusinesses
-                          }));
-                        }}
-                        sx={{ position: 'absolute', right: -8, top: -8 }}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                    <Box sx={{ mb: 2 }}>
-                      <TextField
-                        fullWidth
-                        placeholder="Business Name"
-                        value={business.name}
-                        onChange={(e) => {
-                          const newBusinesses = [...formData.businesses];
-                          newBusinesses[index] = { ...business, name: e.target.value };
-                          setFormData(prev => ({
-                            ...prev,
-                            businesses: newBusinesses
-                          }));
-                        }}
-                        disabled={!editMode}
-                        sx={{
-                          backgroundColor: editMode ? 'white' : '#e0e0e0',
-                          '& .MuiOutlinedInput-root': {
-                            borderRadius: '8px',
-                          },
-                        }}
-                      />
-                    </Box>
-                    <Box>
-                      <TextField
-                        fullWidth
-                        placeholder="Role (Owner/Editor)"
-                        value={business.role}
-                        onChange={(e) => {
-                          const newBusinesses = [...formData.businesses];
-                          newBusinesses[index] = { ...business, role: e.target.value };
-                          setFormData(prev => ({
-                            ...prev,
-                            businesses: newBusinesses
-                          }));
-                        }}
-                        disabled={!editMode}
-                        sx={{
-                          backgroundColor: editMode ? 'white' : '#e0e0e0',
-                          '& .MuiOutlinedInput-root': {
-                            borderRadius: '8px',
-                          },
-                        }}
-                      />
-                    </Box>
-                  </Box>
-                </BusinessCard>
-              ))}
+  {formData.businesses.map((business, index) => (
+  <BusinessCard key={`business-${index}`}>
+    <Box sx={{ position: 'relative' }}>
+      {editMode && (
+        <IconButton 
+          size="small" 
+          onClick={() => {
+            const newBusinesses = [...formData.businesses];
+            newBusinesses.splice(index, 1);
+            setFormData(prev => ({
+              ...prev,
+              businesses: newBusinesses
+            }));
+          }}
+          sx={{ position: 'absolute', right: -8, top: -8 }}
+        >
+          <DeleteIcon fontSize="small" />
+        </IconButton>
+      )}
+      <Box sx={{ mb: 2 }}>
+        <TextField
+          fullWidth
+          placeholder="Business Name"
+          value={business.name}
+          onChange={(e) => {
+            const newBusinesses = [...formData.businesses];
+            newBusinesses[index] = { ...business, name: e.target.value };
+            setFormData(prev => ({
+              ...prev,
+              businesses: newBusinesses
+            }));
+          }}
+          disabled={!editMode}
+          sx={{
+            backgroundColor: editMode ? 'white' : '#e0e0e0',
+            '& .MuiOutlinedInput-root': {
+              borderRadius: '8px',
+            },
+          }}
+        />
+      </Box>
+      <Box>
+        <TextField
+          fullWidth
+          placeholder="Role (Owner/Editor)"
+          value={business.role}
+          onChange={(e) => {
+            const newBusinesses = [...formData.businesses];
+            newBusinesses[index] = { ...business, role: e.target.value };
+            setFormData(prev => ({
+              ...prev,
+              businesses: newBusinesses
+            }));
+          }}
+          disabled={!editMode}
+          sx={{
+            backgroundColor: editMode ? 'white' : '#e0e0e0',
+            '& .MuiOutlinedInput-root': {
+              borderRadius: '8px',
+            },
+          }}
+        />
+      </Box>
+    </Box>
+  </BusinessCard>
+))}
             </Box>
 
             {/* Rest of the component remains unchanged... */}
@@ -1905,39 +2204,39 @@ if (formData.resume) {
 
             {/* Expertise Section */}
             <SectionContainer sx={{ display: editMode || publicFields.profile_personal_expertise_is_public === 1 ? 'block' : 'none' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6">Expertise</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                  <PublicLabel 
-                    onClick={() => handlePublicToggle('expertise')}
-                    disabled={!editMode}
-                    sx={{ mr: 2 }}
-                  >
-                    {publicFields.profile_personal_expertise_is_public === 1 ? ('Public') : (
-  <span style={{ color: 'orange' }}>Private</span>
-)}
-                  </PublicLabel>
-                  {editMode && (
-                    <IconButton onClick={() => {
-                      const newExpertise = [...formData.expertise];
-                      newExpertise.push({ headline: "", description: "", cost: "", bounty: "" });
-                      setFormData(prev => ({
-                        ...prev,
-                        expertise: newExpertise
-                      }));
-                    }} size="small">
-                      <AddIcon />
-                    </IconButton>
-                  )}
-                </Box>
-              </Box>
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+      <Typography variant="h6">Expertise</Typography>
+      {editMode && (
+        <IconButton onClick={() => {
+          const newExpertise = [...formData.expertise];
+          newExpertise.push({ headline: "", description: "", cost: "", bounty: "" });
+          setFormData(prev => ({
+            ...prev,
+            expertise: newExpertise
+          }));
+        }} size="small">
+          <AddIcon />
+        </IconButton>
+      )}
+    </Box>
+    <PublicLabel 
+      onClick={() => handlePublicToggle('expertise')}
+      disabled={!editMode}
+    >
+      {publicFields.profile_personal_expertise_is_public === 1 ? ('Public') : (
+        <span style={{ color: 'orange' }}>Private</span>
+      )}
+    </PublicLabel>
+  </Box>
               
               {formData.expertise.map((item, index) => (
                 <Box key={`expertise-${index}`} sx={{ 
                   position: 'relative',
                   mb: 2,
                   p: 2,
-                  backgroundColor: '#f5f5f5',
+                  backgroundColor: 'white',
+                  border: '1px solid black',
                   borderRadius: '8px'
                 }}>
                   {editMode && (
@@ -1955,7 +2254,7 @@ if (formData.resume) {
                     placeholder="Enter expertise headline"
                     onChange={(value) => handleExpertiseChange(index, "headline", value)}
                     disabled={!editMode}
-                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                    backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
                   />
                   <InputField
                     label="Description"
@@ -1963,7 +2262,7 @@ if (formData.resume) {
                     placeholder="Enter expertise description"
                     onChange={(value) => handleExpertiseChange(index, "description", value)}
                     disabled={!editMode}
-                    backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                    backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
                     multiline
                     rows={2}
                   />
@@ -1980,7 +2279,7 @@ if (formData.resume) {
                         onChange={(e) => handleExpertiseChange(index, "cost", e.target.value)}
                         disabled={!editMode}
                         sx={{
-                          backgroundColor: editMode ? 'white' : '#e0e0e0',
+                          backgroundColor: editMode ? '#f5f5f5' : '#e0e0e0',
                           '& .MuiOutlinedInput-root': {
                             borderRadius: 1,
                           },
@@ -1997,7 +2296,7 @@ if (formData.resume) {
                         onChange={(e) => handleExpertiseChange(index, "bounty", e.target.value)}
                         disabled={!editMode}
                         sx={{
-                          backgroundColor: editMode ? 'white' : '#e0e0e0',
+                          backgroundColor: editMode ? '#f5f5f5' : '#e0e0e0',
                           '& .MuiOutlinedInput-root': {
                             borderRadius: 1,
                           },
@@ -2015,40 +2314,40 @@ if (formData.resume) {
         {/* Wishes Section */}
         {/* Wishes Section */}
 
-        <SectionContainer sx={{ display: editMode || publicFields.profile_personal_wishes_is_public === 1 ? 'block' : 'none' }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6">Wishes</Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <PublicLabel 
-                onClick={() => handlePublicToggle('wishes')}
-                disabled={!editMode}
-                sx={{ mr: 2 }}
-              >
-                {publicFields.profile_personal_wishes_is_public === 1 ? ('Public') : (
-  <span style={{ color: 'orange' }}>Private</span>
-)}
-              </PublicLabel>
-              {editMode && (
-                <IconButton onClick={() => {
-                  const newWishes = [...formData.wishes];
-                  newWishes.push({ helpNeeds: "", details: "", bounty: "Free" });
-                  setFormData(prev => ({
-                    ...prev,
-                    wishes: newWishes
-                  }));
-                }} size="small">
-                  <AddIcon />
-                </IconButton>
-              )}
-            </Box>
-          </Box>
+<SectionContainer sx={{ display: editMode || publicFields.profile_personal_wishes_is_public === 1 ? 'block' : 'none' }}>
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+      <Typography variant="h6">Wishes</Typography>
+      {editMode && (
+        <IconButton onClick={() => {
+          const newWishes = [...formData.wishes];
+          newWishes.push({ helpNeeds: "", details: "", bounty: "" });
+          setFormData(prev => ({
+            ...prev,
+            wishes: newWishes
+          }));
+        }} size="small">
+          <AddIcon />
+        </IconButton>
+      )}
+    </Box>
+    <PublicLabel 
+      onClick={() => handlePublicToggle('wishes')}
+      disabled={!editMode}
+    >
+      {publicFields.profile_personal_wishes_is_public === 1 ? ('Public') : (
+        <span style={{ color: 'orange' }}>Private</span>
+      )}
+    </PublicLabel>
+  </Box>
           
           {formData.wishes.map((item, index) => (
             <Box key={`wish-${index}`} sx={{ 
               position: 'relative',
               mb: 2,
               p: 2,
-              backgroundColor: '#f5f5f5',
+              backgroundColor: 'white',
+              border: '1px solid black',
               borderRadius: '8px'
             }}>
               {editMode && (
@@ -2066,7 +2365,7 @@ if (formData.resume) {
                 placeholder="What help do you need?"
                 onChange={(value) => handleWishChange(index, "helpNeeds", value)}
                 disabled={!editMode}
-                backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
               />
               <InputField
                 label="Help Needed (15 words)"
@@ -2074,7 +2373,7 @@ if (formData.resume) {
                 placeholder="Enter details about your need"
                 onChange={(value) => handleWishChange(index, "details", value)}
                 disabled={!editMode}
-                backgroundColor={editMode ? 'white' : '#e0e0e0'}
+                backgroundColor={editMode ? '#f5f5f5' : '#e0e0e0'}
                 multiline
                 rows={2}
               />
@@ -2083,12 +2382,12 @@ if (formData.resume) {
                 <TextField
                   size="small"
                   placeholder="Free"
-                  value={item.bounty || "Free"}
+                  value={item.bounty || ""}
                   onChange={(e) => handleWishChange(index, "bounty", e.target.value)}
                   disabled={!editMode}
                   sx={{
                     maxWidth: '120px',
-                    backgroundColor: editMode ? 'white' : '#f5f5f5',
+                    backgroundColor: editMode ? '#f5f5f5' : '#f5f5f5',
                     '& .MuiOutlinedInput-root': {
                       borderRadius: '8px',
                     },
@@ -2114,14 +2413,14 @@ if (formData.resume) {
         </form>
 
         {/* ratings */}
-        <Box sx={{ width: '100%', my: 3 }}>
-            <Typography variant="h6" align="center" sx={{ mb: 2 }}>
-                Recommendations
-            </Typography>
-            <div style={{ height: 400, width: '100%' }}>
-                <DataGrid rows={ratings} columns={columns} pageSize={5} getRowId={(row) => row.rating_uid}/>
-            </div>
-        </Box>
+        <Box sx={{ width: '100%', my: 3, overflow: 'auto' }}>
+  <Typography variant="h6" align="center" sx={{ mb: 2 }}>
+    Recommendations
+  </Typography>
+  <div style={{ height: 400, width: '100%', maxWidth: '100%', overflowX: 'auto' }}>
+    <DataGrid rows={ratings} columns={columns} pageSize={5} getRowId={(row) => row.rating_uid}/>
+  </div>
+</Box>
 
         <DialogBox
           open={dialog.open}

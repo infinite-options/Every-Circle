@@ -1,4 +1,4 @@
-
+//print user option page
 import React, {useState} from 'react';
 import { Box, Typography } from '@mui/material';
 import { StyledTextField } from '../StyledComponents';
@@ -9,7 +9,7 @@ import IconButton from '@mui/material/IconButton';
 import ImageList from '@mui/material/ImageList';
 import ImageListItem from '@mui/material/ImageListItem';
 
-const OptionalBusinessInfoStep = ({ formData, handleChange, setFormData }) => {
+const OptionalBusinessInfoStep = ({ formData, handleChange, setFormData, userId }) => {
   console.log('formData in optionalBusinessInfostep', formData);
   const [favoriteIcons, setFavoriteIcons] = useState(
 		formData?.businessGooglePhotos ? formData?.businessGooglePhotos.map((image, index) => index === 0): []);
@@ -32,7 +32,7 @@ const OptionalBusinessInfoStep = ({ formData, handleChange, setFormData }) => {
   }
 
   return (
-    <Box sx={{ width: '100%' }}>
+    <Box sx={{ width: '355px' }}>
       <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
         Provide a short bio of your business (this info is public)
       </Typography>
@@ -133,8 +133,13 @@ const OptionalBusinessInfoStep = ({ formData, handleChange, setFormData }) => {
         </ImageList>
       </Box>
 
+      {/* User ID display */}
+      <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px", borderTop: "1px solid rgba(255,255,255,0.2)", paddingTop: "10px" }}>
+        User ID: {userId || "Not available"}
+      </Typography>
+
     </Box>
   );
 };
 
-export default OptionalBusinessInfoStep; 
+export default OptionalBusinessInfoStep;

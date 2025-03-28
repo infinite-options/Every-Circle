@@ -23,7 +23,7 @@ const SectionTitle = styled(Typography)({
 const PreviewContainer = styled(Box)({
   marginTop: "15px",
   padding: "15px",
-  backgroundColor: "#f9f9f9",
+  backgroundColor: "white",
   borderRadius: "6px",
   border: "1px dashed #ccc"
 });
