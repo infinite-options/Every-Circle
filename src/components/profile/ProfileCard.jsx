@@ -4,12 +4,13 @@ import PersonIcon from '@mui/icons-material/Person';
 import noProfileImage from "../../assets/NoProfiePlaceHolder.png";
 
 const CardContainer = styled(Paper)({
-  padding: "15px",
+  //padding: "15px",
   marginBottom: "20px",
-  borderRadius: "10px",
-  boxShadow: "0px 2px 6px rgba(0, 0, 0, 0.08)",
-  backgroundColor: "#f9f9f9",
-  border: "1px solid #e0e0e0"
+  //borderRadius: "10px",
+  //boxShadow: "0px 2px 6px rgba(0, 0, 0, 0.08)",
+  boxShadow: "none",
+  backgroundColor: "white",
+  //border: "1px solid #e0e0e0"
 });
 
 const ImageContainer = styled(Box)({
@@ -34,7 +35,7 @@ const DetailsContainer = styled(Box)({
 const MiniCardContent = styled(Box)({
   display: "flex",
   padding: "10px",
-  border: "1px solid #e0e0e0",
+ border: "1px solid #e0e0e0",
   borderRadius: "8px",
   backgroundColor: "white"
 });

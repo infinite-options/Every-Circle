@@ -1,4 +1,6 @@
-.home-container {
+/* better */
+
+..home-container {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -6,6 +8,7 @@
   padding: 40px 20px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background-color: white;
+  overflow-x: hidden; /* Ensure hidden parts don't cause horizontal scroll */
 }
 
 .home-title {
@@ -18,15 +21,13 @@
 
 .circles-container {
   position: relative;
-  width: 100%;
-  max-width: 600px;
-  height: 600px;
+  width: 514px;
+  height: 661px;
+  margin: 0 auto;
 }
 
 .circle {
   position: absolute;
-  width: 120px;
-  height: 120px;
   border-radius: 50%;
   display: flex;
   flex-direction: column;
@@ -38,7 +39,7 @@
   text-decoration: none;
   color: white;
   text-align: center;
-  z-index: 1;
+  z-index: 2;
 }
 
 .circle:hover {
@@ -47,48 +48,49 @@
 }
 
 .signup {
-  top: 5%;
-  left: 12%;
+  top: 0;
+  left: 0;
   background-color: #4285f4;
+  width: 220px;
+  height: 220px;
+  font-size: 28px;
 }
 
 .main {
   top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  right: -80px; /* Position it so part goes off the right edge */
+  transform: translateY(-50%); /* Only center vertically now */
   background-color: #ff9933;
-  width: 160px;
-  height: 160px;
-  font-size: 24px;
+  width: 320px;
+  height: 320px;
+  font-size: 36px;
   line-height: 1.2;
 }
 
 .main:hover {
-  transform: translate(-50%, -50%) scale(1.05);
+  transform: translateY(-50%) scale(1.05); /* Keep vertical centering on hover */
 }
 
 .login {
-  bottom: 20%;
-  left: 10%;
+  bottom: 50px;
+  left: 30px;
   background-color: #9c27b0;
+  width: 220px;
+  height: 220px;
+  font-size: 26px;
 }
 
 .how-it-works {
-  bottom: 25%;
-  right: 12%;
+  bottom: -20px;
+  right: 80px;
   background-color: #4db6ac;
-  font-size: 18px;
+  width: 180px;
+  height: 180px;
+  font-size: 22px;
   line-height: 1.2;
 }
 
-.business-signup {
-  top: 5%;
-  right: 15%;
-  background-color: #00C721;
-  font-size: 18px;
-  line-height: 1.2;
-}
-
+/* Re-enabling connecting lines */
 .connecting-lines {
   position: absolute;
   top: 0;
@@ -96,34 +98,48 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 0;
+  z-index: 1;
 }
 
 .connector {
   stroke: #000000;
-  stroke-width: 1.5px;
+  stroke-width: 2px;
   stroke-dasharray: none;
 }
 
 @media (max-width: 768px) {
   .circles-container {
-    max-width: 400px;
-    height: 400px;
+    width: 100%;
+    max-width: 514px;
+    height: 500px;
   }
 
-  .circle {
-    width: 90px;
-    height: 90px;
-    font-size: 14px;
+  .signup {
+    width: 150px;
+    height: 150px;
+    font-size: 18px;
   }
 
   .main {
-    width: 120px;
-    height: 120px;
-    font-size: 20px;
+    width: 300px;
+    height: 300px;
+    font-size: 24px;
+    right: -50px; /* Adjust for smaller screens */
+  }
+
+  .login {
+    width: 130px;
+    height: 130px;
+    font-size: 18px;
+    bottom: -90px;
+    left: 20px;
   }
 
   .how-it-works {
+    width: 110px;
+    height: 110px;
     font-size: 14px;
+    bottom: -50px;
+    right: 5px;
   }
 }

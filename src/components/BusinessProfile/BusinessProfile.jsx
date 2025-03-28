@@ -1,4 +1,11 @@
-/// add visibility
+/////////   if went wrong change till this 
+
+/// change business minicard call
+
+/// sghjklv
+
+
+/// delete product  chanege 
 import React, { useState, useEffect } from "react";
 import { Box, Typography, styled, IconButton, TextField, FormControl, MenuItem, Select, InputLabel, Paper, Switch } from "@mui/material";
 import { SocialLink } from "./SocialLink";
@@ -33,16 +40,20 @@ import BusinessCardMini from "./BusinessCardMini";
 import yelp from "../../assets/yelp.png";
 import google from "../../assets/Google.png";
 import BusinessProducts from './BusinessProducts';
+//import EnhancedProductDisplay from './EnhancedProductDisplay'; 
 
 import RelatedBusinessMinicard from './RelatedBusinessMinicard';
+import BusinessImageUpload from './BusinessImageUpload';
 
 //import VisibilityIcon from "@mui/icons-material/Visibility";
+
 
 
 const FormBox = styled(Box)({
     padding: "0 16px",
     width: "100%",
 });
+
 
 const isValidEmail = (email) => {
     const re = /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
@@ -105,8 +116,15 @@ const YesText = styled(Typography)({
 
 export default function BusinessProfile() {
     const location = useLocation();
-    const { editMode: initialEditMode = false } = location.state || {};
+    //const { editMode: initialEditMode = false } = location.state || {};
+    const { 
+        editMode: initialEditMode = false,
+        selectedBusinessId = null,
+        fromProfile = false 
+      } = location.state || {};
     const { user, updateUser } = useUserContext();
+    
+    
     // console.log('user data', user);
     const userId = user.userId;
     const [formData, setFormData] = useState({
@@ -154,6 +172,7 @@ export default function BusinessProfile() {
     });
     const [selectedImages, setSelectedImages] = useState([]);
     const [deletedImages, setDeletedImages] = useState([]);
+    const [deletedProducts, setDeletedProducts] = useState([]);
     const [showSpinner, setShowSpinner] = useState(false);
     const [favoriteIcons, setFavoriteIcons] = useState([]);
     const [deletedIcons, setDeletedIcons] = useState([]);
@@ -162,6 +181,9 @@ export default function BusinessProfile() {
     const [selectedCategories, setSelectedCategories] = useState([]);
     const [subCategories, setSubCategories] = useState([]);
     const [SubSubCategory, setSubSubCategories] = useState([]);
+    const [uploadedBusinessImages, setUploadedBusinessImages] = useState([]);
+
+
     const [publicFields, setPublicFields] = useState({
         business_name_is_public: 1,
         business_location_is_public: 1,
@@ -174,6 +196,9 @@ export default function BusinessProfile() {
         business_services_is_public: 1
 
     });
+    useEffect(() => {
+        console.log("deletedProducts state updated:", deletedProducts);
+    }, [deletedProducts]);
 
     useEffect(() => {
         const fetchCategories = async () => {
@@ -196,6 +221,9 @@ export default function BusinessProfile() {
     }, []);
 
     const navigate = useNavigate();
+    //const location = useLocation();
+    const queryParams = new URLSearchParams(location.search);
+    const newBusinessId = queryParams.get('newBusinessId');
 
     const templateMap = {
         0: "dark",
@@ -243,7 +271,9 @@ export default function BusinessProfile() {
     
         setSubCategories(subCats);
     };
-    
+    const handleBusinessImagesChange = (images) => {
+        setUploadedBusinessImages(images);
+      };
     const handleSubCategoryChange = (value) => {
         // Find the selected sub-category object
         const selectedSubCategoryObj = allCategories.find(cat => cat.category_uid === value);
@@ -311,37 +341,112 @@ export default function BusinessProfile() {
     const fetchProfile = async () => {
         try {
             setShowSpinner(true);
-            const response = await axios.get(`https://ioec2testsspm.infiniteoptions.com/api/v1/businessinfo/${userId}`);
+
+            console.log("NewBusiess id akbajaal: ",newBusinessId)
+
+                    // Use the selected business ID if coming from profile, otherwise use userId
+                    const endpoint = selectedBusinessId 
+                    ? `https://ioec2testsspm.infiniteoptions.com/api/v1/businessinfo/${selectedBusinessId}`
+                    :(newBusinessId ? `https://ioec2testsspm.infiniteoptions.com/api/v1/businessinfo/${newBusinessId}`: `https://ioec2testsspm.infiniteoptions.com/api/v1/businessinfo/${userId}`);    
+
+            const response = await axios.get(endpoint);
             console.log('response from business endpoint', response);
             if (response.status === 200) {
                 const business = response.data?.result?.[0] || response.data?.business;  /////////// //////
                 console.log('business data is', business);
+                console.log("name froo ras", business.business_name )
                 let businessServices = [];
-                if (response.data.services && Array.isArray(response.data.services)) {
+
+                console.log("Out of if")
+                if (response.data.services && Array.isArray(response.data.services) && response.data.services.length > 0) {
+                    console.log("Processing services array with length:", response.data.services.length);
+                    
                     // Map services from the API response format to our component format
                     businessServices = response.data.services.map(service => {
-                        console.log(`Service ${service.bs_service_name} visibility from API: ${service.bs_is_visible}` , typeof service.bs_is_visible);
-                        return {
-                            bs_uid: service.bs_uid,
-                            bs_service_name: service.bs_service_name || "",
-                            bs_bounty: service.bs_bounty || "",
-                            bs_cost: service.bs_cost || "0",
-                            bs_service_desc: service.bs_service_desc || "",
-                            bs_is_visible: service.bs_is_visible
-                        };
-                    });
+                        // Log each service for debugging
+                        console.log("Processing service:", service);
+                        
+                        // Check if the service object exists and has the required properties
+                        if (service) {
+                            console.log(`Service ${service.bs_service_name || 'unnamed'} visibility from API:`, 
+                                      service.bs_is_visible, 
+                                      typeof service.bs_is_visible);
+                            
+                            return {
+                                bs_uid: service.bs_uid || "",
+                                bs_service_name: service.bs_service_name || "",
+                                bs_bounty: service.bs_bounty || "",
+                                bs_cost: service.bs_cost || "0",
+                                bs_service_desc: service.bs_service_desc || "",
+                                bs_is_visible: service.bs_is_visible === null ? true : service.bs_is_visible
+                            };
+                        }
+                        return null;
+                    }).filter(service => service !== null); // Remove any null entries from mapping
+                } else {
+                    console.log("No services array found, checking business_services field");
+                    // Try parsing business_services if available
+                    try {
+                        if (business.business_services && typeof business.business_services === 'string' 
+                            && business.business_services !== "null") {
+                            businessServices = JSON.parse(business.business_services);
+                            console.log("Successfully parsed business services");
+                        } else {
+                            console.log("No valid business_services data found");
+                            businessServices = [];
+                        }
+                    } catch (e) {
+                        console.error("Error parsing business services:", e);
+                        console.log("Raw business_services string (first 100 chars):", 
+                            business?.business_services?.substring(0, 100) + "...");
+                        businessServices = [];
+                    }
                 }
-                else {
-    // Try parsing business_services if available
-    try {
-        if (business.business_services) {
-            businessServices = JSON.parse(business.business_services);
-        }
-    } catch (e) {
-        console.error("Error parsing business services:", e);
-    }
+                
+if (deletedProducts.length > 0) {
+    businessServices = businessServices.filter(service => 
+        !deletedProducts.includes(service.bs_uid)
+    );
 }
-                const googlePhotos = business?.business_google_photos ? JSON.parse(business.business_google_photos) : [];
+                //const googlePhotos = business?.business_google_photos ? JSON.parse(business.business_google_photos) : [];
+                let googlePhotos = [];
+                try {
+                  if (business?.business_google_photos) {
+                    // Check if the string starts with "[" and ends with "]"
+                    const photoString = business.business_google_photos.trim();
+                    if (photoString.startsWith('[') && photoString.endsWith(']')) {
+                      googlePhotos = JSON.parse(photoString);
+                      console.log("Successfully parsed Google photos");
+                    } else {
+                      // Try to fix common JSON parsing issues
+                      console.log("Attempting to fix malformed JSON for Google photos");
+                      // Handle case where the string might be missing closing quotes or brackets
+                      let fixedString = photoString;
+                      if (!photoString.endsWith(']')) {
+                        fixedString = fixedString + '"]';
+                      }
+                      try {
+                        googlePhotos = JSON.parse(fixedString);
+                        console.log("Fixed and parsed Google photos successfully");
+                      } catch (innerError) {
+                        console.error("Could not fix JSON format:", innerError);
+                        // As a last resort, try to extract URLs using regex
+                        const urlRegex = /(https:\/\/maps\.googleapis\.com\/[^"]*)/g;
+                        const matches = photoString.match(urlRegex);
+                        if (matches && matches.length > 0) {
+                          googlePhotos = matches;
+                          console.log("Extracted Google photo URLs using regex");
+                        }
+                      }
+                    }
+                  }
+                } catch (e) {
+                  console.error("Error parsing business_google_photos:", e);
+                  console.log("Raw business_google_photos string (first 100 chars):", 
+                    business?.business_google_photos?.substring(0, 100) + "...");
+                  // Continue with an empty array instead of crashing
+                  googlePhotos = [];
+                }
                 
                 // Update form data
                 setFormData({
@@ -390,6 +495,12 @@ export default function BusinessProfile() {
             }
         } catch (error) {
             console.error("Error fetching Business profile:", error);
+            // If there's an error and we came from profile, maybe navigate back
+            if (fromProfile) {
+                handleOpen("Error", "Could not find the selected business.");
+                // Optional: navigate back to profile after a delay
+                // setTimeout(() => navigate('/profile'), 3000);
+            }
         } finally {
             setShowSpinner(false);
         }
@@ -397,7 +508,8 @@ export default function BusinessProfile() {
 
     useEffect(() => {
         fetchProfile();
-    }, [userId]);
+    }, [userId],[selectedBusinessId],[newBusinessId]);
+    
 
     const validateRequiredFields = () => {
         const newErrors = {};
@@ -439,6 +551,8 @@ export default function BusinessProfile() {
         }));
     };
 
+
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (validateRequiredFields()) {
@@ -459,28 +573,33 @@ export default function BusinessProfile() {
             //form.append("business_youtube", formData.youtube);
             //form.append("business_allow_banner", formData.allowBanner ? 1 : 0);
             form.append("business_uid", businessId);
-            // if (formData.businessServices && formData.businessServices.length > 0) {
 
-
-            //         console.log("Mapped services:", businessServices);
-
-            //     form.append("business_services", JSON.stringify(formData.businessServices));
-            // }
-
-
-            // if (formData.businessServices && formData.businessServices.length > 0) {
-            //     const formattedServices = formData.businessServices.map(service => ({
-            //       bs_uid: service.bs_uid,
-            //       bs_service_desc: service.bs_service_desc || "",
-            //       bs_service_name: service.bs_service_name || "",
-            //       bs_bounty: service.bs_bounty || "",
-            //       bs_cost: service.bs_cost || "0" ,
-            //       bs_is_visible: parseInt(service.bs_is_visible, 10) === 0 ? 0 : 1
-            //     }));
-                
-            //     console.log("Services being saved:", formattedServices);
-            //     form.append("business_services", JSON.stringify(formattedServices));
+            // if (deletedProducts.length > 0) {
+            //     form.append("delete_services", JSON.stringify(deletedProducts));
+            //     console.log("Products to delete:", deletedProducts);
             //   }
+            if (deletedProducts.length > 0) {
+                // Make sure deleted IDs are properly formatted as strings in an array
+                const formattedDeletedProducts = deletedProducts.map(id => id.toString());
+                // Log for debugging
+                console.log("Deleted products to send:", formattedDeletedProducts);
+                form.append("delete_business_services", JSON.stringify(formattedDeletedProducts));
+            }
+            // IMPROVED IMAGE UPLOAD HANDLING
+// In your handleSubmit function, modify the image upload part:
+            if (uploadedBusinessImages && uploadedBusinessImages.length > 0) {
+                console.log(`Uploading ${uploadedBusinessImages.length} business images`);
+                
+                // Use the exact field name that's showing up in your form data
+                uploadedBusinessImages.forEach((image) => {
+                console.log(`Appending image: ${image.name}, type: ${image.type}, size: ${image.size} bytes`);
+                form.append('business_images_url', image); // Use the same name as in your form data
+                });
+            }
+
+
+    
+
             if (formData.businessServices && formData.businessServices.length > 0) {
                 console.log(formData.businessServices)
                 const formattedServices = formData.businessServices.map(service => {
@@ -488,7 +607,7 @@ export default function BusinessProfile() {
 
                     //console.log(`Service Before:, ${service.bs_service_name}`, service.bs_is_visible, type(service.bs_is_visible))
                   const visibilityValue = service.bs_is_visible;
-                  console.log(`Service 1 ${service.bs_service_name} visibility being submitted: ${visibilityValue}`);
+                  //onsole.log(`Service 1 ${service.bs_service_name} visibility being submitted: ${visibilityValue}`);
                   
                   return {
                     bs_uid: service.bs_uid,
@@ -518,6 +637,8 @@ export default function BusinessProfile() {
             form.append("business_email_id_is_public", publicFields.business_email_id_is_public); 
             form.append("business_services_is_public", publicFields.business_services_is_public); 
 
+            
+
             try {
                 setShowSpinner(true);
                 console.log("Submitting form data:", Object.fromEntries(form));
@@ -528,10 +649,13 @@ export default function BusinessProfile() {
                 });
                 console.log("Business Profile updated successfully", response);
                 if (response.data.code === 200) {
+                    
+                    setDeletedProducts([]);
                     console.log("Response from server 1:", response.data);
                     console.log("Products:", response.data)
                     await fetchProfile();
                     setEditMode(false);
+                    window.scrollTo(0, 0);
                     handleOpen("Success", "Business Profile has been updated successfully.");
                 } else {
                     handleOpen("Error", response.data.message || "Cannot update the business profile.");
@@ -621,7 +745,9 @@ export default function BusinessProfile() {
                                 <PublicLabel 
                                     onClick={() => handlePublicToggle('business_phone_number_is_public')}
                                 >
-                                    {publicFields.business_phone_number_is_public === 1 ? 'Public' : 'Private'}
+                                    {publicFields.business_phone_number_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                                 </PublicLabel>
                             </Box>
                         </InputWrapper>
@@ -641,7 +767,9 @@ export default function BusinessProfile() {
                                 onClick={() => handlePublicToggle('business_email_id_is_public')}
                                 disabled={!editMode}
                             >
-                                {publicFields.business_email_id_is_public === 1 ? 'Public' : 'Private'}
+                                {publicFields.business_email_id_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                             </PublicLabel>
                         </Box>
                     </InputWrapper>
@@ -653,7 +781,9 @@ export default function BusinessProfile() {
                                     <PublicLabel 
                                         onClick={() => handlePublicToggle('business_images_is_public')}
                                     >
-                                        {publicFields.business_images_is_public === 1 ? 'Public' : 'Private'}
+                                        {publicFields.business_images_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                                     </PublicLabel>
                                 </Box>
                                 <Box
@@ -743,7 +873,9 @@ export default function BusinessProfile() {
                                 <PublicLabel 
                                     onClick={() => handlePublicToggle('business_tag_line_is_public')}
                                 >
-                                    {publicFields.business_tag_line_is_public === 1 ? 'Public' : 'Private'}
+                                    {publicFields.business_tag_line_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                                 </PublicLabel>
                             </Box>
                         </InputWrapper>
@@ -822,24 +954,44 @@ export default function BusinessProfile() {
                                 <PublicLabel 
                                     onClick={() => handlePublicToggle('business_short_bio_is_public')}
                                 >
-                                    {publicFields.business_short_bio_is_public === 1 ? 'Public' : 'Private'}
+                                    {publicFields.business_short_bio_is_public === 1 ? ('Public') : (
+  <span style={{ color: 'orange' }}>Private</span>
+)}
                                 </PublicLabel>
                             </Box>
                         </InputWrapper>
                         <Box>
-    <BusinessProducts 
-        editMode={editMode}
-        businessId={businessId}
-        products={formData.businessServices}
-        onProductsChange={(newProducts) => 
-            setFormData(prev => ({ ...prev, businessServices: newProducts }))
-        }
-        publicFieldValue={publicFields.business_services_is_public}
-        onPublicToggle={() => handlePublicToggle('business_services_is_public')}
-        PublicLabelComponent={PublicLabel} // If using the first approach
-    />
-    {/* Remove the original PublicLabel from here */}
+                        <Box>
+                        <BusinessProducts 
+  editMode={editMode}
+  businessId={businessId}
+  products={formData.businessServices}
+  onProductsChange={(newProducts) => 
+    setFormData(prev => ({ ...prev, businessServices: newProducts }))
+  }
+  onDeleteProduct={(productId) => {
+    setDeletedProducts(prev => [...prev, productId]);
+  }}
+  publicFieldValue={publicFields.business_services_is_public}
+  onPublicToggle={() => handlePublicToggle('business_services_is_public')}
+  PublicLabelComponent={PublicLabel}
+/>
 </Box>
+    {/* Remove the original PublicLabel from here */}
+
+
+
+</Box>
+
+
+<InputWrapper>
+  <BusinessImageUpload 
+    onImagesChange={handleBusinessImagesChange}
+    editMode={editMode}
+    publicValue={publicFields.business_images_is_public}
+    onPublicToggle={() => handlePublicToggle('business_images_is_public')}
+  />
+</InputWrapper>
 
 <InputWrapper>
                             <Box sx={{ position: 'relative', display: editMode || publicFields.business_banner_ads_is_public === 1 ? 'block' : 'none' }}>

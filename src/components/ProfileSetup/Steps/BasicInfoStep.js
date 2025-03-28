@@ -3,7 +3,7 @@ import { StyledTextField } from '../StyledComponents';
 
 const BasicInfoStep = ({ formData, handleChange, errors }) => {
   return (
-    <Box sx={{ width: '100%' }}>
+    <Box sx={{ width: '325px' }}>
       <Typography sx={{ color: '#fff', marginTop: "20px", fontSize: "13px" }}>
         Your full name (this info will be public)
       </Typography>

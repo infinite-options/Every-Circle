@@ -4,9 +4,15 @@ import Backdrop from '@mui/material/Backdrop';
 import CircularProgress from '@mui/material/CircularProgress';
 import Autocomplete from "../../recommendation/AutoComplete";
 import axios from "axios";
+import { useLocation } from "react-router-dom";
 
 const BasicInfoStep = ({ formData, handleChange, errors, setFormData, isClaimed, setIsClaimed }) => {
   const [showSpinner, setShowSpinner] = useState(false);
+  const location = useLocation();
+    // Extract userId from URL query parameters
+    const queryParams = new URLSearchParams(location.search);
+    const userId = queryParams.get('userId');
+    
   
 
   const getAutoCompleteData = async (data) => {
@@ -59,7 +65,7 @@ const BasicInfoStep = ({ formData, handleChange, errors, setFormData, isClaimed,
   };
 
   return (
-    <Box sx={{ width: '100%' }}>
+    <Box sx={{ width: '355px' }}>
       <Backdrop sx={{ color: '#fff', zIndex: 1 }} open={showSpinner}>
           <CircularProgress color="inherit" />
       </Backdrop>
@@ -130,7 +136,13 @@ const BasicInfoStep = ({ formData, handleChange, errors, setFormData, isClaimed,
           },
         }}
       />
+
+    <Typography sx={{ color: '#fff', marginTop: "10px", fontSize: "13px" }}>
+        User ID: {userId || "Not available"}
+      </Typography> 
+
     </Box>
+    
   );
 };
 

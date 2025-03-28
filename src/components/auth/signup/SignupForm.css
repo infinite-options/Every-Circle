@@ -21,21 +21,18 @@
   background: #4285f4;
   position: relative;
   clip-path: ellipse(100% 50% at 50% 0%);
-  
 }
 
-.banner::after {
+/* .banner::after {
   content: "";
   position: absolute;
-  bottom: 0; /* Align to bottom */
-  left: 50%;
-  width: 200%; /* Wider than screen */
-  height: 150%; /* Makes it a large circle */
-  background: #4285f4; /* Same as banner color */
-  border-radius: 50%;
-  transform: translateX(-50%);
-  
-}
+  bottom: -50%;
+  left: -10%;
+  right: -10%;
+  height: 100%;
+  background: white; 
+   border-radius: 0 0 50% 50% / 0 0 70% 70%
+} */
 
 .banner h1 {
   color: white;
@@ -226,7 +223,7 @@ input:focus {
 
 @media (max-width: 480px) {
   .banner {
-    height: 160px;
+    height: 60px;
   }
 
   .banner h1 {
