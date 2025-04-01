@@ -170,8 +170,9 @@ const ExpertiseFooter = styled(Box)({
   justifyContent: 'space-between',
   alignItems: 'center',
   marginTop: 'auto',
-  gap: '16px',
-  marginLeft: '20px'
+  gap: '10px',
+  marginLeft: '20px',
+  flexWrap: 'nowrap'
 });
 
 const ActionButton = styled(Box)({
@@ -180,6 +181,8 @@ const ActionButton = styled(Box)({
   padding: '12px 12px',
   borderRadius: '8px',
   fontSize: '16px',
+  whiteSpace: 'nowrap',
+  marginRight: '20px', 
   cursor: 'pointer',
   '&:hover': {
     backgroundColor: '#e0e0e0',
@@ -189,12 +192,13 @@ const ActionButton = styled(Box)({
 const CostDisplay = styled(Box)({
   backgroundColor: '#f5f5f5',
   color: '#666',
-  padding: '12px 24px',
+  padding: '12px 12px',
   borderRadius: '8px',
   fontSize: '16px',
   display: 'flex',
   alignItems: 'center',
-  gap: '8px',
+  gap: '15px',
+  marginRight: 'auto'
 });
 
 const SectionTitle = styled(Typography)({
