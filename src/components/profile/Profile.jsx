@@ -1,11 +1,6 @@
 
-/////business data get from business page 
-
-///resume diaply name 
-
-
-// deleye resuem
-
+//// resume upload new
+ 
 import React, { useState, useEffect, useRef } from "react";
 import { Box, Typography, styled, IconButton, TextField, Rating, Button } from "@mui/material";
 import { SocialLink } from "./SocialLink";
@@ -120,7 +115,8 @@ const BannerSection = styled(Box)(({ theme }) => ({
   borderRadius: '8px',
   padding: '12px 10px',
   display: 'flex',
-  flexDirection: { xs: 'column', sm: 'row' },
+  //flexDirection: { xs: 'column', sm: 'row' },
+  flexDirection: 'row',
   justifyContent: 'space-between',
   alignItems: { xs: 'flex-start', sm: 'center' },
   marginBottom: '16px',
@@ -792,6 +788,7 @@ export default function Profile() {
 
 
   ///////
+ 
   const handleResumeUpload = (e) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -810,7 +807,7 @@ export default function Profile() {
         return;
       }
       
-      // Extract ALL existing resumes for deletion (not just the first one)
+      // Extract ALL existing resumes for deletion
       let existingResumeUrls = [];
       
       if (formData.resume) {
@@ -831,6 +828,9 @@ export default function Profile() {
               // If parsing fails, use string directly
               existingResumeUrls = [formData.resume];
             }
+          } else if (Array.isArray(formData.resume) && formData.resume.length > 0) {
+            // Handle the case where resume is already an array
+            existingResumeUrls = formData.resume.map(resume => resume.link);
           }
         } catch (error) {
           console.error("Error processing existing resumes for deletion:", error);
@@ -864,7 +864,6 @@ export default function Profile() {
       handleOpen("Resume Selected", `File "${file.name}" has been selected. Your previous resume(s) will be replaced when you save your profile.`);
     }
   };
-  
 
   // Replace the handleSubmit function with this optimized version
 
@@ -2042,7 +2041,8 @@ else if (formData.previousResume && formData.previousResume.length > 0) {
             <BannerSection>
   <Box sx={{ 
     display: 'flex', 
-    flexDirection: { xs: 'column', sm: 'row' },
+    //flexDirection: { xs: 'column', sm: 'row' },
+    flexDirection: 'row',
     alignItems: { xs: 'flex-start', sm: 'center' },
     width: '100%'
   }}>
@@ -2071,8 +2071,8 @@ else if (formData.previousResume && formData.previousResume.length > 0) {
         onChange={(e) => setFormData(prev => ({ ...prev, bannerAdsBounty: e.target.value }))}
         disabled={!editMode}
         sx={{
-          flex: 1,
-          width: { xs: '100%', sm: '80px' },
+          //lex: 1,
+          width: '120px',
           ml: 1,
           backgroundColor: editMode ? 'white' : '#f5f5f5',
           '& .MuiOutlinedInput-root': {
@@ -2126,7 +2126,7 @@ else if (formData.previousResume && formData.previousResume.length > 0) {
     {/* Any other controls you need on the right side */}
   </Box>
               
-  {formData.businesses.map((business, index) => (
+  {/* {formData.businesses.map((business, index) => (
   <BusinessCard key={`business-${index}`}>
     <Box sx={{ position: 'relative' }}>
       {editMode && (
@@ -2146,48 +2146,94 @@ else if (formData.previousResume && formData.previousResume.length > 0) {
         </IconButton>
       )}
       <Box sx={{ mb: 2 }}>
-        <TextField
-          fullWidth
-          placeholder="Business Name"
-          value={business.name}
-          onChange={(e) => {
-            const newBusinesses = [...formData.businesses];
-            newBusinesses[index] = { ...business, name: e.target.value };
-            setFormData(prev => ({
-              ...prev,
-              businesses: newBusinesses
-            }));
-          }}
-          disabled={!editMode}
+      <Typography
+          variant="subtitle1"
           sx={{
-            backgroundColor: editMode ? 'white' : '#e0e0e0',
-            '& .MuiOutlinedInput-root': {
-              borderRadius: '8px',
-            },
+            p: 1,
+            bgcolor: '#f5f5f5',
+            borderRadius: '8px',
+            minHeight: '40px',
+            display: 'flex',
+            alignItems: 'center'
           }}
-        />
+        >
+          {business.name || "Business Name"}
+        </Typography>
       </Box>
       <Box>
-        <TextField
-          fullWidth
-          placeholder="Role (Owner/Editor)"
-          value={business.role}
-          onChange={(e) => {
-            const newBusinesses = [...formData.businesses];
-            newBusinesses[index] = { ...business, role: e.target.value };
-            setFormData(prev => ({
-              ...prev,
-              businesses: newBusinesses
-            }));
-          }}
-          disabled={!editMode}
+      <Typography
+  variant="body2"
+  color="text.secondary"
+  sx={{
+    p: 1,
+    bgcolor: '#f5f5f5',
+    borderRadius: '8px',
+    minHeight: '40px',
+    display: 'flex',
+    alignItems: 'center'
+  }}
+>
+  {business.role || "Role"}
+</Typography>
+      </Box>
+    </Box>
+  </BusinessCard>
+))} */}
+{/* Updated Business Card Component */}
+{formData.businesses.map((business, index) => (
+  <BusinessCard key={`business-${index}`}>
+    <Box sx={{ position: 'relative' }}>
+      {/* Adding a title section similar to the Expertise component */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+      <Typography variant="body1" sx={{ fontWeight: 'normal', fontSize: '0.875rem' }}>Business Details</Typography>
+        {editMode && (
+          <IconButton 
+            size="small" 
+            onClick={() => {
+              const newBusinesses = [...formData.businesses];
+              newBusinesses.splice(index, 1);
+              setFormData(prev => ({
+                ...prev,
+                businesses: newBusinesses
+              }));
+            }}
+          >
+            <DeleteIcon fontSize="small" />
+          </IconButton>
+        )}
+      </Box>
+      
+      <Box sx={{ mb: 2 }}>
+        <Typography
+          variant="subtitle1"
           sx={{
-            backgroundColor: editMode ? 'white' : '#e0e0e0',
-            '& .MuiOutlinedInput-root': {
-              borderRadius: '8px',
-            },
+            p: 1,
+            bgcolor: '#f5f5f5',
+            borderRadius: '8px',
+            minHeight: '40px',
+            display: 'flex',
+            alignItems: 'center'
           }}
-        />
+        >
+          {business.name || "Business Name"}
+        </Typography>
+      </Box>
+      
+      <Box>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{
+            p: 1,
+            bgcolor: '#f5f5f5',
+            borderRadius: '8px',
+            minHeight: '40px',
+            display: 'flex',
+            alignItems: 'center'
+          }}
+        >
+          {business.role || "Role"}
+        </Typography>
       </Box>
     </Box>
   </BusinessCard>

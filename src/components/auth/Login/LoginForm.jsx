@@ -5,6 +5,8 @@ import "./LoginForm.css";
 import { useUserContext } from '../../contexts/UserContext';
 import GoogleLogin from "./GoogleLogin";
 import { useUserAuth } from "../authUtils/useUserAuth";
+import eyeIcon from "../../../assets/eye.png";
+import closedEyeIcon from "../../../assets/closedEye.png";
 
 const LoginForm = () => {
   const navigate = useNavigate();
@@ -121,7 +123,12 @@ const LoginForm = () => {
                 className="toggle-password"
                 onClick={() => setShowPassword(!showPassword)}
               >
-                {showPassword ? "👁️" : "👁️‍🗨️"}
+                {/* {showPassword ? "👁️" : "👁️‍🗨️"} */}
+                <img 
+                  src={showPassword ? eyeIcon : closedEyeIcon} 
+                  alt={showPassword ? "Hide password" : "Show password"} 
+                  className="eye-icon"
+                />
               </button>
             </div>
             {errors.password && (

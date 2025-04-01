@@ -17,6 +17,7 @@ const SettingsOptions = () => {
         height: "100%",
         maxWidth: "400px",
         mt: "25px",
+       paddingLeft:'15px'
       }}
     >
       {/* Notification Toggle */}
@@ -32,7 +33,7 @@ const SettingsOptions = () => {
       </Box>
 
       {/* Allow Cookies Toggle */}
-      <Box sx={{ display: "flex", flexDirection: "row", justifyContent: "space-between", width: "100%", mb: "25px" }}>
+      <Box sx={{ display: "flex", flexDirection: "row", justifyContent: "space-between", width: "100%", mb: "25px"}}>
         <Typography variant="body1">Allow Cookies</Typography>
         <Switch />
       </Box>

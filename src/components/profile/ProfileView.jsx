@@ -155,12 +155,14 @@ const ExpertiseTitle = styled(Typography)({
   fontSize: '20px',
   color: '#666',
   marginBottom: '12px',
+  marginLeft: '20px'
 });
 
 const ExpertiseDescription = styled(Typography)({
   fontSize: '18px',
   color: '#666',
   marginBottom: '24px',
+  marginLeft: '20px'
 });
 
 const ExpertiseFooter = styled(Box)({
@@ -168,12 +170,14 @@ const ExpertiseFooter = styled(Box)({
   justifyContent: 'space-between',
   alignItems: 'center',
   marginTop: 'auto',
+  gap: '16px',
+  marginLeft: '20px'
 });
 
 const ActionButton = styled(Box)({
   backgroundColor: '#f5f5f5',
   color: '#666',
-  padding: '12px 24px',
+  padding: '12px 12px',
   borderRadius: '8px',
   fontSize: '16px',
   cursor: 'pointer',
@@ -427,6 +431,7 @@ export default function ProfileView({ formData, publicFields, onEditClick, verif
     fontWeight: 'bold',
     lineHeight: '18px',
     letterSpacing: '0',
+    
     mb: 3,color: '#888', paddingLeft: '20px' }}>
           Expertise
         </Typography>
@@ -475,7 +480,7 @@ export default function ProfileView({ formData, publicFields, onEditClick, verif
               padding: '20px',
               marginBottom: '16px',
               //border: '1px solid black',
-              marginLeft: '30px',
+              marginLeft: '10px',
               width: '90%',
             }}
           >

@@ -7,6 +7,9 @@ import GoogleSignup from "./GoogleSignup";
 import { useUserAuth } from '../authUtils/useUserAuth';
 import { useLocation } from "react-router-dom";
 
+import eyeIcon from "../../../assets/eye.png";
+import closedEyeIcon from "../../../assets/closedEye.png";
+
 const SignupForm = () => {
   const navigate = useNavigate();
 
@@ -214,9 +217,15 @@ const SignupForm = () => {
               <button
                 type="button"
                 className="toggle-password"
+                
                 onClick={() => setShowPassword(!showPassword)}
               >
-                {showPassword ? "👁️" : "👁️‍🗨️"}
+                {/* {showPassword ? "👁️" : "👁️‍🗨️"} */}
+                <img 
+                  src={showPassword ? eyeIcon : closedEyeIcon} 
+                  alt={showPassword ? "Hide password" : "Show password"} 
+                  className="eye-icon"
+                />
               </button>
             </div>
             {errors.password && (
@@ -240,7 +249,12 @@ const SignupForm = () => {
                 className="toggle-password"
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
               >
-                {showConfirmPassword ? "👁️" : "👁️‍🗨️"}
+                {/* {showConfirmPassword ? "👁️" : "👁️‍🗨️"} */}
+                <img 
+                  src={showConfirmPassword ? eyeIcon : closedEyeIcon} 
+                  alt={showConfirmPassword ? "Hide password" : "Show password"} 
+                  className="eye-icon"
+                />
               </button>
             </div>
             {errors.confirmPassword && (
