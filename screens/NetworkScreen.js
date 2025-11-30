@@ -1,0 +1,1592 @@
+// NetworkScreen.js - Web-compatible version
+import React, { useEffect, useState } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import BottomNavBar from "../components/BottomNavBar";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useDarkMode } from "../contexts/DarkModeContext";
+import { useFocusEffect } from "@react-navigation/native";
+import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import MiniCard from "../components/MiniCard";
+import WebTextInput from "../components/WebTextInput";
+import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
+
+// Web-compatible QR code - react-native-qrcode-svg works on both web and native
+let QRCodeComponent = null;
+try {
+  QRCodeComponent = require("react-native-qrcode-svg").default;
+} catch (e) {
+  console.warn("QRCode not available:", e.message);
+}
+
+// WebView handling - use iframe on web, WebView on native
+let WebViewComponent = null;
+if (Platform.OS !== "web") {
+  try {
+    const webviewModule = require("react-native-webview");
+    if (webviewModule && webviewModule.WebView) {
+      WebViewComponent = webviewModule.WebView;
+    }
+  } catch (e) {
+    console.warn("WebView not available on native platform");
+  }
+}
+
+const NetworkScreen = ({ navigation }) => {
+  const { darkMode } = useDarkMode();
+  const [storageData, setStorageData] = useState([]);
+  const [networkData, setNetworkData] = useState([]);
+  const [groupedNetwork, setGroupedNetwork] = useState({});
+  const [profileUid, setProfileUid] = useState("");
+  const [degree, setDegree] = useState("2");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [viewMode, setViewMode] = useState("list");
+  const [userProfileData, setUserProfileData] = useState(null);
+  const [qrCodeData, setQrCodeData] = useState("");
+  const [showAsyncStorage, setShowAsyncStorage] = useState(true);
+  const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
+  const [graphHtml, setGraphHtml] = useState(""); // For web iframe
+  const iframeContainerRef = React.useRef(null); // Ref for web iframe container
+
+  // Load persisted Network screen settings
+  const loadNetworkSettings = async () => {
+    try {
+      console.log("📥 Loading Network screen settings from AsyncStorage...");
+      const [showAsyncStorageValue, degreeValue, viewModeValue, networkDataValue, groupedNetworkValue] = await Promise.all([
+        AsyncStorage.getItem("network_showAsyncStorage"),
+        AsyncStorage.getItem("network_degree"),
+        AsyncStorage.getItem("network_viewMode"),
+        AsyncStorage.getItem("network_data"),
+        AsyncStorage.getItem("network_grouped"),
+      ]);
+
+      console.log("📥 Loaded values:", {
+        showAsyncStorage: showAsyncStorageValue,
+        degree: degreeValue,
+        viewMode: viewModeValue,
+        hasNetworkData: networkDataValue !== null,
+        hasGroupedNetwork: groupedNetworkValue !== null,
+      });
+
+      if (showAsyncStorageValue !== null) {
+        const parsedValue = JSON.parse(showAsyncStorageValue);
+        console.log("📥 Setting showAsyncStorage to:", parsedValue);
+        setShowAsyncStorage(parsedValue);
+      } else {
+        console.log("📥 No persisted showAsyncStorage value, using default: true");
+      }
+      if (degreeValue !== null) {
+        console.log("📥 Setting degree to:", degreeValue);
+        setDegree(degreeValue);
+      } else {
+        console.log("📥 No persisted degree value, using default: 2");
+      }
+      if (viewModeValue !== null) {
+        console.log("📥 Setting viewMode to:", viewModeValue);
+        setViewMode(viewModeValue);
+      } else {
+        console.log("📥 No persisted viewMode value, using default: list");
+      }
+
+      // Load network data if available
+      if (networkDataValue !== null) {
+        try {
+          const parsedNetworkData = JSON.parse(networkDataValue);
+          console.log("📥 Loading network data, items:", parsedNetworkData.length);
+          setNetworkData(parsedNetworkData);
+        } catch (e) {
+          console.error("❌ Error parsing network data:", e);
+        }
+      } else {
+        console.log("📥 No persisted network data");
+      }
+
+      if (groupedNetworkValue !== null) {
+        try {
+          const parsedGroupedNetwork = JSON.parse(groupedNetworkValue);
+          console.log("📥 Loading grouped network data, degrees:", Object.keys(parsedGroupedNetwork).length);
+          setGroupedNetwork(parsedGroupedNetwork);
+        } catch (e) {
+          console.error("❌ Error parsing grouped network data:", e);
+        }
+      } else {
+        console.log("📥 No persisted grouped network data");
+      }
+
+      // Mark settings as loaded so we can start saving changes
+      setSettingsLoaded(true);
+      console.log("✅ Settings loaded, now tracking changes for persistence");
+    } catch (e) {
+      console.error("❌ Error loading network settings:", e);
+    }
+  };
+
+  // Track if settings have been loaded to avoid saving defaults
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+
+  // Save Network screen settings when they change (but only after initial load)
+  useEffect(() => {
+    if (!settingsLoaded) {
+      // Don't save on initial render before settings are loaded
+      return;
+    }
+    const saveSettings = async () => {
+      try {
+        console.log("💾 Saving Network screen settings:", {
+          showAsyncStorage,
+          degree,
+          viewMode,
+        });
+        await Promise.all([
+          AsyncStorage.setItem("network_showAsyncStorage", JSON.stringify(showAsyncStorage)),
+          AsyncStorage.setItem("network_degree", degree),
+          AsyncStorage.setItem("network_viewMode", viewMode),
+        ]);
+        console.log("✅ Network screen settings saved successfully");
+      } catch (e) {
+        console.error("❌ Error saving network settings:", e);
+      }
+    };
+    saveSettings();
+  }, [showAsyncStorage, degree, viewMode, settingsLoaded]);
+
+  useEffect(() => {
+    const loadAsyncStorage = async () => {
+      try {
+        const keys = await AsyncStorage.getAllKeys();
+        const stores = await AsyncStorage.multiGet(keys);
+        setStorageData(stores);
+        const profileEntry = stores.find(([key]) => key === "profile_uid");
+        if (profileEntry) {
+          let uid = profileEntry[1];
+          // AsyncStorage.multiGet returns values as strings, but handle edge cases
+          if (uid === null || uid === undefined) {
+            uid = "";
+          } else {
+            // Try to parse if it's a JSON string
+            try {
+              const parsed = JSON.parse(uid);
+              if (typeof parsed === "string") {
+                uid = parsed;
+              } else if (typeof parsed === "object" && parsed !== null) {
+                // Extract UID from object
+                uid = parsed.profile_uid || parsed.uid || parsed.id || parsed.profile_personal_uid || "";
+                console.warn("⚠️ profile_uid was stored as JSON object, extracted:", uid);
+              } else {
+                uid = String(parsed);
+              }
+            } catch (e) {
+              // Not JSON, use as string
+              uid = String(uid).trim();
+            }
+          }
+
+          uid = String(uid || "").trim();
+          console.log("📋 Loaded profile_uid from AsyncStorage:", uid, "Type:", typeof uid);
+
+          if (uid && uid !== "[object Object]") {
+            setProfileUid(uid);
+            // Fetch user profile data for QR code
+            fetchUserProfileForQR(uid);
+          } else {
+            console.warn("⚠️ Invalid profile_uid loaded:", uid);
+          }
+        }
+      } catch (e) {
+        setStorageData([["error", e.message]]);
+      }
+    };
+    loadAsyncStorage();
+  }, []);
+
+  // Load settings when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log("🔄 Network screen focused - loading settings...");
+      loadNetworkSettings();
+
+      // Refetch network data when screen is focused to get updated relationship information
+      // This ensures relationship changes are reflected immediately
+      const refetchNetworkData = async () => {
+        let currentProfileUid = await AsyncStorage.getItem("profile_uid");
+        // Ensure currentProfileUid is always a string
+        if (currentProfileUid) {
+          try {
+            // Try to parse if it's JSON, but ensure it's a string
+            const parsed = JSON.parse(currentProfileUid);
+            currentProfileUid = typeof parsed === "string" ? parsed : String(parsed);
+          } catch (e) {
+            // Not JSON, use as string
+            currentProfileUid = String(currentProfileUid).trim();
+          }
+        } else {
+          currentProfileUid = "";
+        }
+        if (currentProfileUid && currentProfileUid !== profileUid) {
+          console.log("🔄 Updating profileUid from AsyncStorage:", currentProfileUid);
+          setProfileUid(currentProfileUid);
+        }
+        const currentDegree = (await AsyncStorage.getItem("network_degree")) || "2";
+        const hasNetworkData = await AsyncStorage.getItem("network_data");
+
+        // Only refetch if we have network data already (user has fetched before)
+        if (currentProfileUid && currentDegree && hasNetworkData) {
+          console.log("🔄 Refetching network data to get updated relationships...");
+          // Use AsyncStorage values directly to avoid state timing issues
+          fetchNetwork(currentProfileUid, currentDegree);
+        }
+      };
+      refetchNetworkData();
+    }, [])
+  );
+
+  // Also load settings on initial mount
+  useEffect(() => {
+    console.log("🔄 Network screen mounted - loading settings...");
+    loadNetworkSettings();
+  }, []);
+
+  // Fetch user profile data to create QR code with public miniCard info
+  const fetchUserProfileForQR = async (profileUID) => {
+    try {
+      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUID}`);
+      if (!response.ok) return;
+      const apiUser = await response.json();
+
+      // Fetch user_uid (the 110 number) from AsyncStorage
+      let userUid = null;
+      try {
+        userUid = await AsyncStorage.getItem("user_uid");
+        if (userUid) {
+          userUid = String(userUid).trim();
+          console.log("NetworkScreen - Fetched user_uid for QR code:", userUid);
+        }
+      } catch (e) {
+        console.warn("NetworkScreen - Could not fetch user_uid from AsyncStorage:", e);
+      }
+
+      // Extract public miniCard information
+      const p = apiUser?.personal_info || {};
+      const tagLineIsPublic = p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1;
+      const emailIsPublic = p.profile_personal_email_is_public === 1;
+      const phoneIsPublic = p.profile_personal_phone_number_is_public === 1;
+      const imageIsPublic = p.profile_personal_image_is_public === 1;
+
+      // Sanitize all text fields when creating publicData
+      const publicData = {
+        profile_uid: profileUID,
+        user_uid: userUid || "", // Add user_uid (the 110 number)
+        firstName: sanitizeText(p.profile_personal_first_name),
+        lastName: sanitizeText(p.profile_personal_last_name),
+        tagLine: tagLineIsPublic ? sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline) : "",
+        email: emailIsPublic ? sanitizeText(apiUser?.user_email) : "",
+        phoneNumber: phoneIsPublic ? sanitizeText(p.profile_personal_phone_number) : "",
+        profileImage: imageIsPublic ? sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : "") : "",
+        // Include visibility flags for MiniCard
+        tagLineIsPublic,
+        emailIsPublic,
+        phoneIsPublic,
+        imageIsPublic,
+      };
+
+      setUserProfileData(publicData);
+      // Create vCard format for QR code (standard contact card format)
+      const vCard = createVCard(publicData);
+      setQrCodeData(vCard);
+    } catch (error) {
+      console.error("Error fetching user profile for QR code:", error);
+    }
+  };
+
+  // Create vCard format (standard contact card format that QR scanners recognize)
+  const createVCard = (data) => {
+    const lines = ["BEGIN:VCARD", "VERSION:3.0"];
+
+    // Name (required)
+    const fullName = `${data.firstName} ${data.lastName}`.trim();
+    if (fullName) {
+      lines.push(`FN:${fullName}`);
+      lines.push(`N:${data.lastName || ""};${data.firstName || ""};;;`);
+    }
+
+    // Organization/Title (using tagLine)
+    if (data.tagLine) {
+      lines.push(`ORG:${escapeVCardValue(data.tagLine)}`);
+    }
+
+    // Email
+    if (data.email) {
+      lines.push(`EMAIL:${data.email}`);
+    }
+
+    // Phone
+    if (data.phoneNumber) {
+      // Remove any non-digit characters for phone
+      const phone = data.phoneNumber.replace(/\D/g, "");
+      lines.push(`TEL:${phone}`);
+    }
+
+    // Profile UID as a note
+    if (data.profile_uid) {
+      lines.push(`NOTE:Profile ID: ${data.profile_uid}`);
+    }
+
+    // User UID (the 110 number) as a note - important for identifying the user
+    if (data.user_uid) {
+      lines.push(`NOTE:User ID: ${data.user_uid}`);
+    }
+
+    // Profile Image URL (if available)
+    if (data.profileImage) {
+      lines.push(`PHOTO;TYPE=URL:${data.profileImage}`);
+    }
+
+    lines.push("END:VCARD");
+    return lines.join("\n");
+  };
+
+  // Escape special characters in vCard values
+  const escapeVCardValue = (value) => {
+    if (!value) return "";
+    return String(value).replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\\;").replace(/\n/g, "\\n");
+  };
+
+  // Update graph HTML when network data or view mode changes (for web)
+  useEffect(() => {
+    if (Platform.OS === "web" && viewMode === "graph" && networkData.length > 0 && profileUid) {
+      const html = generateVisHTML(networkData, profileUid || "YOU");
+      setGraphHtml(html);
+    }
+  }, [viewMode, networkData, profileUid]);
+
+  // Create/update iframe element for web
+  useEffect(() => {
+    if (Platform.OS === "web" && viewMode === "graph" && graphHtml && iframeContainerRef.current && typeof document !== "undefined") {
+      const container = iframeContainerRef.current;
+      // Get the actual DOM element (in React Native Web, ref.current is the DOM element)
+      const domElement = container;
+      if (domElement && domElement.nodeName) {
+        // Clear existing iframe
+        while (domElement.firstChild) {
+          domElement.removeChild(domElement.firstChild);
+        }
+        // Create new iframe
+        const iframe = document.createElement("iframe");
+        iframe.setAttribute("srcDoc", graphHtml);
+        iframe.setAttribute("title", "Network Graph");
+        iframe.style.width = "100%";
+        iframe.style.height = "100%";
+        iframe.style.border = "none";
+        domElement.appendChild(iframe);
+      }
+    }
+
+    // Cleanup function
+    return () => {
+      if (Platform.OS === "web" && iframeContainerRef.current && typeof document !== "undefined") {
+        const domElement = iframeContainerRef.current;
+        if (domElement && domElement.nodeName) {
+          while (domElement.firstChild) {
+            domElement.removeChild(domElement.firstChild);
+          }
+        }
+      }
+    };
+  }, [graphHtml, viewMode]);
+
+  const groupByDegree = (data) => {
+    const grouped = {};
+    data.forEach((item) => {
+      const deg = Number(item.degree) || 0;
+      if (!grouped[deg]) grouped[deg] = [];
+      grouped[deg].push(item);
+    });
+    return grouped;
+  };
+
+  const pluckMiniCardFields = (apiUser) => {
+    const p = apiUser?.personal_info || {};
+    return {
+      firstName: sanitizeText(p.profile_personal_first_name),
+      lastName: sanitizeText(p.profile_personal_last_name),
+      tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline),
+      email: sanitizeText(apiUser?.user_email),
+      phoneNumber: sanitizeText(p.profile_personal_phone_number),
+      profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
+    };
+  };
+
+  const getParentUid = (n) => {
+    if (!n) return null;
+    const tryJsonArray = (val) => {
+      try {
+        const arr = typeof val === "string" ? JSON.parse(val) : val;
+        return Array.isArray(arr) && arr.length >= 2 ? arr[arr.length - 2] : null;
+      } catch {
+        return null;
+      }
+    };
+    return (
+      n.parent_uid ||
+      n.via_uid ||
+      n.source_uid ||
+      n.connection_uid ||
+      (Array.isArray(n.path) ? (n.path.length >= 2 ? n.path[n.path.length - 2] : null) : null) ||
+      tryJsonArray(n.path) ||
+      tryJsonArray(n.connection_path) ||
+      null
+    );
+  };
+
+  const fetchNetwork = async (overrideProfileUid = null, overrideDegree = null) => {
+    console.log("============================================");
+    console.log("🔘 Fetch Network");
+    console.log("============================================");
+
+    // Check if the first argument is an event object (from onClick/onPress) and ignore it
+    if (overrideProfileUid && typeof overrideProfileUid === "object" && overrideProfileUid !== null) {
+      // Check if it looks like a React event object
+      if (overrideProfileUid.nativeEvent || overrideProfileUid._reactName || overrideProfileUid.type === "click") {
+        console.warn("⚠️ Event object passed to fetchNetwork, ignoring it");
+        overrideProfileUid = null;
+      }
+    }
+
+    // Always fetch profile_uid directly from AsyncStorage to avoid state corruption issues
+    let uidToUse = overrideProfileUid;
+
+    if (!uidToUse) {
+      try {
+        const directUid = await AsyncStorage.getItem("profile_uid");
+        console.log("🔍 DEBUG - Direct fetch from AsyncStorage:", directUid, "Type:", typeof directUid);
+
+        if (directUid) {
+          // AsyncStorage always returns strings, but check if it's a JSON string
+          try {
+            const parsed = JSON.parse(directUid);
+            // If parsing succeeded, check what we got
+            if (typeof parsed === "string") {
+              uidToUse = parsed;
+            } else if (typeof parsed === "object" && parsed !== null) {
+              // If it's an object, try to extract the UID
+              uidToUse = parsed.profile_uid || parsed.uid || parsed.id || parsed.profile_personal_uid || "";
+              console.warn("⚠️ profile_uid was stored as JSON object, extracted:", uidToUse);
+            } else {
+              uidToUse = String(parsed);
+            }
+          } catch (e) {
+            // Not JSON, use as string
+            uidToUse = String(directUid).trim();
+          }
+        } else {
+          // Fallback to state if AsyncStorage is empty
+          console.warn("⚠️ profile_uid not found in AsyncStorage, using state:", profileUid);
+          uidToUse = profileUid;
+        }
+      } catch (e) {
+        console.error("❌ Error fetching profile_uid from AsyncStorage:", e);
+        // Fallback to state
+        uidToUse = profileUid;
+      }
+    }
+
+    // Final validation and conversion to string
+    if (typeof uidToUse === "object" && uidToUse !== null) {
+      console.error("❌ uidToUse is still an object after processing:", uidToUse);
+      // Last resort: try to extract any string value
+      uidToUse = uidToUse.profile_uid || uidToUse.uid || uidToUse.id || uidToUse.profile_personal_uid || "";
+    }
+
+    uidToUse = String(uidToUse || "").trim();
+
+    // Debug logging
+    console.log("🔍 DEBUG - Final uidToUse:", uidToUse, "Type:", typeof uidToUse);
+    console.log("🔍 DEBUG - State profileUid:", profileUid, "Type:", typeof profileUid);
+
+    // Ensure degreeToUse is always a string
+    let degreeToUse = overrideDegree || degree;
+    degreeToUse = String(degreeToUse || "2").trim();
+
+    console.log("📋 Raw profileUid state:", profileUid, "Type:", typeof profileUid);
+    console.log("📋 Processed uidToUse:", uidToUse, "Type:", typeof uidToUse);
+    console.log("📋 Processed degreeToUse:", degreeToUse, "Type:", typeof degreeToUse);
+
+    if (!uidToUse || !degreeToUse) {
+      const errorMsg = "Missing profile UID or degree value";
+      console.log("❌ Error:", errorMsg);
+      console.log("Profile UID:", uidToUse);
+      console.log("Degree:", degreeToUse);
+      setError(errorMsg);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    // Construct endpoint using base URL - ensure both values are strings
+    const endpoint = `${API_BASE_URL}/api/network/${String(uidToUse)}/${String(degreeToUse)}`;
+
+    console.log("🔗 Endpoint:", endpoint);
+    console.log("📋 Profile UID:", uidToUse);
+    console.log("📋 Degree:", degreeToUse);
+    console.log("📋 Base URL:", API_BASE_URL);
+    console.log("============================================");
+
+    try {
+      console.log("📡 Making fetch request...");
+
+      // Add CORS mode and headers for web requests
+      const fetchOptions =
+        Platform.OS === "web"
+          ? {
+              method: "GET",
+              mode: "cors",
+              credentials: "omit", // Don't send credentials for CORS
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+              },
+              cache: "no-cache",
+            }
+          : {
+              method: "GET",
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "application/json",
+              },
+            };
+
+      console.log("📡 Fetch options:", JSON.stringify(fetchOptions, null, 2));
+
+      // Test if endpoint is reachable (web only)
+      if (Platform.OS === "web") {
+        console.log("🌐 Web platform detected - testing endpoint accessibility...");
+        try {
+          // Try a simple fetch first to see if we get a CORS error
+          const testResponse = await fetch(endpoint, { method: "OPTIONS", mode: "cors" }).catch((optErr) => {
+            console.warn("⚠️ OPTIONS preflight test failed (this is normal):", optErr.message);
+            return null;
+          });
+          if (testResponse) {
+            console.log("✅ OPTIONS preflight successful");
+          }
+        } catch (preflightErr) {
+          console.warn("⚠️ Preflight check warning:", preflightErr.message);
+        }
+      }
+
+      const response = await fetch(endpoint, fetchOptions);
+
+      console.log("📥 Response status:", response.status);
+      console.log("📥 Response ok:", response.ok);
+      console.log("📥 Response headers:", Object.fromEntries(response.headers.entries()));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("❌ Response error:", errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log("✅ Network data received:", JSON.stringify(data, null, 2));
+      console.log("✅ Data count:", Array.isArray(data) ? data.length : "Not an array");
+
+      const enrichedData = await Promise.all(
+        data.map(async (node) => {
+          const uid = node?.network_profile_personal_uid;
+          if (!uid || uid === "110-000000") {
+            return { ...node, profile_image: "", __mc: {} };
+          }
+          try {
+            // Add CORS mode for web requests
+            const userFetchOptions =
+              Platform.OS === "web"
+                ? {
+                    mode: "cors",
+                    credentials: "omit",
+                  }
+                : {};
+
+            const userRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${uid}`, userFetchOptions);
+            if (!userRes.ok) throw new Error(`Failed to load profile ${uid}`);
+            const userData = await userRes.json();
+
+            const { firstName, lastName, tagLine, email, phoneNumber, profileImage } = pluckMiniCardFields(userData);
+            const p = userData?.personal_info || {};
+
+            // Sanitize all text fields when creating __mc
+            const sanitizedFirstName = sanitizeText(firstName);
+            const sanitizedLastName = sanitizeText(lastName);
+            const sanitizedTagLine = sanitizeText(tagLine);
+            const sanitizedEmail = sanitizeText(email);
+            const sanitizedPhoneNumber = sanitizeText(phoneNumber);
+            const sanitizedProfileImage = sanitizeText(profileImage);
+
+            return {
+              ...node,
+              profile_image: sanitizedProfileImage,
+              __mc: {
+                firstName: sanitizedFirstName,
+                lastName: sanitizedLastName,
+                tagLine: sanitizedTagLine,
+                email: sanitizedEmail,
+                phoneNumber: sanitizedPhoneNumber,
+                profileImage: sanitizedProfileImage,
+                emailIsPublic: p.profile_personal_email_is_public === 1,
+                phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
+                tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
+                imageIsPublic: p.profile_personal_image_is_public === 1,
+                personal_info: {
+                  profile_personal_first_name: sanitizedFirstName,
+                  profile_personal_last_name: sanitizedLastName,
+                  profile_personal_tagline: sanitizedTagLine,
+                  profile_personal_tag_line: sanitizedTagLine,
+                  profile_personal_phone_number: sanitizedPhoneNumber,
+                  profile_personal_image: sanitizedProfileImage,
+                  profile_personal_email_is_public: p.profile_personal_email_is_public || 0,
+                  profile_personal_phone_number_is_public: p.profile_personal_phone_number_is_public || 0,
+                  profile_personal_tag_line_is_public: p.profile_personal_tag_line_is_public || p.profile_personal_tagline_is_public || 0,
+                  profile_personal_image_is_public: p.profile_personal_image_is_public || 0,
+                },
+                user_email: sanitizedEmail,
+              },
+            };
+          } catch (err) {
+            console.log("Profile fetch failed for uid:", uid);
+            return { ...node, profile_image: "", __mc: {} };
+          }
+        })
+      );
+
+      setNetworkData(enrichedData);
+      setGroupedNetwork(groupByDegree(enrichedData));
+
+      // Save network data for persistence
+      try {
+        console.log("💾 Saving network data for persistence...");
+        await AsyncStorage.setItem("network_data", JSON.stringify(enrichedData));
+        await AsyncStorage.setItem("network_grouped", JSON.stringify(groupByDegree(enrichedData)));
+        console.log("✅ Network data saved successfully");
+      } catch (e) {
+        console.error("❌ Error saving network data:", e);
+      }
+    } catch (err) {
+      console.error("❌ Network fetch failed:", err);
+      console.error("❌ Error message:", err.message);
+      console.error("❌ Error stack:", err.stack);
+      console.error("❌ Error name:", err.name);
+      console.error("❌ Error type:", typeof err);
+      console.error("❌ Full error object:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
+
+      // Provide more helpful error messages
+      let errorMessage = `Failed to fetch network data: ${err.message}`;
+      if (err.message === "Failed to fetch" && Platform.OS === "web") {
+        const endpointTest = `${endpoint}`;
+        errorMessage = `Network request failed. This could be:\n\n1. CORS issue - The API server needs to allow requests from http://localhost:8081\n2. Network connectivity issue\n3. Invalid endpoint URL\n\nEndpoint: ${endpointTest}\n\nTo test in browser console, run:\n  fetch("${endpointTest}")\n    .then(r => r.json())\n    .then(d => console.log("Success:", d))\n    .catch(e => console.error("Error:", e));\n\nIf you see a CORS error in the console, you need to configure CORS on your AWS API Gateway.`;
+      }
+
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+      console.log("============================================");
+    }
+  };
+
+  const degreeLabel = (deg) => {
+    if (deg === 1) return "1st-Degree Connections";
+    if (deg === 2) return "2nd-Degree Connections";
+    if (deg === 3) return "3rd-Degree Connections";
+    return `${deg}-Degree Connections`;
+  };
+
+  /** ✅ Build vis-network HTML (hierarchical layout by degree) */
+  const generateVisHTML = (data, youId) => {
+    console.log("🔷 generateVisHTML called with:");
+    console.log("  - youId:", youId);
+    console.log("  - data length:", data.length);
+    console.log(
+      "  - data sample (first 3):",
+      JSON.stringify(
+        data.slice(0, 3).map((n) => ({
+          network_profile_personal_uid: n.network_profile_personal_uid,
+          profile_personal_uid: n.profile_personal_uid,
+          target_uid: n.target_uid,
+          degree: n.degree,
+          parent_uid: n.parent_uid,
+          via_uid: n.via_uid,
+          source_uid: n.source_uid,
+          connection_uid: n.connection_uid,
+        })),
+        null,
+        2
+      )
+    );
+
+    // Get user's profile image if available
+    const userImage = userProfileData?.profileImage || "";
+    const hasUserImage = userImage && String(userImage).trim() !== "";
+
+    // Calculate base size for other nodes (max of image nodes or dot nodes)
+    const otherNodeSizes = data.map((n) => {
+      const img = n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
+      const hasImg = img && String(img).trim() !== "";
+      return hasImg ? 18 : 10;
+    });
+    const maxOtherSize = otherNodeSizes.length > 0 ? Math.max(...otherNodeSizes) : 18;
+
+    // User's node should be 150% of the max other node size
+    const userNodeSize = Math.round(maxOtherSize * 1.5);
+
+    const nodes = [
+      {
+        id: youId || "YOU",
+        label: "You",
+        shape: hasUserImage ? "image" : "dot",
+        image: hasUserImage ? userImage : undefined,
+        size: userNodeSize,
+        color: hasUserImage ? undefined : { border: "#AF52DE", background: "#b894ff" },
+        font: { color: "#ffffff", size: 10 },
+        level: 0,
+      },
+    ];
+
+    const allUids = new Set([youId]);
+    data.forEach((n) => allUids.add(n.network_profile_personal_uid));
+
+    data.forEach((n) => {
+      const name = n.__mc?.personal_info?.profile_personal_first_name || n.__mc?.firstName || "";
+      const last = n.__mc?.personal_info?.profile_personal_last_name || n.__mc?.lastName || "";
+      const label = [name, last].filter(Boolean).join(" ") || (n.network_profile_personal_uid ? n.network_profile_personal_uid.slice(-3) : "???");
+
+      const img = n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
+
+      const hasImg = img && String(img).trim() !== "";
+      nodes.push({
+        id: n.network_profile_personal_uid,
+        label,
+        shape: hasImg ? "image" : "dot",
+        image: hasImg ? img : undefined,
+        size: hasImg ? 18 : 10,
+        color: hasImg ? undefined : { border: "#AF52DE", background: "#e9d4ff" },
+        font: { size: 10, color: "#444" },
+        level: Number(n.degree) || 1,
+      });
+    });
+
+    const edges = [];
+    console.log("🔷 Building edges...");
+    data.forEach((n) => {
+      const deg = Number(n.degree) || 1;
+      const nodeUid = n.network_profile_personal_uid;
+      console.log(`\n  Processing node ${nodeUid} (degree ${deg}):`, {
+        profile_personal_referred_by: n.profile_personal_referred_by,
+        profile_personal_uid: n.profile_personal_uid,
+        target_uid: n.target_uid,
+        parent_uid: n.parent_uid,
+        via_uid: n.via_uid,
+      });
+
+      let parent = null;
+
+      // HIGHEST PRIORITY: Use profile_personal_referred_by - this is who referred/connected this person
+      if (n.profile_personal_referred_by && allUids.has(n.profile_personal_referred_by)) {
+        const referredByNode = data.find((x) => x.network_profile_personal_uid === n.profile_personal_referred_by);
+        if (referredByNode) {
+          const referredByDeg = Number(referredByNode.degree) || 1;
+          // For degree 1, the referrer should be YOU or in degree 1
+          // For degree > 1, the referrer should be in degree-1
+          if (deg === 1) {
+            if (n.profile_personal_referred_by === youId || referredByDeg === 1) {
+              parent = n.profile_personal_referred_by;
+              console.log(`    ✅ Found parent via profile_personal_referred_by (degree 1): ${parent}`);
+            }
+          } else if (referredByDeg === deg - 1) {
+            parent = n.profile_personal_referred_by;
+            console.log(`    ✅ Found parent via profile_personal_referred_by (${parent} is in degree ${referredByDeg}): ${parent}`);
+          } else {
+            console.log(`    ⚠️ profile_personal_referred_by ${n.profile_personal_referred_by} exists but is degree ${referredByDeg}, not ${deg - 1}`);
+          }
+        } else if (n.profile_personal_referred_by === youId) {
+          // If referrer is YOU, use it directly
+          parent = youId;
+          console.log(`    ✅ Found parent via profile_personal_referred_by (YOU): ${parent}`);
+        }
+      }
+
+      // Fallback: try getParentUid (checks parent_uid, via_uid, etc.)
+      if (!parent) {
+        try {
+          const p = getParentUid(n);
+          if (p && allUids.has(p)) {
+            parent = p;
+            console.log(`    ✅ Found parent via getParentUid: ${parent}`);
+          }
+        } catch (e) {
+          console.log(`    ❌ Error in getParentUid:`, e);
+        }
+      }
+
+      // Fallback: Check if this node's profile_personal_uid or target_uid points to a valid parent
+      if (!parent && (n.profile_personal_uid || n.target_uid)) {
+        const directParentUid = n.profile_personal_uid || n.target_uid;
+        if (allUids.has(directParentUid)) {
+          const parentNode = data.find((x) => x.network_profile_personal_uid === directParentUid);
+          if (parentNode) {
+            const parentDeg = Number(parentNode.degree) || 1;
+            if (deg === 1) {
+              if (directParentUid === youId || parentDeg === 1) {
+                parent = directParentUid;
+                console.log(`    ✅ Found parent via profile_personal_uid/target_uid (degree 1): ${parent}`);
+              }
+            } else if (parentDeg === deg - 1) {
+              parent = directParentUid;
+              console.log(`    ✅ Found parent via profile_personal_uid/target_uid (${directParentUid} is in degree ${parentDeg}): ${parent}`);
+            }
+          }
+        }
+      }
+
+      // For degree > 1, if still no parent, try reverse lookup
+      // Find a node in degree-1 that has this node's UID as its profile_personal_uid or target_uid
+      if (!parent && deg > 1) {
+        const connectingNode = data.find((x) => {
+          const xDeg = Number(x.degree) || 1;
+          const connectsToThisNode = x.profile_personal_uid === nodeUid || x.target_uid === nodeUid;
+          const isPreviousDegree = xDeg === deg - 1;
+          return connectsToThisNode && isPreviousDegree;
+        });
+
+        if (connectingNode && allUids.has(connectingNode.network_profile_personal_uid)) {
+          parent = connectingNode.network_profile_personal_uid;
+          console.log(`    ✅ Found parent via reverse lookup (node ${parent} connects to ${nodeUid}): ${parent}`);
+        }
+      }
+
+      // For degree 1, connect to YOU if no parent found
+      if (!parent && deg === 1) {
+        parent = youId || "YOU";
+        console.log(`    ✅ Connecting to YOU (degree 1, no parent found)`);
+      }
+
+      // Last resort for degree > 1: find any node with degree-1
+      if (!parent && deg > 1) {
+        const fallbackParent = data.find((x) => Number(x.degree) === deg - 1);
+        if (fallbackParent && allUids.has(fallbackParent.network_profile_personal_uid)) {
+          parent = fallbackParent.network_profile_personal_uid;
+          console.log(`    ⚠️ Using fallback parent (first degree-1 node): ${parent}`);
+        } else {
+          parent = youId || "YOU";
+          console.log(`    ⚠️ No parent found, connecting to YOU`);
+        }
+      }
+
+      if (parent) {
+        console.log(`  ✅ Edge: ${parent} -> ${nodeUid} (degree ${deg})`);
+        edges.push({
+          from: parent,
+          to: nodeUid,
+          color: { color: deg === 1 ? "#bbbbbb" : "#cccccc" },
+          width: deg === 1 ? 0.8 : 0.6,
+          smooth: true,
+        });
+      }
+    });
+
+    console.log("🔷 Total edges created:", edges.length);
+    console.log(
+      "🔷 Edges:",
+      JSON.stringify(
+        edges.map((e) => `${e.from} -> ${e.to}`),
+        null,
+        2
+      )
+    );
+
+    const payload = { nodes, edges };
+
+    // For web, we need to handle message passing differently
+    const messageHandler =
+      Platform.OS === "web"
+        ? `window.addEventListener('message', function(event) {
+          if (event.data && event.data.type === 'nodeClick') {
+            window.parent.postMessage({ type: 'nodeClick', uid: event.data.uid }, '*');
+          }
+        });`
+        : "";
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<style>
+  html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#ffffff; }
+  #mynetwork { width:100%; height:100%; background:#ffffff; }
+</style>
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+  <div id="mynetwork"></div>
+  <script>
+    (function() {
+      const data = ${JSON.stringify(payload)};
+      const container = document.getElementById('mynetwork');
+
+      const options = {
+        layout: {
+          improvedLayout: true
+        },
+        physics: {
+          enabled: true,
+          solver: "repulsion",
+          repulsion: {
+            nodeDistance: 180,     // controls how far apart the rings are
+            centralGravity: 0.3,
+            springLength: 100,
+            springConstant: 0.02,
+            damping: 0.15
+          },
+          stabilization: {
+            iterations: 200,
+            updateInterval: 25
+          }
+        },
+
+        edges: {
+          color: '#cccccc',
+          width: 0.5,
+          smooth: { enabled: true, type: 'continuous', roundness: 0.3 }
+        },
+        interaction: {
+          hover: true,
+          zoomView: true,
+          dragView: true,
+          dragNodes: true
+        }
+      };
+
+      const network = new vis.Network(container, data, options);
+
+      network.once('stabilizationIterationsDone', () => {
+        network.fit({ animation: { duration: 200 }});
+      });
+
+      network.on('click', function(params) {
+        if (params && params.nodes && params.nodes.length > 0) {
+          const id = params.nodes[0];
+          ${
+            Platform.OS === "web"
+              ? `window.parent.postMessage({ type: 'nodeClick', uid: String(id) }, '*');`
+              : `if (id && window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage(String(id));
+          }`
+          }
+        }
+      });
+
+      window.addEventListener('resize', () => {
+        network.fit({ animation: false });
+      });
+    })();
+  </script>
+</body>
+</html>
+`;
+  };
+
+  // Handle iframe message for web
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      const handleMessage = (event) => {
+        // In production, you should validate event.origin for security
+        if (event.data && event.data.type === "nodeClick") {
+          const uid = event.data.uid;
+          if (uid && uid !== (profileUid || "YOU")) {
+            navigation.navigate("Profile", {
+              profile_uid: uid,
+              returnTo: "Network",
+            });
+          }
+        }
+      };
+
+      window.addEventListener("message", handleMessage);
+      return () => {
+        window.removeEventListener("message", handleMessage);
+      };
+    }
+  }, [navigation, profileUid]);
+
+  // Debug: Log render start
+  if (__DEV__) {
+    console.log("🔵 NetworkScreen - RENDER START");
+    console.log("🔵 NetworkScreen - profileUid:", profileUid, "type:", typeof profileUid);
+    console.log("🔵 NetworkScreen - storageData length:", storageData.length);
+    console.log("🔵 NetworkScreen - networkData length:", networkData.length);
+    console.log("🔵 NetworkScreen - groupedNetwork keys:", Object.keys(groupedNetwork));
+  }
+
+  return (
+    <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
+      {/* Header */}
+      {(() => {
+        if (__DEV__) console.log("🔵 NetworkScreen - Rendering Header");
+        return (
+          <View style={[styles.headerBg, darkMode && styles.darkHeaderBg]}>
+            <Text style={[styles.header, darkMode && styles.darkHeader]}>Connect</Text>
+          </View>
+        );
+      })()}
+
+      <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
+        <ScrollView
+          style={[styles.scrollContainer, darkMode && styles.darkScrollContainer]}
+          contentContainerStyle={{ padding: 10, paddingBottom: 120 }}
+          keyboardShouldPersistTaps='handled'
+          showsVerticalScrollIndicator
+        >
+          {/* QR Code Section */}
+          {(() => {
+            if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR Code Section");
+            if (qrCodeData && userProfileData && QRCodeComponent) {
+              if (__DEV__) console.log("🔵 NetworkScreen - QR Code data exists, rendering QR section");
+              return (
+                <View style={[styles.qrCodeContainer, darkMode && styles.darkQrCodeContainer]}>
+                  <Text style={[styles.qrCodeTitle, darkMode && styles.darkQrCodeTitle]}>My Contact QR Code</Text>
+                  <Text style={[styles.qrCodeSubtitle, darkMode && styles.darkQrCodeSubtitle]}>Let others scan this to share your public contact information</Text>
+                  <View style={[styles.qrCodeWrapper, darkMode && styles.darkQrCodeWrapper]}>
+                    <QRCodeComponent value={qrCodeData} size={200} color={darkMode ? "#ffffff" : "#000000"} backgroundColor={darkMode ? "#1a1a1a" : "#ffffff"} />
+                  </View>
+
+                  {/* Display MiniCard showing what information will be transferred */}
+                  {(() => {
+                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
+                    if (userProfileData) {
+                      return (
+                        <View style={styles.qrCodeMiniCardContainer}>
+                          <MiniCard user={userProfileData} />
+                        </View>
+                      );
+                    }
+                    return null;
+                  })()}
+                </View>
+              );
+            }
+            if (__DEV__) console.log("🔵 NetworkScreen - QR Code section not rendered (missing data)");
+            return null;
+          })()}
+
+          {(() => {
+            if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage Section");
+            return (
+              <View>
+                <View style={styles.sectionTitleRow}>
+                  <Text style={[styles.sectionTitle, darkMode && styles.darkSectionTitle]}>AsyncStorage Contents:</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const newValue = !showAsyncStorage;
+                      console.log("👁️ Toggling AsyncStorage visibility from", showAsyncStorage, "to", newValue);
+                      setShowAsyncStorage(newValue);
+                    }}
+                    style={styles.eyeIconButton}
+                  >
+                    <Ionicons name={showAsyncStorage ? "eye" : "eye-off"} size={20} color={darkMode ? "#ffffff" : "#333"} />
+                  </TouchableOpacity>
+                </View>
+                {(() => {
+                  if (__DEV__) console.log("🔵 NetworkScreen - showAsyncStorage:", showAsyncStorage);
+                  if (showAsyncStorage) {
+                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage data, length:", storageData.length);
+                    return (
+                      <>
+                        {storageData.length === 0 ? (
+                          <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>No data in AsyncStorage.</Text>
+                        ) : (
+                          storageData
+                            .map(([key, value], idx) => {
+                              if (__DEV__) console.log(`🔵 NetworkScreen - Processing AsyncStorage item ${idx}:`, { key, value, keyType: typeof key, valueType: typeof value });
+                              const sanitizedKey = sanitizeText(key, "Unknown");
+                              const sanitizedValue = sanitizeText(value, "N/A");
+                              if (__DEV__) console.log(`🔵 NetworkScreen - After sanitization ${idx}:`, { sanitizedKey, sanitizedValue });
+                              if (!isSafeForConditional(sanitizedKey) && !isSafeForConditional(sanitizedValue)) {
+                                if (__DEV__) console.log(`🔵 NetworkScreen - Skipping item ${idx} (unsafe)`);
+                                return null;
+                              }
+                              return (
+                                <View key={key} style={{ marginBottom: 8 }}>
+                                  {isSafeForConditional(sanitizedKey) && <Text style={[styles.keyText, darkMode && styles.darkKeyText]}>{sanitizedKey}:</Text>}
+                                  {isSafeForConditional(sanitizedValue) && <Text style={[styles.valueText, darkMode && styles.darkValueText]}>{sanitizedValue}</Text>}
+                                </View>
+                              );
+                            })
+                            .filter(Boolean)
+                        )}
+                      </>
+                    );
+                  }
+                  return null;
+                })()}
+              </View>
+            );
+          })()}
+
+          {(() => {
+            if (__DEV__) console.log("🔵 NetworkScreen - Rendering Network Section");
+            if (__DEV__) console.log("🔵 NetworkScreen - profileUid for title:", profileUid, "type:", typeof profileUid);
+            const titleSuffix = profileUid ? ` (${profileUid})` : "";
+            if (__DEV__) console.log("🔵 NetworkScreen - titleSuffix:", titleSuffix);
+            return (
+              <View style={{ marginTop: 20 }}>
+                <Text style={[styles.sectionTitle, darkMode && styles.darkSectionTitle]}>My Network{titleSuffix}</Text>
+
+                <View style={styles.networkControlsRow}>
+                  <Text style={[styles.networkControlLabel, darkMode && styles.darkNetworkControlLabel]}>Levels to Display:</Text>
+                  <WebTextInput
+                    style={[styles.networkInput, darkMode && styles.darkNetworkInput]}
+                    value={degree}
+                    onChangeText={setDegree}
+                    placeholder='1'
+                    keyboardType='numeric'
+                    inputMode={Platform.OS === "web" ? "numeric" : undefined}
+                  />
+                  <TouchableOpacity style={styles.fetchButton} onPress={() => fetchNetwork()}>
+                    <Text style={styles.fetchButtonText}>Show Connections</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setViewMode(viewMode === "list" ? "graph" : "list")} style={styles.toggleButton}>
+                    <Text style={styles.toggleButtonText}>{viewMode === "list" ? "View as Graph" : "View as List"}</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {loading && <ActivityIndicator size='large' color='#AF52DE' />}
+                {error && <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>{error}</Text>}
+
+                {viewMode === "graph" && networkData.length > 0 && (
+                  <View
+                    style={{
+                      height: 400,
+                      borderRadius: 10,
+                      overflow: "hidden",
+                      borderWidth: 0,
+                    }}
+                  >
+                    {Platform.OS === "web" ? (
+                      // Web: Use iframe via ref
+                      graphHtml ? (
+                        <View
+                          ref={iframeContainerRef}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                          }}
+                        />
+                      ) : (
+                        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+                          <ActivityIndicator size='large' color='#AF52DE' />
+                          <Text style={[styles.loadingText, darkMode && styles.darkLoadingText]}>Loading graph view...</Text>
+                        </View>
+                      )
+                    ) : WebViewComponent ? (
+                      // Native: Use WebView
+                      <WebViewComponent
+                        originWhitelist={["*"]}
+                        source={{ html: generateVisHTML(networkData, profileUid || "YOU") }}
+                        onMessage={(event) => {
+                          const uid = event?.nativeEvent?.data;
+                          if (uid && uid !== (profileUid || "YOU")) {
+                            navigation.navigate("Profile", {
+                              profile_uid: uid,
+                              returnTo: "Network",
+                            });
+                          }
+                        }}
+                        javaScriptEnabled
+                        domStorageEnabled
+                        automaticallyAdjustContentInsets
+                        allowsInlineMediaPlayback
+                        androidLayerType={Platform.OS === "android" ? "hardware" : "none"}
+                      />
+                    ) : (
+                      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 20 }}>
+                        <Text style={[styles.errorText, darkMode && styles.darkErrorText, { textAlign: "center", marginBottom: 10 }]}>
+                          WebView is not available. The native module needs to be linked.
+                        </Text>
+                        <Text style={[styles.helperText, darkMode && styles.darkHelperText, { textAlign: "center", marginTop: 5 }]}>
+                          To fix: Run {"\n"}
+                          npx expo prebuild --clean{"\n"}
+                          npx expo run:android
+                        </Text>
+                        <Text style={[styles.helperText, darkMode && styles.darkHelperText, { textAlign: "center", marginTop: 5, fontSize: 10 }]}>(or run:ios for iOS)</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {(() => {
+                  if (__DEV__) console.log("🔵 NetworkScreen - Checking list view mode");
+                  if (viewMode === "list" && Object.keys(groupedNetwork).length > 0) {
+                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering list view, groupedNetwork keys:", Object.keys(groupedNetwork));
+                    return (
+                      <View style={{ marginTop: 10 }}>
+                        {/* Filter Buttons */}
+                        {(() => {
+                          if (__DEV__) console.log("🔵 NetworkScreen - Rendering filter buttons");
+                          return (
+                            <View style={styles.filterContainer}>
+                              <TouchableOpacity
+                                style={[
+                                  styles.filterButton,
+                                  relationshipFilter !== "All" && styles.filterButtonActive,
+                                  darkMode && styles.darkFilterButton,
+                                  relationshipFilter !== "All" && darkMode && styles.darkFilterButtonActive,
+                                ]}
+                                onPress={() => {
+                                  const filters = ["All", "Colleagues", "Friends", "Family"];
+                                  const currentIndex = filters.indexOf(relationshipFilter);
+                                  const nextIndex = (currentIndex + 1) % filters.length;
+                                  setRelationshipFilter(filters[nextIndex]);
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    styles.filterButtonText,
+                                    relationshipFilter !== "All" && styles.filterButtonTextActive,
+                                    darkMode && styles.darkFilterButtonText,
+                                    relationshipFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                                  ]}
+                                >
+                                  {relationshipFilter === "All" ? "Relationship" : relationshipFilter}
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={[styles.filterButton, styles.filterButtonDisabled, darkMode && styles.darkFilterButton, darkMode && styles.darkFilterButtonDisabled]} disabled>
+                                <Text style={[styles.filterButtonText, styles.filterButtonTextDisabled, darkMode && styles.darkFilterButtonText, darkMode && styles.darkFilterButtonTextDisabled]}>
+                                  Date
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={[styles.filterButton, styles.filterButtonDisabled, darkMode && styles.darkFilterButton, darkMode && styles.darkFilterButtonDisabled]} disabled>
+                                <Text style={[styles.filterButtonText, styles.filterButtonTextDisabled, darkMode && styles.darkFilterButtonText, darkMode && styles.darkFilterButtonTextDisabled]}>
+                                  Location
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={[styles.filterButton, styles.filterButtonDisabled, darkMode && styles.darkFilterButton, darkMode && styles.darkFilterButtonDisabled]} disabled>
+                                <Text style={[styles.filterButtonText, styles.filterButtonTextDisabled, darkMode && styles.darkFilterButtonText, darkMode && styles.darkFilterButtonTextDisabled]}>
+                                  Event
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        })()}
+
+                        {(() => {
+                          if (__DEV__) console.log("🔵 NetworkScreen - Rendering network list items");
+                          return Object.keys(groupedNetwork)
+                            .map((d) => Number(d))
+                            .sort((a, b) => a - b)
+                            .map((deg) => {
+                              if (__DEV__) console.log(`🔵 NetworkScreen - Processing degree ${deg}`);
+                              // Filter the list based on relationship type
+                              let list = groupedNetwork[deg];
+                              if (relationshipFilter !== "All") {
+                                list = list.filter((node) => {
+                                  const relationship = node.circle_relationship;
+                                  if (relationshipFilter === "Colleagues") {
+                                    return relationship === "colleague";
+                                  } else if (relationshipFilter === "Friends") {
+                                    return relationship === "friend";
+                                  } else if (relationshipFilter === "Family") {
+                                    return relationship === "family";
+                                  }
+                                  return true;
+                                });
+                              }
+
+                              if (list.length === 0) {
+                                if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} has no items after filtering`);
+                                return null; // Don't render degree section if no items after filtering
+                              }
+
+                              if (__DEV__) console.log(`🔵 NetworkScreen - Rendering degree ${deg} with ${list.length} items`);
+                              return (
+                                <View key={deg} style={{ marginBottom: 20 }}>
+                                  {(() => {
+                                    const label = degreeLabel(Number(deg));
+                                    if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} label:`, label);
+                                    return <Text style={[styles.degreeHeader, darkMode && styles.darkDegreeHeader]}>{label}</Text>;
+                                  })()}
+
+                                  {list.map((node, index) => {
+                                    if (__DEV__) console.log(`🔵 NetworkScreen - Rendering node ${deg}-${index}, __mc:`, node.__mc);
+                                    // Data is already sanitized when __mc is created, but double-check
+                                    if (!node.__mc) {
+                                      if (__DEV__) console.log(`🔵 NetworkScreen - Node ${deg}-${index} has no __mc, skipping`);
+                                      return null;
+                                    }
+                                    if (__DEV__) console.log(`🔵 NetworkScreen - Rendering MiniCard for node ${deg}-${index}`);
+                                    return (
+                                      <TouchableOpacity
+                                        key={`${deg}-${index}`}
+                                        onPress={() =>
+                                          navigation.navigate("Profile", {
+                                            profile_uid: node.network_profile_personal_uid,
+                                            returnTo: "Network",
+                                          })
+                                        }
+                                        style={{ marginVertical: 6 }}
+                                      >
+                                        <MiniCard user={node.__mc} />
+                                      </TouchableOpacity>
+                                    );
+                                  })}
+                                </View>
+                              );
+                            });
+                        })()}
+                      </View>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {(() => {
+                  if (__DEV__) console.log("🔵 NetworkScreen - Rendering 'No connections' message");
+                  if (!loading && !error && Object.keys(groupedNetwork).length === 0) {
+                    return <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>No network connections found.</Text>;
+                  }
+                  return null;
+                })()}
+              </View>
+            );
+          })()}
+        </ScrollView>
+
+        <BottomNavBar navigation={navigation} />
+      </SafeAreaView>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  pageContainer: { flex: 1, backgroundColor: "#fff" },
+  safeArea: { flex: 1 },
+  headerBg: {
+    backgroundColor: "#AF52DE",
+    paddingTop: 30,
+    paddingBottom: 15,
+    alignItems: "center",
+    borderBottomLeftRadius: 300,
+    borderBottomRightRadius: 300,
+  },
+  header: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+  scrollContainer: { flex: 1 },
+  darkScrollContainer: { backgroundColor: "#1a1a1a" },
+  sectionTitleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  sectionTitle: { fontWeight: "bold", fontSize: 16, color: "#333" },
+  eyeIconButton: {
+    padding: 4,
+  },
+  keyText: { fontWeight: "bold", color: "#333" },
+  valueText: { color: "#555", fontSize: 13 },
+  inputRow: { flexDirection: "row", alignItems: "center", marginTop: 10 },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 8,
+    marginRight: 8,
+  },
+  networkControlsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  networkControlLabel: {
+    fontSize: 14,
+    color: "#333",
+    marginRight: 8,
+  },
+  darkNetworkControlLabel: {
+    color: "#cccccc",
+  },
+  networkInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    width: 35,
+    textAlign: "center",
+    backgroundColor: "#fff",
+    height: 36, // Match Fetch button height (8px padding top + 8px padding bottom + ~20px text height)
+    ...(Platform.OS === "web" &&
+      {
+        // Web-specific styles are handled in WebTextInput component
+      }),
+  },
+  darkNetworkInput: {
+    backgroundColor: "#444",
+    color: "#fff",
+    borderColor: "#666",
+  },
+  fetchButton: {
+    backgroundColor: "#AF52DE",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  fetchButtonText: { color: "#fff", fontWeight: "600" },
+  toggleContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginVertical: 12,
+  },
+  toggleButton: {
+    backgroundColor: "#AF52DE",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    height: 36, // Match Fetch button height
+  },
+  toggleButtonText: { color: "#fff", fontWeight: "600" },
+  degreeHeader: { fontWeight: "700", fontSize: 15, color: "#6b46c1", marginBottom: 6 },
+  noDataText: { color: "#888" },
+  errorText: { color: "red", marginTop: 8 },
+  darkPageContainer: { backgroundColor: "#1a1a1a" },
+  darkSafeArea: { backgroundColor: "#1a1a1a" },
+  darkHeaderBg: { backgroundColor: "#4b2c91" },
+  darkHeader: { color: "#fff" },
+  darkSectionTitle: { color: "#ccc" },
+  darkKeyText: { color: "#ccc" },
+  darkValueText: { color: "#aaa" },
+  darkNoDataText: { color: "#888" },
+  darkDegreeHeader: { color: "#a78bfa" },
+  darkErrorText: { color: "#f87171" },
+  loadingText: { color: "#666", marginTop: 10 },
+  darkLoadingText: { color: "#aaa" },
+  helperText: { color: "#888", fontSize: 12, marginTop: 5 },
+  darkHelperText: { color: "#999" },
+  qrCodeContainer: {
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    padding: 20,
+    alignItems: "center",
+    marginBottom: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  darkQrCodeContainer: {
+    backgroundColor: "#2d2d2d",
+  },
+  qrCodeTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 5,
+  },
+  darkQrCodeTitle: {
+    color: "#ffffff",
+  },
+  qrCodeSubtitle: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 15,
+    textAlign: "center",
+  },
+  darkQrCodeSubtitle: {
+    color: "#aaa",
+  },
+  qrCodeWrapper: {
+    padding: 10,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  darkQrCodeWrapper: {
+    backgroundColor: "#1a1a1a",
+  },
+  qrCodeInfo: {
+    marginTop: 10,
+    alignItems: "center",
+  },
+  qrCodeInfoText: {
+    fontSize: 18,
+    color: "#333",
+    marginBottom: 4,
+  },
+  darkQrCodeInfoText: {
+    color: "#cccccc",
+  },
+  qrCodeMiniCardContainer: {
+    marginTop: 15,
+    width: "100%",
+  },
+  filterContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginBottom: 15,
+    gap: 8,
+  },
+  filterButton: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    minWidth: 100,
+    alignItems: "center",
+  },
+  filterButtonActive: {
+    backgroundColor: "#AF52DE",
+    borderColor: "#AF52DE",
+  },
+  filterButtonDisabled: {
+    opacity: 0.5,
+  },
+  filterButtonText: {
+    fontSize: 14,
+    color: "#333",
+    fontWeight: "500",
+  },
+  filterButtonTextActive: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+  filterButtonTextDisabled: {
+    color: "#999",
+  },
+  darkFilterButton: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  darkFilterButtonActive: {
+    backgroundColor: "#AF52DE",
+    borderColor: "#AF52DE",
+  },
+  darkFilterButtonDisabled: {
+    opacity: 0.5,
+  },
+  darkFilterButtonText: {
+    color: "#cccccc",
+  },
+  darkFilterButtonTextActive: {
+    color: "#fff",
+  },
+  darkFilterButtonTextDisabled: {
+    color: "#666",
+  },
+});
+
+export default NetworkScreen;

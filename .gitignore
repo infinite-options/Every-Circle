@@ -1,36 +1,54 @@
-# Every-Circle Git Ignore File
+# Every-Circle-Mobile git ignore
 
-# For more about ignoring files:
-# See https://help.github.com/articles/ignoring-files/
-# https://www.atlassian.com/git/tutorials/saving-changes/gitignore
-
-
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
 # dependencies
-/node_modules
-/.pnp
-.pnp
-.js
-.vscode
-/.idea
+node_modules/
 
-# testing
-/coverage
+# Expo
+.expo/
+dist/
+web-build/
 
-# production
-/build
+# Native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
 
-# misc
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
 .DS_Store
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Web certificates
 *.pem
+
+# local env files
+.env*.local
+.env
+.env.bak
+.env*.bak
+*.keystore
+
+# typescript
+*.tsbuildinfo
+
+# Build directories
+ios/
+android/
+
+# Secrets
+secrets.json
+*.sh
+*.plist/ios/
+
+# JetBrains IDEs
+.idea/
+*.iml

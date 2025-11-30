@@ -1,0 +1,78 @@
+{
+  "cli": {
+    "version": ">= 5.9.1",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "resourceClass": "m-medium",
+        "env": {
+          "EXPO_PUBLIC_GOOGLE_URL_SCHEME": "com.googleusercontent.apps.255320444536-fjgkn445u968bhsp7i57fpqquemqbmn5",
+          "EXPO_PUBLIC_BUNDLE_IDENTIFIER": "com.infiniteoptions.everycircle",
+          "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAPoq8L-jM4diZmj80ayQj6_8Gd8z5XwJY",
+          "EXPO_PUBLIC_APP_NAME": "EveryCircle",
+          "EXPO_PUBLIC_APP_SLUG": "everycircle",
+          "EXPO_PUBLIC_APPLE_SERVICES_ID": "com.infiniteoptions.everycircle.signin",
+          "EXPO_PUBLIC_IOS_CLIENT_ID": "255320444536-fjgkn445u968bhsp7i57fpqquemqbmn5.apps.googleusercontent.com"
+        }
+      },
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug",
+        "env": {
+          "ANDROID_NDK_HOME": "/opt/android-ndk",
+          "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAPoq8L-jM4diZmj80ayQj6_8Gd8z5XwJY",
+          "EXPO_PUBLIC_ANDROID_CLIENT_ID_DEBUG": "255320444536-4qnfvi5bl76dq5gih0qo6dg580sb5g6j.apps.googleusercontent.com"
+        }
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "resourceClass": "m-medium",
+        "env": {
+          "EXPO_PUBLIC_GOOGLE_URL_SCHEME": "com.googleusercontent.apps.255320444536-fjgkn445u968bhsp7i57fpqquemqbmn5",
+          "EXPO_PUBLIC_BUNDLE_IDENTIFIER": "com.infiniteoptions.everycircle",
+          "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAPoq8L-jM4diZmj80ayQj6_8Gd8z5XwJY",
+          "EXPO_PUBLIC_APP_NAME": "EveryCircle",
+          "EXPO_PUBLIC_APP_SLUG": "everycircle",
+          "EXPO_PUBLIC_APPLE_SERVICES_ID": "com.infiniteoptions.everycircle.signin",
+          "EXPO_PUBLIC_IOS_CLIENT_ID": "255320444536-fjgkn445u968bhsp7i57fpqquemqbmn5.apps.googleusercontent.com"
+        }
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "ios": {
+        "resourceClass": "m-medium",
+        "buildConfiguration": "Release",
+        "distribution": "store",
+        "env": {
+          "EXPO_PUBLIC_GOOGLE_URL_SCHEME": "com.googleusercontent.apps.255320444536-fjgkn445u968bhsp7i57fpqquemqbmn5",
+          "EXPO_PUBLIC_BUNDLE_IDENTIFIER": "com.infiniteoptions.everycircle",
+          "EXPO_PUBLIC_APPLE_SERVICES_ID": "com.infiniteoptions.everycircle.signin",
+          "EXPO_PUBLIC_APP_NAME": "EveryCircle",
+          "EXPO_PUBLIC_APP_SLUG": "everycircle",
+          "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAPoq8L-jM4diZmj80ayQj6_8Gd8z5XwJY",
+          "EXPO_PUBLIC_IOS_CLIENT_ID": "255320444536-fjgkn445u968bhsp7i57fpqquemqbmn5.apps.googleusercontent.com",
+          "EXPO_PUBLIC_WEB_CLIENT_ID": "255320444536-hg6bgpsso4gn08mefu87qpti02fmd0s2.apps.googleusercontent.com",
+          "EXPO_PUBLIC_ANDROID_CLIENT_ID_RELEASE": "255320444536-4qnfvi5bl76dq5gih0qo6dg580sb5g6j.apps.googleusercontent.com"
+        }
+      },
+      "android": {
+        "distribution": "store",
+        "env": {
+          "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY": "AIzaSyAPoq8L-jM4diZmj80ayQj6_8Gd8z5XwJY",
+          "EXPO_PUBLIC_ANDROID_CLIENT_ID_RELEASE": "255320444536-4qnfvi5bl76dq5gih0qo6dg580sb5g6j.apps.googleusercontent.com",
+          "EXPO_PUBLIC_BUNDLE_IDENTIFIER": "com.infiniteoptions.everycircle"
+        }
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
