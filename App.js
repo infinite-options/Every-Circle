@@ -1,8 +1,9 @@
 import "./polyfills";
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { LogBox, Platform } from "react-native";
 
 import { StyleSheet, Text, View, Alert, ActivityIndicator, TouchableOpacity, Image } from "react-native";
+import { Video } from "expo-av";
 
 // Suppress VirtualizedList nesting warning - we're using nestedScrollEnabled and proper configuration
 LogBox.ignoreLogs(["VirtualizedLists should never be nested inside plain ScrollViews"]);
@@ -79,7 +80,7 @@ export default function App() {
     console.log("------- Program Starting in App.js -------");
     console.log("App.js - Platform:", Platform.OS);
     console.log("App.js - isWeb:", isWeb);
-    
+
     const initialize = async () => {
       try {
         // Check user first
@@ -126,7 +127,7 @@ export default function App() {
   // Web Google Sign-In handler using Google Identity Services
   const handleWebGoogleSignIn = useCallback(async (navigation) => {
     console.log("App.js - handleWebGoogleSignIn - Starting");
-    
+
     return new Promise((resolve, reject) => {
       // Load Google Identity Services script if not already loaded
       if (typeof window === "undefined") {
@@ -171,7 +172,7 @@ export default function App() {
       const handleCredentialResponse = async (response) => {
         try {
           console.log("App.js - Google Sign-In callback received");
-          
+
           // Decode the credential (JWT token)
           const credential = response.credential;
           console.log("App.js - Credential received (first 50 chars):", credential?.substring(0, 50));
@@ -334,7 +335,7 @@ export default function App() {
   const signInHandler = useCallback(async (navigation) => {
     console.log("App.js - Google Sign In Pressed - signInHandler - Starting");
     console.log("App.js - Platform:", isWeb ? "Web" : "Native");
-    
+
     // Handle web Google Sign-In differently
     if (isWeb) {
       console.log("App.js - Web platform: Using Google Identity Services");
@@ -346,13 +347,13 @@ export default function App() {
       }
       return;
     }
-    
+
     // Native Google Sign-In
     if (!GoogleSignin) {
       Alert.alert("Not Available", "Google Sign-In is not available. Please use email/password login.");
       return;
     }
-    
+
     try {
       // First check if user is already signed in
       const isSignedIn = await GoogleSignin.isSignedIn();
@@ -503,13 +504,13 @@ export default function App() {
 
   const signUpHandler = useCallback(async (navigation) => {
     console.log("App.js - signUpHandler - Google Button Pressed");
-    
+
     // Google Sign-In is not available on web
     if (isWeb || !GoogleSignin) {
       Alert.alert("Not Available", "Google Sign-In is not available on web. Please use email/password sign up.");
       return;
     }
-    
+
     try {
       // Clear AsyncStorage before starting sign up to avoid stale data
       await AsyncStorage.clear();
@@ -774,7 +775,7 @@ export default function App() {
     return (
       <SafeAreaProvider>
         <View style={styles.centeredContainer}>
-          <Text style={{ color: 'red', marginBottom: 10 }}>Error: {error}</Text>
+          <Text style={{ color: "red", marginBottom: 10 }}>Error: {error}</Text>
           <TouchableOpacity onPress={() => setError(null)}>
             <Text>Dismiss</Text>
           </TouchableOpacity>
@@ -785,14 +786,18 @@ export default function App() {
 
   const HomeScreen = ({ navigation }) => {
     console.log("App.js - Rendering HomeScreen");
+    const [hasLoggedPlaying, setHasLoggedPlaying] = useState(false);
+
     return (
       <View style={styles.container}>
         <View style={styles.circleMain}>
-          <Image source={require("./assets/everycirclelogonew_1024x1024.png")} style={{ width: 200, height: 200, resizeMode: "contain" }} accessibilityLabel='Every Circle Logo' />
-          <Text style={styles.title}>
-            <Text style={styles.italicText}>every</Text>Circle
-          </Text>
+          <View style={styles.videoContainer}>
+            <Video source={{ uri: "https://www.w3schools.com/html/mov_bbb.mp4" }} style={styles.video} resizeMode='contain' isLooping shouldPlay isMuted={true} useNativeControls={false} />
+          </View>
         </View>
+        <Text style={styles.title}>
+          <Text style={styles.italicText}>every</Text>Circle
+        </Text>
         <View style={styles.circlesContainer}>
           <TouchableOpacity style={styles.circleBox} onPress={() => navigation.navigate("SignUp")}>
             <View style={[styles.circle, { backgroundColor: "#007AFF" }]}>
@@ -821,58 +826,55 @@ export default function App() {
   };
 
   console.log("App.js - Rendering main App component with initialRoute:", initialRoute);
-  
+
   // Add error boundary wrapper
   if (error) {
     console.error("App.js - Error state:", error);
   }
-  
+
   return (
     <TextNodeErrorBoundary>
       <DarkModeProvider>
-        <NavigationContainer
-          onReady={() => console.log("App.js - NavigationContainer ready")}
-          onStateChange={() => console.log("App.js - Navigation state changed")}
-        >
-        <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
-          <Stack.Screen name='Home' component={HomeScreen} />
-          <Stack.Screen
-            name='Login'
-            children={(props) => (
-              <LoginScreen {...props} onGoogleSignIn={() => signInHandler(props.navigation)} onAppleSignIn={(userInfo) => handleAppleSignIn(userInfo, props.navigation)} onError={setError} />
-            )}
-          />
-          <Stack.Screen
-            name='SignUp'
-            children={(props) => (
-              <SignUpScreen {...props} onGoogleSignUp={() => signUpHandler(props.navigation)} onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation)} onError={setError} />
-            )}
-          />
-          <Stack.Screen name='HowItWorksScreen' component={HowItWorksScreen} />
-          <Stack.Screen name='UserInfo' component={UserInfoScreen} />
-          {/* <Stack.Screen name="UserProfile" component={UserProfile} /> */}
-          <Stack.Screen name='AccountType' component={AccountTypeScreen} />
-          <Stack.Screen name='Profile' component={ProfileScreen} />
-          <Stack.Screen name='EditProfile' component={EditProfileScreen} />
-          <Stack.Screen name='Settings' component={SettingsScreen} />
-          <Stack.Screen name='Account' component={AccountScreen} />
-          <Stack.Screen name='Network' component={NetworkScreen} />
-          <Stack.Screen name='Search' component={SearchScreen} />
-          <Stack.Screen name='BusinessSetup' component={BusinessSetupController} />
-          <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
-          <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
-          <Stack.Screen name='Filters' component={FilterScreen} />
-          <Stack.Screen name='SearchTab' component={SearchTab} />
+        <NavigationContainer onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={() => console.log("App.js - Navigation state changed")}>
+          <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
+            <Stack.Screen name='Home' component={HomeScreen} />
+            <Stack.Screen
+              name='Login'
+              children={(props) => (
+                <LoginScreen {...props} onGoogleSignIn={() => signInHandler(props.navigation)} onAppleSignIn={(userInfo) => handleAppleSignIn(userInfo, props.navigation)} onError={setError} />
+              )}
+            />
+            <Stack.Screen
+              name='SignUp'
+              children={(props) => (
+                <SignUpScreen {...props} onGoogleSignUp={() => signUpHandler(props.navigation)} onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation)} onError={setError} />
+              )}
+            />
+            <Stack.Screen name='HowItWorksScreen' component={HowItWorksScreen} />
+            <Stack.Screen name='UserInfo' component={UserInfoScreen} />
+            {/* <Stack.Screen name="UserProfile" component={UserProfile} /> */}
+            <Stack.Screen name='AccountType' component={AccountTypeScreen} />
+            <Stack.Screen name='Profile' component={ProfileScreen} />
+            <Stack.Screen name='EditProfile' component={EditProfileScreen} />
+            <Stack.Screen name='Settings' component={SettingsScreen} />
+            <Stack.Screen name='Account' component={AccountScreen} />
+            <Stack.Screen name='Network' component={NetworkScreen} />
+            <Stack.Screen name='Search' component={SearchScreen} />
+            <Stack.Screen name='BusinessSetup' component={BusinessSetupController} />
+            <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
+            <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
+            <Stack.Screen name='Filters' component={FilterScreen} />
+            <Stack.Screen name='SearchTab' component={SearchTab} />
 
-          <Stack.Screen name='TermsAndConditions' component={TermsAndConditionsScreen} options={{ title: "Terms & Conditions" }} />
-          <Stack.Screen name='PrivacyPolicy' component={PrivacyPolicyScreen} options={{ title: "Privacy Policy" }} />
-          <Stack.Screen name='EditBusinessProfile' component={EditBusinessProfileScreen} />
-          <Stack.Screen name='ShoppingCart' component={ShoppingCartScreen} />
-          <Stack.Screen name='ReviewBusiness' component={ReviewBusinessScreen} options={{ headerShown: false }} />
-          <Stack.Screen name='ReviewDetail' component={ReviewDetailScreen} options={{ headerShown: false }} />
-          <Stack.Screen name='ExpertiseDetail' component={ExpertiseDetailScreen} options={{ headerShown: false }} />
-          <Stack.Screen name='WishDetail' component={WishDetailScreen} options={{ headerShown: false }} />
-          <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
+            <Stack.Screen name='TermsAndConditions' component={TermsAndConditionsScreen} options={{ title: "Terms & Conditions" }} />
+            <Stack.Screen name='PrivacyPolicy' component={PrivacyPolicyScreen} options={{ title: "Privacy Policy" }} />
+            <Stack.Screen name='EditBusinessProfile' component={EditBusinessProfileScreen} />
+            <Stack.Screen name='ShoppingCart' component={ShoppingCartScreen} />
+            <Stack.Screen name='ReviewBusiness' component={ReviewBusinessScreen} options={{ headerShown: false }} />
+            <Stack.Screen name='ReviewDetail' component={ReviewDetailScreen} options={{ headerShown: false }} />
+            <Stack.Screen name='ExpertiseDetail' component={ExpertiseDetailScreen} options={{ headerShown: false }} />
+            <Stack.Screen name='WishDetail' component={WishDetailScreen} options={{ headerShown: false }} />
+            <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
           </Stack.Navigator>
         </NavigationContainer>
       </DarkModeProvider>
@@ -909,6 +911,22 @@ const styles = StyleSheet.create({
     borderRadius: 100,
     justifyContent: "center",
     alignItems: "center",
+    overflow: "visible",
+    position: "relative",
+  },
+  videoContainer: {
+    width: 300,
+    height: 300,
+    overflow: "hidden",
+    borderRadius: 150,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "red",
+  },
+  video: {
+    width: 200,
+    height: 200,
   },
   circle: {
     width: 100,
@@ -928,6 +946,11 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: "bold",
     fontFamily: "Georgia",
+    marginTop: 100,
+    textAlign: "center",
+    // borderWidth: 2,
+    // borderColor: "red",
+    padding: 10,
   },
   italicText: {
     fontStyle: "italic",
