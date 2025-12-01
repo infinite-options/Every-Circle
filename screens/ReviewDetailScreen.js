@@ -408,7 +408,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
                         }}
                         activeOpacity={0.7}
                       >
-                        <MiniCard user={reviewerData} />
+                        <MiniCard user={reviewerData} showRelationship={true} />
                       </TouchableOpacity>
                     );
                   } else {

@@ -3,7 +3,7 @@ import { View, Text, Image, StyleSheet } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 
-const MiniCard = ({ user, business }) => {
+const MiniCard = ({ user, business, showRelationship = false }) => {
   const { darkMode } = useDarkMode();
 
   if (__DEV__) {
@@ -208,6 +208,16 @@ const MiniCard = ({ user, business }) => {
           }
           return null;
         })()}
+
+        {/* RELATIONSHIP - Only show if showRelationship prop is true */}
+        {showRelationship &&
+          (() => {
+            const relationship = user?.relationship || user?.circle_relationship;
+            if (__DEV__) console.log("🔵 MiniCard - Checking relationship:", relationship);
+            const relationshipText = relationship && relationship !== null && relationship.trim() !== "" ? relationship.charAt(0).toUpperCase() + relationship.slice(1) : "Relationship not Assigned";
+            if (__DEV__) console.log("🔵 MiniCard - Rendering relationship:", relationshipText);
+            return <Text style={[styles.relationship, darkMode && styles.darkText]}>{relationshipText}</Text>;
+          })()}
       </View>
     </View>
   );
@@ -253,6 +263,13 @@ const styles = StyleSheet.create({
   phone: {
     fontSize: 14,
     color: "#666",
+    marginBottom: 2,
+  },
+  relationship: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 2,
+    fontStyle: "italic",
   },
   location: {
     fontSize: 14,

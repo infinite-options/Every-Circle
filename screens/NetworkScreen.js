@@ -634,6 +634,7 @@ const NetworkScreen = ({ navigation }) => {
                 email: sanitizedEmail,
                 phoneNumber: sanitizedPhoneNumber,
                 profileImage: sanitizedProfileImage,
+                relationship: node.circle_relationship || null,
                 emailIsPublic: p.profile_personal_email_is_public === 1,
                 phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
                 tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
@@ -1329,7 +1330,7 @@ const NetworkScreen = ({ navigation }) => {
                                         }
                                         style={{ marginVertical: 6 }}
                                       >
-                                        <MiniCard user={node.__mc} />
+                                        <MiniCard user={node.__mc} showRelationship={true} />
                                       </TouchableOpacity>
                                     );
                                   })}

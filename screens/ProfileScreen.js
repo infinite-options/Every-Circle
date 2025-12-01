@@ -459,8 +459,10 @@ const ProfileScreen = ({ route, navigation }) => {
       // Close dropdown immediately for better UX
       setShowRelationshipDropdown(false);
 
-      // Check if the relationship has changed
-      if (relationshipType === relationship) {
+      // Check if the relationship has changed (handle null comparison)
+      const currentRel = relationshipType === null || relationshipType === "null" ? null : relationshipType;
+      const newRel = relationship === null || relationship === "null" ? null : relationship;
+      if (currentRel === newRel) {
         console.log("ProfileScreen - Relationship unchanged, no update needed");
         return;
       }
@@ -489,7 +491,7 @@ const ProfileScreen = ({ route, navigation }) => {
       if (circleUid) {
         const updateEndpoint = `${CIRCLES_ENDPOINT}/${circleUid}`;
         const updateRequestBody = {
-          circle_relationship: relationship,
+          circle_relationship: relationship, // This will be null if "None" is selected
         };
 
         console.log("ProfileScreen - ============================================");
@@ -525,8 +527,9 @@ const ProfileScreen = ({ route, navigation }) => {
         console.log("ProfileScreen - Relationship updated successfully");
         // Update state immediately for better UX
         setRelationshipType(relationship);
-        Alert.alert("Success", `Relationship updated to ${relationship.charAt(0).toUpperCase() + relationship.slice(1)}!`);
-      } else {
+        const successMessage = relationship === null ? "Relationship removed" : `Relationship updated to ${relationship.charAt(0).toUpperCase() + relationship.slice(1)}!`;
+        Alert.alert("Success", successMessage);
+      } else if (relationship !== null) {
         // No existing relationship, create new one with POST
         // Format current date (YYYY-MM-DD)
         const now = new Date();
@@ -583,6 +586,10 @@ const ProfileScreen = ({ route, navigation }) => {
           setCircleUid(result.circle_uid);
         }
         Alert.alert("Success", `Relationship saved as ${relationship.charAt(0).toUpperCase() + relationship.slice(1)}!`);
+      } else {
+        // relationship is null and no circleUid exists - nothing to do
+        console.log("ProfileScreen - No relationship selected and no existing circle, nothing to do");
+        setRelationshipType(null);
       }
 
       // Refresh the relationship data to ensure consistency
@@ -767,6 +774,20 @@ const ProfileScreen = ({ route, navigation }) => {
                   >
                     <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Family</Text>
                   </Pressable>
+                  <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                  <Pressable
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      console.log("ProfileScreen - None button pressed");
+                      // Stop event propagation to prevent click-outside handler from firing
+                      if (Platform.OS === "web" && e?.nativeEvent) {
+                        e.nativeEvent.stopPropagation?.();
+                      }
+                      handleRelationshipSelect(null);
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>None</Text>
+                  </Pressable>
                 </View>
               )}
             </View>
@@ -801,10 +822,16 @@ const ProfileScreen = ({ route, navigation }) => {
             </Text>
             <Text style={[styles.profileId, darkMode && styles.darkProfileId]}>Profile ID: {profileUID}</Text>
             {(() => {
-              const relType = relationshipType ? String(relationshipType).trim() : "";
-              return relType && relType !== "." ? (
-                <Text style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>Relationship: {relType.charAt(0).toUpperCase() + relType.slice(1)}</Text>
-              ) : null;
+              // Only show relationship when viewing another user's profile
+              if (routeProfileUID && !isCurrentUserProfile) {
+                const relType = relationshipType ? String(relationshipType).trim() : "";
+                if (relType && relType !== "." && relType !== "null") {
+                  return <Text style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>Relationship: {relType.charAt(0).toUpperCase() + relType.slice(1)}</Text>;
+                } else {
+                  return <Text style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>Relationship: Relationship not Assigned</Text>;
+                }
+              }
+              return null;
             })()}
             {(() => {
               const tagLine = user.tagLine && (isCurrentUserProfile || user.tagLineIsPublic) ? sanitizeText(user.tagLine) : "";
