@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 // import axios from 'axios';
 import MiniCard from "../components/MiniCard";
 import BottomNavBar from "../components/BottomNavBar";
+import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
@@ -639,19 +640,13 @@ const ProfileScreen = ({ route, navigation }) => {
         </TouchableWithoutFeedback>
       )}
       {/* Header */}
-      <View
-        style={[
-          styles.headerBg,
-          darkMode && styles.darkHeaderBg,
-          routeProfileUID && !isCurrentUserProfile && styles.headerBgOtherUser,
-          routeProfileUID && !isCurrentUserProfile && darkMode && styles.darkHeaderBgOtherUser,
-        ]}
-      >
-        <View style={styles.headerContent}>
-          {routeProfileUID && !isCurrentUserProfile && (
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => {
+      <AppHeader
+        title={isCurrentUserProfile ? "Your Profile" : "Profile"}
+        backgroundColor={routeProfileUID && !isCurrentUserProfile ? "#FF9500" : "#AF52DE"}
+        darkModeBackgroundColor={routeProfileUID && !isCurrentUserProfile ? "#CC7700" : "#8B4C9F"}
+        onBackPress={
+          routeProfileUID && !isCurrentUserProfile
+            ? () => {
                 // Navigate back to the screen we came from with preserved state
                 if (returnTo === "Search" && searchState) {
                   console.log("🔙 Returning to Search with preserved state:", searchState);
@@ -701,13 +696,11 @@ const ProfileScreen = ({ route, navigation }) => {
                   // Default: Navigate to Network screen when viewing another user's profile
                   navigation.navigate("Network");
                 }
-              }}
-            >
-              <Ionicons name='arrow-back' size={24} color='#fff' />
-            </TouchableOpacity>
-          )}
-          <Text style={[styles.header, darkMode && styles.darkHeader, routeProfileUID && !isCurrentUserProfile && styles.headerWithBack]}>{isCurrentUserProfile ? "Your Profile" : "Profile"}</Text>
-          {isCurrentUserProfile && (
+              }
+            : undefined
+        }
+        rightButton={
+          isCurrentUserProfile ? (
             <TouchableOpacity
               style={styles.editButton}
               onPress={() =>
@@ -719,8 +712,7 @@ const ProfileScreen = ({ route, navigation }) => {
             >
               <Image source={require("../assets/Edit.png")} style={[styles.editIcon, darkMode && styles.darkEditIcon]} />
             </TouchableOpacity>
-          )}
-          {routeProfileUID && !isCurrentUserProfile && (
+          ) : routeProfileUID && !isCurrentUserProfile ? (
             <View style={styles.dropdownWrapper}>
               <Pressable
                 style={styles.addButton}
@@ -778,9 +770,9 @@ const ProfileScreen = ({ route, navigation }) => {
                 </View>
               )}
             </View>
-          )}
-        </View>
-      </View>
+          ) : null
+        }
+      />
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView
@@ -1140,38 +1132,6 @@ const styles = StyleSheet.create({
   },
   safeArea: { flex: 1, backgroundColor: "#fff" },
   scrollContainer: { flex: 1 },
-  headerBg: {
-    backgroundColor: "#AF52DE",
-    paddingTop: 30,
-    paddingBottom: 15,
-    alignItems: "center",
-    borderBottomLeftRadius: 300,
-    borderBottomRightRadius: 300,
-    overflow: "visible", // Allow dropdown to extend beyond header
-    zIndex: 10000,
-  },
-  headerBgOtherUser: {
-    backgroundColor: "#FF9500",
-  },
-  headerContent: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    width: "100%",
-    paddingHorizontal: 20,
-    position: "relative",
-    zIndex: 10000,
-  },
-  backButton: {
-    position: "absolute",
-    left: 53,
-    padding: 4,
-    zIndex: 1,
-  },
-  header: { color: "#fff", fontSize: 20, fontWeight: "bold", flex: 1, textAlign: "center" },
-  headerWithBack: {
-    marginLeft: 0,
-  },
   fieldContainer: { marginTop: 15, marginBottom: 0 },
   label: { fontSize: 16, fontWeight: "bold", marginBottom: 5 },
   inputContainer: {
@@ -1185,8 +1145,6 @@ const styles = StyleSheet.create({
   inputText: { fontSize: 15, color: "#333", marginBottom: 4 },
   plainText: { fontSize: 15, color: "#333", marginBottom: 10 },
   editButton: {
-    position: "absolute",
-    right: 53,
     padding: 4,
     alignItems: "center",
     justifyContent: "center",
@@ -1194,9 +1152,6 @@ const styles = StyleSheet.create({
   },
   editIcon: { width: 20, height: 20, tintColor: "#fff" },
   dropdownWrapper: {
-    position: "absolute",
-    right: 53,
-    top: 0,
     zIndex: 10001,
     overflow: "visible", // IMPORTANT FOR WEB
   },
@@ -1307,15 +1262,6 @@ const styles = StyleSheet.create({
   },
   darkScrollContainer: {
     backgroundColor: "#1a1a1a",
-  },
-  darkHeaderBg: {
-    backgroundColor: "#8B4C9F",
-  },
-  darkHeaderBgOtherUser: {
-    backgroundColor: "#CC7700",
-  },
-  darkHeader: {
-    color: "#ffffff",
   },
   darkCardContainer: {
     backgroundColor: "#2d2d2d",

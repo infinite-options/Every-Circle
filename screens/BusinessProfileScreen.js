@@ -6,6 +6,7 @@ import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
 import ProductCard from "../components/ProductCard";
 import BottomNavBar from "../components/BottomNavBar";
+import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -552,11 +553,26 @@ export default function BusinessProfileScreen({ route, navigation }) {
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header */}
-      <View style={[styles.headerBg, darkMode && styles.darkHeaderBg]}>
-        <View style={styles.headerContent}>
-          <Text style={[styles.header, darkMode && styles.darkHeader]}>Business Profile</Text>
-        </View>
-      </View>
+      <AppHeader
+        title='Business Profile'
+        backgroundColor='#AF52DE'
+        rightButton={
+          isOwner ? (
+            <TouchableOpacity
+              style={[styles.editButton, darkMode && styles.darkEditButton]}
+              onPress={() =>
+                navigation.navigate("EditBusinessProfile", {
+                  business: business,
+                  business_uid: business_uid,
+                  business_users: businessUsers,
+                })
+              }
+            >
+              <Image source={require("../assets/Edit.png")} style={[styles.editIcon, darkMode && styles.darkEditIcon]} />
+            </TouchableOpacity>
+          ) : null
+        }
+      />
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView
@@ -572,24 +588,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
             style: [styles.scrollContainer, darkMode && styles.darkScrollContainer, { zIndex: 1 }],
           })}
         >
-          {/* Edit Button - Only show if user owns the business */}
-          {isOwner && (
-            <View style={styles.editButtonContainer}>
-              <TouchableOpacity
-                style={[styles.editButton, darkMode && styles.darkEditButton]}
-                onPress={() =>
-                  navigation.navigate("EditBusinessProfile", {
-                    business: business,
-                    business_uid: business_uid,
-                    business_users: businessUsers,
-                  })
-                }
-              >
-                <Image source={require("../assets/Edit.png")} style={[styles.editIcon, darkMode && styles.darkEditIcon]} />
-              </TouchableOpacity>
-            </View>
-          )}
-
           {/* Business Card (MiniCard at top) */}
           <View style={[styles.card, darkMode && styles.darkCard]}>
             <MiniCard
@@ -1074,35 +1072,6 @@ const styles = StyleSheet.create({
       width: "100%",
     }),
   },
-  headerBg: {
-    backgroundColor: "#AF52DE",
-    paddingTop: 30,
-    paddingBottom: 15,
-    alignItems: "center",
-    borderBottomLeftRadius: 300,
-    borderBottomRightRadius: 300,
-    overflow: "visible", // Allow dropdown to extend beyond header
-    zIndex: 10000,
-    ...(Platform.OS === "web" && {
-      width: "100%",
-    }),
-  },
-  headerContent: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    width: "100%",
-    paddingHorizontal: 20,
-    position: "relative",
-    zIndex: 10000,
-  },
-  header: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
-    flex: 1,
-    textAlign: "center",
-  },
   container: {
     flex: 1,
     backgroundColor: "#F5F5F5",
@@ -1484,12 +1453,6 @@ const styles = StyleSheet.create({
   },
   darkContainer: {
     backgroundColor: "#1a1a1a",
-  },
-  darkHeaderBg: {
-    backgroundColor: "#AF52DE",
-  },
-  darkHeader: {
-    color: "#fff",
   },
   darkCard: {
     backgroundColor: "#2d2d2d",
