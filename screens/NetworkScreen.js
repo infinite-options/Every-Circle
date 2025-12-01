@@ -1426,7 +1426,6 @@ const styles = StyleSheet.create({
     width: 35,
     textAlign: "center",
     backgroundColor: "#fff",
-    height: 36, // Match Fetch button height (8px padding top + 8px padding bottom + ~20px text height)
     ...(Platform.OS === "web" &&
       {
         // Web-specific styles are handled in WebTextInput component
@@ -1451,10 +1450,9 @@ const styles = StyleSheet.create({
   },
   toggleButton: {
     backgroundColor: "#AF52DE",
-    paddingHorizontal: 12,
     paddingVertical: 8,
+    paddingHorizontal: 14,
     borderRadius: 8,
-    height: 36, // Match Fetch button height
   },
   toggleButtonText: { color: "#fff", fontWeight: "600" },
   degreeHeader: { fontWeight: "700", fontSize: 15, color: "#6b46c1", marginBottom: 6 },

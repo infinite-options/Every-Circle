@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, ScrollView, Image, SafeAreaView, TouchableWithoutFeedback } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, ScrollView, Image, SafeAreaView, TouchableWithoutFeedback, Platform, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 // import axios from 'axios';
 import MiniCard from "../components/MiniCard";
@@ -214,6 +214,61 @@ const ProfileScreen = ({ route, navigation }) => {
     console.log("ProfileScreen - businessesData.length:", businessesData?.length);
   }, [businessesData]);
 
+  // Handle clicking outside dropdown on web
+  useEffect(() => {
+    if (Platform.OS !== "web" || !showRelationshipDropdown) return;
+
+    const handleClickOutside = (event) => {
+      // Get the dropdown elements
+      const dropdownButton = document.querySelector("[data-dropdown-button]");
+      const dropdownMenu = document.querySelector("[data-dropdown-menu]");
+      const target = event.target;
+
+      console.log("ProfileScreen - Click outside handler triggered");
+      console.log("ProfileScreen - Target:", target);
+      console.log("ProfileScreen - Dropdown button:", dropdownButton);
+      console.log("ProfileScreen - Dropdown menu:", dropdownMenu);
+
+      // Check if click is inside the dropdown menu or button
+      // Check if target or any of its parents is the dropdown button or menu
+      let clickedButton = false;
+      let clickedMenu = false;
+
+      let element = target;
+      while (element) {
+        if (element === dropdownButton || element.getAttribute?.("data-dropdown-button")) {
+          clickedButton = true;
+          console.log("ProfileScreen - Click detected on dropdown button");
+          break;
+        }
+        if (element === dropdownMenu || element.getAttribute?.("data-dropdown-menu")) {
+          clickedMenu = true;
+          console.log("ProfileScreen - Click detected on dropdown menu");
+          break;
+        }
+        element = element.parentElement;
+      }
+
+      // Only close if click is completely outside both button and menu
+      if (!clickedButton && !clickedMenu) {
+        console.log("ProfileScreen - Click outside detected, closing dropdown");
+        setShowRelationshipDropdown(false);
+      } else {
+        console.log("ProfileScreen - Click inside dropdown, not closing");
+      }
+    };
+
+    // Use click event with a delay to let onPress handlers fire first
+    const timer = setTimeout(() => {
+      document.addEventListener("click", handleClickOutside, false); // Use bubble phase, not capture
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("click", handleClickOutside, false);
+    };
+  }, [showRelationshipDropdown]);
+
   const fetchBusinessesData = async (businesses) => {
     try {
       // console.log("ProfileScreen - fetchBusinessesData called with businesses:", JSON.stringify(businesses, null, 2));
@@ -392,10 +447,15 @@ const ProfileScreen = ({ route, navigation }) => {
   };
 
   const handleRelationshipSelect = async (relationship) => {
+    console.log("============================================");
+    console.log("ProfileScreen - handleRelationshipSelect CALLED");
+    console.log("ProfileScreen - Selected relationship:", relationship);
+    console.log("ProfileScreen - Current relationshipType:", relationshipType);
+    console.log("ProfileScreen - Current circleUid:", circleUid);
+    console.log("============================================");
+
     try {
-      console.log("ProfileScreen - Selected relationship:", relationship);
-      console.log("ProfileScreen - Current relationshipType:", relationshipType);
-      console.log("ProfileScreen - Current circleUid:", circleUid);
+      // Close dropdown immediately for better UX
       setShowRelationshipDropdown(false);
 
       // Check if the relationship has changed
@@ -406,14 +466,20 @@ const ProfileScreen = ({ route, navigation }) => {
 
       // Get the current logged-in user's profile_uid
       const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
+      console.log("ProfileScreen - loggedInProfileUID:", loggedInProfileUID);
       if (!loggedInProfileUID) {
+        console.error("ProfileScreen - ERROR: User profile not found");
         Alert.alert("Error", "User profile not found. Please try again.");
         return;
       }
 
       // Get the profile_uid of the user being viewed
       const viewedProfileUID = routeProfileUID || profileUID;
+      console.log("ProfileScreen - viewedProfileUID:", viewedProfileUID);
+      console.log("ProfileScreen - routeProfileUID:", routeProfileUID);
+      console.log("ProfileScreen - profileUID:", profileUID);
       if (!viewedProfileUID) {
+        console.error("ProfileScreen - ERROR: Profile information not found");
         Alert.alert("Error", "Profile information not found.");
         return;
       }
@@ -426,10 +492,12 @@ const ProfileScreen = ({ route, navigation }) => {
         };
 
         console.log("ProfileScreen - ============================================");
-        console.log("ProfileScreen - ENDPOINT: CIRCLES (UPDATE)");
+        console.log("ProfileScreen - MAKING API CALL: CIRCLES (UPDATE)");
         console.log("ProfileScreen - URL:", updateEndpoint);
         console.log("ProfileScreen - METHOD: PUT");
         console.log("ProfileScreen - REQUEST BODY:", JSON.stringify(updateRequestBody, null, 2));
+        console.log("ProfileScreen - CIRCLES_ENDPOINT:", CIRCLES_ENDPOINT);
+        console.log("ProfileScreen - circleUid:", circleUid);
         console.log("ProfileScreen - ============================================");
 
         const response = await fetch(updateEndpoint, {
@@ -439,6 +507,9 @@ const ProfileScreen = ({ route, navigation }) => {
           },
           body: JSON.stringify(updateRequestBody),
         });
+
+        console.log("ProfileScreen - API CALL COMPLETED");
+        console.log("ProfileScreen - Response status:", response.status);
 
         console.log("ProfileScreen - UPDATE RESPONSE STATUS:", response.status);
         console.log("ProfileScreen - UPDATE RESPONSE OK:", response.ok);
@@ -451,6 +522,8 @@ const ProfileScreen = ({ route, navigation }) => {
         }
 
         console.log("ProfileScreen - Relationship updated successfully");
+        // Update state immediately for better UX
+        setRelationshipType(relationship);
         Alert.alert("Success", `Relationship updated to ${relationship.charAt(0).toUpperCase() + relationship.slice(1)}!`);
       } else {
         // No existing relationship, create new one with POST
@@ -470,10 +543,12 @@ const ProfileScreen = ({ route, navigation }) => {
         };
 
         console.log("ProfileScreen - ============================================");
-        console.log("ProfileScreen - ENDPOINT: CIRCLES (CREATE)");
+        console.log("ProfileScreen - MAKING API CALL: CIRCLES (CREATE)");
         console.log("ProfileScreen - URL:", CIRCLES_ENDPOINT);
         console.log("ProfileScreen - METHOD: POST");
         console.log("ProfileScreen - REQUEST BODY:", JSON.stringify(requestBody, null, 2));
+        console.log("ProfileScreen - loggedInProfileUID:", loggedInProfileUID);
+        console.log("ProfileScreen - viewedProfileUID:", viewedProfileUID);
         console.log("ProfileScreen - ============================================");
 
         // Make the API call
@@ -484,6 +559,9 @@ const ProfileScreen = ({ route, navigation }) => {
           },
           body: JSON.stringify(requestBody),
         });
+
+        console.log("ProfileScreen - API CALL COMPLETED");
+        console.log("ProfileScreen - Response status:", response.status);
 
         console.log("ProfileScreen - CREATE RESPONSE STATUS:", response.status);
         console.log("ProfileScreen - CREATE RESPONSE OK:", response.ok);
@@ -496,18 +574,30 @@ const ProfileScreen = ({ route, navigation }) => {
         }
 
         console.log("ProfileScreen - Relationship saved successfully");
+        // Update state immediately for better UX
+        setRelationshipType(relationship);
+        if (result && result.data && result.data.circle_uid) {
+          setCircleUid(result.data.circle_uid);
+        } else if (result && result.circle_uid) {
+          setCircleUid(result.circle_uid);
+        }
         Alert.alert("Success", `Relationship saved as ${relationship.charAt(0).toUpperCase() + relationship.slice(1)}!`);
       }
 
-      // Refresh the relationship data
+      // Refresh the relationship data to ensure consistency
       if (loggedInProfileUID && viewedProfileUID) {
         await fetchRelationship(loggedInProfileUID, viewedProfileUID);
         console.log("ProfileScreen - Relationship refreshed after save/update");
-        console.log("ProfileScreen - Data passed to ProfileScreen - relationshipType:", relationshipType);
-        console.log("ProfileScreen - Data passed to ProfileScreen - circleUid:", circleUid);
+        console.log("ProfileScreen - Updated relationshipType:", relationshipType);
+        console.log("ProfileScreen - Updated circleUid:", circleUid);
       }
     } catch (error) {
-      console.error("ProfileScreen - Error saving/updating relationship:", error);
+      console.error("ProfileScreen - ============================================");
+      console.error("ProfileScreen - ERROR in handleRelationshipSelect");
+      console.error("ProfileScreen - Error message:", error.message);
+      console.error("ProfileScreen - Error stack:", error.stack);
+      console.error("ProfileScreen - Full error:", error);
+      console.error("ProfileScreen - ============================================");
       Alert.alert("Error", error.message || "Failed to save relationship. Please try again.");
     }
   };
@@ -538,10 +628,12 @@ const ProfileScreen = ({ route, navigation }) => {
     );
   }
 
+  const isWeb = Platform.OS === "web";
+
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Close dropdown when clicking outside */}
-      {showRelationshipDropdown && (
+      {showRelationshipDropdown && !isWeb && (
         <TouchableWithoutFeedback onPress={() => setShowRelationshipDropdown(false)}>
           <View style={styles.dropdownOverlay} />
         </TouchableWithoutFeedback>
@@ -629,30 +721,60 @@ const ProfileScreen = ({ route, navigation }) => {
             </TouchableOpacity>
           )}
           {routeProfileUID && !isCurrentUserProfile && (
-            <View style={styles.dropdownContainer}>
-              <TouchableOpacity
+            <View style={styles.dropdownWrapper}>
+              <Pressable
                 style={styles.addButton}
+                {...(isWeb && { "data-dropdown-button": true })}
                 onPress={() => {
                   console.log("Dropdown button clicked for profile:", profileUID);
-                  console.log("ProfileScreen - Current relationshipType:", relationshipType);
                   setShowRelationshipDropdown(!showRelationshipDropdown);
                 }}
               >
                 <Ionicons name='chevron-down' size={28} color='#fff' />
-              </TouchableOpacity>
+              </Pressable>
               {showRelationshipDropdown && (
-                <View style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]}>
-                  <TouchableOpacity style={styles.dropdownItem} onPress={() => handleRelationshipSelect("friend")}>
+                <View style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]} {...(isWeb && { "data-dropdown-menu": true })}>
+                  <Pressable
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      console.log("ProfileScreen - Friend button pressed");
+                      // Stop event propagation to prevent click-outside handler from firing
+                      if (Platform.OS === "web" && e?.nativeEvent) {
+                        e.nativeEvent.stopPropagation?.();
+                      }
+                      handleRelationshipSelect("friend");
+                    }}
+                  >
                     <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Friend</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                   <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                  <TouchableOpacity style={styles.dropdownItem} onPress={() => handleRelationshipSelect("colleague")}>
+                  <Pressable
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      console.log("ProfileScreen - Colleague button pressed");
+                      // Stop event propagation to prevent click-outside handler from firing
+                      if (Platform.OS === "web" && e?.nativeEvent) {
+                        e.nativeEvent.stopPropagation?.();
+                      }
+                      handleRelationshipSelect("colleague");
+                    }}
+                  >
                     <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Colleague</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                   <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                  <TouchableOpacity style={styles.dropdownItem} onPress={() => handleRelationshipSelect("family")}>
+                  <Pressable
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      console.log("ProfileScreen - Family button pressed");
+                      // Stop event propagation to prevent click-outside handler from firing
+                      if (Platform.OS === "web" && e?.nativeEvent) {
+                        e.nativeEvent.stopPropagation?.();
+                      }
+                      handleRelationshipSelect("family");
+                    }}
+                  >
                     <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Family</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
               )}
             </View>
@@ -661,7 +783,13 @@ const ProfileScreen = ({ route, navigation }) => {
       </View>
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
-        <ScrollView style={[styles.scrollContainer, darkMode && styles.darkScrollContainer]} contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
+        <ScrollView
+          style={[styles.scrollContainer, darkMode && styles.darkScrollContainer]}
+          contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
+          {...(Platform.OS === "web" && {
+            style: [styles.scrollContainer, darkMode && styles.darkScrollContainer, { zIndex: 1 }],
+          })}
+        >
           <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
             <Image
               source={
@@ -1001,7 +1129,15 @@ const ProfileScreen = ({ route, navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  pageContainer: { flex: 1, backgroundColor: "#fff", padding: 0 },
+  pageContainer: {
+    flex: 1,
+    backgroundColor: "#fff",
+    padding: 0,
+    ...(Platform.OS === "web" && {
+      position: "relative",
+      zIndex: 1, // Lower z-index so dropdown can appear above
+    }),
+  },
   safeArea: { flex: 1, backgroundColor: "#fff" },
   scrollContainer: { flex: 1 },
   headerBg: {
@@ -1011,6 +1147,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderBottomLeftRadius: 300,
     borderBottomRightRadius: 300,
+    overflow: "visible", // Allow dropdown to extend beyond header
+    zIndex: 10000,
   },
   headerBgOtherUser: {
     backgroundColor: "#FF9500",
@@ -1022,6 +1160,7 @@ const styles = StyleSheet.create({
     width: "100%",
     paddingHorizontal: 20,
     position: "relative",
+    zIndex: 10000,
   },
   backButton: {
     position: "absolute",
@@ -1053,34 +1192,35 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     zIndex: 1,
   },
-  editIcon: { width: 20, height: 20 },
-  addButton: {
+  editIcon: { width: 20, height: 20, tintColor: "#fff" },
+  dropdownWrapper: {
     position: "absolute",
-    right: 20,
+    right: 53,
+    top: 0,
+    zIndex: 10001,
+    overflow: "visible", // IMPORTANT FOR WEB
+  },
+  addButton: {
     padding: 4,
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 2,
-  },
-  dropdownContainer: {
-    position: "absolute",
-    right: 20,
-    top: 0,
-    zIndex: 10,
   },
   dropdownMenu: {
     position: "absolute",
-    top: 40,
+    top: 45,
     right: 0,
+    width: 170,
     backgroundColor: "#fff",
     borderRadius: 8,
-    minWidth: 150,
+    paddingVertical: 6,
+    // shadow
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 5,
-    marginTop: 4,
+    zIndex: 10002, // REQUIRED FOR WEB - must be above all content
+    pointerEvents: "auto", // REQUIRED FOR WEB
+    overflow: "visible", // Ensure all items are visible
   },
   darkDropdownMenu: {
     backgroundColor: "#2d2d2d",
@@ -1088,19 +1228,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   dropdownItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   dropdownItemText: {
     fontSize: 16,
-    color: "#333",
+    color: "#000",
   },
   darkDropdownItemText: {
     color: "#fff",
   },
   dropdownDivider: {
     height: 1,
-    backgroundColor: "#e0e0e0",
+    backgroundColor: "#ddd",
   },
   darkDropdownDivider: {
     backgroundColor: "#404040",
@@ -1209,7 +1349,7 @@ const styles = StyleSheet.create({
     color: "#ff6b6b",
   },
   darkEditIcon: {
-    tintColor: "#ffffff",
+    tintColor: "#fff",
   },
   businessCardContainer: {
     marginBottom: 10,

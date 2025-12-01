@@ -791,9 +791,18 @@ export default function App() {
     return (
       <View style={styles.container}>
         <View style={styles.circleMain}>
-          <View style={styles.videoContainer}>
-            <Video source={{ uri: "https://www.w3schools.com/html/mov_bbb.mp4" }} style={styles.video} resizeMode='contain' isLooping shouldPlay isMuted={true} useNativeControls={false} />
-          </View>
+          <Image source={require("./assets/everycirclelogonew_1024x1024.png")} style={{ width: 200, height: 200, resizeMode: "contain" }} accessibilityLabel='Every Circle Logo' />
+          {/* <View style={styles.videoContainer}>
+            <Video
+              source={{ uri: "https://every-circle.s3.us-west-1.amazonaws.com/EveryB2B.mp4" }}
+              style={styles.video}
+              resizeMode='contain'
+              isLooping
+              shouldPlay
+              isMuted={true}
+              useNativeControls={false}
+            />
+          </View> */}
         </View>
         <Text style={styles.title}>
           <Text style={styles.italicText}>every</Text>Circle
