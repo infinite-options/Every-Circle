@@ -1,6 +1,6 @@
 // BusinessProfileScreen.js
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TouchableOpacity, Alert, Modal } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TouchableOpacity, Alert, Modal, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
@@ -553,11 +553,25 @@ export default function BusinessProfileScreen({ route, navigation }) {
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header */}
       <View style={[styles.headerBg, darkMode && styles.darkHeaderBg]}>
-        <Text style={[styles.header, darkMode && styles.darkHeader]}>Business Profile</Text>
+        <View style={styles.headerContent}>
+          <Text style={[styles.header, darkMode && styles.darkHeader]}>Business Profile</Text>
+        </View>
       </View>
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
-        <ScrollView style={[styles.scrollContainer, darkMode && styles.darkScrollContainer]} contentContainerStyle={styles.content}>
+        <ScrollView
+          style={[styles.scrollContainer, darkMode && styles.darkScrollContainer]}
+          contentContainerStyle={[
+            styles.content,
+            Platform.OS === "web" && {
+              width: "100%",
+              maxWidth: "100%",
+            },
+          ]}
+          {...(Platform.OS === "web" && {
+            style: [styles.scrollContainer, darkMode && styles.darkScrollContainer, { zIndex: 1 }],
+          })}
+        >
           {/* Edit Button - Only show if user owns the business */}
           {isOwner && (
             <View style={styles.editButtonContainer}>
@@ -1041,13 +1055,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
     padding: 0,
+    ...(Platform.OS === "web" && {
+      position: "relative",
+      zIndex: 1, // Lower z-index so dropdown can appear above
+      width: "100%",
+    }),
   },
   safeArea: {
     flex: 1,
     backgroundColor: "#fff",
+    ...(Platform.OS === "web" && {
+      width: "100%",
+    }),
   },
   scrollContainer: {
     flex: 1,
+    ...(Platform.OS === "web" && {
+      width: "100%",
+    }),
   },
   headerBg: {
     backgroundColor: "#AF52DE",
@@ -1056,11 +1081,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderBottomLeftRadius: 300,
     borderBottomRightRadius: 300,
+    overflow: "visible", // Allow dropdown to extend beyond header
+    zIndex: 10000,
+    ...(Platform.OS === "web" && {
+      width: "100%",
+    }),
+  },
+  headerContent: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+    paddingHorizontal: 20,
+    position: "relative",
+    zIndex: 10000,
   },
   header: {
     color: "#fff",
     fontSize: 20,
     fontWeight: "bold",
+    flex: 1,
+    textAlign: "center",
   },
   container: {
     flex: 1,
@@ -1069,6 +1110,10 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     paddingBottom: 100,
+    ...(Platform.OS === "web" && {
+      width: "100%",
+      maxWidth: "100%",
+    }),
   },
   centered: {
     flex: 1,

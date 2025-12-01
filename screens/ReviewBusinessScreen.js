@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Platform, ScrollView } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Platform, ScrollView, Pressable } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -58,6 +58,14 @@ export default function ReviewBusinessScreen({ route, navigation }) {
       Alert.alert("Please fill all required fields.");
       return;
     }
+    if (!profileId) {
+      Alert.alert("Error", "Profile ID not found. Please try logging in again.");
+      return;
+    }
+    console.log("============================================");
+    console.log("SAVING REVIEW - Rating to be saved:", rating);
+    console.log("Profile ID:", profileId);
+    console.log("============================================");
     const formData = new FormData();
     formData.append("rating_profile_id", profileId);
     formData.append("rating_business_id", business_uid);
@@ -107,11 +115,10 @@ export default function ReviewBusinessScreen({ route, navigation }) {
     console.log("============================================");
 
     try {
+      // Don't set Content-Type header - let the browser/fetch set it automatically with boundary
+      // This is required for FormData to work correctly on Web
       const response = await fetch(RATINGS_ENDPOINT, {
         method,
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
         body: formData,
       });
 
@@ -175,12 +182,31 @@ export default function ReviewBusinessScreen({ route, navigation }) {
         </Text>
         <Text style={styles.label}>Your Rating:</Text>
         <View style={styles.ratingRow}>
-          {[1, 2, 3, 4, 5].map((i) => (
-            <TouchableOpacity key={i} onPress={() => setRating(i)}>
-              <View style={[styles.circle, rating >= i && styles.circleSelected]} />
-            </TouchableOpacity>
-          ))}
+          {[1, 2, 3, 4, 5].map((i) => {
+            const isSelected = rating >= i;
+            return (
+              <Pressable
+                key={i}
+                onPress={() => {
+                  console.log("Rating selected:", i);
+                  setRating(i);
+                }}
+                style={({ pressed }) => [styles.ratingTouchable, pressed && styles.ratingPressed]}
+              >
+                <View
+                  style={[
+                    styles.circle,
+                    isSelected && {
+                      backgroundColor: "#9C45F7",
+                      borderColor: "#9C45F7",
+                    },
+                  ]}
+                />
+              </Pressable>
+            );
+          })}
         </View>
+        {rating > 0 && <Text style={styles.ratingText}>Selected: {rating} out of 5</Text>}
         <Text style={styles.label}>Comments:</Text>
         <TextInput style={styles.input} value={description} onChangeText={setDescription} placeholder='Enter your comments' multiline />
         <Text style={styles.label}>Receipt Date:</Text>
@@ -218,9 +244,12 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, backgroundColor: "#fff" },
   title: { fontSize: 22, fontWeight: "bold", marginBottom: 20, paddingTop: 50 },
   label: { fontSize: 16, marginTop: 10 },
-  ratingRow: { flexDirection: "row", marginVertical: 10 },
+  ratingRow: { flexDirection: "row", marginVertical: 10, alignItems: "center" },
+  ratingTouchable: { cursor: "pointer", padding: 2 },
+  ratingPressed: { opacity: 0.7 },
   circle: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: "#ccc", marginHorizontal: 5 },
   circleSelected: { backgroundColor: "#9C45F7", borderColor: "#9C45F7" },
+  ratingText: { fontSize: 14, color: "#9C45F7", fontWeight: "600", marginTop: 5, marginBottom: 5 },
   input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, minHeight: 80, marginTop: 5 },
   dateButton: { padding: 10, backgroundColor: "#eee", borderRadius: 8, marginTop: 5 },
   uploadButton: { padding: 10, backgroundColor: "#eee", borderRadius: 8, marginTop: 10, alignItems: "center" },
