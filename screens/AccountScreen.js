@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
+import AppHeader from "../components/AppHeader";
 import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL } from "../apiConfig";
 import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
 import { useCallback } from "react";
@@ -386,9 +387,7 @@ export default function AccountScreen({ navigation }) {
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
-      <View style={[styles.header, darkMode && styles.darkHeader]}>
-        <Text style={styles.title}>Account</Text>
-      </View>
+      <AppHeader title="Account" backgroundColor="#AF52DE" />
 
       {/* Main content */}
       <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContentContainer} showsVerticalScrollIndicator={true}>
@@ -536,20 +535,8 @@ export default function AccountScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
-  header: {
-    backgroundColor: "#AF52DE",
-    paddingTop: 30,
-    paddingBottom: 15,
-    alignItems: "center",
-    borderBottomLeftRadius: 300,
-    borderBottomRightRadius: 300,
-  },
-  title: { color: "#fff", fontSize: 20, fontWeight: "bold" },
   darkContainer: {
     backgroundColor: "#1a1a1a",
-  },
-  darkHeader: {
-    backgroundColor: "#4b2c91",
   },
   contentContainer: { flex: 1, padding: 20 },
   scrollContentContainer: {

@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import AppHeader from "../components/AppHeader";
 
 // Only import Stripe on native platforms (not web)
 let StripeProvider = null;
@@ -382,14 +383,11 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
   return (
     <SafeAreaView style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header with Back Button */}
-      <View style={[styles.headerBg, darkMode && styles.darkHeaderBg]}>
-        <View style={styles.headerContent}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Ionicons name='arrow-back' size={24} color='#fff' />
-          </TouchableOpacity>
-          <Text style={[styles.header, darkMode && styles.darkHeader, styles.headerWithBack]}>Seeking Responses</Text>
-        </View>
-      </View>
+      <AppHeader
+        title="Seeking Responses"
+        backgroundColor="#AF52DE"
+        onBackPress={handleBack}
+      />
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -490,44 +488,6 @@ const styles = StyleSheet.create({
   pageContainer: {
     flex: 1,
     backgroundColor: "#F5F5F5",
-  },
-  headerBg: {
-    backgroundColor: "#AF52DE",
-    paddingTop: 30,
-    paddingBottom: 15,
-    alignItems: "center",
-    borderBottomLeftRadius: 300,
-    borderBottomRightRadius: 300,
-  },
-  darkHeaderBg: {
-    backgroundColor: "#8B4C9F",
-  },
-  headerContent: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    width: "100%",
-    paddingHorizontal: 20,
-    position: "relative",
-  },
-  backButton: {
-    position: "absolute",
-    left: 53,
-    padding: 4,
-    zIndex: 1,
-  },
-  header: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
-    flex: 1,
-    textAlign: "center",
-  },
-  headerWithBack: {
-    marginLeft: 0,
-  },
-  darkHeader: {
-    color: "#fff",
   },
   loadingContainer: {
     flex: 1,

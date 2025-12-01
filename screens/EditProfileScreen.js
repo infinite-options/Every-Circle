@@ -8,6 +8,7 @@ import MiniCard from "../components/MiniCard";
 import ExpertiseSection from "../components/ExpertiseSection";
 import BusinessSection from "../components/BusinessSection";
 import BottomNavBar from "../components/BottomNavBar";
+import AppHeader from "../components/AppHeader";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
@@ -684,6 +685,12 @@ const EditProfileScreen = ({ route, navigation }) => {
 
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}>
+      <AppHeader
+        title="Edit Profile"
+        backgroundColor="#AF52DE"
+        darkModeBackgroundColor="#4b2c91"
+        onBackPress={() => navigation.goBack()}
+      />
       <ScrollView
         ref={scrollViewRef}
         style={{ flex: 1, padding: 20, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}
@@ -691,7 +698,6 @@ const EditProfileScreen = ({ route, navigation }) => {
         keyboardShouldPersistTaps='handled'
         showsVerticalScrollIndicator={true}
       >
-        <Text style={{ fontSize: 24, fontWeight: "bold", color: darkMode ? "#ffffff" : "#000000", marginTop: 20, marginBottom: 20 }}>Edit Profile</Text>
         {renderField("First Name (Public)", formData.firstName, true, "firstName", "firstNameIsPublic")}
         {renderField("Last Name (Public)", formData.lastName, true, "lastName", "lastNameIsPublic")}
         {/* Profile Image Upload Section */}

@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
 import ProductCard from "../components/ProductCard";
 import BottomNavBar from "../components/BottomNavBar";
+import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -358,26 +359,16 @@ export default function ReviewDetailScreen({ route, navigation }) {
 
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
-      {/* Header with Back Button - Matching Profile Screen style */}
-      {(() => {
-        if (__DEV__) console.log("🔵 ReviewDetailScreen - Rendering Header");
-        return (
-          <View style={[styles.headerBg, darkMode && styles.darkHeaderBg]}>
-            <View style={styles.headerContent}>
-              <TouchableOpacity
-                style={styles.backButton}
-                onPress={() => {
-                  console.log("🔙 ReviewDetailScreen - Going back to previous screen");
-                  navigation.goBack();
-                }}
-              >
-                <Ionicons name='arrow-back' size={24} color='#fff' />
-              </TouchableOpacity>
-              <Text style={[styles.header, darkMode && styles.darkHeader, styles.headerWithBack]}>Review Details</Text>
-            </View>
-          </View>
-        );
-      })()}
+      {/* Header with Back Button */}
+      <AppHeader
+        title="Review Details"
+        backgroundColor="#FF9500"
+        darkModeBackgroundColor="#CC7700"
+        onBackPress={() => {
+          console.log("🔙 ReviewDetailScreen - Going back to previous screen");
+          navigation.goBack();
+        }}
+      />
 
       <SafeAreaView style={styles.safeArea}>
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -763,43 +754,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F5F5F5",
   },
-  headerBg: {
-    backgroundColor: "#FF9500",
-    paddingTop: 30,
-    paddingBottom: 15,
-    alignItems: "center",
-    borderBottomLeftRadius: 300,
-    borderBottomRightRadius: 300,
-  },
-  darkHeaderBg: {
-    backgroundColor: "#CC7700",
-  },
-  headerContent: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    width: "100%",
-    paddingHorizontal: 20,
-    position: "relative",
-  },
-  backButton: {
-    position: "absolute",
-    left: 53,
-    padding: 4,
-    zIndex: 1,
-  },
   safeArea: {
     flex: 1,
-  },
-  header: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
-    flex: 1,
-    textAlign: "center",
-  },
-  headerWithBack: {
-    marginLeft: 0,
   },
   container: {
     flex: 1,
@@ -1033,11 +989,5 @@ const styles = StyleSheet.create({
   // Dark mode styles
   darkPageContainer: {
     backgroundColor: "#1a1a1a",
-  },
-  darkHeaderBg: {
-    backgroundColor: "#CC7700",
-  },
-  darkHeader: {
-    color: "#fff",
   },
 });

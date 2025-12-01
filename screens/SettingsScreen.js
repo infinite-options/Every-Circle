@@ -19,6 +19,7 @@ if (!isWeb) {
 }
 
 import BottomNavBar from "../components/BottomNavBar";
+import AppHeader from "../components/AppHeader";
 import QRCode from "react-native-qrcode-svg";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
@@ -228,9 +229,7 @@ export default function SettingsScreen() {
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
-      <View style={[styles.header, darkMode && styles.darkHeader]}>
-        <Text style={styles.headerText}>Settings</Text>
-      </View>
+      <AppHeader title="Settings" backgroundColor="#AF52DE" />
 
       {/* Settings Options */}
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkContainer]}>
@@ -354,22 +353,6 @@ const styles = StyleSheet.create({
   },
   darkContainer: {
     backgroundColor: "#1a1a1a",
-  },
-  header: {
-    backgroundColor: "#AF52DE",
-    paddingTop: 30,
-    paddingBottom: 15,
-    alignItems: "center",
-    borderBottomLeftRadius: 300,
-    borderBottomRightRadius: 300,
-  },
-  darkHeader: {
-    backgroundColor: "#4b2c91",
-  },
-  headerText: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
   },
   settingsContainer: {
     padding: 15,

@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import BottomNavBar from "../components/BottomNavBar";
+import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useFocusEffect } from "@react-navigation/native";
@@ -1031,14 +1032,7 @@ const NetworkScreen = ({ navigation }) => {
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header */}
-      {(() => {
-        if (__DEV__) console.log("🔵 NetworkScreen - Rendering Header");
-        return (
-          <View style={[styles.headerBg, darkMode && styles.darkHeaderBg]}>
-            <Text style={[styles.header, darkMode && styles.darkHeader]}>Connect</Text>
-          </View>
-        );
-      })()}
+      <AppHeader title='Connect' backgroundColor='#AF52DE' />
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView
@@ -1370,15 +1364,6 @@ const NetworkScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   pageContainer: { flex: 1, backgroundColor: "#fff" },
   safeArea: { flex: 1 },
-  headerBg: {
-    backgroundColor: "#AF52DE",
-    paddingTop: 30,
-    paddingBottom: 15,
-    alignItems: "center",
-    borderBottomLeftRadius: 300,
-    borderBottomRightRadius: 300,
-  },
-  header: { color: "#fff", fontSize: 20, fontWeight: "bold" },
   scrollContainer: { flex: 1 },
   darkScrollContainer: { backgroundColor: "#1a1a1a" },
   sectionTitleRow: {
@@ -1460,7 +1445,6 @@ const styles = StyleSheet.create({
   errorText: { color: "red", marginTop: 8 },
   darkPageContainer: { backgroundColor: "#1a1a1a" },
   darkSafeArea: { backgroundColor: "#1a1a1a" },
-  darkHeaderBg: { backgroundColor: "#4b2c91" },
   darkHeader: { color: "#fff" },
   darkSectionTitle: { color: "#ccc" },
   darkKeyText: { color: "#ccc" },

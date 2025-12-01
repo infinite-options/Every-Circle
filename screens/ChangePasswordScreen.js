@@ -5,6 +5,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
 import * as Crypto from "expo-crypto";
 import BottomNavBar from "../components/BottomNavBar";
+import AppHeader from "../components/AppHeader";
 import { USER_PROFILE_INFO_ENDPOINT, ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, UPDATE_EMAIL_PASSWORD_ENDPOINT } from "../apiConfig";
 
 export default function ChangePasswordScreen() {
@@ -207,13 +208,11 @@ export default function ChangePasswordScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Header with back button */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <MaterialIcons name='arrow-back' size={24} color='#fff' />
-        </TouchableOpacity>
-        <Text style={styles.headerText}>Change Password</Text>
-        <View style={styles.placeholder} />
-      </View>
+      <AppHeader
+        title="Change Password"
+        backgroundColor="#AF52DE"
+        onBackPress={() => navigation.goBack()}
+      />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.formContainer}>
@@ -291,24 +290,6 @@ export default function ChangePasswordScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f8f8f8" },
-  header: {
-    backgroundColor: "#AF52DE",
-    paddingVertical: 15,
-    paddingHorizontal: 15,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-  },
-  headerText: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
-    textAlign: "center",
-  },
-  backButton: { padding: 5 },
-  placeholder: { width: 24 },
   scrollContent: { flexGrow: 1, padding: 20 },
   formContainer: {
     backgroundColor: "#fff",

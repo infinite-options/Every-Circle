@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, SafeAr
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import BottomNavBar from "../components/BottomNavBar";
+import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BUSINESS_RESULTS_ENDPOINT, EXPERTISE_RESULTS_ENDPOINT, WISHES_RESULTS_ENDPOINT, TAG_SEARCH_DISTINCT_ENDPOINT, TAG_CATEGORY_DISTINCT_ENDPOINT, SEARCH_BASE_URL } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -217,7 +218,7 @@ export default function SearchScreen({ route }) {
         console.error("❌ Fetch error details:", fetchError);
         console.error("❌ Error name:", fetchError.name);
         console.error("❌ Error message:", fetchError.message);
-        
+
         // Try with no-cors mode as a fallback (limited but might work)
         if (Platform.OS === "web" && fetchError.message === "Failed to fetch") {
           console.warn("⚠️ CORS error detected, trying no-cors mode as fallback...");
@@ -236,11 +237,11 @@ export default function SearchScreen({ route }) {
             console.error("❌ no-cors fallback also failed:", noCorsError);
             throw new Error(
               `CORS Error: The search server at ${SEARCH_BASE_URL} is not allowing requests from http://localhost:8081.\n\n` +
-              `To fix this, the server needs to:\n` +
-              `1. Allow requests from http://localhost:8081 (or your production domain)\n` +
-              `2. Include CORS headers: Access-Control-Allow-Origin, Access-Control-Allow-Methods\n\n` +
-              `You can test the endpoint directly in your browser:\n${apiUrl}\n\n` +
-              `Note: The server must respond to OPTIONS preflight requests with proper CORS headers.`
+                `To fix this, the server needs to:\n` +
+                `1. Allow requests from http://localhost:8081 (or your production domain)\n` +
+                `2. Include CORS headers: Access-Control-Allow-Origin, Access-Control-Allow-Methods\n\n` +
+                `You can test the endpoint directly in your browser:\n${apiUrl}\n\n` +
+                `Note: The server must respond to OPTIONS preflight requests with proper CORS headers.`
             );
           }
         } else {
@@ -250,7 +251,7 @@ export default function SearchScreen({ route }) {
 
       // Check if response is opaque (from no-cors mode)
       const isOpaque = res.type === "opaque" || res.type === "opaqueredirect";
-      
+
       if (isOpaque) {
         console.warn("⚠️ Response is opaque (from no-cors mode). Status and headers are not accessible.");
       } else {
@@ -390,7 +391,7 @@ export default function SearchScreen({ route }) {
             // If it's just a period or starts with a period that might cause issues, return empty
             return str === "." ? "" : str;
           };
-          
+
           return {
             id: `${b.business_uid || i}`,
             company: sanitizeText(b.business_name || b.company) || "Unknown Business",
@@ -411,7 +412,7 @@ export default function SearchScreen({ route }) {
 
       console.log("✅ Processed search results:", list);
       console.log("✅ Number of processed results:", list.length);
-      
+
       // Debug: Check for any periods in the data that might cause issues
       list.forEach((item, idx) => {
         Object.keys(item).forEach((key) => {
@@ -421,7 +422,7 @@ export default function SearchScreen({ route }) {
           }
         });
       });
-      
+
       console.log("✅ Setting results state...");
       setResults(list);
       console.log("✅ Results state updated");
@@ -460,7 +461,7 @@ export default function SearchScreen({ route }) {
     for (const endpoint of alternativeEndpoints) {
       try {
         console.log("🔄 Trying alternative endpoint:", endpoint);
-        
+
         // Add CORS mode for web requests
         const altFetchOptions =
           Platform.OS === "web"
@@ -481,7 +482,7 @@ export default function SearchScreen({ route }) {
                   "Content-Type": "application/json",
                 },
               };
-        
+
         const res = await fetch(endpoint, altFetchOptions);
         console.log("📡 Alternative endpoint response status:", res.status);
 
@@ -501,7 +502,7 @@ export default function SearchScreen({ route }) {
               // If it's just a period or starts with a period that might cause issues, return empty
               return str === "." ? "" : str;
             };
-            
+
             const list = resultsArray.map((b, i) => ({
               id: `${b.business_uid || i}`,
               company: sanitizeText(b.business_name || b.company) || "Unknown Business",
@@ -641,22 +642,16 @@ export default function SearchScreen({ route }) {
             />
             <View style={styles.wishProfileInfo}>
               {/* Name is always visible */}
-              <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>
-                {[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Unknown"}
-              </Text>
+              <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>{[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Unknown"}</Text>
               {/* Show email if public */}
               {(() => {
                 const email = profile.emailIsPublic && profile.email ? String(profile.email).trim() : "";
-                return email && email !== "." ? (
-                  <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{email}</Text>
-                ) : null;
+                return email && email !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{email}</Text> : null;
               })()}
               {/* Show phone if public */}
               {(() => {
                 const phone = profile.phoneIsPublic && profile.phone ? String(profile.phone).trim() : "";
-                return phone && phone !== "." ? (
-                  <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{phone}</Text>
-                ) : null;
+                return phone && phone !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{phone}</Text> : null;
               })()}
             </View>
           </View>
@@ -664,13 +659,9 @@ export default function SearchScreen({ route }) {
 
         {/* Wish Information */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
-          <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>
-            {wish.title ? String(wish.title).trim() : (item.company ? String(item.company).trim() : "")}
-          </Text>
+          <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
           {wish.description && String(wish.description).trim() && String(wish.description).trim() !== "." && (
-            <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>
-              {String(wish.description).trim()}
-            </Text>
+            <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{String(wish.description).trim()}</Text>
           )}
           {wish.bounty && (
             <View style={styles.wishBountyContainerRight}>
@@ -727,35 +718,25 @@ export default function SearchScreen({ route }) {
           />
           <View style={styles.wishProfileInfo}>
             {/* Name is always visible */}
-            <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>
-              {[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Unknown"}
-            </Text>
+            <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>{[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Unknown"}</Text>
             {/* Show email if public */}
             {(() => {
               const email = profile.emailIsPublic && profile.email ? String(profile.email).trim() : "";
-              return email && email !== "." ? (
-                <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{email}</Text>
-              ) : null;
+              return email && email !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{email}</Text> : null;
             })()}
             {/* Show phone if public */}
             {(() => {
               const phone = profile.phoneIsPublic && profile.phone ? String(profile.phone).trim() : "";
-              return phone && phone !== "." ? (
-                <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{phone}</Text>
-              ) : null;
+              return phone && phone !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{phone}</Text> : null;
             })()}
           </View>
         </View>
 
         {/* Expertise Information */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
-          <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>
-            {expertise.title ? String(expertise.title).trim() : (item.company ? String(item.company).trim() : "")}
-          </Text>
+          <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
           {expertise.description && String(expertise.description).trim() && String(expertise.description).trim() !== "." && (
-            <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>
-              {String(expertise.description).trim()}
-            </Text>
+            <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{String(expertise.description).trim()}</Text>
           )}
           <View style={styles.expertiseDetailsContainer}>
             {expertise.cost && (
@@ -821,17 +802,11 @@ export default function SearchScreen({ route }) {
         }}
       >
         <View style={styles.resultContent}>
-          <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>
-            {item.company ? String(item.company).trim() : ""}
-          </Text>
+          <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
           {(() => {
             const tagLine = item.business_tag_line ? String(item.business_tag_line).trim() : "";
             if (tagLine && tagLine !== "." && tagLine.length > 0) {
-              return (
-                <Text style={[styles.businessTagLine, darkMode && styles.darkBusinessTagLine]}>
-                  {tagLine}
-                </Text>
-              );
+              return <Text style={[styles.businessTagLine, darkMode && styles.darkBusinessTagLine]}>{tagLine}</Text>;
             }
             return null;
           })()}
@@ -839,11 +814,7 @@ export default function SearchScreen({ route }) {
         <View style={styles.resultActions}>
           <View style={styles.ratingContainer}>
             <Ionicons name='star' size={16} color='#FFCD3C' />
-            <Text style={[styles.ratingText, darkMode && styles.darkRatingText]}>
-              {typeof item.rating === "number" 
-                ? item.rating.toFixed(1) 
-                : (item.rating ? String(item.rating) : "N/A")}
-            </Text>
+            <Text style={[styles.ratingText, darkMode && styles.darkRatingText]}>{typeof item.rating === "number" ? item.rating.toFixed(1) : item.rating ? String(item.rating) : "N/A"}</Text>
           </View>
 
           <TouchableOpacity
@@ -887,11 +858,14 @@ export default function SearchScreen({ route }) {
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
-      <View style={[styles.header, darkMode && styles.darkHeader]}>
-        <Text style={styles.title}>Search</Text>
-        <TouchableOpacity
-          style={styles.cartButton}
-          onPress={() =>
+      <AppHeader
+        title='Search'
+        backgroundColor='#AF52DE'
+        darkModeBackgroundColor='#4b2c91'
+        rightButton={
+          <TouchableOpacity
+            style={styles.cartButton}
+            onPress={() =>
               navigation.navigate("ShoppingCart", {
                 cartItems: cartItems,
                 onRemoveItem: async (index) => {
@@ -917,14 +891,15 @@ export default function SearchScreen({ route }) {
               })
             }
           >
-            <Ionicons name='cart-outline' size={18} color='black' />
+            <Ionicons name='cart-outline' size={24} color='#fff' />
             {cartCount > 0 && (
               <View style={styles.cartBadge}>
                 <Text style={styles.cartBadgeText}>{cartCount}</Text>
               </View>
             )}
           </TouchableOpacity>
-        </View>
+        }
+      />
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         {/* Main Content */}
@@ -1257,36 +1232,13 @@ const styles = StyleSheet.create({
     color: "#333",
   },
   container: { flex: 1, backgroundColor: "#fff" },
-  header: {
-    backgroundColor: "#AF52DE",
-    paddingTop: 30,
-    paddingBottom: 15,
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    borderBottomLeftRadius: 300,
-    borderBottomRightRadius: 300,
-  },
-  darkHeader: {
-    backgroundColor: "#4b2c91",
-  },
-  title: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
-    flex: 1,
-    textAlign: "center",
-  },
   cartButton: {
-    backgroundColor: "#fff",
-    borderRadius: 18,
-    padding: 4,
-    position: "absolute",
-    right: 53,
+    padding: 8,
     justifyContent: "center",
     alignItems: "center",
     zIndex: 1,
+    minWidth: 40,
+    minHeight: 40,
   },
   cartBadge: {
     position: "absolute",

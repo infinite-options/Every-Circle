@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
 import BottomNavBar from "../components/BottomNavBar";
+import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Only import Stripe on native platforms (not web)
@@ -469,13 +470,12 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const content = (
     <View style={styles.container}>
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Ionicons name='arrow-back' size={24} color='#fff' />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Shopping Cart</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+        <AppHeader
+          title="Shopping Cart"
+          backgroundColor="#9C45F7"
+          darkModeBackgroundColor="#7B35C7"
+          onBackPress={() => navigation.goBack()}
+        />
 
         <SafeAreaView style={styles.safeArea}>
           <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
@@ -580,33 +580,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F5F5F5",
-  },
-  header: {
-    backgroundColor: "#9C45F7",
-    paddingTop: 30,
-    paddingBottom: 15,
-    paddingHorizontal: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    borderBottomLeftRadius: 300,
-    borderBottomRightRadius: 300,
-  },
-  backButton: {
-    position: "absolute",
-    left: 53,
-    padding: 4,
-    zIndex: 1,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#fff",
-    flex: 1,
-    textAlign: "center",
-  },
-  headerSpacer: {
-    width: 40,
   },
   safeArea: {
     flex: 1,

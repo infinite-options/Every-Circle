@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { TRANSACTIONS_ENDPOINT, PROFILE_WISH_INFO_ENDPOINT } from "../apiConfig";
 
@@ -189,14 +190,12 @@ const WishDetailScreenContent = ({ route, navigation }) => {
   return (
     <SafeAreaView style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header with Back Button */}
-      <View style={[styles.headerBg, darkMode && styles.darkHeaderBg]}>
-        <View style={styles.headerContent}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Ionicons name='arrow-back' size={24} color='#fff' />
-          </TouchableOpacity>
-          <Text style={[styles.header, darkMode && styles.darkHeader, styles.headerWithBack]}>Seeking</Text>
-        </View>
-      </View>
+      <AppHeader
+        title="Seeking"
+        backgroundColor="#FF9500"
+        darkModeBackgroundColor="#CC7700"
+        onBackPress={handleBack}
+      />
 
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {/* User MiniCard - Clickable */}
@@ -286,37 +285,6 @@ const styles = StyleSheet.create({
   pageContainer: {
     flex: 1,
     backgroundColor: "#F5F5F5",
-  },
-  headerBg: {
-    backgroundColor: "#FF9500",
-    paddingVertical: 15,
-    alignItems: "center",
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-  },
-  headerContent: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    width: "100%",
-    paddingHorizontal: 20,
-    position: "relative",
-  },
-  backButton: {
-    position: "absolute",
-    left: 20,
-    padding: 4,
-    zIndex: 1,
-  },
-  header: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
-    flex: 1,
-    textAlign: "center",
-  },
-  headerWithBack: {
-    marginLeft: 0,
   },
   container: {
     flex: 1,
@@ -416,12 +384,6 @@ const styles = StyleSheet.create({
   // Dark mode styles
   darkPageContainer: {
     backgroundColor: "#1a1a1a",
-  },
-  darkHeaderBg: {
-    backgroundColor: "#CC7700",
-  },
-  darkHeader: {
-    color: "#fff",
   },
   darkCard: {
     backgroundColor: "#2d2d2d",

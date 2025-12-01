@@ -3,6 +3,7 @@ import { SafeAreaView, ScrollView, View, Text, TouchableOpacity, StyleSheet } fr
 import { useNavigation } from "@react-navigation/native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import BottomNavBar from "../components/BottomNavBar";
+import AppHeader from "../components/AppHeader";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
 export default function TermsAndConditionsScreen() {
@@ -12,9 +13,11 @@ export default function TermsAndConditionsScreen() {
   return (
     <SafeAreaView style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
-      <View style={[styles.header, darkMode && styles.darkHeader]}>
-        <Text style={styles.headerText}>Settings</Text>
-      </View>
+      <AppHeader
+        title="Terms & Conditions"
+        backgroundColor="#AF52DE"
+        onBackPress={() => navigation.goBack()}
+      />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[styles.title, darkMode && styles.darkTitle]}>Terms &amp; Conditions</Text>
         <Text style={[styles.body, darkMode && styles.darkBody]}>
@@ -352,22 +355,6 @@ export default function TermsAndConditionsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
   darkContainer: { backgroundColor: "#1a1a1a" },
-  header: {
-    backgroundColor: "#AF52DE",
-    paddingTop: 30,
-    paddingBottom: 15,
-    alignItems: "center",
-    borderBottomLeftRadius: 300,
-    borderBottomRightRadius: 300,
-  },
-  darkHeader: {
-    backgroundColor: "#4b2c91",
-  },
-  headerText: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "bold",
-  },
   content: { padding: 20, paddingBottom: 40 },
   title: {
     fontSize: 24,

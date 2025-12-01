@@ -24,6 +24,7 @@ const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButto
     const colorMap = {
       "#AF52DE": "#8B4C9F", // Purple
       "#FF9500": "#CC7700", // Orange
+      "#9C45F7": "#7B35C7", // Purple (Shopping Cart)
     };
     return colorMap[color] || color;
   };
