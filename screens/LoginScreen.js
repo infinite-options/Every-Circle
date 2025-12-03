@@ -250,8 +250,18 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
         </View>
       </View>
 
-      <TouchableOpacity style={[styles.continueButton, isValid && styles.continueButtonActive]} onPress={handleContinue} disabled={!isValid || showSpinner}>
-        {showSpinner ? <ActivityIndicator color='#fff' /> : <Text style={[styles.continueButtonText, isValid && styles.continueButtonTextActive]}>Continue</Text>}
+      <TouchableOpacity 
+        style={[styles.continueButton, isValid ? styles.continueButtonActive : null]} 
+        onPress={handleContinue} 
+        disabled={!isValid || showSpinner}
+      >
+        {showSpinner ? (
+          <ActivityIndicator color='#fff' />
+        ) : (
+          <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : null]}>
+            Continue
+          </Text>
+        )}
       </TouchableOpacity>
 
       <View style={styles.dividerContainer}>
@@ -296,22 +306,20 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
             <Text style={styles.googleButtonText}>Sign in with Google</Text>
           </TouchableOpacity>
         )}
-        {Platform.OS === "ios" && (
-          <AppleSignIn
-            onSignIn={async (...args) => {
-              if (!signingIn) {
-                setSigningIn(true);
-                try {
-                  await onAppleSignIn(...args);
-                } finally {
-                  setSigningIn(false);
-                }
+        <AppleSignIn
+          onSignIn={async (...args) => {
+            if (!signingIn) {
+              setSigningIn(true);
+              try {
+                await onAppleSignIn(...args);
+              } finally {
+                setSigningIn(false);
               }
-            }}
-            onError={onError}
-            disabled={signingIn}
-          />
-        )}
+            }
+          }}
+          onError={onError}
+          disabled={signingIn}
+        />
       </View>
 
       <View style={styles.footer}>
@@ -389,7 +397,7 @@ const styles = StyleSheet.create({
   dividerText: { marginHorizontal: 10, color: "#666" },
   socialContainer: { alignItems: "center", marginBottom: 30 },
   googleButton: { width: 192, height: 48, marginBottom: 15 },
-  googleButtonText: { color: "#fff", textAlign: "center", padding: 12, backgroundColor: "#4285F4", borderRadius: 4 },
+  googleButtonText: { color: "#fff", textAlign: "center", padding: 12, backgroundColor: "#4285F4", borderRadius: 8 },
   footer: { alignItems: "center" },
   footerText: { fontSize: 16, color: "#666" },
   signUpText: { color: "#FF9500", fontWeight: "bold" },

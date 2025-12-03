@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Platform, Modal } from "react-native";
 
 // Only import GoogleSigninButton on native platforms (not web)
@@ -15,19 +15,13 @@ if (!isWeb) {
 
 import AppleSignIn from "../AppleSignIn";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Ionicons } from '@expo/vector-icons';
-import { 
-  ACCOUNT_SALT_ENDPOINT, 
-  CREATE_ACCOUNT_ENDPOINT, 
-  GOOGLE_SIGNUP_ENDPOINT, 
-  REFERRAL_API_ENDPOINT 
-} from "../apiConfig";
+import { Ionicons } from "@expo/vector-icons";
+import { ACCOUNT_SALT_ENDPOINT, CREATE_ACCOUNT_ENDPOINT, GOOGLE_SIGNUP_ENDPOINT, REFERRAL_API_ENDPOINT } from "../apiConfig";
 // import CryptoJS from "react-native-crypto-js";
 // import * as CryptoJS from "react-native-crypto-js";
 import * as Crypto from "expo-crypto";
 
 export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, navigation, route }) {
-  
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -51,7 +45,6 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       const { email: googleEmail, firstName, lastName } = route.params.googleUserInfo;
       setEmail(googleEmail);
       setIsGoogleSignUp(true);
-      // Pre-populate other fields if needed
     }
   }, [route.params?.googleUserInfo]);
 
@@ -63,14 +56,22 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     }
   }, [route.params?.appleUserInfo]);
 
-  const validateInputs = (email, password, confirmPassword) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const isEmailValid = emailRegex.test(email);
-    const isPasswordValid = isGoogleSignUp ? true : password.length >= 6;
-    const doPasswordsMatch = isGoogleSignUp ? true : password === confirmPassword;
+  const validateInputs = useCallback(
+    (email, password, confirmPassword) => {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const isEmailValid = emailRegex.test(email);
+      const isPasswordValid = isGoogleSignUp ? true : password.length >= 6;
+      const doPasswordsMatch = isGoogleSignUp ? true : password === confirmPassword;
 
-    setIsValid(isEmailValid && isPasswordValid && doPasswordsMatch);
-  };
+      setIsValid(isEmailValid && isPasswordValid && doPasswordsMatch);
+    },
+    [isGoogleSignUp]
+  );
+
+  // Validate inputs whenever email, password, confirmPassword, or isGoogleSignUp changes
+  useEffect(() => {
+    validateInputs(email, password, confirmPassword);
+  }, [email, password, confirmPassword, isGoogleSignUp, validateInputs]);
 
   const handleEmailChange = (text) => {
     setEmail(text);
@@ -247,16 +248,9 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         {!isGoogleSignUp && (
           <>
             <View style={styles.passwordInputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder='Password'
-                value={password}
-                onChangeText={handlePasswordChange}
-                secureTextEntry={!isPasswordVisible}
-                autoCapitalize='none'
-              />
+              <TextInput style={styles.input} placeholder='Password' value={password} onChangeText={handlePasswordChange} secureTextEntry={!isPasswordVisible} autoCapitalize='none' />
               <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
-                <Ionicons name={isPasswordVisible ? 'eye-off' : 'eye'} size={24} color="#666" />
+                <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
               </TouchableOpacity>
             </View>
             <View style={styles.passwordInputContainer}>
@@ -269,15 +263,15 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                 autoCapitalize='none'
               />
               <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}>
-                <Ionicons name={isConfirmPasswordVisible ? 'eye-off' : 'eye'} size={24} color="#666" />
+                <Ionicons name={isConfirmPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
               </TouchableOpacity>
             </View>
           </>
         )}
       </View>
 
-      <TouchableOpacity style={[styles.continueButton, isValid && styles.continueButtonActive]} onPress={handleContinue} disabled={!isValid}>
-        <Text style={[styles.continueButtonText, isValid && styles.continueButtonTextActive]}>{isGoogleSignUp ? "Complete Sign Up" : "Continue"}</Text>
+      <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : null]} onPress={handleContinue} disabled={!isValid}>
+        <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : null]}>{isGoogleSignUp ? "Complete Sign Up" : "Continue"}</Text>
       </TouchableOpacity>
 
       {!isGoogleSignUp && (
@@ -292,14 +286,11 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             {GoogleSigninButton && !isWeb ? (
               <GoogleSigninButton style={styles.googleButton} size={GoogleSigninButton.Size.Wide} color={GoogleSigninButton.Color.Dark} onPress={onGoogleSignUp} />
             ) : (
-              <TouchableOpacity
-                style={styles.googleButton}
-                onPress={() => Alert.alert("Not Available", "Google Sign-In is not available on web. Please use email/password sign up.")}
-              >
-                <Text style={styles.googleButtonText}>Sign up with Google (Not available on web)</Text>
+              <TouchableOpacity style={styles.googleButton} onPress={onGoogleSignUp}>
+                <Text style={styles.googleButtonText}>Sign up with Google</Text>
               </TouchableOpacity>
             )}
-            {Platform.OS === "ios" && <AppleSignIn onSignIn={onAppleSignUp} onError={onError} />}
+            <AppleSignIn onSignIn={onAppleSignUp} onError={onError} buttonText='Sign up with Apple' />
           </View>
         </>
       )}
@@ -313,20 +304,20 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         </Text>
       </View>
 
-      <Modal visible={showReferralModal} transparent animationType="fade">
+      <Modal visible={showReferralModal} transparent animationType='fade'>
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)" }}>
           <View style={{ backgroundColor: "#fff", padding: 24, borderRadius: 12, width: 300 }}>
             <Text style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>Who referred you to Every Circle?</Text>
             <TextInput
               style={{ borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, marginBottom: 8 }}
-              placeholder="Enter referral email (optional)"
+              placeholder='Enter referral email (optional)'
               value={referralId}
               onChangeText={setReferralId}
-              keyboardType="email-address"
-              autoCapitalize="none"
+              keyboardType='email-address'
+              autoCapitalize='none'
               editable={!isCheckingReferral}
             />
-            {!!referralError && <Text style={{ color: 'red', marginBottom: 8 }}>{referralError}</Text>}
+            {!!referralError && <Text style={{ color: "red", marginBottom: 8 }}>{referralError}</Text>}
             <TouchableOpacity style={{ backgroundColor: "#007AFF", padding: 12, borderRadius: 8, alignItems: "center", marginBottom: 8 }} onPress={handleReferralSubmit} disabled={isCheckingReferral}>
               <Text style={{ color: "#fff", fontWeight: "bold" }}>{isCheckingReferral ? "Checking..." : "Continue"}</Text>
             </TouchableOpacity>
@@ -373,10 +364,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   passwordInputContainer: {
-    position: 'relative',
+    position: "relative",
   },
   passwordVisibilityToggle: {
-    position: 'absolute',
+    position: "absolute",
     right: 15,
     top: 15,
     zIndex: 1,
@@ -395,7 +386,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FF9500",
   },
   continueButtonText: {
-    color: "#fff",
+    color: "#999",
     fontSize: 18,
     fontWeight: "bold",
   },
@@ -430,7 +421,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     padding: 12,
     backgroundColor: "#4285F4",
-    borderRadius: 4,
+    borderRadius: 8,
   },
   footer: {
     alignItems: "center",
