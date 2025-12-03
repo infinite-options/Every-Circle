@@ -1,6 +1,6 @@
 // ReviewDetailScreen.js
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, Image, Alert, Modal, Platform, Pressable } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, Image, Alert, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
@@ -253,38 +253,10 @@ export default function ReviewDetailScreen({ route, navigation }) {
     }
   }, [reviewer_profile_id]);
 
-  // Debug: Log modal visibility changes
-  useEffect(() => {
-    console.log("🔵 ReviewDetailScreen - Modal visibility changed:", quantityModalVisible);
-    if (quantityModalVisible) {
-      console.log("🔵 ReviewDetailScreen - Modal is now VISIBLE");
-    } else {
-      console.log("🔵 ReviewDetailScreen - Modal is now HIDDEN");
-    }
-  }, [quantityModalVisible]);
-
   const handleProductPress = (service) => {
-    console.log("🔵 ReviewDetailScreen - Opening modal for service:", service.bs_service_name);
     setSelectedService(service);
     setQuantity(1);
     setQuantityModalVisible(true);
-    console.log("🔵 ReviewDetailScreen - Modal state set to visible");
-  };
-
-  const handleModalClose = () => {
-    console.log("🔵 ReviewDetailScreen - Closing modal");
-    setQuantityModalVisible(false);
-    setQuantity(1);
-    // Small delay on web to ensure modal fully closes and doesn't block touches
-    if (Platform.OS === "web") {
-      setTimeout(() => {
-        setSelectedService(null);
-        console.log("🔵 ReviewDetailScreen - Modal state cleared (web delay)");
-      }, 100);
-    } else {
-      setSelectedService(null);
-      console.log("🔵 ReviewDetailScreen - Modal state cleared");
-    }
   };
 
   const handleQuantityConfirm = async () => {
@@ -326,12 +298,10 @@ export default function ReviewDetailScreen({ route, navigation }) {
         })
       );
 
-      // Close modal and reset state
-      handleModalClose();
+      setQuantityModalVisible(false);
     } catch (error) {
       console.error("Error adding item to cart:", error);
       Alert.alert("Error", "Failed to add item to cart");
-      setQuantityModalVisible(false);
     }
   };
 
@@ -742,19 +712,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
 
         <BottomNavBar navigation={navigation} />
 
-        <Modal
-          animationType='slide'
-          transparent={true}
-          visible={quantityModalVisible}
-          onRequestClose={handleModalClose}
-          onShow={() => {
-            console.log("🔵 ReviewDetailScreen - Modal onShow triggered");
-            console.log("🔵 ReviewDetailScreen - Modal should be visible now");
-          }}
-          onDismiss={() => {
-            console.log("🔵 ReviewDetailScreen - Modal onDismiss triggered");
-          }}
-        >
+        <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>Select Quantity</Text>
@@ -775,7 +733,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
               <Text style={styles.totalPrice}>Total: ${selectedService ? (parseFloat(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
 
               <View style={styles.modalButtons}>
-                <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={handleModalClose}>
+                <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setQuantityModalVisible(false)}>
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
 
@@ -947,16 +905,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
-    ...(Platform.OS === "web" && {
-      position: "fixed",
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      width: "100%",
-      height: "100%",
-      zIndex: 9999,
-    }),
   },
   modalContent: {
     backgroundColor: "#fff",
@@ -964,10 +912,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     width: "80%",
     maxHeight: "80%",
-    ...(Platform.OS === "web" && {
-      zIndex: 10000,
-      position: "relative",
-    }),
   },
   modalTitle: {
     fontSize: 18,
