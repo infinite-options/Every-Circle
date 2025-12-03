@@ -31,7 +31,7 @@ console.log("STRIPE_PUBLISHABLE_KEY:", STRIPE_PUBLISHABLE_KEY);
 const ShoppingCartScreen = ({ route, navigation }) => {
   const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id } = route.params;
   const [cartItems, setCartItems] = useState(initialCartItems);
-  
+
   // Only use Stripe hook if available (not on web)
   let initPaymentSheet, presentPaymentSheet;
   if (useStripe && !isWeb) {
@@ -469,16 +469,11 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
   const content = (
     <View style={styles.container}>
-        {/* Header */}
-        <AppHeader
-          title="Shopping Cart"
-          backgroundColor="#9C45F7"
-          darkModeBackgroundColor="#7B35C7"
-          onBackPress={() => navigation.goBack()}
-        />
+      {/* Header */}
+      <AppHeader title='Shopping Cart' backgroundColor='#9C45F7' darkModeBackgroundColor='#7B35C7' onBackPress={() => navigation.goBack()} />
 
-        <SafeAreaView style={styles.safeArea}>
-          <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
           {cartItems.length === 0 ? (
             <Text style={styles.emptyCart}>Your cart is empty</Text>
           ) : (
@@ -564,15 +559,15 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         )}
 
         <BottomNavBar navigation={navigation} />
-        </SafeAreaView>
-      </View>
+      </SafeAreaView>
+    </View>
   );
 
   // Only wrap with StripeProvider on native platforms
   if (StripeProvider && !isWeb && STRIPE_PUBLISHABLE_KEY) {
     return <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>{content}</StripeProvider>;
   }
-  
+
   return content;
 };
 

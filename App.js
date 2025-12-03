@@ -14,6 +14,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
+let GoogleSigninButton = null;
 let statusCodes = null;
 // Check if we're on web by checking for window object (works at module load time)
 const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
@@ -21,6 +22,7 @@ if (!isWeb) {
   try {
     const googleSigninModule = require("@react-native-google-signin/google-signin");
     GoogleSignin = googleSigninModule.GoogleSignin;
+    GoogleSigninButton = googleSigninModule.GoogleSigninButton;
     statusCodes = googleSigninModule.statusCodes;
   } catch (e) {
     console.warn("GoogleSignin not available:", e.message);
@@ -790,19 +792,8 @@ export default function App() {
 
     return (
       <View style={styles.container}>
-        <View style={styles.circleMain}>
-          <Image source={require("./assets/everycirclelogonew_1024x1024.png")} style={{ width: 200, height: 200, resizeMode: "contain" }} accessibilityLabel='Every Circle Logo' />
-          {/* <View style={styles.videoContainer}>
-            <Video
-              source={{ uri: "https://every-circle.s3.us-west-1.amazonaws.com/EveryB2B.mp4" }}
-              style={styles.video}
-              resizeMode='contain'
-              isLooping
-              shouldPlay
-              isMuted={true}
-              useNativeControls={false}
-            />
-          </View> */}
+        <View style={styles.logoContainer}>
+          <Image source={require("./assets/everycirclelogonew_1024x1024.png")} style={styles.logo} accessibilityLabel='Every Circle Logo' />
         </View>
         <Text style={styles.title}>
           <Text style={styles.italicText}>every</Text>Circle
@@ -896,15 +887,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
     alignItems: "center",
-    justifyContent: "center",
+    paddingTop: 60,
+    paddingBottom: 20,
   },
   centeredContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
+  logoContainer: {
+    width: 200,
+    height: 200,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  logo: {
+    width: 200,
+    height: 200,
+    resizeMode: "contain",
+  },
   circlesContainer: {
-    marginTop: 50,
+    marginTop: 30,
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-around",
@@ -955,10 +960,8 @@ const styles = StyleSheet.create({
     fontSize: 26,
     fontWeight: "bold",
     fontFamily: "Georgia",
-    marginTop: 100,
+    marginTop: 10,
     textAlign: "center",
-    // borderWidth: 2,
-    // borderColor: "red",
     padding: 10,
   },
   italicText: {

@@ -52,3 +52,7 @@ secrets.json
 # JetBrains IDEs
 .idea/
 *.iml
+
+# Specific Files
+StripePayment.js
+STRIPE_IMPLEMENTATION_GUIDE.md

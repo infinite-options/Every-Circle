@@ -3,8 +3,9 @@ import { StyleSheet, View, Platform, TouchableOpacity, Text } from "react-native
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as WebBrowser from "expo-web-browser";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons } from "@expo/vector-icons";
 
-const AppleSignIn = ({ onSignIn, onError }) => {
+const AppleSignIn = ({ onSignIn, onError, disabled, buttonText = "Sign in with Apple" }) => {
   // console.log("AppleSignIn - Rendering");
   const handleAppleSignIn = async () => {
     try {
@@ -159,8 +160,8 @@ const AppleSignIn = ({ onSignIn, onError }) => {
       <View style={styles.container}>
         <AppleAuthentication.AppleAuthenticationButton
           buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
-          cornerRadius={5}
+          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+          cornerRadius={8}
           style={styles.appleButton}
           onPress={handleAppleSignIn}
         />
@@ -168,11 +169,22 @@ const AppleSignIn = ({ onSignIn, onError }) => {
     );
   }
 
-  // Android button
+  // Android/Web button - Must match Apple's design guidelines
+  // Apple HIG: Black background (#000000), white text, rounded corners (8-10pt), minimum 44pt height
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.androidAppleButton} onPress={handleAppleSignIn}>
-        <Text style={styles.androidAppleButtonText}>Sign in with Apple</Text>
+      <TouchableOpacity 
+        style={[styles.appleButtonWeb, { opacity: disabled ? 0.6 : 1 }]} 
+        onPress={handleAppleSignIn}
+        disabled={disabled}
+        activeOpacity={0.8}
+      >
+        <View style={styles.appleButtonContent}>
+          <View style={styles.appleLogo}>
+            <Ionicons name="logo-apple" size={18} color="#FFFFFF" />
+          </View>
+          <Text style={styles.appleButtonText}>{buttonText}</Text>
+        </View>
       </TouchableOpacity>
     </View>
   );
@@ -185,19 +197,41 @@ const styles = StyleSheet.create({
   appleButton: {
     width: 192,
     height: 48,
+    minWidth: 192,
+    minHeight: 48,
   },
-  androidAppleButton: {
+  appleButtonWeb: {
     width: 192,
     height: 48,
-    backgroundColor: "#000",
+    minWidth: 192,
+    minHeight: 48,
+    backgroundColor: "#000000",
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 5,
+    borderRadius: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  androidAppleButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+  appleButtonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  appleLogo: {
+    marginRight: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  appleButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "500",
+    fontFamily: Platform.OS === "web" ? "'Google Sans', Roboto, sans-serif" : "System",
+    letterSpacing: 0.25,
   },
 });
 

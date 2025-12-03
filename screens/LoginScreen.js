@@ -3,19 +3,10 @@
 import React, { useState } from "react";
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, Platform } from "react-native";
 
-// Only import GoogleSigninButton on native platforms (not web)
-let GoogleSigninButton = null;
-const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
-if (!isWeb) {
-  try {
-    const googleSigninModule = require("@react-native-google-signin/google-signin");
-    GoogleSigninButton = googleSigninModule.GoogleSigninButton;
-  } catch (e) {
-    console.warn("GoogleSigninButton not available:", e.message);
-  }
-}
-
+import GoogleSignInButton from "../components/GoogleSignInButton";
 import AppleSignIn from "../AppleSignIn";
+
+const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
 import * as Crypto from "expo-crypto";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
@@ -261,57 +252,35 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
       </View>
 
       <View style={styles.socialContainer}>
-        {GoogleSigninButton && !isWeb ? (
-          <GoogleSigninButton
-            style={styles.googleButton}
-            size={GoogleSigninButton.Size.Wide}
-            color={GoogleSigninButton.Color.Dark}
-            onPress={async () => {
-              if (!signingIn) {
-                setSigningIn(true);
-                try {
-                  await onGoogleSignIn();
-                } finally {
-                  setSigningIn(false);
-                }
+        <GoogleSignInButton
+          style={styles.googleButton}
+          onPress={async () => {
+            if (!signingIn) {
+              setSigningIn(true);
+              try {
+                await onGoogleSignIn();
+              } finally {
+                setSigningIn(false);
               }
-            }}
-            disabled={signingIn}
-          />
-        ) : (
-          <TouchableOpacity
-            style={styles.googleButton}
-            onPress={async () => {
-              if (!signingIn) {
-                setSigningIn(true);
-                try {
-                  await onGoogleSignIn();
-                } finally {
-                  setSigningIn(false);
-                }
+            }
+          }}
+          disabled={signingIn}
+          text="Sign in with Google"
+        />
+        <AppleSignIn
+          onSignIn={async (...args) => {
+            if (!signingIn) {
+              setSigningIn(true);
+              try {
+                await onAppleSignIn(...args);
+              } finally {
+                setSigningIn(false);
               }
-            }}
-            disabled={signingIn}
-          >
-            <Text style={styles.googleButtonText}>Sign in with Google</Text>
-          </TouchableOpacity>
-        )}
-        {Platform.OS === "ios" && (
-          <AppleSignIn
-            onSignIn={async (...args) => {
-              if (!signingIn) {
-                setSigningIn(true);
-                try {
-                  await onAppleSignIn(...args);
-                } finally {
-                  setSigningIn(false);
-                }
-              }
-            }}
-            onError={onError}
-            disabled={signingIn}
-          />
-        )}
+            }
+          }}
+          onError={onError}
+          disabled={signingIn}
+        />
       </View>
 
       <View style={styles.footer}>
