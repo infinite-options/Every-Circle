@@ -30,6 +30,30 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [currentUserProfileId, setCurrentUserProfileId] = useState(null);
   const [businessUsers, setBusinessUsers] = useState([]);
   const [reviewerProfiles, setReviewerProfiles] = useState({}); // Store reviewer profile data by profile_id
+  const [viewportWidth, setViewportWidth] = useState(null); // Track viewport width for web responsiveness
+
+  // Handle viewport resize on web (for DevTools opening/closing)
+  useEffect(() => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      const updateViewportWidth = () => {
+        setViewportWidth(window.innerWidth);
+      };
+
+      // Set initial width
+      updateViewportWidth();
+
+      // Listen for resize events
+      window.addEventListener("resize", updateViewportWidth);
+
+      // Also listen for orientation changes
+      window.addEventListener("orientationchange", updateViewportWidth);
+
+      return () => {
+        window.removeEventListener("resize", updateViewportWidth);
+        window.removeEventListener("orientationchange", updateViewportWidth);
+      };
+    }
+  }, []);
 
   // Load cart items when component mounts
   useEffect(() => {
@@ -551,7 +575,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
   }
 
   return (
-    <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
+    <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]} key={Platform.OS === "web" ? `viewport-${viewportWidth}` : undefined}>
       {/* Header */}
       <AppHeader
         title='Business Profile'
