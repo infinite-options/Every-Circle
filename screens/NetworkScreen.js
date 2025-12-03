@@ -49,6 +49,8 @@ const NetworkScreen = ({ navigation }) => {
   const [graphHtml, setGraphHtml] = useState(""); // For web iframe
   const iframeContainerRef = React.useRef(null); // Ref for web iframe container
 
+
+
   // Load persisted Network screen settings
   const loadNetworkSettings = async () => {
     try {
@@ -298,6 +300,29 @@ const NetworkScreen = ({ navigation }) => {
       console.error("Error fetching user profile for QR code:", error);
     }
   };
+  
+  // For GRAPH view - minimal data
+  // const fetchNetworkForGraph = async (uid, deg) => {
+  //   const response = await fetch(
+  //     `${API_BASE_URL}/api/network/${uid}/${deg}?minimal=true`
+  //   );
+  //   const data = await response.json();
+  //   // Data already contains name + image, no enrichment needed!
+  //   setNetworkData(data);
+  // };
+
+  // For LIST/GRAPH view - full data  
+  const fetchNetworkForListGraph = async (uid, deg) => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/network/${uid}/${deg}`
+    );
+    const data = await response.json();
+    // Enrich with full profile details
+    const enriched = await Promise.all(
+      data.map(node => fetchFullProfile(node.uid))
+    );
+    setNetworkData(enriched);
+  };
 
   // Create vCard format (standard contact card format that QR scanners recognize)
   const createVCard = (data) => {
@@ -439,259 +464,56 @@ const NetworkScreen = ({ navigation }) => {
     );
   };
 
-  const fetchNetwork = async (overrideProfileUid = null, overrideDegree = null) => {
-    console.log("============================================");
+  const fetchNetwork = async (overrideUid = null, overrideDeg = null) => {
     console.log("🔘 Fetch Network");
-    console.log("============================================");
-
-    // Check if the first argument is an event object (from onClick/onPress) and ignore it
-    if (overrideProfileUid && typeof overrideProfileUid === "object" && overrideProfileUid !== null) {
-      // Check if it looks like a React event object
-      if (overrideProfileUid.nativeEvent || overrideProfileUid._reactName || overrideProfileUid.type === "click") {
-        console.warn("⚠️ Event object passed to fetchNetwork, ignoring it");
-        overrideProfileUid = null;
+  
+    // EVENT OBJECT DETECTION - Add this block here
+    if (overrideUid && typeof overrideUid === "object" && overrideUid !== null) {
+      if (overrideUid.nativeEvent || overrideUid._reactName || overrideUid.type === "click") {
+        console.warn("⚠️ Event object passed, ignoring");
+        overrideUid = null;
       }
     }
-
-    // Always fetch profile_uid directly from AsyncStorage to avoid state corruption issues
-    let uidToUse = overrideProfileUid;
-
-    if (!uidToUse) {
+    //const uid = overrideUid || profileUid;
+    // Get UID with AsyncStorage fallback
+    let uid = overrideUid;
+    if (!uid) {
       try {
         const directUid = await AsyncStorage.getItem("profile_uid");
-        console.log("🔍 DEBUG - Direct fetch from AsyncStorage:", directUid, "Type:", typeof directUid);
-
         if (directUid) {
-          // AsyncStorage always returns strings, but check if it's a JSON string
           try {
             const parsed = JSON.parse(directUid);
-            // If parsing succeeded, check what we got
-            if (typeof parsed === "string") {
-              uidToUse = parsed;
-            } else if (typeof parsed === "object" && parsed !== null) {
-              // If it's an object, try to extract the UID
-              uidToUse = parsed.profile_uid || parsed.uid || parsed.id || parsed.profile_personal_uid || "";
-              console.warn("⚠️ profile_uid was stored as JSON object, extracted:", uidToUse);
-            } else {
-              uidToUse = String(parsed);
-            }
+            uid = typeof parsed === "string" ? parsed : String(parsed);
           } catch (e) {
-            // Not JSON, use as string
-            uidToUse = String(directUid).trim();
+            uid = String(directUid).trim();
           }
         } else {
-          // Fallback to state if AsyncStorage is empty
-          console.warn("⚠️ profile_uid not found in AsyncStorage, using state:", profileUid);
-          uidToUse = profileUid;
+          uid = profileUid;
         }
       } catch (e) {
-        console.error("❌ Error fetching profile_uid from AsyncStorage:", e);
-        // Fallback to state
-        uidToUse = profileUid;
+        console.error("Error fetching from AsyncStorage:", e);
+        uid = profileUid;
       }
     }
+    uid = String(uid || "").trim();
 
-    // Final validation and conversion to string
-    if (typeof uidToUse === "object" && uidToUse !== null) {
-      console.error("❌ uidToUse is still an object after processing:", uidToUse);
-      // Last resort: try to extract any string value
-      uidToUse = uidToUse.profile_uid || uidToUse.uid || uidToUse.id || uidToUse.profile_personal_uid || "";
-    }
+    //const deg = overrideDeg || degree;
+    const deg = String(overrideDeg || degree || "2").trim();
 
-    uidToUse = String(uidToUse || "").trim();
-
-    // Debug logging
-    console.log("🔍 DEBUG - Final uidToUse:", uidToUse, "Type:", typeof uidToUse);
-    console.log("🔍 DEBUG - State profileUid:", profileUid, "Type:", typeof profileUid);
-
-    // Ensure degreeToUse is always a string
-    let degreeToUse = overrideDegree || degree;
-    degreeToUse = String(degreeToUse || "2").trim();
-
-    console.log("📋 Raw profileUid state:", profileUid, "Type:", typeof profileUid);
-    console.log("📋 Processed uidToUse:", uidToUse, "Type:", typeof uidToUse);
-    console.log("📋 Processed degreeToUse:", degreeToUse, "Type:", typeof degreeToUse);
-
-    if (!uidToUse || !degreeToUse) {
-      const errorMsg = "Missing profile UID or degree value";
-      console.log("❌ Error:", errorMsg);
-      console.log("Profile UID:", uidToUse);
-      console.log("Degree:", degreeToUse);
-      setError(errorMsg);
+    // VALIDATION - Add this block
+    if (!uid || !deg) {
+      setError("Missing profile UID or degree value");
+      console.log("❌ Missing uid or degree:", { uid, deg });
       return;
     }
-
-    setLoading(true);
-    setError(null);
-
-    // Construct endpoint using base URL - ensure both values are strings
-    const endpoint = `${API_BASE_URL}/api/network/${String(uidToUse)}/${String(degreeToUse)}`;
-
-    console.log("🔗 Endpoint:", endpoint);
-    console.log("📋 Profile UID:", uidToUse);
-    console.log("📋 Degree:", degreeToUse);
-    console.log("📋 Base URL:", API_BASE_URL);
-    console.log("============================================");
-
-    try {
-      console.log("📡 Making fetch request...");
-
-      // Add CORS mode and headers for web requests
-      const fetchOptions =
-        Platform.OS === "web"
-          ? {
-              method: "GET",
-              mode: "cors",
-              credentials: "omit", // Don't send credentials for CORS
-              headers: {
-                "Content-Type": "application/json",
-                Accept: "application/json",
-              },
-              cache: "no-cache",
-            }
-          : {
-              method: "GET",
-              headers: {
-                "Content-Type": "application/json",
-                Accept: "application/json",
-              },
-            };
-
-      console.log("📡 Fetch options:", JSON.stringify(fetchOptions, null, 2));
-
-      // Test if endpoint is reachable (web only)
-      if (Platform.OS === "web") {
-        console.log("🌐 Web platform detected - testing endpoint accessibility...");
-        try {
-          // Try a simple fetch first to see if we get a CORS error
-          const testResponse = await fetch(endpoint, { method: "OPTIONS", mode: "cors" }).catch((optErr) => {
-            console.warn("⚠️ OPTIONS preflight test failed (this is normal):", optErr.message);
-            return null;
-          });
-          if (testResponse) {
-            console.log("✅ OPTIONS preflight successful");
-          }
-        } catch (preflightErr) {
-          console.warn("⚠️ Preflight check warning:", preflightErr.message);
-        }
-      }
-
-      const response = await fetch(endpoint, fetchOptions);
-
-      console.log("📥 Response status:", response.status);
-      console.log("📥 Response ok:", response.ok);
-      console.log("📥 Response headers:", Object.fromEntries(response.headers.entries()));
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("❌ Response error:", errorText);
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const data = await response.json();
-      console.log("✅ Network data received:", JSON.stringify(data, null, 2));
-      console.log("✅ Data count:", Array.isArray(data) ? data.length : "Not an array");
-
-      const enrichedData = await Promise.all(
-        data.map(async (node) => {
-          const uid = node?.network_profile_personal_uid;
-          if (!uid || uid === "110-000000") {
-            return { ...node, profile_image: "", __mc: {} };
-          }
-          try {
-            // Add CORS mode for web requests
-            const userFetchOptions =
-              Platform.OS === "web"
-                ? {
-                    mode: "cors",
-                    credentials: "omit",
-                  }
-                : {};
-
-            const userRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${uid}`, userFetchOptions);
-            if (!userRes.ok) throw new Error(`Failed to load profile ${uid}`);
-            const userData = await userRes.json();
-
-            const { firstName, lastName, tagLine, email, phoneNumber, profileImage } = pluckMiniCardFields(userData);
-            const p = userData?.personal_info || {};
-
-            // Sanitize all text fields when creating __mc
-            const sanitizedFirstName = sanitizeText(firstName);
-            const sanitizedLastName = sanitizeText(lastName);
-            const sanitizedTagLine = sanitizeText(tagLine);
-            const sanitizedEmail = sanitizeText(email);
-            const sanitizedPhoneNumber = sanitizeText(phoneNumber);
-            const sanitizedProfileImage = sanitizeText(profileImage);
-
-            return {
-              ...node,
-              profile_image: sanitizedProfileImage,
-              __mc: {
-                firstName: sanitizedFirstName,
-                lastName: sanitizedLastName,
-                tagLine: sanitizedTagLine,
-                email: sanitizedEmail,
-                phoneNumber: sanitizedPhoneNumber,
-                profileImage: sanitizedProfileImage,
-                emailIsPublic: p.profile_personal_email_is_public === 1,
-                phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
-                tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
-                imageIsPublic: p.profile_personal_image_is_public === 1,
-                personal_info: {
-                  profile_personal_first_name: sanitizedFirstName,
-                  profile_personal_last_name: sanitizedLastName,
-                  profile_personal_tagline: sanitizedTagLine,
-                  profile_personal_tag_line: sanitizedTagLine,
-                  profile_personal_phone_number: sanitizedPhoneNumber,
-                  profile_personal_image: sanitizedProfileImage,
-                  profile_personal_email_is_public: p.profile_personal_email_is_public || 0,
-                  profile_personal_phone_number_is_public: p.profile_personal_phone_number_is_public || 0,
-                  profile_personal_tag_line_is_public: p.profile_personal_tag_line_is_public || p.profile_personal_tagline_is_public || 0,
-                  profile_personal_image_is_public: p.profile_personal_image_is_public || 0,
-                },
-                user_email: sanitizedEmail,
-              },
-            };
-          } catch (err) {
-            console.log("Profile fetch failed for uid:", uid);
-            return { ...node, profile_image: "", __mc: {} };
-          }
-        })
-      );
-
-      setNetworkData(enrichedData);
-      setGroupedNetwork(groupByDegree(enrichedData));
-
-      // Save network data for persistence
-      try {
-        console.log("💾 Saving network data for persistence...");
-        await AsyncStorage.setItem("network_data", JSON.stringify(enrichedData));
-        await AsyncStorage.setItem("network_grouped", JSON.stringify(groupByDegree(enrichedData)));
-        console.log("✅ Network data saved successfully");
-      } catch (e) {
-        console.error("❌ Error saving network data:", e);
-      }
-    } catch (err) {
-      console.error("❌ Network fetch failed:", err);
-      console.error("❌ Error message:", err.message);
-      console.error("❌ Error stack:", err.stack);
-      console.error("❌ Error name:", err.name);
-      console.error("❌ Error type:", typeof err);
-      console.error("❌ Full error object:", JSON.stringify(err, Object.getOwnPropertyNames(err)));
-
-      // Provide more helpful error messages
-      let errorMessage = `Failed to fetch network data: ${err.message}`;
-      if (err.message === "Failed to fetch" && Platform.OS === "web") {
-        const endpointTest = `${endpoint}`;
-        errorMessage = `Network request failed. This could be:\n\n1. CORS issue - The API server needs to allow requests from http://localhost:8081\n2. Network connectivity issue\n3. Invalid endpoint URL\n\nEndpoint: ${endpointTest}\n\nTo test in browser console, run:\n  fetch("${endpointTest}")\n    .then(r => r.json())\n    .then(d => console.log("Success:", d))\n    .catch(e => console.error("Error:", e));\n\nIf you see a CORS error in the console, you need to configure CORS on your AWS API Gateway.`;
-      }
-
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-      console.log("============================================");
+    
+    // Choose fetch strategy based on view mode
+    if (viewMode === "graph") {
+      await fetchNetworkForListGraph(uid, deg);
+    } else {
+      await fetchNetworkForListGraph(uid, deg);
     }
-  };
+};
 
   const degreeLabel = (deg) => {
     if (deg === 1) return "1st-Degree Connections";
