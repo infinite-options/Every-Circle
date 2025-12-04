@@ -3,7 +3,17 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { LogBox, Platform } from "react-native";
 
 import { StyleSheet, Text, View, Alert, ActivityIndicator, TouchableOpacity, Image } from "react-native";
-import { Video } from "expo-av";
+
+// Only import Video on native platforms when needed (currently commented out)
+let Video = null;
+if (!isWeb) {
+  try {
+    const expoAvModule = require("expo-av");
+    Video = expoAvModule.Video;
+  } catch (e) {
+    console.warn("expo-av not available:", e.message);
+  }
+}
 
 // Suppress VirtualizedList nesting warning - we're using nestedScrollEnabled and proper configuration
 LogBox.ignoreLogs(["VirtualizedLists should never be nested inside plain ScrollViews"]);
