@@ -34,11 +34,19 @@ if (isWeb) {
   }
 }
 
-// Web Stripe components
-import StripePayment from "../StripePayment";
+// Web Stripe components (only load on web)
+let StripePayment = null;
+let Elements = null;
+if (isWeb) {
+  try {
+    StripePayment = require("../StripePayment").default;
+    Elements = require("@stripe/react-stripe-js").Elements;
+  } catch (e) {
+    console.warn("Stripe web components not available:", e.message);
+  }
+}
 import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
-import { Elements } from "@stripe/react-stripe-js";
 
 // Use the publishable key from environment variables
 const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
@@ -761,7 +769,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       </SafeAreaView>
 
       {/* Web Stripe Components */}
-      {isWeb && (
+      {isWeb && Elements && StripePayment && (
         <>
           <StripeFeesDialog
             show={showFeesDialog}
