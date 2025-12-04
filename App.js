@@ -4,6 +4,10 @@ import { LogBox, Platform } from "react-native";
 
 import { StyleSheet, Text, View, Alert, ActivityIndicator, TouchableOpacity, Image } from "react-native";
 
+// Check if we're on web by checking for window object (works at module load time)
+// This must be defined before any code that uses it
+const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
+
 // Only import Video on native platforms when needed (currently commented out)
 let Video = null;
 if (!isWeb) {
@@ -25,8 +29,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
 let statusCodes = null;
-// Check if we're on web by checking for window object (works at module load time)
-const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
 if (!isWeb) {
   try {
     const googleSigninModule = require("@react-native-google-signin/google-signin");
