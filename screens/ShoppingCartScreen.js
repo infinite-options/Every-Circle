@@ -387,7 +387,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
   };
 
-  const prepareTransactionData = (buyerUid, paymentIntent, totalAmount) => {
+  const prepareTransactionData = (buyerUid, paymentIntent, totalAmount, processingFee = 0) => {
     // Use the referral profile ID from route params, or fallback to a default
     // If the recommender is "Charity", use a default referral ID
     const recommenderProfileId = recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231"; // Default referral ID for charity purchases
@@ -402,13 +402,14 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       console.log("Using business_uid from first cart item:", transactionBusinessId);
     }
 
+    const subtotal = parseFloat(calculateTotal());
     const transactionData = {
       profile_id: buyerUid,
       business_id: transactionBusinessId,
       stripe_payment_intent: paymentIntent,
       total_amount_paid: parseFloat(totalAmount),
-      total_costs: parseFloat(calculateTotal()),
-      total_taxes: 0, // Currently hardcoded to 0, can be updated if needed
+      total_costs: subtotal,
+      total_taxes: parseFloat(processingFee), // 3% processing fee for credit card payments
       items: cartItems.map((item) => ({
         bs_uid: item.bs_uid,
         bounty: parseFloat(item.bs_bounty) || 0,
@@ -418,13 +419,16 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     };
 
     console.log("Prepared Transaction Data:", JSON.stringify(transactionData, null, 2));
+    console.log("Subtotal:", subtotal);
+    console.log("Processing Fee (tax):", processingFee);
+    console.log("Total Amount Paid:", totalAmount);
     console.log("Using recommender profile ID:", recommenderProfileId);
     console.log("Original recommender from route:", recommender_profile_id);
     console.log("Transaction business ID:", transactionBusinessId);
     return transactionData;
   };
 
-  const recordTransactions = async (buyerUid, paymentIntent) => {
+  const recordTransactions = async (buyerUid, paymentIntent, totalAmount = null, processingFee = null) => {
     try {
       console.log("Recording transactions for items:", cartItems);
 
@@ -437,8 +441,15 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         buyerProfileId = buyerUid;
       }
 
+      // Calculate processing fee if not provided (3% for web Stripe payments)
+      const subtotal = calculateTotal();
+      const fee = processingFee !== null ? processingFee : subtotal * 0.03;
+      const total = totalAmount !== null ? totalAmount : subtotal + fee;
+
+      console.log("Transaction amounts - Subtotal:", subtotal, "Fee:", fee, "Total:", total);
+
       // Prepare the transaction data
-      const transactionData = prepareTransactionData(buyerProfileId, paymentIntent || "PAYMENT_INTENT_ID", calculateTotal());
+      const transactionData = prepareTransactionData(buyerProfileId, paymentIntent || "PAYMENT_INTENT_ID", total, fee);
 
       console.log("============================================");
       console.log("ENDPOINT: RECORD_TRANSACTIONS");
@@ -508,8 +519,15 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         throw new Error("User ID not found");
       }
 
-      // Record the transactions
-      await recordTransactions(buyerUid, paymentIntent);
+      // Calculate amounts with 3% processing fee
+      const subtotal = calculateTotal();
+      const processingFee = subtotal * 0.03;
+      const totalAmount = subtotal + processingFee;
+
+      console.log("Web payment amounts - Subtotal:", subtotal, "Processing Fee (3%):", processingFee, "Total:", totalAmount);
+
+      // Record the transactions with fee included
+      await recordTransactions(buyerUid, paymentIntent, totalAmount, processingFee);
 
       // Clear ALL cart data from AsyncStorage
       try {
