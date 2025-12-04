@@ -92,10 +92,12 @@ module.exports = ({ config: expoConfig }) => ({
             targetSdkVersion: 35,
             buildToolsVersion: "35.0.0",
             minSdkVersion: 24,
+            ndkVersion: "25.1.8937393",
           },
 
           gradleProperties: {
             MAPS_API_KEY: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "AIzaSyAPoq8L-jM4diZmj80ayQj6_8Gd8z5XwJY",
+            "android.builder.sdkDownload": "true",
           },
         },
       ],
