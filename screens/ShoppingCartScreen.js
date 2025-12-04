@@ -22,7 +22,23 @@ if (!isWeb) {
 }
 
 import { REACT_APP_STRIPE_PUBLIC_KEY } from "@env";
-import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, STRIPE_KEY_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, STRIPE_KEY_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, GET_STRIPE_PUBLIC_KEY_ENDPOINT } from "../apiConfig";
+
+// Web Stripe imports (only load on web)
+let loadStripe = null;
+if (isWeb) {
+  try {
+    loadStripe = require("@stripe/stripe-js").loadStripe;
+  } catch (e) {
+    console.warn("Stripe web library not available:", e.message);
+  }
+}
+
+// Web Stripe components
+import StripePayment from "../StripePayment";
+import StripeFeesDialog from "../components/StripeFeesDialog";
+import PaymentFailure from "../components/PaymentFailure";
+import { Elements } from "@stripe/react-stripe-js";
 
 // Use the publishable key from environment variables
 const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
@@ -31,7 +47,7 @@ console.log("STRIPE_PUBLISHABLE_KEY:", STRIPE_PUBLISHABLE_KEY);
 const ShoppingCartScreen = ({ route, navigation }) => {
   const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id } = route.params;
   const [cartItems, setCartItems] = useState(initialCartItems);
-  
+
   // Only use Stripe hook if available (not on web)
   let initPaymentSheet, presentPaymentSheet;
   if (useStripe && !isWeb) {
@@ -47,6 +63,14 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const [stripeInitialized, setStripeInitialized] = useState(false);
   const [currentClientSecret, setCurrentClientSecret] = useState(null);
 
+  // Web Stripe state
+  const [stripePromise, setStripePromise] = useState(null);
+  const [showStripePayment, setShowStripePayment] = useState(false);
+  const [showFeesDialog, setShowFeesDialog] = useState(false);
+  const [showPaymentFailure, setShowPaymentFailure] = useState(false);
+  const [paymentError, setPaymentError] = useState(null);
+  const [customerUid, setCustomerUid] = useState(null);
+
   useEffect(() => {
     console.log("ShoppingCartScreen mounted");
     console.log("In shopping cart screen, STRIPE_PUBLISHABLE_KEY:", STRIPE_PUBLISHABLE_KEY);
@@ -60,12 +84,79 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       console.error("Stripe publishable key not found");
       Alert.alert("Error", "Payment system is not properly configured");
     }
+
+    // Get customer UID for web Stripe
+    const getCustomerUid = async () => {
+      try {
+        const uid = await AsyncStorage.getItem("profile_uid");
+        setCustomerUid(uid);
+      } catch (error) {
+        console.error("Error getting customer UID:", error);
+      }
+    };
+    getCustomerUid();
   }, []);
 
   // Update local state when initialCartItems changes
   useEffect(() => {
     setCartItems(initialCartItems);
   }, [initialCartItems]);
+
+  // Load Stripe public key for web
+  const loadStripePublicKey = async (businessCode = "ECTEST") => {
+    try {
+      console.log("============================================");
+      console.log("Loading Stripe public key for business code:", businessCode);
+      // Determine environment: ECTEST → PMTEST, EC → PM
+      const environment = businessCode === "ECTEST" ? "PMTEST" : businessCode === "EC" ? "PM" : "PMTEST";
+      console.log("Mapped environment for Stripe key lookup:", environment);
+      const url = `${GET_STRIPE_PUBLIC_KEY_ENDPOINT}/${environment}`;
+
+      console.log("Fetching Stripe key from URL:", url);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Stripe key: ${response.statusText}`);
+      }
+
+      const responseData = await response.json();
+      console.log("Full response data:", JSON.stringify(responseData, null, 2));
+      console.log("Response keys:", Object.keys(responseData));
+
+      // Handle both camelCase (publicKey) and UPPERCASE (PUBLISHABLE_KEY) response formats
+      const publicKey = responseData.publicKey || responseData.PUBLISHABLE_KEY;
+
+      if (!publicKey) {
+        console.error("Response structure:", responseData);
+        console.error("Available keys:", Object.keys(responseData));
+        throw new Error("Public key not found in response. Expected 'publicKey' or 'PUBLISHABLE_KEY'");
+      }
+      const last4Digits = publicKey.length >= 4 ? publicKey.slice(-4) : "N/A";
+      console.log("Stripe public key received (last 4 digits):", last4Digits);
+      console.log("Full public key length:", publicKey.length);
+      console.log("Public key starts with:", publicKey.substring(0, 10) + "...");
+
+      // Load Stripe with public key
+      if (loadStripe) {
+        const stripe = await loadStripe(publicKey);
+        setStripePromise(stripe);
+        console.log("Stripe loaded successfully with key ending in:", last4Digits);
+        console.log("============================================");
+        return stripe;
+      } else {
+        throw new Error("Stripe loadStripe function not available");
+      }
+    } catch (error) {
+      console.error("Error loading Stripe public key:", error);
+      console.error("Error details:", error.message);
+      console.log("============================================");
+      Alert.alert("Error", "Failed to initialize payment system. Please try again.");
+      throw error;
+    }
+  };
 
   const handleRemoveItem = async (index) => {
     try {
@@ -381,15 +472,105 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
   };
 
+  // Handle fees dialog continue
+  const handleFeesDialogContinue = async () => {
+    try {
+      setShowFeesDialog(false);
+      setLoading(true);
+
+      // Load Stripe public key
+      await loadStripePublicKey("ECTEST"); // Using ECTEST for now, can be made dynamic
+
+      // Calculate total with 3% fee
+      const subtotal = calculateTotal();
+      const fee = subtotal * 0.03;
+      const total = subtotal + fee;
+
+      // Show Stripe payment modal
+      setShowStripePayment(true);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error loading Stripe:", error);
+      Alert.alert("Error", "Failed to initialize payment. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  // Web Stripe payment submission handler
+  const handleWebPaymentSubmit = async (paymentIntent, paymentMethod) => {
+    try {
+      setLoading(true);
+      console.log("Web payment submitted - paymentIntent:", paymentIntent, "paymentMethod:", paymentMethod);
+
+      // Get the buyer's ID
+      const buyerUid = await AsyncStorage.getItem("profile_uid");
+      if (!buyerUid) {
+        throw new Error("User ID not found");
+      }
+
+      // Record the transactions
+      await recordTransactions(buyerUid, paymentIntent);
+
+      // Clear ALL cart data from AsyncStorage
+      try {
+        console.log("Clearing all cart data...");
+        const keys = await AsyncStorage.getAllKeys();
+        const cartKeys = keys.filter((key) => key.startsWith("cart_"));
+        console.log("Found cart keys to clear:", cartKeys);
+
+        // Clear each cart
+        await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
+        console.log("All cart data cleared successfully");
+
+        // Clear local state
+        setCartItems([]);
+
+        Alert.alert("Success", "Payment successful! Your order has been placed.", [
+          {
+            text: "OK",
+            onPress: () => {
+              // Navigate to Search screen with refresh parameter
+              navigation.navigate("Search", { refreshCart: true });
+            },
+          },
+        ]);
+      } catch (error) {
+        console.error("Error clearing cart data:", error);
+        Alert.alert("Error", "There was an error clearing your cart. Please try again.");
+      }
+    } catch (error) {
+      console.error("Web payment submission error:", error);
+      setPaymentError(error);
+      setShowPaymentFailure(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCheckout = async () => {
     console.log("Checkout button pressed");
-    // console.log('Current cart items:', cartItems);
+    console.log("Platform:", Platform.OS);
 
     if (!stripeInitialized) {
       Alert.alert("Error", "Payment system is not ready. Please try again.");
       return;
     }
 
+    // Web Stripe flow
+    if (isWeb) {
+      try {
+        setLoading(true);
+        // Show fees dialog first
+        setShowFeesDialog(true);
+      } catch (error) {
+        console.error("Error starting web checkout:", error);
+        Alert.alert("Error", "An error occurred. Please try again.");
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Native Stripe flow (existing code)
     try {
       setLoading(true);
       console.log("Starting checkout process...");
@@ -469,16 +650,11 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
   const content = (
     <View style={styles.container}>
-        {/* Header */}
-        <AppHeader
-          title="Shopping Cart"
-          backgroundColor="#9C45F7"
-          darkModeBackgroundColor="#7B35C7"
-          onBackPress={() => navigation.goBack()}
-        />
+      {/* Header */}
+      <AppHeader title='Shopping Cart' backgroundColor='#9C45F7' darkModeBackgroundColor='#7B35C7' onBackPress={() => navigation.goBack()} />
 
-        <SafeAreaView style={styles.safeArea}>
-          <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
           {cartItems.length === 0 ? (
             <Text style={styles.emptyCart}>Your cart is empty</Text>
           ) : (
@@ -564,15 +740,50 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         )}
 
         <BottomNavBar navigation={navigation} />
-        </SafeAreaView>
-      </View>
+      </SafeAreaView>
+
+      {/* Web Stripe Components */}
+      {isWeb && (
+        <>
+          <StripeFeesDialog
+            show={showFeesDialog}
+            setShow={setShowFeesDialog}
+            onContinue={handleFeesDialogContinue}
+            onCancel={() => {
+              setShowFeesDialog(false);
+              setLoading(false);
+            }}
+          />
+          {stripePromise && customerUid && (
+            <Elements stripe={stripePromise}>
+              <StripePayment
+                message='ECTEST'
+                amount={calculateTotal() * 1.03} // Add 3% fee
+                paidBy={customerUid}
+                show={showStripePayment}
+                setShow={setShowStripePayment}
+                submit={handleWebPaymentSubmit}
+              />
+            </Elements>
+          )}
+          <PaymentFailure
+            show={showPaymentFailure}
+            setShow={setShowPaymentFailure}
+            onGoToDashboard={() => {
+              setShowPaymentFailure(false);
+              navigation.navigate("Search", { refreshCart: true });
+            }}
+          />
+        </>
+      )}
+    </View>
   );
 
   // Only wrap with StripeProvider on native platforms
   if (StripeProvider && !isWeb && STRIPE_PUBLISHABLE_KEY) {
     return <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>{content}</StripeProvider>;
   }
-  
+
   return content;
 };
 
