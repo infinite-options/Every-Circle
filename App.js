@@ -8,16 +8,8 @@ import { StyleSheet, Text, View, Alert, ActivityIndicator, TouchableOpacity, Ima
 // This must be defined before any code that uses it
 const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
 
-// Only import Video on native platforms when needed (currently commented out)
-let Video = null;
-if (!isWeb) {
-  try {
-    const expoAvModule = require("expo-av");
-    Video = expoAvModule.Video;
-  } catch (e) {
-    console.warn("expo-av not available:", e.message);
-  }
-}
+// Video component removed - expo-av was causing build issues with new architecture
+// If needed in the future, re-add expo-av and configure it properly
 
 // Suppress VirtualizedList nesting warning - we're using nestedScrollEnabled and proper configuration
 LogBox.ignoreLogs(["VirtualizedLists should never be nested inside plain ScrollViews"]);

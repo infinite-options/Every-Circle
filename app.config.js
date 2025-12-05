@@ -111,7 +111,6 @@ module.exports = ({ config: expoConfig }) => ({
 
       "expo-font",
       "expo-apple-authentication",
-      "expo-av",
     ],
 
     extra: {
