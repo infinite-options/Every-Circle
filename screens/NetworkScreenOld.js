@@ -3,7 +3,6 @@ import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import BottomNavBar from "../components/BottomNavBar";
-import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useFocusEffect } from "@react-navigation/native";
@@ -49,6 +48,8 @@ const NetworkScreen = ({ navigation }) => {
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
   const [graphHtml, setGraphHtml] = useState(""); // For web iframe
   const iframeContainerRef = React.useRef(null); // Ref for web iframe container
+
+
 
   // Load persisted Network screen settings
   const loadNetworkSettings = async () => {
@@ -299,6 +300,29 @@ const NetworkScreen = ({ navigation }) => {
       console.error("Error fetching user profile for QR code:", error);
     }
   };
+  
+  // For GRAPH view - minimal data
+  // const fetchNetworkForGraph = async (uid, deg) => {
+  //   const response = await fetch(
+  //     `${API_BASE_URL}/api/network/${uid}/${deg}?minimal=true`
+  //   );
+  //   const data = await response.json();
+  //   // Data already contains name + image, no enrichment needed!
+  //   setNetworkData(data);
+  // };
+
+  // For LIST/GRAPH view - full data  
+  const fetchNetworkForListGraph = async (uid, deg) => {
+    const response = await fetch(
+      `${API_BASE_URL}/api/network/${uid}/${deg}`
+    );
+    const data = await response.json();
+    // Enrich with full profile details
+    const enriched = await Promise.all(
+      data.map(node => fetchFullProfile(node.uid))
+    );
+    setNetworkData(enriched);
+  };
 
   // Create vCard format (standard contact card format that QR scanners recognize)
   const createVCard = (data) => {
@@ -440,115 +464,56 @@ const NetworkScreen = ({ navigation }) => {
     );
   };
 
-  const fetchNetwork = async (overrideProfileUid = null, overrideDegree = null) => {
+  const fetchNetwork = async (overrideUid = null, overrideDeg = null) => {
     console.log("🔘 Fetch Network");
-    
-    
-    try {
-      // Get UID from AsyncStorage or use override
-      //overrideProfileUid is the UID passed in, if any
-      let uid = overrideProfileUid; //if uid provided use it, if not get from AsyncStorage 
-      if (!uid) { // No override uid, get from AsyncStorage
-        try {
-          const directUid = await AsyncStorage.getItem("profile_uid"); //getting uid from AsyncStorage
-          if (directUid) { //directUid is the uid stored in AsyncStorage under "profile_uid"
-            try {
-              const parsed = JSON.parse(directUid); //try to parse it in case it's stored as JSON
-              uid = typeof parsed === "string" ? parsed : String(parsed); //ensure it's a string
-            } catch (e) { //not JSON, use as string
-              uid = String(directUid).trim(); 
-            }
-          } else { 
-            uid = profileUid; 
+  
+    // EVENT OBJECT DETECTION 
+    if (overrideUid && typeof overrideUid === "object" && overrideUid !== null) {
+      if (overrideUid.nativeEvent || overrideUid._reactName || overrideUid.type === "click") {
+        console.warn("⚠️ Event object passed, ignoring");
+        overrideUid = null;
+      }
+    }
+    //const uid = overrideUid || profileUid;
+    // Get UID with AsyncStorage fallback
+    let uid = overrideUid;
+    if (!uid) {
+      try {
+        const directUid = await AsyncStorage.getItem("profile_uid");
+        if (directUid) {
+          try {
+            const parsed = JSON.parse(directUid);
+            uid = typeof parsed === "string" ? parsed : String(parsed);
+          } catch (e) {
+            uid = String(directUid).trim();
           }
-        } catch (e) { 
+        } else {
           uid = profileUid;
         }
-      }
-      
-      uid = String(uid || "").trim();
-      const deg = String(overrideDegree || degree || "1").trim(); //degree passed in or from last selected degree state or a default one
-      
-      if (!uid) { //final check for uid
-        throw new Error("No profile UID available");
-      }
-
-      console.log("Fetching for UID:", uid, "Degree:", deg); //log final uid and degree being used
-
-      // CORS handling for web
-      const fetchOptions = Platform.OS === "web"
-        ? {
-            method: "GET",
-            mode: "cors",
-            credentials: "omit",
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-            cache: "no-cache",
-          }
-        : {
-            method: "GET",
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-          };
-
-      const response = await fetch(`${API_BASE_URL}/api/network/${uid}/${deg}`, fetchOptions); //fetching network data from API
-      
-      if (!response.ok) { //check for HTTP errors
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-      
-      const data = await response.json(); //parse JSON response
-      console.log("✅ Received", data.length, "connections");
-      console.log("✅ Sample data:", data[0]);
-
-      // Format data - backend now has ALL fields, no need for additional API calls
-      const formatted = data.map(node => ({ 
-        ...node,
-        __mc: { 
-          firstName: sanitizeText(node.profile_personal_first_name || ""),
-          lastName: sanitizeText(node.profile_personal_last_name || ""),
-          tagLine: sanitizeText(node.profile_personal_tag_line || ""),
-          phoneNumber: sanitizeText(node.profile_personal_phone_number || ""),
-          profileImage: sanitizeText(node.profile_personal_image || ""),
-          relationship: node.circle_relationship || null,
-          emailIsPublic: node.profile_personal_email_is_public === 1,
-          phoneIsPublic: node.profile_personal_phone_number_is_public === 1,
-          tagLineIsPublic: node.profile_personal_tag_line_is_public === 1,
-          imageIsPublic: node.profile_personal_image_is_public === 1,
-          personal_info: {
-            profile_personal_first_name: sanitizeText(node.profile_personal_first_name || ""),
-            profile_personal_last_name: sanitizeText(node.profile_personal_last_name || ""),
-            profile_personal_tag_line: sanitizeText(node.profile_personal_tag_line || ""),
-            profile_personal_phone_number: sanitizeText(node.profile_personal_phone_number || ""),
-            profile_personal_image: sanitizeText(node.profile_personal_image || ""),
-            profile_personal_email_is_public: node.profile_personal_email_is_public || 0,
-            profile_personal_phone_number_is_public: node.profile_personal_phone_number_is_public || 0,
-            profile_personal_tag_line_is_public: node.profile_personal_tag_line_is_public || 0,
-            profile_personal_image_is_public: node.profile_personal_image_is_public || 0,
-          }
-        }
-      }));
-      
-      console.log("✅ Formatted sample:", formatted[0]);
-      
-      // Update state
-      setNetworkData(formatted); 
-      setGroupedNetwork(groupByDegree(formatted));
-      
-      // Save for asyncStorage
-      try {
-        await AsyncStorage.setItem("network_data", JSON.stringify(formatted)); //saving raw formatted data 
-        await AsyncStorage.setItem("network_grouped", JSON.stringify(groupByDegree(formatted))); //saving grouped data
       } catch (e) {
-        console.error("❌ Error saving network data:", e);
+        console.error("Error fetching from AsyncStorage:", e);
+        uid = profileUid;
       }
-      
-    } catch (err) {
-      console.error("❌ Fetch failed:", err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
     }
-  };
+    uid = String(uid || "").trim();
+
+    //const deg = overrideDeg || degree;
+    const deg = String(overrideDeg || degree || "2").trim();
+
+    // VALIDATION - Add this block
+    if (!uid || !deg) {
+      setError("Missing profile UID or degree value");
+      console.log("❌ Missing uid or degree:", { uid, deg });
+      return;
+    }
+    
+    // Choose fetch strategy based on view mode
+    if (viewMode === "graph") {
+      await fetchNetworkForListGraph(uid, deg);
+    } else {
+      await fetchNetworkForListGraph(uid, deg);
+    }
+};
 
   const degreeLabel = (deg) => {
     if (deg === 1) return "1st-Degree Connections";
@@ -760,6 +725,35 @@ const NetworkScreen = ({ navigation }) => {
       )
     );
 
+    // Equal Spacing Circular Layout by Degree
+
+    // Sort nodes by degree so rings appear clean
+    const sortedNodes = nodes.sort((a, b) => (a.level || 0) - (b.level || 0));
+
+    const radiusBase = 150; // distance between rings
+    const nodesPerRing = {}; // how many nodes in each degree ring
+
+    sortedNodes.forEach(n => {
+      if (!nodesPerRing[n.level]) nodesPerRing[n.level] = [];
+      nodesPerRing[n.level].push(n);
+    });
+
+    // Assign (x,y) circular positions per ring
+    Object.keys(nodesPerRing).forEach(levelStr => {
+      const level = Number(levelStr);
+      const ringNodes = nodesPerRing[level];
+
+      const radius = radiusBase * (level + 1); // ring 0 still gets a small radius
+      const step = (2 * Math.PI) / ringNodes.length;
+
+      ringNodes.forEach((node, i) => {
+        const angle = i * step;
+        node.x = radius * Math.cos(angle);
+        node.y = radius * Math.sin(angle);
+        node.fixed = true;
+      });
+    });
+
     const payload = { nodes, edges };
 
     // For web, we need to handle message passing differently
@@ -793,22 +787,11 @@ const NetworkScreen = ({ navigation }) => {
 
       const options = {
         layout: {
-          improvedLayout: true
+          improvedLayout: false
         },
         physics: {
-          enabled: true,
-          solver: "repulsion",
-          repulsion: {
-            nodeDistance: 180,     // controls how far apart the rings are
-            centralGravity: 0.3,
-            springLength: 100,
-            springConstant: 0.02,
-            damping: 0.15
-          },
-          stabilization: {
-            iterations: 200,
-            updateInterval: 25
-          }
+          enabled: false
+          
         },
 
         edges: {
@@ -888,7 +871,14 @@ const NetworkScreen = ({ navigation }) => {
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header */}
-      <AppHeader title='Connect' backgroundColor='#AF52DE' />
+      {(() => {
+        if (__DEV__) console.log("🔵 NetworkScreen - Rendering Header");
+        return (
+          <View style={[styles.headerBg, darkMode && styles.darkHeaderBg]}>
+            <Text style={[styles.header, darkMode && styles.darkHeader]}>Connect</Text>
+          </View>
+        );
+      })()}
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView
@@ -1185,7 +1175,7 @@ const NetworkScreen = ({ navigation }) => {
                                         }
                                         style={{ marginVertical: 6 }}
                                       >
-                                        <MiniCard user={node.__mc} showRelationship={true} />
+                                        <MiniCard user={node.__mc} />
                                       </TouchableOpacity>
                                     );
                                   })}
@@ -1220,6 +1210,15 @@ const NetworkScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   pageContainer: { flex: 1, backgroundColor: "#fff" },
   safeArea: { flex: 1 },
+  headerBg: {
+    backgroundColor: "#AF52DE",
+    paddingTop: 30,
+    paddingBottom: 15,
+    alignItems: "center",
+    borderBottomLeftRadius: 300,
+    borderBottomRightRadius: 300,
+  },
+  header: { color: "#fff", fontSize: 20, fontWeight: "bold" },
   scrollContainer: { flex: 1 },
   darkScrollContainer: { backgroundColor: "#1a1a1a" },
   sectionTitleRow: {
@@ -1301,6 +1300,7 @@ const styles = StyleSheet.create({
   errorText: { color: "red", marginTop: 8 },
   darkPageContainer: { backgroundColor: "#1a1a1a" },
   darkSafeArea: { backgroundColor: "#1a1a1a" },
+  darkHeaderBg: { backgroundColor: "#4b2c91" },
   darkHeader: { color: "#fff" },
   darkSectionTitle: { color: "#ccc" },
   darkKeyText: { color: "#ccc" },
