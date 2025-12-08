@@ -602,7 +602,8 @@ const NetworkScreen = ({ navigation }) => {
         shape: hasUserImage ? "image" : "dot",
         image: hasUserImage ? userImage : undefined,
         size: userNodeSize,
-        color: hasUserImage ? undefined : { border: "#AF52DE", background: "#b894ff" },
+        borderWidth: 3,
+        color: hasUserImage ? undefined : { border: "#444444", background: "#b894ff" },
         font: { color: "#ffffff", size: 10 },
         level: 0,
       },
@@ -619,14 +620,15 @@ const NetworkScreen = ({ navigation }) => {
       const img = n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
 
       const hasImg = img && String(img).trim() !== "";
+      
       nodes.push({
         id: n.network_profile_personal_uid,
         label,
-        shape: hasImg ? "image" : "dot",
+        shape: hasImg ? "circularImage" : "dot",
         image: hasImg ? img : undefined,
         size: hasImg ? 18 : 10,
-        color: hasImg ? undefined : { border: "#AF52DE", background: "#e9d4ff" },
-        font: { size: 10, color: "#444" },
+        color: hasImg ? undefined : { border: "#FFFFFF", background: "#e9d4ff" },
+        font: { size: 11, color: "#444" },
         level: Number(n.degree) || 1,
       });
     });
@@ -744,7 +746,7 @@ const NetworkScreen = ({ navigation }) => {
           from: parent,
           to: nodeUid,
           color: { color: deg === 1 ? "#bbbbbb" : "#cccccc" },
-          width: deg === 1 ? 0.8 : 0.6,
+          width: deg === 1 ? 3 : 2,
           smooth: true,
         });
       }
@@ -793,7 +795,8 @@ const NetworkScreen = ({ navigation }) => {
 
       const options = {
         layout: {
-          improvedLayout: true
+          improvedLayout: true,
+          randomSeed: 58  // for consistent layout
         },
         physics: {
           enabled: true,
