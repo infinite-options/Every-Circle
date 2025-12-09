@@ -112,6 +112,20 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       console.log("Referral Modal: No referral email entered");
       return;
     }
+
+    // Normalize emails for comparison (lowercase, trim)
+    const referralEmailNormalized = referralId.trim().toLowerCase();
+    const userEmailNormalized = email.trim().toLowerCase();
+    const googleEmailNormalized = pendingGoogleUserInfo?.email?.trim().toLowerCase() || "";
+    const appleEmailNormalized = pendingAppleUserInfo?.email?.trim().toLowerCase() || "";
+
+    // Check if referral email matches the user's own email
+    if (referralEmailNormalized === userEmailNormalized || referralEmailNormalized === googleEmailNormalized || referralEmailNormalized === appleEmailNormalized) {
+      setReferralError("Please enter the email of the person who referred you, not your own email address.");
+      console.log("Referral Modal: User tried to refer themselves");
+      return;
+    }
+
     setIsCheckingReferral(true);
     try {
       console.log("Referral Modal: Checking referral for email:", referralId);
