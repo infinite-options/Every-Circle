@@ -15,7 +15,7 @@ export default function UserInfoScreen({ navigation, route }) {
 
   useEffect(() => {
     console.log("UserInfoScreen - route.params:", route.params);
-    
+
     // Pre-populate from Google user info if present
     if (route?.params?.googleUserInfo) {
       const { firstName: gFirst, lastName: gLast, email: gEmail } = route.params.googleUserInfo;
@@ -26,7 +26,7 @@ export default function UserInfoScreen({ navigation, route }) {
         storeUserEmail(gEmail);
       }
     }
-    
+
     // Pre-populate from Apple user info if present
     if (route?.params?.appleUserInfo) {
       const { firstName: aFirst, lastName: aLast, email: aEmail } = route.params.appleUserInfo;
@@ -37,7 +37,7 @@ export default function UserInfoScreen({ navigation, route }) {
         storeUserEmail(aEmail);
       }
     }
-    
+
     // Load saved first and last name if they exist (only if not already set by social login)
     const loadSavedData = async () => {
       try {
@@ -80,7 +80,7 @@ export default function UserInfoScreen({ navigation, route }) {
 
             // After fetching the user profile (e.g., fullUser)
             if (data.ratings_info) {
-              await AsyncStorage.setItem('user_ratings_info', JSON.stringify(data.ratings_info));
+              await AsyncStorage.setItem("user_ratings_info", JSON.stringify(data.ratings_info));
             }
           } else {
             console.log("No existing profile found for user");
@@ -96,7 +96,8 @@ export default function UserInfoScreen({ navigation, route }) {
   }, [route?.params?.googleUserInfo, route?.params?.appleUserInfo]);
 
   const formatPhoneNumber = (text) => {
-    const cleaned = ("" + text).replace(/\D/g, "");
+    // Remove all non-digit characters and limit to 10 digits
+    const cleaned = ("" + text).replace(/\D/g, "").slice(0, 10);
 
     const match = cleaned.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
 
@@ -119,12 +120,12 @@ export default function UserInfoScreen({ navigation, route }) {
       return;
     }
 
-    // Basic phone number validation
-    // const phoneRegex = /^\+?[\d\s-]{10,}$/;
-    // if (!phoneRegex.test(phoneNumber)) {
-    //   Alert.alert("Error", "Please enter a valid phone number");
-    //   return;
-    // }
+    // Validate phone number is exactly 10 digits
+    const cleanPhoneNumber = phoneNumber.replace(/\D/g, "");
+    if (cleanPhoneNumber.length !== 10) {
+      Alert.alert("Error", "Please enter a valid 10-digit phone number");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -145,15 +146,23 @@ export default function UserInfoScreen({ navigation, route }) {
         throw new Error("User UID not found");
       }
 
+      // Ensure referral ID is not the same as user_uid (user cannot refer themselves)
+      if (referralId === userUid) {
+        console.log("UserInfoScreen - Referral ID matches user_uid, using default referral ID instead");
+        referralId = "100-000001"; // Default referral ID for new users
+      }
+
       console.log("UserInfoScreen - AsyncStorage - userUid", userUid);
       console.log("UserInfoScreen - AsyncStorage - email", email);
       console.log("UserInfoScreen - Referral UID", referralId);
 
       // Create form data for the API request
+      // Phone number is already validated and cleaned above
+
       const formData = new FormData();
       formData.append("profile_personal_first_name", firstName.trim());
       formData.append("profile_personal_last_name", lastName.trim());
-      formData.append("profile_personal_phone_number", phoneNumber.trim());
+      formData.append("profile_personal_phone_number", cleanPhoneNumber);
       formData.append("profile_personal_referred_by", referralId || "100-000001");
       formData.append("user_uid", userUid);
 
@@ -166,14 +175,14 @@ export default function UserInfoScreen({ navigation, route }) {
       console.log("Form data contents:");
       console.log(`profile_personal_first_name: ${firstName.trim()}`);
       console.log(`profile_personal_last_name: ${lastName.trim()}`);
-      console.log(`profile_personal_phone_number: ${phoneNumber.trim()}`);
+      console.log(`profile_personal_phone_number: ${cleanPhoneNumber} (formatted: ${phoneNumber.trim()})`);
       console.log(`profile_personal_referred_by: ${referralId || "100-000001"}`);
       console.log(`user_uid: ${userUid}`);
       if (profileExists && profilePersonalUid) {
         console.log(`profile_uid: ${profilePersonalUid}`);
       }
 
-              const endpoint = USER_PROFILE_INFO_ENDPOINT;
+      const endpoint = USER_PROFILE_INFO_ENDPOINT;
       const method = profileExists ? "PUT" : "POST";
 
       console.log("Making API request:", {
@@ -183,8 +192,18 @@ export default function UserInfoScreen({ navigation, route }) {
         profilePersonalUid,
       });
 
+      // Verify FormData contents by iterating through it
+      console.log("============================================");
+      console.log("📦 FORM DATA CONTENTS (verifying all fields):");
+      console.log("============================================");
+      for (let pair of formData.entries()) {
+        console.log(`${pair[0]}: ${pair[1]}`);
+      }
+      console.log("============================================");
+
       // Make the appropriate request based on whether profile exists
-      console.log("Sending this data:", formData);
+      // Don't set Content-Type header - let the browser/fetch set it automatically with boundary
+      // This is required for FormData to work correctly on Web
       const response = await fetch(endpoint, {
         method,
         body: formData,
@@ -197,7 +216,15 @@ export default function UserInfoScreen({ navigation, route }) {
       console.log("API Response body:", JSON.stringify(responseObject, null, 2));
 
       if (!response.ok) {
-        throw new Error(`Failed to ${method.toLowerCase()} user profile: ${responseObject.message || "Unknown error"}`);
+        const errorMessage = responseObject.message || responseObject.error || "Unknown error";
+        const errorCode = responseObject.code || response.status;
+        console.error(`API Error Details:`, {
+          status: response.status,
+          code: errorCode,
+          message: errorMessage,
+          fullResponse: responseObject,
+        });
+        throw new Error(`Failed to ${method.toLowerCase()} user profile: ${errorMessage} (Code: ${errorCode})`);
       }
 
       console.log("Profile update successful, proceeding to next screen");
