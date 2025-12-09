@@ -73,6 +73,7 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const [showPassModal, setShowPassModal] = useState(false);
   const [showForgotPasswordSpinner, setShowForgotPasswordSpinner] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
 
   const validateInputs = (email, password) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -90,6 +91,10 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
   const handlePasswordChange = (text) => {
     // console.log("handlePasswordChange", text);
     setPassword(text);
+    // Clear password error when user starts typing
+    if (passwordError) {
+      setPasswordError("");
+    }
     validateInputs(email, text);
   };
 
@@ -111,6 +116,8 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
       // console.log("saltObject", saltObject);
 
       if (saltObject.code !== 200) {
+        setShowSpinner(false);
+        setPasswordError(""); // Clear password error if email doesn't exist
         Alert.alert("Error", "User does not exist. Please Sign Up.");
         return;
       }
@@ -136,6 +143,13 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
       });
       const loginObject = await loginResponse.json();
       console.log("LoginScreen - loginObject returned", loginObject);
+
+      // Check if login failed (wrong password or other error)
+      if (loginObject.code !== 200 || !loginObject.result || !loginObject.result.user_uid) {
+        setShowSpinner(false);
+        setPasswordError("Incorrect password. Please try again.");
+        return;
+      }
 
       const user_uid = loginObject.result.user_uid;
       const user_email = loginObject.result.user_email_id;
@@ -280,6 +294,7 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
             <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
           </TouchableOpacity>
         </View>
+        {!!passwordError && <Text style={styles.passwordErrorText}>{passwordError}</Text>}
         <TouchableOpacity onPress={() => setShowForgotPasswordModal(true)} style={styles.forgotPasswordLink}>
           <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
         </TouchableOpacity>
@@ -510,6 +525,12 @@ const styles = StyleSheet.create({
     color: "#FF9500",
     fontSize: 14,
     fontWeight: "600",
+  },
+  passwordErrorText: {
+    color: "red",
+    fontSize: 14,
+    marginTop: -10,
+    marginBottom: 8,
   },
   modalOverlay: {
     flex: 1,
