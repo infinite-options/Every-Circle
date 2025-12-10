@@ -12,6 +12,8 @@ import MiniCard from "../components/MiniCard";
 import WebTextInput from "../components/WebTextInput";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 
+import FeedbackPopup from "../components/FeedbackPopup";
+
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
 try {
@@ -49,6 +51,8 @@ const NetworkScreen = ({ navigation }) => {
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
   const [graphHtml, setGraphHtml] = useState(""); // For web iframe
   const iframeContainerRef = React.useRef(null); // Ref for web iframe container
+
+  const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
   // Load persisted Network screen settings
   const loadNetworkSettings = async () => {
@@ -891,7 +895,13 @@ const NetworkScreen = ({ navigation }) => {
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header */}
-      <AppHeader title='Connect' backgroundColor='#AF52DE' />
+      {/* <AppHeader title='Connect' backgroundColor='#AF52DE' /> */}
+      <TouchableOpacity 
+        onPress={() => setShowFeedbackPopup(true)}
+        activeOpacity={0.7}
+      >
+        <AppHeader title='Connect' backgroundColor='#AF52DE' />
+      </TouchableOpacity>
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView
@@ -1216,6 +1226,11 @@ const NetworkScreen = ({ navigation }) => {
 
         <BottomNavBar navigation={navigation} />
       </SafeAreaView>
+      <FeedbackPopup
+        visible={showFeedbackPopup}
+        onClose={() => setShowFeedbackPopup(false)}
+        pageName="Network"
+      />
     </View>
   );
 };
