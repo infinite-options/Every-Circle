@@ -8,12 +8,25 @@ import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BUSINESS_RESULTS_ENDPOINT, EXPERTISE_RESULTS_ENDPOINT, WISHES_RESULTS_ENDPOINT, TAG_SEARCH_DISTINCT_ENDPOINT, TAG_CATEGORY_DISTINCT_ENDPOINT, SEARCH_BASE_URL } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import FeedbackPopup from "../components/FeedbackPopup";
 
 export default function SearchScreen({ route }) {
   const navigation = useNavigation();
   const { darkMode } = useDarkMode();
   const [cartItems, setCartItems] = useState([]);
   const [cartCount, setCartCount] = useState(0);
+
+  const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
+  
+    const searchFeedbackInstructions = "Instructions for Search";
+  
+    // Define custom questions for the Account page
+    const searchFeedbackQuestions = [
+      "Search - Question 1?",
+      "Search - Question 2?",
+      "Search - Question 3?"
+    ];
+  
 
   // --- stub initial data, so you see the four items by default ---
   const initialResults = [
@@ -858,6 +871,10 @@ export default function SearchScreen({ route }) {
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
+      <TouchableOpacity 
+        onPress={() => setShowFeedbackPopup(true)}
+        activeOpacity={0.7}
+      >
       <AppHeader
         title='Search'
         backgroundColor='#AF52DE'
@@ -900,6 +917,7 @@ export default function SearchScreen({ route }) {
           </TouchableOpacity>
         }
       />
+      </TouchableOpacity>
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         {/* Main Content */}
@@ -1211,6 +1229,13 @@ export default function SearchScreen({ route }) {
 
         {/* Bottom Navigation Bar */}
         <BottomNavBar navigation={navigation} />
+        <FeedbackPopup
+          visible={showFeedbackPopup}
+          onClose={() => setShowFeedbackPopup(false)}
+          pageName="Search"
+          instructions={searchFeedbackInstructions}
+          questions={searchFeedbackQuestions}
+        />
       </SafeAreaView>
     </View>
   );

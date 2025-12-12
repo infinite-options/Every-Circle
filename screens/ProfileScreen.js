@@ -10,6 +10,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText } from "../utils/textSanitizer";
+import FeedbackPopup from "../components/FeedbackPopup";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 console.log(`ProfileScreen - Full endpoint: ${ProfileScreenAPI}`);
@@ -29,6 +30,18 @@ const ProfileScreen = ({ route, navigation }) => {
   const [relationshipType, setRelationshipType] = useState(null);
   const [circleUid, setCircleUid] = useState(null);
   const { darkMode } = useDarkMode();
+
+  const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
+  
+    const profileFeedbackInstructions = "Instructions for Profile";
+  
+    // Define custom questions for the Account page
+    const profileFeedbackQuestions = [
+      "Profile - Question 1?",
+      "Profile - Question 2?",
+      "Profile - Question 3?"
+    ];
+  
 
   useFocusEffect(
     React.useCallback(() => {
@@ -647,6 +660,10 @@ const ProfileScreen = ({ route, navigation }) => {
         </TouchableWithoutFeedback>
       )}
       {/* Header */}
+      <TouchableOpacity 
+        onPress={() => setShowFeedbackPopup(true)}
+        activeOpacity={0.7}
+      >
       <AppHeader
         title={isCurrentUserProfile ? "Your Profile" : "Profile"}
         backgroundColor={routeProfileUID && !isCurrentUserProfile ? "#FF9500" : "#AF52DE"}
@@ -794,6 +811,7 @@ const ProfileScreen = ({ route, navigation }) => {
           ) : null
         }
       />
+      </TouchableOpacity>
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView
@@ -1143,6 +1161,13 @@ const ProfileScreen = ({ route, navigation }) => {
 
         <BottomNavBar navigation={navigation} />
       </SafeAreaView>
+      <FeedbackPopup
+        visible={showFeedbackPopup}
+        onClose={() => setShowFeedbackPopup(false)}
+        pageName="Profile"
+        instructions={profileFeedbackInstructions}
+        questions={profileFeedbackQuestions}
+      />
     </View>
   );
 };

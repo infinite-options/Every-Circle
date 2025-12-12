@@ -5,6 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useRoute } from "@react-navigation/native";
 import { CommonActions } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import FeedbackPopup from "../components/FeedbackPopup";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -33,6 +34,17 @@ export default function SettingsScreen() {
   const [displayEmail, setDisplayEmail] = useState(true);
   const [displayPhoneNumber, setDisplayPhoneNumber] = useState(false);
   const [qrModalVisible, setQrModalVisible] = useState(false);
+
+  const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
+  
+  const settingsFeedbackInstructions = "Instructions for Settings";
+  
+  // Define custom questions for the Account page
+  const settingsFeedbackQuestions = [
+      "Settings - Question 1?",
+      "Settings - Question 2?",
+      "Settings - Question 3?"
+  ];
 
   console.log("In SettingsScreen");
 
@@ -229,7 +241,13 @@ export default function SettingsScreen() {
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
-      <AppHeader title="Settings" backgroundColor="#AF52DE" />
+      {/* <AppHeader title="Settings" backgroundColor="#AF52DE" /> */}
+      <TouchableOpacity 
+        onPress={() => setShowFeedbackPopup(true)}
+        activeOpacity={0.7}
+      >
+        <AppHeader title='Settings' backgroundColor='#AF52DE' />
+      </TouchableOpacity>
 
       {/* Settings Options */}
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkContainer]}>
@@ -338,6 +356,13 @@ export default function SettingsScreen() {
       </Modal>
 
       <BottomNavBar navigation={navigation} />
+      <FeedbackPopup
+        visible={showFeedbackPopup}
+        onClose={() => setShowFeedbackPopup(false)}
+        pageName="Settings"
+        instructions={settingsFeedbackInstructions}
+        questions={settingsFeedbackQuestions}
+      />
     </View>
   );
 }

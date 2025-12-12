@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
@@ -8,6 +8,7 @@ import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
 import { useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import FeedbackPopup from "../components/FeedbackPopup";
 export default function AccountScreen({ navigation }) {
   const { darkMode } = useDarkMode();
   const [userUID, setUserUID] = useState(null);
@@ -16,6 +17,18 @@ export default function AccountScreen({ navigation }) {
   const [bountyLoading, setBountyLoading] = useState(true);
   const [transactionData, setTransactionData] = useState([]);
   const [transactionLoading, setTransactionLoading] = useState(true);
+
+  const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
+
+  const accountFeedbackInstructions = "Instructions for Account";
+
+  // Define custom questions for the Account page
+  const accountFeedbackQuestions = [
+    "Account - Question 1?",
+    "Account - Question 2?",
+    "Account - Question 3?"
+  ];
+
   // above your effect or focus logic
   const checkAuth = async () => {
     try {
@@ -387,7 +400,13 @@ export default function AccountScreen({ navigation }) {
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
-      <AppHeader title="Account" backgroundColor="#AF52DE" />
+      {/* <AppHeader title="Account" backgroundColor="#AF52DE" /> */}
+      <TouchableOpacity 
+        onPress={() => setShowFeedbackPopup(true)}
+        activeOpacity={0.7}
+      >
+        <AppHeader title='Account' backgroundColor='#AF52DE' />
+      </TouchableOpacity>
 
       {/* Main content */}
       <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContentContainer} showsVerticalScrollIndicator={true}>
@@ -529,6 +548,13 @@ export default function AccountScreen({ navigation }) {
       </ScrollView>
 
       <BottomNavBar navigation={navigation} />
+      <FeedbackPopup
+        visible={showFeedbackPopup}
+        onClose={() => setShowFeedbackPopup(false)}
+        pageName="Account"
+        instructions={accountFeedbackInstructions}
+        questions={accountFeedbackQuestions}
+      />
     </View>
   );
 }

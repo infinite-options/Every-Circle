@@ -54,6 +54,16 @@ const NetworkScreen = ({ navigation }) => {
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
+  const networkFeedbackInstructions = "Instructions for Connect";
+
+  //Define custom questions for the Network page
+  const networkFeedbackQuestions = [
+    "Connect - Question 1?",
+    "Connect - Question 2?",
+    "Connect - Question 3?"
+  ];
+  
+
   // Load persisted Network screen settings
   const loadNetworkSettings = async () => {
     try {
@@ -1230,6 +1240,8 @@ const NetworkScreen = ({ navigation }) => {
         visible={showFeedbackPopup}
         onClose={() => setShowFeedbackPopup(false)}
         pageName="Network"
+        instructions={networkFeedbackInstructions}
+        questions={networkFeedbackQuestions}
       />
     </View>
   );

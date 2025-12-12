@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
-  StyleSheet,
+  StyleSheet, 
   TouchableOpacity,
   Modal,
   ScrollView,
@@ -16,7 +16,11 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { sanitizeText } from "../utils/textSanitizer";
 
-const FeedbackPopup = ({ visible, onClose, pageName }) => {
+const FeedbackPopup = ({ visible, onClose, pageName, instructions, questions = [
+    "Question 1?",
+    "Question 2?",
+    "Question 3?"
+  ] }) => {
   const { darkMode } = useDarkMode();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -223,6 +227,15 @@ const FeedbackPopup = ({ visible, onClose, pageName }) => {
             contentContainerStyle={styles.contentContainer}
             showsVerticalScrollIndicator
           >
+            {/* Instructions */}
+            {instructions && (
+              <View style={styles.instructionsSection}>
+                <Text style={[styles.instructionsText, darkMode && styles.darkText]}>
+                  {instructions}
+                </Text>
+              </View>
+            )}
+
             {/* User Info Display */}
             <View style={styles.infoSection}>
               <Text style={[styles.infoText, darkMode && styles.darkText]}>
@@ -266,19 +279,19 @@ const FeedbackPopup = ({ visible, onClose, pageName }) => {
               </Text>
               
               <RatingSelector
-                label="1. Question 1?"
+                label={`1. ${questions[0]}`}
                 value={rating1}
                 onChange={setRating1}
               />
               
               <RatingSelector
-                label="2. Question 2?"
+                label={`2. ${questions[1]}`}
                 value={rating2}
                 onChange={setRating2}
               />
               
               <RatingSelector
-                label="3. Question 3?"
+                label={`3. ${questions[2]}`}
                 value={rating3}
                 onChange={setRating3}
               />
@@ -367,8 +380,21 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: 20,
   },
+  instructionsSection: {
+  padding: 12,
+  borderRadius: 8,
+  marginBottom: 15,
+  borderLeftWidth: 4,
+  borderLeftColor: "#AF52DE",
+  backgroundColor: "#F1F0F2",
+  },
+  instructionsText: {
+    fontSize: 14,
+    color: "#333333",
+    lineHeight: 20,
+  },
   infoSection: {
-    backgroundColor: "#f5f5f5",
+    backgroundColor: "#ffffff",
     padding: 12,
     borderRadius: 8,
     marginBottom: 20,
