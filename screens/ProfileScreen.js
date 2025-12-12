@@ -15,6 +15,21 @@ import FeedbackPopup from "../components/FeedbackPopup";
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 console.log(`ProfileScreen - Full endpoint: ${ProfileScreenAPI}`);
 
+// Helper function to format phone number for display
+const formatPhoneNumberForDisplay = (phoneNumber) => {
+  if (!phoneNumber) return "";
+  // Remove all non-digit characters
+  const cleaned = ("" + phoneNumber).replace(/\D/g, "");
+  // If it's not 10 digits, return as-is
+  if (cleaned.length !== 10) return phoneNumber;
+  // Format as (XXX) XXX-XXXX
+  const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
+  if (match) {
+    return `(${match[1]}) ${match[2]}-${match[3]}`;
+  }
+  return phoneNumber;
+};
+
 const ProfileScreen = ({ route, navigation }) => {
   // modified on 11/08 - for network profile navigation
   // Allows opening a specific user's profile when navigating from the Network screen
@@ -861,7 +876,8 @@ const ProfileScreen = ({ route, navigation }) => {
             })()}
             {(() => {
               const phoneNumber = user.phoneNumber && (isCurrentUserProfile || user.phoneIsPublic) ? sanitizeText(user.phoneNumber) : "";
-              return phoneNumber ? <Text style={[styles.contact, darkMode && styles.darkContact]}>{phoneNumber}</Text> : null;
+              const formattedPhone = phoneNumber ? formatPhoneNumberForDisplay(phoneNumber) : "";
+              return formattedPhone ? <Text style={[styles.contact, darkMode && styles.darkContact]}>{formattedPhone}</Text> : null;
             })()}
             {(() => {
               const email = user.email && (isCurrentUserProfile || user.emailIsPublic) ? sanitizeText(user.email) : "";
