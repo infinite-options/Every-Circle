@@ -13,6 +13,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { getHeaderColors } from "../config/headerColors";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 const DEFAULT_PROFILE_IMAGE = require("../assets/profile.png");
@@ -685,7 +686,7 @@ const EditProfileScreen = ({ route, navigation }) => {
 
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}>
-      <AppHeader title='Edit Profile' backgroundColor='#AF52DE' darkModeBackgroundColor='#4b2c91' onBackPress={() => navigation.goBack()} />
+      <AppHeader title='Edit Profile' {...getHeaderColors("editProfile")} onBackPress={() => navigation.goBack()} />
       <ScrollView
         ref={scrollViewRef}
         style={{ flex: 1, padding: 20, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}

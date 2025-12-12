@@ -13,6 +13,7 @@ import WebTextInput from "../components/WebTextInput";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 
 import FeedbackPopup from "../components/FeedbackPopup";
+import { getHeaderColors } from "../config/headerColors";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -57,12 +58,7 @@ const NetworkScreen = ({ navigation }) => {
   const networkFeedbackInstructions = "Instructions for Connect";
 
   //Define custom questions for the Network page
-  const networkFeedbackQuestions = [
-    "Connect - Question 1?",
-    "Connect - Question 2?",
-    "Connect - Question 3?"
-  ];
-  
+  const networkFeedbackQuestions = ["Connect - Question 1?", "Connect - Question 2?", "Connect - Question 3?"];
 
   // Load persisted Network screen settings
   const loadNetworkSettings = async () => {
@@ -456,68 +452,73 @@ const NetworkScreen = ({ navigation }) => {
 
   const fetchNetwork = async (overrideProfileUid = null, overrideDegree = null) => {
     console.log("🔘 Fetch Network");
-    
-    
+
     try {
       // Get UID from AsyncStorage or use override
       //overrideProfileUid is the UID passed in, if any
-      let uid = overrideProfileUid; //if uid provided use it, if not get from AsyncStorage 
-      if (!uid) { // No override uid, get from AsyncStorage
+      let uid = overrideProfileUid; //if uid provided use it, if not get from AsyncStorage
+      if (!uid) {
+        // No override uid, get from AsyncStorage
         try {
           const directUid = await AsyncStorage.getItem("profile_uid"); //getting uid from AsyncStorage
-          if (directUid) { //directUid is the uid stored in AsyncStorage under "profile_uid"
+          if (directUid) {
+            //directUid is the uid stored in AsyncStorage under "profile_uid"
             try {
               const parsed = JSON.parse(directUid); //try to parse it in case it's stored as JSON
               uid = typeof parsed === "string" ? parsed : String(parsed); //ensure it's a string
-            } catch (e) { //not JSON, use as string
-              uid = String(directUid).trim(); 
+            } catch (e) {
+              //not JSON, use as string
+              uid = String(directUid).trim();
             }
-          } else { 
-            uid = profileUid; 
+          } else {
+            uid = profileUid;
           }
-        } catch (e) { 
+        } catch (e) {
           uid = profileUid;
         }
       }
-      
+
       uid = String(uid || "").trim();
       const deg = String(overrideDegree || degree || "1").trim(); //degree passed in or from last selected degree state or a default one
-      
-      if (!uid) { //final check for uid
+
+      if (!uid) {
+        //final check for uid
         throw new Error("No profile UID available");
       }
 
       console.log("Fetching for UID:", uid, "Degree:", deg); //log final uid and degree being used
 
       // CORS handling for web
-      const fetchOptions = Platform.OS === "web"
-        ? {
-            method: "GET",
-            mode: "cors",
-            credentials: "omit",
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-            cache: "no-cache",
-          }
-        : {
-            method: "GET",
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
-          };
+      const fetchOptions =
+        Platform.OS === "web"
+          ? {
+              method: "GET",
+              mode: "cors",
+              credentials: "omit",
+              headers: { "Content-Type": "application/json", Accept: "application/json" },
+              cache: "no-cache",
+            }
+          : {
+              method: "GET",
+              headers: { "Content-Type": "application/json", Accept: "application/json" },
+            };
 
       const response = await fetch(`${API_BASE_URL}/api/network/${uid}/${deg}`, fetchOptions); //fetching network data from API
-      
-      if (!response.ok) { //check for HTTP errors
+
+      if (!response.ok) {
+        //check for HTTP errors
         const errorText = await response.text();
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
-      
+
       const data = await response.json(); //parse JSON response
       console.log("✅ Received", data.length, "connections");
       console.log("✅ Sample data:", data[0]);
 
       // Format data - backend now has ALL fields, no need for additional API calls
-      const formatted = data.map(node => ({ 
+      const formatted = data.map((node) => ({
         ...node,
-        __mc: { 
+        __mc: {
           firstName: sanitizeText(node.profile_personal_first_name || ""),
           lastName: sanitizeText(node.profile_personal_last_name || ""),
           tagLine: sanitizeText(node.profile_personal_tag_line || ""),
@@ -538,24 +539,23 @@ const NetworkScreen = ({ navigation }) => {
             profile_personal_phone_number_is_public: node.profile_personal_phone_number_is_public || 0,
             profile_personal_tag_line_is_public: node.profile_personal_tag_line_is_public || 0,
             profile_personal_image_is_public: node.profile_personal_image_is_public || 0,
-          }
-        }
+          },
+        },
       }));
-      
+
       console.log("✅ Formatted sample:", formatted[0]);
-      
+
       // Update state
-      setNetworkData(formatted); 
+      setNetworkData(formatted);
       setGroupedNetwork(groupByDegree(formatted));
-      
+
       // Save for asyncStorage
       try {
-        await AsyncStorage.setItem("network_data", JSON.stringify(formatted)); //saving raw formatted data 
+        await AsyncStorage.setItem("network_data", JSON.stringify(formatted)); //saving raw formatted data
         await AsyncStorage.setItem("network_grouped", JSON.stringify(groupByDegree(formatted))); //saving grouped data
       } catch (e) {
         console.error("❌ Error saving network data:", e);
       }
-      
     } catch (err) {
       console.error("❌ Fetch failed:", err);
       setError(err.message);
@@ -634,7 +634,7 @@ const NetworkScreen = ({ navigation }) => {
       const img = n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
 
       const hasImg = img && String(img).trim() !== "";
-      
+
       nodes.push({
         id: n.network_profile_personal_uid,
         label,
@@ -906,11 +906,8 @@ const NetworkScreen = ({ navigation }) => {
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header */}
       {/* <AppHeader title='Connect' backgroundColor='#AF52DE' /> */}
-      <TouchableOpacity 
-        onPress={() => setShowFeedbackPopup(true)}
-        activeOpacity={0.7}
-      >
-        <AppHeader title='Connect' backgroundColor='#AF52DE' />
+      <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
+        <AppHeader title='Connect' {...getHeaderColors("network")} />
       </TouchableOpacity>
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
@@ -1236,13 +1233,7 @@ const NetworkScreen = ({ navigation }) => {
 
         <BottomNavBar navigation={navigation} />
       </SafeAreaView>
-      <FeedbackPopup
-        visible={showFeedbackPopup}
-        onClose={() => setShowFeedbackPopup(false)}
-        pageName="Network"
-        instructions={networkFeedbackInstructions}
-        questions={networkFeedbackQuestions}
-      />
+      <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Network' instructions={networkFeedbackInstructions} questions={networkFeedbackQuestions} />
     </View>
   );
 };

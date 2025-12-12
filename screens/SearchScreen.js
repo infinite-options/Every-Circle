@@ -9,6 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BUSINESS_RESULTS_ENDPOINT, EXPERTISE_RESULTS_ENDPOINT, WISHES_RESULTS_ENDPOINT, TAG_SEARCH_DISTINCT_ENDPOINT, TAG_CATEGORY_DISTINCT_ENDPOINT, SEARCH_BASE_URL } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
+import { getHeaderColors } from "../config/headerColors";
 
 export default function SearchScreen({ route }) {
   const navigation = useNavigation();
@@ -871,7 +872,7 @@ export default function SearchScreen({ route }) {
       <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
         <AppHeader
           title='Search'
-          backgroundColor='#AF52DE'
+          {...getHeaderColors("search")}
           darkModeBackgroundColor='#4b2c91'
           rightButton={
             <TouchableOpacity

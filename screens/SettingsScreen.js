@@ -23,6 +23,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import QRCode from "react-native-qrcode-svg";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { getHeaderColors } from "../config/headerColors";
 
 export default function SettingsScreen() {
   const navigation = useNavigation();
@@ -36,15 +37,11 @@ export default function SettingsScreen() {
   const [qrModalVisible, setQrModalVisible] = useState(false);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
-  
+
   const settingsFeedbackInstructions = "Instructions for Settings";
-  
+
   // Define custom questions for the Account page
-  const settingsFeedbackQuestions = [
-      "Settings - Question 1?",
-      "Settings - Question 2?",
-      "Settings - Question 3?"
-  ];
+  const settingsFeedbackQuestions = ["Settings - Question 1?", "Settings - Question 2?", "Settings - Question 3?"];
 
   console.log("In SettingsScreen");
 
@@ -242,11 +239,8 @@ export default function SettingsScreen() {
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
       {/* <AppHeader title="Settings" backgroundColor="#AF52DE" /> */}
-      <TouchableOpacity 
-        onPress={() => setShowFeedbackPopup(true)}
-        activeOpacity={0.7}
-      >
-        <AppHeader title='Settings' backgroundColor='#AF52DE' />
+      <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
+        <AppHeader title='Settings' {...getHeaderColors("settings")} />
       </TouchableOpacity>
 
       {/* Settings Options */}
@@ -356,13 +350,7 @@ export default function SettingsScreen() {
       </Modal>
 
       <BottomNavBar navigation={navigation} />
-      <FeedbackPopup
-        visible={showFeedbackPopup}
-        onClose={() => setShowFeedbackPopup(false)}
-        pageName="Settings"
-        instructions={settingsFeedbackInstructions}
-        questions={settingsFeedbackQuestions}
-      />
+      <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Settings' instructions={settingsFeedbackInstructions} questions={settingsFeedbackQuestions} />
     </View>
   );
 }

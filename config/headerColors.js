@@ -12,11 +12,13 @@
 export const HEADER_COLORS = {
   // Default/Main screens
   default: "#AF52DE", // Purple - default for most screens
-  profile: "#AF52DE", // Purple
-  editProfile: "#AF52DE", // Purple
+  // profile: "#AF52DE", // Purple
+  profile: "#800000", // Maroon
+  // editProfile: "#AF52DE", // Purple
+  editProfile: "#929090", // Gray
   settings: "#AF52DE", // Purple
-  network: "#AF52DE", // Purple (Connect)
-  account: "#AF52DE", // Purple
+  network: "#2434C2", // Blue (Connect)
+  account: "#18884A", // Green
   search: "#AF52DE", // Purple
   changePassword: "#AF52DE", // Purple
   businessProfile: "#AF52DE", // Purple
@@ -46,6 +48,10 @@ export const DARK_MODE_COLORS = {
   "#FF9500": "#CC7700", // Orange -> Darker Orange
   "#9C45F7": "#7B35C7", // Purple variant -> Darker Purple
   "#007AFF": "#0051D5", // Blue -> Darker Blue
+  "#800000": "#660000", // Maroon -> Darker Maroon
+  "#929090": "#6B6B6B", // Gray -> Darker Gray
+  "#2434C2": "#1C2899", // Blue (Connect) -> Darker Blue
+  "#18884A": "#126B38", // Green -> Darker Green
 };
 
 /**

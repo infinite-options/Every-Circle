@@ -11,6 +11,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
+import { getHeaderColors } from "../config/headerColors";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -579,7 +580,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       {/* Header */}
       <AppHeader
         title='Business Profile'
-        backgroundColor='#AF52DE'
+        {...getHeaderColors("businessProfile")}
         rightButton={
           isOwner ? (
             <TouchableOpacity

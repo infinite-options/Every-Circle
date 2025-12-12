@@ -11,6 +11,7 @@ import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_INFO_ENDPOINT, CIRCL
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText } from "../utils/textSanitizer";
 import FeedbackPopup from "../components/FeedbackPopup";
+import { getHeaderColors } from "../config/headerColors";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 console.log(`ProfileScreen - Full endpoint: ${ProfileScreenAPI}`);
@@ -673,8 +674,7 @@ const ProfileScreen = ({ route, navigation }) => {
       <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
         <AppHeader
           title={isCurrentUserProfile ? "Your Profile" : "Profile"}
-          backgroundColor={routeProfileUID && !isCurrentUserProfile ? "#FF9500" : "#AF52DE"}
-          darkModeBackgroundColor={routeProfileUID && !isCurrentUserProfile ? "#CC7700" : "#8B4C9F"}
+          {...(routeProfileUID && !isCurrentUserProfile ? getHeaderColors("profileView") : getHeaderColors("profile"))}
           onBackPress={
             routeProfileUID && !isCurrentUserProfile
               ? () => {

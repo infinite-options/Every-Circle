@@ -9,6 +9,7 @@ import { useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
+import { getHeaderColors } from "../config/headerColors";
 export default function AccountScreen({ navigation }) {
   const { darkMode } = useDarkMode();
   const [userUID, setUserUID] = useState(null);
@@ -23,11 +24,7 @@ export default function AccountScreen({ navigation }) {
   const accountFeedbackInstructions = "Instructions for Account";
 
   // Define custom questions for the Account page
-  const accountFeedbackQuestions = [
-    "Account - Question 1?",
-    "Account - Question 2?",
-    "Account - Question 3?"
-  ];
+  const accountFeedbackQuestions = ["Account - Question 1?", "Account - Question 2?", "Account - Question 3?"];
 
   // above your effect or focus logic
   const checkAuth = async () => {
@@ -401,11 +398,8 @@ export default function AccountScreen({ navigation }) {
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
       {/* <AppHeader title="Account" backgroundColor="#AF52DE" /> */}
-      <TouchableOpacity 
-        onPress={() => setShowFeedbackPopup(true)}
-        activeOpacity={0.7}
-      >
-        <AppHeader title='Account' backgroundColor='#AF52DE' />
+      <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
+        <AppHeader title='Account' {...getHeaderColors("account")} />
       </TouchableOpacity>
 
       {/* Main content */}
@@ -548,13 +542,7 @@ export default function AccountScreen({ navigation }) {
       </ScrollView>
 
       <BottomNavBar navigation={navigation} />
-      <FeedbackPopup
-        visible={showFeedbackPopup}
-        onClose={() => setShowFeedbackPopup(false)}
-        pageName="Account"
-        instructions={accountFeedbackInstructions}
-        questions={accountFeedbackQuestions}
-      />
+      <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Account' instructions={accountFeedbackInstructions} questions={accountFeedbackQuestions} />
     </View>
   );
 }
