@@ -295,7 +295,13 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
           </TouchableOpacity>
         </View>
         {!!passwordError && <Text style={styles.passwordErrorText}>{passwordError}</Text>}
-        <TouchableOpacity onPress={() => setShowForgotPasswordModal(true)} style={styles.forgotPasswordLink}>
+        <TouchableOpacity
+          onPress={() => {
+            setForgotPasswordEmail(email); // Auto-populate with email from login form
+            setShowForgotPasswordModal(true);
+          }}
+          style={styles.forgotPasswordLink}
+        >
           <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
         </TouchableOpacity>
       </View>
