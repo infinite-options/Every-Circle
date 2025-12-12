@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Image, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { DARK_MODE_COLORS } from "../config/headerColors";
 
 /**
  * Reusable App Header Component
@@ -21,12 +22,8 @@ const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButto
   // Dark mode color adjustments for common colors
   const getDarkModeColor = (color) => {
     if (!darkMode) return color;
-    const colorMap = {
-      "#AF52DE": "#8B4C9F", // Purple
-      "#FF9500": "#CC7700", // Orange
-      "#9C45F7": "#7B35C7", // Purple (Shopping Cart)
-    };
-    return colorMap[color] || color;
+    // Use centralized dark mode color mapping
+    return DARK_MODE_COLORS[color] || color;
   };
 
   const finalBgColor = darkMode ? getDarkModeColor(bgColor) : bgColor;

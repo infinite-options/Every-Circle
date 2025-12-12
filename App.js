@@ -792,11 +792,29 @@ export default function App() {
     console.log("App.js - Rendering HomeScreen");
     const [hasLoggedPlaying, setHasLoggedPlaying] = useState(false);
 
+    // Load Castoro font for web (both regular and italic variants)
+    useEffect(() => {
+      if (Platform.OS === "web" && typeof document !== "undefined") {
+        // Check if font is already loaded
+        if (!document.getElementById("castoro-font")) {
+          const link = document.createElement("link");
+          link.id = "castoro-font";
+          link.rel = "stylesheet";
+          link.href = "https://fonts.googleapis.com/css2?family=Castoro:ital,wght@0,400;1,400&display=swap";
+          document.head.appendChild(link);
+        }
+      }
+    }, []);
+
     return (
       <View style={styles.container}>
-        <View style={styles.circleMain}>
-          <Image source={require("./assets/everycirclelogonew_1024x1024.png")} style={{ width: 200, height: 200, resizeMode: "contain" }} accessibilityLabel='Every Circle Logo' />
-          {/* <View style={styles.videoContainer}>
+        <View style={styles.contentBox}>
+          {/* Welcome Text */}
+          <Text style={styles.welcomeText}>Welcome!</Text>
+
+          <View style={styles.circleMain}>
+            <Image source={require("./assets/everycirclelogonew_1024x1024.png")} style={{ width: 200, height: 200, resizeMode: "contain" }} accessibilityLabel='Every Circle Logo' />
+            {/* <View style={styles.videoContainer}>
             <Video
               source={{ uri: "https://every-circle.s3.us-west-1.amazonaws.com/EveryB2B.mp4" }}
               style={styles.video}
@@ -807,32 +825,45 @@ export default function App() {
               useNativeControls={false}
             />
           </View> */}
-        </View>
-        <Text style={styles.title}>
-          <Text style={styles.italicText}>every</Text>Circle
-        </Text>
-        <View style={styles.circlesContainer}>
-          <TouchableOpacity style={styles.circleBox} onPress={() => navigation.navigate("SignUp")}>
-            <View style={[styles.circle, { backgroundColor: "#007AFF" }]}>
-              <Text style={styles.circleText}>Sign Up</Text>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.circleBox} onPress={() => navigation.navigate("HowItWorksScreen")}>
-            <View style={[styles.circle, { backgroundColor: "#00C7BE" }]}>
-              <Text style={styles.circleText}>How It Works</Text>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.circleBox}
-            onPress={() => {
-              console.log("App.js - Login Button Pressed");
-              navigation.navigate("Login");
-            }}
-          >
-            <View style={[styles.circle, { backgroundColor: "#AF52DE" }]}>
-              <Text style={styles.circleText}>Login</Text>
-            </View>
-          </TouchableOpacity>
+          </View>
+
+          {/* Branding Text */}
+          <View style={styles.brandingContainer}>
+            <Text style={styles.brandName}>
+              <Text style={styles.brandItalicText}>every</Text>
+              <Text style={styles.brandRegularText}>Circle</Text>
+              <Text style={styles.brandText}>.com</Text>
+            </Text>
+            <Text style={styles.tagline}>Connecting Circles of Influence</Text>
+            {/* <Text style={styles.tagline}>It Pays to Be Connected</Text> */}
+          </View>
+
+          <View style={styles.circlesContainer}>
+            <TouchableOpacity style={styles.circleBox} onPress={() => navigation.navigate("SignUp")}>
+              {/* <View style={[styles.circle, { backgroundColor: "#007AFF" }]}> */}
+              <View style={[styles.circle, { backgroundColor: "#800000" }]}>
+                <Text style={styles.circleText}>Sign Up</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.circleBox} onPress={() => navigation.navigate("HowItWorksScreen")}>
+              {/* <View style={[styles.circle, { backgroundColor: "#00C7BE" }]}> */}
+              <View style={[styles.circle, { backgroundColor: "#FF9500" }]}>
+                <Text style={styles.circleText}>How It Works</Text>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.circleBox}
+              onPress={() => {
+                console.log("App.js - Login Button Pressed");
+                navigation.navigate("Login");
+              }}
+            >
+              {/* <View style={[styles.circle, { backgroundColor: "#AF52DE" }]}> */}
+              <View style={[styles.circle, { backgroundColor: "#2434C2" }]}>
+                <Text style={styles.circleText}>Login</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
@@ -902,6 +933,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  contentBox: {
+    borderWidth: 2,
+    borderColor: "#fff",
+    alignSelf: "center",
+    padding: 20,
+    alignItems: "center",
+  },
   centeredContainer: {
     flex: 1,
     justifyContent: "center",
@@ -954,6 +992,52 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     textAlign: "center",
+  },
+  welcomeText: {
+    fontSize: 36,
+    fontFamily: "Georgia",
+    fontStyle: "italic",
+    color: "#000",
+    textAlign: "center",
+    marginTop: 40,
+    marginBottom: 20,
+  },
+  brandingContainer: {
+    alignItems: "flex-start",
+    marginTop: 20,
+    marginBottom: 20,
+    width: "100%",
+    paddingHorizontal: 30, // Match circlesContainer padding (20) + circleBox margin (10) to align with Sign Up button
+  },
+  brandName: {
+    fontSize: 36,
+    fontStyle: "regular",
+    // fontWeight: "bold",
+    fontFamily: Platform.OS === "web" ? "Arial, sans-serif" : undefined,
+    color: "#000",
+    textAlign: "left",
+  },
+  brandItalicText: {
+    fontStyle: "italic",
+    fontFamily: Platform.OS === "web" ? '"Castoro", serif' : "Castoro",
+  },
+  brandRegularText: {
+    color: "#800000",
+    fontFamily: Platform.OS === "web" ? '"Castoro", serif' : "Castoro",
+    fontStyle: "normal", // Explicitly set to normal to override any italic inheritance
+    fontWeight: "normal", // Ensure normal weight
+  },
+  brandText: {
+    color: "#000",
+    fontSize: 20,
+  },
+  tagline: {
+    fontSize: 24,
+    // fontStyle: "italic",
+    fontFamily: Platform.OS === "web" ? "Arial, sans-serif" : undefined,
+    color: "#000",
+    textAlign: "left",
+    marginTop: 8,
   },
   title: {
     fontSize: 26,

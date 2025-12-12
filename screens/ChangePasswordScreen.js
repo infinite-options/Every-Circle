@@ -7,6 +7,7 @@ import * as Crypto from "expo-crypto";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import { USER_PROFILE_INFO_ENDPOINT, ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, UPDATE_EMAIL_PASSWORD_ENDPOINT } from "../apiConfig";
+import { getHeaderColors } from "../config/headerColors";
 
 export default function ChangePasswordScreen() {
   const navigation = useNavigation();
@@ -219,7 +220,7 @@ export default function ChangePasswordScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Header with back button */}
-      <AppHeader title='Change Password' backgroundColor='#AF52DE' onBackPress={() => navigation.goBack()} />
+      <AppHeader title='Change Password' {...getHeaderColors("changePassword")} onBackPress={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.formContainer}>
