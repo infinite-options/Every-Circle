@@ -91,9 +91,10 @@ export const getDarkModeStyles = (darkMode) => ({
     : {},
 
   // Icon styles
+  // Note: tintColor should be applied as a prop on Image components, not in styles
   icon: darkMode
     ? {
-        tintColor: "#ffffff",
+        // tintColor moved to Image prop - use tintColor="#ffffff" on Image component instead
       }
     : {},
 });

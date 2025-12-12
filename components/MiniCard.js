@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, Image, StyleSheet } from "react-native";
+import { View, Text, Image, StyleSheet, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 
@@ -54,6 +54,7 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
             <Image
               source={businessImage && businessImage.trim() !== "" ? { uri: businessImage } : require("../assets/profile.png")}
               style={[styles.profileImage, darkMode && styles.darkProfileImage]}
+              tintColor={darkMode ? "#ffffff" : undefined}
               onError={(error) => {
                 console.log("MiniCard business image failed to load:", error.nativeEvent.error);
                 console.log("Problematic business image URI:", businessImage);
@@ -229,11 +230,17 @@ const styles = StyleSheet.create({
     padding: 15,
     backgroundColor: "#fff",
     borderRadius: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.1)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+          elevation: 3,
+        }),
     marginVertical: 5,
   },
   profileImage: {
@@ -283,8 +290,14 @@ const styles = StyleSheet.create({
   },
   darkCardContainer: {
     backgroundColor: "#2d2d2d",
-    shadowColor: "#000",
-    shadowOpacity: 0.3,
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.3)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOpacity: 0.3,
+        }),
   },
   darkName: {
     color: "#ffffff",
@@ -293,7 +306,7 @@ const styles = StyleSheet.create({
     color: "#cccccc",
   },
   darkProfileImage: {
-    tintColor: "#ffffff",
+    // tintColor moved to Image prop
   },
 });
 

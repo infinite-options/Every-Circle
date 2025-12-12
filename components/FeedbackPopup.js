@@ -1,14 +1,6 @@
 // FeedbackPopup.js
 import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet, 
-  TouchableOpacity,
-  Modal,
-  ScrollView,
-  Platform,
-} from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import WebTextInput from "./WebTextInput";
@@ -16,19 +8,15 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { sanitizeText } from "../utils/textSanitizer";
 
-const FeedbackPopup = ({ visible, onClose, pageName, instructions, questions = [
-    "Question 1?",
-    "Question 2?",
-    "Question 3?"
-  ] }) => {
+const FeedbackPopup = ({ visible, onClose, pageName, instructions, questions = ["Question 1?", "Question 2?", "Question 3?"] }) => {
   const { darkMode } = useDarkMode();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [userUid, setUserUid] = useState("");
   const [feedbackText, setFeedbackText] = useState("");
-  const [rating1, setRating1] = useState(0); 
-  const [rating2, setRating2] = useState(0); 
-  const [rating3, setRating3] = useState(0); 
+  const [rating1, setRating1] = useState(0);
+  const [rating2, setRating2] = useState(0);
+  const [rating3, setRating3] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -50,16 +38,13 @@ const FeedbackPopup = ({ visible, onClose, pageName, instructions, questions = [
   const loadUserData = async () => {
     try {
       console.log("📥 Loading user data for feedback...");
-      
+
       // Get user_uid and profile_uid from AsyncStorage
-      const [storedUserUid, storedProfileUid] = await Promise.all([
-        AsyncStorage.getItem("user_uid"),
-        AsyncStorage.getItem("profile_uid"),
-      ]);
+      const [storedUserUid, storedProfileUid] = await Promise.all([AsyncStorage.getItem("user_uid"), AsyncStorage.getItem("profile_uid")]);
 
       console.log("📥 Raw values from AsyncStorage:", {
         userUid: storedUserUid,
-        profileUid: storedProfileUid
+        profileUid: storedProfileUid,
       });
 
       // Parse user_uid
@@ -83,7 +68,7 @@ const FeedbackPopup = ({ visible, onClose, pageName, instructions, questions = [
 
       console.log("📥 Parsed UIDs:", {
         userUid: uid,
-        profileUid: profileUid
+        profileUid: profileUid,
       });
 
       // Fetch user profile data from API to get first and last name
@@ -94,11 +79,11 @@ const FeedbackPopup = ({ visible, onClose, pageName, instructions, questions = [
           if (response.ok) {
             const apiUser = await response.json();
             console.log("📥 API response:", apiUser);
-            
+
             const p = apiUser?.personal_info || {};
             const firstName = sanitizeText(p.profile_personal_first_name || "");
             const lastName = sanitizeText(p.profile_personal_last_name || "");
-            
+
             console.log("✅ Setting names from API:", { firstName, lastName });
             setFirstName(firstName);
             setLastName(lastName);
@@ -111,7 +96,7 @@ const FeedbackPopup = ({ visible, onClose, pageName, instructions, questions = [
       } else {
         console.warn("⚠️ No profile_uid available to fetch user data");
       }
-      
+
       console.log("✅ User data loading complete");
     } catch (error) {
       console.error("❌ Error loading user data for feedback:", error);
@@ -155,7 +140,7 @@ const FeedbackPopup = ({ visible, onClose, pageName, instructions, questions = [
       }
 
       setSubmitSuccess(true);
-      
+
       // Close popup after 2 seconds
       setTimeout(() => {
         onClose();
@@ -175,24 +160,10 @@ const FeedbackPopup = ({ visible, onClose, pageName, instructions, questions = [
         {[1, 2, 3, 4, 5].map((num) => (
           <TouchableOpacity
             key={num}
-            style={[
-              styles.ratingButton,
-              value === num && styles.ratingButtonSelected,
-              darkMode && styles.darkRatingButton,
-              value === num && darkMode && styles.darkRatingButtonSelected,
-            ]}
+            style={[styles.ratingButton, value === num && styles.ratingButtonSelected, darkMode && styles.darkRatingButton, value === num && darkMode && styles.darkRatingButtonSelected]}
             onPress={() => onChange(num)}
           >
-            <Text
-              style={[
-                styles.ratingButtonText,
-                value === num && styles.ratingButtonTextSelected,
-                darkMode && styles.darkText,
-                value === num && styles.ratingButtonTextSelected,
-              ]}
-            >
-              {num}
-            </Text>
+            <Text style={[styles.ratingButtonText, value === num && styles.ratingButtonTextSelected, darkMode && styles.darkText, value === num && styles.ratingButtonTextSelected]}>{num}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -200,39 +171,22 @@ const FeedbackPopup = ({ visible, onClose, pageName, instructions, questions = [
   );
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType='fade' onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={[styles.popup, darkMode && styles.darkPopup]}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={[styles.title, darkMode && styles.darkText]}>
-              Share Your Feedback
-            </Text>
+            <Text style={[styles.title, darkMode && styles.darkText]}>Share Your Feedback</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Ionicons
-                name="close"
-                size={24}
-                color={darkMode ? "#ffffff" : "#333333"}
-              />
+              <Ionicons name='close' size={24} color={darkMode ? "#ffffff" : "#333333"} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView
-            style={styles.content}
-            contentContainerStyle={styles.contentContainer}
-            showsVerticalScrollIndicator
-          >
+          <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator>
             {/* Instructions */}
             {instructions && (
               <View style={styles.instructionsSection}>
-                <Text style={[styles.instructionsText, darkMode && styles.darkText]}>
-                  {instructions}
-                </Text>
+                <Text style={[styles.instructionsText, darkMode && styles.darkText]}>{instructions}</Text>
               </View>
             )}
 
@@ -254,77 +208,47 @@ const FeedbackPopup = ({ visible, onClose, pageName, instructions, questions = [
 
             {/* Feedback Text */}
             <View style={styles.section}>
-              <Text style={[styles.sectionLabel, darkMode && styles.darkText]}>
-                Your Feedback
-              </Text>
+              <Text style={[styles.sectionLabel, darkMode && styles.darkText]}>Tell us what you think</Text>
               <WebTextInput
-                style={[
-                  styles.textArea,
-                  darkMode && styles.darkTextArea,
-                ]}
+                style={[styles.textArea, darkMode && styles.darkTextArea]}
                 value={feedbackText}
                 onChangeText={setFeedbackText}
-                placeholder="Tell us what you think..."
+                placeholder='Tell us what you think...'
                 placeholderTextColor={darkMode ? "#888888" : "#999999"}
                 multiline
                 numberOfLines={4}
-                textAlignVertical="top"
+                textAlignVertical='top'
               />
             </View>
 
             {/* Rating Questions */}
             <View style={styles.section}>
-              <Text style={[styles.sectionTitle, darkMode && styles.darkText]}>
-                Rate Your Experience
-              </Text>
-              
-              <RatingSelector
-                label={`1. ${questions[0]}`}
-                value={rating1}
-                onChange={setRating1}
-              />
-              
-              <RatingSelector
-                label={`2. ${questions[1]}`}
-                value={rating2}
-                onChange={setRating2}
-              />
-              
-              <RatingSelector
-                label={`3. ${questions[2]}`}
-                value={rating3}
-                onChange={setRating3}
-              />
+              <Text style={[styles.sectionTitle, darkMode && styles.darkText]}>Rate Your Experience</Text>
+
+              <RatingSelector label={`1. ${questions[0]}`} value={rating1} onChange={setRating1} />
+
+              <RatingSelector label={`2. ${questions[1]}`} value={rating2} onChange={setRating2} />
+
+              <RatingSelector label={`3. ${questions[2]}`} value={rating3} onChange={setRating3} />
             </View>
 
             {/* Error Message */}
-            {submitError ? (
-              <Text style={styles.errorText}>{submitError}</Text>
-            ) : null}
+            {submitError ? <Text style={styles.errorText}>{submitError}</Text> : null}
 
             {/* Success Message */}
             {submitSuccess ? (
               <View style={styles.successContainer}>
-                <Ionicons name="checkmark-circle" size={24} color="#4CAF50" />
-                <Text style={styles.successText}>
-                  Thank you for your feedback!
-                </Text>
+                <Ionicons name='checkmark-circle' size={24} color='#4CAF50' />
+                <Text style={styles.successText}>Thank you for your feedback!</Text>
               </View>
             ) : null}
 
             {/* Submit Button */}
-            <TouchableOpacity
-              style={[
-                styles.submitButton,
-                submitting && styles.submitButtonDisabled,
-              ]}
-              onPress={handleSubmit}
-              disabled={submitting || submitSuccess}
-            >
-              <Text style={styles.submitButtonText}>
-                {submitting ? "Submitting..." : "Submit Feedback"}
-              </Text>
-            </TouchableOpacity>
+            {!submitSuccess && (
+              <TouchableOpacity style={[styles.submitButton, submitting && styles.submitButtonDisabled]} onPress={handleSubmit} disabled={submitting}>
+                <Text style={styles.submitButtonText}>{submitting ? "Submitting..." : "Submit Feedback"}</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
         </View>
       </View>
@@ -346,11 +270,17 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 500,
     maxHeight: "90%",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.25)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.25,
+          shadowRadius: 4,
+          elevation: 5,
+        }),
   },
   darkPopup: {
     backgroundColor: "#2d2d2d",
@@ -381,12 +311,12 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   instructionsSection: {
-  padding: 12,
-  borderRadius: 8,
-  marginBottom: 15,
-  borderLeftWidth: 4,
-  borderLeftColor: "#AF52DE",
-  backgroundColor: "#F1F0F2",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: "#AF52DE",
+    backgroundColor: "#F1F0F2",
   },
   instructionsText: {
     fontSize: 14,
@@ -411,7 +341,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   sectionLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
     color: "#333333",
     marginBottom: 8,
@@ -430,6 +360,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     minHeight: 100,
     backgroundColor: "#ffffff",
+    fontFamily: Platform.OS === "web" ? "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" : undefined,
   },
   darkTextArea: {
     backgroundColor: "#1a1a1a",

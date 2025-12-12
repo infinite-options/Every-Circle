@@ -173,15 +173,10 @@ const AppleSignIn = ({ onSignIn, onError, disabled, buttonText = "Sign in with A
   // Apple HIG: Black background (#000000), white text, rounded corners (8-10pt), minimum 44pt height
   return (
     <View style={styles.container}>
-      <TouchableOpacity 
-        style={[styles.appleButtonWeb, { opacity: disabled ? 0.6 : 1 }]} 
-        onPress={handleAppleSignIn}
-        disabled={disabled}
-        activeOpacity={0.8}
-      >
+      <TouchableOpacity style={[styles.appleButtonWeb, { opacity: disabled ? 0.6 : 1 }]} onPress={handleAppleSignIn} disabled={disabled} activeOpacity={0.8}>
         <View style={styles.appleButtonContent}>
           <View style={styles.appleLogo}>
-            <Ionicons name="logo-apple" size={18} color="#FFFFFF" />
+            <Ionicons name='logo-apple' size={18} color='#FFFFFF' />
           </View>
           <Text style={styles.appleButtonText}>{buttonText}</Text>
         </View>
@@ -209,11 +204,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     borderRadius: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 1px 2px 0px rgba(0, 0, 0, 0.2)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.2,
+          shadowRadius: 2,
+          elevation: 2,
+        }),
   },
   appleButtonContent: {
     flexDirection: "row",

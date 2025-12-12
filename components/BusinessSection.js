@@ -268,7 +268,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                 />
 
                 <TouchableOpacity onPress={() => deleteBusiness(actualIndex)} style={styles.deleteButton}>
-                  <Image source={require("../assets/delete.png")} style={[styles.deleteIcon, darkMode && styles.darkDeleteIcon]} />
+                  <Image source={require("../assets/delete.png")} style={[styles.deleteIcon, darkMode && styles.darkDeleteIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
                 </TouchableOpacity>
               </View>
             );
@@ -374,7 +374,9 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   deleteIcon: { width: 20, height: 20 },
-  darkDeleteIcon: { tintColor: "#ffffff" },
+  darkDeleteIcon: {
+    /* tintColor moved to Image prop */
+  },
   businessCardWrapper: {
     marginBottom: 10,
     borderRadius: 10,

@@ -592,7 +592,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 })
               }
             >
-              <Image source={require("../assets/Edit.png")} style={[styles.editIcon, darkMode && styles.darkEditIcon]} />
+              <Image source={require("../assets/Edit.png")} style={[styles.editIcon, darkMode && styles.darkEditIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
             </TouchableOpacity>
           ) : null
         }
@@ -1122,11 +1122,17 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 15,
     borderRadius: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.05)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.05,
+          shadowRadius: 4,
+          elevation: 2,
+        }),
   },
   cardTitle: {
     fontSize: 18,
@@ -1370,11 +1376,17 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 10,
     borderRadius: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.05)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.05,
+          shadowRadius: 4,
+          elevation: 2,
+        }),
   },
   reviewCardHeader: {
     flexDirection: "row",
@@ -1480,8 +1492,14 @@ const styles = StyleSheet.create({
   },
   darkCard: {
     backgroundColor: "#2d2d2d",
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.2)",
+        }
+      : {
+          shadowColor: "#000",
+          shadowOpacity: 0.2,
+        }),
   },
   darkCardTitle: {
     color: "#ffffff",
@@ -1514,7 +1532,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#404040",
   },
   darkEditIcon: {
-    tintColor: "#ffffff",
+    // tintColor moved to Image prop
   },
   darkCartButton: {
     backgroundColor: "#404040",

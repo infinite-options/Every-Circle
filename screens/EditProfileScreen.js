@@ -685,12 +685,7 @@ const EditProfileScreen = ({ route, navigation }) => {
 
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}>
-      <AppHeader
-        title="Edit Profile"
-        backgroundColor="#AF52DE"
-        darkModeBackgroundColor="#4b2c91"
-        onBackPress={() => navigation.goBack()}
-      />
+      <AppHeader title='Edit Profile' backgroundColor='#AF52DE' darkModeBackgroundColor='#4b2c91' onBackPress={() => navigation.goBack()} />
       <ScrollView
         ref={scrollViewRef}
         style={{ flex: 1, padding: 20, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}
@@ -706,6 +701,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           <Image
             source={profileImageUri && !imageError ? { uri: profileImageUri } : DEFAULT_PROFILE_IMAGE}
             style={[styles.profileImage, darkMode && styles.darkProfileImage]}
+            tintColor={darkMode ? "#ffffff" : undefined}
             onError={handleImageError}
           />
           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
@@ -891,7 +887,7 @@ const styles = StyleSheet.create({
     borderColor: "#404040",
   },
   darkProfileImage: {
-    tintColor: "#ffffff",
+    // tintColor moved to Image prop
     backgroundColor: "#404040",
   },
   darkUploadLink: {

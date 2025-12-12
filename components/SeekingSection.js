@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
 
 const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus }) => {
@@ -175,14 +175,31 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               return (
                 isNumeric && (
                   <Dropdown
-                    style={styles.bountyUnitDropdown}
+                    style={[
+                      styles.bountyUnitDropdown,
+                      Platform.OS === "web" && {
+                        shadowColor: undefined,
+                        shadowOffset: undefined,
+                        shadowOpacity: undefined,
+                        shadowRadius: undefined,
+                      },
+                    ]}
                     data={bountyUnitOptions}
                     labelField='label'
                     valueField='value'
                     placeholder='Select unit'
                     value={parsed.unit}
                     onChange={(item) => handleBountyUnitChange(index, item)}
-                    containerStyle={styles.dropdownContainer}
+                    containerStyle={[
+                      styles.dropdownContainer,
+                      Platform.OS === "web" && {
+                        boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.1)",
+                        shadowColor: undefined,
+                        shadowOffset: undefined,
+                        shadowOpacity: undefined,
+                        shadowRadius: undefined,
+                      },
+                    ]}
                     itemTextStyle={styles.dropdownItemText}
                     selectedTextStyle={styles.dropdownSelectedText}
                     activeColor='#f0f0f0'
@@ -287,6 +304,16 @@ const styles = StyleSheet.create({
   dropdownContainer: {
     borderRadius: 5,
     marginTop: 5,
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.1)",
+          // Override deprecated shadow props from library
+          shadowColor: undefined,
+          shadowOffset: undefined,
+          shadowOpacity: undefined,
+          shadowRadius: undefined,
+        }
+      : {}),
   },
   dropdownItemText: {
     color: "#000",

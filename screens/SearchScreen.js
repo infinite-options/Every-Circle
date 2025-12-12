@@ -17,16 +17,11 @@ export default function SearchScreen({ route }) {
   const [cartCount, setCartCount] = useState(0);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
-  
-    const searchFeedbackInstructions = "Instructions for Search";
-  
-    // Define custom questions for the Account page
-    const searchFeedbackQuestions = [
-      "Search - Question 1?",
-      "Search - Question 2?",
-      "Search - Question 3?"
-    ];
-  
+
+  const searchFeedbackInstructions = "Instructions for Search";
+
+  // Define custom questions for the Account page
+  const searchFeedbackQuestions = ["Search - Question 1?", "Search - Question 2?", "Search - Question 3?"];
 
   // --- stub initial data, so you see the four items by default ---
   const initialResults = [
@@ -648,6 +643,7 @@ export default function SearchScreen({ route }) {
             <Image
               source={profile.image && profile.imageIsPublic && profile.image !== "" && String(profile.image).trim() !== "" ? { uri: String(profile.image) } : require("../assets/profile.png")}
               style={[styles.wishProfileImage, darkMode && styles.darkWishProfileImage]}
+              tintColor={darkMode ? "#ffffff" : undefined}
               onError={(error) => {
                 console.log("Wish profile image failed to load:", error.nativeEvent.error);
               }}
@@ -724,6 +720,7 @@ export default function SearchScreen({ route }) {
           <Image
             source={profile.image && profile.imageIsPublic && profile.image !== "" && String(profile.image).trim() !== "" ? { uri: String(profile.image) } : require("../assets/profile.png")}
             style={[styles.wishProfileImage, darkMode && styles.darkWishProfileImage]}
+            tintColor={darkMode ? "#ffffff" : undefined}
             onError={(error) => {
               console.log("Expertise profile image failed to load:", error.nativeEvent.error);
             }}
@@ -871,52 +868,49 @@ export default function SearchScreen({ route }) {
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
-      <TouchableOpacity 
-        onPress={() => setShowFeedbackPopup(true)}
-        activeOpacity={0.7}
-      >
-      <AppHeader
-        title='Search'
-        backgroundColor='#AF52DE'
-        darkModeBackgroundColor='#4b2c91'
-        rightButton={
-          <TouchableOpacity
-            style={styles.cartButton}
-            onPress={() =>
-              navigation.navigate("ShoppingCart", {
-                cartItems: cartItems,
-                onRemoveItem: async (index) => {
-                  // Get the business_uid from the item being removed before filtering
-                  const itemToRemove = cartItems[index];
-                  const businessUid = itemToRemove.business_uid;
+      <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
+        <AppHeader
+          title='Search'
+          backgroundColor='#AF52DE'
+          darkModeBackgroundColor='#4b2c91'
+          rightButton={
+            <TouchableOpacity
+              style={styles.cartButton}
+              onPress={() =>
+                navigation.navigate("ShoppingCart", {
+                  cartItems: cartItems,
+                  onRemoveItem: async (index) => {
+                    // Get the business_uid from the item being removed before filtering
+                    const itemToRemove = cartItems[index];
+                    const businessUid = itemToRemove.business_uid;
 
-                  // Create a new array without the removed item
-                  const newCartItems = cartItems.filter((_, i) => i !== index);
-                  setCartItems(newCartItems);
-                  setCartCount(newCartItems.length);
+                    // Create a new array without the removed item
+                    const newCartItems = cartItems.filter((_, i) => i !== index);
+                    setCartItems(newCartItems);
+                    setCartCount(newCartItems.length);
 
-                  // Update AsyncStorage for the specific business
-                  await AsyncStorage.setItem(
-                    `cart_${businessUid}`,
-                    JSON.stringify({
-                      items: newCartItems.filter((item) => item.business_uid === businessUid),
-                    })
-                  );
-                },
-                businessName: "All Items",
-                business_uid: "all",
-              })
-            }
-          >
-            <Ionicons name='cart-outline' size={24} color='#fff' />
-            {cartCount > 0 && (
-              <View style={styles.cartBadge}>
-                <Text style={styles.cartBadgeText}>{cartCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        }
-      />
+                    // Update AsyncStorage for the specific business
+                    await AsyncStorage.setItem(
+                      `cart_${businessUid}`,
+                      JSON.stringify({
+                        items: newCartItems.filter((item) => item.business_uid === businessUid),
+                      })
+                    );
+                  },
+                  businessName: "All Items",
+                  business_uid: "all",
+                })
+              }
+            >
+              <Ionicons name='cart-outline' size={24} color='#fff' />
+              {cartCount > 0 && (
+                <View style={styles.cartBadge}>
+                  <Text style={styles.cartBadgeText}>{cartCount}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          }
+        />
       </TouchableOpacity>
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
@@ -1229,13 +1223,7 @@ export default function SearchScreen({ route }) {
 
         {/* Bottom Navigation Bar */}
         <BottomNavBar navigation={navigation} />
-        <FeedbackPopup
-          visible={showFeedbackPopup}
-          onClose={() => setShowFeedbackPopup(false)}
-          pageName="Search"
-          instructions={searchFeedbackInstructions}
-          questions={searchFeedbackQuestions}
-        />
+        <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Search' instructions={searchFeedbackInstructions} questions={searchFeedbackQuestions} />
       </SafeAreaView>
     </View>
   );
@@ -1660,7 +1648,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
   },
   darkWishProfileImage: {
-    tintColor: "#ffffff",
+    // tintColor moved to Image prop
   },
   darkWishProfileName: {
     color: "#ffffff",

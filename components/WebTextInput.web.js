@@ -2,7 +2,17 @@
 import React from "react";
 
 // Web-compatible TextInput that uses native HTML input on web
-const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, inputMode, ...props }) => {
+const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, inputMode, multiline, numberOfLines, textAlignVertical, placeholderTextColor, ...props }) => {
+  // Filter out React Native-specific props that shouldn't be passed to DOM elements
+  const {
+    // Remove React Native-specific props
+    secureTextEntry,
+    autoCapitalize,
+    autoCorrect,
+    autoFocus,
+    returnKeyType,
+    ...domProps
+  } = props;
   // On web, use a native HTML input element
   const webStyle = {
     borderWidth: style?.borderWidth || 1,
@@ -16,11 +26,12 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
     fontSize: style?.fontSize || 14,
     width: style?.width || "auto",
     height: style?.height || "auto",
-    textAlign: style?.textAlign || "center",
+    minHeight: style?.minHeight || "auto",
+    textAlign: style?.textAlign || (multiline ? "left" : "center"),
     // Note: outline, WebkitAppearance, etc. are applied directly to the DOM element via React.createElement
     // They're not React Native style properties, so we apply them as HTML attributes
     boxSizing: "border-box",
-    fontFamily: "inherit",
+    fontFamily: style?.fontFamily || "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
   };
 
   // Map keyboardType to input type
@@ -40,6 +51,44 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
     return "text";
   };
 
+  // Use textarea for multiline inputs, input for single-line
+  if (multiline) {
+    const textareaElement = React.createElement("textarea", {
+      value: value || "",
+      onChange: (e) => onChangeText && onChangeText(e.target.value),
+      placeholder: placeholder,
+      rows: numberOfLines || 4,
+      style: {
+        ...webStyle,
+        outline: "none",
+        resize: "vertical",
+        fontFamily: style?.fontFamily || "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+        ...(placeholderTextColor && {
+          // Use CSS custom property for placeholder color
+          "--placeholder-color": placeholderTextColor,
+        }),
+      },
+      ...domProps,
+    });
+
+    // Apply placeholder color via a style tag if needed
+    if (placeholderTextColor) {
+      const styleId = "webtextinput-placeholder-style";
+      if (typeof document !== "undefined" && !document.getElementById(styleId)) {
+        const style = document.createElement("style");
+        style.id = styleId;
+        style.textContent = `
+          textarea[style*="--placeholder-color"]::placeholder {
+            color: var(--placeholder-color) !important;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+    }
+
+    return textareaElement;
+  }
+
   // Use React.createElement to avoid JSX issues with native HTML elements
   const inputElement = React.createElement("input", {
     type: getInputType(),
@@ -52,12 +101,29 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
       outline: "none",
       WebkitAppearance: "none",
       MozAppearance: "textfield",
+      ...(placeholderTextColor && {
+        "--placeholder-color": placeholderTextColor,
+      }),
     },
-    ...props,
+    ...domProps,
   });
-  
+
+  // Apply placeholder color via a style tag if needed
+  if (placeholderTextColor && typeof document !== "undefined") {
+    const styleId = "webtextinput-placeholder-style-input";
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.textContent = `
+        input[style*="--placeholder-color"]::placeholder {
+          color: var(--placeholder-color) !important;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  }
+
   return inputElement;
 };
 
 export default WebTextInput;
-
