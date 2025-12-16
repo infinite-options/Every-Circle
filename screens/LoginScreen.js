@@ -1,7 +1,7 @@
 // LoginScreen.js
 
 import React, { useState } from "react";
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, Platform } from "react-native";
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, Platform, Modal } from "react-native";
 
 // Only import GoogleSigninButton on native platforms (not web)
 let GoogleSigninButton = null;
@@ -22,7 +22,7 @@ import axios from "axios";
 import Constants from "expo-constants";
 import config from "../config";
 import { Ionicons } from "@expo/vector-icons";
-import { ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
 // import SignUpScreen from "./screens/SignUpScreen";
 
 // Helper function to extract the last two digits before .apps.googleusercontent.com
@@ -69,6 +69,11 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
   const [showSpinner, setShowSpinner] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
+  const [showPassModal, setShowPassModal] = useState(false);
+  const [showForgotPasswordSpinner, setShowForgotPasswordSpinner] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
 
   const validateInputs = (email, password) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -86,6 +91,10 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
   const handlePasswordChange = (text) => {
     // console.log("handlePasswordChange", text);
     setPassword(text);
+    // Clear password error when user starts typing
+    if (passwordError) {
+      setPasswordError("");
+    }
     validateInputs(email, text);
   };
 
@@ -107,6 +116,8 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
       // console.log("saltObject", saltObject);
 
       if (saltObject.code !== 200) {
+        setShowSpinner(false);
+        setPasswordError(""); // Clear password error if email doesn't exist
         Alert.alert("Error", "User does not exist. Please Sign Up.");
         return;
       }
@@ -132,6 +143,13 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
       });
       const loginObject = await loginResponse.json();
       console.log("LoginScreen - loginObject returned", loginObject);
+
+      // Check if login failed (wrong password or other error)
+      if (loginObject.code !== 200 || !loginObject.result || !loginObject.result.user_uid) {
+        setShowSpinner(false);
+        setPasswordError("Incorrect password. Please try again.");
+        return;
+      }
 
       const user_uid = loginObject.result.user_uid;
       const user_email = loginObject.result.user_email_id;
@@ -233,6 +251,34 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
     }
   };
 
+  const onReset = async () => {
+    if (forgotPasswordEmail === "") {
+      Alert.alert("Error", "Please enter an email");
+      return;
+    }
+    setShowForgotPasswordSpinner(true);
+    axios
+      .post(SET_TEMP_PASSWORD_ENDPOINT, {
+        email: forgotPasswordEmail,
+      })
+      .then((response) => {
+        if (response.data.message === "A temporary password has been sent") {
+          setShowForgotPasswordSpinner(false);
+          setShowPassModal(true);
+        }
+        if (response.data.code === 280) {
+          Alert.alert("Error", "No account found with that email.");
+          setShowForgotPasswordSpinner(false);
+          return;
+        }
+      })
+      .catch((error) => {
+        console.error("Forgot password error:", error);
+        Alert.alert("Error", "Something went wrong. Please try again.");
+        setShowForgotPasswordSpinner(false);
+      });
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -248,20 +294,20 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
             <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
           </TouchableOpacity>
         </View>
+        {!!passwordError && <Text style={styles.passwordErrorText}>{passwordError}</Text>}
+        <TouchableOpacity
+          onPress={() => {
+            setForgotPasswordEmail(email); // Auto-populate with email from login form
+            setShowForgotPasswordModal(true);
+          }}
+          style={styles.forgotPasswordLink}
+        >
+          <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+        </TouchableOpacity>
       </View>
 
-      <TouchableOpacity 
-        style={[styles.continueButton, isValid ? styles.continueButtonActive : null]} 
-        onPress={handleContinue} 
-        disabled={!isValid || showSpinner}
-      >
-        {showSpinner ? (
-          <ActivityIndicator color='#fff' />
-        ) : (
-          <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : null]}>
-            Continue
-          </Text>
-        )}
+      <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : null]} onPress={handleContinue} disabled={!isValid || showSpinner}>
+        {showSpinner ? <ActivityIndicator color='#fff' /> : <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : null]}>Continue</Text>}
       </TouchableOpacity>
 
       <View style={styles.dividerContainer}>
@@ -344,6 +390,60 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
           <Text style={styles.apiKeysText}>iOS Build: {Constants.expoConfig?.ios?.buildNumber || "Not set"}</Text>
         </View>
       )}
+
+      {/* Forgot Password Modal */}
+      <Modal visible={showForgotPasswordModal} transparent animationType='fade'>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Forgot Password</Text>
+            <Text style={styles.modalSubtitle}>Enter your email address and we'll send you a temporary password.</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder='Email'
+              value={forgotPasswordEmail}
+              onChangeText={setForgotPasswordEmail}
+              keyboardType='email-address'
+              autoCapitalize='none'
+              editable={!showForgotPasswordSpinner}
+            />
+            <View style={styles.modalButtonContainer}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={() => {
+                  setShowForgotPasswordModal(false);
+                  setForgotPasswordEmail("");
+                }}
+                disabled={showForgotPasswordSpinner}
+              >
+                <Text style={styles.modalButtonCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, styles.modalButtonSubmit]} onPress={onReset} disabled={showForgotPasswordSpinner}>
+                {showForgotPasswordSpinner ? <ActivityIndicator color='#fff' /> : <Text style={styles.modalButtonSubmitText}>Send</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Success Modal */}
+      <Modal visible={showPassModal} transparent animationType='fade'>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Password Reset</Text>
+            <Text style={styles.modalSubtitle}>A temporary password has been sent to your email.</Text>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonSubmit]}
+              onPress={() => {
+                setShowPassModal(false);
+                setShowForgotPasswordModal(false);
+                setForgotPasswordEmail("");
+              }}
+            >
+              <Text style={styles.modalButtonSubmitText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -421,5 +521,83 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
     marginBottom: 4,
+  },
+  forgotPasswordLink: {
+    alignSelf: "flex-end",
+    marginTop: -10,
+    marginBottom: 10,
+  },
+  forgotPasswordText: {
+    color: "#FF9500",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  passwordErrorText: {
+    color: "red",
+    fontSize: 14,
+    marginTop: -10,
+    marginBottom: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    padding: 24,
+    borderRadius: 12,
+    width: "85%",
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    marginBottom: 8,
+    color: "#007AFF",
+    textAlign: "center",
+  },
+  modalSubtitle: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  modalInput: {
+    backgroundColor: "#F5F5F5",
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 20,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: "#E5E5E5",
+  },
+  modalButtonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 15,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  modalButtonCancel: {
+    backgroundColor: "#E5E5E5",
+  },
+  modalButtonCancelText: {
+    color: "#666",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  modalButtonSubmit: {
+    backgroundColor: "#FF9500",
+  },
+  modalButtonSubmitText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
   },
 });

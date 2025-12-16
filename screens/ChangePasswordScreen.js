@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, SafeAreaView, Alert, ActivityIndicator, ScrollView, Image, Dimensions } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, SafeAreaView, Alert, ActivityIndicator, ScrollView, Image, Dimensions, Modal } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
@@ -19,6 +19,10 @@ export default function ChangePasswordScreen() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     // Fetch user information when component mounts
@@ -66,6 +70,10 @@ export default function ChangePasswordScreen() {
 
     getUserInfo();
   }, []);
+
+  const isFormValid = () => {
+    return currentPassword.length >= 6 && newPassword.length >= 6 && newPassword === confirmPassword && confirmPassword.length > 0;
+  };
 
   const validateInputs = () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
@@ -147,7 +155,7 @@ export default function ChangePasswordScreen() {
       console.log("Verify response:", verifyData);
 
       if (verifyData.code !== 200) {
-        Alert.alert("Error", "Current password is incorrect");
+        setPasswordError("Incorrect password. Please try again.");
         setIsLoading(false);
         return;
       }
@@ -189,17 +197,20 @@ export default function ChangePasswordScreen() {
           // Optionally store the new password plain text or clear it from storage.
           // await AsyncStorage.setItem("current_password_hash", newPassword); // For example purposes only
 
-          Alert.alert("Success", "Your password has been updated successfully", [{ text: "OK", onPress: () => navigation.goBack() }]);
+          setShowSuccessModal(true);
         } else {
-          Alert.alert("Error", `Failed to update password: ${updateData.message || "Unknown error"}. Please try again later.`);
+          setErrorMessage(`Failed to update password: ${updateData.message || "Unknown error"}. Please try again later.`);
+          setShowErrorModal(true);
         }
       } catch (parseError) {
         console.error("Error parsing update response:", parseError);
-        Alert.alert("Error", "The server returned an unexpected response. Please try again later.", [{ text: "OK", onPress: () => navigation.goBack() }]);
+        setErrorMessage("The server returned an unexpected response. Please try again later.");
+        setShowErrorModal(true);
       }
     } catch (error) {
       console.error("Error changing password:", error);
-      Alert.alert("Error", "Something went wrong. Please try again.");
+      setErrorMessage("Something went wrong. Please try again.");
+      setShowErrorModal(true);
     } finally {
       setIsLoading(false);
     }
@@ -208,11 +219,7 @@ export default function ChangePasswordScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Header with back button */}
-      <AppHeader
-        title="Change Password"
-        backgroundColor="#AF52DE"
-        onBackPress={() => navigation.goBack()}
-      />
+      <AppHeader title='Change Password' backgroundColor='#AF52DE' onBackPress={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.formContainer}>
@@ -227,12 +234,19 @@ export default function ChangePasswordScreen() {
               placeholderTextColor='#999'
               secureTextEntry={!showCurrentPassword}
               value={currentPassword}
-              onChangeText={setCurrentPassword}
+              onChangeText={(text) => {
+                setCurrentPassword(text);
+                // Clear password error when user starts typing
+                if (passwordError) {
+                  setPasswordError("");
+                }
+              }}
             />
             <TouchableOpacity onPress={() => setShowCurrentPassword(!showCurrentPassword)} style={styles.eyeIcon}>
               <MaterialIcons name={showCurrentPassword ? "visibility-off" : "visibility"} size={20} color='#666' />
             </TouchableOpacity>
           </View>
+          {!!passwordError && <Text style={styles.passwordErrorText}>{passwordError}</Text>}
 
           {/* New Password Input */}
           <View style={styles.inputContainer}>
@@ -277,13 +291,55 @@ export default function ChangePasswordScreen() {
           </View>
 
           {/* Submit Button */}
-          <TouchableOpacity style={styles.submitButton} onPress={handleChangePassword} disabled={isLoading}>
-            {isLoading ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.submitButtonText}>Update Password</Text>}
+          <TouchableOpacity style={[styles.submitButton, (!isFormValid() || isLoading) && styles.submitButtonDisabled]} onPress={handleChangePassword} disabled={!isFormValid() || isLoading}>
+            {isLoading ? (
+              <ActivityIndicator size='small' color='#fff' />
+            ) : (
+              <Text style={[styles.submitButtonText, (!isFormValid() || isLoading) && styles.submitButtonTextDisabled]}>Update Password</Text>
+            )}
           </TouchableOpacity>
         </View>
       </ScrollView>
       {/* Bottom Navigation Bar */}
       <BottomNavBar navigation={navigation} />
+
+      {/* Success Modal */}
+      <Modal visible={showSuccessModal} transparent animationType='fade'>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Password Reset</Text>
+            <Text style={styles.modalSubtitle}>Password Reset Successfully</Text>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonSubmit]}
+              onPress={() => {
+                setShowSuccessModal(false);
+                navigation.goBack();
+              }}
+            >
+              <Text style={styles.modalButtonSubmitText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Error Modal */}
+      <Modal visible={showErrorModal} transparent animationType='fade'>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Error</Text>
+            <Text style={styles.modalSubtitle}>{errorMessage}</Text>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonSubmit]}
+              onPress={() => {
+                setShowErrorModal(false);
+                setErrorMessage("");
+              }}
+            >
+              <Text style={styles.modalButtonSubmitText}>OK</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -346,7 +402,58 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 15,
   },
+  submitButtonDisabled: {
+    backgroundColor: "#E5E5E5",
+  },
   submitButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  submitButtonTextDisabled: {
+    color: "#999",
+  },
+  passwordErrorText: {
+    color: "red",
+    fontSize: 14,
+    marginTop: -10,
+    marginBottom: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    padding: 24,
+    borderRadius: 12,
+    width: "85%",
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    marginBottom: 8,
+    color: "#007AFF",
+    textAlign: "center",
+  },
+  modalSubtitle: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  modalButton: {
+    padding: 15,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  modalButtonSubmit: {
+    backgroundColor: "#FF9500",
+  },
+  modalButtonSubmitText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",

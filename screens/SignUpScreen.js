@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Platform, Modal } from "react-native";
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Platform, Modal, ActivityIndicator } from "react-native";
+import axios from "axios";
 
 // Only import GoogleSigninButton on native platforms (not web)
 let GoogleSigninButton = null;
@@ -16,7 +17,7 @@ if (!isWeb) {
 import AppleSignIn from "../AppleSignIn";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { ACCOUNT_SALT_ENDPOINT, CREATE_ACCOUNT_ENDPOINT, GOOGLE_SIGNUP_ENDPOINT, REFERRAL_API_ENDPOINT } from "../apiConfig";
+import { ACCOUNT_SALT_ENDPOINT, CREATE_ACCOUNT_ENDPOINT, GOOGLE_SIGNUP_ENDPOINT, REFERRAL_API_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
 // import CryptoJS from "react-native-crypto-js";
 // import * as CryptoJS from "react-native-crypto-js";
 import * as Crypto from "expo-crypto";
@@ -36,6 +37,10 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   const [isCheckingReferral, setIsCheckingReferral] = useState(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
+  const [showPassModal, setShowPassModal] = useState(false);
+  const [showForgotPasswordSpinner, setShowForgotPasswordSpinner] = useState(false);
 
   // Handle pre-populated Google user info
   useEffect(() => {
@@ -107,6 +112,20 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       console.log("Referral Modal: No referral email entered");
       return;
     }
+
+    // Normalize emails for comparison (lowercase, trim)
+    const referralEmailNormalized = referralId.trim().toLowerCase();
+    const userEmailNormalized = email.trim().toLowerCase();
+    const googleEmailNormalized = pendingGoogleUserInfo?.email?.trim().toLowerCase() || "";
+    const appleEmailNormalized = pendingAppleUserInfo?.email?.trim().toLowerCase() || "";
+
+    // Check if referral email matches the user's own email
+    if (referralEmailNormalized === userEmailNormalized || referralEmailNormalized === googleEmailNormalized || referralEmailNormalized === appleEmailNormalized) {
+      setReferralError("Please enter the email of the person who referred you, not your own email address.");
+      console.log("Referral Modal: User tried to refer themselves");
+      return;
+    }
+
     setIsCheckingReferral(true);
     try {
       console.log("Referral Modal: Checking referral for email:", referralId);
@@ -236,6 +255,34 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     }
   };
 
+  const onReset = async () => {
+    if (forgotPasswordEmail === "") {
+      Alert.alert("Error", "Please enter an email");
+      return;
+    }
+    setShowForgotPasswordSpinner(true);
+    axios
+      .post(SET_TEMP_PASSWORD_ENDPOINT, {
+        email: forgotPasswordEmail,
+      })
+      .then((response) => {
+        if (response.data.message === "A temporary password has been sent") {
+          setShowForgotPasswordSpinner(false);
+          setShowPassModal(true);
+        }
+        if (response.data.code === 280) {
+          Alert.alert("Error", "No account found with that email.");
+          setShowForgotPasswordSpinner(false);
+          return;
+        }
+      })
+      .catch((error) => {
+        console.error("Forgot password error:", error);
+        Alert.alert("Error", "Something went wrong. Please try again.");
+        setShowForgotPasswordSpinner(false);
+      });
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -266,6 +313,9 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                 <Ionicons name={isConfirmPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
               </TouchableOpacity>
             </View>
+            <TouchableOpacity onPress={() => setShowForgotPasswordModal(true)} style={styles.forgotPasswordLink}>
+              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+            </TouchableOpacity>
           </>
         )}
       </View>
@@ -323,6 +373,60 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             </TouchableOpacity>
             <TouchableOpacity style={{ backgroundColor: "#FFA500", padding: 12, borderRadius: 8, alignItems: "center" }} onPress={handleNewUserReferral} disabled={isCheckingReferral}>
               <Text style={{ color: "#fff", fontWeight: "bold" }}>New User</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Forgot Password Modal */}
+      <Modal visible={showForgotPasswordModal} transparent animationType='fade'>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Forgot Password</Text>
+            <Text style={styles.modalSubtitle}>Enter your email address and we'll send you a temporary password.</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder='Email'
+              value={forgotPasswordEmail}
+              onChangeText={setForgotPasswordEmail}
+              keyboardType='email-address'
+              autoCapitalize='none'
+              editable={!showForgotPasswordSpinner}
+            />
+            <View style={styles.modalButtonContainer}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalButtonCancel]}
+                onPress={() => {
+                  setShowForgotPasswordModal(false);
+                  setForgotPasswordEmail("");
+                }}
+                disabled={showForgotPasswordSpinner}
+              >
+                <Text style={styles.modalButtonCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, styles.modalButtonSubmit]} onPress={onReset} disabled={showForgotPasswordSpinner}>
+                {showForgotPasswordSpinner ? <ActivityIndicator color='#fff' /> : <Text style={styles.modalButtonSubmitText}>Send</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Success Modal */}
+      <Modal visible={showPassModal} transparent animationType='fade'>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Password Reset</Text>
+            <Text style={styles.modalSubtitle}>A temporary password has been sent to your email.</Text>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalButtonSubmit]}
+              onPress={() => {
+                setShowPassModal(false);
+                setShowForgotPasswordModal(false);
+                setForgotPasswordEmail("");
+              }}
+            >
+              <Text style={styles.modalButtonSubmitText}>OK</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -432,6 +536,78 @@ const styles = StyleSheet.create({
   },
   logInText: {
     color: "#FF9500",
+    fontWeight: "bold",
+  },
+  forgotPasswordLink: {
+    alignSelf: "flex-end",
+    marginTop: -10,
+    marginBottom: 10,
+  },
+  forgotPasswordText: {
+    color: "#FF9500",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    padding: 24,
+    borderRadius: 12,
+    width: "85%",
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    marginBottom: 8,
+    color: "#007AFF",
+    textAlign: "center",
+  },
+  modalSubtitle: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  modalInput: {
+    backgroundColor: "#F5F5F5",
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 20,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: "#E5E5E5",
+  },
+  modalButtonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 15,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  modalButtonCancel: {
+    backgroundColor: "#E5E5E5",
+  },
+  modalButtonCancelText: {
+    color: "#666",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  modalButtonSubmit: {
+    backgroundColor: "#FF9500",
+  },
+  modalButtonSubmitText: {
+    color: "#fff",
+    fontSize: 16,
     fontWeight: "bold",
   },
 });
