@@ -1,3 +1,4 @@
+//components/MiniCard.js
 import React from "react";
 import { View, Text, Image, StyleSheet } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -144,7 +145,11 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
   const phoneIsPublic = user?.personal_info?.profile_personal_phone_number_is_public == 1 || user?.phoneIsPublic;
   const tagLineIsPublic = user?.personal_info?.profile_personal_tagline_is_public == 1 || user?.tagLineIsPublic;
   const imageIsPublic = user?.personal_info?.profile_personal_image_is_public == 1 || user?.imageIsPublic;
-
+  const city = sanitizeText(user?.personal_info?.profile_personal_city || user?.city || "");
+  const state = sanitizeText(user?.personal_info?.profile_personal_state || user?.state || "");
+  const locationIsPublic = user?.personal_info?.profile_personal_location_is_public === 1 || user?.locationIsPublic === true;
+  
+  
   return (
     <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
       {(() => {
@@ -209,6 +214,27 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
           return null;
         })()}
 
+        {/* CITY, STATE */}
+        {(() => {
+          if (__DEV__) console.log("🔵 MiniCard - Checking city/state:", { city, state, locationIsPublic, isSafeCity: isSafeForConditional(city), isSafeState: isSafeForConditional(state) });
+
+          if (locationIsPublic && (isSafeForConditional(city) || isSafeForConditional(state))) {
+            const locationParts = [];
+            if (city && city !== "." && city.trim() !== "") locationParts.push(city);
+            if (state && state !== "." && state.trim() !== "") locationParts.push(state);
+
+            const locationText = locationParts.join(", ");
+
+            if (locationText && locationText.trim() !== "") {
+              if (__DEV__) console.log("🔵 MiniCard - Rendering city/state:", locationText);
+              return <Text style={[styles.city, darkMode && styles.darkText]}>{locationText}</Text>;
+            }
+          }
+          return null;
+        })()}
+
+
+
         {/* RELATIONSHIP - Only show if showRelationship prop is true */}
         {showRelationship &&
           (() => {
@@ -223,9 +249,10 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
   );
 };
 
+
 const styles = StyleSheet.create({
   cardContainer: {
-    flexDirection: "row",
+    flexDirection: "row", // main layout: left column (name+image) + right column (info)
     padding: 15,
     backgroundColor: "#fff",
     borderRadius: 10,
@@ -236,24 +263,36 @@ const styles = StyleSheet.create({
     elevation: 3,
     marginVertical: 5,
   },
+  leftColumn: {
+    flexDirection: "column", // stack name and image vertically
+    alignItems: "flex-start",
+    marginRight: 15,
+  },
+  rightColumn: {
+    flex: 1, // take remaining space
+    justifyContent: "center",
+  },
   profileImage: {
     width: 50,
     height: 50,
     borderRadius: 25,
-    marginRight: 15,
+    marginTop: 5, // space below name
   },
-  textContainer: {
-    flex: 1,
+  relationship: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 2,
+    fontStyle: "italic",
   },
   name: {
     fontSize: 16,
     fontWeight: "bold",
-    marginBottom: 4,
+    textAlign: "left",
   },
   tagline: {
     fontSize: 14,
     color: "#666",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   email: {
     fontSize: 14,
@@ -265,12 +304,6 @@ const styles = StyleSheet.create({
     color: "#666",
     marginBottom: 2,
   },
-  relationship: {
-    fontSize: 14,
-    color: "#666",
-    marginTop: 2,
-    fontStyle: "italic",
-  },
   location: {
     fontSize: 14,
     color: "#666",
@@ -280,6 +313,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#1a73e8",
     marginBottom: 2,
+  },
+  relationship: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 2,
+    fontStyle: "italic",
   },
   darkCardContainer: {
     backgroundColor: "#2d2d2d",
@@ -296,5 +335,6 @@ const styles = StyleSheet.create({
     tintColor: "#ffffff",
   },
 });
+
 
 export default MiniCard;

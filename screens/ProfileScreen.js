@@ -127,11 +127,14 @@ const ProfileScreen = ({ route, navigation }) => {
         lastName: apiUser.personal_info?.profile_personal_last_name || "",
         phoneNumber: apiUser.personal_info?.profile_personal_phone_number || "",
         tagLine: apiUser.personal_info?.profile_personal_tag_line || "",
+        city: apiUser.personal_info?.profile_personal_city || "",
+        state: apiUser.personal_info?.profile_personal_state || "",
         shortBio: apiUser.personal_info?.profile_personal_short_bio || "",
         emailIsPublic: apiUser.personal_info?.profile_personal_email_is_public === 1,
         phoneIsPublic: apiUser.personal_info?.profile_personal_phone_number_is_public === 1,
         imageIsPublic: apiUser.personal_info?.profile_personal_image_is_public === 1,
         tagLineIsPublic: apiUser.personal_info?.profile_personal_tag_line_is_public === 1,
+        locationIsPublic: apiUser.personal_info?.profile_personal_location_is_public === 1,
         shortBioIsPublic: apiUser.personal_info?.profile_personal_short_bio_is_public === 1,
         experienceIsPublic: apiUser.personal_info?.profile_personal_experience_is_public === 1,
         educationIsPublic: apiUser.personal_info?.profile_personal_education_is_public === 1,
@@ -856,6 +859,12 @@ const ProfileScreen = ({ route, navigation }) => {
               return tagLine ? <Text style={[styles.tagline, darkMode && styles.darkTagline]}>{tagLine}</Text> : null;
             })()}
             {(() => {
+              const location = user.city && user.state && (isCurrentUserProfile || user.locationIsPublic)
+                ? `${sanitizeText(user.city)}, ${sanitizeText(user.state)}`
+                : "";
+              return location ? <Text style={[styles.tagline, darkMode && styles.darkTagline]}>{location}</Text> : null;
+            })()}
+            {(() => {
               const shortBio = user.shortBio && (isCurrentUserProfile || user.shortBioIsPublic) ? sanitizeText(user.shortBio) : "";
               return shortBio ? <Text style={[styles.bio, darkMode && styles.darkBio]}>{shortBio}</Text> : null;
             })()}
@@ -988,10 +997,13 @@ const ProfileScreen = ({ route, navigation }) => {
                               phone: user.phoneNumber,
                               image: user.profileImage,
                               tagLine: user.tagLine,
+                              city: user.city,
+                              state: user.state,
                               emailIsPublic: user.emailIsPublic,
                               phoneIsPublic: user.phoneIsPublic,
                               imageIsPublic: user.imageIsPublic,
                               tagLineIsPublic: user.tagLineIsPublic,
+                              locationIsPublic: user.locationIsPublic,
                             };
                             navigation.navigate("ExpertiseDetail", {
                               expertiseData,
@@ -1049,10 +1061,13 @@ const ProfileScreen = ({ route, navigation }) => {
                                 phone: user.phoneNumber,
                                 image: user.profileImage,
                                 tagLine: user.tagLine,
+                                city: user.city,
+                                state: user.state,
                                 emailIsPublic: user.emailIsPublic,
                                 phoneIsPublic: user.phoneIsPublic,
                                 imageIsPublic: user.imageIsPublic,
                                 tagLineIsPublic: user.tagLineIsPublic,
+                                locationIsPublic: user.locationIsPublic,
                               };
                               navigation.navigate("WishResponses", {
                                 wishData: wishDataForNavigation,
@@ -1101,10 +1116,13 @@ const ProfileScreen = ({ route, navigation }) => {
                               phone: user.phoneNumber,
                               image: user.profileImage,
                               tagLine: user.tagLine,
+                              city: user.city,
+                              state: user.state,
                               emailIsPublic: user.emailIsPublic,
                               phoneIsPublic: user.phoneIsPublic,
                               imageIsPublic: user.imageIsPublic,
                               tagLineIsPublic: user.tagLineIsPublic,
+                              locationIsPublic: user.locationIsPublic,
                             };
                             navigation.navigate("WishDetail", {
                               wishData,
@@ -1288,6 +1306,7 @@ const styles = StyleSheet.create({
     color: "#777",
     marginBottom: 12,
   },
+  
   bio: {
     fontSize: 16,
     color: "#777",

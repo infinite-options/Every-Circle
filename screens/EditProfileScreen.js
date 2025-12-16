@@ -1,3 +1,4 @@
+//EditProfileScreen.js
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Modal, ActivityIndicator, Keyboard, UIManager, findNodeHandle } from "react-native";
 import axios from "axios";
@@ -44,6 +45,9 @@ const EditProfileScreen = ({ route, navigation }) => {
     phoneNumber: user?.phoneNumber || "",
     tagLine: user?.tagLine || "",
     shortBio: user?.shortBio || "",
+    city: user?.personal_info?.profile_personal_city || '',
+    state: user?.personal_info?.profile_personal_state || '',
+    locationIsPublic:user?.personal_info?.profile_personal_location_is_public === 1,
     emailIsPublic: user?.emailIsPublic || false,
     phoneIsPublic: user?.phoneIsPublic || false,
     tagLineIsPublic: user?.tagLineIsPublic || false,
@@ -349,7 +353,9 @@ const EditProfileScreen = ({ route, navigation }) => {
       payload.append("profile_personal_phone_number", formData.phoneNumber);
       payload.append("profile_personal_tag_line", formData.tagLine);
       payload.append("profile_personal_short_bio", formData.shortBio);
-
+      payload.append("profile_personal_city", formData.city);
+      payload.append("profile_personal_state", formData.state);
+      payload.append("profile_personal_location_is_public", formData.locationIsPublic ? 1 : 0);
       payload.append("profile_personal_phone_number_is_public", formData.phoneIsPublic ? 1 : 0);
       payload.append("profile_personal_email_is_public", formData.emailIsPublic ? 1 : 0);
       payload.append("profile_personal_tag_line_is_public", formData.tagLineIsPublic ? 1 : 0);
@@ -515,7 +521,17 @@ const EditProfileScreen = ({ route, navigation }) => {
           setPendingBusinessNames(newBusinesses.map((biz) => biz.name));
           setShowBusinessModal(true);
         } else {
-          navigation.replace("Profile");
+          navigation.replace("Profile", {
+            updatedUser: {
+              ...user,
+              personal_info: {
+                ...user.personal_info,
+                profile_personal_city: formData.city,
+                profile_personal_state: formData.state,
+                profile_personal_location_is_public: formData.locationIsPublic ? 1 : 0,
+              },
+            }
+          });
         }
       } else {
         console.error("Profile update failed:", response);
@@ -591,6 +607,9 @@ const EditProfileScreen = ({ route, navigation }) => {
     email: formData.email,
     phoneNumber: formData.phoneNumber,
     tagLine: formData.tagLine,
+    city: formData.city,
+    state: formData.state,
+    locationIsPublic: formData.locationIsPublic,
     // Include visibility flags
     emailIsPublic: formData.emailIsPublic,
     phoneIsPublic: formData.phoneIsPublic,
@@ -721,6 +740,8 @@ const EditProfileScreen = ({ route, navigation }) => {
         </View>
         {renderField("Phone Number", formData.phoneNumber, formData.phoneIsPublic, "phoneNumber", "phoneIsPublic")}
         {renderField("Email", formData.email, formData.emailIsPublic, "email", "emailIsPublic")}
+        {renderField("City", formData.city, formData.locationIsPublic, "city", "locationIsPublic")}
+        {renderField("State", formData.state, formData.locationIsPublic, "state", "locationIsPublic")}
         {renderField("Tag Line", formData.tagLine, formData.tagLineIsPublic, "tagLine", "tagLineIsPublic")}
 
         {/* MiniCard Live Preview Section */}

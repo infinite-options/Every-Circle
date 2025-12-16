@@ -288,6 +288,10 @@ const NetworkScreen = ({ navigation }) => {
       const phoneIsPublic = p.profile_personal_phone_number_is_public === 1;
       const imageIsPublic = p.profile_personal_image_is_public === 1;
 
+      const city = p.profile_personal_city || "";
+      const state = p.profile_personal_state || "";
+      const locationIsPublic = p.profile_personal_location_is_public === 1;
+
       // Sanitize all text fields when creating publicData
       const publicData = {
         profile_uid: profileUID,
@@ -298,11 +302,15 @@ const NetworkScreen = ({ navigation }) => {
         email: emailIsPublic ? sanitizeText(apiUser?.user_email) : "",
         phoneNumber: phoneIsPublic ? sanitizeText(p.profile_personal_phone_number) : "",
         profileImage: imageIsPublic ? sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : "") : "",
+        city: locationIsPublic ? sanitizeText(p.profile_personal_city || "") : "",
+        state: locationIsPublic ? sanitizeText(p.profile_personal_state || "") : "",
+        locationIsPublic: p.profile_personal_city_is_public === 1 || p.profile_personal_state_is_public === 1,
         // Include visibility flags for MiniCard
         tagLineIsPublic,
         emailIsPublic,
         phoneIsPublic,
         imageIsPublic,
+        locationIsPublic,
       };
 
       setUserProfileData(publicData);
@@ -328,6 +336,11 @@ const NetworkScreen = ({ navigation }) => {
     // Organization/Title (using tagLine)
     if (data.tagLine) {
       lines.push(`ORG:${escapeVCardValue(data.tagLine)}`);
+    }
+
+    // Location (city, state)
+    if (data.city || data.state) {
+      lines.push(`ADR;TYPE=home:;;${data.city || ""};${data.state || ""};;;`);
     }
 
     // Email
@@ -426,6 +439,8 @@ const NetworkScreen = ({ navigation }) => {
       firstName: sanitizeText(p.profile_personal_first_name),
       lastName: sanitizeText(p.profile_personal_last_name),
       tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline),
+      city: sanitizeText(p.profile_personal_city || ""),
+      state: sanitizeText(p.profile_personal_state || ""),
       email: sanitizeText(apiUser?.user_email),
       phoneNumber: sanitizeText(p.profile_personal_phone_number),
       profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
@@ -521,12 +536,15 @@ const NetworkScreen = ({ navigation }) => {
           firstName: sanitizeText(node.profile_personal_first_name || ""),
           lastName: sanitizeText(node.profile_personal_last_name || ""),
           tagLine: sanitizeText(node.profile_personal_tag_line || ""),
+          city: sanitizeText(node.profile_personal_city || ""),
+          state: sanitizeText(node.profile_personal_state || ""),
           phoneNumber: sanitizeText(node.profile_personal_phone_number || ""),
           profileImage: sanitizeText(node.profile_personal_image || ""),
           relationship: node.circle_relationship || null,
           emailIsPublic: node.profile_personal_email_is_public === 1,
           phoneIsPublic: node.profile_personal_phone_number_is_public === 1,
           tagLineIsPublic: node.profile_personal_tag_line_is_public === 1,
+          locationIsPublic: node.profile_personal_location_is_public === 1,
           imageIsPublic: node.profile_personal_image_is_public === 1,
           personal_info: {
             profile_personal_first_name: sanitizeText(node.profile_personal_first_name || ""),
