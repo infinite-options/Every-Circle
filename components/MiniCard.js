@@ -1,3 +1,4 @@
+//components/MiniCard.js
 import React from "react";
 import { View, Text, Image, StyleSheet, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -54,7 +55,6 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
             <Image
               source={businessImage && businessImage.trim() !== "" ? { uri: businessImage } : require("../assets/profile.png")}
               style={[styles.profileImage, darkMode && styles.darkProfileImage]}
-              tintColor={darkMode ? "#ffffff" : undefined}
               onError={(error) => {
                 console.log("MiniCard business image failed to load:", error.nativeEvent.error);
                 console.log("Problematic business image URI:", businessImage);
@@ -145,7 +145,11 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
   const phoneIsPublic = user?.personal_info?.profile_personal_phone_number_is_public == 1 || user?.phoneIsPublic;
   const tagLineIsPublic = user?.personal_info?.profile_personal_tagline_is_public == 1 || user?.tagLineIsPublic;
   const imageIsPublic = user?.personal_info?.profile_personal_image_is_public == 1 || user?.imageIsPublic;
-
+  const city = sanitizeText(user?.personal_info?.profile_personal_city || user?.city || "");
+  const state = sanitizeText(user?.personal_info?.profile_personal_state || user?.state || "");
+  const locationIsPublic = user?.personal_info?.profile_personal_location_is_public === 1 || user?.locationIsPublic === true;
+  
+  
   return (
     <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
       {(() => {
@@ -210,6 +214,27 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
           return null;
         })()}
 
+        {/* CITY, STATE */}
+        {(() => {
+          if (__DEV__) console.log("🔵 MiniCard - Checking city/state:", { city, state, locationIsPublic, isSafeCity: isSafeForConditional(city), isSafeState: isSafeForConditional(state) });
+
+          if (locationIsPublic && (isSafeForConditional(city) || isSafeForConditional(state))) {
+            const locationParts = [];
+            if (city && city !== "." && city.trim() !== "") locationParts.push(city);
+            if (state && state !== "." && state.trim() !== "") locationParts.push(state);
+
+            const locationText = locationParts.join(", ");
+
+            if (locationText && locationText.trim() !== "") {
+              if (__DEV__) console.log("🔵 MiniCard - Rendering city/state:", locationText);
+              return <Text style={[styles.city, darkMode && styles.darkText]}>{locationText}</Text>;
+            }
+          }
+          return null;
+        })()}
+
+
+
         {/* RELATIONSHIP - Only show if showRelationship prop is true */}
         {showRelationship &&
           (() => {
@@ -223,6 +248,7 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   cardContainer: {
