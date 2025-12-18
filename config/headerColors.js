@@ -19,7 +19,7 @@ export const HEADER_COLORS = {
   settings: "#AF52DE", // Purple
   network: "#2434C2", // Blue (Connect)
   account: "#18884A", // Green
-  search: "#AF52DE", // Purple
+  search: "#4F8A8B", // Purple -> green shade
   changePassword: "#AF52DE", // Purple
   businessProfile: "#AF52DE", // Purple
 
