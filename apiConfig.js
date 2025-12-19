@@ -2,7 +2,7 @@
 // Uncomment the appropriate line for your environment
 
 // Production/Development Environment
-export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
+//export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
 // export const SEARCH_BASE_URL = "http://54.183.12.163:5001";
 // export const SEARCH_BASE_URL = "http://13.52.244.236:5001";
 // export const SEARCH_BASE_URL = "http://13.52.82.86:5001";
@@ -13,7 +13,7 @@ export const SEARCH_BASE_URL = "https://ioec2vrecsearch.infiniteoptions.com";
 
 // Local Development (commented out by default)
 // export const API_BASE_URL = "http://localhost:4090";
-//export const API_BASE_URL = "http://127.0.0.1:4090";
+export const API_BASE_URL = "http://127.0.0.1:4090";
 
 // Google and Apple Authentication Endpoints
 export const GOOGLE_SIGNUP_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialSignUp/EVERY-CIRCLE";
@@ -50,6 +50,9 @@ export const WISHES_RESULTS_ENDPOINT = `${SEARCH_BASE_URL}/search_wishes`;
 export const BOUNTY_RESULTS_ENDPOINT = `${API_BASE_URL}/api/bountyresults`;
 export const TAG_SEARCH_DISTINCT_ENDPOINT = `${API_BASE_URL}/api/tagsearchdistinct`;
 export const TAG_CATEGORY_DISTINCT_ENDPOINT = `${API_BASE_URL}/api/tagcategorydistinct`;
+
+//Search Referral Endpoint
+export const SEARCH_REFERRAL_ENDPOINT = `${API_BASE_URL}/api/search_referral`;
 
 // Transaction and Rating Endpoints
 export const TRANSACTIONS_ENDPOINT = `${API_BASE_URL}/api/v1/transactions`;

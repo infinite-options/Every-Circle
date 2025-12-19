@@ -21,6 +21,7 @@ import { ACCOUNT_SALT_ENDPOINT, CREATE_ACCOUNT_ENDPOINT, GOOGLE_SIGNUP_ENDPOINT,
 // import CryptoJS from "react-native-crypto-js";
 // import * as CryptoJS from "react-native-crypto-js";
 import * as Crypto from "expo-crypto";
+import ReferralSearch from "../components/ReferralSearch";
 
 export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, navigation, route }) {
   const [email, setEmail] = useState("");
@@ -167,6 +168,27 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     }
   };
 
+  const handleReferralSelect = (selectedUid, selectedUserId) => {
+    setShowReferralModal(false);
+    
+    if (pendingGoogleUserInfo) {
+      navigation.navigate("UserInfo", {
+        googleUserInfo: pendingGoogleUserInfo,
+        referralId: selectedUid,
+      });
+      setPendingGoogleUserInfo(null);
+    } else if (pendingAppleUserInfo) {
+      navigation.navigate("UserInfo", {
+        appleUserInfo: pendingAppleUserInfo,
+        referralId: selectedUid,
+      });
+      setPendingAppleUserInfo(null);
+    } else if (pendingRegularSignup) {
+      navigation.navigate("UserInfo", { referralId: selectedUid });
+      setPendingRegularSignup(false);
+    }
+  };
+
   const handleNewUserReferral = async () => {
     setReferralError("");
     setShowReferralModal(false);
@@ -222,6 +244,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           await AsyncStorage.setItem("user_email_id", googleUserInfo.email);
           setPendingGoogleUserInfo(googleUserInfo);
           setShowReferralModal(true);
+          console.log("Setting referral modal to true, should show now");
         } else {
           throw new Error("Failed to create account");
         }
@@ -354,10 +377,13 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         </Text>
       </View>
 
+      {/* Referral Modal */}
       <Modal visible={showReferralModal} transparent animationType='fade'>
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)" }}>
-          <View style={{ backgroundColor: "#fff", padding: 24, borderRadius: 12, width: 300 }}>
+          <View style={{ backgroundColor: "#fff", padding: 24, borderRadius: 12, width: '90%', maxWidth: 500, maxHeight: '80%' }}>
             <Text style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>Who referred you to Every Circle?</Text>
+            
+            {/* Email Input Section */}
             <TextInput
               style={{ borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, marginBottom: 8 }}
               placeholder='Enter referral email (optional)'
@@ -368,12 +394,29 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               editable={!isCheckingReferral}
             />
             {!!referralError && <Text style={{ color: "red", marginBottom: 8 }}>{referralError}</Text>}
-            <TouchableOpacity style={{ backgroundColor: "#007AFF", padding: 12, borderRadius: 8, alignItems: "center", marginBottom: 8 }} onPress={handleReferralSubmit} disabled={isCheckingReferral}>
+            <TouchableOpacity 
+              style={{ backgroundColor: "#007AFF", padding: 12, borderRadius: 8, alignItems: "center", marginBottom: 12 }} 
+              onPress={handleReferralSubmit} 
+              disabled={isCheckingReferral}
+            >
               <Text style={{ color: "#fff", fontWeight: "bold" }}>{isCheckingReferral ? "Checking..." : "Continue"}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={{ backgroundColor: "#FFA500", padding: 12, borderRadius: 8, alignItems: "center" }} onPress={handleNewUserReferral} disabled={isCheckingReferral}>
-              <Text style={{ color: "#fff", fontWeight: "bold" }}>New User</Text>
-            </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 16 }}>
+              <View style={{ flex: 1, height: 1, backgroundColor: '#E5E5E5' }} />
+              <Text style={{ marginHorizontal: 10, color: '#666', fontSize: 14 }}>OR SEARCH</Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: '#E5E5E5' }} />
+            </View>
+
+            {/* Search Section - Embed ReferralSearch content here */}
+            <ReferralSearch
+              visible={true}
+              onSelect={handleReferralSelect}
+              onNewUser={handleNewUserReferral}
+              onClose={() => setShowReferralModal(false)}
+              embedded={true}
+            />
           </View>
         </View>
       </Modal>
