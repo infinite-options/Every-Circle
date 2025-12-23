@@ -19,7 +19,10 @@ export default function HowItWorksScreen({ navigation }) {
     <SafeAreaView style={styles.safeArea}>
       {/* TOP MAROON HEADER */}
       <View style={styles.topHeader}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+        >
           <Ionicons name="chevron-back" size={18} color="#111" />
         </TouchableOpacity>
 
@@ -37,11 +40,20 @@ export default function HowItWorksScreen({ navigation }) {
           rightIconBg="#fff"
           rightIconBorder
         >
-          <Text style={styles.pillCenterText}>everyCircle</Text>
+          {/* <Text style={styles.pillCenterText}>everyCircle</Text> */}
+          <Text style={styles.pillCenterText}>
+            <Text style={styles.everyItalic}>every</Text>
+            <Text style={styles.circleNormal}>Circle</Text>
+          </Text>
         </Pill>
 
         {/* How It Works pill with highlighted text */}
-        <Pill bg={PALE_YELLOW} rightIcon="chevron-down" rightIconBg={PALE_YELLOW} rightIconBorder>
+        <Pill
+          bg={PALE_YELLOW}
+          rightIcon="chevron-down"
+          rightIconBg={PALE_YELLOW}
+          rightIconBorder
+        >
           <View style={styles.hiwHighlightWrap}>
             <Text style={styles.hiwHighlightText}>How It Works</Text>
           </View>
@@ -54,16 +66,26 @@ export default function HowItWorksScreen({ navigation }) {
               source={require("../assets/everycirclelogonew_400x400.jpg")}
               style={styles.videoImage}
             />
-            <TouchableOpacity style={styles.playOverlay} onPress={onPlay} activeOpacity={0.9}>
+            <TouchableOpacity
+              style={styles.playOverlay}
+              onPress={onPlay}
+              activeOpacity={0.9}
+            >
               <Ionicons name="play" size={30} color="rgba(255,255,255,0.95)" />
               <View style={styles.playCircle} />
             </TouchableOpacity>
 
             {/* bottom nav circles */}
-            <TouchableOpacity style={[styles.cornerNav, styles.cornerLeft]} onPress={onPrev}>
+            <TouchableOpacity
+              style={[styles.cornerNav, styles.cornerLeft]}
+              onPress={onPrev}
+            >
               <Ionicons name="chevron-back" size={18} color="#111" />
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.cornerNav, styles.cornerRight]} onPress={onNext}>
+            <TouchableOpacity
+              style={[styles.cornerNav, styles.cornerRight]}
+              onPress={onNext}
+            >
               <Ionicons name="chevron-forward" size={18} color="#111" />
             </TouchableOpacity>
           </View>
@@ -86,7 +108,9 @@ export default function HowItWorksScreen({ navigation }) {
                 <Text style={styles.smallMaroon}>Circle</Text>
                 <Text style={styles.smallBlack}>.com</Text>
               </Text>
-              <Text style={styles.smallSubtitle}>Connecting Circles of Influence</Text>
+              <Text style={styles.smallSubtitle}>
+                Connecting Circles of Influence
+              </Text>
             </View>
           </View>
         </View>
@@ -98,9 +122,15 @@ export default function HowItWorksScreen({ navigation }) {
           <Text style={styles.gbHeading}>One-Stop Marketing Platform</Text>
 
           <Text style={styles.gbBody}>
-            <Text style={styles.gbItalic}>Comprehensive Turnkey Solution for{"\n"}</Text>
-            <Text style={styles.gbItalic}>Businesses, Organizations and Professionals{"\n"}</Text>
-            <Text style={styles.gbBold}>solves common, fundamental challenges:</Text>
+            <Text style={styles.gbItalic}>
+              Comprehensive Turnkey Solution for{"\n"}
+            </Text>
+            <Text style={styles.gbItalic}>
+              Businesses, Organizations and Professionals{"\n"}
+            </Text>
+            <Text style={styles.gbBold}>
+              solves common, fundamental challenges:
+            </Text>
           </Text>
 
           <Text style={styles.gbMaroonHeading}>Save Time, Money, ...</Text>
@@ -111,17 +141,25 @@ export default function HowItWorksScreen({ navigation }) {
           </Text>
 
           <Text style={styles.gbHeading2}>Generate Specific Connections</Text>
-          <Text style={styles.gbLine}>Matching your criteria, geographical radius, ...</Text>
+          <Text style={styles.gbLine}>
+            Matching your criteria, geographical radius, ...
+          </Text>
 
           <Text style={styles.gbHeading2}>Earn Multiple Revenue Streams</Text>
           <Text style={styles.gbLine}>
-            with <Text style={styles.gbBold}>NO-COST</Text> Profiles for each{"\n"}
+            with <Text style={styles.gbBold}>NO-COST</Text> Profiles for each
+            {"\n"}
             individual, business, organization
           </Text>
         </View>
 
         {/* PROFILE HEADER PILL */}
-        <HeaderPill title="PROFILE" bg={MAROON} icon="person-outline" iconColor="#111" />
+        <HeaderPill
+          title="PROFILE"
+          bg={MAROON}
+          icon="person-outline"
+          iconColor="#111"
+        />
 
         <View style={styles.card}>
           <Text style={styles.secTitle}>1. Create Your Profile(s)</Text>
@@ -147,7 +185,10 @@ export default function HowItWorksScreen({ navigation }) {
           </Text>
 
           <Bullet>
-            <Text>Create Circles of Influence{"\n"}Join other users’ Circles of Influence</Text>
+            <Text>
+              Create Circles of Influence{"\n"}Join other users’ Circles of
+              Influence
+            </Text>
           </Bullet>
 
           <Bullet>
@@ -156,18 +197,33 @@ export default function HowItWorksScreen({ navigation }) {
 
           <Text style={styles.noteLine}>
             <Text style={styles.noteLabel}>Note:</Text>
-            <Text> You manage the narrative here{"\n"}Submit as little or as much as you desire</Text>
+            <Text>
+              {" "}
+              You manage the narrative here{"\n"}Submit as little or as much as
+              you desire
+            </Text>
           </Text>
         </View>
 
         {/* CONNECT HEADER PILL */}
-        <HeaderPill title="CONNECT" bg={CONNECT_BLUE} icon="git-network-outline" iconColor="#111" />
+        <HeaderPill
+          title="CONNECT"
+          bg={CONNECT_BLUE}
+          icon="git-network-outline"
+          iconColor="#111"
+        />
 
         <View style={styles.card}>
-          <Text style={styles.secTitle}>2. Generate <Text style={styles.boldWord}>SPECIFIC</Text> Connections</Text>
+          <Text style={styles.secTitle}>
+            2. Generate <Text style={styles.boldWord}>SPECIFIC</Text>{" "}
+            Connections
+          </Text>
 
           <Bullet>
-            <Text>Meet prospects in-person and online{"\n"}matching your criteria, geographical radius</Text>
+            <Text>
+              Meet prospects in-person and online{"\n"}matching your criteria,
+              geographical radius
+            </Text>
           </Bullet>
 
           <Bullet>
@@ -175,7 +231,8 @@ export default function HowItWorksScreen({ navigation }) {
           </Bullet>
 
           <Bullet>
-            <Text>Grow your personal / professional networks{"\n"}
+            <Text>
+              Grow your personal / professional networks{"\n"}
               Invite others with your custom QR code and{"\n"}
               marketing collateral to create their profiles
             </Text>
@@ -183,10 +240,17 @@ export default function HowItWorksScreen({ navigation }) {
         </View>
 
         {/* ACCOUNT HEADER PILL */}
-        <HeaderPill title="ACCOUNT" bg={ACCOUNT_GREEN} icon="business-outline" iconColor="#111" />
+        <HeaderPill
+          title="ACCOUNT"
+          bg={ACCOUNT_GREEN}
+          icon="business-outline"
+          iconColor="#111"
+        />
 
         <View style={styles.card}>
-          <Text style={styles.secTitle}>3. Manage Multiple Revenue Streams</Text>
+          <Text style={styles.secTitle}>
+            3. Manage Multiple Revenue Streams
+          </Text>
 
           <Bullet>
             <Text>Select attributes for advertisers</Text>
@@ -208,14 +272,17 @@ export default function HowItWorksScreen({ navigation }) {
             <Text>
               Bounties are deducted and shared,{"\n"}
               by different percentages,{" "}
-              <Text style={[styles.boldWord, styles.italicWord]}>ONLY</Text>{" "}
+              <Text style={[styles.boldWord, styles.italicWord]}>
+                ONLY
+              </Text>{" "}
               after{"\n"}
               completed transactions
             </Text>
           </Text>
 
           <Bullet>
-            <Text>Review your Dashboards{"\n"}
+            <Text>
+              Review your Dashboards{"\n"}
               Revenue, Expenses (Shopping Cart){"\n"}
               Bounty Revenue Distribution Table{"\n"}
               Revenue Guide and Projections
@@ -224,13 +291,22 @@ export default function HowItWorksScreen({ navigation }) {
         </View>
 
         {/* SETTINGS HEADER PILL */}
-        <HeaderPill title="SETTINGS" bg={SETTINGS_PURPLE} icon="settings-outline" iconColor="#111" />
+        <HeaderPill
+          title="SETTINGS"
+          bg={SETTINGS_PURPLE}
+          icon="settings-outline"
+          iconColor="#111"
+        />
 
         <View style={styles.card}>
-          <Text style={styles.secTitle}>4. Control and Manage <Text style={styles.boldWord}>YOUR</Text> Platform</Text>
+          <Text style={styles.secTitle}>
+            4. Control and Manage <Text style={styles.boldWord}>YOUR</Text>{" "}
+            Platform
+          </Text>
 
           <Bullet>
-            <Text>Manage Settings{"\n"}
+            <Text>
+              Manage Settings{"\n"}
               Display / Hide profiles and features{"\n"}
               Select specific notification criteria
             </Text>
@@ -238,12 +314,18 @@ export default function HowItWorksScreen({ navigation }) {
         </View>
 
         {/* SEARCH HEADER PILL */}
-        <HeaderPill title="SEARCH" bg={SEARCH_TEAL} icon="search-outline" iconColor="#111" />
+        <HeaderPill
+          title="SEARCH"
+          bg={SEARCH_TEAL}
+          icon="search-outline"
+          iconColor="#111"
+        />
 
         <View style={styles.card}>
           <Text style={styles.secTitle}>5. Advanced Search</Text>
           <Bullet>
-            <Text>Concepts, keywords{"\n"}
+            <Text>
+              Concepts, keywords{"\n"}
               Within a specific profile{"\n"}
               All profiles in the platform
             </Text>
@@ -251,7 +333,11 @@ export default function HowItWorksScreen({ navigation }) {
         </View>
 
         {/* CONTINUE BUTTON */}
-        <TouchableOpacity style={styles.continueBtn} activeOpacity={0.9} onPress={() => console.log("Continue")}>
+        <TouchableOpacity
+          style={styles.continueBtn}
+          activeOpacity={0.9}
+          onPress={() => console.log("Continue")}
+        >
           <Text style={styles.continueText}>Continue</Text>
         </TouchableOpacity>
 
@@ -259,28 +345,54 @@ export default function HowItWorksScreen({ navigation }) {
         <FeedbackBanner />
 
         {/* DROPDOWN PILLS */}
-        <Pill bg="#fff" rightIcon="chevron-down" rightIconBg="#fff" rightIconBorder>
+        <Pill
+          bg="#fff"
+          rightIcon="chevron-down"
+          rightIconBg="#fff"
+          rightIconBorder
+        >
           <Text style={styles.pillBig}>HOME</Text>
         </Pill>
 
-        <Pill bg="#fff" rightIcon="chevron-down" rightIconBg="#fff" rightIconBorder>
+        <Pill
+          bg="#fff"
+          rightIcon="chevron-down"
+          rightIconBg="#fff"
+          rightIconBorder
+        >
           <Text style={styles.pillBig}>
             Welcome! <Text style={styles.pillItalic}>Sign Up</Text>
           </Text>
         </Pill>
 
-        <Pill bg="#fff" rightIcon="chevron-down" rightIconBg="#fff" rightIconBorder>
+        <Pill
+          bg="#fff"
+          rightIcon="chevron-down"
+          rightIconBg="#fff"
+          rightIconBorder
+        >
           <Text style={styles.pillBig}>
             Welcome Back! <Text style={styles.pillItalic}>Log In</Text>
           </Text>
         </Pill>
 
-        <Pill bg="#fff" rightIcon="chevron-down" rightIconBg="#fff" rightIconBorder>
-          <Text style={[styles.pillCenterText, { fontSize: 22 }]}>everyCircle</Text>
+        <Pill
+          bg="#fff"
+          rightIcon="chevron-down"
+          rightIconBg="#fff"
+          rightIconBorder
+        >
+          <Text style={[styles.pillCenterText, { fontSize: 22 }]}>
+            everyCircle
+          </Text>
         </Pill>
 
         {/* CONTINUE BUTTON AGAIN */}
-        <TouchableOpacity style={[styles.continueBtn, { marginTop: 10 }]} activeOpacity={0.9} onPress={() => console.log("Continue2")}>
+        <TouchableOpacity
+          style={[styles.continueBtn, { marginTop: 10 }]}
+          activeOpacity={0.9}
+          onPress={() => console.log("Continue2")}
+        >
           <Text style={styles.continueText}>Continue</Text>
         </TouchableOpacity>
 
@@ -415,6 +527,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
+  everyItalic: {
+    fontStyle: "italic",
+    fontWeight: "900", // keep it bold 
+  },
+  circleNormal: {
+    fontStyle: "normal",
+    fontWeight: "900",
+  },
+
   /* Pills */
   pill: {
     width: "100%",
@@ -528,7 +649,12 @@ const styles = StyleSheet.create({
   smallSubtitle: { fontSize: 18, color: "#111" },
 
   /* Got Business card text */
-  gbTitle: { fontSize: 34, fontWeight: "900", color: MAROON, fontStyle: "italic" },
+  gbTitle: {
+    fontSize: 34,
+    fontWeight: "900",
+    color: MAROON,
+    fontStyle: "italic",
+  },
   gbHeading: { fontSize: 28, fontWeight: "900", color: "#111", marginTop: 10 },
   gbBody: { fontSize: 18, color: "#111", marginTop: 6, lineHeight: 26 },
   gbItalic: { fontStyle: "italic" },
@@ -636,7 +762,12 @@ const styles = StyleSheet.create({
   },
 
   /* Dropdown pills at bottom */
-  pillBig: { fontSize: 32, fontWeight: "900", color: "#111", textAlign: "center" },
+  pillBig: {
+    fontSize: 32,
+    fontWeight: "900",
+    color: "#111",
+    textAlign: "center",
+  },
   pillItalic: { fontStyle: "italic", fontWeight: "900" },
 
   /* bottom icons */
