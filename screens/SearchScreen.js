@@ -17,6 +17,9 @@ export default function SearchScreen({ route }) {
   const [cartItems, setCartItems] = useState([]);
   const [cartCount, setCartCount] = useState(0);
 
+  const [isFirstVisit, setIsFirstVisit] = useState(true);
+  const [hasLoadedInitialSearch, setHasLoadedInitialSearch] = useState(false);
+
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
   const searchFeedbackInstructions = "Instructions for Search";
@@ -45,6 +48,7 @@ export default function SearchScreen({ route }) {
 
   // Search type state: 'businesses', 'expertise', 'seeking'
   const [searchType, setSearchType] = useState("businesses");
+  
 
   // Restore search state when returning from Profile
   useFocusEffect(
@@ -118,6 +122,98 @@ export default function SearchScreen({ route }) {
     return unsubscribe;
   }, [navigation, route.params?.refreshCart]); // Add route.params?.refreshCart as a dependency
 
+  // Load saved search state or perform initial "Chinese" search
+  useEffect(() => {
+    const loadSavedSearch = async () => {
+      try {
+        // Get current user's UID
+        const userUid = await AsyncStorage.getItem('user_uid');
+        
+        if (!userUid) {
+          console.log("⚠️ No user_uid found yet, will retry...");
+          return;
+        }
+
+        console.log("👤 Loading search for user:", userUid);
+
+        // Use user-specific keys
+        const savedSearchQuery = await AsyncStorage.getItem(`last_search_query_${userUid}`);
+        const savedSearchType = await AsyncStorage.getItem(`last_search_type_${userUid}`);
+        const savedResults = await AsyncStorage.getItem(`last_search_results_${userUid}`);
+        
+        console.log("📋 Saved search query:", savedSearchQuery);
+        console.log("📋 Saved search type:", savedSearchType);
+        console.log("📋 Has saved results:", !!savedResults);
+        
+        if (savedSearchQuery && savedResults) {
+          // User has searched before, restore their last search
+          console.log("📋 Restoring last search for user:", userUid, "Query:", savedSearchQuery);
+          setSearchQuery(savedSearchQuery);
+          if (savedSearchType) setSearchType(savedSearchType);
+          setResults(JSON.parse(savedResults));
+          setIsFirstVisit(false);
+          setHasLoadedInitialSearch(true);
+        } else {
+          // First time user, search for "Chinese"
+          console.log("🆕 First visit for user:", userUid, "- searching for 'Chinese'");
+          setSearchQuery("Chinese");
+          setIsFirstVisit(true);
+          setHasLoadedInitialSearch(true);
+          // Trigger the search after a brief delay to ensure state is set
+          setTimeout(() => {
+            performSearch("Chinese", "businesses");
+          }, 100);
+        }
+      } catch (error) {
+        console.error("Error loading saved search:", error);
+        // On error, default to Chinese search
+        setSearchQuery("Chinese");
+        setHasLoadedInitialSearch(true);
+        setTimeout(() => {
+          performSearch("Chinese", "businesses");
+        }, 100);
+      }
+    };
+
+    // Only run once when component mounts or when we haven't loaded yet
+    if (!hasLoadedInitialSearch) {
+      // Add a small delay to ensure AsyncStorage is ready
+      const timer = setTimeout(() => {
+        loadSavedSearch();
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [hasLoadedInitialSearch]);
+
+  // Save search state whenever results change (but not on initial load)
+  useEffect(() => {
+    const saveSearchState = async () => {
+      // Only save if we have results and have completed initial load
+      if (results.length > 0 && hasLoadedInitialSearch && searchQuery.trim() && !loading) {
+        try {
+          // Get current user's UID
+          const userUid = await AsyncStorage.getItem('user_uid');
+          
+          if (!userUid) {
+            console.log("⚠️ No user_uid found, cannot save search state");
+            return;
+          }
+
+          // Save with user-specific keys
+          await AsyncStorage.setItem(`last_search_query_${userUid}`, searchQuery);
+          await AsyncStorage.setItem(`last_search_type_${userUid}`, searchType);
+          await AsyncStorage.setItem(`last_search_results_${userUid}`, JSON.stringify(results));
+          console.log("💾 Saved search state for user:", userUid, "Query:", searchQuery);
+        } catch (error) {
+          console.error("Error saving search state:", error);
+        }
+      }
+    };
+
+    saveSearchState();
+  }, [results, searchQuery, searchType, hasLoadedInitialSearch, loading]);
+
   // Clear cart data when refreshCart is true
   useEffect(() => {
     const clearCartData = async () => {
@@ -160,12 +256,13 @@ export default function SearchScreen({ route }) {
   const bountyOptions = ["Any", "Low", "Medium", "High"];
   const ratingOptions = ["> 1", "> 2", "> 3", "> 4", "> 4.5", "> 4.6", "> 4.8"];
 
-  const onSearch = async () => {
-    const q = searchQuery.trim();
+  // Extracted search function that can be called programmatically
+  const performSearch = async (query, type = searchType) => {
+    const q = query.trim();
     if (!q) return;
 
-    console.log("🔍 User searched for:", q);
-    console.log("🔍 Search type:", searchType);
+    console.log("🔍 Performing search for:", q);
+    console.log("🔍 Search type:", type);
     console.log("🔍 Search query length:", q.length);
     console.log("🔍 Search query type:", typeof q);
     console.log("🔍 Rating filter:", rating);
@@ -174,7 +271,7 @@ export default function SearchScreen({ route }) {
     try {
       // Select the appropriate endpoint based on search type
       let baseEndpoint;
-      switch (searchType) {
+      switch (type) {
         case "expertise":
           baseEndpoint = EXPERTISE_RESULTS_ENDPOINT;
           break;
@@ -254,16 +351,14 @@ export default function SearchScreen({ route }) {
             );
           }
         } else {
-          throw fetchError;
+        throw fetchError;
         }
       }
 
       // Check if response is opaque (from no-cors mode)
       const isOpaque = res.type === "opaque" || res.type === "opaqueredirect";
 
-      if (isOpaque) {
-        console.warn("⚠️ Response is opaque (from no-cors mode). Status and headers are not accessible.");
-      } else {
+      if (!isOpaque) {
         console.log("📡 Response status:", res.status);
         console.log("📡 Response ok:", res.ok);
         console.log("📡 Response headers:", Object.fromEntries(res.headers.entries()));
@@ -300,7 +395,7 @@ export default function SearchScreen({ route }) {
         console.error("❌ Response text that failed to parse:", responseText.substring(0, 500));
         throw new Error(`Failed to parse JSON response: ${parseError.message}`);
       }
-
+      
       // console.log("📡 Search API Response:", JSON.stringify(json, null, 2));
       // console.log("📊 Number of results returned:", Array.isArray(json) ? json.length : json.results?.length || json.result?.length || 0);
 
@@ -311,11 +406,12 @@ export default function SearchScreen({ route }) {
 
       // The API returns an array directly, not wrapped in results/result
       const resultsArray = Array.isArray(json) ? json : json.results || json.result || [];
+      console.log("🔍 Results array length:", resultsArray.length);
       // console.log("🔍 Results array length:", resultsArray.length);
 
       // Process results based on search type
       let list;
-      if (searchType === "seeking") {
+      if (type === "seeking") {
         // For seeking/wishes, the response includes profile data directly
         list = resultsArray.map((item, i) => ({
           id: `${item.profile_wish_uid || i}`,
@@ -324,6 +420,7 @@ export default function SearchScreen({ route }) {
           hasPriceTag: false,
           hasX: false,
           hasDollar: false,
+          hasBounty: b.has_bounty || b.business_bounty || false,
           business_short_bio: item.profile_wish_description || "",
           business_tag_line: item.profile_wish_title || "",
           tags: [],
@@ -352,7 +449,7 @@ export default function SearchScreen({ route }) {
             tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
           },
         }));
-      } else if (searchType === "expertise") {
+      } else if (type === "expertise") {
         // For expertise, the response includes profile data directly
         list = resultsArray.map((item, i) => ({
           id: `${item.profile_expertise_uid || i}`,
@@ -367,7 +464,6 @@ export default function SearchScreen({ route }) {
           score: item.score || 0,
           itemType: "expertise",
           profile_uid: item.profile_expertise_profile_personal_id,
-          // Store expertise data
           expertiseData: {
             title: item.profile_expertise_title,
             description: item.profile_expertise_description,
@@ -392,62 +488,39 @@ export default function SearchScreen({ route }) {
         }));
       } else {
         // For businesses, use the existing mapping
-        list = resultsArray.map((b, i) => {
-          // Sanitize text fields to prevent periods from being rendered as text nodes
-          const sanitizeText = (text) => {
-            if (!text) return "";
-            const str = String(text).trim();
-            // If it's just a period or starts with a period that might cause issues, return empty
-            return str === "." ? "" : str;
-          };
+        const sanitizeText = (text) => {
+          if (!text) return "";
+          const str = String(text).trim();
+          return str === "." ? "" : str;
+        };
 
-          return {
-            id: `${b.business_uid || i}`,
-            company: sanitizeText(b.business_name || b.company) || "Unknown Business",
-            // Use score as rating if rating_star not available, convert to 1-5 scale
-            rating: typeof b.rating_star === "number" ? b.rating_star : typeof b.score === "number" ? Math.min(5, Math.max(1, Math.round(b.score * 5))) : 4,
-            hasPriceTag: b.has_price_tag || false,
-            hasX: b.has_x || false,
-            hasDollar: b.has_dollar_sign || false,
-            // Add additional fields from the API response - sanitize to prevent period issues
-            business_short_bio: sanitizeText(b.business_short_bio),
-            business_tag_line: sanitizeText(b.business_tag_line),
-            tags: b.tags || [],
-            score: b.score || 0,
-            itemType: "businesses",
-          };
-        });
+        list = resultsArray.map((b, i) => ({
+          id: `${b.business_uid || i}`,
+          company: sanitizeText(b.business_name || b.company) || "Unknown Business",
+          rating: typeof b.rating_star === "number" ? b.rating_star : typeof b.score === "number" ? Math.min(5, Math.max(1, Math.round(b.score * 5))) : 4,
+          hasPriceTag: b.has_price_tag || false,
+          hasX: b.has_x || false,
+          hasDollar: b.has_dollar_sign || false,
+          business_short_bio: sanitizeText(b.business_short_bio),
+          business_tag_line: sanitizeText(b.business_tag_line),
+          tags: b.tags || [],
+          score: b.score || 0,
+          itemType: "businesses",
+        }));
       }
 
-      console.log("✅ Processed search results:", list);
-      console.log("✅ Number of processed results:", list.length);
-
-      // Debug: Check for any periods in the data that might cause issues
-      list.forEach((item, idx) => {
-        Object.keys(item).forEach((key) => {
-          const value = item[key];
-          if (typeof value === "string" && value.trim() === ".") {
-            console.warn(`⚠️ Found period in item ${idx}, field ${key}:`, value);
-          }
-        });
-      });
-
-      console.log("✅ Setting results state...");
+      console.log("✅ Processed search results:", list.length, "items");
       setResults(list);
-      console.log("✅ Results state updated");
+      setHasLoadedInitialSearch(true);
     } catch (err) {
-      console.warn("❌ Search failed for query:", q, "Error:", err);
-      console.warn("❌ Error details:", err.message);
-      console.warn("❌ Error type:", err.constructor.name);
-
-      // Check if it's a network error (common on iOS with HTTP endpoints or connection issues)
+      console.error("❌ Search failed for query:", q, "Error:", err);
+      
       if (err.message.includes("Network request failed") || err.message.includes("Failed to fetch")) {
         Alert.alert("Network Error", "Unable to connect to the search server. Please check your internet connection or try again later.", [{ text: "OK" }]);
         setResults([]);
         return;
       }
 
-      // If the v1 endpoint fails, let's try alternative endpoints
       if (err.message.includes("404")) {
         console.log("🔄 Trying alternative endpoints...");
         await tryAlternativeEndpoints(q);
@@ -456,6 +529,10 @@ export default function SearchScreen({ route }) {
       }
     }
     setLoading(false);
+  };
+  
+  const onSearch = async () => {
+    await performSearch(searchQuery, searchType);
   };
 
   const tryAlternativeEndpoints = async (query) => {
@@ -843,6 +920,13 @@ export default function SearchScreen({ route }) {
           >
             <Ionicons name='share-social-outline' size={22} color={darkMode ? "#ffffff" : "#000000"} />
           </TouchableOpacity>
+
+          {/* Bounty indicator */}
+          {item.hasBounty && (
+            <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
+              <Text style={styles.bountyEmojiIcon}>💰</Text>
+            </TouchableOpacity>
+          )}
 
           {item.hasX && (
             <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
