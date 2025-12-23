@@ -51,6 +51,9 @@ export const BOUNTY_RESULTS_ENDPOINT = `${API_BASE_URL}/api/bountyresults`;
 export const TAG_SEARCH_DISTINCT_ENDPOINT = `${API_BASE_URL}/api/tagsearchdistinct`;
 export const TAG_CATEGORY_DISTINCT_ENDPOINT = `${API_BASE_URL}/api/tagcategorydistinct`;
 
+//Search Referral Endpoint
+export const SEARCH_REFERRAL_ENDPOINT = `${API_BASE_URL}/api/search_referral`;
+
 // Transaction and Rating Endpoints
 export const TRANSACTIONS_ENDPOINT = `${API_BASE_URL}/api/v1/transactions`;
 export const RATINGS_ENDPOINT = `${API_BASE_URL}/ratings`;

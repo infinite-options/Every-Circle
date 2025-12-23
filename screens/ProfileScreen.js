@@ -48,11 +48,16 @@ const ProfileScreen = ({ route, navigation }) => {
   const { darkMode } = useDarkMode();
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
-
-  const profileFeedbackInstructions = "Instructions for Profile";
-
-  // Define custom questions for the Account page
-  const profileFeedbackQuestions = ["Profile - Question 1?", "Profile - Question 2?", "Profile - Question 3?"];
+  
+    const profileFeedbackInstructions = "Instructions for Profile";
+  
+    // Define custom questions for the Account page
+    const profileFeedbackQuestions = [
+      "Profile - Question 1?",
+      "Profile - Question 2?",
+      "Profile - Question 3?"
+    ];
+  
 
   useFocusEffect(
     React.useCallback(() => {
@@ -138,11 +143,14 @@ const ProfileScreen = ({ route, navigation }) => {
         lastName: apiUser.personal_info?.profile_personal_last_name || "",
         phoneNumber: apiUser.personal_info?.profile_personal_phone_number || "",
         tagLine: apiUser.personal_info?.profile_personal_tag_line || "",
+        city: apiUser.personal_info?.profile_personal_city || "",
+        state: apiUser.personal_info?.profile_personal_state || "",
         shortBio: apiUser.personal_info?.profile_personal_short_bio || "",
         emailIsPublic: apiUser.personal_info?.profile_personal_email_is_public === 1,
         phoneIsPublic: apiUser.personal_info?.profile_personal_phone_number_is_public === 1,
         imageIsPublic: apiUser.personal_info?.profile_personal_image_is_public === 1,
         tagLineIsPublic: apiUser.personal_info?.profile_personal_tag_line_is_public === 1,
+        locationIsPublic: apiUser.personal_info?.profile_personal_location_is_public === 1,
         shortBioIsPublic: apiUser.personal_info?.profile_personal_short_bio_is_public === 1,
         experienceIsPublic: apiUser.personal_info?.profile_personal_experience_is_public === 1,
         educationIsPublic: apiUser.personal_info?.profile_personal_education_is_public === 1,
@@ -672,152 +680,152 @@ const ProfileScreen = ({ route, navigation }) => {
       )}
       {/* Header */}
       <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
-        <AppHeader
+      <AppHeader
           title={isCurrentUserProfile ? "Your Profile" : "Profile"}
           {...(routeProfileUID && !isCurrentUserProfile ? getHeaderColors("profileView") : getHeaderColors("profile"))}
-          onBackPress={
-            routeProfileUID && !isCurrentUserProfile
-              ? () => {
-                  // Navigate back to the screen we came from with preserved state
-                  if (returnTo === "Search" && searchState) {
-                    console.log("🔙 Returning to Search with preserved state:", searchState);
-                    navigation.navigate("Search", {
-                      restoreState: true,
-                      searchState: searchState,
-                    });
-                  } else if (returnTo === "ExpertiseDetail" && route.params?.expertiseDetailState) {
-                    // Navigate back to ExpertiseDetail screen
-                    console.log("🔙 Returning to ExpertiseDetail");
-                    const { expertiseData, profileData, profile_uid, searchState, returnTo: detailReturnTo, profileState: detailProfileState } = route.params.expertiseDetailState;
-                    navigation.navigate("ExpertiseDetail", {
-                      expertiseData,
-                      profileData,
-                      profile_uid,
-                      searchState,
-                      returnTo: detailReturnTo,
-                      profileState: detailProfileState,
-                    });
-                  } else if (returnTo === "WishDetail" && route.params?.wishDetailState) {
-                    // Navigate back to WishDetail screen
-                    console.log("🔙 Returning to WishDetail");
-                    const { wishData, profileData, profile_uid, searchState, returnTo: detailReturnTo, profileState: detailProfileState } = route.params.wishDetailState;
-                    navigation.navigate("WishDetail", {
-                      wishData,
-                      profileData,
-                      profile_uid,
-                      searchState,
-                      returnTo: detailReturnTo,
-                      profileState: detailProfileState,
-                    });
-                  } else if (returnTo === "WishResponses" && route.params?.wishResponsesState) {
-                    // Navigate back to WishResponses screen
-                    console.log("🔙 Returning to WishResponses");
-                    const { wishData, profileData, profile_uid, profileState: wishResponsesProfileState } = route.params.wishResponsesState;
-                    navigation.navigate("WishResponses", {
-                      wishData,
-                      profileData,
-                      profile_uid,
-                      profileState: wishResponsesProfileState,
-                    });
-                  } else if (returnTo === "Network") {
-                    // Navigate back to Network screen
-                    console.log("🔙 Returning to Network");
-                    navigation.navigate("Network");
-                  } else {
-                    // Default: Navigate to Network screen when viewing another user's profile
-                    navigation.navigate("Network");
-                  }
+        onBackPress={
+          routeProfileUID && !isCurrentUserProfile
+            ? () => {
+                // Navigate back to the screen we came from with preserved state
+                if (returnTo === "Search" && searchState) {
+                  console.log("🔙 Returning to Search with preserved state:", searchState);
+                  navigation.navigate("Search", {
+                    restoreState: true,
+                    searchState: searchState,
+                  });
+                } else if (returnTo === "ExpertiseDetail" && route.params?.expertiseDetailState) {
+                  // Navigate back to ExpertiseDetail screen
+                  console.log("🔙 Returning to ExpertiseDetail");
+                  const { expertiseData, profileData, profile_uid, searchState, returnTo: detailReturnTo, profileState: detailProfileState } = route.params.expertiseDetailState;
+                  navigation.navigate("ExpertiseDetail", {
+                    expertiseData,
+                    profileData,
+                    profile_uid,
+                    searchState,
+                    returnTo: detailReturnTo,
+                    profileState: detailProfileState,
+                  });
+                } else if (returnTo === "WishDetail" && route.params?.wishDetailState) {
+                  // Navigate back to WishDetail screen
+                  console.log("🔙 Returning to WishDetail");
+                  const { wishData, profileData, profile_uid, searchState, returnTo: detailReturnTo, profileState: detailProfileState } = route.params.wishDetailState;
+                  navigation.navigate("WishDetail", {
+                    wishData,
+                    profileData,
+                    profile_uid,
+                    searchState,
+                    returnTo: detailReturnTo,
+                    profileState: detailProfileState,
+                  });
+                } else if (returnTo === "WishResponses" && route.params?.wishResponsesState) {
+                  // Navigate back to WishResponses screen
+                  console.log("🔙 Returning to WishResponses");
+                  const { wishData, profileData, profile_uid, profileState: wishResponsesProfileState } = route.params.wishResponsesState;
+                  navigation.navigate("WishResponses", {
+                    wishData,
+                    profileData,
+                    profile_uid,
+                    profileState: wishResponsesProfileState,
+                  });
+                } else if (returnTo === "Network") {
+                  // Navigate back to Network screen
+                  console.log("🔙 Returning to Network");
+                  navigation.navigate("Network");
+                } else {
+                  // Default: Navigate to Network screen when viewing another user's profile
+                  navigation.navigate("Network");
                 }
-              : undefined
-          }
-          rightButton={
-            isCurrentUserProfile ? (
-              <TouchableOpacity
-                style={styles.editButton}
-                onPress={() =>
-                  navigation.navigate("EditProfile", {
-                    user: user,
-                    profile_uid: profileUID,
-                  })
-                }
+              }
+            : undefined
+        }
+        rightButton={
+          isCurrentUserProfile ? (
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() =>
+                navigation.navigate("EditProfile", {
+                  user: user,
+                  profile_uid: profileUID,
+                })
+              }
+            >
+              <Image source={require("../assets/Edit.png")} style={[styles.editIcon, darkMode && styles.darkEditIcon]} tintColor={darkMode ? "#fff" : "#fff"} />
+            </TouchableOpacity>
+          ) : routeProfileUID && !isCurrentUserProfile ? (
+            <View style={styles.dropdownWrapper}>
+              <Pressable
+                style={styles.addButton}
+                {...(isWeb && { "data-dropdown-button": true })}
+                onPress={() => {
+                  console.log("Dropdown button clicked for profile:", profileUID);
+                  setShowRelationshipDropdown(!showRelationshipDropdown);
+                }}
               >
-                <Image source={require("../assets/Edit.png")} style={[styles.editIcon, darkMode && styles.darkEditIcon]} tintColor={darkMode ? "#fff" : "#fff"} />
-              </TouchableOpacity>
-            ) : routeProfileUID && !isCurrentUserProfile ? (
-              <View style={styles.dropdownWrapper}>
-                <Pressable
-                  style={styles.addButton}
-                  {...(isWeb && { "data-dropdown-button": true })}
-                  onPress={() => {
-                    console.log("Dropdown button clicked for profile:", profileUID);
-                    setShowRelationshipDropdown(!showRelationshipDropdown);
-                  }}
-                >
-                  <Ionicons name='chevron-down' size={28} color='#fff' />
-                </Pressable>
-                {showRelationshipDropdown && (
-                  <View style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]} {...(isWeb && { "data-dropdown-menu": true })}>
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        console.log("ProfileScreen - Friend button pressed");
-                        // Stop event propagation to prevent click-outside handler from firing
-                        if (Platform.OS === "web" && e?.nativeEvent) {
-                          e.nativeEvent.stopPropagation?.();
-                        }
-                        handleRelationshipSelect("friend");
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Friend</Text>
-                    </Pressable>
-                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        console.log("ProfileScreen - Colleague button pressed");
-                        // Stop event propagation to prevent click-outside handler from firing
-                        if (Platform.OS === "web" && e?.nativeEvent) {
-                          e.nativeEvent.stopPropagation?.();
-                        }
-                        handleRelationshipSelect("colleague");
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Colleague</Text>
-                    </Pressable>
-                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        console.log("ProfileScreen - Family button pressed");
-                        // Stop event propagation to prevent click-outside handler from firing
-                        if (Platform.OS === "web" && e?.nativeEvent) {
-                          e.nativeEvent.stopPropagation?.();
-                        }
-                        handleRelationshipSelect("family");
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Family</Text>
-                    </Pressable>
-                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        console.log("ProfileScreen - None button pressed");
-                        // Stop event propagation to prevent click-outside handler from firing
-                        if (Platform.OS === "web" && e?.nativeEvent) {
-                          e.nativeEvent.stopPropagation?.();
-                        }
-                        handleRelationshipSelect(null);
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>None</Text>
-                    </Pressable>
-                  </View>
-                )}
-              </View>
-            ) : null
-          }
-        />
+                <Ionicons name='chevron-down' size={28} color='#fff' />
+              </Pressable>
+              {showRelationshipDropdown && (
+                <View style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]} {...(isWeb && { "data-dropdown-menu": true })}>
+                  <Pressable
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      console.log("ProfileScreen - Friend button pressed");
+                      // Stop event propagation to prevent click-outside handler from firing
+                      if (Platform.OS === "web" && e?.nativeEvent) {
+                        e.nativeEvent.stopPropagation?.();
+                      }
+                      handleRelationshipSelect("friend");
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Friend</Text>
+                  </Pressable>
+                  <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                  <Pressable
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      console.log("ProfileScreen - Colleague button pressed");
+                      // Stop event propagation to prevent click-outside handler from firing
+                      if (Platform.OS === "web" && e?.nativeEvent) {
+                        e.nativeEvent.stopPropagation?.();
+                      }
+                      handleRelationshipSelect("colleague");
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Colleague</Text>
+                  </Pressable>
+                  <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                  <Pressable
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      console.log("ProfileScreen - Family button pressed");
+                      // Stop event propagation to prevent click-outside handler from firing
+                      if (Platform.OS === "web" && e?.nativeEvent) {
+                        e.nativeEvent.stopPropagation?.();
+                      }
+                      handleRelationshipSelect("family");
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Family</Text>
+                  </Pressable>
+                  <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                  <Pressable
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      console.log("ProfileScreen - None button pressed");
+                      // Stop event propagation to prevent click-outside handler from firing
+                      if (Platform.OS === "web" && e?.nativeEvent) {
+                        e.nativeEvent.stopPropagation?.();
+                      }
+                      handleRelationshipSelect(null);
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>None</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          ) : null
+        }
+      />
       </TouchableOpacity>
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
@@ -861,6 +869,12 @@ const ProfileScreen = ({ route, navigation }) => {
             {(() => {
               const tagLine = user.tagLine && (isCurrentUserProfile || user.tagLineIsPublic) ? sanitizeText(user.tagLine) : "";
               return tagLine ? <Text style={[styles.tagline, darkMode && styles.darkTagline]}>{tagLine}</Text> : null;
+            })()}
+            {(() => {
+              const location = user.city && user.state && (isCurrentUserProfile || user.locationIsPublic)
+                ? `${sanitizeText(user.city)}, ${sanitizeText(user.state)}`
+                : "";
+              return location ? <Text style={[styles.tagline, darkMode && styles.darkTagline]}>{location}</Text> : null;
             })()}
             {(() => {
               const shortBio = user.shortBio && (isCurrentUserProfile || user.shortBioIsPublic) ? sanitizeText(user.shortBio) : "";
@@ -996,10 +1010,13 @@ const ProfileScreen = ({ route, navigation }) => {
                               phone: user.phoneNumber,
                               image: user.profileImage,
                               tagLine: user.tagLine,
+                              city: user.city,
+                              state: user.state,
                               emailIsPublic: user.emailIsPublic,
                               phoneIsPublic: user.phoneIsPublic,
                               imageIsPublic: user.imageIsPublic,
                               tagLineIsPublic: user.tagLineIsPublic,
+                              locationIsPublic: user.locationIsPublic,
                             };
                             navigation.navigate("ExpertiseDetail", {
                               expertiseData,
@@ -1057,10 +1074,13 @@ const ProfileScreen = ({ route, navigation }) => {
                                 phone: user.phoneNumber,
                                 image: user.profileImage,
                                 tagLine: user.tagLine,
+                                city: user.city,
+                                state: user.state,
                                 emailIsPublic: user.emailIsPublic,
                                 phoneIsPublic: user.phoneIsPublic,
                                 imageIsPublic: user.imageIsPublic,
                                 tagLineIsPublic: user.tagLineIsPublic,
+                                locationIsPublic: user.locationIsPublic,
                               };
                               navigation.navigate("WishResponses", {
                                 wishData: wishDataForNavigation,
@@ -1109,10 +1129,13 @@ const ProfileScreen = ({ route, navigation }) => {
                               phone: user.phoneNumber,
                               image: user.profileImage,
                               tagLine: user.tagLine,
+                              city: user.city,
+                              state: user.state,
                               emailIsPublic: user.emailIsPublic,
                               phoneIsPublic: user.phoneIsPublic,
                               imageIsPublic: user.imageIsPublic,
                               tagLineIsPublic: user.tagLineIsPublic,
+                              locationIsPublic: user.locationIsPublic,
                             };
                             navigation.navigate("WishDetail", {
                               wishData,
@@ -1169,7 +1192,13 @@ const ProfileScreen = ({ route, navigation }) => {
 
         <BottomNavBar navigation={navigation} />
       </SafeAreaView>
-      <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Profile' instructions={profileFeedbackInstructions} questions={profileFeedbackQuestions} />
+      <FeedbackPopup
+        visible={showFeedbackPopup}
+        onClose={() => setShowFeedbackPopup(false)}
+        pageName="Profile"
+        instructions={profileFeedbackInstructions}
+        questions={profileFeedbackQuestions}
+      />
     </View>
   );
 };
@@ -1228,11 +1257,11 @@ const styles = StyleSheet.create({
           boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.2)",
         }
       : {
-          shadowColor: "#000",
-          shadowOpacity: 0.2,
-          shadowRadius: 4,
-          elevation: 5,
-        }),
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+    }),
     zIndex: 10002, // REQUIRED FOR WEB - must be above all content
     pointerEvents: "auto", // REQUIRED FOR WEB
     overflow: "visible", // Ensure all items are visible
@@ -1296,6 +1325,7 @@ const styles = StyleSheet.create({
     color: "#777",
     marginBottom: 12,
   },
+  
   bio: {
     fontSize: 16,
     color: "#777",
