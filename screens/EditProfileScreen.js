@@ -46,9 +46,9 @@ const EditProfileScreen = ({ route, navigation }) => {
     phoneNumber: user?.phoneNumber || "",
     tagLine: user?.tagLine || "",
     shortBio: user?.shortBio || "",
-    city: user?.personal_info?.profile_personal_city || '',
-    state: user?.personal_info?.profile_personal_state || '',
-    locationIsPublic:user?.personal_info?.profile_personal_location_is_public === 1,
+    city: user?.personal_info?.profile_personal_city || "",
+    state: user?.personal_info?.profile_personal_state || "",
+    locationIsPublic: user?.personal_info?.profile_personal_location_is_public === 1,
     emailIsPublic: user?.emailIsPublic || false,
     phoneIsPublic: user?.phoneIsPublic || false,
     tagLineIsPublic: user?.tagLineIsPublic || false,
@@ -532,7 +532,7 @@ const EditProfileScreen = ({ route, navigation }) => {
                 profile_personal_state: formData.state,
                 profile_personal_location_is_public: formData.locationIsPublic ? 1 : 0,
               },
-            }
+            },
           });
         }
       } else {
