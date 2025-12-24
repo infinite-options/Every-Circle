@@ -8,7 +8,9 @@ import BusinessStep1 from "./BusinessStep1";
 import BusinessStep2 from "./BusinessStep2";
 import BusinessStep3 from "./BusinessStep3";
 import BusinessStep4 from "./BusinessStep4";
+import BusinessFooter from "../components/BusinessFooter";
 import BottomNavBar from "../components/BottomNavBar";
+import AppHeader from "../components/AppHeader";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
@@ -144,9 +146,18 @@ export default function BusinessSetupController({ navigation, route }) {
     if (activeStep > 0) {
       setActiveStep((prev) => prev - 1);
     } else {
-      // If we're at Step 0, go back to Settings
-      navigation.navigate("Settings");
+      // If we're at Step 0, go back to the previous screen (Settings, Profile, or AccountType)
+      if (navigation.canGoBack()) {
+        navigation.goBack();
+      } else {
+        // Fallback to Settings if we can't go back
+        navigation.navigate("Settings");
+      }
     }
+  };
+
+  const handleHeaderBack = () => {
+    handleBack();
   };
 
   const validateCurrentStep = () => {
@@ -413,8 +424,10 @@ export default function BusinessSetupController({ navigation, route }) {
 
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
+      <AppHeader title='Business Setup' backgroundColor='#FF9500' onBackPress={handleHeaderBack} />
       {renderStep()}
-      <BottomNavBar navigation={navigation} businessStep={true} onBack={handleBack} onContinue={handleContinue} />
+      <BusinessFooter activeStep={activeStep} onBack={handleBack} onContinue={handleContinue} onSubmit={submitBusinessData} totalSteps={5} />
+      <BottomNavBar navigation={navigation} />
     </View>
   );
 }

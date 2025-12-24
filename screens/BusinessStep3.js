@@ -2,7 +2,6 @@
 import React, { useEffect } from "react";
 import { View, Text, TextInput, StyleSheet, Dimensions, ScrollView } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
 const { width } = Dimensions.get("window");
@@ -60,7 +59,7 @@ export default function BusinessStep3({ formData, setFormData, navigation }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#f5f5f5" }}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, justifyContent: "center", alignItems: "center", paddingVertical: 40, paddingBottom: 120 }} nestedScrollEnabled={true}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1, justifyContent: "center", alignItems: "center", paddingTop: 20, paddingBottom: 140 }} nestedScrollEnabled={true}>
         <View style={[styles.formCard, darkMode && styles.darkFormCard]}>
           <Text style={[styles.title, darkMode && styles.darkTitle]}>Social Media Links</Text>
 
@@ -129,6 +128,8 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 20,
     width: "100%",
+    borderWidth: 1,
+    borderColor: "#ddd",
   },
   formCard: {
     backgroundColor: "#fff",
@@ -157,6 +158,7 @@ const styles = StyleSheet.create({
   darkInput: {
     backgroundColor: "#404040",
     color: "#ffffff",
-    borderColor: "#555",
+    borderWidth: 1,
+    borderColor: "#404040",
   },
 });

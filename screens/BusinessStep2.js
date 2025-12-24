@@ -5,8 +5,6 @@ import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { Dropdown } from "react-native-element-dropdown";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import BottomNavBar from "../components/BottomNavBar";
-import ContinueButton from "../components/ContinueButton";
 import { CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
@@ -159,10 +157,10 @@ export default function BusinessStep2({ formData, setFormData, navigation }) {
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#fff" }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
-        <View style={{ flex: 1, paddingTop: 60, paddingHorizontal: 20, alignItems: "center" }}>
+        <View style={{ flex: 1, paddingTop: 20, paddingHorizontal: 20, alignItems: "center" }}>
           <ScrollView
             style={{ flex: 1, width: "100%" }}
-            contentContainerStyle={{ justifyContent: "center", alignItems: "center", paddingBottom: 120 }}
+            contentContainerStyle={{ justifyContent: "center", alignItems: "center", paddingBottom: 140 }}
             keyboardShouldPersistTaps='handled'
             nestedScrollEnabled={true}
           >
@@ -315,6 +313,8 @@ const styles = StyleSheet.create({
     padding: 12,
     width: "100%",
     marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "#ddd",
   },
   textarea: {
     backgroundColor: "#fff",
@@ -324,6 +324,8 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
     marginBottom: 20,
     width: "100%",
+    borderWidth: 1,
+    borderColor: "#ddd",
   },
   tagRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   tagInput: {
@@ -332,6 +334,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
     marginRight: 10,
+    borderWidth: 1,
+    borderColor: "#ddd",
   },
   tagButton: {
     backgroundColor: "#FFA500",
@@ -452,12 +456,14 @@ const styles = StyleSheet.create({
   darkInput: {
     backgroundColor: "#404040",
     color: "#ffffff",
-    borderColor: "#555",
+    borderWidth: 1,
+    borderColor: "#404040",
   },
   darkTextarea: {
     backgroundColor: "#404040",
     color: "#ffffff",
-    borderColor: "#555",
+    borderWidth: 1,
+    borderColor: "#404040",
   },
   darkImageWrapper: {
     backgroundColor: "#404040",
@@ -472,6 +478,8 @@ const styles = StyleSheet.create({
   darkTagInput: {
     backgroundColor: "#404040",
     color: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#404040",
   },
   darkTagItem: {
     backgroundColor: "#404040",

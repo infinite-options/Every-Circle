@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
 const defaultService = {
@@ -83,7 +82,7 @@ export default function BusinessStep4({ formData, setFormData, navigation }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#f5f5f5" }}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: 40, alignItems: "center", paddingBottom: 120 }} nestedScrollEnabled={true}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingTop: 20, paddingBottom: 140, alignItems: "center" }} nestedScrollEnabled={true}>
         <View style={[styles.formCard, darkMode && styles.darkFormCard]}>
           <Text style={[styles.title, darkMode && styles.darkTitle]}>Add Products or Services</Text>
 
@@ -305,7 +304,6 @@ export default function BusinessStep4({ formData, setFormData, navigation }) {
           ))}
         </View>
       </ScrollView>
-      <BottomNavBar navigation={navigation} />
     </View>
   );
 }
@@ -346,7 +344,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     width: "100%",
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: "#ddd",
   },
   addButton: {
     backgroundColor: "#00C721",
@@ -412,7 +410,8 @@ const styles = StyleSheet.create({
   darkInput: {
     backgroundColor: "#404040",
     color: "#ffffff",
-    borderColor: "#555",
+    borderWidth: 1,
+    borderColor: "#404040",
   },
   darkNoServicesText: {
     color: "#cccccc",

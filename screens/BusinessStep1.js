@@ -205,7 +205,7 @@ export default function BusinessStep1({ formData, setFormData, navigation }) {
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
           <ScrollView
             style={{ flex: 1, width: "100%" }}
-            contentContainerStyle={{ paddingTop: 60, paddingHorizontal: 20, alignItems: "center", paddingBottom: 40 }}
+            contentContainerStyle={{ paddingTop: 20, paddingHorizontal: 20, alignItems: "center", paddingBottom: 140 }}
             keyboardShouldPersistTaps='handled'
             nestedScrollEnabled={true}
           >
@@ -249,7 +249,7 @@ export default function BusinessStep1({ formData, setFormData, navigation }) {
               />
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>EIN Number (Optional)</Text>
-              <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>For verification purposes</Text>
+              <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>For verification purposes only</Text>
               <TextInput
                 style={[styles.input, darkMode && styles.darkInput]}
                 value={formData.einNumber || ""}
@@ -260,7 +260,7 @@ export default function BusinessStep1({ formData, setFormData, navigation }) {
                 onChangeText={(text) => updateFormData("einNumber", formatEINNumber(text))}
               />
 
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Images</Text>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Upload Busines Images (Optional)</Text>
               <View style={styles.carousel}>
                 <View style={styles.imageRow}>
                   {combinedImages.map((img, index) => {
@@ -351,6 +351,8 @@ const styles = StyleSheet.create({
     padding: 12,
     width: "100%",
     marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "#ddd",
   },
   loadingOverlay: {
     position: "absolute",
@@ -422,7 +424,8 @@ const styles = StyleSheet.create({
   darkInput: {
     backgroundColor: "#404040",
     color: "#ffffff",
-    borderColor: "#555",
+    borderWidth: 1,
+    borderColor: "#404040",
   },
   darkHelperText: {
     color: "#cccccc",
@@ -435,6 +438,8 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
     marginBottom: 20,
     width: "100%",
+    borderWidth: 1,
+    borderColor: "#ddd",
   },
   carousel: {
     marginVertical: 20,
@@ -510,6 +515,7 @@ const styles = StyleSheet.create({
   darkTextarea: {
     backgroundColor: "#404040",
     color: "#ffffff",
-    borderColor: "#555",
+    borderWidth: 1,
+    borderColor: "#404040",
   },
 });

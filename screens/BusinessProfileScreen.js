@@ -584,7 +584,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         rightButton={
           isOwner ? (
             <TouchableOpacity
-              style={[styles.editButton, darkMode && styles.darkEditButton]}
+              style={styles.editButton}
               onPress={() =>
                 navigation.navigate("EditBusinessProfile", {
                   business: business,
@@ -593,7 +593,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 })
               }
             >
-              <Image source={require("../assets/Edit.png")} style={[styles.editIcon, darkMode && styles.darkEditIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
+              <Image source={require("../assets/Edit.png")} style={[styles.editIcon, darkMode && styles.darkEditIcon]} tintColor={darkMode ? "#fff" : "#fff"} />
             </TouchableOpacity>
           ) : null
         }
@@ -1214,13 +1214,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   editButton: {
-    backgroundColor: "#f0f0f0",
-    padding: 8,
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    justifyContent: "center",
+    padding: 4,
     alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1,
   },
   editIcon: {
     width: 20,
@@ -1528,9 +1525,6 @@ const styles = StyleSheet.create({
   },
   darkNoDataText: {
     color: "#cccccc",
-  },
-  darkEditButton: {
-    backgroundColor: "#404040",
   },
   darkEditIcon: {
     // tintColor moved to Image prop
