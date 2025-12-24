@@ -33,6 +33,7 @@ if (!isWeb) {
 
 import config from "./config";
 import { GOOGLE_SIGNUP_ENDPOINT, GOOGLE_SIGNIN_ENDPOINT, APPLE_SIGNIN_ENDPOINT, API_BASE_URL } from "./apiConfig";
+import versionData from "./version.json";
 import { DarkModeProvider } from "./contexts/DarkModeContext";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
 import LoginScreen from "./screens/LoginScreen";
@@ -791,6 +792,23 @@ export default function App() {
   const HomeScreen = ({ navigation }) => {
     console.log("App.js - Rendering HomeScreen");
     const [hasLoggedPlaying, setHasLoggedPlaying] = useState(false);
+    // Static timestamp - set once when component mounts (represents last build/change time)
+    const [buildTimestamp] = useState(new Date());
+
+    // Format date and time
+    const formatDateTime = (date) => {
+      const options = {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      };
+      return date.toLocaleString("en-US", options);
+    };
 
     // Load Castoro font for web (both regular and italic variants)
     useEffect(() => {
@@ -836,6 +854,11 @@ export default function App() {
             </Text>
             <Text style={styles.tagline}>Connecting Circles of Influence</Text>
             {/* <Text style={styles.tagline}>It Pays to Be Connected</Text> */}
+
+            {/* Build Timestamp - Last Change Date/Time with Version */}
+            <Text style={styles.dateTimeText}>
+              Version {versionData.major}.{versionData.build} - {formatDateTime(buildTimestamp)}
+            </Text>
           </View>
 
           <View style={styles.circlesContainer}>
@@ -1001,6 +1024,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 40,
     marginBottom: 20,
+  },
+  dateTimeText: {
+    fontSize: 14,
+    fontFamily: Platform.OS === "web" ? "Arial, sans-serif" : undefined,
+    color: "#666",
+    textAlign: "left",
+    marginTop: 8,
   },
   brandingContainer: {
     alignItems: "flex-start",

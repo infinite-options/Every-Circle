@@ -287,12 +287,18 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
       </View>
 
       <View style={styles.inputContainer}>
-        <TextInput style={styles.input} placeholder='Email' value={email} onChangeText={handleEmailChange} keyboardType='email-address' autoCapitalize='none' />
-        <View style={styles.passwordInputContainer}>
-          <TextInput style={styles.input} placeholder='Password' value={password} onChangeText={handlePasswordChange} secureTextEntry={!isPasswordVisible} autoCapitalize='none' />
-          <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
-            <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
-          </TouchableOpacity>
+        <View style={styles.fieldContainer}>
+          <Text style={styles.label}>Email</Text>
+          <TextInput style={styles.input} placeholder='Email' value={email} onChangeText={handleEmailChange} keyboardType='email-address' autoCapitalize='none' />
+        </View>
+        <View style={styles.fieldContainer}>
+          <Text style={styles.label}>Password</Text>
+          <View style={styles.passwordInputContainer}>
+            <TextInput style={styles.input} placeholder='Password' value={password} onChangeText={handlePasswordChange} secureTextEntry={!isPasswordVisible} autoCapitalize='none' />
+            <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
+              <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
+            </TouchableOpacity>
+          </View>
         </View>
         {!!passwordError && <Text style={styles.passwordErrorText}>{passwordError}</Text>}
         <TouchableOpacity
@@ -454,12 +460,15 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: "bold", marginBottom: 10, color: "#007AFF" },
   subtitle: { fontSize: 16, color: "#666", textAlign: "center" },
   inputContainer: { marginBottom: 30 },
+  fieldContainer: { marginBottom: 15 },
+  label: { fontSize: 16, fontWeight: "bold", marginBottom: 5, color: "#000" },
   input: {
     backgroundColor: "#F5F5F5",
     borderRadius: 10,
     padding: 15,
-    marginBottom: 15,
     fontSize: 16,
+    borderWidth: 1,
+    borderColor: "#ccc",
   },
   passwordInputContainer: {
     position: "relative",

@@ -95,6 +95,17 @@ const ProfileScreen = ({ route, navigation }) => {
           try {
             const response = await fetch(`${ProfileScreenAPI}/${userId}`);
             const apiUser = await response.json();
+
+            // Handle case where profile is not found (404 error)
+            if ((!response.ok && response.status === 404) || apiUser.message === "Profile not found for this user" || (apiUser.code === 404 && apiUser.message === "Profile not found for this user")) {
+              console.log("ProfileScreen - Profile not found for current user, routing to UserInfo");
+              setLoading(false);
+              // Clear any existing profile data but keep user credentials
+              await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+              navigation.navigate("UserInfo");
+              return;
+            }
+
             if (apiUser && apiUser.personal_info?.profile_personal_uid) {
               profileId = apiUser.personal_info.profile_personal_uid;
               setProfileUID(profileId);
@@ -124,8 +135,31 @@ const ProfileScreen = ({ route, navigation }) => {
       const apiUser = await response.json();
       console.log("ProfileScreen.js - Profile API Response:", JSON.stringify(apiUser, null, 2));
 
-      if (!apiUser || apiUser.message === "Profile not found for this user") {
-        console.log("No profile data found for user");
+      // Handle case where profile is not found (404 error)
+      if (
+        (!response.ok && response.status === 404) ||
+        !apiUser ||
+        apiUser.message === "Profile not found for this user" ||
+        (apiUser.code === 404 && apiUser.message === "Profile not found for this user")
+      ) {
+        console.log("ProfileScreen - Profile not found for profile UID:", profileUID);
+
+        // Check if this is the current user's profile
+        const currentUserUid = await AsyncStorage.getItem("user_uid");
+        const currentProfileUid = await AsyncStorage.getItem("profile_uid");
+
+        // If the profileUID matches user_uid or is the current user's profile, route to UserInfo
+        if (isCurrentUserProfile || profileUID === currentUserUid || profileUID === currentProfileUid) {
+          console.log("ProfileScreen - Current user's profile not found, routing to UserInfo");
+          setLoading(false);
+          // Clear any existing profile data but keep user credentials
+          await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+          navigation.navigate("UserInfo");
+          return;
+        }
+
+        // If viewing another user's profile that doesn't exist, just show empty state
+        console.log("No profile data found for user (viewing other user's profile)");
         setUser(null);
         setLoading(false);
         return;

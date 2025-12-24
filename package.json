@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "prestart": "node increment-build.js",
     "start": "expo start --dev-client",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
+    "android": "node increment-build.js && expo run:android",
+    "ios": "node increment-build.js && expo run:ios",
     "web": "expo start --web",
-    "build": "expo export --platform web"
+    "build": "node increment-build.js && expo export --platform web"
   },
   "dependencies": {
     "@expo-google-fonts/alata": "^0.2.3",

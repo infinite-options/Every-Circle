@@ -17,7 +17,7 @@ if (!isWeb) {
 import AppleSignIn from "../AppleSignIn";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { ACCOUNT_SALT_ENDPOINT, CREATE_ACCOUNT_ENDPOINT, GOOGLE_SIGNUP_ENDPOINT, REFERRAL_API_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
+import { ACCOUNT_SALT_ENDPOINT, CREATE_ACCOUNT_ENDPOINT, GOOGLE_SIGNUP_ENDPOINT, REFERRAL_API_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT, LOGIN_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 // import CryptoJS from "react-native-crypto-js";
 // import * as CryptoJS from "react-native-crypto-js";
 import * as Crypto from "expo-crypto";
@@ -42,6 +42,8 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const [showPassModal, setShowPassModal] = useState(false);
   const [showForgotPasswordSpinner, setShowForgotPasswordSpinner] = useState(false);
+  const [userExistsError, setUserExistsError] = useState("");
+  const [isAttemptingLogin, setIsAttemptingLogin] = useState(false);
 
   // Handle pre-populated Google user info
   useEffect(() => {
@@ -81,11 +83,13 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
 
   const handleEmailChange = (text) => {
     setEmail(text);
+    setUserExistsError(""); // Clear error when user changes email
     validateInputs(text, password, confirmPassword);
   };
 
   const handlePasswordChange = (text) => {
     setPassword(text);
+    setUserExistsError(""); // Clear error when user changes password
     validateInputs(email, text, confirmPassword);
   };
 
@@ -260,7 +264,127 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         const createAccountData = await createAccountResponse.json();
         console.log("SignUpScreen - Regular Signup Response:", createAccountData);
         if (createAccountData.message === "User already exists") {
-          Alert.alert("User Already Exists", "This email is already registered. Please log in instead.", [{ text: "OK", style: "cancel" }]);
+          // If user_uid is not provided, just show error
+          if (!createAccountData.user_uid) {
+            setUserExistsError("User Already Exists");
+            return;
+          }
+          // User already exists - try to log them in with the password they entered
+          console.log("SignUpScreen - User already exists, attempting login with provided password");
+          setUserExistsError(""); // Clear any previous error
+          setIsAttemptingLogin(true);
+          
+          try {
+            // 1. Get salt for the existing user
+            const saltResponse = await fetch(ACCOUNT_SALT_ENDPOINT, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email }),
+            });
+            const saltObject = await saltResponse.json();
+            
+            if (saltObject.code !== 200) {
+              setIsAttemptingLogin(false);
+              setUserExistsError("User Already Exists");
+              return;
+            }
+            
+            // 2. Hash password with salt
+            const salt = saltObject.result[0].password_salt;
+            const value = password + salt;
+            const hashedPassword = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value, {
+              encoding: Crypto.CryptoEncoding.HEX,
+            });
+            
+            // 3. Attempt login
+            const loginResponse = await fetch(LOGIN_ENDPOINT, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email, password: hashedPassword }),
+            });
+            const loginObject = await loginResponse.json();
+            
+            // 4. Check if login succeeded
+            if (loginObject.code === 200 && loginObject.result && loginObject.result.user_uid) {
+              const user_uid = loginObject.result.user_uid;
+              const user_email = loginObject.result.user_email_id;
+              
+              // Store user credentials
+              await AsyncStorage.setItem("user_uid", user_uid);
+              await AsyncStorage.setItem("user_email_id", user_email);
+              
+              // Fetch user profile
+              const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${user_uid}`, {
+                method: "GET",
+                headers: { "Content-Type": "application/json" },
+              });
+              const fullUser = await profileResponse.json();
+              
+              // Handle case where profile is not found (check status code and message)
+              if ((!profileResponse.ok && profileResponse.status === 404) || 
+                  fullUser.message === "Profile not found for this user" || 
+                  (fullUser.code === 404 && fullUser.message === "Profile not found for this user")) {
+                console.log("SignUpScreen - Profile not found for user, routing to UserInfo");
+                await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+                await AsyncStorage.setItem("user_uid", user_uid);
+                await AsyncStorage.setItem("user_email_id", user_email);
+                
+                setIsAttemptingLogin(false);
+                // Navigate directly to UserInfo without showing alert
+                navigation.navigate("UserInfo");
+                return;
+              }
+              
+              // Store profile data and navigate to Profile
+              await AsyncStorage.setItem("user_uid", user_uid);
+              await AsyncStorage.setItem("user_email_id", user_email);
+              await AsyncStorage.setItem("profile_uid", fullUser.personal_info?.profile_personal_uid || "");
+              
+              setIsAttemptingLogin(false);
+              navigation.navigate("Profile", {
+                user: {
+                  ...fullUser,
+                  user_email: user_email,
+                },
+                profile_uid: fullUser.personal_info?.profile_personal_uid || "",
+              });
+            } else {
+              // Password doesn't match - show error and stay on sign up page
+              setIsAttemptingLogin(false);
+              setUserExistsError("User Already Exists");
+            }
+          } catch (loginError) {
+            console.error("SignUpScreen - Error attempting login:", loginError);
+            
+            // If we have user_uid from the "User already exists" response, check if profile exists
+            // If profile doesn't exist, route to UserInfo
+            if (createAccountData.user_uid) {
+              try {
+                const profileCheckResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${createAccountData.user_uid}`, {
+                  method: "GET",
+                  headers: { "Content-Type": "application/json" },
+                });
+                const profileCheckData = await profileCheckResponse.json();
+                
+                // If profile not found, route to UserInfo
+                if ((!profileCheckResponse.ok && profileCheckResponse.status === 404) || 
+                    profileCheckData.message === "Profile not found for this user" || 
+                    (profileCheckData.code === 404 && profileCheckData.message === "Profile not found for this user")) {
+                  console.log("SignUpScreen - Profile not found in catch block, routing to UserInfo");
+                  await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+                  await AsyncStorage.setItem("user_uid", createAccountData.user_uid);
+                  setIsAttemptingLogin(false);
+                  navigation.navigate("UserInfo");
+                  return;
+                }
+              } catch (profileError) {
+                console.error("SignUpScreen - Error checking profile:", profileError);
+              }
+            }
+            
+            setIsAttemptingLogin(false);
+            setUserExistsError("User Already Exists");
+          }
         } else if (createAccountData.code === 281 && createAccountData.user_uid) {
           // Clear AsyncStorage before storing new user data
           await AsyncStorage.clear();
@@ -314,28 +438,38 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       </View>
 
       <View style={styles.inputContainer}>
-        <TextInput style={styles.input} placeholder='Email' value={email} onChangeText={handleEmailChange} keyboardType='email-address' autoCapitalize='none' editable={!isGoogleSignUp} />
+        <View style={styles.fieldContainer}>
+          <Text style={styles.label}>Email</Text>
+          <TextInput style={styles.input} placeholder='Email' value={email} onChangeText={handleEmailChange} keyboardType='email-address' autoCapitalize='none' editable={!isGoogleSignUp} />
+        </View>
         {!isGoogleSignUp && (
           <>
-            <View style={styles.passwordInputContainer}>
-              <TextInput style={styles.input} placeholder='Password' value={password} onChangeText={handlePasswordChange} secureTextEntry={!isPasswordVisible} autoCapitalize='none' />
-              <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
-                <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
-              </TouchableOpacity>
+            <View style={styles.fieldContainer}>
+              <Text style={styles.label}>Password</Text>
+              <View style={styles.passwordInputContainer}>
+                <TextInput style={styles.input} placeholder='Password' value={password} onChangeText={handlePasswordChange} secureTextEntry={!isPasswordVisible} autoCapitalize='none' />
+                <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
+                  <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={styles.passwordInputContainer}>
-              <TextInput
-                style={styles.input}
-                placeholder='Confirm Password'
-                value={confirmPassword}
-                onChangeText={handleConfirmPasswordChange}
-                secureTextEntry={!isConfirmPasswordVisible}
-                autoCapitalize='none'
-              />
-              <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}>
-                <Ionicons name={isConfirmPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
-              </TouchableOpacity>
+            <View style={styles.fieldContainer}>
+              <Text style={styles.label}>Confirm Password</Text>
+              <View style={styles.passwordInputContainer}>
+                <TextInput
+                  style={styles.input}
+                  placeholder='Confirm Password'
+                  value={confirmPassword}
+                  onChangeText={handleConfirmPasswordChange}
+                  secureTextEntry={!isConfirmPasswordVisible}
+                  autoCapitalize='none'
+                />
+                <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}>
+                  <Ionicons name={isConfirmPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
+                </TouchableOpacity>
+              </View>
             </View>
+            {!!userExistsError && <Text style={styles.userExistsErrorText}>{userExistsError}</Text>}
             <TouchableOpacity onPress={() => setShowForgotPasswordModal(true)} style={styles.forgotPasswordLink}>
               <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
             </TouchableOpacity>
@@ -343,8 +477,12 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         )}
       </View>
 
-      <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : null]} onPress={handleContinue} disabled={!isValid}>
-        <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : null]}>{isGoogleSignUp ? "Complete Sign Up" : "Continue"}</Text>
+      <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : null]} onPress={handleContinue} disabled={!isValid || isAttemptingLogin}>
+        {isAttemptingLogin ? (
+          <ActivityIndicator color='#fff' />
+        ) : (
+          <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : null]}>{isGoogleSignUp ? "Complete Sign Up" : "Continue"}</Text>
+        )}
       </TouchableOpacity>
 
       {!isGoogleSignUp && (
@@ -503,12 +641,22 @@ const styles = StyleSheet.create({
   inputContainer: {
     marginBottom: 30,
   },
+  fieldContainer: {
+    marginBottom: 15,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 5,
+    color: "#000",
+  },
   input: {
     backgroundColor: "#F5F5F5",
     borderRadius: 10,
     padding: 15,
-    marginBottom: 15,
     fontSize: 16,
+    borderWidth: 1,
+    borderColor: "#ccc",
   },
   passwordInputContainer: {
     position: "relative",
@@ -590,6 +738,13 @@ const styles = StyleSheet.create({
     color: "#FF9500",
     fontSize: 14,
     fontWeight: "600",
+  },
+  userExistsErrorText: {
+    color: "red",
+    fontSize: 14,
+    marginTop: -10,
+    marginBottom: 8,
+    textAlign: "left",
   },
   modalOverlay: {
     flex: 1,

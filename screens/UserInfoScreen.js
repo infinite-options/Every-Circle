@@ -250,13 +250,13 @@ export default function UserInfoScreen({ navigation, route }) {
       <Text style={styles.subtitle}>Please provide your information to continue</Text>
 
       <View style={styles.inputContainer}>
-        <Text style={styles.label}>First Name</Text>
+        <Text style={styles.label}>First Name (Required)</Text>
         <TextInput style={styles.input} value={firstName} onChangeText={setFirstName} placeholder='Enter your first name' autoCapitalize='words' />
 
-        <Text style={styles.label}>Last Name</Text>
+        <Text style={styles.label}>Last Name (Required)</Text>
         <TextInput style={styles.input} value={lastName} onChangeText={setLastName} placeholder='Enter your last name' autoCapitalize='words' />
 
-        <Text style={styles.label}>Phone Number</Text>
+        <Text style={styles.label}>Phone Number (Required for password recovery)</Text>
         <TextInput style={styles.input} value={phoneNumber} onChangeText={(text) => setPhoneNumber(formatPhoneNumber(text))} placeholder='(000) 000-0000' keyboardType='phone-pad' />
       </View>
 
