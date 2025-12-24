@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,24 +6,61 @@ import {
   Image,
   TouchableOpacity,
   ScrollView,
+  Modal,
+  Platform,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Asset } from "expo-asset";
+
+// Try native video (only if expo-av exists)
+let NativeVideo = null;
+try {
+  NativeVideo = require("expo-av").Video;
+} catch (e) {
+  NativeVideo = null;
+}
 
 export default function HowItWorksScreen({ navigation }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playKey, setPlayKey] = useState(0); // forces web <video> reload each time
+
   const onPrev = () => console.log("Prev");
   const onNext = () => console.log("Next");
-  const onPlay = () => console.log("Play");
+
+  const onPlay = useCallback(() => {
+    // Web uses <video>. Native uses expo-av if available.
+    if (Platform.OS !== "web" && !NativeVideo) {
+      Alert.alert(
+        "Video Not Enabled",
+        "Video works on Web right now. On iOS/Android, enable expo-av (or your team’s preferred native video solution)."
+      );
+      return;
+    }
+
+    setPlayKey((k) => k + 1);
+    setIsPlaying(true);
+  }, []);
+
+  const onCloseVideo = () => setIsPlaying(false);
+
+  const videoUri = useMemo(() => {
+    // Works on web as a URL; native uses require() below for expo-av
+    return Asset.fromModule(require("../assets/EveryB2B.mp4")).uri;
+  }, []);
 
   return (
     <SafeAreaView style={styles.safeArea}>
       {/* TOP MAROON HEADER */}
       <View style={styles.topHeader}>
+        {/* Back icon: WHITE only, no box */}
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           style={styles.backBtn}
+          activeOpacity={0.8}
         >
-          <Ionicons name="chevron-back" size={18} color="#111" />
+          <Ionicons name="chevron-back" size={28} color="#fff" />
         </TouchableOpacity>
 
         <Text style={styles.topHeaderTitle}>HOME</Text>
@@ -34,13 +71,7 @@ export default function HowItWorksScreen({ navigation }) {
 
       <ScrollView contentContainerStyle={styles.page}>
         {/* everyCircle pill */}
-        <Pill
-          bg="#fff"
-          rightIcon="chevron-up"
-          rightIconBg="#fff"
-          rightIconBorder
-        >
-          {/* <Text style={styles.pillCenterText}>everyCircle</Text> */}
+        <Pill bg="#fff" rightIcon="chevron-up" rightIconBg="#fff" rightIconBorder>
           <Text style={styles.pillCenterText}>
             <Text style={styles.everyItalic}>every</Text>
             <Text style={styles.circleNormal}>Circle</Text>
@@ -66,13 +97,18 @@ export default function HowItWorksScreen({ navigation }) {
               source={require("../assets/everycirclelogonew_400x400.jpg")}
               style={styles.videoImage}
             />
+
+            {/* Play overlay */}
             <TouchableOpacity
               style={styles.playOverlay}
               onPress={onPlay}
               activeOpacity={0.9}
             >
-              <Ionicons name="play" size={30} color="rgba(255,255,255,0.95)" />
-              <View style={styles.playCircle} />
+              <Ionicons
+                name="play-circle"
+                size={84}
+                color="rgba(0,0,0,0.55)"
+              />
             </TouchableOpacity>
 
             {/* bottom nav circles */}
@@ -82,6 +118,7 @@ export default function HowItWorksScreen({ navigation }) {
             >
               <Ionicons name="chevron-back" size={18} color="#111" />
             </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.cornerNav, styles.cornerRight]}
               onPress={onNext}
@@ -94,6 +131,70 @@ export default function HowItWorksScreen({ navigation }) {
             The whole is greater than the sum of its parts ...
           </Text>
         </View>
+
+        {/* WEB video modal */}
+        {Platform.OS === "web" && (
+          <Modal visible={isPlaying} transparent animationType="fade">
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalFrame}>
+                {/* X close */}
+                <TouchableOpacity
+                  onPress={onCloseVideo}
+                  activeOpacity={0.85}
+                  style={styles.closeBtn}
+                >
+                  <Ionicons name="close" size={22} color="#111" />
+                </TouchableOpacity>
+
+                {/* HTML video - fits fully, no half-black */}
+                <video
+                  key={playKey}
+                  src={videoUri}
+                  autoPlay
+                  controls
+                  playsInline
+                  onEnded={() => setIsPlaying(false)}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    backgroundColor: "#fff",
+                    objectFit: "contain",
+                    borderRadius: 14,
+                  }}
+                />
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* NATIVE video modal (if expo-av exists) */}
+        {Platform.OS !== "web" && NativeVideo && (
+          <Modal visible={isPlaying} transparent animationType="fade">
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalFrame}>
+                <TouchableOpacity
+                  onPress={onCloseVideo}
+                  activeOpacity={0.85}
+                  style={styles.closeBtn}
+                >
+                  <Ionicons name="close" size={22} color="#111" />
+                </TouchableOpacity>
+
+                <NativeVideo
+                  key={playKey}
+                  source={require("../assets/EveryB2B.mp4")}
+                  shouldPlay
+                  useNativeControls
+                  resizeMode="contain"
+                  style={{ width: "100%", height: "100%", borderRadius: 14 }}
+                  onPlaybackStatusUpdate={(status) => {
+                    if (status?.didJustFinish) setIsPlaying(false);
+                  }}
+                />
+              </View>
+            </View>
+          </Modal>
+        )}
 
         {/* SMALL LOGO CARD */}
         <View style={styles.card}>
@@ -272,9 +373,7 @@ export default function HowItWorksScreen({ navigation }) {
             <Text>
               Bounties are deducted and shared,{"\n"}
               by different percentages,{" "}
-              <Text style={[styles.boldWord, styles.italicWord]}>
-                ONLY
-              </Text>{" "}
+              <Text style={[styles.boldWord, styles.italicWord]}>ONLY</Text>{" "}
               after{"\n"}
               completed transactions
             </Text>
@@ -345,43 +444,23 @@ export default function HowItWorksScreen({ navigation }) {
         <FeedbackBanner />
 
         {/* DROPDOWN PILLS */}
-        <Pill
-          bg="#fff"
-          rightIcon="chevron-down"
-          rightIconBg="#fff"
-          rightIconBorder
-        >
+        <Pill bg="#fff" rightIcon="chevron-down" rightIconBg="#fff" rightIconBorder>
           <Text style={styles.pillBig}>HOME</Text>
         </Pill>
 
-        <Pill
-          bg="#fff"
-          rightIcon="chevron-down"
-          rightIconBg="#fff"
-          rightIconBorder
-        >
+        <Pill bg="#fff" rightIcon="chevron-down" rightIconBg="#fff" rightIconBorder>
           <Text style={styles.pillBig}>
             Welcome! <Text style={styles.pillItalic}>Sign Up</Text>
           </Text>
         </Pill>
 
-        <Pill
-          bg="#fff"
-          rightIcon="chevron-down"
-          rightIconBg="#fff"
-          rightIconBorder
-        >
+        <Pill bg="#fff" rightIcon="chevron-down" rightIconBg="#fff" rightIconBorder>
           <Text style={styles.pillBig}>
             Welcome Back! <Text style={styles.pillItalic}>Log In</Text>
           </Text>
         </Pill>
 
-        <Pill
-          bg="#fff"
-          rightIcon="chevron-down"
-          rightIconBg="#fff"
-          rightIconBorder
-        >
+        <Pill bg="#fff" rightIcon="chevron-down" rightIconBg="#fff" rightIconBorder>
           <Text style={[styles.pillCenterText, { fontSize: 22 }]}>
             everyCircle
           </Text>
@@ -399,19 +478,7 @@ export default function HowItWorksScreen({ navigation }) {
         {/* FEEDBACK BANNER AGAIN */}
         <FeedbackBanner />
 
-        {/* BOTTOM ICON ROW */}
-        <View style={styles.bottomIconsRow}>
-          <Image
-            source={require("../assets/everycirclelogonew_400x400.jpg")}
-            style={styles.bottomLogo}
-          />
-          <Ionicons name="git-network-outline" size={34} color="#111" />
-          <Ionicons name="person-outline" size={34} color="#111" />
-          <Ionicons name="business-outline" size={34} color="#111" />
-          <Ionicons name="settings-outline" size={34} color="#111" />
-          <Ionicons name="search-outline" size={34} color="#111" />
-        </View>
-
+        {/* Removed bottom icon row as requested */}
         <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
@@ -504,16 +571,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  backBtn: {
-    width: 36,
-    height: 26,
-    borderRadius: 14,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: BORDER,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+
+  // no background box now
+  backBtn: { padding: 2 },
+
   topHeaderTitle: {
     color: "#fff",
     fontWeight: "900",
@@ -529,7 +590,7 @@ const styles = StyleSheet.create({
 
   everyItalic: {
     fontStyle: "italic",
-    fontWeight: "900", // keep it bold 
+    fontWeight: "900",
   },
   circleNormal: {
     fontStyle: "normal",
@@ -585,32 +646,28 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
 
-  /* Video */
+  /* Video box (frame) */
   videoBox: {
     borderWidth: 1,
     borderColor: BORDER,
     borderRadius: 18,
-    paddingVertical: 28,
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
     backgroundColor: "#fff",
+    overflow: "hidden",
+    height: 280,
   },
   videoImage: { width: 200, height: 200, resizeMode: "contain" },
+
   playOverlay: {
     position: "absolute",
-    width: 66,
-    height: 66,
+    width: 140,
+    height: 140,
     alignItems: "center",
     justifyContent: "center",
   },
-  playCircle: {
-    position: "absolute",
-    width: 66,
-    height: 66,
-    borderRadius: 33,
-    backgroundColor: "rgba(0,0,0,0.45)",
-  },
+
   cornerNav: {
     position: "absolute",
     bottom: 14,
@@ -622,6 +679,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 10,
   },
   cornerLeft: { left: 14 },
   cornerRight: { right: 14 },
@@ -632,6 +690,40 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontStyle: "italic",
     color: "#111",
+  },
+
+  /* Modal video */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  modalFrame: {
+    width: "100%",
+    maxWidth: 760,
+    height: 420,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: BORDER,
+    overflow: "hidden",
+    position: "relative",
+  },
+  closeBtn: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 6,
+    backgroundColor: "#fff",
+    borderWidth: 2,
+    borderColor: "#111",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 50,
   },
 
   /* Small logo card */
@@ -769,19 +861,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   pillItalic: { fontStyle: "italic", fontWeight: "900" },
-
-  /* bottom icons */
-  bottomIconsRow: {
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 18,
-    paddingHorizontal: 6,
-  },
-  bottomLogo: {
-    width: 44,
-    height: 44,
-    resizeMode: "contain",
-  },
 });
