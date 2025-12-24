@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Platform, Modal, ActivityIndicator } from "react-native";
-import axios from "axios";
 
 // Only import GoogleSigninButton on native platforms (not web)
 let GoogleSigninButton = null;
@@ -17,7 +16,7 @@ if (!isWeb) {
 import AppleSignIn from "../AppleSignIn";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import { ACCOUNT_SALT_ENDPOINT, CREATE_ACCOUNT_ENDPOINT, GOOGLE_SIGNUP_ENDPOINT, REFERRAL_API_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT, LOGIN_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { ACCOUNT_SALT_ENDPOINT, CREATE_ACCOUNT_ENDPOINT, GOOGLE_SIGNUP_ENDPOINT, REFERRAL_API_ENDPOINT, LOGIN_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 // import CryptoJS from "react-native-crypto-js";
 // import * as CryptoJS from "react-native-crypto-js";
 import * as Crypto from "expo-crypto";
@@ -38,10 +37,6 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   const [isCheckingReferral, setIsCheckingReferral] = useState(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
-  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
-  const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
-  const [showPassModal, setShowPassModal] = useState(false);
-  const [showForgotPasswordSpinner, setShowForgotPasswordSpinner] = useState(false);
   const [userExistsError, setUserExistsError] = useState("");
   const [isAttemptingLogin, setIsAttemptingLogin] = useState(false);
 
@@ -174,7 +169,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
 
   const handleReferralSelect = (selectedUid, selectedUserId) => {
     setShowReferralModal(false);
-    
+
     if (pendingGoogleUserInfo) {
       navigation.navigate("UserInfo", {
         googleUserInfo: pendingGoogleUserInfo,
@@ -273,7 +268,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           console.log("SignUpScreen - User already exists, attempting login with provided password");
           setUserExistsError(""); // Clear any previous error
           setIsAttemptingLogin(true);
-          
+
           try {
             // 1. Get salt for the existing user
             const saltResponse = await fetch(ACCOUNT_SALT_ENDPOINT, {
@@ -282,20 +277,20 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               body: JSON.stringify({ email }),
             });
             const saltObject = await saltResponse.json();
-            
+
             if (saltObject.code !== 200) {
               setIsAttemptingLogin(false);
               setUserExistsError("User Already Exists");
               return;
             }
-            
+
             // 2. Hash password with salt
             const salt = saltObject.result[0].password_salt;
             const value = password + salt;
             const hashedPassword = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value, {
               encoding: Crypto.CryptoEncoding.HEX,
             });
-            
+
             // 3. Attempt login
             const loginResponse = await fetch(LOGIN_ENDPOINT, {
               method: "POST",
@@ -303,43 +298,45 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               body: JSON.stringify({ email, password: hashedPassword }),
             });
             const loginObject = await loginResponse.json();
-            
+
             // 4. Check if login succeeded
             if (loginObject.code === 200 && loginObject.result && loginObject.result.user_uid) {
               const user_uid = loginObject.result.user_uid;
               const user_email = loginObject.result.user_email_id;
-              
+
               // Store user credentials
               await AsyncStorage.setItem("user_uid", user_uid);
               await AsyncStorage.setItem("user_email_id", user_email);
-              
+
               // Fetch user profile
               const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${user_uid}`, {
                 method: "GET",
                 headers: { "Content-Type": "application/json" },
               });
               const fullUser = await profileResponse.json();
-              
+
               // Handle case where profile is not found (check status code and message)
-              if ((!profileResponse.ok && profileResponse.status === 404) || 
-                  fullUser.message === "Profile not found for this user" || 
-                  (fullUser.code === 404 && fullUser.message === "Profile not found for this user")) {
+              if (
+                (!profileResponse.ok && profileResponse.status === 404) ||
+                fullUser.message === "Profile not found for this user" ||
+                (fullUser.code === 404 && fullUser.message === "Profile not found for this user")
+              ) {
                 console.log("SignUpScreen - Profile not found for user, routing to UserInfo");
                 await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
                 await AsyncStorage.setItem("user_uid", user_uid);
                 await AsyncStorage.setItem("user_email_id", user_email);
-                
+
                 setIsAttemptingLogin(false);
                 // Navigate directly to UserInfo without showing alert
                 navigation.navigate("UserInfo");
                 return;
               }
-              
+
               // Store profile data and navigate to Profile
               await AsyncStorage.setItem("user_uid", user_uid);
               await AsyncStorage.setItem("user_email_id", user_email);
               await AsyncStorage.setItem("profile_uid", fullUser.personal_info?.profile_personal_uid || "");
-              
+
               setIsAttemptingLogin(false);
               navigation.navigate("Profile", {
                 user: {
@@ -355,7 +352,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             }
           } catch (loginError) {
             console.error("SignUpScreen - Error attempting login:", loginError);
-            
+
             // If we have user_uid from the "User already exists" response, check if profile exists
             // If profile doesn't exist, route to UserInfo
             if (createAccountData.user_uid) {
@@ -365,11 +362,13 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   headers: { "Content-Type": "application/json" },
                 });
                 const profileCheckData = await profileCheckResponse.json();
-                
+
                 // If profile not found, route to UserInfo
-                if ((!profileCheckResponse.ok && profileCheckResponse.status === 404) || 
-                    profileCheckData.message === "Profile not found for this user" || 
-                    (profileCheckData.code === 404 && profileCheckData.message === "Profile not found for this user")) {
+                if (
+                  (!profileCheckResponse.ok && profileCheckResponse.status === 404) ||
+                  profileCheckData.message === "Profile not found for this user" ||
+                  (profileCheckData.code === 404 && profileCheckData.message === "Profile not found for this user")
+                ) {
                   console.log("SignUpScreen - Profile not found in catch block, routing to UserInfo");
                   await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
                   await AsyncStorage.setItem("user_uid", createAccountData.user_uid);
@@ -381,7 +380,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                 console.error("SignUpScreen - Error checking profile:", profileError);
               }
             }
-            
+
             setIsAttemptingLogin(false);
             setUserExistsError("User Already Exists");
           }
@@ -400,34 +399,6 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       console.error("Error in account creation:", error);
       Alert.alert("Error", "Failed to create account. Please try again.");
     }
-  };
-
-  const onReset = async () => {
-    if (forgotPasswordEmail === "") {
-      Alert.alert("Error", "Please enter an email");
-      return;
-    }
-    setShowForgotPasswordSpinner(true);
-    axios
-      .post(SET_TEMP_PASSWORD_ENDPOINT, {
-        email: forgotPasswordEmail,
-      })
-      .then((response) => {
-        if (response.data.message === "A temporary password has been sent") {
-          setShowForgotPasswordSpinner(false);
-          setShowPassModal(true);
-        }
-        if (response.data.code === 280) {
-          Alert.alert("Error", "No account found with that email.");
-          setShowForgotPasswordSpinner(false);
-          return;
-        }
-      })
-      .catch((error) => {
-        console.error("Forgot password error:", error);
-        Alert.alert("Error", "Something went wrong. Please try again.");
-        setShowForgotPasswordSpinner(false);
-      });
   };
 
   return (
@@ -470,9 +441,6 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               </View>
             </View>
             {!!userExistsError && <Text style={styles.userExistsErrorText}>{userExistsError}</Text>}
-            <TouchableOpacity onPress={() => setShowForgotPasswordModal(true)} style={styles.forgotPasswordLink}>
-              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-            </TouchableOpacity>
           </>
         )}
       </View>
@@ -518,9 +486,9 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       {/* Referral Modal */}
       <Modal visible={showReferralModal} transparent animationType='fade'>
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)" }}>
-          <View style={{ backgroundColor: "#fff", padding: 24, borderRadius: 12, width: '90%', maxWidth: 500, maxHeight: '80%' }}>
+          <View style={{ backgroundColor: "#fff", padding: 24, borderRadius: 12, width: "90%", maxWidth: 500, maxHeight: "80%" }}>
             <Text style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>Who referred you to Every Circle?</Text>
-            
+
             {/* Email Input Section */}
             <TextInput
               style={{ borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, marginBottom: 8 }}
@@ -532,83 +500,19 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               editable={!isCheckingReferral}
             />
             {!!referralError && <Text style={{ color: "red", marginBottom: 8 }}>{referralError}</Text>}
-            <TouchableOpacity 
-              style={{ backgroundColor: "#007AFF", padding: 12, borderRadius: 8, alignItems: "center", marginBottom: 12 }} 
-              onPress={handleReferralSubmit} 
-              disabled={isCheckingReferral}
-            >
+            <TouchableOpacity style={{ backgroundColor: "#007AFF", padding: 12, borderRadius: 8, alignItems: "center", marginBottom: 12 }} onPress={handleReferralSubmit} disabled={isCheckingReferral}>
               <Text style={{ color: "#fff", fontWeight: "bold" }}>{isCheckingReferral ? "Checking..." : "Continue"}</Text>
             </TouchableOpacity>
 
             {/* Divider */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 16 }}>
-              <View style={{ flex: 1, height: 1, backgroundColor: '#E5E5E5' }} />
-              <Text style={{ marginHorizontal: 10, color: '#666', fontSize: 14 }}>OR SEARCH</Text>
-              <View style={{ flex: 1, height: 1, backgroundColor: '#E5E5E5' }} />
+            <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 16 }}>
+              <View style={{ flex: 1, height: 1, backgroundColor: "#E5E5E5" }} />
+              <Text style={{ marginHorizontal: 10, color: "#666", fontSize: 14 }}>OR SEARCH</Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: "#E5E5E5" }} />
             </View>
 
             {/* Search Section - Embed ReferralSearch content here */}
-            <ReferralSearch
-              visible={true}
-              onSelect={handleReferralSelect}
-              onNewUser={handleNewUserReferral}
-              onClose={() => setShowReferralModal(false)}
-              embedded={true}
-            />
-          </View>
-        </View>
-      </Modal>
-
-      {/* Forgot Password Modal */}
-      <Modal visible={showForgotPasswordModal} transparent animationType='fade'>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Forgot Password</Text>
-            <Text style={styles.modalSubtitle}>Enter your email address and we'll send you a temporary password.</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder='Email'
-              value={forgotPasswordEmail}
-              onChangeText={setForgotPasswordEmail}
-              keyboardType='email-address'
-              autoCapitalize='none'
-              editable={!showForgotPasswordSpinner}
-            />
-            <View style={styles.modalButtonContainer}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel]}
-                onPress={() => {
-                  setShowForgotPasswordModal(false);
-                  setForgotPasswordEmail("");
-                }}
-                disabled={showForgotPasswordSpinner}
-              >
-                <Text style={styles.modalButtonCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalButton, styles.modalButtonSubmit]} onPress={onReset} disabled={showForgotPasswordSpinner}>
-                {showForgotPasswordSpinner ? <ActivityIndicator color='#fff' /> : <Text style={styles.modalButtonSubmitText}>Send</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Success Modal */}
-      <Modal visible={showPassModal} transparent animationType='fade'>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Password Reset</Text>
-            <Text style={styles.modalSubtitle}>A temporary password has been sent to your email.</Text>
-            <TouchableOpacity
-              style={[styles.modalButton, styles.modalButtonSubmit]}
-              onPress={() => {
-                setShowPassModal(false);
-                setShowForgotPasswordModal(false);
-                setForgotPasswordEmail("");
-              }}
-            >
-              <Text style={styles.modalButtonSubmitText}>OK</Text>
-            </TouchableOpacity>
+            <ReferralSearch visible={true} onSelect={handleReferralSelect} onNewUser={handleNewUserReferral} onClose={() => setShowReferralModal(false)} embedded={true} />
           </View>
         </View>
       </Modal>
@@ -728,16 +632,6 @@ const styles = StyleSheet.create({
   logInText: {
     color: "#FF9500",
     fontWeight: "bold",
-  },
-  forgotPasswordLink: {
-    alignSelf: "flex-end",
-    marginTop: -10,
-    marginBottom: 10,
-  },
-  forgotPasswordText: {
-    color: "#FF9500",
-    fontSize: 14,
-    fontWeight: "600",
   },
   userExistsErrorText: {
     color: "red",

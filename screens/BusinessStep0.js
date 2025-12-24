@@ -152,7 +152,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
               <Text style={[styles.title, darkMode && styles.darkTitle]}>Welcome to Every Circle!</Text>
               <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Let's Start Building Your Business Page!</Text>
 
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Search for Existing Business</Text>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Search for Google Maps Business or Organization</Text>
               <View style={{ width: "100%", marginBottom: 20, zIndex: 1000 }}>
                 {(() => {
                   const apiKey = config.googleMapsApiKey;
@@ -162,7 +162,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                 })()}
                 <GooglePlacesAutocomplete
                   ref={googlePlacesRef}
-                  placeholder='Search for a business'
+                  placeholder='Enter a Business or Organization name'
                   placeholderTextColor={darkMode ? "#ffffff" : "#666"}
                   fetchDetails={true}
                   onPress={handleGooglePlaceSelect}

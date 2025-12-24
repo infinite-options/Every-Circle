@@ -59,13 +59,13 @@ const AccountTypeScreen = ({ navigation, route }) => {
       // Check if we have valid profile data (personal_info exists)
       // Even if status is 500, the data might still be valid
       const profileData = response.data;
-      
+
       if (profileData && profileData.personal_info) {
         // Store profile_uid in AsyncStorage for consistency with other screens
         if (profileData.personal_info.profile_personal_uid) {
           await AsyncStorage.setItem("profile_uid", profileData.personal_info.profile_personal_uid);
         }
-        
+
         navigation.navigate("Profile", {
           user: profileData,
           profile_uid: profileData.personal_info?.profile_personal_uid || "",
@@ -75,17 +75,17 @@ const AccountTypeScreen = ({ navigation, route }) => {
       }
     } catch (error) {
       console.error("Error fetching profile:", error.response?.data || error.message);
-      
+
       // Check if error response contains valid data despite the error
       const errorData = error.response?.data;
       if (errorData && errorData.personal_info) {
         console.log("Found valid profile data in error response, proceeding...");
-        
+
         // Store profile_uid in AsyncStorage
         if (errorData.personal_info.profile_personal_uid) {
           await AsyncStorage.setItem("profile_uid", errorData.personal_info.profile_personal_uid);
         }
-        
+
         navigation.navigate("Profile", {
           user: errorData,
           profile_uid: errorData.personal_info?.profile_personal_uid || "",
@@ -98,14 +98,14 @@ const AccountTypeScreen = ({ navigation, route }) => {
 
   return (
     <View style={styles.accountContainer}>
-      <AppHeader title="Choose Your Account" backgroundColor="#007AFF" />
+      <AppHeader title='Choose Your Account' backgroundColor='#007AFF' />
       <View style={styles.circlesContainer}>
         <TouchableOpacity style={[styles.accountButton, styles.personal]} onPress={handleSelectAccount}>
-          <Text style={styles.accountText}>Personal</Text>
+          <Text style={styles.accountText}>Individual</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={[styles.accountButton, styles.business]} onPress={() => navigation.navigate("BusinessSetup")}>
-          <Text style={styles.accountText}>Business</Text>
+          <Text style={styles.accountText}>Business or Organization</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -158,6 +158,8 @@ const styles = StyleSheet.create({
     color: "#000",
     fontSize: isWeb ? 28 : 22,
     fontWeight: "bold",
+    textAlign: "center",
+    width: "100%",
   },
 });
 export default AccountTypeScreen;
