@@ -13,6 +13,9 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 const BusinessProfileAPI = BUSINESS_INFO_ENDPOINT;
 
 export default function EditBusinessProfileScreen({ route, navigation }) {
+  console.log("EditBusinessProfileScreen loaded with route params:", route.params);
+  console.log("route object:", route);
+  console.log("navigation object:", navigation);
   const { darkMode } = useDarkMode();
   // console.log("Edit Button Pressed: EditBusinessProfileScreen", route.params.business);
   const { business, business_users } = route.params || {};
@@ -622,12 +625,14 @@ export default function EditBusinessProfileScreen({ route, navigation }) {
       "Initial services with bs_uid and bs_tags:",
       initialServices.map((s) => ({ name: s.bs_service_name, bs_uid: s.bs_uid, bs_tags: s.bs_tags }))
     );
+    //console.log("Default service template:", defaultService);
     return initialServices.map((service) => ({
-      ...defaultService,
+      //...defaultService, //commented out so businesses with services can be edited
       ...service,
       bs_uid: service.bs_uid || "", // Ensure bs_uid is preserved
       bs_tags: service.bs_tags || "", // Ensure bs_tags is preserved
     }));
+
   });
 
   const [showServiceForm, setShowServiceForm] = useState(false);
