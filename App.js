@@ -231,7 +231,12 @@ export default function App() {
 
             console.log("App.js - Endpoint Response:", JSON.stringify(fullUser, null, 2));
 
-            if (fullUser.message === "Profile not found for this user") {
+            // Handle case where profile is not found (404 error)
+            const is404 = !profileResponse.ok && profileResponse.status === 404;
+            const isProfileNotFound = fullUser.message === "Profile not found for this user";
+            const is404Code = fullUser.code === 404;
+
+            if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
               Alert.alert("User Not Found", "This account is not registered. Would you like to sign up?", [
                 {
                   text: "Cancel",
@@ -393,7 +398,12 @@ export default function App() {
 
         console.log("App.js - Endpoint Response:", JSON.stringify(fullUser, null, 2));
 
-        if (fullUser.message === "Profile not found for this user") {
+        // Handle case where profile is not found (404 error)
+        const is404 = !profileResponse.ok && profileResponse.status === 404;
+        const isProfileNotFound = fullUser.message === "Profile not found for this user";
+        const is404Code = fullUser.code === 404;
+
+        if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
           // Sign out from Google when profile is not found
           await GoogleSignin.signOut();
 
@@ -603,6 +613,33 @@ export default function App() {
         const fullUser = await profileResponse.json();
         console.log("App.js - Existing user profile:", JSON.stringify(fullUser, null, 2));
 
+        // Handle case where profile is not found (404 error)
+        // Check response status, response body message, and code
+        const is404 = !profileResponse.ok && profileResponse.status === 404;
+        const isProfileNotFound = fullUser.message === "Profile not found for this user";
+        const is404Code = fullUser.code === 404;
+
+        if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
+          console.log("App.js - Profile not found for existing user, routing to UserInfo");
+          // Clear any existing profile data but keep user credentials
+          await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+          await AsyncStorage.setItem("user_uid", result.user_uid || userInfo.user.id);
+          await AsyncStorage.setItem("user_email_id", userInfo.user.email);
+
+          // Navigate to UserInfo to complete profile
+          navigation.navigate("UserInfo", {
+            googleUserInfo: {
+              email: userInfo.user.email,
+              firstName: userInfo.user.givenName,
+              lastName: userInfo.user.familyName,
+              profilePicture: userInfo.user.photo,
+              googleId: userInfo.user.id,
+              accessToken: tokens.accessToken,
+            },
+          });
+          return;
+        }
+
         if (fullUser && fullUser.personal_info?.profile_personal_uid) {
           await AsyncStorage.setItem("profile_uid", fullUser.personal_info.profile_personal_uid);
 
@@ -615,7 +652,7 @@ export default function App() {
             profile_uid: fullUser.personal_info.profile_personal_uid,
           });
         } else {
-          // Fallback if profile not found
+          // Fallback if profile not found (but not a 404)
           Alert.alert("Profile Not Found", "Your account exists but profile data could not be loaded. Please try signing in instead.", [
             {
               text: "OK",
@@ -703,6 +740,32 @@ export default function App() {
         const profileResponse = await fetch(endpoint);
         const fullUser = await profileResponse.json();
         console.log("App.js - Full user 2:", JSON.stringify(fullUser, null, 2));
+
+        // Handle case where profile is not found (404 error)
+        const is404 = !profileResponse.ok && profileResponse.status === 404;
+        const isProfileNotFound = fullUser.message === "Profile not found for this user";
+        const is404Code = fullUser.code === 404;
+
+        if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
+          console.log("App.js - Profile not found for Apple sign in user, routing to UserInfo");
+          // Clear any existing profile data but keep user credentials
+          await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+          await AsyncStorage.setItem("user_uid", userUid);
+          await AsyncStorage.setItem("user_email_id", userEmail);
+
+          // Navigate to UserInfo to complete profile
+          navigation.navigate("UserInfo", {
+            appleUserInfo: {
+              email: userEmail,
+              firstName: user.name?.split(" ")[0] || "",
+              lastName: user.name?.split(" ").slice(1).join(" ") || "",
+              appleId: user.id,
+              idToken: idToken,
+            },
+          });
+          return;
+        }
+
         await AsyncStorage.setItem("profile_uid", fullUser.personal_info?.profile_personal_uid || "");
         await AsyncStorage.setItem("user_email_id", fullUser.user_email || "");
         // await AsyncStorage.setItem("user_name", user.name);
@@ -857,7 +920,7 @@ export default function App() {
 
             {/* Build Timestamp - Last Change Date/Time with Version */}
             <Text style={styles.dateTimeText}>
-              Version {versionData.major}.{versionData.build} - {formatDateTime(buildTimestamp)}
+              Version {versionData.major}.{versionData.build}
             </Text>
           </View>
 

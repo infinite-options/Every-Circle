@@ -16,6 +16,9 @@ export default function ReviewBusinessScreen({ route, navigation }) {
   const [receiptFile, setReceiptFile] = useState(null);
   const [imageFile, setImageFile] = useState(null);
 
+  // Validation state
+  const isValid = rating > 0 && description.trim() && receiptDate;
+
   useEffect(() => {
     AsyncStorage.getItem("profile_uid").then(setProfileId);
     // Pre-populate if editing
@@ -230,8 +233,8 @@ export default function ReviewBusinessScreen({ route, navigation }) {
         <TouchableOpacity onPress={() => pickFile(setImageFile, "Image")} style={styles.uploadButton}>
           <Text>{imageFile ? imageFile.name : "Upload Image"}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>{isEdit ? "Update Review" : "Submit Review"}</Text>
+        <TouchableOpacity style={[styles.saveButton, !isValid && styles.saveButtonDisabled]} onPress={handleSave} disabled={!isValid}>
+          <Text style={[styles.saveButtonText, !isValid && styles.saveButtonTextDisabled]}>{isEdit ? "Update Review" : "Submit Review"}</Text>
         </TouchableOpacity>
       </ScrollView>
       <BottomNavBar navigation={navigation} />
@@ -265,5 +268,11 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 20,
   },
+  saveButtonDisabled: {
+    backgroundColor: "#999",
+  },
   saveButtonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  saveButtonTextDisabled: {
+    color: "#ccc",
+  },
 });

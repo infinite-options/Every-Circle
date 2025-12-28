@@ -15,6 +15,9 @@ export default function UserInfoScreen({ navigation, route }) {
   const [profileExists, setProfileExists] = useState(false);
   const [profilePersonalUid, setProfilePersonalUid] = useState(null);
 
+  // Validation state
+  const isValid = firstName.trim() && lastName.trim() && phoneNumber.replace(/\D/g, "").length === 10;
+
   useEffect(() => {
     console.log("UserInfoScreen - route.params:", route.params);
 
@@ -263,7 +266,7 @@ export default function UserInfoScreen({ navigation, route }) {
         <TextInput style={styles.input} value={phoneNumber} onChangeText={(text) => setPhoneNumber(formatPhoneNumber(text))} placeholder='(000) 000-0000' keyboardType='phone-pad' />
       </View>
 
-      <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={handleContinue} disabled={loading}>
+      <TouchableOpacity style={[styles.button, (!isValid || loading) && styles.buttonDisabled]} onPress={handleContinue} disabled={!isValid || loading}>
         {loading ? <ActivityIndicator color='#fff' /> : <Text style={styles.buttonText}>Continue</Text>}
       </TouchableOpacity>
     </View>

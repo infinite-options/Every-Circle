@@ -205,8 +205,13 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
       const fullUser = await profileResponse.json();
       console.log("LoginScreen - user profile info", fullUser);
 
-      // Handle case where profile is not found for existing user
-      if (fullUser.message === "Profile not found for this user") {
+      // Handle case where profile is not found (404 error)
+      // Check response status, response body message, and code
+      const is404 = !profileResponse.ok && profileResponse.status === 404;
+      const isProfileNotFound = fullUser.message === "Profile not found for this user";
+      const is404Code = fullUser.code === 404;
+
+      if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
         console.log("LoginScreen - Profile not found for existing user, redirecting to UserInfo");
 
         // Clear any existing profile data but keep the new user credentials
@@ -217,15 +222,9 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
         await AsyncStorage.setItem("user_uid", user_uid);
         await AsyncStorage.setItem("user_email_id", user_email);
 
-        Alert.alert("Complete Your Profile", "Your account exists but your profile is incomplete. Please complete your profile information.", [
-          {
-            text: "Continue",
-            onPress: () => {
-              setShowSpinner(false);
-              navigation.navigate("UserInfo");
-            },
-          },
-        ]);
+        setShowSpinner(false);
+        // Navigate directly to UserInfo without showing alert (consistent with SignUpScreen)
+        navigation.navigate("UserInfo");
         return;
       }
 
@@ -315,8 +314,8 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : null]} onPress={handleContinue} disabled={!isValid || showSpinner}>
-        {showSpinner ? <ActivityIndicator color='#fff' /> : <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : null]}>Continue</Text>}
+      <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]} onPress={handleContinue} disabled={!isValid || showSpinner}>
+        {showSpinner ? <ActivityIndicator color='#fff' /> : <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : styles.continueButtonTextDisabled]}>Continue</Text>}
       </TouchableOpacity>
 
       <View style={styles.dividerContainer}>
@@ -496,6 +495,9 @@ const styles = StyleSheet.create({
   continueButtonActive: {
     backgroundColor: "#FF9500",
   },
+  continueButtonDisabled: {
+    backgroundColor: "#999",
+  },
   continueButtonText: {
     color: "#fff",
     fontSize: 16,
@@ -503,6 +505,9 @@ const styles = StyleSheet.create({
   },
   continueButtonTextActive: {
     color: "#fff",
+  },
+  continueButtonTextDisabled: {
+    color: "#ccc",
   },
   dividerContainer: {
     flexDirection: "row",

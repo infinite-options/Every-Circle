@@ -448,13 +448,15 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         )}
       </View>
 
-      <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : null]} onPress={handleContinue} disabled={!isValid || isAttemptingLogin}>
-        {isAttemptingLogin ? (
-          <ActivityIndicator color='#fff' />
-        ) : (
-          <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : null]}>{isGoogleSignUp ? "Complete Sign Up" : "Continue"}</Text>
-        )}
-      </TouchableOpacity>
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]} onPress={handleContinue} disabled={!isValid || isAttemptingLogin}>
+          {isAttemptingLogin ? (
+            <ActivityIndicator color='#fff' />
+          ) : (
+            <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : styles.continueButtonTextDisabled]}>{isGoogleSignUp ? "Complete Sign Up" : "Continue"}</Text>
+          )}
+        </TouchableOpacity>
+      </View>
 
       {!isGoogleSignUp && (
         <>
@@ -578,6 +580,12 @@ const styles = StyleSheet.create({
     top: 15,
     zIndex: 1,
   },
+  buttonContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginVertical: 20,
+  },
   continueButton: {
     backgroundColor: "#FF9500",
     paddingVertical: 12,
@@ -586,11 +594,12 @@ const styles = StyleSheet.create({
     minWidth: 100,
     alignItems: "center",
     justifyContent: "center",
-    alignSelf: "center",
-    marginVertical: 20,
   },
   continueButtonActive: {
     backgroundColor: "#FF9500",
+  },
+  continueButtonDisabled: {
+    backgroundColor: "#999",
   },
   continueButtonText: {
     color: "#fff",
@@ -599,6 +608,9 @@ const styles = StyleSheet.create({
   },
   continueButtonTextActive: {
     color: "#fff",
+  },
+  continueButtonTextDisabled: {
+    color: "#ccc",
   },
   dividerContainer: {
     flexDirection: "row",

@@ -21,6 +21,9 @@ export default function EditBusinessProfileScreen({ route, navigation }) {
   const [businessUID, setBusinessUID] = useState(business?.business_uid || "");
   const scrollViewRef = useRef(null);
 
+  // Validation state
+  const isValid = formData.name.trim() && businessUID.trim();
+
   const [formData, setFormData] = useState({
     name: business?.business_name || "",
     location: business?.business_address_line_1 || "",
@@ -1054,8 +1057,8 @@ export default function EditBusinessProfileScreen({ route, navigation }) {
           )}
         </View>
 
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Submit</Text>
+        <TouchableOpacity style={[styles.saveButton, !isValid && styles.saveButtonDisabled]} onPress={handleSave} disabled={!isValid}>
+          <Text style={[styles.saveButtonText, !isValid && styles.saveButtonTextDisabled]}>Submit</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -1086,10 +1089,16 @@ const styles = StyleSheet.create({
     marginTop: 30,
     marginBottom: 20,
   },
+  saveButtonDisabled: {
+    backgroundColor: "#999",
+  },
   saveButtonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  saveButtonTextDisabled: {
+    color: "#ccc",
   },
   previewSection: {
     marginVertical: 20,
