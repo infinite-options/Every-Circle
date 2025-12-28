@@ -9,12 +9,9 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { getHeaderColor } from "../config/headerColors";
 
 export default function HowItWorksScreen({ navigation }) {
-  const onPrev = () => console.log("Prev");
-  const onNext = () => console.log("Next");
-  const onPlay = () => console.log("Play");
-
   return (
     <SafeAreaView style={styles.safeArea}>
       {/* TOP MAROON HEADER */}
@@ -23,78 +20,16 @@ export default function HowItWorksScreen({ navigation }) {
           onPress={() => navigation.goBack()}
           style={styles.backBtn}
         >
-          <Ionicons name="chevron-back" size={18} color="#111" />
+          <Ionicons name="chevron-back" size={18} color="#fff" />
         </TouchableOpacity>
 
-        <Text style={styles.topHeaderTitle}>HOME</Text>
+        <Text style={styles.topHeaderTitle}>How it Works</Text>
 
         {/* spacer */}
         <View style={{ width: 38 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.page}>
-        {/* everyCircle pill */}
-        <Pill
-          bg="#fff"
-          rightIcon="chevron-up"
-          rightIconBg="#fff"
-          rightIconBorder
-        >
-          {/* <Text style={styles.pillCenterText}>everyCircle</Text> */}
-          <Text style={styles.pillCenterText}>
-            <Text style={styles.everyItalic}>every</Text>
-            <Text style={styles.circleNormal}>Circle</Text>
-          </Text>
-        </Pill>
-
-        {/* How It Works pill with highlighted text */}
-        <Pill
-          bg={PALE_YELLOW}
-          rightIcon="chevron-down"
-          rightIconBg={PALE_YELLOW}
-          rightIconBorder
-        >
-          <View style={styles.hiwHighlightWrap}>
-            <Text style={styles.hiwHighlightText}>How It Works</Text>
-          </View>
-        </Pill>
-
-        {/* VIDEO CARD */}
-        <View style={styles.card}>
-          <View style={styles.videoBox}>
-            <Image
-              source={require("../assets/everycirclelogonew_400x400.jpg")}
-              style={styles.videoImage}
-            />
-            <TouchableOpacity
-              style={styles.playOverlay}
-              onPress={onPlay}
-              activeOpacity={0.9}
-            >
-              <Ionicons name="play" size={30} color="rgba(255,255,255,0.95)" />
-              <View style={styles.playCircle} />
-            </TouchableOpacity>
-
-            {/* bottom nav circles */}
-            <TouchableOpacity
-              style={[styles.cornerNav, styles.cornerLeft]}
-              onPress={onPrev}
-            >
-              <Ionicons name="chevron-back" size={18} color="#111" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.cornerNav, styles.cornerRight]}
-              onPress={onNext}
-            >
-              <Ionicons name="chevron-forward" size={18} color="#111" />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.videoCaption}>
-            The whole is greater than the sum of its parts ...
-          </Text>
-        </View>
-
         {/* SMALL LOGO CARD */}
         <View style={styles.card}>
           <View style={styles.smallRow}>
@@ -156,9 +91,8 @@ export default function HowItWorksScreen({ navigation }) {
         {/* PROFILE HEADER PILL */}
         <HeaderPill
           title="PROFILE"
-          bg={MAROON}
-          icon="person-outline"
-          iconColor="#111"
+          bg={getHeaderColor("profile")}
+          iconSource={require("../assets/profile.png")}
         />
 
         <View style={styles.card}>
@@ -208,9 +142,8 @@ export default function HowItWorksScreen({ navigation }) {
         {/* CONNECT HEADER PILL */}
         <HeaderPill
           title="CONNECT"
-          bg={CONNECT_BLUE}
-          icon="git-network-outline"
-          iconColor="#111"
+          bg={getHeaderColor("network")}
+          iconSource={require("../assets/connect.png")}
         />
 
         <View style={styles.card}>
@@ -242,9 +175,8 @@ export default function HowItWorksScreen({ navigation }) {
         {/* ACCOUNT HEADER PILL */}
         <HeaderPill
           title="ACCOUNT"
-          bg={ACCOUNT_GREEN}
-          icon="business-outline"
-          iconColor="#111"
+          bg={getHeaderColor("account")}
+          iconSource={require("../assets/pillar.png")}
         />
 
         <View style={styles.card}>
@@ -293,9 +225,8 @@ export default function HowItWorksScreen({ navigation }) {
         {/* SETTINGS HEADER PILL */}
         <HeaderPill
           title="SETTINGS"
-          bg={SETTINGS_PURPLE}
-          icon="settings-outline"
-          iconColor="#111"
+          bg={getHeaderColor("settings")}
+          iconSource={require("../assets/setting.png")}
         />
 
         <View style={styles.card}>
@@ -316,9 +247,8 @@ export default function HowItWorksScreen({ navigation }) {
         {/* SEARCH HEADER PILL */}
         <HeaderPill
           title="SEARCH"
-          bg={SEARCH_TEAL}
-          icon="search-outline"
-          iconColor="#111"
+          bg={getHeaderColor("search")}
+          iconSource={require("../assets/search.png")}
         />
 
         <View style={styles.card}>
@@ -405,11 +335,11 @@ export default function HowItWorksScreen({ navigation }) {
             source={require("../assets/everycirclelogonew_400x400.jpg")}
             style={styles.bottomLogo}
           />
-          <Ionicons name="git-network-outline" size={34} color="#111" />
-          <Ionicons name="person-outline" size={34} color="#111" />
-          <Ionicons name="business-outline" size={34} color="#111" />
-          <Ionicons name="settings-outline" size={34} color="#111" />
-          <Ionicons name="search-outline" size={34} color="#111" />
+          <Image source={require("../assets/connect.png")} style={styles.bottomIcon} tintColor="#111" />
+          <Image source={require("../assets/profile.png")} style={styles.bottomIcon} tintColor="#111" />
+          <Image source={require("../assets/pillar.png")} style={styles.bottomIcon} tintColor="#111" />
+          <Image source={require("../assets/setting.png")} style={styles.bottomIcon} tintColor="#111" />
+          <Image source={require("../assets/search.png")} style={styles.bottomIcon} tintColor="#111" />
         </View>
 
         <View style={{ height: 40 }} />
@@ -437,11 +367,11 @@ function Pill({ bg, rightIcon, rightIconBg, rightIconBorder, children }) {
   );
 }
 
-function HeaderPill({ title, bg, icon, iconColor }) {
+function HeaderPill({ title, bg, iconSource }) {
   return (
     <View style={[styles.headerPill, { backgroundColor: bg }]}>
       <View style={styles.headerIcon}>
-        <Ionicons name={icon} size={26} color={iconColor} />
+        <Image source={iconSource} style={styles.headerIconImage} tintColor="#fff" />
       </View>
       <Text style={styles.headerPillText}>{title}</Text>
     </View>
@@ -507,10 +437,6 @@ const styles = StyleSheet.create({
   backBtn: {
     width: 36,
     height: 26,
-    borderRadius: 14,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: BORDER,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -685,6 +611,10 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     justifyContent: "center",
   },
+  headerIconImage: {
+    width: 26,
+    height: 26,
+  },
   headerPillText: {
     flex: 1,
     textAlign: "center",
@@ -786,5 +716,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     resizeMode: "contain",
+  },
+  bottomIcon: {
+    width: 34,
+    height: 34,
   },
 });
