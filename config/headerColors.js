@@ -22,6 +22,7 @@ export const HEADER_COLORS = {
   search: "#4F8A8B", // Green shade
   changePassword: "#AF52DE", // Purple
   businessProfile: "#AF52DE", // Purple
+  editBusinessProfile: "#929090", // Gray (same as editProfile)
 
   // Detail/View screens (Orange)
   profileView: "#FF9500", // Orange - for viewing other users' profiles

@@ -9,6 +9,8 @@ import BottomNavBar from "../components/BottomNavBar";
 import ProductCard from "../components/ProductCard";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import AppHeader from "../components/AppHeader";
+import { getHeaderColors } from "../config/headerColors";
 
 const BusinessProfileAPI = BUSINESS_INFO_ENDPOINT;
 
@@ -623,7 +625,7 @@ export default function EditBusinessProfileScreen({ route, navigation }) {
       initialServices.map((s) => ({ name: s.bs_service_name, bs_uid: s.bs_uid, bs_tags: s.bs_tags }))
     );
     return initialServices.map((service) => ({
-      ...defaultService,
+      // ...defaultService,  //Commented out so businesses with services can be edited.  Not sure if other defaultService line work?
       ...service,
       bs_uid: service.bs_uid || "", // Ensure bs_uid is preserved
       bs_tags: service.bs_tags || "", // Ensure bs_tags is preserved
@@ -846,6 +848,7 @@ export default function EditBusinessProfileScreen({ route, navigation }) {
 
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
+      <AppHeader title='Edit Business Profile' {...getHeaderColors("editBusinessProfile")} onBackPress={() => navigation.goBack()} />
       <ScrollView
         ref={scrollViewRef}
         style={[styles.container, darkMode && styles.darkContainer]}
@@ -853,8 +856,6 @@ export default function EditBusinessProfileScreen({ route, navigation }) {
         keyboardShouldPersistTaps='handled'
         showsVerticalScrollIndicator={true}
       >
-        <Text style={[styles.header, darkMode && styles.darkHeader]}>Edit Business Profile</Text>
-
         {renderField("Business Name", formData.name, "name")}
         {renderField("Location", formData.location, "location")}
         {renderField("Address Line 2", formData.addressLine2, "addressLine2")}
