@@ -819,7 +819,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           onPress={handleSave}
           disabled={!isChanged || isLoading}
         >
-          {isLoading ? <ActivityIndicator size='large' color={darkMode ? "#ffffff" : "#fff"} /> : <Text style={[styles.saveText, darkMode && styles.darkSaveText]}>Save</Text>}
+          {isLoading ? <ActivityIndicator size='large' color={darkMode ? "#ffffff" : "#fff"} /> : <Text style={[styles.saveText, darkMode && styles.darkSaveText]}>Submit</Text>}
         </TouchableOpacity>
       </ScrollView>
       <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 10 }}>
@@ -860,12 +860,13 @@ const styles = StyleSheet.create({
   textarea: { minHeight: 40, maxHeight: 200 },
   disabledInput: { backgroundColor: "#eee", color: "#999" },
   saveButton: {
-    backgroundColor: "#FFA500",
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    justifyContent: "center",
+    backgroundColor: "#800000",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    minWidth: 100,
     alignItems: "center",
+    justifyContent: "center",
     alignSelf: "center",
     marginVertical: 20,
   },
@@ -883,7 +884,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 
-  saveText: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+  saveText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
   imageSection: { alignItems: "center", marginBottom: 20 },
   profileImage: { width: 100, height: 100, borderRadius: 50, marginBottom: 10, backgroundColor: "#eee" },
   uploadLink: { color: "#007AFF", textDecorationLine: "underline", marginBottom: 10 },
@@ -926,7 +927,7 @@ const styles = StyleSheet.create({
     color: "#666666",
   },
   darkSaveButton: {
-    backgroundColor: "#ff8c00", // Slightly darker orange for dark mode
+    backgroundColor: "#660000", // Darker maroon for dark mode
   },
   darkSaveText: {
     color: "#ffffff",
@@ -956,10 +957,14 @@ const styles = StyleSheet.create({
   },
   modalButton: {
     marginTop: 10,
-    backgroundColor: "#007AFF",
-    borderRadius: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 24,
+    backgroundColor: "#FF9500",
+    borderRadius: 25,
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    minWidth: 100,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
   },
   modalButtonText: {
     color: "#fff",

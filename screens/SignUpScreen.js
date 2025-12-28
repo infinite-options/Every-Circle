@@ -21,6 +21,8 @@ import { ACCOUNT_SALT_ENDPOINT, CREATE_ACCOUNT_ENDPOINT, GOOGLE_SIGNUP_ENDPOINT,
 // import * as CryptoJS from "react-native-crypto-js";
 import * as Crypto from "expo-crypto";
 import ReferralSearch from "../components/ReferralSearch";
+import AppHeader from "../components/AppHeader";
+import { getHeaderColors } from "../config/headerColors";
 
 export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, navigation, route }) {
   const [email, setEmail] = useState("");
@@ -403,6 +405,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
 
   return (
     <View style={styles.container}>
+      <AppHeader title='Sign Up' {...getHeaderColors("signUp")} />
       <View style={styles.header}>
         <Text style={styles.title}>Welcome to Every Circle!</Text>
         <Text style={styles.subtitle}>{isGoogleSignUp ? "Complete your sign up" : "Please create your account to continue."}</Text>
@@ -500,8 +503,12 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               editable={!isCheckingReferral}
             />
             {!!referralError && <Text style={{ color: "red", marginBottom: 8 }}>{referralError}</Text>}
-            <TouchableOpacity style={{ backgroundColor: "#007AFF", padding: 12, borderRadius: 8, alignItems: "center", marginBottom: 12 }} onPress={handleReferralSubmit} disabled={isCheckingReferral}>
-              <Text style={{ color: "#fff", fontWeight: "bold" }}>{isCheckingReferral ? "Checking..." : "Continue"}</Text>
+            <TouchableOpacity
+              style={{ backgroundColor: "#FF9500", paddingVertical: 12, paddingHorizontal: 30, borderRadius: 25, minWidth: 100, alignItems: "center", justifyContent: "center", marginBottom: 12 }}
+              onPress={handleReferralSubmit}
+              disabled={isCheckingReferral}
+            >
+              <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 16 }}>{isCheckingReferral ? "Checking..." : "Continue"}</Text>
             </TouchableOpacity>
 
             {/* Divider */}
@@ -524,11 +531,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
-    paddingTop: 100,
     padding: 20,
   },
   header: {
     alignItems: "center",
+    marginTop: 100,
     marginBottom: 40,
   },
   title: {
@@ -572,12 +579,13 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   continueButton: {
-    backgroundColor: "#E5E5E5",
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    justifyContent: "center",
+    backgroundColor: "#FF9500",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    minWidth: 100,
     alignItems: "center",
+    justifyContent: "center",
     alignSelf: "center",
     marginVertical: 20,
   },
@@ -585,8 +593,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#FF9500",
   },
   continueButtonText: {
-    color: "#999",
-    fontSize: 18,
+    color: "#fff",
+    fontSize: 16,
     fontWeight: "bold",
   },
   continueButtonTextActive: {

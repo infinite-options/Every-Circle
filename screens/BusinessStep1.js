@@ -260,7 +260,7 @@ export default function BusinessStep1({ formData, setFormData, navigation }) {
                 onChangeText={(text) => updateFormData("einNumber", formatEINNumber(text))}
               />
 
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Upload Busines Images (Optional)</Text>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Upload Busines Images (Optional) </Text>
               <View style={styles.carousel}>
                 <View style={styles.imageRow}>
                   {combinedImages.map((img, index) => {

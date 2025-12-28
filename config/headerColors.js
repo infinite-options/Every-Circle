@@ -23,6 +23,9 @@ export const HEADER_COLORS = {
   changePassword: "#AF52DE", // Purple
   businessProfile: "#AF52DE", // Purple
   editBusinessProfile: "#929090", // Gray (same as editProfile)
+  login: "#800000", // Maroon (same as profile)
+  signUp: "#800000", // Maroon (same as profile)
+  userInfo: "#800000", // Maroon (same as profile, for Complete Your Profile)
 
   // Detail/View screens (Orange)
   profileView: "#FF9500", // Orange - for viewing other users' profiles

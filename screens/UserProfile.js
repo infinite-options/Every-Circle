@@ -161,10 +161,14 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   button: {
-    backgroundColor: "#007AFF",
-    padding: 15,
-    borderRadius: 8,
+    backgroundColor: "#FF9500",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    minWidth: 100,
     alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
     marginBottom: 80, // Added to ensure button is above menu bar
   },
   buttonText: {

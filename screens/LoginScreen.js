@@ -23,6 +23,8 @@ import Constants from "expo-constants";
 import config from "../config";
 import { Ionicons } from "@expo/vector-icons";
 import { ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
+import AppHeader from "../components/AppHeader";
+import { getHeaderColors } from "../config/headerColors";
 // import SignUpScreen from "./screens/SignUpScreen";
 
 // Helper function to extract the last two digits before .apps.googleusercontent.com
@@ -281,6 +283,7 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
 
   return (
     <View style={styles.container}>
+      <AppHeader title='Login' {...getHeaderColors("login")} />
       <View style={styles.header}>
         <Text style={styles.title}>Welcome to everyCircle!</Text>
         <Text style={styles.subtitle}>Please choose a login option to continue.</Text>
@@ -455,9 +458,9 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff", paddingTop: 100, padding: 20 },
+  container: { flex: 1, backgroundColor: "#fff", padding: 20 },
   header: { alignItems: "center", marginBottom: 40 },
-  title: { fontSize: 28, fontWeight: "bold", marginBottom: 10, color: "#007AFF" },
+  title: { fontSize: 28, fontWeight: "bold", marginTop: 100, marginBottom: 10, color: "#007AFF" },
   subtitle: { fontSize: 16, color: "#666", textAlign: "center" },
   inputContainer: { marginBottom: 30 },
   fieldContainer: { marginBottom: 15 },
@@ -480,18 +483,22 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   continueButton: {
-    backgroundColor: "#E5E5E5",
+    backgroundColor: "#FF9500",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
     borderRadius: 25,
-    padding: 15,
+    minWidth: 100,
     alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
     marginBottom: 30,
   },
   continueButtonActive: {
     backgroundColor: "#FF9500",
   },
   continueButtonText: {
-    color: "#999",
-    fontSize: 18,
+    color: "#fff",
+    fontSize: 16,
     fontWeight: "bold",
   },
   continueButtonTextActive: {

@@ -5,6 +5,7 @@ import { getUserEmail } from "../utils/emailStorage";
 import axios from "axios";
 import { REFERRAL_API_ENDPOINT } from "../apiConfig";
 import AppHeader from "../components/AppHeader";
+import { getHeaderColors } from "../config/headerColors";
 
 const { width } = Dimensions.get("window");
 const isWeb = Platform.OS === "web";
@@ -98,7 +99,9 @@ const AccountTypeScreen = ({ navigation, route }) => {
 
   return (
     <View style={styles.accountContainer}>
-      <AppHeader title='Choose Your Account' backgroundColor='#007AFF' />
+      <AppHeader title='Your Profile' {...getHeaderColors("signUp")} />
+      {/* <AppHeader title='Choose Your Account' backgroundColor='#007AFF' /> */}
+      <Text style={styles.title}>Complete Your Account</Text>
       <View style={styles.circlesContainer}>
         <TouchableOpacity style={[styles.accountButton, styles.personal]} onPress={handleSelectAccount}>
           <Text style={styles.accountText}>Individual</Text>
@@ -116,6 +119,13 @@ const styles = StyleSheet.create({
   accountContainer: {
     flex: 1,
     backgroundColor: "#fff",
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: "bold",
+    marginTop: 100,
+    marginBottom: 10,
+    textAlign: "center",
   },
   circlesContainer: {
     flex: 1,
@@ -149,10 +159,10 @@ const styles = StyleSheet.create({
         }),
   },
   personal: {
-    backgroundColor: "#FFA500",
+    backgroundColor: "#800000",
   },
   business: {
-    backgroundColor: "#00C721",
+    backgroundColor: "#FFA500",
   },
   accountText: {
     color: "#000",

@@ -231,7 +231,7 @@ export default function ReviewBusinessScreen({ route, navigation }) {
           <Text>{imageFile ? imageFile.name : "Upload Image"}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>{isEdit ? "Update Review" : "Save Review"}</Text>
+          <Text style={styles.saveButtonText}>{isEdit ? "Update Review" : "Submit Review"}</Text>
         </TouchableOpacity>
       </ScrollView>
       <BottomNavBar navigation={navigation} />
@@ -253,6 +253,17 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, minHeight: 80, marginTop: 5 },
   dateButton: { padding: 10, backgroundColor: "#eee", borderRadius: 8, marginTop: 5 },
   uploadButton: { padding: 10, backgroundColor: "#eee", borderRadius: 8, marginTop: 10, alignItems: "center" },
-  saveButton: { backgroundColor: "#9C45F7", padding: 15, borderRadius: 10, alignItems: "center", marginTop: 20, marginBottom: 20 },
+  saveButton: {
+    backgroundColor: "#800000",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    minWidth: 100,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    marginTop: 20,
+    marginBottom: 20,
+  },
   saveButtonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
 });

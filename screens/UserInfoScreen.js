@@ -3,6 +3,8 @@ import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, ActivityInd
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { storeUserEmail, getUserEmail } from "../utils/emailStorage";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import AppHeader from "../components/AppHeader";
+import { getHeaderColors } from "../config/headerColors";
 
 export default function UserInfoScreen({ navigation, route }) {
   // console.log("UserInfoScreen - route.params:", route.params);
@@ -246,6 +248,7 @@ export default function UserInfoScreen({ navigation, route }) {
 
   return (
     <View style={styles.container}>
+      <AppHeader title='Your Profile' {...getHeaderColors("userInfo")} />
       <Text style={styles.title}>Complete Your Profile</Text>
       <Text style={styles.subtitle}>Please provide your information to continue</Text>
 
@@ -271,12 +274,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
-    paddingTop: 100,
     padding: 20,
   },
   title: {
     fontSize: 24,
     fontWeight: "bold",
+    marginTop: 100,
     marginBottom: 10,
     textAlign: "center",
   },
@@ -304,10 +307,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   button: {
-    backgroundColor: "#007AFF",
-    padding: 15,
-    borderRadius: 8,
+    backgroundColor: "#FF9500",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    minWidth: 100,
     alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
   },
   buttonDisabled: {
     backgroundColor: "#999",

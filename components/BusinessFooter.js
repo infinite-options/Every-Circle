@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   continueButton: {
-    backgroundColor: "#00C721",
+    backgroundColor: "#FF9500",
     paddingVertical: 12,
     paddingHorizontal: 30,
     borderRadius: 25,
@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   submitButton: {
-    backgroundColor: "#00C721",
+    backgroundColor: "#800000",
     paddingVertical: 12,
     paddingHorizontal: 30,
     borderRadius: 25,
@@ -97,10 +97,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#666",
   },
   darkContinueButton: {
-    backgroundColor: "#00C721",
+    backgroundColor: "#FF9500",
   },
   darkSubmitButton: {
-    backgroundColor: "#00C721",
+    backgroundColor: "#800000",
   },
   darkButtonText: {
     color: "#ffffff",

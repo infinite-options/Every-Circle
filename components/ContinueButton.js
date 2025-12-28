@@ -29,17 +29,18 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   continueButton: {
-    backgroundColor: "#FFA500",
-    width: 80,
-    height: 50,
+    backgroundColor: "#FF9500",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
     borderRadius: 25,
-    justifyContent: "center",
+    minWidth: 100,
     alignItems: "center",
+    justifyContent: "center",
   },
   continueButtonText: {
     color: "#fff",
     fontWeight: "bold",
-    fontSize: 14,
+    fontSize: 16,
   },
   backButton: {
     backgroundColor: "#333",
@@ -58,6 +59,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#666",
   },
   darkContinueButton: {
-    backgroundColor: "#555",
+    backgroundColor: "#FF9500",
   },
 });

@@ -1055,7 +1055,7 @@ export default function EditBusinessProfileScreen({ route, navigation }) {
         </View>
 
         <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Save</Text>
+          <Text style={styles.saveButtonText}>Submit</Text>
         </TouchableOpacity>
       </ScrollView>
 
@@ -1075,26 +1075,21 @@ const styles = StyleSheet.create({
   addText: { fontSize: 24, fontWeight: "bold", color: "#000" },
   input: { borderWidth: 1, borderColor: "#ccc", padding: 10, borderRadius: 5 },
   saveButton: {
-    backgroundColor: "#00C721",
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    backgroundColor: "#800000",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    minWidth: 100,
     alignItems: "center",
     justifyContent: "center",
     alignSelf: "center",
     marginTop: 30,
     marginBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
   saveButtonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
-    textAlign: "center",
   },
   previewSection: {
     marginVertical: 20,

@@ -719,13 +719,16 @@ const styles = StyleSheet.create({
   /* Continue button */
   continueBtn: {
     marginTop: 6,
-    width: 170,
-    backgroundColor: "#f59e0b",
-    borderRadius: 28,
+    backgroundColor: "#FF9500",
     paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    minWidth: 100,
     alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
   },
-  continueText: { color: "#fff", fontSize: 24, fontWeight: "900" },
+  continueText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
 
   /* Feedback banner */
   feedbackBanner: {

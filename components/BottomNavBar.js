@@ -51,27 +51,27 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
               }}
             >
               <Image source={require("../assets/connect.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
-              <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Connect</Text>
+              {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Connect</Text> */}
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Profile")}>
               <Image source={require("../assets/profile.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
-              <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Profile</Text>
+              {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Profile</Text> */}
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Account")}>
               <Image source={require("../assets/pillar.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
-              <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Account</Text>
+              {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Account</Text> */}
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Settings")}>
               <Image source={require("../assets/setting.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
-              <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Settings</Text>
+              {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Settings</Text> */}
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Search")}>
               <Image source={require("../assets/search.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
-              <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Search</Text>
+              {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Search</Text> */}
             </TouchableOpacity>
           </>
         )}
