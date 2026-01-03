@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Platform, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getHeaderColor } from "../config/headerColors";
 import BottomNavBar from "../components/BottomNavBar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const { width } = Dimensions.get("window");
+const isMobile = Platform.OS !== "web";
 
 export default function HowItWorksScreen({ navigation, route }) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -59,41 +62,35 @@ export default function HowItWorksScreen({ navigation, route }) {
 
           <Text style={styles.gbHeading}>Create a Meaningful and Profitable Circle of Influence</Text>
 
-          <Text style={styles.gbBody}>
+          <View style={styles.gbBodyContainer}>
             <Bullet>
-              <Text style={styles.gbItalic}>Imagine being able to curate a select group of friends and colleagues you know and trust{"\n"}</Text>
+              <Text style={styles.gbItalic}>Imagine being able to curate a select group of friends and colleagues you know and trust</Text>
             </Bullet>
             <Bullet>
-              <Text style={styles.gbItalic}>Imagine being able to relywhat your friends recommend, what they need and what they want{"\n"}</Text>
+              <Text style={styles.gbItalic}>Imagine being able to rely on what your friends recommend, what they need and what they want</Text>
             </Bullet>
             <Bullet>
-              <Text style={styles.gbItalic}>Imagine being able to help them and rely on their expertise{"\n"}</Text>
+              <Text style={styles.gbItalic}>Imagine being able to help them and rely on their expertise</Text>
             </Bullet>
-            <Text style={styles.gbBold}>
-              {"\n"}
-              {"\n"}Make Money every time you help someone or make a recommendation they can use
-            </Text>
-          </Text>
+            <Text style={[styles.gbBold, styles.gbBoldText]}>{"\n"}Make Money every time you help someone or make a recommendation they can use</Text>
+          </View>
 
           <Text style={styles.gbTitle}>{"\n"}For a Business</Text>
 
           <Text style={styles.gbHeading}>Grow your Business with Results-Based Marketing</Text>
 
-          <Text style={styles.gbBody}>
+          <View style={styles.gbBodyContainer}>
             <Bullet>
-              <Text style={styles.gbItalic}>Target your ad spend toward people who are looking to buy your products and services{"\n"}</Text>
+              <Text style={styles.gbItalic}>Target your ad spend toward people who are looking to buy your products and services</Text>
             </Bullet>
             <Bullet>
-              <Text style={styles.gbItalic}>Reward people for recommending your business{"\n"}</Text>
+              <Text style={styles.gbItalic}>Reward people for recommending your business</Text>
             </Bullet>
             <Bullet>
-              <Text style={styles.gbItalic}>Encourage people to try your products and services{"\n"}</Text>
+              <Text style={styles.gbItalic}>Encourage people to try your products and services</Text>
             </Bullet>
-            <Text style={styles.gbBold}>
-              {"\n"}
-              {"\n"}Track your marketing effectiveness
-            </Text>
-          </Text>
+            <Text style={[styles.gbBold, styles.gbBoldText]}>{"\n"}Track your marketing effectiveness</Text>
+          </View>
 
           {/* <Text style={styles.gbMaroonHeading}>Save Time, Money, ...</Text>
           <Text style={styles.gbLine}>
@@ -412,8 +409,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER,
     borderRadius: 22,
-    padding: 16,
-    marginBottom: 14,
+    padding: isMobile ? 14 : 16,
+    marginBottom: isMobile ? 12 : 14,
   },
 
   /* Video */
@@ -466,30 +463,69 @@ const styles = StyleSheet.create({
   },
 
   /* Small logo card */
-  smallRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  smallRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: isMobile ? 10 : 14,
+  },
   smallLogo: {
-    width: 60,
-    height: 60,
+    width: isMobile ? 50 : 60,
+    height: isMobile ? 50 : 60,
     resizeMode: "contain",
     backgroundColor: "#fff",
   },
-  smallTitle: { fontSize: 26, fontWeight: "900", color: "#111" },
+  smallTitle: {
+    fontSize: isMobile ? 20 : 26,
+    fontWeight: "900",
+    color: "#111",
+  },
   smallItalic: { fontStyle: "italic", fontWeight: "900" },
   smallMaroon: { color: MAROON, fontWeight: "900" },
   smallBlack: { color: "#111", fontWeight: "900" },
-  smallSubtitle: { fontSize: 18, color: "#111" },
+  smallSubtitle: {
+    fontSize: isMobile ? 14 : 18,
+    color: "#111",
+    marginTop: 2,
+  },
 
   /* Got Business card text */
   gbTitle: {
-    fontSize: 34,
+    fontSize: isMobile ? 24 : 34,
     fontWeight: "900",
     color: MAROON,
     fontStyle: "italic",
+    marginTop: 8,
   },
-  gbHeading: { fontSize: 28, fontWeight: "900", color: "#111", marginTop: 10 },
-  gbBody: { fontSize: 18, color: "#111", marginTop: 6, lineHeight: 26 },
-  gbItalic: { fontStyle: "italic" },
-  gbBold: { fontWeight: "900" },
+  gbHeading: {
+    fontSize: isMobile ? 18 : 28,
+    fontWeight: "900",
+    color: "#111",
+    marginTop: 10,
+    lineHeight: isMobile ? 24 : 32,
+  },
+  gbBodyContainer: {
+    marginTop: 8,
+  },
+  gbBody: {
+    fontSize: isMobile ? 16 : 18,
+    color: "#111",
+    marginTop: 6,
+    lineHeight: isMobile ? 22 : 26,
+  },
+  gbItalic: {
+    fontStyle: "italic",
+    fontSize: isMobile ? 16 : 18,
+    lineHeight: isMobile ? 22 : 26,
+  },
+  gbBold: {
+    fontWeight: "900",
+  },
+  gbBoldText: {
+    fontSize: isMobile ? 16 : 18,
+    color: "#111",
+    lineHeight: isMobile ? 22 : 26,
+    marginTop: 8,
+  },
 
   gbMaroonHeading: {
     fontSize: 26,
@@ -523,7 +559,7 @@ const styles = StyleSheet.create({
   headerPillText: {
     flex: 1,
     textAlign: "center",
-    fontSize: 30,
+    fontSize: isMobile ? 22 : 30,
     fontWeight: "900",
     color: "#fff",
     letterSpacing: 1,
@@ -531,24 +567,50 @@ const styles = StyleSheet.create({
   },
 
   /* Section body text */
-  secTitle: { fontSize: 28, fontWeight: "900", color: "#111", marginBottom: 6 },
+  secTitle: {
+    fontSize: isMobile ? 20 : 28,
+    fontWeight: "900",
+    color: "#111",
+    marginBottom: 6,
+    lineHeight: isMobile ? 26 : 32,
+  },
 
-  bulletRow: { flexDirection: "row", alignItems: "flex-start", marginTop: 10 },
-  bulletDot: { width: 22, fontSize: 24, color: "#111", lineHeight: 26 },
-  bulletText: { flex: 1, fontSize: 22, color: "#111", lineHeight: 30 },
+  bulletRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: isMobile ? 8 : 10,
+    marginBottom: isMobile ? 4 : 6,
+  },
+  bulletDot: {
+    width: isMobile ? 18 : 22,
+    fontSize: isMobile ? 18 : 24,
+    color: "#111",
+    lineHeight: isMobile ? 20 : 26,
+    marginRight: 8,
+  },
+  bulletText: {
+    flex: 1,
+    fontSize: isMobile ? 16 : 22,
+    color: "#111",
+    lineHeight: isMobile ? 22 : 30,
+  },
 
   indentLine: {
-    marginLeft: 22,
+    marginLeft: isMobile ? 18 : 22,
     marginTop: 10,
-    fontSize: 22,
+    fontSize: isMobile ? 16 : 22,
     color: "#111",
-    lineHeight: 30,
+    lineHeight: isMobile ? 22 : 30,
   },
 
   italicWord: { fontStyle: "italic" },
   boldWord: { fontWeight: "900" },
 
-  noteLine: { marginTop: 14, fontSize: 22, lineHeight: 30 },
+  noteLine: {
+    marginTop: 14,
+    fontSize: isMobile ? 16 : 22,
+    lineHeight: isMobile ? 22 : 30,
+  },
   noteLabel: { color: MAROON, fontWeight: "900" },
 
   /* Continue button */
