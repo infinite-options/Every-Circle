@@ -246,10 +246,12 @@ export default function HowItWorksScreen({ navigation, route }) {
           </Bullet>
         </View>
 
-        {/* CONTINUE BUTTON */}
-        <TouchableOpacity style={styles.continueBtn} activeOpacity={0.9} onPress={() => console.log("Continue")}>
-          <Text style={styles.continueText}>Continue</Text>
-        </TouchableOpacity>
+        {/* SIGN UP BUTTON - Only show if user is not logged in */}
+        {!isLoggedIn && (
+          <TouchableOpacity style={styles.continueBtn} activeOpacity={0.9} onPress={() => navigation.navigate("SignUp")}>
+            <Text style={styles.continueText}>Sign Up</Text>
+          </TouchableOpacity>
+        )}
 
         {/* FEEDBACK BANNER */}
         <FeedbackBanner />
@@ -326,7 +328,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff" },
 
   topHeader: {
-    backgroundColor: MAROON,
+    backgroundColor: "#FF9500",
     paddingTop: 14,
     paddingBottom: 16,
     paddingHorizontal: 16,
@@ -345,7 +347,7 @@ const styles = StyleSheet.create({
   topHeaderTitle: {
     color: "#fff",
     fontWeight: "900",
-    fontSize: 24,
+    fontSize: 18,
     letterSpacing: 1,
   },
 

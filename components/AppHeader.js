@@ -34,7 +34,7 @@ const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButto
         {/* Back Button */}
         {onBackPress && (
           <TouchableOpacity style={styles.backButton} onPress={onBackPress}>
-            <Ionicons name='arrow-back' size={24} color='#fff' />
+            <Ionicons name='chevron-back' size={18} color='#fff' />
           </TouchableOpacity>
         )}
 
@@ -51,8 +51,8 @@ const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButto
 const styles = StyleSheet.create({
   headerBg: {
     backgroundColor: "#AF52DE",
-    paddingTop: 30,
-    paddingBottom: 15,
+    paddingTop: 14,
+    paddingBottom: 16,
     alignItems: "center",
     borderBottomLeftRadius: 300,
     borderBottomRightRadius: 300,
@@ -64,15 +64,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     width: "100%",
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     position: "relative",
     zIndex: 10000,
   },
   backButton: {
     position: "absolute",
-    left: 53,
+    left: 16,
     top: 0,
-    padding: 4,
+    width: 36,
+    height: 26,
     zIndex: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -92,7 +93,7 @@ const styles = StyleSheet.create({
   },
   rightButtonContainer: {
     position: "absolute",
-    right: 53,
+    right: 16,
     top: 0,
     zIndex: 10001,
     alignItems: "center",

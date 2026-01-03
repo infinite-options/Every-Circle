@@ -1,7 +1,8 @@
 // LoginScreen.js
 
 import React, { useState } from "react";
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, Platform, Modal } from "react-native";
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, Platform, Modal, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 // Only import GoogleSigninButton on native platforms (not web)
 let GoogleSigninButton = null;
@@ -281,9 +282,10 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
   };
 
   return (
-    <View style={styles.container}>
-      <AppHeader title='Login' {...getHeaderColors("login")} />
-      <View style={styles.header}>
+    <SafeAreaView style={styles.safeArea}>
+      <AppHeader title='Login' {...getHeaderColors("login")} onBackPress={() => navigation.goBack()} />
+      <ScrollView contentContainerStyle={styles.contentContainer}>
+        <View style={styles.header}>
         <Text style={styles.title}>Welcome to everyCircle!</Text>
         <Text style={styles.subtitle}>Please choose a login option to continue.</Text>
       </View>
@@ -452,12 +454,14 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
           </View>
         </View>
       </Modal>
-    </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff", padding: 20 },
+  safeArea: { flex: 1, backgroundColor: "#fff" },
+  contentContainer: { padding: 20 },
   header: { alignItems: "center", marginBottom: 40 },
   title: { fontSize: 28, fontWeight: "bold", marginTop: 100, marginBottom: 10, color: "#007AFF" },
   subtitle: { fontSize: 16, color: "#666", textAlign: "center" },
