@@ -1,16 +1,6 @@
 // components/ReferralSearch.js
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  Modal,
-  FlatList,
-  Image,
-  ActivityIndicator,
-  StyleSheet,
-} from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Modal, FlatList, Image, ActivityIndicator, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SEARCH_REFERRAL_ENDPOINT } from "../apiConfig";
 
@@ -27,19 +17,19 @@ const ReferralSearch = ({ visible, onSelect, onNewUser, onClose, embedded = fals
 
     setIsSearching(true);
     setHasSearched(true);
-    
+
     try {
       const url = `${SEARCH_REFERRAL_ENDPOINT}?query=${encodeURIComponent(searchQuery.trim())}`;
       console.log("Search URL:", url); // DEBUG
-      
+
       const response = await fetch(url);
       console.log("Response status:", response.status); // DEBUG
-      
+
       const data = await response.json();
       console.log("Response data:", data); // DEBUG
       console.log("Results array:", data.results); // DEBUG
       console.log("Results length:", data.results?.length); // DEBUG
-      
+
       if (data.code === 200) {
         setSearchResults(data.results || []);
       } else {
@@ -53,7 +43,6 @@ const ReferralSearch = ({ visible, onSelect, onNewUser, onClose, embedded = fals
     }
   };
 
-
   const handleSelectUser = (user) => {
     onSelect(user.profile_personal_uid, user.profile_personal_user_id);
     // Reset modal state
@@ -63,173 +52,115 @@ const ReferralSearch = ({ visible, onSelect, onNewUser, onClose, embedded = fals
   };
 
   const renderUserItem = ({ item }) => {
-    const fullName = `${item.profile_personal_first_name || ""} ${
-      item.profile_personal_last_name || ""
-    }`.trim();
-    
-    const location = [item.profile_personal_city, item.profile_personal_state]
-      .filter(Boolean)
-      .join(", ");
+    const fullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
+
+    const location = [item.profile_personal_city, item.profile_personal_state].filter(Boolean).join(", ");
 
     return (
-      <TouchableOpacity
-        style={styles.userItem}
-        onPress={() => handleSelectUser(item)}
-      >
-        <Image
-          source={
-            item.profile_personal_image
-              ? { uri: item.profile_personal_image }
-              : require("../assets/profile.png")
-          }
-          style={styles.userImage}
-        />
+      <TouchableOpacity style={styles.userItem} onPress={() => handleSelectUser(item)}>
+        <Image source={item.profile_personal_image ? { uri: item.profile_personal_image } : require("../assets/profile.png")} style={styles.userImage} />
         <View style={styles.userInfo}>
           <Text style={styles.userName}>{fullName || "Unknown"}</Text>
-          {location ? (
-            <Text style={styles.userLocation}>{location}</Text>
-          ) : null}
+          {location ? <Text style={styles.userLocation}>{location}</Text> : null}
         </View>
-        <Ionicons name="chevron-forward" size={20} color="#666" />
+        <Ionicons name='chevron-forward' size={20} color='#666' />
       </TouchableOpacity>
     );
   };
 
   return embedded ? (
-  // Embedded version (no modal wrapper)
-  <>
-    {/* Search Input */}
-    <View style={styles.searchContainer}>
-      <Ionicons
-        name="search"
-        size={20}
-        color="#666"
-        style={styles.searchIcon}
-      />
-      <TextInput
-        style={styles.searchInput}
-        placeholder="Search by name, city, or state"
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        onSubmitEditing={handleSearch}
-        autoCapitalize="words"
-      />
-      <TouchableOpacity onPress={handleSearch} style={styles.searchButton}>
-        <Text style={styles.searchButtonText}>Search</Text>
-      </TouchableOpacity>
-    </View>
-
-    {/* Results */}
-    <View style={[styles.resultsContainer, { minHeight: 150 }]}>
-      {isSearching ? (
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
-          <Text style={styles.loadingText}>Searching...</Text>
-        </View>
-      ) : hasSearched && searchResults.length === 0 ? (
-        <View style={styles.centerContainer}>
-          <Ionicons name="search" size={48} color="#ccc" />
-          <Text style={styles.noResultsText}>No users found</Text>
-          <Text style={styles.noResultsSubtext}>
-            Try a different name or location
-          </Text>
-        </View>
-      ) : searchResults.length > 0 ? (
-        <FlatList
-          data={searchResults}
-          renderItem={renderUserItem}
-          keyExtractor={(item) => item.profile_personal_uid}
-          style={styles.resultsList}
-        />
-      ) : (
-        <View style={styles.centerContainer}>
-          <Ionicons name="people" size={48} color="#ccc" />
-          <Text style={styles.instructionText}>
-            Search for the person who referred you
-          </Text>
-        </View>
-      )}
-    </View>
-
-    {/* New User Button */}
-    <TouchableOpacity style={styles.newUserButton} onPress={onNewUser}>
-      <Text style={styles.newUserButtonText}>I'm a New User</Text>
-    </TouchableOpacity>
-  </>
-) : (
-  // Original standalone modal version
-  <Modal visible={visible} transparent animationType="fade">
-    <View style={styles.overlay}>
-      <View style={styles.modalContainer}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Who referred you?</Text>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Ionicons name="close" size={24} color="#333" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Search Input */}
-        <View style={styles.searchContainer}>
-          <Ionicons
-            name="search"
-            size={20}
-            color="#666"
-            style={styles.searchIcon}
-          />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search by name, city, or state"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearch}
-            autoCapitalize="words"
-          />
-          <TouchableOpacity onPress={handleSearch} style={styles.searchButton}>
-            <Text style={styles.searchButtonText}>Search</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Results */}
-        <View style={styles.resultsContainer}>
-          {isSearching ? (
-            <View style={styles.centerContainer}>
-              <ActivityIndicator size="large" color="#007AFF" />
-              <Text style={styles.loadingText}>Searching...</Text>
-            </View>
-          ) : hasSearched && searchResults.length === 0 ? (
-            <View style={styles.centerContainer}>
-              <Ionicons name="search" size={48} color="#ccc" />
-              <Text style={styles.noResultsText}>No users found</Text>
-              <Text style={styles.noResultsSubtext}>
-                Try a different name or location
-              </Text>
-            </View>
-          ) : searchResults.length > 0 ? (
-            <FlatList
-              data={searchResults}
-              renderItem={renderUserItem}
-              keyExtractor={(item) => item.profile_personal_uid}
-              style={styles.resultsList}
-            />
-          ) : (
-            <View style={styles.centerContainer}>
-              <Ionicons name="people" size={48} color="#ccc" />
-              <Text style={styles.instructionText}>
-                Search for the person who referred you
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* New User Button */}
-        <TouchableOpacity style={styles.newUserButton} onPress={onNewUser}>
-          <Text style={styles.newUserButtonText}>I'm a New User</Text>
+    // Embedded version (no modal wrapper)
+    <>
+      {/* Search Input */}
+      <View style={styles.searchContainer}>
+        <Ionicons name='search' size={20} color='#666' style={styles.searchIcon} />
+        <TextInput style={styles.searchInput} placeholder='Search by name or city' value={searchQuery} onChangeText={setSearchQuery} onSubmitEditing={handleSearch} autoCapitalize='words' />
+        <TouchableOpacity onPress={handleSearch} style={styles.searchButton}>
+          <Text style={styles.searchButtonText}>Search</Text>
         </TouchableOpacity>
       </View>
-    </View>
-  </Modal>
-);
+
+      {/* Results */}
+      <View style={[styles.resultsContainer, { minHeight: 150 }]}>
+        {isSearching ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size='large' color='#007AFF' />
+            <Text style={styles.loadingText}>Searching...</Text>
+          </View>
+        ) : hasSearched && searchResults.length === 0 ? (
+          <View style={styles.centerContainer}>
+            <Ionicons name='search' size={48} color='#ccc' />
+            <Text style={styles.noResultsText}>No users found</Text>
+            <Text style={styles.noResultsSubtext}>Try a different name or location</Text>
+          </View>
+        ) : searchResults.length > 0 ? (
+          <FlatList data={searchResults} renderItem={renderUserItem} keyExtractor={(item) => item.profile_personal_uid} style={styles.resultsList} />
+        ) : (
+          <View style={styles.centerContainer}>
+            <Ionicons name='people' size={48} color='#ccc' />
+            <Text style={styles.instructionText}>Search for the person who referred you</Text>
+          </View>
+        )}
+      </View>
+
+      {/* New User Button */}
+      <TouchableOpacity style={styles.newUserButton} onPress={onNewUser}>
+        <Text style={styles.newUserButtonText}>I'm a New User</Text>
+      </TouchableOpacity>
+    </>
+  ) : (
+    // Original standalone modal version
+    <Modal visible={visible} transparent animationType='fade'>
+      <View style={styles.overlay}>
+        <View style={styles.modalContainer}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.title}>Who referred you?</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Ionicons name='close' size={24} color='#333' />
+            </TouchableOpacity>
+          </View>
+
+          {/* Search Input */}
+          <View style={styles.searchContainer}>
+            <Ionicons name='search' size={20} color='#666' style={styles.searchIcon} />
+            <TextInput style={styles.searchInput} placeholder='Search by name or city' value={searchQuery} onChangeText={setSearchQuery} onSubmitEditing={handleSearch} autoCapitalize='words' />
+            <TouchableOpacity onPress={handleSearch} style={styles.searchButton}>
+              <Text style={styles.searchButtonText}>Search</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Results */}
+          <View style={styles.resultsContainer}>
+            {isSearching ? (
+              <View style={styles.centerContainer}>
+                <ActivityIndicator size='large' color='#007AFF' />
+                <Text style={styles.loadingText}>Searching...</Text>
+              </View>
+            ) : hasSearched && searchResults.length === 0 ? (
+              <View style={styles.centerContainer}>
+                <Ionicons name='search' size={48} color='#ccc' />
+                <Text style={styles.noResultsText}>No users found</Text>
+                <Text style={styles.noResultsSubtext}>Try a different name or location</Text>
+              </View>
+            ) : searchResults.length > 0 ? (
+              <FlatList data={searchResults} renderItem={renderUserItem} keyExtractor={(item) => item.profile_personal_uid} style={styles.resultsList} />
+            ) : (
+              <View style={styles.centerContainer}>
+                <Ionicons name='people' size={48} color='#ccc' />
+                <Text style={styles.instructionText}>Search for the person who referred you</Text>
+              </View>
+            )}
+          </View>
+
+          {/* New User Button */}
+          <TouchableOpacity style={styles.newUserButton} onPress={onNewUser}>
+            <Text style={styles.newUserButtonText}>I'm a New User</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
 };
 
 const styles = StyleSheet.create({

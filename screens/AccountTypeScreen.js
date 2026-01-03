@@ -6,11 +6,21 @@ import axios from "axios";
 import { REFERRAL_API_ENDPOINT } from "../apiConfig";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
+import BottomNavBar from "../components/BottomNavBar";
 
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
 const isWeb = Platform.OS === "web";
 
 const userProfileAPI = REFERRAL_API_ENDPOINT;
+
+// Calculate position for buttons around a circle
+const calculateCirclePosition = (index, totalButtons, radius) => {
+  // Start from top (-90 degrees) and distribute evenly
+  const angle = (index * 2 * Math.PI) / totalButtons - Math.PI / 2;
+  const x = Math.cos(angle) * radius;
+  const y = Math.sin(angle) * radius;
+  return { x, y };
+};
 
 const AccountTypeScreen = ({ navigation, route }) => {
   const [email, setEmail] = useState(route.params?.email || "");
@@ -101,16 +111,64 @@ const AccountTypeScreen = ({ navigation, route }) => {
     <View style={styles.accountContainer}>
       <AppHeader title='Your Profile' {...getHeaderColors("signUp")} />
       {/* <AppHeader title='Choose Your Account' backgroundColor='#007AFF' /> */}
-      <Text style={styles.title}>Complete Your Account</Text>
+      <Text style={styles.title}>What woul you like to do next?</Text>
       <View style={styles.circlesContainer}>
-        <TouchableOpacity style={[styles.accountButton, styles.personal]} onPress={handleSelectAccount}>
-          <Text style={styles.accountText}>Individual</Text>
-        </TouchableOpacity>
+        {(() => {
+          const buttons = [
+            { label: "Complete Your Profile", style: styles.personal, onPress: handleSelectAccount, index: 0 },
+            { label: "Add a Business", style: styles.business, onPress: () => navigation.navigate("BusinessSetup"), index: 1 },
+            { label: "Add an Organization", style: styles.organization, onPress: () => navigation.navigate("BusinessSetup"), index: 2 },
+            { label: "Start a Search", style: styles.search, onPress: () => navigation.navigate("BusinessSetup"), index: 3 },
+            { label: "Take a Tour", style: styles.tour, onPress: () => navigation.navigate("HowItWorksScreen"), index: 4 },
+          ];
 
-        <TouchableOpacity style={[styles.accountButton, styles.business]} onPress={() => navigation.navigate("BusinessSetup")}>
-          <Text style={styles.accountText}>Business or Organization</Text>
-        </TouchableOpacity>
+          // Calculate responsive radius based on available space
+          const headerHeight = isWeb ? 80 : 100;
+          const titleHeight = 60;
+          const titleMarginTop = 100;
+          const spacingFromTitle = 117;
+          const bottomNavHeight = isWeb ? 60 : 100;
+          const availableHeight = height - headerHeight - titleMarginTop - titleHeight - spacingFromTitle - bottomNavHeight;
+          const availableWidth = width - (isWeb ? 80 : 40);
+
+          // Use the smaller dimension to ensure circle fits
+          const maxRadius = Math.min(availableWidth, availableHeight) * 0.4;
+          const radius = Math.max(isWeb ? Math.min(maxRadius, 250) : Math.min(maxRadius, 180), isWeb ? 200 : 140);
+
+          // Button size - responsive but consistent
+          const buttonSize = isWeb ? Math.min(180, width * 0.15) : Math.min(120, width * 0.25);
+          const circleSize = radius * 2;
+
+          return (
+            <View style={[styles.largeCircle, { width: circleSize, height: circleSize, borderRadius: radius }]}>
+              {buttons.map((button) => {
+                const position = calculateCirclePosition(button.index, buttons.length, radius);
+                return (
+                  <TouchableOpacity
+                    key={button.index}
+                    style={[
+                      styles.accountButton,
+                      button.style,
+                      {
+                        position: "absolute",
+                        left: radius + position.x - buttonSize / 2,
+                        top: radius + position.y - buttonSize / 2,
+                        width: buttonSize,
+                        height: buttonSize,
+                        borderRadius: buttonSize / 2,
+                      },
+                    ]}
+                    onPress={button.onPress}
+                  >
+                    <Text style={[styles.accountText, { fontSize: isWeb ? Math.max(14, buttonSize * 0.1) : Math.max(12, buttonSize * 0.11) }]}>{button.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          );
+        })()}
       </View>
+      <BottomNavBar navigation={navigation} />
     </View>
   );
 };
@@ -124,45 +182,42 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "bold",
     marginTop: 100,
-    marginBottom: 10,
+    marginBottom: 117,
     textAlign: "center",
   },
   circlesContainer: {
     flex: 1,
-    flexDirection: isWeb ? "row" : "column",
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: isWeb ? 40 : 20,
-    paddingVertical: isWeb ? 40 : 60,
-    ...(isWeb && {
-      maxWidth: 1200,
-      alignSelf: "center",
-      width: "100%",
-    }),
+    paddingBottom: isWeb ? 60 : 100,
+  },
+  largeCircle: {
+    position: "relative",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#ddd",
+    borderStyle: "dashed",
   },
   accountButton: {
-    width: isWeb ? Math.min(300, width * 0.25) : width * 0.6,
-    height: isWeb ? Math.min(300, width * 0.25) : width * 0.6,
-    borderRadius: isWeb ? Math.min(150, width * 0.125) : width * 0.3,
     justifyContent: "center",
     alignItems: "center",
-    ...(isWeb
-      ? {
-          minWidth: 200,
-          minHeight: 200,
-          maxWidth: 350,
-          maxHeight: 350,
-          marginHorizontal: 20,
-        }
-      : {
-          marginVertical: 15,
-        }),
+    position: "absolute",
   },
   personal: {
     backgroundColor: "#800000",
   },
   business: {
     backgroundColor: "#FFA500",
+  },
+  organization: {
+    backgroundColor: "#4CAF50",
+  },
+  search: {
+    backgroundColor: "#9C27B0",
+  },
+  tour: {
+    backgroundColor: "#2196F3",
   },
   accountText: {
     color: "#000",

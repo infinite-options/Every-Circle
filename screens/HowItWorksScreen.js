@@ -1,26 +1,34 @@
-import React from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-  ScrollView,
-} from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getHeaderColor } from "../config/headerColors";
+import BottomNavBar from "../components/BottomNavBar";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-export default function HowItWorksScreen({ navigation }) {
+export default function HowItWorksScreen({ navigation, route }) {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const checkLoginStatus = async () => {
+      try {
+        const userUid = await AsyncStorage.getItem("user_uid");
+        const profileUid = await AsyncStorage.getItem("profile_uid");
+        // User is considered logged in if either user_uid or profile_uid exists
+        setIsLoggedIn(!!(userUid || profileUid));
+      } catch (error) {
+        console.error("Error checking login status:", error);
+        setIsLoggedIn(false);
+      }
+    };
+    checkLoginStatus();
+  }, []);
   return (
     <SafeAreaView style={styles.safeArea}>
       {/* TOP MAROON HEADER */}
       <View style={styles.topHeader}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backBtn}
-        >
-          <Ionicons name="chevron-back" size={18} color="#fff" />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name='chevron-back' size={18} color='#fff' />
         </TouchableOpacity>
 
         <Text style={styles.topHeaderTitle}>How it Works</Text>
@@ -33,42 +41,61 @@ export default function HowItWorksScreen({ navigation }) {
         {/* SMALL LOGO CARD */}
         <View style={styles.card}>
           <View style={styles.smallRow}>
-            <Image
-              source={require("../assets/everycirclelogonew_400x400.jpg")}
-              style={styles.smallLogo}
-            />
+            <Image source={require("../assets/everycirclelogonew_400x400.jpg")} style={styles.smallLogo} />
             <View style={{ flex: 1 }}>
               <Text style={styles.smallTitle}>
                 <Text style={styles.smallItalic}>every</Text>
                 <Text style={styles.smallMaroon}>Circle</Text>
                 <Text style={styles.smallBlack}>.com</Text>
               </Text>
-              <Text style={styles.smallSubtitle}>
-                Connecting Circles of Influence
-              </Text>
+              <Text style={styles.smallSubtitle}>Connecting Circles of Influence</Text>
             </View>
           </View>
         </View>
 
         {/* GOT BUSINESS CARD */}
         <View style={styles.card}>
-          <Text style={styles.gbTitle}>Got Business ?</Text>
+          <Text style={styles.gbTitle}>For the Individual</Text>
 
-          <Text style={styles.gbHeading}>One-Stop Marketing Platform</Text>
+          <Text style={styles.gbHeading}>Create a Meaningful and Profitable Circle of Influence</Text>
 
           <Text style={styles.gbBody}>
-            <Text style={styles.gbItalic}>
-              Comprehensive Turnkey Solution for{"\n"}
-            </Text>
-            <Text style={styles.gbItalic}>
-              Businesses, Organizations and Professionals{"\n"}
-            </Text>
+            <Bullet>
+              <Text style={styles.gbItalic}>Imagine being able to curate a select group of friends and colleagues you know and trust{"\n"}</Text>
+            </Bullet>
+            <Bullet>
+              <Text style={styles.gbItalic}>Imagine being able to relywhat your friends recommend, what they need and what they want{"\n"}</Text>
+            </Bullet>
+            <Bullet>
+              <Text style={styles.gbItalic}>Imagine being able to help them and rely on their expertise{"\n"}</Text>
+            </Bullet>
             <Text style={styles.gbBold}>
-              solves common, fundamental challenges:
+              {"\n"}
+              {"\n"}Make Money every time you help someone or make a recommendation they can use
             </Text>
           </Text>
 
-          <Text style={styles.gbMaroonHeading}>Save Time, Money, ...</Text>
+          <Text style={styles.gbTitle}>{"\n"}For a Business</Text>
+
+          <Text style={styles.gbHeading}>Grow your Business with Results-Based Marketing</Text>
+
+          <Text style={styles.gbBody}>
+            <Bullet>
+              <Text style={styles.gbItalic}>Target your ad spend toward people who are looking to buy your products and services{"\n"}</Text>
+            </Bullet>
+            <Bullet>
+              <Text style={styles.gbItalic}>Reward people for recommending your business{"\n"}</Text>
+            </Bullet>
+            <Bullet>
+              <Text style={styles.gbItalic}>Encourage people to try your products and services{"\n"}</Text>
+            </Bullet>
+            <Text style={styles.gbBold}>
+              {"\n"}
+              {"\n"}Track your marketing effectiveness
+            </Text>
+          </Text>
+
+          {/* <Text style={styles.gbMaroonHeading}>Save Time, Money, ...</Text>
           <Text style={styles.gbLine}>
             <Text style={styles.gbItalic}>Innovative, </Text>
             <Text style={styles.gbBold}>Results-Based</Text>
@@ -76,24 +103,18 @@ export default function HowItWorksScreen({ navigation }) {
           </Text>
 
           <Text style={styles.gbHeading2}>Generate Specific Connections</Text>
-          <Text style={styles.gbLine}>
-            Matching your criteria, geographical radius, ...
-          </Text>
+          <Text style={styles.gbLine}>Matching your criteria, geographical radius, ...</Text>
 
           <Text style={styles.gbHeading2}>Earn Multiple Revenue Streams</Text>
           <Text style={styles.gbLine}>
             with <Text style={styles.gbBold}>NO-COST</Text> Profiles for each
             {"\n"}
             individual, business, organization
-          </Text>
+          </Text> */}
         </View>
 
         {/* PROFILE HEADER PILL */}
-        <HeaderPill
-          title="PROFILE"
-          bg={getHeaderColor("profile")}
-          iconSource={require("../assets/profile.png")}
-        />
+        <HeaderPill title='PROFILE' bg={getHeaderColor("profile")} iconSource={require("../assets/profile.png")} />
 
         <View style={styles.card}>
           <Text style={styles.secTitle}>1. Create Your Profile(s)</Text>
@@ -119,10 +140,7 @@ export default function HowItWorksScreen({ navigation }) {
           </Text>
 
           <Bullet>
-            <Text>
-              Create Circles of Influence{"\n"}Join other users’ Circles of
-              Influence
-            </Text>
+            <Text>Create Circles of Influence{"\n"}Join other users’ Circles of Influence</Text>
           </Bullet>
 
           <Bullet>
@@ -131,32 +149,20 @@ export default function HowItWorksScreen({ navigation }) {
 
           <Text style={styles.noteLine}>
             <Text style={styles.noteLabel}>Note:</Text>
-            <Text>
-              {" "}
-              You manage the narrative here{"\n"}Submit as little or as much as
-              you desire
-            </Text>
+            <Text> You manage the narrative here{"\n"}Submit as little or as much as you desire</Text>
           </Text>
         </View>
 
         {/* CONNECT HEADER PILL */}
-        <HeaderPill
-          title="CONNECT"
-          bg={getHeaderColor("network")}
-          iconSource={require("../assets/connect.png")}
-        />
+        <HeaderPill title='CONNECT' bg={getHeaderColor("network")} iconSource={require("../assets/connect.png")} />
 
         <View style={styles.card}>
           <Text style={styles.secTitle}>
-            2. Generate <Text style={styles.boldWord}>SPECIFIC</Text>{" "}
-            Connections
+            2. Generate <Text style={styles.boldWord}>SPECIFIC</Text> Connections
           </Text>
 
           <Bullet>
-            <Text>
-              Meet prospects in-person and online{"\n"}matching your criteria,
-              geographical radius
-            </Text>
+            <Text>Meet prospects in-person and online{"\n"}matching your criteria, geographical radius</Text>
           </Bullet>
 
           <Bullet>
@@ -173,16 +179,10 @@ export default function HowItWorksScreen({ navigation }) {
         </View>
 
         {/* ACCOUNT HEADER PILL */}
-        <HeaderPill
-          title="ACCOUNT"
-          bg={getHeaderColor("account")}
-          iconSource={require("../assets/pillar.png")}
-        />
+        <HeaderPill title='ACCOUNT' bg={getHeaderColor("account")} iconSource={require("../assets/pillar.png")} />
 
         <View style={styles.card}>
-          <Text style={styles.secTitle}>
-            3. Manage Multiple Revenue Streams
-          </Text>
+          <Text style={styles.secTitle}>3. Manage Multiple Revenue Streams</Text>
 
           <Bullet>
             <Text>Select attributes for advertisers</Text>
@@ -203,11 +203,7 @@ export default function HowItWorksScreen({ navigation }) {
 
             <Text>
               Bounties are deducted and shared,{"\n"}
-              by different percentages,{" "}
-              <Text style={[styles.boldWord, styles.italicWord]}>
-                ONLY
-              </Text>{" "}
-              after{"\n"}
+              by different percentages, <Text style={[styles.boldWord, styles.italicWord]}>ONLY</Text> after{"\n"}
               completed transactions
             </Text>
           </Text>
@@ -223,16 +219,11 @@ export default function HowItWorksScreen({ navigation }) {
         </View>
 
         {/* SETTINGS HEADER PILL */}
-        <HeaderPill
-          title="SETTINGS"
-          bg={getHeaderColor("settings")}
-          iconSource={require("../assets/setting.png")}
-        />
+        <HeaderPill title='SETTINGS' bg={getHeaderColor("settings")} iconSource={require("../assets/setting.png")} />
 
         <View style={styles.card}>
           <Text style={styles.secTitle}>
-            4. Control and Manage <Text style={styles.boldWord}>YOUR</Text>{" "}
-            Platform
+            4. Control and Manage <Text style={styles.boldWord}>YOUR</Text> Platform
           </Text>
 
           <Bullet>
@@ -245,11 +236,7 @@ export default function HowItWorksScreen({ navigation }) {
         </View>
 
         {/* SEARCH HEADER PILL */}
-        <HeaderPill
-          title="SEARCH"
-          bg={getHeaderColor("search")}
-          iconSource={require("../assets/search.png")}
-        />
+        <HeaderPill title='SEARCH' bg={getHeaderColor("search")} iconSource={require("../assets/search.png")} />
 
         <View style={styles.card}>
           <Text style={styles.secTitle}>5. Advanced Search</Text>
@@ -263,87 +250,16 @@ export default function HowItWorksScreen({ navigation }) {
         </View>
 
         {/* CONTINUE BUTTON */}
-        <TouchableOpacity
-          style={styles.continueBtn}
-          activeOpacity={0.9}
-          onPress={() => console.log("Continue")}
-        >
+        <TouchableOpacity style={styles.continueBtn} activeOpacity={0.9} onPress={() => console.log("Continue")}>
           <Text style={styles.continueText}>Continue</Text>
         </TouchableOpacity>
 
         {/* FEEDBACK BANNER */}
         <FeedbackBanner />
 
-        {/* DROPDOWN PILLS */}
-        <Pill
-          bg="#fff"
-          rightIcon="chevron-down"
-          rightIconBg="#fff"
-          rightIconBorder
-        >
-          <Text style={styles.pillBig}>HOME</Text>
-        </Pill>
-
-        <Pill
-          bg="#fff"
-          rightIcon="chevron-down"
-          rightIconBg="#fff"
-          rightIconBorder
-        >
-          <Text style={styles.pillBig}>
-            Welcome! <Text style={styles.pillItalic}>Sign Up</Text>
-          </Text>
-        </Pill>
-
-        <Pill
-          bg="#fff"
-          rightIcon="chevron-down"
-          rightIconBg="#fff"
-          rightIconBorder
-        >
-          <Text style={styles.pillBig}>
-            Welcome Back! <Text style={styles.pillItalic}>Log In</Text>
-          </Text>
-        </Pill>
-
-        <Pill
-          bg="#fff"
-          rightIcon="chevron-down"
-          rightIconBg="#fff"
-          rightIconBorder
-        >
-          <Text style={[styles.pillCenterText, { fontSize: 22 }]}>
-            everyCircle
-          </Text>
-        </Pill>
-
-        {/* CONTINUE BUTTON AGAIN */}
-        <TouchableOpacity
-          style={[styles.continueBtn, { marginTop: 10 }]}
-          activeOpacity={0.9}
-          onPress={() => console.log("Continue2")}
-        >
-          <Text style={styles.continueText}>Continue</Text>
-        </TouchableOpacity>
-
-        {/* FEEDBACK BANNER AGAIN */}
-        <FeedbackBanner />
-
-        {/* BOTTOM ICON ROW */}
-        <View style={styles.bottomIconsRow}>
-          <Image
-            source={require("../assets/everycirclelogonew_400x400.jpg")}
-            style={styles.bottomLogo}
-          />
-          <Image source={require("../assets/connect.png")} style={styles.bottomIcon} tintColor="#111" />
-          <Image source={require("../assets/profile.png")} style={styles.bottomIcon} tintColor="#111" />
-          <Image source={require("../assets/pillar.png")} style={styles.bottomIcon} tintColor="#111" />
-          <Image source={require("../assets/setting.png")} style={styles.bottomIcon} tintColor="#111" />
-          <Image source={require("../assets/search.png")} style={styles.bottomIcon} tintColor="#111" />
-        </View>
-
-        <View style={{ height: 40 }} />
+        <View style={{ height: isLoggedIn ? 100 : 40 }} />
       </ScrollView>
+      {isLoggedIn && <BottomNavBar navigation={navigation} />}
     </SafeAreaView>
   );
 }
@@ -354,14 +270,8 @@ function Pill({ bg, rightIcon, rightIconBg, rightIconBorder, children }) {
     <View style={[styles.pill, { backgroundColor: bg }]}>
       <View style={styles.pillInner}>{children}</View>
 
-      <View
-        style={[
-          styles.pillRightCircle,
-          { backgroundColor: rightIconBg },
-          rightIconBorder ? styles.circleBorder : null,
-        ]}
-      >
-        <Ionicons name={rightIcon} size={16} color="#111" />
+      <View style={[styles.pillRightCircle, { backgroundColor: rightIconBg }, rightIconBorder ? styles.circleBorder : null]}>
+        <Ionicons name={rightIcon} size={16} color='#111' />
       </View>
     </View>
   );
@@ -371,7 +281,7 @@ function HeaderPill({ title, bg, iconSource }) {
   return (
     <View style={[styles.headerPill, { backgroundColor: bg }]}>
       <View style={styles.headerIcon}>
-        <Image source={iconSource} style={styles.headerIconImage} tintColor="#fff" />
+        <Image source={iconSource} style={styles.headerIconImage} tintColor='#fff' />
       </View>
       <Text style={styles.headerPillText}>{title}</Text>
     </View>
@@ -395,13 +305,8 @@ function FeedbackBanner() {
         <Text style={styles.feedbackSub}>Future Banner Ad Here</Text>
       </View>
       <View style={styles.feedbackIconBox}>
-        <Ionicons name="chatbox-ellipses-outline" size={34} color="#111" />
-        <Ionicons
-          name="create-outline"
-          size={18}
-          color="#111"
-          style={{ position: "absolute", right: -2, top: -2 }}
-        />
+        <Ionicons name='chatbox-ellipses-outline' size={34} color='#111' />
+        <Ionicons name='create-outline' size={18} color='#111' style={{ position: "absolute", right: -2, top: -2 }} />
       </View>
     </View>
   );
@@ -455,7 +360,7 @@ const styles = StyleSheet.create({
 
   everyItalic: {
     fontStyle: "italic",
-    fontWeight: "900", // keep it bold 
+    fontWeight: "900", // keep it bold
   },
   circleNormal: {
     fontStyle: "normal",
