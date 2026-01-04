@@ -282,9 +282,10 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.pageContainer}>
       <AppHeader title='Login' {...getHeaderColors("login")} onBackPress={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.contentContainer}>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.contentContainer}>
         <View style={styles.header}>
         <Text style={styles.title}>Welcome to everyCircle!</Text>
         <Text style={styles.subtitle}>Please choose a login option to continue.</Text>
@@ -454,12 +455,14 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
           </View>
         </View>
       </Modal>
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  pageContainer: { flex: 1, backgroundColor: "#fff" },
   safeArea: { flex: 1, backgroundColor: "#fff" },
   contentContainer: { padding: 20 },
   header: { alignItems: "center", marginBottom: 40 },

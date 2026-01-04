@@ -405,9 +405,10 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.pageContainer}>
       <AppHeader title='Sign Up' {...getHeaderColors("signUp")} onBackPress={() => navigation.goBack()} />
-      <ScrollView contentContainerStyle={styles.contentContainer}>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView contentContainerStyle={styles.contentContainer}>
         <View style={styles.header}>
           <Text style={styles.title}>Welcome to Every Circle!</Text>
           <Text style={styles.subtitle}>{isGoogleSignUp ? "Complete your sign up" : "Please create your account to continue."}</Text>
@@ -527,12 +528,17 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             </View>
           </View>
         </Modal>
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  pageContainer: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
   safeArea: {
     flex: 1,
     backgroundColor: "#fff",

@@ -111,7 +111,7 @@ const AccountTypeScreen = ({ navigation, route }) => {
     <View style={styles.accountContainer}>
       <AppHeader title='Your Profile' {...getHeaderColors("signUp")} />
       {/* <AppHeader title='Choose Your Account' backgroundColor='#007AFF' /> */}
-      <Text style={styles.title}>What woul you like to do next?</Text>
+      <Text style={styles.title}>What would you like to do next?</Text>
       <View style={styles.circlesContainer}>
         {(() => {
           const buttons = [
