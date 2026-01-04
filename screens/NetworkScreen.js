@@ -310,9 +310,11 @@ const NetworkScreen = ({ navigation }) => {
       };
 
       setUserProfileData(publicData);
-      // Create vCard format for QR code (standard contact card format)
-      const vCard = createVCard(publicData);
-      setQrCodeData(vCard);
+      // Create URL for QR code that redirects to everyCircle.com connect page
+      const baseUrl = "https://everycircle.com"; // Update with your actual domain
+      const connectUrl = `${baseUrl}/connect?profile_uid=${profileUID}`;
+      console.log("🔗 QR Code Redirect URL:", connectUrl);
+      setQrCodeData(connectUrl);
     } catch (error) {
       console.error("Error fetching user profile for QR code:", error);
     }

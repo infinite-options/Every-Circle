@@ -63,6 +63,8 @@ import ReviewDetailScreen from "./screens/ReviewDetailScreen";
 import ExpertiseDetailScreen from "./screens/ExpertiseDetailScreen";
 import WishDetailScreen from "./screens/WishDetailScreen";
 import WishResponsesScreen from "./screens/WishResponsesScreen";
+import ConnectScreen from "./screens/ConnectScreen";
+import ConnectWebScreen from "./screens/ConnectWebScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -1005,6 +1007,7 @@ export default function App() {
             <Stack.Screen name='ExpertiseDetail' component={ExpertiseDetailScreen} options={{ headerShown: false }} />
             <Stack.Screen name='WishDetail' component={WishDetailScreen} options={{ headerShown: false }} />
             <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
+            <Stack.Screen name='Connect' component={Platform.OS === "web" ? ConnectWebScreen : ConnectScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       </DarkModeProvider>
