@@ -927,7 +927,8 @@ const ProfileScreen = ({ route, navigation }) => {
           />
 
           {/* Only show Experience section if there are public experiences, or if viewing own profile */}
-          {(isCurrentUserProfile || (user.experience && user.experience.filter((exp) => exp.isPublic).length > 0)) && (
+          {/*{(isCurrentUserProfile || (user.experience && user.experience.filter((exp) => exp.isPublic).length > 0)) && ( */}
+          {user.experienceIsPublic && (
             <View style={styles.fieldContainer}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Experience:</Text>
               {user.experience && user.experience.filter((exp) => exp.isPublic).length > 0 ? (
@@ -960,7 +961,8 @@ const ProfileScreen = ({ route, navigation }) => {
           )}
 
           {/* Only show Education section if there are public education entries, or if viewing own profile */}
-          {(isCurrentUserProfile || (user.education && user.education.filter((edu) => edu.isPublic).length > 0)) && (
+          {/*{(isCurrentUserProfile || (user.education && user.education.filter((edu) => edu.isPublic).length > 0)) && ( */}
+          {user.educationIsPublic && (
             <View style={styles.fieldContainer}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Education:</Text>
               {user.education && user.education.filter((edu) => edu.isPublic).length > 0 ? (
@@ -984,7 +986,8 @@ const ProfileScreen = ({ route, navigation }) => {
           )}
 
           {/* Only show Expertise section if there are public expertise entries, or if viewing own profile */}
-          {(isCurrentUserProfile || (user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0)) && (
+          {/*{(isCurrentUserProfile || (user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0)) && ( */}
+          {user.expertiseIsPublic && (
             <View style={styles.fieldContainer}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Expertise:</Text>
               {user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0 ? (
