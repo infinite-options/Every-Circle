@@ -65,6 +65,7 @@ import WishDetailScreen from "./screens/WishDetailScreen";
 import WishResponsesScreen from "./screens/WishResponsesScreen";
 import ConnectScreen from "./screens/ConnectScreen";
 import ConnectWebScreen from "./screens/ConnectWebScreen";
+import NewConnectionScreen from "./screens/NewConnectionScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -964,10 +965,42 @@ export default function App() {
     console.error("App.js - Error state:", error);
   }
 
+  // Configure linking for web URL routing
+  const linking = {
+    prefixes: ["everycircle://", "https://everycircle.com", "http://everycircle.com", "http://localhost:8081"],
+    config: {
+      screens: {
+        Home: "",
+        NewConnection: {
+          path: "newconnection/:profile_uid?",
+          parse: {
+            profile_uid: (profile_uid) => profile_uid,
+          },
+        },
+        Connect: {
+          path: "connect",
+          parse: {
+            profile_uid: (profile_uid) => profile_uid,
+          },
+        },
+        Login: "login",
+        SignUp: "signup",
+        Profile: "profile",
+        Network: "network",
+        Search: "search",
+        Settings: "settings",
+      },
+    },
+  };
+
   return (
     <TextNodeErrorBoundary>
       <DarkModeProvider>
-        <NavigationContainer onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={() => console.log("App.js - Navigation state changed")}>
+        <NavigationContainer
+          linking={isWeb ? linking : undefined}
+          onReady={() => console.log("App.js - NavigationContainer ready")}
+          onStateChange={() => console.log("App.js - Navigation state changed")}
+        >
           <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
             <Stack.Screen name='Home' component={HomeScreen} />
             <Stack.Screen
@@ -1007,7 +1040,19 @@ export default function App() {
             <Stack.Screen name='ExpertiseDetail' component={ExpertiseDetailScreen} options={{ headerShown: false }} />
             <Stack.Screen name='WishDetail' component={WishDetailScreen} options={{ headerShown: false }} />
             <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
-            <Stack.Screen name='Connect' component={Platform.OS === "web" ? ConnectWebScreen : ConnectScreen} />
+            <Stack.Screen
+              name='Connect'
+              component={(props) => {
+                // If profile_uid is present in route params or URL, use NewConnectionScreen
+                const profileUid = props.route?.params?.profile_uid || (isWeb && typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("profile_uid") : null);
+                if (profileUid) {
+                  return <NewConnectionScreen {...props} />;
+                }
+                // Otherwise use the original Connect screen
+                return Platform.OS === "web" ? <ConnectWebScreen {...props} /> : <ConnectScreen {...props} />;
+              }}
+            />
+            <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       </DarkModeProvider>

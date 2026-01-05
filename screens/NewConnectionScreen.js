@@ -1,0 +1,888 @@
+// NewConnectionScreen.js - Simple Hello World page or MiniCard display
+import React, { useEffect, useState } from "react";
+import { View, Text, StyleSheet, SafeAreaView, ActivityIndicator, ScrollView, Platform, TextInput, TouchableOpacity, Alert } from "react-native";
+import { useRoute, useNavigation } from "@react-navigation/native";
+import { useDarkMode } from "../contexts/DarkModeContext";
+import AppHeader from "../components/AppHeader";
+import MiniCard from "../components/MiniCard";
+import BottomNavBar from "../components/BottomNavBar";
+import { USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
+import { sanitizeText } from "../utils/textSanitizer";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import WebTextInput from "../components/WebTextInput";
+import * as Location from "expo-location";
+import { Dropdown } from "react-native-element-dropdown";
+
+const NewConnectionScreen = () => {
+  const { darkMode } = useDarkMode();
+  const route = useRoute();
+  const navigation = useNavigation();
+  const [loading, setLoading] = useState(false);
+  const [profileData, setProfileData] = useState(null);
+  const [error, setError] = useState(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [checkingLogin, setCheckingLogin] = useState(true);
+  const [loggedInUser, setLoggedInUser] = useState(null);
+
+  // Form fields for logged-in users
+  const [introducedBy, setIntroducedBy] = useState("");
+  const [commentsNotes, setCommentsNotes] = useState("");
+  const [meetingLocation, setMeetingLocation] = useState("");
+  const [meetingEvent, setMeetingEvent] = useState("");
+  const [relationship, setRelationship] = useState("friend");
+  const [dateTimeStamp, setDateTimeStamp] = useState("");
+  const [latitude, setLatitude] = useState(null);
+  const [longitude, setLongitude] = useState(null);
+  const [locationError, setLocationError] = useState(null);
+  const [fetchingLocation, setFetchingLocation] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [existingRelationship, setExistingRelationship] = useState(null);
+  const [circleUid, setCircleUid] = useState(null);
+  const [checkingRelationship, setCheckingRelationship] = useState(false);
+
+  // Relationship options matching ConnectScreen.js
+  const relationshipOptions = [
+    { label: "Friend", value: "friend" },
+    { label: "Colleague", value: "colleague" },
+    { label: "Family", value: "family" },
+  ];
+
+  // Get profile_uid from route params or URL
+  // Handles both /connect?profile_uid=xxx and /newconnection/xxx URLs
+  const profileUid =
+    route.params?.profile_uid ||
+    (Platform.OS === "web" && typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("profile_uid") || window.location.pathname.split("/newconnection/")[1]?.split("?")[0] || window.location.pathname.split("/newconnection/")[1]
+      : null);
+
+  // Check login status on mount
+  useEffect(() => {
+    checkLoginStatus();
+  }, []);
+
+  useEffect(() => {
+    if (profileUid) {
+      fetchProfileData();
+    }
+  }, [profileUid]);
+
+  // Fetch existing relationship when user is logged in and viewing a profile
+  useEffect(() => {
+    if (isLoggedIn && profileUid && !checkingRelationship) {
+      fetchExistingRelationship();
+    }
+  }, [isLoggedIn, profileUid]);
+
+  // Fetch location when user is logged in and viewing a profile
+  useEffect(() => {
+    if (isLoggedIn && profileData && !fetchingLocation && latitude === null) {
+      fetchCurrentLocation();
+    }
+  }, [isLoggedIn, profileData]);
+
+  const handleContinue = async () => {
+    try {
+      setSubmitting(true);
+
+      // Check if user is logged in
+      const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
+      if (!loggedInProfileUID) {
+        Alert.alert("Not Logged In", "Please log in to add connections.");
+        navigation.navigate("Login");
+        setSubmitting(false);
+        return;
+      }
+
+      // Check if trying to add self
+      if (loggedInProfileUID === profileUid) {
+        Alert.alert("Cannot Add Self", "You cannot add yourself as a connection.");
+        setSubmitting(false);
+        return;
+      }
+
+      // Format date from dateTimeStamp (YYYY-MM-DD)
+      let circleDate = "";
+      if (dateTimeStamp) {
+        const date = new Date(dateTimeStamp);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        circleDate = `${year}-${month}-${day}`;
+      } else {
+        // Fallback to current date if no timestamp
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, "0");
+        const day = String(now.getDate()).padStart(2, "0");
+        circleDate = `${year}-${month}-${day}`;
+      }
+
+      // Format geotag from latitude and longitude
+      let circleGeotag = null;
+      if (latitude !== null && longitude !== null) {
+        // Format as "latitude,longitude" with proper precision
+        circleGeotag = `${latitude},${longitude}`;
+        console.log("NewConnectionScreen - Geotag formatted:", circleGeotag);
+      } else {
+        console.log("NewConnectionScreen - No geotag available (latitude:", latitude, "longitude:", longitude, ")");
+      }
+
+      // Make API call - use PUT if updating, POST if creating new
+      const isUpdate = circleUid !== null;
+      const endpoint = isUpdate ? `${CIRCLES_ENDPOINT}/${circleUid}` : CIRCLES_ENDPOINT;
+      const method = isUpdate ? "PUT" : "POST";
+
+      // Build request body - for PUT, only include updatable fields
+      const requestBody = isUpdate
+        ? {
+            circle_relationship: relationship || "None",
+            circle_date: circleDate,
+            circle_event: meetingEvent || null,
+            circle_note: commentsNotes || null,
+            circle_geotag: circleGeotag,
+          }
+        : {
+            circle_profile_id: loggedInProfileUID,
+            circle_related_person_id: profileUid,
+            circle_relationship: relationship || "None",
+            circle_date: circleDate,
+            circle_event: meetingEvent || null,
+            circle_note: commentsNotes || null,
+            circle_geotag: circleGeotag,
+          };
+
+      console.log("NewConnectionScreen - Making API call:", {
+        endpoint,
+        method,
+        isUpdate,
+        requestBody,
+      });
+
+      const response = await fetch(endpoint, {
+        method: method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      console.log("NewConnectionScreen - API response status:", response.status, "ok:", response.ok);
+
+      // Check if response is successful (200-299 range)
+      const isSuccess = response.ok || (response.status >= 200 && response.status < 300);
+
+      if (isSuccess) {
+        const successMessage = isUpdate ? "Contact successfully updated" : "Contact successfully added";
+        console.log("NewConnectionScreen - Success! Showing alert:", successMessage);
+
+        // Handle web vs native differently for alerts
+        if (Platform.OS === "web") {
+          // On web, use window.alert and navigate immediately after
+          window.alert(successMessage);
+          console.log("NewConnectionScreen - Navigating to Network page");
+          navigation.navigate("Network");
+        } else {
+          // On native, use Alert.alert with button callback
+          Alert.alert("Success", successMessage, [
+            {
+              text: "OK",
+              onPress: () => {
+                console.log("NewConnectionScreen - Navigating to Network page");
+                // Navigate to Network page (shows QR code and network)
+                navigation.navigate("Network");
+              },
+            },
+          ]);
+        }
+      } else {
+        let errorMessage = "Failed to add connection";
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorData.error || (isUpdate ? "Failed to update connection" : "Failed to add connection");
+        } catch (parseError) {
+          // If response is not JSON, use status text
+          errorMessage = `Error ${response.status}: ${response.statusText || (isUpdate ? "Failed to update connection" : "Failed to add connection")}`;
+        }
+        console.error("NewConnectionScreen - API error:", errorMessage);
+
+        // Handle web vs native for error alerts
+        if (Platform.OS === "web") {
+          window.alert(`Error: ${errorMessage}`);
+        } else {
+          Alert.alert("Error", errorMessage);
+        }
+      }
+    } catch (err) {
+      console.error("Error adding connection:", err);
+      const errorMsg = err.message || "Failed to add connection. Please try again.";
+
+      // Handle web vs native for error alerts
+      if (Platform.OS === "web") {
+        window.alert(`Error: ${errorMsg}`);
+      } else {
+        Alert.alert("Error", errorMsg);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const fetchCurrentLocation = async () => {
+    try {
+      setFetchingLocation(true);
+      setLocationError(null);
+
+      if (Platform.OS === "web") {
+        // Use browser geolocation API on web
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              setLatitude(position.coords.latitude);
+              setLongitude(position.coords.longitude);
+              setFetchingLocation(false);
+            },
+            (error) => {
+              console.error("Geolocation error:", error);
+              setLocationError("Failed to get location: " + error.message);
+              setFetchingLocation(false);
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          );
+        } else {
+          setLocationError("Geolocation is not supported by this browser");
+          setFetchingLocation(false);
+        }
+      } else {
+        // Use expo-location on native
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          setLocationError("Location permission denied");
+          setFetchingLocation(false);
+          return;
+        }
+
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+
+        setLatitude(location.coords.latitude);
+        setLongitude(location.coords.longitude);
+        setFetchingLocation(false);
+      }
+    } catch (err) {
+      console.error("Error fetching location:", err);
+      setLocationError("Failed to get location");
+      setFetchingLocation(false);
+    }
+  };
+
+  const checkLoginStatus = async () => {
+    try {
+      setCheckingLogin(true);
+      const userUid = await AsyncStorage.getItem("user_uid");
+      const profileUid = await AsyncStorage.getItem("profile_uid");
+
+      if (userUid || profileUid) {
+        setIsLoggedIn(true);
+        setLoggedInUser({
+          user_uid: userUid,
+          profile_uid: profileUid,
+        });
+      } else {
+        setIsLoggedIn(false);
+        setLoggedInUser(null);
+      }
+    } catch (err) {
+      console.error("Error checking login status:", err);
+      setIsLoggedIn(false);
+    } finally {
+      setCheckingLogin(false);
+    }
+  };
+
+  const fetchExistingRelationship = async () => {
+    try {
+      setCheckingRelationship(true);
+      const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
+
+      if (!loggedInProfileUID || !profileUid) {
+        setExistingRelationship(null);
+        setCircleUid(null);
+        return;
+      }
+
+      const endpoint = `${CIRCLES_ENDPOINT}/${loggedInProfileUID}?circle_related_person_id=${profileUid}`;
+      const response = await fetch(endpoint, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result && result.data && result.data.length > 0) {
+          const relationshipData = result.data[0];
+          setExistingRelationship(relationshipData);
+          setCircleUid(relationshipData.circle_uid);
+
+          // Populate form fields with existing data
+          if (relationshipData.circle_relationship) {
+            setRelationship(relationshipData.circle_relationship);
+          }
+          if (relationshipData.circle_event) {
+            setMeetingEvent(relationshipData.circle_event);
+          }
+          if (relationshipData.circle_note) {
+            setCommentsNotes(relationshipData.circle_note);
+          }
+          if (relationshipData.circle_date) {
+            // Format date for display
+            const date = new Date(relationshipData.circle_date);
+            setDateTimeStamp(date.toISOString());
+          }
+          if (relationshipData.circle_geotag && latitude === null && longitude === null) {
+            // Parse geotag (format: "latitude,longitude")
+            // Only set if location hasn't been fetched yet
+            const [lat, lng] = relationshipData.circle_geotag.split(",");
+            if (lat && lng) {
+              setLatitude(parseFloat(lat));
+              setLongitude(parseFloat(lng));
+            }
+          }
+        } else {
+          setExistingRelationship(null);
+          setCircleUid(null);
+        }
+      } else {
+        setExistingRelationship(null);
+        setCircleUid(null);
+      }
+    } catch (error) {
+      console.error("Error fetching existing relationship:", error);
+      setExistingRelationship(null);
+      setCircleUid(null);
+    } finally {
+      setCheckingRelationship(false);
+    }
+  };
+
+  const fetchProfileData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
+      if (!response.ok) {
+        throw new Error("Profile not found");
+      }
+      const apiUser = await response.json();
+
+      const p = apiUser?.personal_info || {};
+      const profileInfo = {
+        profile_uid: profileUid,
+        firstName: sanitizeText(p.profile_personal_first_name || ""),
+        lastName: sanitizeText(p.profile_personal_last_name || ""),
+        tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || ""),
+        city: sanitizeText(p.profile_personal_city || ""),
+        state: sanitizeText(p.profile_personal_state || ""),
+        email: sanitizeText(apiUser?.user_email || ""),
+        phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+        profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
+        emailIsPublic: p.profile_personal_email_is_public === 1,
+        phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
+        tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
+        locationIsPublic: p.profile_personal_location_is_public === 1,
+        imageIsPublic: p.profile_personal_image_is_public === 1,
+      };
+
+      setProfileData(profileInfo);
+      // Set date/time stamp when profile is loaded
+      const now = new Date();
+      setDateTimeStamp(now.toISOString());
+    } catch (err) {
+      console.error("Error fetching profile:", err);
+      setError(err.message || "Failed to load profile");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <View style={[styles.container, darkMode && styles.darkContainer]}>
+      <AppHeader title='New Connection' />
+      <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          {/* Login Status Display */}
+          <View style={[styles.loginStatusContainer, darkMode && styles.darkLoginStatusContainer]}>
+            {checkingLogin ? (
+              <Text style={[styles.loginStatusText, darkMode && styles.darkLoginStatusText]}>Checking login status...</Text>
+            ) : (
+              <>
+                <Text style={[styles.loginStatusLabel, darkMode && styles.darkLoginStatusLabel]}>Login Status:</Text>
+                <View style={[styles.loginStatusBadge, isLoggedIn ? styles.loggedInBadge : styles.loggedOutBadge]}>
+                  <Text style={styles.loginStatusBadgeText}>{isLoggedIn ? "Logged In" : "Not Logged In"}</Text>
+                </View>
+                {isLoggedIn && loggedInUser && (
+                  <View style={styles.userInfoContainer}>
+                    {loggedInUser.user_uid && <Text style={[styles.userInfoText, darkMode && styles.darkUserInfoText]}>User UID: {loggedInUser.user_uid}</Text>}
+                    {loggedInUser.profile_uid && <Text style={[styles.userInfoText, darkMode && styles.darkUserInfoText]}>Profile UID: {loggedInUser.profile_uid}</Text>}
+                  </View>
+                )}
+              </>
+            )}
+          </View>
+
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size='large' color='#AF52DE' />
+              <Text style={[styles.loadingText, darkMode && styles.darkLoadingText]}>Loading profile...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.errorContainer}>
+              <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>{error}</Text>
+              <Text style={[styles.helloText, darkMode && styles.darkHelloText]}>Hello World</Text>
+            </View>
+          ) : profileData ? (
+            <>
+              <View style={styles.cardContainer}>
+                <MiniCard user={profileData} />
+              </View>
+
+              {/* Form fields for logged-in users */}
+              {isLoggedIn && (
+                <View style={[styles.formContainer, darkMode && styles.darkFormContainer]}>
+                  <Text style={[styles.formTitle, darkMode && styles.darkFormTitle]}>Connection Details</Text>
+
+                  {/* Already Connected indicator */}
+                  {existingRelationship && (
+                    <View style={[styles.alreadyConnectedContainer, darkMode && styles.darkAlreadyConnectedContainer]}>
+                      <Text style={[styles.alreadyConnectedText, darkMode && styles.darkAlreadyConnectedText]}>Already Connected</Text>
+                    </View>
+                  )}
+
+                  {/* Date Time Stamp */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Date Time Stamp:</Text>
+                    <Text style={[styles.fieldValue, darkMode && styles.darkFieldValue]}>{dateTimeStamp ? new Date(dateTimeStamp).toLocaleString() : "Not set"}</Text>
+                  </View>
+
+                  {/* Geo Location */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Geo Location:</Text>
+                    {fetchingLocation ? (
+                      <View style={styles.locationLoading}>
+                        <ActivityIndicator size='small' color='#AF52DE' />
+                        <Text style={[styles.locationText, darkMode && styles.darkLocationText]}>Fetching location...</Text>
+                      </View>
+                    ) : locationError ? (
+                      <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>{locationError}</Text>
+                    ) : latitude !== null && longitude !== null ? (
+                      <Text style={[styles.locationText, darkMode && styles.darkLocationText]}>
+                        Latitude: {latitude.toFixed(6)}, Longitude: {longitude.toFixed(6)}
+                      </Text>
+                    ) : (
+                      <Text style={[styles.locationText, darkMode && styles.darkLocationText]}>Location not available</Text>
+                    )}
+                  </View>
+
+                  {/* Relationship */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Relationship:</Text>
+                    <Dropdown
+                      style={[styles.dropdown, darkMode && styles.darkDropdown]}
+                      data={relationshipOptions}
+                      labelField='label'
+                      valueField='value'
+                      placeholder='Select relationship'
+                      placeholderTextColor={darkMode ? "#666" : "#999"}
+                      value={relationship}
+                      onChange={(item) => setRelationship(item.value)}
+                      containerStyle={[styles.dropdownContainer, darkMode && styles.darkDropdownContainer]}
+                      itemTextStyle={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}
+                      selectedTextStyle={[styles.dropdownSelectedText, darkMode && styles.darkDropdownSelectedText]}
+                      activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                      maxHeight={250}
+                      renderItem={(item) => (
+                        <View style={styles.dropdownItem}>
+                          <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>{item.label}</Text>
+                        </View>
+                      )}
+                      flatListProps={{
+                        nestedScrollEnabled: true,
+                        ItemSeparatorComponent: () => <View style={[styles.dropdownSeparator, darkMode && styles.darkDropdownSeparator]} />,
+                      }}
+                    />
+                  </View>
+
+                  {/* Introduced By */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Introduced By:</Text>
+                    <WebTextInput
+                      style={[styles.textInput, darkMode && styles.darkTextInput]}
+                      value={introducedBy}
+                      onChangeText={setIntroducedBy}
+                      placeholder='Enter who introduced you to this person'
+                      placeholderTextColor={darkMode ? "#666" : "#999"}
+                    />
+                  </View>
+
+                  {/* Meeting Location */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Meeting Location:</Text>
+                    <WebTextInput
+                      style={[styles.textInput, darkMode && styles.darkTextInput]}
+                      value={meetingLocation}
+                      onChangeText={setMeetingLocation}
+                      placeholder='Enter where you met this person'
+                      placeholderTextColor={darkMode ? "#666" : "#999"}
+                    />
+                  </View>
+
+                  {/* Meeting Event */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Meeting Event:</Text>
+                    <WebTextInput
+                      style={[styles.textInput, darkMode && styles.darkTextInput]}
+                      value={meetingEvent}
+                      onChangeText={setMeetingEvent}
+                      placeholder='Enter the event where you met'
+                      placeholderTextColor={darkMode ? "#666" : "#999"}
+                    />
+                  </View>
+
+                  {/* Comments, Notes, Reminder */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Comments, Notes, Reminder:</Text>
+                    <WebTextInput
+                      style={[styles.textArea, darkMode && styles.darkTextInput]}
+                      value={commentsNotes}
+                      onChangeText={setCommentsNotes}
+                      placeholder='Enter any comments, notes, or reminders about this connection'
+                      placeholderTextColor={darkMode ? "#666" : "#999"}
+                      multiline
+                      numberOfLines={4}
+                    />
+                  </View>
+
+                  {/* Continue/Update Button */}
+                  <TouchableOpacity style={[styles.continueButton, darkMode && styles.darkContinueButton, submitting && styles.continueButtonDisabled]} onPress={handleContinue} disabled={submitting}>
+                    {submitting ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.continueButtonText}>{existingRelationship ? "Update" : "Continue"}</Text>}
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          ) : (
+            <View style={styles.content}>
+              <Text style={[styles.helloText, darkMode && styles.darkHelloText]}>Hello World</Text>
+            </View>
+          )}
+        </ScrollView>
+        {isLoggedIn && <BottomNavBar navigation={navigation} />}
+      </SafeAreaView>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  darkContainer: {
+    backgroundColor: "#1a1a1a",
+  },
+  safeArea: {
+    flex: 1,
+  },
+  darkSafeArea: {
+    backgroundColor: "#1a1a1a",
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 120, // Extra padding to ensure content is visible above BottomNavBar
+  },
+  content: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: 400,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: 400,
+  },
+  loadingText: {
+    marginTop: 10,
+    color: "#666",
+  },
+  darkLoadingText: {
+    color: "#aaa",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: 400,
+  },
+  errorText: {
+    color: "red",
+    fontSize: 16,
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  darkErrorText: {
+    color: "#f87171",
+  },
+  cardContainer: {
+    marginTop: 20,
+  },
+  helloText: {
+    fontSize: 32,
+    fontWeight: "bold",
+    color: "#333",
+  },
+  darkHelloText: {
+    color: "#fff",
+  },
+  loginStatusContainer: {
+    backgroundColor: "#f5f5f5",
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  darkLoginStatusContainer: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  loginStatusLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 8,
+  },
+  darkLoginStatusLabel: {
+    color: "#aaa",
+  },
+  loginStatusText: {
+    fontSize: 14,
+    color: "#666",
+  },
+  darkLoginStatusText: {
+    color: "#aaa",
+  },
+  loginStatusBadge: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    alignSelf: "flex-start",
+    marginBottom: 8,
+  },
+  loggedInBadge: {
+    backgroundColor: "#4caf50",
+  },
+  loggedOutBadge: {
+    backgroundColor: "#f44336",
+  },
+  loginStatusBadgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  userInfoContainer: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#e0e0e0",
+  },
+  userInfoText: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 4,
+  },
+  darkUserInfoText: {
+    color: "#aaa",
+  },
+  formContainer: {
+    marginTop: 30,
+    padding: 20,
+    backgroundColor: "#f9f9f9",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  darkFormContainer: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  formTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 20,
+  },
+  darkFormTitle: {
+    color: "#fff",
+  },
+  fieldContainer: {
+    marginBottom: 20,
+  },
+  fieldLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+  },
+  darkFieldLabel: {
+    color: "#ccc",
+  },
+  fieldValue: {
+    fontSize: 14,
+    color: "#666",
+    fontFamily: Platform.OS === "web" ? "monospace" : "monospace",
+  },
+  darkFieldValue: {
+    color: "#aaa",
+  },
+  locationLoading: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  locationText: {
+    fontSize: 14,
+    color: "#666",
+    fontFamily: Platform.OS === "web" ? "monospace" : "monospace",
+  },
+  darkLocationText: {
+    color: "#aaa",
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    backgroundColor: "#fff",
+    color: "#333",
+  },
+  darkTextInput: {
+    backgroundColor: "#1a1a1a",
+    borderColor: "#404040",
+    color: "#fff",
+  },
+  textArea: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    backgroundColor: "#fff",
+    color: "#333",
+    minHeight: 100,
+    textAlignVertical: "top",
+  },
+  continueButton: {
+    backgroundColor: "#FF9500",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    minWidth: 100,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  darkContinueButton: {
+    backgroundColor: "#FF9500",
+  },
+  continueButtonDisabled: {
+    opacity: 0.6,
+  },
+  continueButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  alreadyConnectedContainer: {
+    backgroundColor: "#e8f5e9",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "#4caf50",
+  },
+  darkAlreadyConnectedContainer: {
+    backgroundColor: "#1b5e20",
+    borderColor: "#66bb6a",
+  },
+  alreadyConnectedText: {
+    color: "#2e7d32",
+    fontSize: 16,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  darkAlreadyConnectedText: {
+    color: "#81c784",
+  },
+  dropdown: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: "#fff",
+    minHeight: 48,
+  },
+  darkDropdown: {
+    backgroundColor: "#1a1a1a",
+    borderColor: "#404040",
+  },
+  dropdownContainer: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    backgroundColor: "#fff",
+    zIndex: 1000,
+    ...(Platform.OS === "web" && {
+      boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.1)",
+    }),
+  },
+  darkDropdownContainer: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  dropdownItem: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  dropdownItemText: {
+    fontSize: 16,
+    color: "#333",
+  },
+  darkDropdownItemText: {
+    color: "#fff",
+  },
+  dropdownSelectedText: {
+    fontSize: 16,
+    color: "#333",
+  },
+  darkDropdownSelectedText: {
+    color: "#fff",
+  },
+  dropdownSeparator: {
+    height: 1,
+    backgroundColor: "#e0e0e0",
+  },
+  darkDropdownSeparator: {
+    backgroundColor: "#404040",
+  },
+});
+
+export default NewConnectionScreen;

@@ -310,11 +310,10 @@ const NetworkScreen = ({ navigation }) => {
       };
 
       setUserProfileData(publicData);
-      // Create URL for QR code that redirects to everyCircle.com connect page
-      const baseUrl = "https://everycircle.com"; // Update with your actual domain
-      const connectUrl = `${baseUrl}/connect?profile_uid=${profileUID}`;
-      console.log("🔗 QR Code Redirect URL:", connectUrl);
-      setQrCodeData(connectUrl);
+      // Set QR code to redirect to CNN.com
+      const qrUrl = "https://www.cnn.com";
+      console.log("🔗 QR Code Redirect URL:", qrUrl);
+      setQrCodeData(qrUrl);
     } catch (error) {
       console.error("Error fetching user profile for QR code:", error);
     }
