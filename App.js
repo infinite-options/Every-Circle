@@ -90,11 +90,28 @@ export default function App() {
 
     const initialize = async () => {
       try {
-        // Check user first
-        console.log("App.js - Checking if user in AsyncStorage...");
-        const uid = await AsyncStorage.getItem("user_uid");
-        console.log("App.js - User UID:", uid);
-        if (uid) setInitialRoute("Profile");
+        // On web, check if we're on the /connect path
+        if (isWeb && typeof window !== "undefined") {
+          const path = window.location.pathname;
+          const searchParams = new URLSearchParams(window.location.search);
+          const profileUid = searchParams.get("profile_uid");
+
+          if (path === "/connect" && profileUid) {
+            console.log("App.js - Detected /connect URL with profile_uid:", profileUid);
+            setInitialRoute("Connect");
+          } else {
+            // Check user for other routes
+            const uid = await AsyncStorage.getItem("user_uid");
+            console.log("App.js - User UID:", uid);
+            if (uid) setInitialRoute("Profile");
+          }
+        } else {
+          // Native: Check user first
+          console.log("App.js - Checking if user in AsyncStorage...");
+          const uid = await AsyncStorage.getItem("user_uid");
+          console.log("App.js - User UID:", uid);
+          if (uid) setInitialRoute("Profile");
+        }
 
         // Configure Google Sign-In (only on native platforms)
         if (!isWeb && GoogleSignin) {
@@ -964,10 +981,36 @@ export default function App() {
     console.error("App.js - Error state:", error);
   }
 
+  // Configure linking for web URL routing
+  const linking = {
+    prefixes: ["everycircle://", "https://everycircle.com", "http://everycircle.com"],
+    config: {
+      screens: {
+        Home: "",
+        Connect: {
+          path: "connect",
+          parse: {
+            profile_uid: (profile_uid) => profile_uid,
+          },
+        },
+        Login: "login",
+        SignUp: "signup",
+        Profile: "profile",
+        Network: "network",
+        Search: "search",
+        Settings: "settings",
+      },
+    },
+  };
+
   return (
     <TextNodeErrorBoundary>
       <DarkModeProvider>
-        <NavigationContainer onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={() => console.log("App.js - Navigation state changed")}>
+        <NavigationContainer
+          linking={isWeb ? linking : undefined}
+          onReady={() => console.log("App.js - NavigationContainer ready")}
+          onStateChange={() => console.log("App.js - Navigation state changed")}
+        >
           <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
             <Stack.Screen name='Home' component={HomeScreen} />
             <Stack.Screen

@@ -196,7 +196,7 @@ const ConnectWebScreen = () => {
           ) : (
             <>
               <Text style={[styles.title, darkMode && styles.darkTitle]}>Connect with {profileData.firstName}</Text>
-              <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Add this person to your network</Text>
+              <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>View their contact information below</Text>
 
               <View style={styles.cardContainer}>
                 <MiniCard user={profileData} />
@@ -208,6 +208,13 @@ const ConnectWebScreen = () => {
                   onPress={() => (Platform.OS === "web" && typeof window !== "undefined" ? (window.location.href = "/SignUp") : navigation.navigate("SignUp"))}
                 >
                   <Text style={styles.primaryButtonText}>Sign Up for EveryCircle</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.secondaryButton, styles.loginButton]}
+                  onPress={() => (Platform.OS === "web" && typeof window !== "undefined" ? (window.location.href = "/Login") : navigation.navigate("Login"))}
+                >
+                  <Text style={[styles.secondaryButtonText, darkMode && styles.darkSecondaryButtonText]}>Login to EveryCircle</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.secondaryButton} onPress={downloadVCard}>
@@ -336,6 +343,9 @@ const styles = StyleSheet.create({
   },
   darkSecondaryButtonText: {
     color: "#a78bfa",
+  },
+  loginButton: {
+    marginTop: 0,
   },
   linkButton: {
     paddingVertical: 12,
