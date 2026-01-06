@@ -508,32 +508,6 @@ const ProfileScreen = ({ route, navigation }) => {
     return null;
   };
 
-  // Format date from YYYY-MM-DD to readable format
-  const formatCircleDate = (dateString) => {
-    if (!dateString) return null;
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-    } catch (error) {
-      console.error("Error formatting date:", error);
-      return dateString; // Return original if parsing fails
-    }
-  };
-
-  // Format geotag from "latitude,longitude" to "Latitude: X, Longitude: Y"
-  const formatCircleGeotag = (geotag) => {
-    if (!geotag) return null;
-    try {
-      const [lat, lon] = geotag.split(",");
-      if (lat && lon) {
-        return `Latitude: ${parseFloat(lat).toFixed(6)}, Longitude: ${parseFloat(lon).toFixed(6)}`;
-      }
-    } catch (error) {
-      console.error("Error formatting geotag:", error);
-    }
-    return null;
-  };
-
   const handleRelationshipSelect = async (relationship) => {
     console.log("============================================");
     console.log("ProfileScreen - handleRelationshipSelect CALLED");
@@ -734,11 +708,11 @@ const ProfileScreen = ({ route, navigation }) => {
         </TouchableWithoutFeedback>
       )}
       {/* Header */}
-      <AppHeader
-        title={isCurrentUserProfile ? "Your Profile" : "Profile"}
-        {...(routeProfileUID && !isCurrentUserProfile ? getHeaderColors("profileView") : getHeaderColors("profile"))}
-        onTitlePress={() => setShowFeedbackPopup(true)}
-        onBackPress={
+      <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
+        <AppHeader
+          title={isCurrentUserProfile ? "Your Profile" : "Profile"}
+          {...(routeProfileUID && !isCurrentUserProfile ? getHeaderColors("profileView") : getHeaderColors("profile"))}
+          onBackPress={
             routeProfileUID && !isCurrentUserProfile
               ? () => {
                   // Navigate back to the screen we came from with preserved state
@@ -807,29 +781,14 @@ const ProfileScreen = ({ route, navigation }) => {
                 <Image source={require("../assets/Edit.png")} style={[styles.editIcon, darkMode && styles.darkEditIcon]} tintColor={darkMode ? "#fff" : "#fff"} />
               </TouchableOpacity>
             ) : routeProfileUID && !isCurrentUserProfile ? (
-              <View style={styles.dropdownWrapper} pointerEvents="box-none">
+              <View style={styles.dropdownWrapper}>
                 <Pressable
                   style={styles.addButton}
                   {...(isWeb && { "data-dropdown-button": true })}
-                  onPress={(e) => {
+                  onPress={() => {
                     console.log("Dropdown button clicked for profile:", profileUID);
-                    // Stop event propagation to prevent parent TouchableOpacity from handling it
-                    if (e?.stopPropagation) {
-                      e.stopPropagation();
-                    }
-                    if (Platform.OS === "web" && e?.nativeEvent) {
-                      e.nativeEvent.stopPropagation?.();
-                    }
                     setShowRelationshipDropdown(!showRelationshipDropdown);
                   }}
-                  onPressIn={(e) => {
-                    // Also stop propagation on press in to prevent parent from capturing
-                    if (e?.stopPropagation) {
-                      e.stopPropagation();
-                    }
-                  }}
-                  onStartShouldSetResponder={() => true}
-                  onResponderTerminationRequest={() => false}
                 >
                   <Ionicons name='chevron-down' size={28} color='#fff' />
                 </Pressable>
@@ -896,6 +855,7 @@ const ProfileScreen = ({ route, navigation }) => {
             ) : null
           }
         />
+      </TouchableOpacity>
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView
@@ -936,45 +896,6 @@ const ProfileScreen = ({ route, navigation }) => {
               return null;
             })()}
             {(() => {
-              // Display circle details when viewing another user's profile and relationship exists
-              if (routeProfileUID && !isCurrentUserProfile && existingRelationship) {
-                const circleDetails = [];
-                
-                // Format and add date if available
-                const formattedDate = formatCircleDate(existingRelationship.circle_date);
-                if (formattedDate) {
-                  circleDetails.push(<Text key="date" style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>Date: {formattedDate}</Text>);
-                }
-                
-                // Add event if available
-                if (existingRelationship.circle_event) {
-                  circleDetails.push(<Text key="event" style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>Event: {existingRelationship.circle_event}</Text>);
-                }
-                
-                // Add note if available
-                if (existingRelationship.circle_note) {
-                  circleDetails.push(<Text key="note" style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>Note: {existingRelationship.circle_note}</Text>);
-                }
-                
-                // Format and add geotag if available
-                const formattedGeotag = formatCircleGeotag(existingRelationship.circle_geotag);
-                if (formattedGeotag) {
-                  circleDetails.push(<Text key="geotag" style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>Location: {formattedGeotag}</Text>);
-                }
-                
-                // Add introduced_by if available
-                if (existingRelationship.circle_introduced_by) {
-                  circleDetails.push(<Text key="introduced_by" style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>Introduced By: {existingRelationship.circle_introduced_by}</Text>);
-                }
-                
-                // Return View with all circle details if any exist
-                if (circleDetails.length > 0) {
-                  return <View>{circleDetails}</View>;
-                }
-              }
-              return null;
-            })()}
-            {(() => {
               const tagLine = user.tagLine && (isCurrentUserProfile || user.tagLineIsPublic) ? sanitizeText(user.tagLine) : "";
               return tagLine ? <Text style={[styles.tagline, darkMode && styles.darkTagline]}>{tagLine}</Text> : null;
             })()}
@@ -1006,7 +927,8 @@ const ProfileScreen = ({ route, navigation }) => {
           />
 
           {/* Only show Experience section if there are public experiences, or if viewing own profile */}
-          {(isCurrentUserProfile || (user.experience && user.experience.filter((exp) => exp.isPublic).length > 0)) && (
+          {/*{(isCurrentUserProfile || (user.experience && user.experience.filter((exp) => exp.isPublic).length > 0)) && ( */}
+          {user.experienceIsPublic && (
             <View style={styles.fieldContainer}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Experience:</Text>
               {user.experience && user.experience.filter((exp) => exp.isPublic).length > 0 ? (
@@ -1039,7 +961,8 @@ const ProfileScreen = ({ route, navigation }) => {
           )}
 
           {/* Only show Education section if there are public education entries, or if viewing own profile */}
-          {(isCurrentUserProfile || (user.education && user.education.filter((edu) => edu.isPublic).length > 0)) && (
+          {/*{(isCurrentUserProfile || (user.education && user.education.filter((edu) => edu.isPublic).length > 0)) && ( */}
+          {user.educationIsPublic && (
             <View style={styles.fieldContainer}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Education:</Text>
               {user.education && user.education.filter((edu) => edu.isPublic).length > 0 ? (
@@ -1063,7 +986,8 @@ const ProfileScreen = ({ route, navigation }) => {
           )}
 
           {/* Only show Expertise section if there are public expertise entries, or if viewing own profile */}
-          {(isCurrentUserProfile || (user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0)) && (
+          {/*{(isCurrentUserProfile || (user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0)) && ( */}
+          {user.expertiseIsPublic && (
             <View style={styles.fieldContainer}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Expertise:</Text>
               {user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0 ? (
