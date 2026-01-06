@@ -136,9 +136,25 @@ export default function BusinessStep2({ formData, setFormData, navigation }) {
     }
   };
 
+  // const addTag = () => {
+  //   if (customTag.trim()) {
+  //     const updatedTags = [...customTags, customTag.trim()];
+  //     setCustomTags(updatedTags);
+  //     setFormData((prev) => ({ ...prev, customTags: updatedTags }));
+  //     AsyncStorage.setItem("businessFormData", JSON.stringify({ ...formData, customTags: updatedTags })).catch((err) => console.error("Save error", err));
+  //     setCustomTag("");
+  //   }
+  // };
+
   const addTag = () => {
     if (customTag.trim()) {
-      const updatedTags = [...customTags, customTag.trim()];
+      // Split by comma and trim each tag
+      const newTags = customTag
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(tag => tag.length > 0); // Remove empty strings
+      
+      const updatedTags = [...customTags, ...newTags];
       setCustomTags(updatedTags);
       setFormData((prev) => ({ ...prev, customTags: updatedTags }));
       AsyncStorage.setItem("businessFormData", JSON.stringify({ ...formData, customTags: updatedTags })).catch((err) => console.error("Save error", err));
