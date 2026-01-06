@@ -1153,7 +1153,8 @@ const ProfileScreen = ({ route, navigation }) => {
           )}
 
           {/* Only show Seeking section if there are public wishes, or if viewing own profile */}
-          {(isCurrentUserProfile || (user.wishes && user.wishes.filter((wish) => wish.isPublic).length > 0)) && (
+          {/*{(isCurrentUserProfile || (user.wishes && user.wishes.filter((wish) => wish.isPublic).length > 0)) && ( */}
+          {user.wishesIsPublic && (
             <View style={styles.fieldContainer}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Seeking:</Text>
               {user.wishes && user.wishes.filter((wish) => wish.isPublic).length > 0 ? (
@@ -1272,7 +1273,8 @@ const ProfileScreen = ({ route, navigation }) => {
           )}
 
           {/* Only show Businesses section if there are businesses, or if viewing own profile */}
-          {(isCurrentUserProfile || (businessesData && businessesData.length > 0)) && (
+          {/*{(isCurrentUserProfile || (businessesData && businessesData.length > 0)) && ( */}
+          {user.businessesIsPublic && (
             <View style={styles.fieldContainer}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Businesses:</Text>
               {businessesData && businessesData.length > 0 ? (
