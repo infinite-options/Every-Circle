@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Keyboard, UIManager, findNodeHandle } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Dropdown } from "react-native-element-dropdown";
@@ -20,9 +20,6 @@ export default function EditBusinessProfileScreen({ route, navigation }) {
   const { business, business_users } = route.params || {};
   const [businessUID, setBusinessUID] = useState(business?.business_uid || "");
   const scrollViewRef = useRef(null);
-
-  // Validation state
-  const isValid = formData.name.trim() && businessUID.trim();
 
   const [formData, setFormData] = useState({
     name: business?.business_name || "",
@@ -97,6 +94,11 @@ export default function EditBusinessProfileScreen({ route, navigation }) {
     taglineIsPublic: business?.business_tag_line_is_public === "1" || business?.tagline_is_public === "1" || business?.taglineIsPublic === true,
     shortBioIsPublic: business?.business_short_bio_is_public === "1" || business?.short_bio_is_public === "1" || business?.shortBioIsPublic === true,
   });
+
+  // Validation state - computed after formData is initialized
+  const isValid = useMemo(() => {
+    return formData.name.trim() && businessUID.trim();
+  }, [formData.name, businessUID]);
 
   const [customTagInput, setCustomTagInput] = useState("");
   const [additionalBusinessUsers, setAdditionalBusinessUsers] = useState([]);
