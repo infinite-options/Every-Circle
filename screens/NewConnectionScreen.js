@@ -284,21 +284,27 @@ const NewConnectionScreen = () => {
       const userUid = await AsyncStorage.getItem("user_uid");
       const profileUid = await AsyncStorage.getItem("profile_uid");
 
+      console.log("NewConnectionScreen - checkLoginStatus - userUid:", userUid, "profileUid:", profileUid);
+
       if (userUid || profileUid) {
         setIsLoggedIn(true);
         setLoggedInUser({
           user_uid: userUid,
           profile_uid: profileUid,
         });
+        console.log("NewConnectionScreen - User is logged in");
       } else {
         setIsLoggedIn(false);
         setLoggedInUser(null);
+        console.log("NewConnectionScreen - User is NOT logged in");
       }
     } catch (err) {
       console.error("Error checking login status:", err);
       setIsLoggedIn(false);
+      setLoggedInUser(null);
     } finally {
       setCheckingLogin(false);
+      console.log("NewConnectionScreen - checkLoginStatus complete, checkingLogin:", false, "isLoggedIn:", isLoggedIn);
     }
   };
 
@@ -454,26 +460,35 @@ const NewConnectionScreen = () => {
               </View>
 
               {/* Login/SignUp buttons for non-logged-in users */}
-              {!isLoggedIn && (
-                <View style={[styles.authContainer, darkMode && styles.darkAuthContainer]}>
-                  <Text style={[styles.authTitle, darkMode && styles.darkAuthTitle]}>Connect with {profileData.firstName}</Text>
-                  <Text style={[styles.authSubtitle, darkMode && styles.darkAuthSubtitle]}>Sign in or create an account to add this person to your network</Text>
+              {(() => {
+                const shouldShowAuth = !checkingLogin && !isLoggedIn;
+                console.log("NewConnectionScreen - Render check:", {
+                  checkingLogin,
+                  isLoggedIn,
+                  shouldShowAuth,
+                  hasProfileData: !!profileData,
+                });
+                return shouldShowAuth ? (
+                  <View style={[styles.authContainer, darkMode && styles.darkAuthContainer]}>
+                    <Text style={[styles.authTitle, darkMode && styles.darkAuthTitle]}>Connect with {profileData.firstName}</Text>
+                    <Text style={[styles.authSubtitle, darkMode && styles.darkAuthSubtitle]}>Sign in or create an account to add this person to your network</Text>
 
-                  <TouchableOpacity
-                    style={[styles.authButton, styles.loginButton, darkMode && styles.darkLoginButton]}
-                    onPress={() => navigation.navigate("Login", { returnToNewConnection: true, profile_uid: profileUid })}
-                  >
-                    <Text style={styles.authButtonText}>Login</Text>
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.authButton, styles.loginButton, darkMode && styles.darkLoginButton]}
+                      onPress={() => navigation.navigate("Login", { returnToNewConnection: true, profile_uid: profileUid })}
+                    >
+                      <Text style={styles.authButtonText}>Login</Text>
+                    </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={[styles.authButton, styles.signupButton, darkMode && styles.darkSignupButton]}
-                    onPress={() => navigation.navigate("SignUp", { referralProfileUid: profileUid, returnToNewConnection: true, profile_uid: profileUid })}
-                  >
-                    <Text style={styles.authButtonText}>Sign Up</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+                    <TouchableOpacity
+                      style={[styles.authButton, styles.signupButton, darkMode && styles.darkSignupButton]}
+                      onPress={() => navigation.navigate("SignUp", { referralProfileUid: profileUid, returnToNewConnection: true, profile_uid: profileUid })}
+                    >
+                      <Text style={styles.authButtonText}>Sign Up</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null;
+              })()}
 
               {/* Form fields for logged-in users */}
               {isLoggedIn && (

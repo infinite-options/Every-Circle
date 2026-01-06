@@ -311,8 +311,10 @@ const NetworkScreen = ({ navigation }) => {
       };
 
       setUserProfileData(publicData);
-      // Set QR code to redirect to CNN.com
-      const qrUrl = "https://www.cnn.com";
+      // Set QR code to redirect to /newconnection/{profile_uid}
+      // Always use production domain so QR codes work for anyone who scans them
+      // When opened in the EveryCircle app, deep linking will navigate to NewConnection screen
+      const qrUrl = `https://everycircle.com/newconnection/${profileUID}`;
       console.log("🔗 QR Code Redirect URL:", qrUrl);
       setQrCodeData(qrUrl);
     } catch (error) {
