@@ -234,13 +234,23 @@ export default function UserInfoScreen({ navigation, route }) {
 
       console.log("Profile update successful, proceeding to next screen");
 
-      // navigate to account type screen
-      Alert.alert("Success", "Profile saved successfully!");
-      console.log("UserInfoScreen - Navigating to AccountType with:", { user_uid: userUid, email: email });
-      navigation.navigate("AccountType", {
-        user_uid: userUid,
-        email: email,
-      });
+      // Check if we should redirect back to NewConnection screen
+      if (route?.params?.returnToNewConnection && route?.params?.profile_uid) {
+        // Navigate back to NewConnection screen with profile_uid
+        Alert.alert("Success", "Profile saved successfully!");
+        console.log("UserInfoScreen - Navigating to NewConnection with profile_uid:", route.params.profile_uid);
+        navigation.navigate("NewConnection", {
+          profile_uid: route.params.profile_uid,
+        });
+      } else {
+        // navigate to account type screen
+        Alert.alert("Success", "Profile saved successfully!");
+        console.log("UserInfoScreen - Navigating to AccountType with:", { user_uid: userUid, email: email });
+        navigation.navigate("AccountType", {
+          user_uid: userUid,
+          email: email,
+        });
+      }
     } catch (error) {
       console.error("Error updating user profile:", error);
       Alert.alert("Error", `Failed to update profile: ${error.message}`);

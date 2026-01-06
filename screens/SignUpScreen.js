@@ -58,9 +58,21 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   useEffect(() => {
     if (route.params?.appleUserInfo) {
       setPendingAppleUserInfo(route.params.appleUserInfo);
-      setShowReferralModal(true);
+      // Skip referral modal if referralProfileUid is provided
+      if (route.params?.referralProfileUid) {
+        // Use the referral profile UID directly and skip modal
+        AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
+        navigation.navigate("UserInfo", {
+          appleUserInfo: route.params.appleUserInfo,
+          referralId: route.params.referralProfileUid,
+          returnToNewConnection: route.params?.returnToNewConnection,
+          profile_uid: route.params?.profile_uid,
+        });
+      } else {
+        setShowReferralModal(true);
+      }
     }
-  }, [route.params?.appleUserInfo]);
+  }, [route.params?.appleUserInfo, route.params?.referralProfileUid]);
 
   const validateInputs = useCallback(
     (email, password, confirmPassword) => {
@@ -146,16 +158,24 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           navigation.navigate("UserInfo", {
             googleUserInfo: pendingGoogleUserInfo,
             referralId: foundReferralUid,
+            returnToNewConnection: route.params?.returnToNewConnection,
+            profile_uid: route.params?.profile_uid,
           });
           setPendingGoogleUserInfo(null);
         } else if (pendingAppleUserInfo) {
           navigation.navigate("UserInfo", {
             appleUserInfo: pendingAppleUserInfo,
             referralId: foundReferralUid,
+            returnToNewConnection: route.params?.returnToNewConnection,
+            profile_uid: route.params?.profile_uid,
           });
           setPendingAppleUserInfo(null);
         } else if (pendingRegularSignup) {
-          navigation.navigate("UserInfo", { referralId: foundReferralUid });
+          navigation.navigate("UserInfo", {
+            referralId: foundReferralUid,
+            returnToNewConnection: route.params?.returnToNewConnection,
+            profile_uid: route.params?.profile_uid,
+          });
           setPendingRegularSignup(false);
         }
       } else {
@@ -177,16 +197,24 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       navigation.navigate("UserInfo", {
         googleUserInfo: pendingGoogleUserInfo,
         referralId: selectedUid,
+        returnToNewConnection: route.params?.returnToNewConnection,
+        profile_uid: route.params?.profile_uid,
       });
       setPendingGoogleUserInfo(null);
     } else if (pendingAppleUserInfo) {
       navigation.navigate("UserInfo", {
         appleUserInfo: pendingAppleUserInfo,
         referralId: selectedUid,
+        returnToNewConnection: route.params?.returnToNewConnection,
+        profile_uid: route.params?.profile_uid,
       });
       setPendingAppleUserInfo(null);
     } else if (pendingRegularSignup) {
-      navigation.navigate("UserInfo", { referralId: selectedUid });
+      navigation.navigate("UserInfo", {
+        referralId: selectedUid,
+        returnToNewConnection: route.params?.returnToNewConnection,
+        profile_uid: route.params?.profile_uid,
+      });
       setPendingRegularSignup(false);
     }
   };
@@ -202,16 +230,24 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       navigation.navigate("UserInfo", {
         googleUserInfo: pendingGoogleUserInfo,
         referralId: newUserReferralId,
+        returnToNewConnection: route.params?.returnToNewConnection,
+        profile_uid: route.params?.profile_uid,
       });
       setPendingGoogleUserInfo(null);
     } else if (pendingAppleUserInfo) {
       navigation.navigate("UserInfo", {
         appleUserInfo: pendingAppleUserInfo,
         referralId: newUserReferralId,
+        returnToNewConnection: route.params?.returnToNewConnection,
+        profile_uid: route.params?.profile_uid,
       });
       setPendingAppleUserInfo(null);
     } else if (pendingRegularSignup) {
-      navigation.navigate("UserInfo", { referralId: newUserReferralId });
+      navigation.navigate("UserInfo", {
+        referralId: newUserReferralId,
+        returnToNewConnection: route.params?.returnToNewConnection,
+        profile_uid: route.params?.profile_uid,
+      });
       setPendingRegularSignup(false);
     }
   };
@@ -245,8 +281,22 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           await AsyncStorage.setItem("user_uid", result.user_uid);
           await AsyncStorage.setItem("user_email_id", googleUserInfo.email);
           setPendingGoogleUserInfo(googleUserInfo);
-          setShowReferralModal(true);
-          console.log("Setting referral modal to true, should show now");
+
+          // Skip referral modal if referralProfileUid is provided
+          if (route.params?.referralProfileUid) {
+            // Use the referral profile UID directly and skip modal
+            await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
+            navigation.navigate("UserInfo", {
+              googleUserInfo: googleUserInfo,
+              referralId: route.params.referralProfileUid,
+              returnToNewConnection: route.params?.returnToNewConnection,
+              profile_uid: route.params?.profile_uid,
+            });
+            setPendingGoogleUserInfo(null);
+          } else {
+            setShowReferralModal(true);
+            console.log("Setting referral modal to true, should show now");
+          }
         } else {
           throw new Error("Failed to create account");
         }
@@ -393,7 +443,20 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           await AsyncStorage.setItem("user_uid", createAccountData.user_uid);
           await AsyncStorage.setItem("user_email_id", email);
           setPendingRegularSignup(true);
-          setShowReferralModal(true);
+
+          // Skip referral modal if referralProfileUid is provided
+          if (route.params?.referralProfileUid) {
+            // Use the referral profile UID directly and skip modal
+            await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
+            navigation.navigate("UserInfo", {
+              referralId: route.params.referralProfileUid,
+              returnToNewConnection: route.params?.returnToNewConnection,
+              profile_uid: route.params?.profile_uid,
+            });
+            setPendingRegularSignup(false);
+          } else {
+            setShowReferralModal(true);
+          }
         } else {
           throw new Error("Failed to create account");
         }
@@ -409,125 +472,125 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       <AppHeader title='Sign Up' {...getHeaderColors("signUp")} onBackPress={() => navigation.goBack()} />
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.contentContainer}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Welcome to Every Circle!</Text>
-          <Text style={styles.subtitle}>{isGoogleSignUp ? "Complete your sign up" : "Please create your account to continue."}</Text>
-        </View>
-
-        <View style={styles.inputContainer}>
-          <View style={styles.fieldContainer}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput style={styles.input} placeholder='Email' value={email} onChangeText={handleEmailChange} keyboardType='email-address' autoCapitalize='none' editable={!isGoogleSignUp} />
+          <View style={styles.header}>
+            <Text style={styles.title}>Welcome to Every Circle!</Text>
+            <Text style={styles.subtitle}>{isGoogleSignUp ? "Complete your sign up" : "Please create your account to continue."}</Text>
           </View>
+
+          <View style={styles.inputContainer}>
+            <View style={styles.fieldContainer}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput style={styles.input} placeholder='Email' value={email} onChangeText={handleEmailChange} keyboardType='email-address' autoCapitalize='none' editable={!isGoogleSignUp} />
+            </View>
+            {!isGoogleSignUp && (
+              <>
+                <View style={styles.fieldContainer}>
+                  <Text style={styles.label}>Password</Text>
+                  <View style={styles.passwordInputContainer}>
+                    <TextInput style={styles.input} placeholder='Password' value={password} onChangeText={handlePasswordChange} secureTextEntry={!isPasswordVisible} autoCapitalize='none' />
+                    <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
+                      <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <View style={styles.fieldContainer}>
+                  <Text style={styles.label}>Confirm Password</Text>
+                  <View style={styles.passwordInputContainer}>
+                    <TextInput
+                      style={styles.input}
+                      placeholder='Confirm Password'
+                      value={confirmPassword}
+                      onChangeText={handleConfirmPasswordChange}
+                      secureTextEntry={!isConfirmPasswordVisible}
+                      autoCapitalize='none'
+                    />
+                    <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}>
+                      <Ionicons name={isConfirmPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                {!!userExistsError && <Text style={styles.userExistsErrorText}>{userExistsError}</Text>}
+              </>
+            )}
+          </View>
+
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]} onPress={handleContinue} disabled={!isValid || isAttemptingLogin}>
+              {isAttemptingLogin ? (
+                <ActivityIndicator color='#fff' />
+              ) : (
+                <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : styles.continueButtonTextDisabled]}>{isGoogleSignUp ? "Complete Sign Up" : "Continue"}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
           {!isGoogleSignUp && (
             <>
-              <View style={styles.fieldContainer}>
-                <Text style={styles.label}>Password</Text>
-                <View style={styles.passwordInputContainer}>
-                  <TextInput style={styles.input} placeholder='Password' value={password} onChangeText={handlePasswordChange} secureTextEntry={!isPasswordVisible} autoCapitalize='none' />
-                  <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
-                    <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
-                  </TouchableOpacity>
-                </View>
+              <View style={styles.dividerContainer}>
+                <View style={styles.divider} />
+                <Text style={styles.dividerText}>OR</Text>
+                <View style={styles.divider} />
               </View>
-              <View style={styles.fieldContainer}>
-                <Text style={styles.label}>Confirm Password</Text>
-                <View style={styles.passwordInputContainer}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder='Confirm Password'
-                    value={confirmPassword}
-                    onChangeText={handleConfirmPasswordChange}
-                    secureTextEntry={!isConfirmPasswordVisible}
-                    autoCapitalize='none'
-                  />
-                  <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}>
-                    <Ionicons name={isConfirmPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
+
+              <View style={styles.socialContainer}>
+                {GoogleSigninButton && !isWeb ? (
+                  <GoogleSigninButton style={styles.googleButton} size={GoogleSigninButton.Size.Wide} color={GoogleSigninButton.Color.Dark} onPress={onGoogleSignUp} />
+                ) : (
+                  <TouchableOpacity style={styles.googleButton} onPress={onGoogleSignUp}>
+                    <Text style={styles.googleButtonText}>Sign up with Google</Text>
                   </TouchableOpacity>
-                </View>
+                )}
+                <AppleSignIn onSignIn={onAppleSignUp} onError={onError} buttonText='Sign up with Apple' />
               </View>
-              {!!userExistsError && <Text style={styles.userExistsErrorText}>{userExistsError}</Text>}
             </>
           )}
-        </View>
 
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]} onPress={handleContinue} disabled={!isValid || isAttemptingLogin}>
-            {isAttemptingLogin ? (
-              <ActivityIndicator color='#fff' />
-            ) : (
-              <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : styles.continueButtonTextDisabled]}>{isGoogleSignUp ? "Complete Sign Up" : "Continue"}</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {!isGoogleSignUp && (
-          <>
-            <View style={styles.dividerContainer}>
-              <View style={styles.divider} />
-              <Text style={styles.dividerText}>OR</Text>
-              <View style={styles.divider} />
-            </View>
-
-            <View style={styles.socialContainer}>
-              {GoogleSigninButton && !isWeb ? (
-                <GoogleSigninButton style={styles.googleButton} size={GoogleSigninButton.Size.Wide} color={GoogleSigninButton.Color.Dark} onPress={onGoogleSignUp} />
-              ) : (
-                <TouchableOpacity style={styles.googleButton} onPress={onGoogleSignUp}>
-                  <Text style={styles.googleButtonText}>Sign up with Google</Text>
-                </TouchableOpacity>
-              )}
-              <AppleSignIn onSignIn={onAppleSignUp} onError={onError} buttonText='Sign up with Apple' />
-            </View>
-          </>
-        )}
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Already have an account?{" "}
-            <Text style={styles.logInText} onPress={() => navigation.navigate("Login")}>
-              Log In
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              Already have an account?{" "}
+              <Text style={styles.logInText} onPress={() => navigation.navigate("Login")}>
+                Log In
+              </Text>
             </Text>
-          </Text>
-        </View>
-
-        {/* Referral Modal */}
-        <Modal visible={showReferralModal} transparent animationType='fade'>
-          <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)" }}>
-            <View style={{ backgroundColor: "#fff", padding: 24, borderRadius: 12, width: "90%", maxWidth: 500, maxHeight: "80%" }}>
-              <Text style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>Who referred you to Every Circle?</Text>
-
-              {/* Email Input Section */}
-              <TextInput
-                style={{ borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, marginBottom: 8 }}
-                placeholder='Enter referral email (optional)'
-                value={referralId}
-                onChangeText={setReferralId}
-                keyboardType='email-address'
-                autoCapitalize='none'
-                editable={!isCheckingReferral}
-              />
-              {!!referralError && <Text style={{ color: "red", marginBottom: 8 }}>{referralError}</Text>}
-              <TouchableOpacity
-                style={{ backgroundColor: "#FF9500", paddingVertical: 12, paddingHorizontal: 30, borderRadius: 25, minWidth: 100, alignItems: "center", justifyContent: "center", marginBottom: 12 }}
-                onPress={handleReferralSubmit}
-                disabled={isCheckingReferral}
-              >
-                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 16 }}>{isCheckingReferral ? "Checking..." : "Continue"}</Text>
-              </TouchableOpacity>
-
-              {/* Divider */}
-              <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 16 }}>
-                <View style={{ flex: 1, height: 1, backgroundColor: "#E5E5E5" }} />
-                <Text style={{ marginHorizontal: 10, color: "#666", fontSize: 14 }}>OR SEARCH</Text>
-                <View style={{ flex: 1, height: 1, backgroundColor: "#E5E5E5" }} />
-              </View>
-
-              {/* Search Section - Embed ReferralSearch content here */}
-              <ReferralSearch visible={true} onSelect={handleReferralSelect} onNewUser={handleNewUserReferral} onClose={() => setShowReferralModal(false)} embedded={true} />
-            </View>
           </View>
-        </Modal>
+
+          {/* Referral Modal */}
+          <Modal visible={showReferralModal} transparent animationType='fade'>
+            <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.5)" }}>
+              <View style={{ backgroundColor: "#fff", padding: 24, borderRadius: 12, width: "90%", maxWidth: 500, maxHeight: "80%" }}>
+                <Text style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>Who referred you to Every Circle?</Text>
+
+                {/* Email Input Section */}
+                <TextInput
+                  style={{ borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, marginBottom: 8 }}
+                  placeholder='Enter referral email (optional)'
+                  value={referralId}
+                  onChangeText={setReferralId}
+                  keyboardType='email-address'
+                  autoCapitalize='none'
+                  editable={!isCheckingReferral}
+                />
+                {!!referralError && <Text style={{ color: "red", marginBottom: 8 }}>{referralError}</Text>}
+                <TouchableOpacity
+                  style={{ backgroundColor: "#FF9500", paddingVertical: 12, paddingHorizontal: 30, borderRadius: 25, minWidth: 100, alignItems: "center", justifyContent: "center", marginBottom: 12 }}
+                  onPress={handleReferralSubmit}
+                  disabled={isCheckingReferral}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 16 }}>{isCheckingReferral ? "Checking..." : "Continue"}</Text>
+                </TouchableOpacity>
+
+                {/* Divider */}
+                <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 16 }}>
+                  <View style={{ flex: 1, height: 1, backgroundColor: "#E5E5E5" }} />
+                  <Text style={{ marginHorizontal: 10, color: "#666", fontSize: 14 }}>OR SEARCH</Text>
+                  <View style={{ flex: 1, height: 1, backgroundColor: "#E5E5E5" }} />
+                </View>
+
+                {/* Search Section - Embed ReferralSearch content here */}
+                <ReferralSearch visible={true} onSelect={handleReferralSelect} onNewUser={handleNewUserReferral} onClose={() => setShowReferralModal(false)} embedded={true} />
+              </View>
+            </View>
+          </Modal>
         </ScrollView>
       </SafeAreaView>
     </View>

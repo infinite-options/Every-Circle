@@ -7,7 +7,7 @@ import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useFocusEffect } from "@react-navigation/native";
-import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
 import MiniCard from "../components/MiniCard";
 import WebTextInput from "../components/WebTextInput";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
@@ -52,6 +52,7 @@ const NetworkScreen = ({ navigation }) => {
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
   const [graphHtml, setGraphHtml] = useState(""); // For web iframe
   const iframeContainerRef = React.useRef(null); // Ref for web iframe container
+  const [activeView, setActiveView] = useState("connections"); // "connections" or "circles" - default to connections
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -468,6 +469,7 @@ const NetworkScreen = ({ navigation }) => {
 
   const fetchNetwork = async (overrideProfileUid = null, overrideDegree = null) => {
     console.log("🔘 Fetch Network");
+    setActiveView("connections");
 
     try {
       // Get UID from AsyncStorage or use override
@@ -578,6 +580,148 @@ const NetworkScreen = ({ navigation }) => {
     } catch (err) {
       console.error("❌ Fetch failed:", err);
       setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCircle = async () => {
+    console.log("🔘 Fetch Circle");
+    setActiveView("circles");
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Get UID from AsyncStorage
+      let uid = null;
+      try {
+        const directUid = await AsyncStorage.getItem("profile_uid");
+        if (directUid) {
+          try {
+            const parsed = JSON.parse(directUid);
+            uid = typeof parsed === "string" ? parsed : String(parsed);
+          } catch (e) {
+            uid = String(directUid).trim();
+          }
+        } else {
+          uid = profileUid;
+        }
+      } catch (e) {
+        uid = profileUid;
+      }
+
+      uid = String(uid || "").trim();
+
+      if (!uid) {
+        throw new Error("No profile UID available");
+      }
+
+      console.log("Fetching circles for UID:", uid);
+
+      // CORS handling for web
+      const fetchOptions =
+        Platform.OS === "web"
+          ? {
+              method: "GET",
+              mode: "cors",
+              credentials: "omit",
+              headers: { "Content-Type": "application/json", Accept: "application/json" },
+              cache: "no-cache",
+            }
+          : {
+              method: "GET",
+              headers: { "Content-Type": "application/json", Accept: "application/json" },
+            };
+
+      // Fetch circles for the user
+      const response = await fetch(`${CIRCLES_ENDPOINT}/${uid}`, fetchOptions);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log("✅ Received circles response:", result);
+
+      // Check if result has data array
+      if (result && result.data && Array.isArray(result.data)) {
+        const circles = result.data;
+        console.log("✅ Received", circles.length, "circles");
+
+        // For circles, we need to fetch profile info for each circle_related_person_id
+        const formatted = await Promise.all(
+          circles.map(async (circle) => {
+            try {
+              // Fetch profile info for the related person
+              const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${circle.circle_related_person_id}`);
+              if (profileResponse.ok) {
+                const apiUser = await profileResponse.json();
+                const p = apiUser?.personal_info || {};
+                return {
+                  ...circle,
+                  __mc: {
+                    firstName: sanitizeText(p.profile_personal_first_name || ""),
+                    lastName: sanitizeText(p.profile_personal_last_name || ""),
+                    tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || ""),
+                    city: sanitizeText(p.profile_personal_city || ""),
+                    state: sanitizeText(p.profile_personal_state || ""),
+                    phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+                    profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
+                    relationship: circle.circle_relationship || null,
+                    emailIsPublic: p.profile_personal_email_is_public === 1,
+                    phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
+                    tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
+                    locationIsPublic: p.profile_personal_location_is_public === 1,
+                    imageIsPublic: p.profile_personal_image_is_public === 1,
+                    personal_info: {
+                      profile_personal_first_name: sanitizeText(p.profile_personal_first_name || ""),
+                      profile_personal_last_name: sanitizeText(p.profile_personal_last_name || ""),
+                      profile_personal_tag_line: sanitizeText(p.profile_personal_tag_line || ""),
+                      profile_personal_phone_number: sanitizeText(p.profile_personal_phone_number || ""),
+                      profile_personal_image: sanitizeText(p.profile_personal_image || ""),
+                      profile_personal_email_is_public: p.profile_personal_email_is_public || 0,
+                      profile_personal_phone_number_is_public: p.profile_personal_phone_number_is_public || 0,
+                      profile_personal_tag_line_is_public: p.profile_personal_tag_line_is_public || 0,
+                      profile_personal_image_is_public: p.profile_personal_image_is_public || 0,
+                    },
+                  },
+                  network_profile_personal_uid: circle.circle_related_person_id,
+                };
+              }
+            } catch (err) {
+              console.error(`Error fetching profile for circle ${circle.circle_related_person_id}:`, err);
+            }
+            // Return circle data even if profile fetch fails
+            return {
+              ...circle,
+              __mc: {
+                firstName: "",
+                lastName: "",
+                tagLine: "",
+                relationship: circle.circle_relationship || null,
+              },
+              network_profile_personal_uid: circle.circle_related_person_id,
+            };
+          })
+        );
+
+        // Update state with circles data
+        setNetworkData(formatted);
+        setGroupedNetwork({ 1: formatted }); // Group all circles as degree 1
+        setError(null);
+      } else {
+        // No circles found or empty response
+        setNetworkData([]);
+        setGroupedNetwork({});
+        setError(null);
+      }
+    } catch (err) {
+      console.error("Error fetching circles:", err);
+      setError(err.message || "Failed to fetch circles");
+      setNetworkData([]);
+      setGroupedNetwork({});
     } finally {
       setLoading(false);
     }
@@ -1041,8 +1185,23 @@ const NetworkScreen = ({ navigation }) => {
                     keyboardType='numeric'
                     inputMode={Platform.OS === "web" ? "numeric" : undefined}
                   />
-                  <TouchableOpacity style={styles.fetchButton} onPress={() => fetchNetwork()}>
+                  <TouchableOpacity
+                    style={[styles.fetchButton, activeView === "connections" ? styles.fetchButtonActive : styles.fetchButtonInactive]}
+                    onPress={() => {
+                      setActiveView("connections");
+                      fetchNetwork();
+                    }}
+                  >
                     <Text style={styles.fetchButtonText}>Show Connections</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.fetchButton, activeView === "circles" ? styles.fetchButtonActive : styles.fetchButtonInactive]}
+                    onPress={() => {
+                      setActiveView("circles");
+                      fetchCircle();
+                    }}
+                  >
+                    <Text style={styles.fetchButtonText}>Show Circle</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => setViewMode(viewMode === "list" ? "graph" : "list")} style={styles.toggleButton}>
                     <Text style={styles.toggleButtonText}>{viewMode === "list" ? "View as Graph" : "View as List"}</Text>
@@ -1318,10 +1477,15 @@ const styles = StyleSheet.create({
     borderColor: "#666",
   },
   fetchButton: {
-    backgroundColor: "#AF52DE",
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 8,
+  },
+  fetchButtonActive: {
+    backgroundColor: "#2434C2", // Blue color like Connect header
+  },
+  fetchButtonInactive: {
+    backgroundColor: "#AF52DE", // Purple color
   },
   fetchButtonText: { color: "#fff", fontWeight: "600" },
   toggleContainer: {

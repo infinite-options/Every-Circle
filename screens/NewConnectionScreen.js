@@ -139,6 +139,7 @@ const NewConnectionScreen = () => {
             circle_date: circleDate,
             circle_event: meetingEvent || null,
             circle_note: commentsNotes || null,
+            circle_introduced_by: introducedBy || null,
             circle_geotag: circleGeotag,
           }
         : {
@@ -148,6 +149,7 @@ const NewConnectionScreen = () => {
             circle_date: circleDate,
             circle_event: meetingEvent || null,
             circle_note: commentsNotes || null,
+            circle_introduced_by: introducedBy || null,
             circle_geotag: circleGeotag,
           };
 
@@ -336,6 +338,9 @@ const NewConnectionScreen = () => {
           if (relationshipData.circle_note) {
             setCommentsNotes(relationshipData.circle_note);
           }
+          if (relationshipData.circle_introduced_by) {
+            setIntroducedBy(relationshipData.circle_introduced_by);
+          }
           if (relationshipData.circle_date) {
             // Format date for display
             const date = new Date(relationshipData.circle_date);
@@ -447,6 +452,28 @@ const NewConnectionScreen = () => {
               <View style={styles.cardContainer}>
                 <MiniCard user={profileData} />
               </View>
+
+              {/* Login/SignUp buttons for non-logged-in users */}
+              {!isLoggedIn && (
+                <View style={[styles.authContainer, darkMode && styles.darkAuthContainer]}>
+                  <Text style={[styles.authTitle, darkMode && styles.darkAuthTitle]}>Connect with {profileData.firstName}</Text>
+                  <Text style={[styles.authSubtitle, darkMode && styles.darkAuthSubtitle]}>Sign in or create an account to add this person to your network</Text>
+
+                  <TouchableOpacity
+                    style={[styles.authButton, styles.loginButton, darkMode && styles.darkLoginButton]}
+                    onPress={() => navigation.navigate("Login", { returnToNewConnection: true, profile_uid: profileUid })}
+                  >
+                    <Text style={styles.authButtonText}>Login</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.authButton, styles.signupButton, darkMode && styles.darkSignupButton]}
+                    onPress={() => navigation.navigate("SignUp", { referralProfileUid: profileUid, returnToNewConnection: true, profile_uid: profileUid })}
+                  >
+                    <Text style={styles.authButtonText}>Sign Up</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {/* Form fields for logged-in users */}
               {isLoggedIn && (
@@ -882,6 +909,63 @@ const styles = StyleSheet.create({
   },
   darkDropdownSeparator: {
     backgroundColor: "#404040",
+  },
+  authContainer: {
+    marginTop: 30,
+    padding: 20,
+    backgroundColor: "#f9f9f9",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  darkAuthContainer: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  authTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  darkAuthTitle: {
+    color: "#fff",
+  },
+  authSubtitle: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  darkAuthSubtitle: {
+    color: "#aaa",
+  },
+  authButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
+    marginBottom: 12,
+  },
+  loginButton: {
+    backgroundColor: "#AF52DE",
+  },
+  darkLoginButton: {
+    backgroundColor: "#AF52DE",
+  },
+  signupButton: {
+    backgroundColor: "#FF9500",
+  },
+  darkSignupButton: {
+    backgroundColor: "#FF9500",
+  },
+  authButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
 
