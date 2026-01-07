@@ -6,6 +6,9 @@ import config from "../config";
 import { Dropdown } from "react-native-element-dropdown";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
+import { TouchableOpacity, Image, Alert } from "react-native";
 
 const { width } = Dimensions.get("window");
 
@@ -50,8 +53,56 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
 
   const updateFormData = (field, value) => {
     const updated = { ...formData, [field]: value };
+    console.log(`💾 Updating formData.${field}:`, value);  // ADD THIS
     setFormData(updated);
     AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+  };
+
+  const handleLogoUpload = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission required", "Permission to access media library is required!");
+        return;
+      }
+
+      let result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: "images",
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        console.log("🖼️ Logo selected - URI:", asset.uri);  // ADD THIS
+        let fileSize = asset.fileSize;
+
+        if (!fileSize && asset.uri) {
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+            fileSize = fileInfo.size;
+          } catch (e) {
+            console.log("Could not get file size from FileSystem", e);
+          }
+        }
+
+        if (fileSize && fileSize > 2 * 1024 * 1024) {
+          Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
+          return;
+        }
+
+        console.log("✅ Saving logo to formData.favImage:", asset.uri);  // ADD THIS
+        updateFormData("favImage", asset.uri);
+      }
+    } catch (error) {
+      console.error("❌ Logo upload error:", error);  // ADD THIS
+      Alert.alert("Error", "Failed to pick logo image.");
+    }
+  };
+
+  const handleLogoRemove = () => {
+    updateFormData("favImage", "");
   };
 
   const handleGooglePlaceSelect = async (data, details = null) => {
@@ -211,6 +262,21 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
                 onChangeText={(text) => updateFormData("businessName", text)}
               />
+
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Logo (Optional)</Text>
+                {formData.favImage ? (
+                  <View style={styles.logoContainer}>
+                    <Image source={{ uri: formData.favImage }} style={styles.logoImage} />
+                    <TouchableOpacity style={styles.removeLogoButton} onPress={handleLogoRemove}>
+                      <Text style={styles.removeLogoText}>✕ Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity style={[styles.uploadLogoBox, darkMode && styles.darkUploadLogoBox]} onPress={handleLogoUpload}>
+                    <Text style={[styles.uploadLogoText, darkMode && styles.darkUploadLogoText]}>📷</Text>
+                    <Text style={[styles.uploadLogoText, darkMode && styles.darkUploadLogoText]}>Upload Logo</Text>
+                  </TouchableOpacity>
+                )}
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Phone Number</Text>
               <TextInput
@@ -384,4 +450,54 @@ const styles = StyleSheet.create({
   darkOrText: {
     color: "#cccccc",
   },
+  logoContainer: {
+  alignItems: "center",
+  marginBottom: 20,
+},
+logoImage: {
+  width: 120,
+  height: 120,
+  borderRadius: 60,
+  marginBottom: 10,
+  borderWidth: 2,
+  borderColor: "#ddd",
+},
+removeLogoButton: {
+  backgroundColor: "#ff3b30",
+  paddingHorizontal: 16,
+  paddingVertical: 8,
+  borderRadius: 8,
+},
+removeLogoText: {
+  color: "#fff",
+  fontWeight: "bold",
+  fontSize: 14,
+},
+uploadLogoBox: {
+  width: 120,
+  height: 120,
+  borderRadius: 60,
+  backgroundColor: "#f0f0f0",
+  justifyContent: "center",
+  alignItems: "center",
+  marginBottom: 20,
+  borderWidth: 2,
+  borderColor: "#ddd",
+  borderStyle: "dashed",
+  alignSelf: "center",
+},
+uploadLogoText: {
+  color: "#666",
+  fontSize: 14,
+  textAlign: "center",
+},
+
+// Dark mode styles for logo
+darkUploadLogoBox: {
+  backgroundColor: "#404040",
+  borderColor: "#555",
+},
+darkUploadLogoText: {
+  color: "#cccccc",
+},
 });

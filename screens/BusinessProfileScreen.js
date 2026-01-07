@@ -623,7 +623,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 business_phone_number: sanitizeText(business.business_phone_number),
                 business_email: sanitizeText(business.business_email_id),
                 business_website: sanitizeText(business.business_website),
-                first_image: business.images && business.images.length > 0 ? business.images[0] : null,
+                //first_image: business.images && business.images.length > 0 ? business.images[0] : null,
+                first_image: business.business_favorite_image || (business.images && business.images.length > 0 ? business.images[0] : null),
                 phoneIsPublic: business.phoneIsPublic,
                 emailIsPublic: business.emailIsPublic,
               }}
