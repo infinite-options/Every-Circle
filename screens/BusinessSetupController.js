@@ -162,25 +162,25 @@ export default function BusinessSetupController({ navigation, route }) {
 
   const validateCurrentStep = () => {
     switch (activeStep) {
-      case 0:
-        // Step 0: Must have Business Name
-        return formData.businessName && formData.businessName.trim() !== "";
-      case 1:
-        // Step 1: No required fields
-        return true;
-      case 2:
-        // Step 2: Must select at least a Main Category
-        return formData.businessCategoryId && formData.businessCategoryId.length > 0;
-      case 3:
-        // Step 3: No required fields
-        return true;
-      case 4:
-        // Step 4: No required fields
-        return true;
-      default:
-        return false;
-    }
-  };
+    case 0:
+      // Step 0: Must have Business Name
+      return formData.businessName && formData.businessName.trim() !== "";
+    case 1:
+      // Step 1: Must select at least a Main Category
+      return formData.businessCategoryId && formData.businessCategoryId.length > 0;
+    case 2:
+      // Step 2: No required fields (Business Role and EIN are optional)
+      return true;
+    case 3:
+      // Step 3: No required fields
+      return true;
+    case 4:
+      // Step 4: No required fields
+      return true;
+    default:
+      return false;
+  }
+};
 
   const handleContinue = () => {
     if (validateCurrentStep()) {
@@ -196,12 +196,13 @@ export default function BusinessSetupController({ navigation, route }) {
         case 0:
           errorMessage = "Please enter a Business Name to continue.";
           break;
-        case 2:
+        case 1:
           errorMessage = "Please select at least a Main Category to continue.";
           break;
         default:
           errorMessage = "Please complete all required fields to continue.";
       }
+      console.log("❌ Validation failed:", errorMessage);
       Alert.alert("Validation Error", errorMessage);
     }
   };
@@ -269,7 +270,47 @@ export default function BusinessSetupController({ navigation, route }) {
       // data.append('business_categories_id', JSON.stringify(formData.categories));
       data.append("business_google_rating", formData.googleRating);
       data.append("business_google_photos", JSON.stringify(formData.businessGooglePhotos));
+      //business_fav_image is being used to store business logo
       // data.append('business_fav_image', formData.favImage);
+      // Append business logo (favImage)
+      if (formData.favImage) {
+        console.log("📸 Processing business_favorite_image");
+        
+        // Check if it's a base64 data URI
+        if (formData.favImage.startsWith("data:image/")) {
+          // Extract base64 data and mime type
+          const matches = formData.favImage.match(/^data:(image\/[a-z]+);base64,(.+)$/);
+          if (matches && matches.length === 3) {
+            const mimeType = matches[1]; // e.g., "image/png"
+            const base64Data = matches[2];
+            const fileType = mimeType.split('/')[1]; // e.g., "png"
+            const fileName = `business_logo.${fileType}`;
+            
+            console.log("📸 Appending base64 business_favorite_image:", fileName);
+            
+            // For React Native, convert base64 to blob-like structure
+            data.append("business_favorite_image", {
+              uri: formData.favImage,
+              type: mimeType,
+              name: fileName,
+            });
+          }
+        } 
+        // Check if it's a file URI
+        else if (formData.favImage.startsWith("file://") || formData.favImage.startsWith("content://")) {
+          const uriParts = formData.favImage.split(".");
+          const fileType = uriParts[uriParts.length - 1] || "jpg";
+          const fileName = `business_logo.${fileType}`;
+          
+          console.log("📸 Appending file URI business_favorite_image:", fileName);
+          
+          data.append("business_favorite_image", {
+            uri: formData.favImage,
+            type: `image/${fileType}`,
+            name: fileName,
+          });
+        }
+      }
       data.append("business_price_level", formData.priceLevel);
       data.append("business_google_id", formData.googleId);
       data.append("business_yelp", formData.yelp);
@@ -361,6 +402,13 @@ export default function BusinessSetupController({ navigation, route }) {
           console.log(`${key}:`, value);
         });
       }
+      console.log("============================================");
+
+      console.log("============================================");
+      console.log("🔍 CHECKING LOGO BEFORE SUBMISSION");
+      console.log("============================================");
+      console.log("formData.favImage:", formData.favImage);
+      console.log("Is valid URI?", formData.favImage && (formData.favImage.startsWith("file://") || formData.favImage.startsWith("content://")));
       console.log("============================================");
 
       const response = await fetch(BusinessProfileApi, {
