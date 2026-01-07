@@ -48,7 +48,6 @@ export default function SearchScreen({ route }) {
 
   // Search type state: 'businesses', 'expertise', 'seeking'
   const [searchType, setSearchType] = useState("businesses");
-  
 
   // Restore search state when returning from Profile
   useFocusEffect(
@@ -127,8 +126,8 @@ export default function SearchScreen({ route }) {
     const loadSavedSearch = async () => {
       try {
         // Get current user's UID
-        const userUid = await AsyncStorage.getItem('user_uid');
-        
+        const userUid = await AsyncStorage.getItem("user_uid");
+
         if (!userUid) {
           console.log("⚠️ No user_uid found yet, will retry...");
           return;
@@ -140,11 +139,11 @@ export default function SearchScreen({ route }) {
         const savedSearchQuery = await AsyncStorage.getItem(`last_search_query_${userUid}`);
         const savedSearchType = await AsyncStorage.getItem(`last_search_type_${userUid}`);
         const savedResults = await AsyncStorage.getItem(`last_search_results_${userUid}`);
-        
+
         console.log("📋 Saved search query:", savedSearchQuery);
         console.log("📋 Saved search type:", savedSearchType);
         console.log("📋 Has saved results:", !!savedResults);
-        
+
         if (savedSearchQuery && savedResults) {
           // User has searched before, restore their last search
           console.log("📋 Restoring last search for user:", userUid, "Query:", savedSearchQuery);
@@ -181,7 +180,7 @@ export default function SearchScreen({ route }) {
       const timer = setTimeout(() => {
         loadSavedSearch();
       }, 100);
-      
+
       return () => clearTimeout(timer);
     }
   }, [hasLoadedInitialSearch]);
@@ -193,8 +192,8 @@ export default function SearchScreen({ route }) {
       if (results.length > 0 && hasLoadedInitialSearch && searchQuery.trim() && !loading) {
         try {
           // Get current user's UID
-          const userUid = await AsyncStorage.getItem('user_uid');
-          
+          const userUid = await AsyncStorage.getItem("user_uid");
+
           if (!userUid) {
             console.log("⚠️ No user_uid found, cannot save search state");
             return;
@@ -351,7 +350,7 @@ export default function SearchScreen({ route }) {
             );
           }
         } else {
-        throw fetchError;
+          throw fetchError;
         }
       }
 
@@ -395,7 +394,7 @@ export default function SearchScreen({ route }) {
         console.error("❌ Response text that failed to parse:", responseText.substring(0, 500));
         throw new Error(`Failed to parse JSON response: ${parseError.message}`);
       }
-      
+
       // console.log("📡 Search API Response:", JSON.stringify(json, null, 2));
       // console.log("📊 Number of results returned:", Array.isArray(json) ? json.length : json.results?.length || json.result?.length || 0);
 
@@ -514,7 +513,7 @@ export default function SearchScreen({ route }) {
       setHasLoadedInitialSearch(true);
     } catch (err) {
       console.error("❌ Search failed for query:", q, "Error:", err);
-      
+
       if (err.message.includes("Network request failed") || err.message.includes("Failed to fetch")) {
         Alert.alert("Network Error", "Unable to connect to the search server. Please check your internet connection or try again later.", [{ text: "OK" }]);
         setResults([]);
@@ -530,7 +529,7 @@ export default function SearchScreen({ route }) {
     }
     setLoading(false);
   };
-  
+
   const onSearch = async () => {
     await performSearch(searchQuery, searchType);
   };
@@ -953,50 +952,46 @@ export default function SearchScreen({ route }) {
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
-      <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
-        <AppHeader
-          title='Search'
-          {...getHeaderColors("search")}
-          darkModeBackgroundColor='#4b2c91'
-          rightButton={
-            <TouchableOpacity
-              style={styles.cartButton}
-              onPress={() =>
-                navigation.navigate("ShoppingCart", {
-                  cartItems: cartItems,
-                  onRemoveItem: async (index) => {
-                    // Get the business_uid from the item being removed before filtering
-                    const itemToRemove = cartItems[index];
-                    const businessUid = itemToRemove.business_uid;
+      <AppHeader
+        title='Search'
+        {...getHeaderColors("search")}
+        darkModeBackgroundColor='#4b2c91'
+        onTitlePress={() => setShowFeedbackPopup(true)} // ✅ SAFE
+        rightButton={
+          <TouchableOpacity
+            style={styles.cartButton}
+            onPress={() =>
+              navigation.navigate("ShoppingCart", {
+                cartItems,
+                onRemoveItem: async (index) => {
+                  const itemToRemove = cartItems[index];
+                  const businessUid = itemToRemove.business_uid;
 
-                    // Create a new array without the removed item
-                    const newCartItems = cartItems.filter((_, i) => i !== index);
-                    setCartItems(newCartItems);
-                    setCartCount(newCartItems.length);
+                  const newCartItems = cartItems.filter((_, i) => i !== index);
+                  setCartItems(newCartItems);
+                  setCartCount(newCartItems.length);
 
-                    // Update AsyncStorage for the specific business
-                    await AsyncStorage.setItem(
-                      `cart_${businessUid}`,
-                      JSON.stringify({
-                        items: newCartItems.filter((item) => item.business_uid === businessUid),
-                      })
-                    );
-                  },
-                  businessName: "All Items",
-                  business_uid: "all",
-                })
-              }
-            >
-              <Ionicons name='cart-outline' size={24} color='#fff' />
-              {cartCount > 0 && (
-                <View style={styles.cartBadge}>
-                  <Text style={styles.cartBadgeText}>{cartCount}</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          }
-        />
-      </TouchableOpacity>
+                  await AsyncStorage.setItem(
+                    `cart_${businessUid}`,
+                    JSON.stringify({
+                      items: newCartItems.filter((item) => item.business_uid === businessUid),
+                    })
+                  );
+                },
+                businessName: "All Items",
+                business_uid: "all",
+              })
+            }
+          >
+            <Ionicons name='cart-outline' size={24} color='#fff' />
+            {cartCount > 0 && (
+              <View style={styles.cartBadge}>
+                <Text style={styles.cartBadgeText}>{cartCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        }
+      />
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         {/* Main Content */}
