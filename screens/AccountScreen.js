@@ -397,7 +397,7 @@ export default function AccountScreen({ navigation }) {
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
-      {/* <AppHeader title="Account" backgroundColor="#AF52DE" /> */}
+      {/* <AppHeader title="Account" backgroundColor="#18884A" /> */}
       <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
         <AppHeader title='Account' {...getHeaderColors("account")} />
       </TouchableOpacity>
@@ -586,7 +586,7 @@ const styles = StyleSheet.create({
   transactionsContainer: { backgroundColor: "transparent", paddingVertical: 6 },
   transactionHeaderRow: {
     flexDirection: "row",
-    backgroundColor: "#AF52DE",
+    backgroundColor: "#18884A",
     paddingVertical: 6,
     paddingHorizontal: 4,
     borderRadius: 8,
@@ -619,7 +619,7 @@ const styles = StyleSheet.create({
   },
   bountyTableHeader: {
     flexDirection: "row",
-    backgroundColor: "#AF52DE",
+    backgroundColor: "#18884A",
     paddingVertical: 6,
     paddingHorizontal: 4,
     borderRadius: 8,

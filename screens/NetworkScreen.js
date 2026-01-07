@@ -1593,8 +1593,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   filterButtonActive: {
-    backgroundColor: "#AF52DE",
-    borderColor: "#AF52DE",
+    backgroundColor: "#2434C2",
+    borderColor: "#2434C2",
   },
   filterButtonDisabled: {
     opacity: 0.5,

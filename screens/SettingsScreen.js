@@ -315,7 +315,7 @@ export default function SettingsScreen() {
 
           {/* Logout Button */}
           <TouchableOpacity style={[styles.logoutButton, darkMode && styles.darkLogoutButton]} onPress={handleLogout}>
-            <MaterialIcons name='logout' size={20} style={styles.icon} color={darkMode ? "#fff" : "#FF3B30"} />
+            <MaterialIcons name='logout' size={20} style={styles.icon} color={darkMode ? "#fff" : "#AF52DE"} />
             <Text style={[styles.logoutText, darkMode && styles.darkLogoutText]}>Logout</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -413,19 +413,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#FF3B30",
+    borderColor: "#AF52DE",
   },
   darkLogoutButton: {
     backgroundColor: "#333",
-    borderColor: "#FF3B30",
+    borderColor: "#AF52DE",
   },
   logoutText: {
     fontSize: 16,
-    color: "#FF3B30",
+    color: "#AF52DE",
     marginLeft: 10,
   },
   darkLogoutText: {
-    color: "#FF3B30",
+    color: "#AF52DE",
   },
   qrModalBox: {
     backgroundColor: "#fff",
