@@ -739,163 +739,163 @@ const ProfileScreen = ({ route, navigation }) => {
         {...(routeProfileUID && !isCurrentUserProfile ? getHeaderColors("profileView") : getHeaderColors("profile"))}
         onTitlePress={() => setShowFeedbackPopup(true)}
         onBackPress={
-            routeProfileUID && !isCurrentUserProfile
-              ? () => {
-                  // Navigate back to the screen we came from with preserved state
-                  if (returnTo === "Search" && searchState) {
-                    console.log("🔙 Returning to Search with preserved state:", searchState);
-                    navigation.navigate("Search", {
-                      restoreState: true,
-                      searchState: searchState,
-                    });
-                  } else if (returnTo === "ExpertiseDetail" && route.params?.expertiseDetailState) {
-                    // Navigate back to ExpertiseDetail screen
-                    console.log("🔙 Returning to ExpertiseDetail");
-                    const { expertiseData, profileData, profile_uid, searchState, returnTo: detailReturnTo, profileState: detailProfileState } = route.params.expertiseDetailState;
-                    navigation.navigate("ExpertiseDetail", {
-                      expertiseData,
-                      profileData,
-                      profile_uid,
-                      searchState,
-                      returnTo: detailReturnTo,
-                      profileState: detailProfileState,
-                    });
-                  } else if (returnTo === "WishDetail" && route.params?.wishDetailState) {
-                    // Navigate back to WishDetail screen
-                    console.log("🔙 Returning to WishDetail");
-                    const { wishData, profileData, profile_uid, searchState, returnTo: detailReturnTo, profileState: detailProfileState } = route.params.wishDetailState;
-                    navigation.navigate("WishDetail", {
-                      wishData,
-                      profileData,
-                      profile_uid,
-                      searchState,
-                      returnTo: detailReturnTo,
-                      profileState: detailProfileState,
-                    });
-                  } else if (returnTo === "WishResponses" && route.params?.wishResponsesState) {
-                    // Navigate back to WishResponses screen
-                    console.log("🔙 Returning to WishResponses");
-                    const { wishData, profileData, profile_uid, profileState: wishResponsesProfileState } = route.params.wishResponsesState;
-                    navigation.navigate("WishResponses", {
-                      wishData,
-                      profileData,
-                      profile_uid,
-                      profileState: wishResponsesProfileState,
-                    });
-                  } else if (returnTo === "Network") {
-                    // Navigate back to Network screen
-                    console.log("🔙 Returning to Network");
-                    navigation.navigate("Network");
-                  } else {
-                    // Default: Navigate to Network screen when viewing another user's profile
-                    navigation.navigate("Network");
+          routeProfileUID && !isCurrentUserProfile
+            ? () => {
+                // Navigate back to the screen we came from with preserved state
+                if (returnTo === "Search" && searchState) {
+                  console.log("🔙 Returning to Search with preserved state:", searchState);
+                  navigation.navigate("Search", {
+                    restoreState: true,
+                    searchState: searchState,
+                  });
+                } else if (returnTo === "ExpertiseDetail" && route.params?.expertiseDetailState) {
+                  // Navigate back to ExpertiseDetail screen
+                  console.log("🔙 Returning to ExpertiseDetail");
+                  const { expertiseData, profileData, profile_uid, searchState, returnTo: detailReturnTo, profileState: detailProfileState } = route.params.expertiseDetailState;
+                  navigation.navigate("ExpertiseDetail", {
+                    expertiseData,
+                    profileData,
+                    profile_uid,
+                    searchState,
+                    returnTo: detailReturnTo,
+                    profileState: detailProfileState,
+                  });
+                } else if (returnTo === "WishDetail" && route.params?.wishDetailState) {
+                  // Navigate back to WishDetail screen
+                  console.log("🔙 Returning to WishDetail");
+                  const { wishData, profileData, profile_uid, searchState, returnTo: detailReturnTo, profileState: detailProfileState } = route.params.wishDetailState;
+                  navigation.navigate("WishDetail", {
+                    wishData,
+                    profileData,
+                    profile_uid,
+                    searchState,
+                    returnTo: detailReturnTo,
+                    profileState: detailProfileState,
+                  });
+                } else if (returnTo === "WishResponses" && route.params?.wishResponsesState) {
+                  // Navigate back to WishResponses screen
+                  console.log("🔙 Returning to WishResponses");
+                  const { wishData, profileData, profile_uid, profileState: wishResponsesProfileState } = route.params.wishResponsesState;
+                  navigation.navigate("WishResponses", {
+                    wishData,
+                    profileData,
+                    profile_uid,
+                    profileState: wishResponsesProfileState,
+                  });
+                } else if (returnTo === "Network") {
+                  // Navigate back to Network screen
+                  console.log("🔙 Returning to Network");
+                  navigation.navigate("Network");
+                } else {
+                  // Default: Navigate to Network screen when viewing another user's profile
+                  navigation.navigate("Network");
+                }
+              }
+            : undefined
+        }
+        rightButton={
+          isCurrentUserProfile ? (
+            <TouchableOpacity
+              style={styles.editButton}
+              onPress={() =>
+                navigation.navigate("EditProfile", {
+                  user: user,
+                  profile_uid: profileUID,
+                })
+              }
+            >
+              <Image source={require("../assets/Edit.png")} style={[styles.editIcon, darkMode && styles.darkEditIcon]} tintColor={darkMode ? "#fff" : "#fff"} />
+            </TouchableOpacity>
+          ) : routeProfileUID && !isCurrentUserProfile ? (
+            <View style={styles.dropdownWrapper} pointerEvents='box-none'>
+              <Pressable
+                style={styles.addButton}
+                {...(isWeb && { "data-dropdown-button": true })}
+                onPress={(e) => {
+                  console.log("Dropdown button clicked for profile:", profileUID);
+                  // Stop event propagation to prevent parent TouchableOpacity from handling it
+                  if (e?.stopPropagation) {
+                    e.stopPropagation();
                   }
-                }
-              : undefined
-          }
-          rightButton={
-            isCurrentUserProfile ? (
-              <TouchableOpacity
-                style={styles.editButton}
-                onPress={() =>
-                  navigation.navigate("EditProfile", {
-                    user: user,
-                    profile_uid: profileUID,
-                  })
-                }
+                  if (Platform.OS === "web" && e?.nativeEvent) {
+                    e.nativeEvent.stopPropagation?.();
+                  }
+                  setShowRelationshipDropdown(!showRelationshipDropdown);
+                }}
+                onPressIn={(e) => {
+                  // Also stop propagation on press in to prevent parent from capturing
+                  if (e?.stopPropagation) {
+                    e.stopPropagation();
+                  }
+                }}
+                onStartShouldSetResponder={() => true}
+                onResponderTerminationRequest={() => false}
               >
-                <Image source={require("../assets/Edit.png")} style={[styles.editIcon, darkMode && styles.darkEditIcon]} tintColor={darkMode ? "#fff" : "#fff"} />
-              </TouchableOpacity>
-            ) : routeProfileUID && !isCurrentUserProfile ? (
-              <View style={styles.dropdownWrapper} pointerEvents="box-none">
-                <Pressable
-                  style={styles.addButton}
-                  {...(isWeb && { "data-dropdown-button": true })}
-                  onPress={(e) => {
-                    console.log("Dropdown button clicked for profile:", profileUID);
-                    // Stop event propagation to prevent parent TouchableOpacity from handling it
-                    if (e?.stopPropagation) {
-                      e.stopPropagation();
-                    }
-                    if (Platform.OS === "web" && e?.nativeEvent) {
-                      e.nativeEvent.stopPropagation?.();
-                    }
-                    setShowRelationshipDropdown(!showRelationshipDropdown);
-                  }}
-                  onPressIn={(e) => {
-                    // Also stop propagation on press in to prevent parent from capturing
-                    if (e?.stopPropagation) {
-                      e.stopPropagation();
-                    }
-                  }}
-                  onStartShouldSetResponder={() => true}
-                  onResponderTerminationRequest={() => false}
-                >
-                  <Ionicons name='chevron-down' size={28} color='#fff' />
-                </Pressable>
-                {showRelationshipDropdown && (
-                  <View style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]} {...(isWeb && { "data-dropdown-menu": true })}>
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        console.log("ProfileScreen - Friend button pressed");
-                        // Stop event propagation to prevent click-outside handler from firing
-                        if (Platform.OS === "web" && e?.nativeEvent) {
-                          e.nativeEvent.stopPropagation?.();
-                        }
-                        handleRelationshipSelect("friend");
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Friend</Text>
-                    </Pressable>
-                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        console.log("ProfileScreen - Colleague button pressed");
-                        // Stop event propagation to prevent click-outside handler from firing
-                        if (Platform.OS === "web" && e?.nativeEvent) {
-                          e.nativeEvent.stopPropagation?.();
-                        }
-                        handleRelationshipSelect("colleague");
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Colleague</Text>
-                    </Pressable>
-                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        console.log("ProfileScreen - Family button pressed");
-                        // Stop event propagation to prevent click-outside handler from firing
-                        if (Platform.OS === "web" && e?.nativeEvent) {
-                          e.nativeEvent.stopPropagation?.();
-                        }
-                        handleRelationshipSelect("family");
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Family</Text>
-                    </Pressable>
-                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        console.log("ProfileScreen - None button pressed");
-                        // Stop event propagation to prevent click-outside handler from firing
-                        if (Platform.OS === "web" && e?.nativeEvent) {
-                          e.nativeEvent.stopPropagation?.();
-                        }
-                        handleRelationshipSelect(null);
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>None</Text>
-                    </Pressable>
-                  </View>
-                )}
-              </View>
-            ) : null
-          }
-        />
+                <Ionicons name='chevron-down' size={28} color='#fff' />
+              </Pressable>
+              {showRelationshipDropdown && (
+                <View style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]} {...(isWeb && { "data-dropdown-menu": true })}>
+                  <Pressable
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      console.log("ProfileScreen - Friend button pressed");
+                      // Stop event propagation to prevent click-outside handler from firing
+                      if (Platform.OS === "web" && e?.nativeEvent) {
+                        e.nativeEvent.stopPropagation?.();
+                      }
+                      handleRelationshipSelect("friend");
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Friend</Text>
+                  </Pressable>
+                  <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                  <Pressable
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      console.log("ProfileScreen - Colleague button pressed");
+                      // Stop event propagation to prevent click-outside handler from firing
+                      if (Platform.OS === "web" && e?.nativeEvent) {
+                        e.nativeEvent.stopPropagation?.();
+                      }
+                      handleRelationshipSelect("colleague");
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Colleague</Text>
+                  </Pressable>
+                  <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                  <Pressable
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      console.log("ProfileScreen - Family button pressed");
+                      // Stop event propagation to prevent click-outside handler from firing
+                      if (Platform.OS === "web" && e?.nativeEvent) {
+                        e.nativeEvent.stopPropagation?.();
+                      }
+                      handleRelationshipSelect("family");
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Family</Text>
+                  </Pressable>
+                  <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                  <Pressable
+                    style={styles.dropdownItem}
+                    onPress={(e) => {
+                      console.log("ProfileScreen - None button pressed");
+                      // Stop event propagation to prevent click-outside handler from firing
+                      if (Platform.OS === "web" && e?.nativeEvent) {
+                        e.nativeEvent.stopPropagation?.();
+                      }
+                      handleRelationshipSelect(null);
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>None</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          ) : null
+        }
+      />
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView
@@ -939,34 +939,54 @@ const ProfileScreen = ({ route, navigation }) => {
               // Display circle details when viewing another user's profile and relationship exists
               if (routeProfileUID && !isCurrentUserProfile && existingRelationship) {
                 const circleDetails = [];
-                
+
                 // Format and add date if available
                 const formattedDate = formatCircleDate(existingRelationship.circle_date);
                 if (formattedDate) {
-                  circleDetails.push(<Text key="date" style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>Date: {formattedDate}</Text>);
+                  circleDetails.push(
+                    <Text key='date' style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>
+                      Date: {formattedDate}
+                    </Text>
+                  );
                 }
-                
+
                 // Add event if available
                 if (existingRelationship.circle_event) {
-                  circleDetails.push(<Text key="event" style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>Event: {existingRelationship.circle_event}</Text>);
+                  circleDetails.push(
+                    <Text key='event' style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>
+                      Event: {existingRelationship.circle_event}
+                    </Text>
+                  );
                 }
-                
+
                 // Add note if available
                 if (existingRelationship.circle_note) {
-                  circleDetails.push(<Text key="note" style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>Note: {existingRelationship.circle_note}</Text>);
+                  circleDetails.push(
+                    <Text key='note' style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>
+                      Note: {existingRelationship.circle_note}
+                    </Text>
+                  );
                 }
-                
+
                 // Format and add geotag if available
                 const formattedGeotag = formatCircleGeotag(existingRelationship.circle_geotag);
                 if (formattedGeotag) {
-                  circleDetails.push(<Text key="geotag" style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>Location: {formattedGeotag}</Text>);
+                  circleDetails.push(
+                    <Text key='geotag' style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>
+                      Location: {formattedGeotag}
+                    </Text>
+                  );
                 }
-                
+
                 // Add introduced_by if available
                 if (existingRelationship.circle_introduced_by) {
-                  circleDetails.push(<Text key="introduced_by" style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>Introduced By: {existingRelationship.circle_introduced_by}</Text>);
+                  circleDetails.push(
+                    <Text key='introduced_by' style={[styles.relationshipText, darkMode && styles.darkRelationshipText]}>
+                      Introduced By: {existingRelationship.circle_introduced_by}
+                    </Text>
+                  );
                 }
-                
+
                 // Return View with all circle details if any exist
                 if (circleDetails.length > 0) {
                   return <View>{circleDetails}</View>;

@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Image, Platform } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { DARK_MODE_COLORS } from "../config/headerColors";
@@ -12,21 +12,27 @@ import { DARK_MODE_COLORS } from "../config/headerColors";
  * @param {function} onBackPress - Callback for back button press (if provided, shows back button)
  * @param {React.ReactNode|function} rightButton - Right side button/icon (can be a component or render function)
  * @param {string} darkModeBackgroundColor - Background color for dark mode (optional)
+ * @param {function} onTitlePress - Callback for title press (if provided, makes title clickable)
  */
-const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButton, darkModeBackgroundColor }) => {
+const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButton, darkModeBackgroundColor, onTitlePress }) => {
   const { darkMode } = useDarkMode();
 
   // Determine background color based on dark mode
-  const bgColor = darkMode && darkModeBackgroundColor ? darkModeBackgroundColor : backgroundColor;
+  const baseBgColor = darkMode && darkModeBackgroundColor ? darkModeBackgroundColor : backgroundColor;
 
-  // Dark mode color adjustments for common colors
-  const getDarkModeColor = (color) => {
-    if (!darkMode) return color;
-    // Use centralized dark mode color mapping
-    return DARK_MODE_COLORS[color] || color;
-  };
+  const finalBgColor = darkMode ? DARK_MODE_COLORS[baseBgColor] || baseBgColor : baseBgColor;
 
-  const finalBgColor = darkMode ? getDarkModeColor(bgColor) : bgColor;
+  const Title = onTitlePress ? (
+    <TouchableOpacity onPress={onTitlePress} activeOpacity={0.7} style={styles.titleTouchable}>
+      <Text style={[styles.header, darkMode && styles.darkHeader, onBackPress && styles.headerWithBack]} numberOfLines={1}>
+        {title}
+      </Text>
+    </TouchableOpacity>
+  ) : (
+    <Text style={[styles.header, darkMode && styles.darkHeader, onBackPress && styles.headerWithBack]} numberOfLines={1}>
+      {title}
+    </Text>
+  );
 
   return (
     <View style={[styles.headerBg, { backgroundColor: finalBgColor }, Platform.OS === "web" && { width: "100%" }]}>
@@ -34,14 +40,14 @@ const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButto
         {/* Back Button */}
         {onBackPress && (
           <TouchableOpacity style={styles.backButton} onPress={onBackPress}>
-            <Ionicons name='arrow-back' size={24} color='#fff' />
+            <Ionicons name='chevron-back' size={20} color='#fff' />
           </TouchableOpacity>
         )}
 
-        {/* Header Text */}
-        <Text style={[styles.header, darkMode && styles.darkHeader, onBackPress && styles.headerWithBack]}>{title}</Text>
+        {/* Title */}
+        {Title}
 
-        {/* Right Button/Icon */}
+        {/* Right Button */}
         {rightButton && <View style={styles.rightButtonContainer}>{typeof rightButton === "function" ? rightButton() : rightButton}</View>}
       </View>
     </View>
@@ -51,53 +57,64 @@ const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButto
 const styles = StyleSheet.create({
   headerBg: {
     backgroundColor: "#AF52DE",
-    paddingTop: 30,
-    paddingBottom: 15,
-    alignItems: "center",
+    paddingTop: 16,
+    paddingBottom: 16,
     borderBottomLeftRadius: 300,
     borderBottomRightRadius: 300,
-    overflow: "visible", // Allow dropdown to extend beyond header
     zIndex: 10000,
+    overflow: "visible",
   },
+
   headerContent: {
     flexDirection: "row",
-    justifyContent: "center",
     alignItems: "center",
-    width: "100%",
-    paddingHorizontal: 20,
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    minHeight: 56, // 🔒 consistent header height across platforms
     position: "relative",
+    width: "100%",
     zIndex: 10000,
   },
+
   backButton: {
     position: "absolute",
-    left: 53,
-    top: 0,
-    padding: 4,
-    zIndex: 1,
+    left: 16,
+    width: 36,
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
+    zIndex: 1,
   },
+
   header: {
-    color: "#fff",
+    flex: 1, // ✅ FLEX MUST LIVE HERE
     fontSize: 20,
     fontWeight: "bold",
-    flex: 1,
+    color: "#fff",
     textAlign: "center",
+    textAlignVertical: "center",
   },
+
   headerWithBack: {
     marginLeft: 0,
   },
+
+  titleTouchable: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
   darkHeader: {
     color: "#ffffff",
   },
+
   rightButtonContainer: {
     position: "absolute",
-    right: 53,
-    top: 0,
-    zIndex: 10001,
+    right: 16,
     alignItems: "center",
     justifyContent: "center",
-    overflow: "visible", // IMPORTANT FOR WEB - allows dropdowns to extend beyond
+    zIndex: 10001,
+    overflow: "visible",
   },
 });
 
