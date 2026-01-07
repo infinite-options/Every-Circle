@@ -12,9 +12,8 @@ import { DARK_MODE_COLORS } from "../config/headerColors";
  * @param {function} onBackPress - Callback for back button press (if provided, shows back button)
  * @param {React.ReactNode|function} rightButton - Right side button/icon (can be a component or render function)
  * @param {string} darkModeBackgroundColor - Background color for dark mode (optional)
- * @param {function} onTitlePress - Callback for title press (if provided, makes title clickable)
  */
-const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButton, darkModeBackgroundColor, onTitlePress }) => {
+const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButton, darkModeBackgroundColor }) => {
   const { darkMode } = useDarkMode();
 
   // Determine background color based on dark mode
@@ -29,26 +28,18 @@ const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButto
 
   const finalBgColor = darkMode ? getDarkModeColor(bgColor) : bgColor;
 
-  const TitleComponent = onTitlePress ? (
-    <TouchableOpacity onPress={onTitlePress} activeOpacity={0.7} style={styles.titleTouchable}>
-      <Text style={[styles.header, darkMode && styles.darkHeader, onBackPress && styles.headerWithBack]}>{title}</Text>
-    </TouchableOpacity>
-  ) : (
-    <Text style={[styles.header, darkMode && styles.darkHeader, onBackPress && styles.headerWithBack]}>{title}</Text>
-  );
-
   return (
     <View style={[styles.headerBg, { backgroundColor: finalBgColor }, Platform.OS === "web" && { width: "100%" }]}>
       <View style={styles.headerContent}>
         {/* Back Button */}
         {onBackPress && (
           <TouchableOpacity style={styles.backButton} onPress={onBackPress}>
-            <Ionicons name='chevron-back' size={18} color='#fff' />
+            <Ionicons name='arrow-back' size={24} color='#fff' />
           </TouchableOpacity>
         )}
 
         {/* Header Text */}
-        {TitleComponent}
+        <Text style={[styles.header, darkMode && styles.darkHeader, onBackPress && styles.headerWithBack]}>{title}</Text>
 
         {/* Right Button/Icon */}
         {rightButton && <View style={styles.rightButtonContainer}>{typeof rightButton === "function" ? rightButton() : rightButton}</View>}
@@ -60,8 +51,8 @@ const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButto
 const styles = StyleSheet.create({
   headerBg: {
     backgroundColor: "#AF52DE",
-    paddingTop: 14,
-    paddingBottom: 16,
+    paddingTop: 30,
+    paddingBottom: 15,
     alignItems: "center",
     borderBottomLeftRadius: 300,
     borderBottomRightRadius: 300,
@@ -73,16 +64,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     width: "100%",
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     position: "relative",
     zIndex: 10000,
   },
   backButton: {
     position: "absolute",
-    left: 16,
+    left: 53,
     top: 0,
-    width: 36,
-    height: 26,
+    padding: 4,
     zIndex: 1,
     alignItems: "center",
     justifyContent: "center",
@@ -94,11 +84,6 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: "center",
   },
-  titleTouchable: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   headerWithBack: {
     marginLeft: 0,
   },
@@ -107,7 +92,7 @@ const styles = StyleSheet.create({
   },
   rightButtonContainer: {
     position: "absolute",
-    right: 16,
+    right: 53,
     top: 0,
     zIndex: 10001,
     alignItems: "center",
