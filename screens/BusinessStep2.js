@@ -8,267 +8,92 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
+const businessRoles = [
+    { label: "Owner", value: "owner" },
+    { label: "Employee", value: "employee" },
+    { label: "Partner", value: "partner" },
+    { label: "Admin", value: "admin" },
+    { label: "Other", value: "other" },
+];
+
 const { width } = Dimensions.get("window");
 
 export default function BusinessStep2({ formData, setFormData, navigation }) {
   const { darkMode } = useDarkMode();
-  console.log("BusinessStep2 - darkMode value:", darkMode);
-  useEffect(() => {
-    console.log("\nIn BusinessStep2", formData);
-  }, []);
-  const [allCategories, setAllCategories] = useState([]);
-  const [mainCategories, setMainCategories] = useState([]);
-  const [subCategories, setSubCategories] = useState([]);
-  const [subSubCategories, setSubSubCategories] = useState([]);
-  const [selectedMain, setSelectedMain] = useState(null);
-  const [selectedSub, setSelectedSub] = useState(null);
-  const [selectedSubSub, setSelectedSubSub] = useState(null);
-  const [customTag, setCustomTag] = useState("");
-  const [customTags, setCustomTags] = useState(formData.customTags || []);
 
-  const googlePhotos = formData.businessGooglePhotos || [];
-  const userUploadedImages = formData.images || [];
+  const formatEINNumber = (text) => {
+    // Remove all non-numeric characters
+    const cleaned = text.replace(/\D/g, "");
 
-  const combinedImages = [...googlePhotos, ...userUploadedImages];
-
-  useEffect(() => {
-    // console.log('In BusinessStep2');
-    const fetchCategories = async () => {
-      try {
-        const res = await fetch(CATEGORY_LIST_ENDPOINT);
-        const json = await res.json();
-        setAllCategories(json.result);
-        setMainCategories(json.result.filter((cat) => cat.category_parent_id === null));
-      } catch (e) {
-        console.error("Fetch category error:", e);
-      }
-    };
-    fetchCategories();
-
-    const loadSavedForm = async () => {
-      try {
-        const stored = await AsyncStorage.getItem("businessFormData");
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          setFormData((prev) => ({ ...prev, ...parsed }));
-        }
-      } catch (err) {
-        console.error("Error loading saved form data:", err);
-      }
-    };
-    loadSavedForm();
-  }, []);
-
-  useEffect(() => {
-    const updated = allCategories.filter((c) => c.category_parent_id === selectedMain);
-    setSubCategories(updated);
-    setSelectedSub(null);
-    setSelectedSubSub(null);
-    setSubSubCategories([]);
-  }, [selectedMain]);
-
-  useEffect(() => {
-    const updated = allCategories.filter((c) => c.category_parent_id === selectedSub);
-    setSubSubCategories(updated);
-    setSelectedSubSub(null);
-  }, [selectedSub]);
-
-  useEffect(() => {
-    const selectedIds = [selectedMain, selectedSub, selectedSubSub].filter(Boolean);
-    const updatedForm = {
-      ...formData,
-      businessCategoryId: selectedIds,
-      customTags,
-    };
-    setFormData(updatedForm);
-    AsyncStorage.setItem("businessFormData", JSON.stringify(updatedForm)).catch((err) => console.error("Save error", err));
-  }, [selectedMain, selectedSub, selectedSubSub, customTags]);
-
-  const handleImagePick = async (index) => {
-    try {
-      // Request permission
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission required", "Permission to access media library is required!");
-        return;
-      }
-      // Launch picker with new API
-      let result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: "images",
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.7,
-      });
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        let fileSize = asset.fileSize;
-        if (!fileSize && asset.uri) {
-          try {
-            const fileInfo = await FileSystem.getInfoAsync(asset.uri);
-            fileSize = fileInfo.size;
-          } catch (e) {
-            console.log("Could not get file size from FileSystem", e);
-          }
-        }
-        if (fileSize && fileSize > 2 * 1024 * 1024) {
-          Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
-          return;
-        }
-        const newImageUri = asset.uri;
-        const updated = [...userUploadedImages];
-        updated[index] = newImageUri;
-        const newFormData = { ...formData, images: updated };
-        setFormData(newFormData);
-        AsyncStorage.setItem("businessFormData", JSON.stringify(newFormData)).catch((err) => console.error("Save error", err));
-      }
-    } catch (error) {
-      let errorMessage = "Failed to pick image. ";
-      if (error.name === "PermissionDenied") {
-        errorMessage += "Permission was denied.";
-      } else if (error.name === "ImagePickerError") {
-        errorMessage += "There was an error with the image picker.";
-      } else if (error.message && error.message.includes("permission")) {
-        errorMessage += "Permission issue detected.";
-      } else if (error.message && error.message.includes("canceled")) {
-        errorMessage += "Operation was canceled.";
-      }
-      Alert.alert("Error", errorMessage);
+    // Limit to 9 digits (2 + 7)
+    if (cleaned.length > 9) {
+      return text.slice(0, -1);
     }
-  };
 
-  // const addTag = () => {
-  //   if (customTag.trim()) {
-  //     const updatedTags = [...customTags, customTag.trim()];
-  //     setCustomTags(updatedTags);
-  //     setFormData((prev) => ({ ...prev, customTags: updatedTags }));
-  //     AsyncStorage.setItem("businessFormData", JSON.stringify({ ...formData, customTags: updatedTags })).catch((err) => console.error("Save error", err));
-  //     setCustomTag("");
-  //   }
-  // };
-
-  const addTag = () => {
-    if (customTag.trim()) {
-      // Split by comma and trim each tag
-      const newTags = customTag
-        .split(',')
-        .map(tag => tag.trim())
-        .filter(tag => tag.length > 0); // Remove empty strings
-      
-      const updatedTags = [...customTags, ...newTags];
-      setCustomTags(updatedTags);
-      setFormData((prev) => ({ ...prev, customTags: updatedTags }));
-      AsyncStorage.setItem("businessFormData", JSON.stringify({ ...formData, customTags: updatedTags })).catch((err) => console.error("Save error", err));
-      setCustomTag("");
-    }
-  };
-
-  const removeTag = (tag) => {
-    const updatedTags = customTags.filter((t) => t !== tag);
-    setCustomTags(updatedTags);
-    const newFormData = { ...formData, customTags: updatedTags };
-    setFormData(newFormData);
-    AsyncStorage.setItem("businessFormData", JSON.stringify(newFormData)).catch((err) => console.error("Save error", err));
+    // Format based on length: ##-#######
+    if (cleaned.length === 0) return "";
+    if (cleaned.length <= 2) return cleaned;
+    if (cleaned.length <= 9) return `${cleaned.slice(0, 2)}-${cleaned.slice(2)}`;
+    return text;
   };
 
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#fff" }}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
-        <View style={{ flex: 1, paddingTop: 20, paddingHorizontal: 20, alignItems: "center" }}>
+      <View style={{ flex: 1 }}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
+           <View style={{ flex: 1, paddingTop: 20, paddingHorizontal: 20, alignItems: "center" }}>
           <ScrollView
             style={{ flex: 1, width: "100%" }}
-            contentContainerStyle={{ justifyContent: "center", alignItems: "center", paddingBottom: 140 }}
+            contentContainerStyle={{ paddingTop: 20, paddingHorizontal: 20, alignItems: "center", paddingBottom: 140 }}
             keyboardShouldPersistTaps='handled'
             nestedScrollEnabled={true}
           >
             <View style={[styles.formCard, darkMode && styles.darkFormCard]}>
-              <Text style={[styles.title, darkMode && styles.darkTitle]}>Select Category</Text>
-              <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Select Tags for your business</Text>
+              <Text style={[styles.title, darkMode && styles.darkTitle]}>Welcome to Every Circle!</Text>
+              <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Let's Build Your Business Page! Step 2</Text>
 
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Brief Description</Text>
-              <TextInput
-                style={[styles.textarea, darkMode && styles.darkTextarea]}
-                placeholder='Describe your business...'
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Role</Text>
+              <Dropdown
+                style={[styles.input, darkMode && styles.darkInput]}
+                data={businessRoles}
+                labelField='label'
+                valueField='value'
+                placeholder='Select your role'
                 placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-                value={formData.shortBio || ""}
-                multiline
-                numberOfLines={4}
-                onChangeText={(text) => {
-                  const updated = { ...formData, shortBio: text };
-                  setFormData(updated);
-                  AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+                value={formData.businessRole || ""}
+                onChange={(item) => updateFormData("businessRole", item.value)}
+                containerStyle={[{ borderRadius: 10, zIndex: 1000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
+                itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+                selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+                activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                maxHeight={250}
+                renderItem={(item) => (
+                  <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
+                    <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}>{item.label}</Text>
+                  </View>
+                )}
+                flatListProps={{
+                  nestedScrollEnabled: true,
+                  ItemSeparatorComponent: () => <View style={{ height: 2 }} />,
                 }}
               />
 
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Main Category *</Text>
-              <Dropdown
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>EIN Number (Optional)</Text>
+              <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>For verification purposes only</Text>
+              <TextInput
                 style={[styles.input, darkMode && styles.darkInput]}
-                data={mainCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-                labelField='label'
-                valueField='value'
-                placeholder='Select Main Category'
-                placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-                value={selectedMain}
-                onChange={(item) => setSelectedMain(item.value)}
+                value={formData.einNumber || ""}
+                placeholder='##-#######'
+                placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                keyboardType='numeric'
+                maxLength={10}
+                onChangeText={(text) => updateFormData("einNumber", formatEINNumber(text))}
               />
-
-              {subCategories.length > 0 && (
-                <>
-                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Sub Category (Optional)</Text>
-                  <Dropdown
-                    style={[styles.input, darkMode && styles.darkInput]}
-                    data={subCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-                    labelField='label'
-                    valueField='value'
-                    placeholder='Select Sub Category'
-                    placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-                    value={selectedSub}
-                    onChange={(item) => setSelectedSub(item.value)}
-                  />
-                </>
-              )}
-
-              {subSubCategories.length > 0 && (
-                <>
-                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Sub-Sub Category (Optional)</Text>
-                  <Dropdown
-                    style={[styles.input, darkMode && styles.darkInput]}
-                    data={subSubCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-                    labelField='label'
-                    valueField='value'
-                    placeholder='Select Sub-Sub Category'
-                    placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-                    value={selectedSubSub}
-                    onChange={(item) => setSelectedSubSub(item.value)}
-                  />
-                </>
-              )}
-
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Custom Tags</Text>
-              <View style={styles.tagRow}>
-                <TextInput
-                  style={[styles.tagInput, darkMode && styles.darkTagInput]}
-                  placeholder='Add tag'
-                  placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-                  value={customTag}
-                  onChangeText={setCustomTag}
-                  onSubmitEditing={addTag}
-                />
-                <TouchableOpacity onPress={addTag} style={styles.tagButton}>
-                  <Text style={styles.tagButtonText}>Add</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.tagList}>
-                {customTags.map((tag, i) => (
-                  <TouchableOpacity key={i} onPress={() => removeTag(tag)} style={[styles.tagItem, darkMode && styles.darkTagItem]}>
-                    <Text style={darkMode && styles.darkTagItemText}>{tag} ✕</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
             </View>
           </ScrollView>
-        </View>
-      </KeyboardAvoidingView>
+          </View>
+        </KeyboardAvoidingView>
+      </View>
     </View>
   );
 }
@@ -503,4 +328,7 @@ const styles = StyleSheet.create({
   darkTagItemText: {
     color: "#ffffff",
   },
+  darkHelperText: {
+  color: "#cccccc",
+},
 });

@@ -862,17 +862,17 @@ export default function EditBusinessProfileScreen({ route, navigation }) {
         showsVerticalScrollIndicator={true}
       >
         {renderField("Business Name", formData.name, "name")}
+        {renderField("Phone Number", formData.phone, "phone", "", "phoneIsPublic")}
+        {renderField("Email", formData.email, "email", "", "emailIsPublic")}
         {renderField("Location", formData.location, "location")}
         {renderField("Address Line 2", formData.addressLine2, "addressLine2")}
         {renderField("City", formData.city, "city")}
         {renderField("State", formData.state, "state")}
-        {renderField("Country", formData.country, "country")}
         {renderField("Zip Code", formData.zip, "zip")}
-        {renderField("Phone Number", formData.phone, "phone", "", "phoneIsPublic")}
-        {renderField("Email", formData.email, "email", "", "emailIsPublic")}
-        {renderField("Business Category", formData.category, "category")}
+        {renderField("Country", formData.country, "country")}
         {renderField("Tag Line", formData.tagline, "tagline", "", "taglineIsPublic")}
         {renderField("Short Bio", formData.shortBio, "shortBio", "", "shortBioIsPublic")}
+        {renderField("Business Category", formData.category, "category")}
         {renderBusinessRoleField()}
         {renderField("EIN Number", formData.einNumber, "einNumber", "##-#######", null, "numeric", 10, formatEINNumber)}
         {renderField("Website", formData.website, "website")}
