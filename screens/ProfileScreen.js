@@ -135,6 +135,8 @@ const ProfileScreen = ({ route, navigation }) => {
       const apiUser = await response.json();
       console.log("ProfileScreen.js - Profile API Response:", JSON.stringify(apiUser, null, 2));
 
+      console.log("ProfileScreen - personal_info object:", JSON.stringify(apiUser.personal_info, null, 2));
+
       // Handle case where profile is not found (404 error)
       if (
         (!response.ok && response.status === 404) ||
@@ -254,6 +256,9 @@ const ProfileScreen = ({ route, navigation }) => {
       console.log("ProfileScreen - Setting user data:", userData);
       console.log("ProfileScreen - Profile UID in userData:", userData.profile_uid);
       setUser(userData);
+
+      console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
+      console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
 
       if (userData.businesses && userData.businesses.length > 0) {
         console.log("ProfileScreen - Calling fetchBusinessesData with businesses:", userData.businesses);
@@ -1294,7 +1299,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
           {/* Only show Businesses section if there are businesses, or if viewing own profile */}
           {/*{(isCurrentUserProfile || (businessesData && businessesData.length > 0)) && ( */}
-          {user.businessesIsPublic && (
+          {user.businessIsPublic && (
             <View style={styles.fieldContainer}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Businesses:</Text>
               {businessesData && businessesData.length > 0 ? (

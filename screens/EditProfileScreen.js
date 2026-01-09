@@ -106,7 +106,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     youtube: user?.youtube || "",
   });
   // console.log("EditProfileScreen business_info:", formData.businesses);
-
+  
   // Add state to track deleted items
   const [deletedItems, setDeletedItems] = useState({
     experiences: [],
@@ -367,6 +367,8 @@ const EditProfileScreen = ({ route, navigation }) => {
       payload.append("profile_personal_expertise_is_public", formData.expertiseIsPublic ? 1 : 0);
       payload.append("profile_personal_wishes_is_public", formData.wishesIsPublic ? 1 : 0);
       payload.append("profile_personal_business_is_public", formData.businessIsPublic ? 1 : 0);
+      console.log("EditProfileScreen - Sending businessIsPublic:", formData.businessIsPublic);
+      console.log("EditProfileScreen - As value:", formData.businessIsPublic ? 1 : 0);
       payload.append("profile_personal_image_is_public", formData.imageIsPublic ? 1 : 0);
 
       // Map experience data to backend field names - using frontend field names for consistency

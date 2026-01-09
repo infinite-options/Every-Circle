@@ -201,9 +201,9 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
               >
                 <MiniCard business={business} />
               </TouchableOpacity>
-              {business.role && (
+                  {business.role && (
                 <View style={styles.roleContainer}>
-                  <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {business.role}</Text>
+                    <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {business.role}</Text>
                 </View>
               )}
             </View>
@@ -398,12 +398,12 @@ const styles = StyleSheet.create({
     color: "#999",
   },
   businessActions: {
-    flexDirection: "row",
+  flexDirection: "row",
     justifyContent: "flex-end",
-    alignItems: "center",
-    marginTop: 8,
-    paddingLeft: 10,
-  },
+  alignItems: "center",
+  marginTop: 8,
+  paddingLeft: 10,
+},
   existingBusinessText: {
     fontSize: 16,
     color: "#000",
