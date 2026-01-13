@@ -135,6 +135,8 @@ const ProfileScreen = ({ route, navigation }) => {
       const apiUser = await response.json();
       console.log("ProfileScreen.js - Profile API Response:", JSON.stringify(apiUser, null, 2));
 
+      console.log("ProfileScreen - personal_info object:", JSON.stringify(apiUser.personal_info, null, 2));
+
       // Handle case where profile is not found (404 error)
       if (
         (!response.ok && response.status === 404) ||
@@ -213,6 +215,8 @@ const ProfileScreen = ({ route, navigation }) => {
       // console.log("ProfileScreen - apiUser.business_info (raw):", apiUser.business_info);
       // console.log("ProfileScreen - apiUser.business_info type:", typeof apiUser.business_info);
 
+      // Map business_info to userData.businesses
+      // Ensure business_info is parsed correctly
       userData.businesses = apiUser.business_info
         ? (typeof apiUser.business_info === "string" ? JSON.parse(apiUser.business_info) : apiUser.business_info).map((bus) => ({
             profile_business_uid: bus.business_uid || bus.profile_business_uid || "",
@@ -220,6 +224,7 @@ const ProfileScreen = ({ route, navigation }) => {
             role: bus.profile_business_role || bus.role || bus.bu_role || "",
             isApproved: bus.profile_business_approved === "1" || bus.profile_business_approved === 1 || bus.isApproved === true || bus.isApproved === "1",
             isPublic: bus.profile_business_is_visible === "1" || bus.profile_business_is_visible === 1 || bus.isPublic === true || bus.isPublic === "1",
+            bu_individual_business_is_public: bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === true,
           }))
         : [];
 
@@ -254,6 +259,10 @@ const ProfileScreen = ({ route, navigation }) => {
       console.log("ProfileScreen - Setting user data:", userData);
       console.log("ProfileScreen - Profile UID in userData:", userData.profile_uid);
       setUser(userData);
+
+      console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
+      console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
+
 
       if (userData.businesses && userData.businesses.length > 0) {
         console.log("ProfileScreen - Calling fetchBusinessesData with businesses:", userData.businesses);
@@ -335,6 +344,7 @@ const ProfileScreen = ({ route, navigation }) => {
     try {
       // console.log("ProfileScreen - fetchBusinessesData called with businesses:", JSON.stringify(businesses, null, 2));
       // console.log("ProfileScreen - Number of businesses to fetch:", businesses.length);
+      console.log("ProfileScreen - fetchBusinessesData called with businesses:", JSON.stringify(businesses, null, 2));
 
       const businessPromises = businesses.map(async (bus) => {
         console.log("ProfileScreen - Processing business:", bus);
@@ -397,6 +407,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
           // Get role and approval status from the original business_info entry
           const originalBusiness = businesses.find((b) => b.profile_business_uid === bus.profile_business_uid);
+          console.log("ProfileScreen - originalBusiness for", rawBusiness.business_name, ":", JSON.stringify(originalBusiness, null, 2));
 
           // Return business object matching BusinessProfileScreen structure for MiniCard
           // Sanitize all text fields to prevent "Unexpected text node" errors
@@ -414,6 +425,7 @@ const ProfileScreen = ({ route, navigation }) => {
             business_uid: sanitizeText(rawBusiness.business_uid, ""),
             role: sanitizeText(originalBusiness?.role, ""),
             isApproved: originalBusiness?.isApproved || false,
+            individualIsPublic: originalBusiness?.bu_individual_business_is_public === 1 || originalBusiness?.bu_individual_business_is_public === "1" || originalBusiness?.bu_individual_business_is_public === true,
           };
         } catch (error) {
           console.error(`Error fetching business ${bus.profile_business_uid}:`, error);
@@ -423,8 +435,8 @@ const ProfileScreen = ({ route, navigation }) => {
       const fetchedBusinesses = await Promise.all(businessPromises);
       // console.log("ProfileScreen - Fetched businesses (before filter):", JSON.stringify(fetchedBusinesses, null, 2));
       const validBusinesses = fetchedBusinesses.filter(Boolean);
-      // console.log("ProfileScreen - Valid businesses (after filter):", JSON.stringify(validBusinesses, null, 2));
-      // console.log("ProfileScreen - Setting businessesData with", validBusinesses.length, "businesses");
+      console.log("ProfileScreen - Valid businesses (after filter):", JSON.stringify(validBusinesses, null, 2));
+      console.log("ProfileScreen - Setting businessesData with", validBusinesses.length, "businesses");
       setBusinessesData(validBusinesses);
     } catch (error) {
       // console.error("ProfileScreen - Error fetching businesses data:", error);
@@ -724,6 +736,26 @@ const ProfileScreen = ({ route, navigation }) => {
   }
 
   const isWeb = Platform.OS === "web";
+
+  //for user.businessIsPublic true show all businesses else filter by individualIsPublic
+  console.log("Raw businessesData:", businessesData);
+  console.log("user.businessIsPublic:", user.businessIsPublic);
+
+  const publicBusinesses = Array.isArray(businessesData)
+    ? businessesData.filter((business) => {
+        console.log("Checking business:", {
+          name: business.name,
+          individualIsPublic: business.individualIsPublic,
+          rawFlag: business.bu_individual_business_is_public,
+        });
+
+        return business.individualIsPublic === true;
+      })
+    : [];
+
+  console.log("Filtered publicBusinesses:", publicBusinesses);
+  console.log("publicBusinesses.length:", publicBusinesses.length);
+  
 
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
@@ -1294,31 +1326,50 @@ const ProfileScreen = ({ route, navigation }) => {
 
           {/* Only show Businesses section if there are businesses, or if viewing own profile */}
           {/*{(isCurrentUserProfile || (businessesData && businessesData.length > 0)) && ( */}
-          {user.businessesIsPublic && (
-            <View style={styles.fieldContainer}>
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Businesses:</Text>
-              {businessesData && businessesData.length > 0 ? (
-                businessesData.map((business, index) => (
-                  <TouchableOpacity
-                    key={business.business_uid || index}
-                    onPress={() => {
-                      if (business.business_uid) {
-                        navigation.navigate("BusinessProfile", { business_uid: business.business_uid });
-                      }
-                    }}
-                    style={[styles.businessCardContainer, darkMode && styles.darkBusinessCardContainer, index > 0 && { marginTop: 10 }]}
-                  >
-                    <MiniCard business={business} />
-                    <View style={styles.roleContainer}>
-                      <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {sanitizeText(business.role, "No Role Selected")}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))
-              ) : (
-                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: darkMode ? "#999" : "#666" }]}>No businesses added yet</Text>
-              )}
-            </View>
-          )}
+
+          {user.businessIsPublic && (
+          <View style={styles.fieldContainer}>
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>
+              Businesses:
+            </Text>
+            {publicBusinesses.length > 0 ? (
+              publicBusinesses.map((business, index) => (
+                <TouchableOpacity
+                  key={business.profile_business_uid || index}
+                  onPress={() => {
+                    if (business.profile_business_uid) {
+                      navigation.navigate("BusinessProfile", {
+                        business_uid: business.profile_business_uid,
+                      });
+                    }
+                  }}
+                  style={[
+                    styles.businessCardContainer,
+                    darkMode && styles.darkBusinessCardContainer,
+                    index > 0 && { marginTop: 10 },
+                  ]}
+                >
+                  <MiniCard business={business} />
+                  <View style={styles.roleContainer}>
+                    <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>
+                      Role: {sanitizeText(business.role, "No Role Selected")}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <Text
+                style={[
+                  styles.inputText,
+                  darkMode && styles.darkInputText,
+                  { fontStyle: "italic", color: darkMode ? "#999" : "#666" },
+                ]}
+              >
+                No businesses added yet
+              </Text>
+            )}
+          </View>
+        )}
         </ScrollView>
 
         <BottomNavBar navigation={navigation} />

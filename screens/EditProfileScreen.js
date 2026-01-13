@@ -66,6 +66,7 @@ const EditProfileScreen = ({ route, navigation }) => {
       role: biz.role || biz.profile_business_role || "",
       isPublic: biz.isPublic !== undefined ? biz.isPublic : biz.profile_business_is_visible === 1,
       isApproved: biz.isApproved !== undefined ? biz.isApproved : biz.profile_business_approved === "1",
+      individualIsPublic: biz.individualIsPublic !== undefined ? biz.individualIsPublic : (biz.bu_individual_business_is_public === 1 || biz.bu_individual_business_is_public === "1"),
       isNew: biz.isNew || false,
     })) || [{ name: "", role: "", isPublic: 0, isApproved: 0, isNew: false }],
     experience: user?.experience?.map((e) => ({
@@ -106,7 +107,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     youtube: user?.youtube || "",
   });
   // console.log("EditProfileScreen business_info:", formData.businesses);
-
+  
   // Add state to track deleted items
   const [deletedItems, setDeletedItems] = useState({
     experiences: [],
@@ -367,6 +368,8 @@ const EditProfileScreen = ({ route, navigation }) => {
       payload.append("profile_personal_expertise_is_public", formData.expertiseIsPublic ? 1 : 0);
       payload.append("profile_personal_wishes_is_public", formData.wishesIsPublic ? 1 : 0);
       payload.append("profile_personal_business_is_public", formData.businessIsPublic ? 1 : 0);
+      console.log("EditProfileScreen - Sending businessIsPublic:", formData.businessIsPublic);
+      console.log("EditProfileScreen - As value:", formData.businessIsPublic ? 1 : 0);
       payload.append("profile_personal_image_is_public", formData.imageIsPublic ? 1 : 0);
 
       // Map experience data to backend field names - using frontend field names for consistency
@@ -405,7 +408,7 @@ const EditProfileScreen = ({ route, navigation }) => {
       payload.append("education_info", JSON.stringify(formData.education || []));
       payload.append("expertise_info", JSON.stringify(formData.expertise || []));
       payload.append("wishes_info", JSON.stringify(formData.wishes || []));
-      payload.append("business_info", JSON.stringify(formData.businesses || []));
+      //payload.append("business_info", JSON.stringify(formData.businesses || []));
 
       // Add businesses to payload (for each business, add the correct fields)
       const businessesPayload = (formData.businesses || [])
@@ -421,6 +424,7 @@ const EditProfileScreen = ({ route, navigation }) => {
               profile_business_role: biz.role || "",
               isPublic: biz.isPublic ? 1 : 0,
               isApproved: biz.isApproved ? 1 : 0,
+              individualIsPublic: biz.individualIsPublic ? 1 : 0,
             };
           }
 
@@ -431,6 +435,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             isPublic: biz.isPublic ? 1 : 0,
             isApproved: 1, // Set to approved for new businesses
             profile_business_approver_id: profileUID, // Use the current user's profile UID as approver
+            individualIsPublic: biz.individualIsPublic ? 1 : 0, 
           };
         })
         .filter(Boolean);
@@ -498,7 +503,11 @@ const EditProfileScreen = ({ route, navigation }) => {
       }
 
       console.log("Payload being sent to API:", payload);
-
+      console.log("==========================================");
+      console.log("BUSINESSES PAYLOAD DETAIL:");
+      console.log("formData.businesses:", JSON.stringify(formData.businesses, null, 2));
+      console.log("businessesPayload:", JSON.stringify(businessesPayload, null, 2));
+      console.log("==========================================");
       console.log("Sending payload to server... PUT");
       await new Promise((res) => setTimeout(res, 2000)); // Add this line to simulate a 2s delay
       const response = await axios({

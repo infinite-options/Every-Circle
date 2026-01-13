@@ -12,6 +12,11 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
   const [businessesData, setBusinessesData] = useState([]);
   const [loadingBusinesses, setLoadingBusinesses] = useState(false);
 
+  // Debugging: Log businesses prop whenever it changes
+  useEffect(() => {
+    console.log("BusinessSection received businesses prop:", businesses);
+  }, [businesses]);
+
   const addBusiness = () => {
     // Navigate to BusinessSetup screen to add a new business
     if (navigation) {
@@ -61,6 +66,12 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
     }
   };
 
+  const toggleIndividualVisibility = (index) => {
+    const updated = [...businesses];
+    updated[index].individualIsPublic = !updated[index].individualIsPublic;
+    setBusinesses(updated);
+  };
+
   // Fetch business details for MiniCards
   useEffect(() => {
     if (businesses && businesses.length > 0) {
@@ -73,6 +84,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
   const fetchBusinessesData = async (businesses) => {
     try {
       setLoadingBusinesses(true);
+      console.log("Starting fetchBusinessesData with businesses:", businesses);
       const businessPromises = businesses.map(async (bus) => {
         // Only fetch details for businesses that have a business_uid (existing businesses)
         if (!bus.profile_business_uid && !bus.business_uid) {
@@ -81,6 +93,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
 
         try {
           const businessUid = bus.profile_business_uid || bus.business_uid;
+          console.log(`Fetching business ${businessUid}, bus object:`, bus);
           const businessEndpoint = `${BUSINESS_INFO_ENDPOINT}/${businessUid}`;
           const response = await fetch(businessEndpoint);
           const result = await response.json();
@@ -133,7 +146,8 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
 
           // Get role and approval status from the original business entry
           const originalBusiness = businesses.find((b) => (b.profile_business_uid || b.business_uid) === businessUid);
-
+          console.log(`For business ${businessUid}, found originalBusiness:`, originalBusiness);
+          console.log(`individualIsPublic value:`, originalBusiness?.individualIsPublic);
           return {
             business_name: rawBusiness.business_name || "",
             business_address_line_1: rawBusiness.business_address_line_1 || "",
@@ -149,6 +163,11 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
             profile_business_uid: bus.profile_business_uid || "",
             role: originalBusiness?.role || "",
             isApproved: originalBusiness?.isApproved || false,
+            // Get individualIsPublic from the businesses prop (which has the latest data from backend)
+            individualIsPublic: originalBusiness?.individualIsPublic ?? 
+                             (bus.bu_individual_business_is_public === 1 || 
+                              bus.bu_individual_business_is_public === "1" || 
+                              bus.bu_individual_business_is_public === true),
             index: businesses.indexOf(bus), // Store original index for editing/deleting
           };
         } catch (error) {
@@ -159,6 +178,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
 
       const fetchedBusinesses = await Promise.all(businessPromises);
       const validBusinesses = fetchedBusinesses.filter(Boolean);
+      console.log("Final businessesData:", validBusinesses);
       setBusinessesData(validBusinesses);
     } catch (error) {
       console.error("BusinessSection - Error fetching businesses data:", error);
@@ -189,7 +209,18 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
           const originalIndex = business.index;
           const originalBusiness = businesses[originalIndex];
           return (
-            <View key={business.business_uid || business.profile_business_uid || idx} style={[styles.businessCardWrapper, darkMode && styles.darkBusinessCardWrapper, idx > 0 && { marginTop: 10 }]}>
+            <View key={business.business_uid || business.profile_business_uid || idx} style={[styles.card, darkMode && styles.darkCard, idx > 0 && { marginTop: 10 }]}>
+              {/* Header with toggle */}
+              <View style={styles.rowHeader}>
+                <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{idx + 1}</Text>
+                <TouchableOpacity onPress={() => toggleIndividualVisibility(originalIndex)}>
+                  <Text style={{ color: business.individualIsPublic ? (darkMode ? "#4ade80" : "#4CAF50") : (darkMode ? "#f87171" : "#f44336"), fontWeight: "bold" }}>
+                    {business.individualIsPublic ? "Public" : "Private"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              
+              {/* Business card */}
               <TouchableOpacity
                 onPress={() => {
                   if (business.business_uid && navigation) {
@@ -197,10 +228,11 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                   }
                 }}
                 activeOpacity={0.7}
-                style={{ flex: 1 }}
               >
                 <MiniCard business={business} />
               </TouchableOpacity>
+              
+              {/* Role text */}
               {business.role && (
                 <View style={styles.roleContainer}>
                   <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {business.role}</Text>
@@ -266,10 +298,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                   value={item.role}
                   onChangeText={(text) => handleInputChange(actualIndex, "role", text)}
                 />
-
-                <TouchableOpacity onPress={() => deleteBusiness(actualIndex)} style={styles.deleteButton}>
-                  <Image source={require("../assets/delete.png")} style={[styles.deleteIcon, darkMode && styles.darkDeleteIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
-                </TouchableOpacity>
+                
               </View>
             );
           })
@@ -398,12 +427,13 @@ const styles = StyleSheet.create({
     color: "#999",
   },
   businessActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    alignItems: "center",
-    marginTop: 8,
-    paddingLeft: 10,
-  },
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  marginTop: 8,
+  paddingLeft: 10,
+  paddingRight: 10,
+},
   existingBusinessText: {
     fontSize: 16,
     color: "#000",
