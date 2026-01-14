@@ -111,7 +111,7 @@ const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPubl
                 setExperience(updated);
               }}
             >
-              <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold", marginLeft: 10 }}>{item.isPublic ? "Public" : "Private"}</Text>
+              <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold", marginLeft: 10 }}>{item.isPublic ? "Display" : "Hide"}</Text>
             </TouchableOpacity>
           </View>
 

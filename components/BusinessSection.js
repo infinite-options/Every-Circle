@@ -198,7 +198,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
           </TouchableOpacity>
         </View>
         <TouchableOpacity onPress={toggleVisibility}>
-          <Text style={[styles.toggleText, { color: isPublic ? (darkMode ? "#4ade80" : "#4CAF50") : darkMode ? "#f87171" : "#f44336" }]}>{isPublic ? "Public" : "Private"}</Text>
+          <Text style={[styles.toggleText, { color: isPublic ? (darkMode ? "#4ade80" : "#4CAF50") : darkMode ? "#f87171" : "#f44336" }]}>{isPublic ? "Display" : "Hide"}</Text>
         </TouchableOpacity>
       </View>
 
@@ -215,7 +215,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                 <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{idx + 1}</Text>
                 <TouchableOpacity onPress={() => toggleIndividualVisibility(originalIndex)}>
                   <Text style={{ color: business.individualIsPublic ? (darkMode ? "#4ade80" : "#4CAF50") : (darkMode ? "#f87171" : "#f44336"), fontWeight: "bold" }}>
-                    {business.individualIsPublic ? "Public" : "Private"}
+                    {business.individualIsPublic ? "Display" : "Hide"}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -252,7 +252,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                 <View style={styles.rowHeader}>
                   <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{actualIndex + 1}</Text>
                   <TouchableOpacity onPress={() => toggleEntryVisibility(actualIndex)}>
-                    <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold", marginLeft: 10 }}>{item.isPublic ? "Public" : "Private"}</Text>
+                    <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold", marginLeft: 10 }}>{item.isPublic ? "Display" : "Hide"}</Text>
                   </TouchableOpacity>
                 </View>
 

@@ -571,7 +571,7 @@ const EditProfileScreen = ({ route, navigation }) => {
       <View style={styles.labelRow}>
         <Text style={[styles.label, darkMode && styles.darkLabel]}>{label}</Text>
         <TouchableOpacity onPress={() => handleToggleVisibility(visibilityFieldName)}>
-          <Text style={[styles.toggleText, { color: isPublic ? (darkMode ? "#4ade80" : "green") : darkMode ? "#f87171" : "red" }]}>{isPublic ? "Public" : "Private"}</Text>
+          <Text style={[styles.toggleText, { color: isPublic ? (darkMode ? "#4ade80" : "green") : darkMode ? "#f87171" : "red" }]}>{isPublic ? "Display" : "Hide"}</Text>
         </TouchableOpacity>
       </View>
       <TextInput
@@ -592,7 +592,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         <Text style={[styles.label, darkMode && styles.darkLabel]}>Short Bio</Text>
         <TouchableOpacity onPress={() => handleToggleVisibility("shortBioIsPublic")}>
           <Text style={[styles.toggleText, { color: formData.shortBioIsPublic ? (darkMode ? "#4ade80" : "green") : darkMode ? "#f87171" : "red" }]}>
-            {formData.shortBioIsPublic ? "Public" : "Private"}
+            {formData.shortBioIsPublic ? "Display" : "Hide"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -723,8 +723,6 @@ const EditProfileScreen = ({ route, navigation }) => {
         keyboardShouldPersistTaps='handled'
         showsVerticalScrollIndicator={true}
       >
-        {renderField("First Name (Public)", formData.firstName, true, "firstName", "firstNameIsPublic")}
-        {renderField("Last Name (Public)", formData.lastName, true, "lastName", "lastNameIsPublic")}
         {/* Profile Image Upload Section */}
         <View style={[styles.imageSection, darkMode && styles.darkImageSection]}>
           <Text style={[styles.label, darkMode && styles.darkLabel]}>Profile Image</Text>
@@ -737,7 +735,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
             <TouchableOpacity onPress={toggleProfileImageVisibility}>
               <Text style={[styles.toggleText, { fontWeight: "bold", color: formData.imageIsPublic ? (darkMode ? "#4ade80" : "green") : darkMode ? "#f87171" : "red" }]}>
-                {formData.imageIsPublic ? "Public" : "Private"}
+                {formData.imageIsPublic ? "Display" : "Hide"}
               </Text>
             </TouchableOpacity>
           </View>
@@ -745,6 +743,8 @@ const EditProfileScreen = ({ route, navigation }) => {
             <Text style={[styles.uploadLink, darkMode && styles.darkUploadLink]}>Upload Image</Text>
           </TouchableOpacity>
         </View>
+        {renderField("First Name (Public)", formData.firstName, true, "firstName", "firstNameIsPublic")}
+        {renderField("Last Name (Public)", formData.lastName, true, "lastName", "lastNameIsPublic")}
         {renderField("Phone Number", formData.phoneNumber, formData.phoneIsPublic, "phoneNumber", "phoneIsPublic")}
         {renderField("Email", formData.email, formData.emailIsPublic, "email", "emailIsPublic")}
         {renderField("City", formData.city, formData.locationIsPublic, "city", "locationIsPublic")}
@@ -828,7 +828,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           onPress={handleSave}
           disabled={!isChanged || isLoading}
         >
-          {isLoading ? <ActivityIndicator size='large' color={darkMode ? "#ffffff" : "#fff"} /> : <Text style={[styles.saveText, darkMode && styles.darkSaveText]}>Submit</Text>}
+          {isLoading ? <ActivityIndicator size='small' color={darkMode ? "#ffffff" : "#fff"} /> : <Text style={[styles.saveText, darkMode && styles.darkSaveText]}>Submit</Text>}
         </TouchableOpacity>
       </ScrollView>
       <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 10 }}>

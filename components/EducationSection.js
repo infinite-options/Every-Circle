@@ -88,7 +88,7 @@ const EducationSection = ({ education, setEducation, toggleVisibility, isPublic,
           </TouchableOpacity>
         </View>
         <TouchableOpacity onPress={toggleVisibility}>
-          <Text style={[styles.toggleText, { color: isPublic ? "#4CAF50" : "#f44336" }]}> {isPublic ? "Public" : "Private"}</Text>
+          <Text style={[styles.toggleText, { color: isPublic ? "#4CAF50" : "#f44336" }]}> {isPublic ? "Display" : "Hide"}</Text>
         </TouchableOpacity>
       </View>
 
@@ -99,7 +99,7 @@ const EducationSection = ({ education, setEducation, toggleVisibility, isPublic,
 
             {/* Individual public/private toggle */}
             <TouchableOpacity onPress={() => toggleEntryVisibility(index)}>
-              <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold", marginLeft: 10 }}>{item.isPublic ? "Public" : "Private"}</Text>
+              <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold", marginLeft: 10 }}>{item.isPublic ? "Display" : "Hide"}</Text>
             </TouchableOpacity>
           </View>
           <TextInput style={styles.input} placeholder='School' value={item.school} onChangeText={(text) => handleInputChange(index, "school", text)} />

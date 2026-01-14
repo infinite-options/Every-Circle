@@ -938,23 +938,25 @@ const ProfileScreen = ({ route, navigation }) => {
           })}
         >
           <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
-            <Image
-              source={
-                user.profileImage && (isCurrentUserProfile || user.imageIsPublic) && user.profileImage !== "" && String(user.profileImage).trim() !== ""
-                  ? { uri: String(user.profileImage) }
-                  : require("../assets/profile.png")
-              }
-              style={styles.profileImage}
-              onError={(error) => {
-                console.log("ProfileScreen image failed to load:", error.nativeEvent.error);
-                console.log("Problematic profile image URI:", user.profileImage);
-              }}
-              defaultSource={require("../assets/profile.png")}
-            />
-            <Text style={[styles.nameText, darkMode && styles.darkNameText]}>
-              {user.firstName} {user.lastName}
-            </Text>
-            <Text style={[styles.profileId, darkMode && styles.darkProfileId]}>Profile ID: {profileUID}</Text>
+            <View style={styles.profileHeaderContainer}>
+              <Image
+                source={
+                  user.profileImage && (isCurrentUserProfile || user.imageIsPublic) && user.profileImage !== "" && String(user.profileImage).trim() !== ""
+                    ? { uri: String(user.profileImage) }
+                    : require("../assets/profile.png")
+                }
+                style={styles.profileImage}
+                onError={(error) => {
+                  console.log("ProfileScreen image failed to load:", error.nativeEvent.error);
+                  console.log("Problematic profile image URI:", user.profileImage);
+                }}
+                defaultSource={require("../assets/profile.png")}
+              />
+              <Text style={[styles.nameText, darkMode && styles.darkNameText]}>
+                {user.firstName} {user.lastName}
+              </Text>
+              <Text style={[styles.profileId, darkMode && styles.darkProfileId]}>Profile ID: {profileUID}</Text>
+            </View>
             {(() => {
               // Only show relationship when viewing another user's profile
               if (routeProfileUID && !isCurrentUserProfile) {
@@ -1027,25 +1029,33 @@ const ProfileScreen = ({ route, navigation }) => {
               return null;
             })()}
             {(() => {
-              const tagLine = user.tagLine && (isCurrentUserProfile || user.tagLineIsPublic) ? sanitizeText(user.tagLine) : "";
-              return tagLine ? <Text style={[styles.tagline, darkMode && styles.darkTagline]}>{tagLine}</Text> : null;
+              // Tagline hidden per user request
+              return null;
+              // const tagLine = user.tagLine && (isCurrentUserProfile || user.tagLineIsPublic) ? sanitizeText(user.tagLine) : "";
+              // return tagLine ? <Text style={[styles.tagline, darkMode && styles.darkTagline]}>{tagLine}</Text> : null;
             })()}
             {(() => {
-              const location = user.city && user.state && (isCurrentUserProfile || user.locationIsPublic) ? `${sanitizeText(user.city)}, ${sanitizeText(user.state)}` : "";
-              return location ? <Text style={[styles.tagline, darkMode && styles.darkTagline]}>{location}</Text> : null;
+              // City and State hidden per user request
+              return null;
+              // const location = user.city && user.state && (isCurrentUserProfile || user.locationIsPublic) ? `${sanitizeText(user.city)}, ${sanitizeText(user.state)}` : "";
+              // return location ? <Text style={[styles.tagline, darkMode && styles.darkTagline]}>{location}</Text> : null;
             })()}
             {(() => {
               const shortBio = user.shortBio && (isCurrentUserProfile || user.shortBioIsPublic) ? sanitizeText(user.shortBio) : "";
               return shortBio ? <Text style={[styles.bio, darkMode && styles.darkBio]}>{shortBio}</Text> : null;
             })()}
             {(() => {
-              const phoneNumber = user.phoneNumber && (isCurrentUserProfile || user.phoneIsPublic) ? sanitizeText(user.phoneNumber) : "";
-              const formattedPhone = phoneNumber ? formatPhoneNumberForDisplay(phoneNumber) : "";
-              return formattedPhone ? <Text style={[styles.contact, darkMode && styles.darkContact]}>{formattedPhone}</Text> : null;
+              // Phone number hidden per user request
+              return null;
+              // const phoneNumber = user.phoneNumber && (isCurrentUserProfile || user.phoneIsPublic) ? sanitizeText(user.phoneNumber) : "";
+              // const formattedPhone = phoneNumber ? formatPhoneNumberForDisplay(phoneNumber) : "";
+              // return formattedPhone ? <Text style={[styles.contact, darkMode && styles.darkContact]}>{formattedPhone}</Text> : null;
             })()}
             {(() => {
-              const email = user.email && (isCurrentUserProfile || user.emailIsPublic) ? sanitizeText(user.email) : "";
-              return email ? <Text style={[styles.contact, darkMode && styles.darkContact]}>{email}</Text> : null;
+              // Email hidden per user request
+              return null;
+              // const email = user.email && (isCurrentUserProfile || user.emailIsPublic) ? sanitizeText(user.email) : "";
+              // return email ? <Text style={[styles.contact, darkMode && styles.darkContact]}>{email}</Text> : null;
             })()}
           </View>
 
@@ -1479,12 +1489,18 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     marginBottom: 0,
   },
-  nameText: { fontSize: 26, fontWeight: "bold", color: "#000", marginBottom: 8 },
+  profileHeaderContainer: {
+    width: "100%",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  nameText: { fontSize: 26, fontWeight: "bold", color: "#000", marginBottom: 8, textAlign: "center" },
   profileId: {
     fontSize: 14,
     color: "#666",
     marginBottom: 8,
     fontStyle: "italic",
+    textAlign: "center",
   },
   relationshipText: {
     fontSize: 14,

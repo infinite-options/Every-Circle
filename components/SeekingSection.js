@@ -121,7 +121,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
           </TouchableOpacity>
         </View>
         <TouchableOpacity onPress={toggleVisibility}>
-          <Text style={[styles.toggleText, { color: isPublic ? "#4CAF50" : "#f44336" }]}>{isPublic ? "Public" : "Private"}</Text>
+          <Text style={[styles.toggleText, { color: isPublic ? "#4CAF50" : "#f44336" }]}>{isPublic ? "Display" : "Hide"}</Text>
         </TouchableOpacity>
       </View>
 
@@ -130,7 +130,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
           <View style={styles.rowHeader}>
             <Text style={styles.label}>Seeking #{index + 1}</Text>
             <TouchableOpacity onPress={() => toggleEntryVisibility(index)}>
-              <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold" }}>{item.isPublic ? "Public" : "Private"}</Text>
+              <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold" }}>{item.isPublic ? "Display" : "Hide"}</Text>
             </TouchableOpacity>
           </View>
 

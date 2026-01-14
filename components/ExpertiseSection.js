@@ -127,7 +127,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
           </TouchableOpacity>
         </View>
         <TouchableOpacity onPress={toggleVisibility}>
-          <Text style={[styles.toggleText, { color: isPublic ? "#4CAF50" : "#f44336" }]}>{isPublic ? "Public" : "Private"}</Text>
+          <Text style={[styles.toggleText, { color: isPublic ? "#4CAF50" : "#f44336" }]}>{isPublic ? "Display" : "Hide"}</Text>
         </TouchableOpacity>
       </View>
 
@@ -136,7 +136,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
           <View style={styles.rowHeader}>
             <Text style={styles.label}>Expertise #{index + 1}</Text>
             <TouchableOpacity onPress={() => toggleEntryVisibility(index)}>
-              <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold", marginLeft: 10 }}>{item.isPublic ? "Public" : "Private"}</Text>
+              <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold", marginLeft: 10 }}>{item.isPublic ? "Display" : "Hide"}</Text>
             </TouchableOpacity>
           </View>
 

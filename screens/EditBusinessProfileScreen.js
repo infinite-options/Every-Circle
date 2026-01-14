@@ -493,7 +493,7 @@ export default function EditBusinessProfileScreen({ route, navigation }) {
         <Text style={[styles.label, darkMode && styles.darkLabel]}>{label}</Text>
         {visibilityKey && (
           <TouchableOpacity onPress={() => toggleVisibility(visibilityKey)}>
-            <Text style={{ color: formData[visibilityKey] ? (darkMode ? "#4CAF50" : "green") : darkMode ? "#FF6B6B" : "red" }}>{formData[visibilityKey] ? "Public" : "Private"}</Text>
+            <Text style={{ color: formData[visibilityKey] ? (darkMode ? "#4CAF50" : "green") : darkMode ? "#FF6B6B" : "red" }}>{formData[visibilityKey] ? "Display" : "Hide"}</Text>
           </TouchableOpacity>
         )}
       </View>
