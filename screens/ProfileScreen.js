@@ -224,7 +224,7 @@ const ProfileScreen = ({ route, navigation }) => {
             role: bus.profile_business_role || bus.role || bus.bu_role || "",
             isApproved: bus.profile_business_approved === "1" || bus.profile_business_approved === 1 || bus.isApproved === true || bus.isApproved === "1",
             isPublic: bus.profile_business_is_visible === "1" || bus.profile_business_is_visible === 1 || bus.isPublic === true || bus.isPublic === "1",
-            bu_individual_business_is_public: bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === true,
+            individualIsPublic: bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === true,
           }))
         : [];
 
@@ -425,7 +425,7 @@ const ProfileScreen = ({ route, navigation }) => {
             business_uid: sanitizeText(rawBusiness.business_uid, ""),
             role: sanitizeText(originalBusiness?.role, ""),
             isApproved: originalBusiness?.isApproved || false,
-            individualIsPublic: originalBusiness?.bu_individual_business_is_public === 1 || originalBusiness?.bu_individual_business_is_public === "1" || originalBusiness?.bu_individual_business_is_public === true,
+            individualIsPublic: originalBusiness?.individualIsPublic === 1 || originalBusiness?.individualIsPublic === "1" || originalBusiness?.individualIsPublic === true || originalBusiness?.bu_individual_business_is_public === 1 || originalBusiness?.bu_individual_business_is_public === "1" || originalBusiness?.bu_individual_business_is_public === true,
           };
         } catch (error) {
           console.error(`Error fetching business ${bus.profile_business_uid}:`, error);
@@ -749,7 +749,7 @@ const ProfileScreen = ({ route, navigation }) => {
           rawFlag: business.bu_individual_business_is_public,
         });
 
-        return business.individualIsPublic === true;
+        return business.individualIsPublic === true || business.individualIsPublic === 1 || business.individualIsPublic === "1";
       })
     : [];
 
