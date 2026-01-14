@@ -1038,7 +1038,7 @@ const ProfileScreen = ({ route, navigation }) => {
               const shortBio = user.shortBio && (isCurrentUserProfile || user.shortBioIsPublic) ? sanitizeText(user.shortBio) : "";
               return shortBio ? <Text style={[styles.bio, darkMode && styles.darkBio]}>{shortBio}</Text> : null;
             })()}
-            {(() => {
+            {/* {(() => {
               const phoneNumber = user.phoneNumber && (isCurrentUserProfile || user.phoneIsPublic) ? sanitizeText(user.phoneNumber) : "";
               const formattedPhone = phoneNumber ? formatPhoneNumberForDisplay(phoneNumber) : "";
               return formattedPhone ? <Text style={[styles.contact, darkMode && styles.darkContact]}>{formattedPhone}</Text> : null;
@@ -1046,7 +1046,7 @@ const ProfileScreen = ({ route, navigation }) => {
             {(() => {
               const email = user.email && (isCurrentUserProfile || user.emailIsPublic) ? sanitizeText(user.email) : "";
               return email ? <Text style={[styles.contact, darkMode && styles.darkContact]}>{email}</Text> : null;
-            })()}
+            })()} */}
           </View>
 
           <MiniCard
@@ -1476,7 +1476,7 @@ const styles = StyleSheet.create({
   errorText: { fontSize: 18, color: "red", textAlign: "center", marginTop: 20 },
   cardContainer: {
     padding: 0,
-    alignItems: "flex-start",
+    alignItems: "center",
     marginBottom: 0,
   },
   nameText: { fontSize: 26, fontWeight: "bold", color: "#000", marginBottom: 8 },

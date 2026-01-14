@@ -828,7 +828,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           onPress={handleSave}
           disabled={!isChanged || isLoading}
         >
-          {isLoading ? <ActivityIndicator size='large' color={darkMode ? "#ffffff" : "#fff"} /> : <Text style={[styles.saveText, darkMode && styles.darkSaveText]}>Submit</Text>}
+          {isLoading ? <ActivityIndicator size='small' color={darkMode ? "#ffffff" : "#fff"} /> : <Text style={[styles.saveText, darkMode && styles.darkSaveText]}>Submit</Text>}
         </TouchableOpacity>
       </ScrollView>
       <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 10 }}>
