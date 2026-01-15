@@ -94,7 +94,7 @@ const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPubl
 
         {/* Public Toggle */}
         <TouchableOpacity onPress={toggleVisibility}>
-          <Text style={[styles.toggleText, { color: isPublic ? "#4CAF50" : "#f44336" }]}>{isPublic ? "Public" : "Private"}</Text>
+          <Text style={[styles.toggleText, { color: isPublic ? "#4CAF50" : "#f44336" }]}>{isPublic ? "Display" : "Hide"}</Text>
         </TouchableOpacity>
       </View>
 
