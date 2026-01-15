@@ -46,9 +46,9 @@ const EditProfileScreen = ({ route, navigation }) => {
     phoneNumber: user?.phoneNumber || "",
     tagLine: user?.tagLine || "",
     shortBio: user?.shortBio || "",
-    city: user?.personal_info?.profile_personal_city || "",
-    state: user?.personal_info?.profile_personal_state || "",
-    locationIsPublic: user?.personal_info?.profile_personal_location_is_public === 1,
+    city: user?.city || "",
+    state: user?.state || "",
+    locationIsPublic: user?.locationIsPublic || false,
     emailIsPublic: user?.emailIsPublic || false,
     phoneIsPublic: user?.phoneIsPublic || false,
     tagLineIsPublic: user?.tagLineIsPublic || false,
@@ -66,7 +66,7 @@ const EditProfileScreen = ({ route, navigation }) => {
       role: biz.role || biz.profile_business_role || "",
       isPublic: biz.isPublic !== undefined ? biz.isPublic : biz.profile_business_is_visible === 1,
       isApproved: biz.isApproved !== undefined ? biz.isApproved : biz.profile_business_approved === "1",
-      individualIsPublic: biz.individualIsPublic !== undefined ? biz.individualIsPublic : (biz.bu_individual_business_is_public === 1 || biz.bu_individual_business_is_public === "1"),
+      individualIsPublic: biz.individualIsPublic !== undefined ? biz.individualIsPublic : biz.bu_individual_business_is_public === 1 || biz.bu_individual_business_is_public === "1",
       isNew: biz.isNew || false,
     })) || [{ name: "", role: "", isPublic: 0, isApproved: 0, isNew: false }],
     experience: user?.experience?.map((e) => ({
@@ -107,7 +107,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     youtube: user?.youtube || "",
   });
   // console.log("EditProfileScreen business_info:", formData.businesses);
-  
+
   // Add state to track deleted items
   const [deletedItems, setDeletedItems] = useState({
     experiences: [],
@@ -435,7 +435,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             isPublic: biz.isPublic ? 1 : 0,
             isApproved: 1, // Set to approved for new businesses
             profile_business_approver_id: profileUID, // Use the current user's profile UID as approver
-            individualIsPublic: biz.individualIsPublic ? 1 : 0, 
+            individualIsPublic: biz.individualIsPublic ? 1 : 0,
           };
         })
         .filter(Boolean);

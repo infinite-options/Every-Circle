@@ -263,7 +263,6 @@ const ProfileScreen = ({ route, navigation }) => {
       console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
       console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
 
-
       if (userData.businesses && userData.businesses.length > 0) {
         console.log("ProfileScreen - Calling fetchBusinessesData with businesses:", userData.businesses);
         fetchBusinessesData(userData.businesses);
@@ -425,7 +424,8 @@ const ProfileScreen = ({ route, navigation }) => {
             business_uid: sanitizeText(rawBusiness.business_uid, ""),
             role: sanitizeText(originalBusiness?.role, ""),
             isApproved: originalBusiness?.isApproved || false,
-            individualIsPublic: originalBusiness?.bu_individual_business_is_public === 1 || originalBusiness?.bu_individual_business_is_public === "1" || originalBusiness?.bu_individual_business_is_public === true,
+            individualIsPublic:
+              originalBusiness?.bu_individual_business_is_public === 1 || originalBusiness?.bu_individual_business_is_public === "1" || originalBusiness?.bu_individual_business_is_public === true,
           };
         } catch (error) {
           console.error(`Error fetching business ${bus.profile_business_uid}:`, error);
@@ -755,7 +755,6 @@ const ProfileScreen = ({ route, navigation }) => {
 
   console.log("Filtered publicBusinesses:", publicBusinesses);
   console.log("publicBusinesses.length:", publicBusinesses.length);
-  
 
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
@@ -1041,8 +1040,8 @@ const ProfileScreen = ({ route, navigation }) => {
               // return location ? <Text style={[styles.tagline, darkMode && styles.darkTagline]}>{location}</Text> : null;
             })()}
             {(() => {
-              const shortBio = user.shortBio && (isCurrentUserProfile || user.shortBioIsPublic) ? sanitizeText(user.shortBio) : "";
-              return shortBio ? <Text style={[styles.bio, darkMode && styles.darkBio]}>{shortBio}</Text> : null;
+              // ShortBio moved below MiniCard
+              return null;
             })()}
             {(() => {
               // Phone number hidden per user request
@@ -1066,6 +1065,20 @@ const ProfileScreen = ({ route, navigation }) => {
               profileImage: isCurrentUserProfile || user.imageIsPublic ? user.profileImage : "",
             }}
           />
+
+          {/* Bio section */}
+          {user.shortBioIsPublic && (
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Bio:</Text>
+              {user.shortBio && user.shortBio.trim() !== "" ? (
+                <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(user.shortBio)}</Text>
+                </View>
+              ) : (
+                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: darkMode ? "#999" : "#666" }]}>No bio added yet</Text>
+              )}
+            </View>
+          )}
 
           {/* Only show Experience section if there are public experiences, or if viewing own profile */}
           {/*{(isCurrentUserProfile || (user.experience && user.experience.filter((exp) => exp.isPublic).length > 0)) && ( */}
@@ -1338,48 +1351,32 @@ const ProfileScreen = ({ route, navigation }) => {
           {/*{(isCurrentUserProfile || (businessesData && businessesData.length > 0)) && ( */}
 
           {user.businessIsPublic && (
-          <View style={styles.fieldContainer}>
-            <Text style={[styles.label, darkMode && styles.darkLabel]}>
-              Businesses:
-            </Text>
-            {publicBusinesses.length > 0 ? (
-              publicBusinesses.map((business, index) => (
-                <TouchableOpacity
-                  key={business.profile_business_uid || index}
-                  onPress={() => {
-                    if (business.profile_business_uid) {
-                      navigation.navigate("BusinessProfile", {
-                        business_uid: business.profile_business_uid,
-                      });
-                    }
-                  }}
-                  style={[
-                    styles.businessCardContainer,
-                    darkMode && styles.darkBusinessCardContainer,
-                    index > 0 && { marginTop: 10 },
-                  ]}
-                >
-                  <MiniCard business={business} />
-                  <View style={styles.roleContainer}>
-                    <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>
-                      Role: {sanitizeText(business.role, "No Role Selected")}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))
-            ) : (
-              <Text
-                style={[
-                  styles.inputText,
-                  darkMode && styles.darkInputText,
-                  { fontStyle: "italic", color: darkMode ? "#999" : "#666" },
-                ]}
-              >
-                No businesses added yet
-              </Text>
-            )}
-          </View>
-        )}
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Businesses:</Text>
+              {publicBusinesses.length > 0 ? (
+                publicBusinesses.map((business, index) => (
+                  <TouchableOpacity
+                    key={business.profile_business_uid || index}
+                    onPress={() => {
+                      if (business.profile_business_uid) {
+                        navigation.navigate("BusinessProfile", {
+                          business_uid: business.profile_business_uid,
+                        });
+                      }
+                    }}
+                    style={[styles.businessCardContainer, darkMode && styles.darkBusinessCardContainer, index > 0 && { marginTop: 10 }]}
+                  >
+                    <MiniCard business={business} />
+                    <View style={styles.roleContainer}>
+                      <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {sanitizeText(business.role, "No Role Selected")}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: darkMode ? "#999" : "#666" }]}>No businesses added yet</Text>
+              )}
+            </View>
+          )}
         </ScrollView>
 
         <BottomNavBar navigation={navigation} />
