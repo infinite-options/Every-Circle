@@ -74,7 +74,8 @@ const styles = StyleSheet.create({
 
   backButton: {
     position: "absolute",
-    left: 16,
+    left: 21,
+    top: 5,
     width: 36,
     height: 36,
     alignItems: "center",
@@ -86,6 +87,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#fff",
     textAlign: "center",
+    marginTop: 5,
   },
 
   darkHeader: {
@@ -94,7 +96,8 @@ const styles = StyleSheet.create({
 
   rightButtonContainer: {
     position: "absolute",
-    right: 16,
+    right: 21,
+    top: 5,
     alignItems: "center",
     justifyContent: "center",
   },

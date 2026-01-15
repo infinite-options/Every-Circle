@@ -1072,7 +1072,23 @@ const NetworkScreen = ({ navigation }) => {
       {/* Header */}
       {/* <AppHeader title='Connect' backgroundColor='#AF52DE' /> */}
       <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
-        <AppHeader title='Connect' {...getHeaderColors("network")} />
+        <AppHeader
+          title='Connect'
+          {...getHeaderColors("network")}
+          rightButton={
+            <TouchableOpacity
+              style={styles.cameraButton}
+              onPress={(e) => {
+                if (e?.stopPropagation) {
+                  e.stopPropagation();
+                }
+                navigation.navigate("Search");
+              }}
+            >
+              <Ionicons name='camera' size={20} color='#fff' />
+            </TouchableOpacity>
+          }
+        />
       </TouchableOpacity>
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
@@ -1630,6 +1646,12 @@ const styles = StyleSheet.create({
   },
   darkFilterButtonTextDisabled: {
     color: "#666",
+  },
+  cameraButton: {
+    padding: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1,
   },
 });
 

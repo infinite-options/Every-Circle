@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Alert } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
@@ -126,7 +127,14 @@ const ConnectScreen = () => {
   if (loading) {
     return (
       <View style={[styles.container, darkMode && styles.darkContainer]}>
-        <AppHeader title='Connect' />
+        <AppHeader
+          title='Connect'
+          rightButton={
+            <TouchableOpacity style={styles.cameraButton} onPress={() => navigation.navigate("Search")}>
+              <Ionicons name='camera' size={20} color='#fff' />
+            </TouchableOpacity>
+          }
+        />
         <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
           <View style={styles.loadingContainer}>
             <ActivityIndicator size='large' color='#AF52DE' />
@@ -140,7 +148,14 @@ const ConnectScreen = () => {
   if (error || !profileData) {
     return (
       <View style={[styles.container, darkMode && styles.darkContainer]}>
-        <AppHeader title='Connect' />
+        <AppHeader
+          title='Connect'
+          rightButton={
+            <TouchableOpacity style={styles.cameraButton} onPress={() => navigation.navigate("Search")}>
+              <Ionicons name='camera' size={20} color='#fff' />
+            </TouchableOpacity>
+          }
+        />
         <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
           <View style={styles.errorContainer}>
             <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>{error || "Profile not found"}</Text>
@@ -155,7 +170,14 @@ const ConnectScreen = () => {
 
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
-      <AppHeader title='Connect' />
+      <AppHeader
+        title='Connect'
+        rightButton={
+          <TouchableOpacity style={styles.cameraButton} onPress={() => navigation.navigate("Search")}>
+            <Ionicons name='camera' size={20} color='#fff' />
+          </TouchableOpacity>
+        }
+      />
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
           <Text style={[styles.title, darkMode && styles.darkTitle]}>Add to Your Network</Text>
@@ -320,6 +342,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     textAlign: "center",
+  },
+  cameraButton: {
+    padding: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1,
   },
 });
 
