@@ -129,42 +129,10 @@ const EditProfileScreen = ({ route, navigation }) => {
       const updated = { ...prev, [fieldName]: newValue };
 
       // Update all items in the section when the section toggle is changed
-      if (fieldName === "experienceIsPublic") {
-        updated.experience = prev.experience.map((item) => ({
-          ...item,
-          isPublic: newValue,
-        }));
-      }
-      if (fieldName === "educationIsPublic") {
-        updated.education = prev.education.map((item) => ({
-          ...item,
-          isPublic: newValue,
-        }));
-      }
-      if (fieldName === "wishesIsPublic") {
-        updated.wishes = prev.wishes.map((item) => ({
-          ...item,
-          isPublic: newValue,
-        }));
-      }
-      if (fieldName === "businessIsPublic") {
-        updated.businesses = prev.businesses.map((item) => ({
-          ...item,
-          isPublic: newValue,
-        }));
-      }
-      if (fieldName === "expertiseIsPublic") {
-        updated.expertise = prev.expertise.map((item) => ({
-          ...item,
-          isPublic: newValue,
-        }));
-      }
-      if (fieldName === "businessIsPublic") {
-        updated.businesses = prev.businesses.map((item) => ({
-          ...item,
-          isPublic: newValue,
-        }));
-      }
+      // Removed: Section-level toggles should not change individual entry visibility
+      // Individual entries maintain their own isPublic values
+      // The section-level toggle (experienceIsPublic, educationIsPublic, etc.) only controls
+      // whether the section itself is visible, not the individual entries within it
 
       return updated;
     });
