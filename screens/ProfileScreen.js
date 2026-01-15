@@ -345,7 +345,7 @@ const ProfileScreen = ({ route, navigation }) => {
       // console.log("ProfileScreen - Number of businesses to fetch:", businesses.length);
       console.log("ProfileScreen - fetchBusinessesData called with businesses:", JSON.stringify(businesses, null, 2));
 
-      const businessPromises = businesses.map(async (bus) => {
+      const businessPromises = businesses.map(async (bus, index) => {
         console.log("ProfileScreen - Processing business:", bus);
         if (!bus.profile_business_uid) {
           console.log("ProfileScreen - Skipping business - no profile_business_uid:", bus);
@@ -422,10 +422,12 @@ const ProfileScreen = ({ route, navigation }) => {
               rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1 || rawBusiness.phone_is_public === "1" || rawBusiness.phone_is_public === 1,
             emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1 || rawBusiness.email_is_public === "1" || rawBusiness.email_is_public === 1,
             business_uid: sanitizeText(rawBusiness.business_uid, ""),
+            profile_business_uid: bus.profile_business_uid || "",
             role: sanitizeText(originalBusiness?.role, ""),
             isApproved: originalBusiness?.isApproved || false,
             individualIsPublic:
               originalBusiness?.bu_individual_business_is_public === 1 || originalBusiness?.bu_individual_business_is_public === "1" || originalBusiness?.bu_individual_business_is_public === true,
+            index: index, // Store original index for BusinessSection to map back to businesses array
           };
         } catch (error) {
           console.error(`Error fetching business ${bus.profile_business_uid}:`, error);
@@ -832,6 +834,7 @@ const ProfileScreen = ({ route, navigation }) => {
                 navigation.navigate("EditProfile", {
                   user: user,
                   profile_uid: profileUID,
+                  businessesData: businessesData, // Pass pre-fetched business data to avoid redundant API calls
                 })
               }
             >

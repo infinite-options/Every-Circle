@@ -21,7 +21,7 @@ const DEFAULT_PROFILE_IMAGE = require("../assets/profile.png");
 
 const EditProfileScreen = ({ route, navigation }) => {
   const { darkMode } = useDarkMode();
-  const { user, profile_uid: routeProfileUID } = route.params || {};
+  const { user, profile_uid: routeProfileUID, businessesData: preFetchedBusinessesData } = route.params || {};
   const [profileUID, setProfileUID] = useState(routeProfileUID || user?.profile_uid || "");
   const scrollViewRef = useRef(null);
 
@@ -789,6 +789,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           isPublic={formData.businessIsPublic}
           handleDelete={handleDeleteBusiness}
           navigation={navigation}
+          preFetchedBusinessesData={preFetchedBusinessesData}
         />
 
         <TouchableOpacity

@@ -4,12 +4,12 @@ import { BUSINESSES_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import MiniCard from "./MiniCard";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
-const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic, navigation, handleDelete }) => {
+const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic, navigation, handleDelete, preFetchedBusinessesData }) => {
   const { darkMode } = useDarkMode();
   const [modalVisible, setModalVisible] = useState(false);
   const [businessList, setBusinessList] = useState([]);
   const [activeBusinessIndex, setActiveBusinessIndex] = useState(null);
-  const [businessesData, setBusinessesData] = useState([]);
+  const [businessesData, setBusinessesData] = useState(preFetchedBusinessesData || []);
   const [loadingBusinesses, setLoadingBusinesses] = useState(false);
 
   // Debugging: Log businesses prop whenever it changes
@@ -73,13 +73,49 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
   };
 
   // Fetch business details for MiniCards
+  // Only fetch if preFetchedBusinessesData was not provided
   useEffect(() => {
-    if (businesses && businesses.length > 0) {
+    if (preFetchedBusinessesData && preFetchedBusinessesData.length > 0) {
+      // Use pre-fetched data from ProfileScreen to avoid redundant API calls
+      console.log("BusinessSection - Using pre-fetched business data, skipping API call");
+      setBusinessesData(preFetchedBusinessesData);
+    } else if (businesses && businesses.length > 0) {
+      // Only fetch if we don't have pre-fetched data
       fetchBusinessesData(businesses);
     } else {
       setBusinessesData([]);
     }
-  }, [businesses]);
+  }, [preFetchedBusinessesData]); // Only run when preFetchedBusinessesData changes (initial load)
+
+  // Sync businessesData with businesses prop changes (especially individualIsPublic)
+  useEffect(() => {
+    if (businessesData && businessesData.length > 0 && businesses && businesses.length > 0) {
+      // Update businessesData to reflect changes in businesses prop (like individualIsPublic toggles)
+      const updatedBusinessesData = businessesData.map((businessDataItem) => {
+        const originalIndex = businessDataItem.index;
+        const matchingBusiness = businesses[originalIndex];
+        
+        if (matchingBusiness) {
+          // Sync individualIsPublic and other fields that might change
+          return {
+            ...businessDataItem,
+            individualIsPublic: matchingBusiness.individualIsPublic !== undefined 
+              ? matchingBusiness.individualIsPublic 
+              : businessDataItem.individualIsPublic,
+            isPublic: matchingBusiness.isPublic !== undefined 
+              ? matchingBusiness.isPublic 
+              : businessDataItem.isPublic,
+            role: matchingBusiness.role || businessDataItem.role,
+            isApproved: matchingBusiness.isApproved !== undefined 
+              ? matchingBusiness.isApproved 
+              : businessDataItem.isApproved,
+          };
+        }
+        return businessDataItem;
+      });
+      setBusinessesData(updatedBusinessesData);
+    }
+  }, [businesses]); // Run whenever businesses prop changes
 
   const fetchBusinessesData = async (businesses) => {
     try {
