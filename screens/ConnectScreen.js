@@ -130,7 +130,7 @@ const ConnectScreen = () => {
         <AppHeader
           title='Connect'
           rightButton={
-            <TouchableOpacity style={styles.cameraButton} onPress={() => navigation.navigate("Search")}>
+            <TouchableOpacity style={styles.cameraButton} onPress={() => navigation.navigate("QRScanner")}>
               <Ionicons name='camera' size={20} color='#fff' />
             </TouchableOpacity>
           }
@@ -151,7 +151,7 @@ const ConnectScreen = () => {
         <AppHeader
           title='Connect'
           rightButton={
-            <TouchableOpacity style={styles.cameraButton} onPress={() => navigation.navigate("Search")}>
+            <TouchableOpacity style={styles.cameraButton} onPress={() => navigation.navigate("QRScanner")}>
               <Ionicons name='camera' size={20} color='#fff' />
             </TouchableOpacity>
           }

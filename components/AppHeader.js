@@ -75,9 +75,10 @@ const styles = StyleSheet.create({
   backButton: {
     position: "absolute",
     left: 21,
-    top: 5,
+    top: "50%",
     width: 36,
     height: 36,
+    marginTop: -13, // Half of button height (18) minus 5px offset = -13 to align with text
     alignItems: "center",
     justifyContent: "center",
   },
@@ -97,7 +98,9 @@ const styles = StyleSheet.create({
   rightButtonContainer: {
     position: "absolute",
     right: 21,
-    top: 5,
+    top: "50%",
+    height: 36, // Match backButton height for consistent alignment
+    marginTop: -13, // Half of container height (18) minus 5px offset = -13 to align with text
     alignItems: "center",
     justifyContent: "center",
   },

@@ -66,6 +66,7 @@ import WishResponsesScreen from "./screens/WishResponsesScreen";
 import ConnectScreen from "./screens/ConnectScreen";
 import ConnectWebScreen from "./screens/ConnectWebScreen";
 import NewConnectionScreen from "./screens/NewConnectionScreen";
+import QRScannerScreen from "./screens/QRScannerScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -1053,6 +1054,7 @@ export default function App() {
               }}
             />
             <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
+            <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
           </Stack.Navigator>
         </NavigationContainer>
       </DarkModeProvider>

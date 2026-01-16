@@ -111,6 +111,7 @@ module.exports = ({ config: expoConfig }) => ({
 
       "expo-font",
       "expo-apple-authentication",
+      "expo-barcode-scanner",
     ],
 
     extra: {

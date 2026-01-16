@@ -13,6 +13,7 @@ import WebTextInput from "../components/WebTextInput";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 
 import FeedbackPopup from "../components/FeedbackPopup";
+import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors } from "../config/headerColors";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
@@ -55,6 +56,8 @@ const NetworkScreen = ({ navigation }) => {
   const [activeView, setActiveView] = useState("connections"); // "connections" or "circles" - default to connections
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
+  const [scannedProfileData, setScannedProfileData] = useState(null);
+  const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
 
   const networkFeedbackInstructions = "Instructions for Connect";
 
@@ -311,14 +314,128 @@ const NetworkScreen = ({ navigation }) => {
       };
 
       setUserProfileData(publicData);
-      // Set QR code to redirect to /newconnection/{profile_uid}
-      // Always use production domain so QR codes work for anyone who scans them
-      // When opened in the EveryCircle app, deep linking will navigate to NewConnection screen
-      const qrUrl = `https://everycircle.com/newconnection/${profileUID}`;
-      console.log("🔗 QR Code Redirect URL:", qrUrl);
-      setQrCodeData(qrUrl);
+      // Create QR code data with EveryCircle identifier
+      // Format: JSON with type identifier for app scanning, URL for web compatibility
+      const qrData = {
+        type: "everycircle",
+        profile_uid: profileUID,
+        version: "1.0",
+        // Include URL for web compatibility
+        url: `https://everycircle.com/newconnection/${profileUID}`,
+      };
+      const qrDataString = JSON.stringify(qrData);
+      console.log("🔗 QR Code Data:", qrDataString);
+      // For display, we'll use the JSON string, but also support URL format for backward compatibility
+      setQrCodeData(qrDataString);
     } catch (error) {
       console.error("Error fetching user profile for QR code:", error);
+    }
+  };
+
+  // Handle QR scan complete - fetch profile data and show popup
+  const handleQRScanComplete = async (scanData) => {
+    try {
+      if (!scanData || !scanData.profile_uid) {
+        console.error("Invalid scan data:", scanData);
+        return;
+      }
+
+      // Fetch the profile data
+      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${scanData.profile_uid}`);
+      if (!response.ok) {
+        throw new Error("Profile not found");
+      }
+      const apiUser = await response.json();
+
+      // Extract and sanitize profile information
+      const p = apiUser?.personal_info || {};
+      const tagLineIsPublic = p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1;
+      const emailIsPublic = p.profile_personal_email_is_public === 1;
+      const phoneIsPublic = p.profile_personal_phone_number_is_public === 1;
+      const imageIsPublic = p.profile_personal_image_is_public === 1;
+      const locationIsPublic = p.profile_personal_location_is_public === 1;
+
+      const profileInfo = {
+        profile_uid: scanData.profile_uid,
+        firstName: sanitizeText(p.profile_personal_first_name || ""),
+        lastName: sanitizeText(p.profile_personal_last_name || ""),
+        tagLine: tagLineIsPublic ? sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || "") : "",
+        email: emailIsPublic ? sanitizeText(apiUser?.user_email || "") : "",
+        phoneNumber: phoneIsPublic ? sanitizeText(p.profile_personal_phone_number || "") : "",
+        profileImage: imageIsPublic ? sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : "") : "",
+        city: locationIsPublic ? sanitizeText(p.profile_personal_city || "") : "",
+        state: locationIsPublic ? sanitizeText(p.profile_personal_state || "") : "",
+        emailIsPublic,
+        phoneIsPublic,
+        tagLineIsPublic,
+        locationIsPublic,
+        imageIsPublic,
+      };
+
+      setScannedProfileData(profileInfo);
+      setShowScannedProfilePopup(true);
+    } catch (error) {
+      console.error("Error fetching scanned profile:", error);
+      // You might want to show an error alert here
+    }
+  };
+
+  // Handle adding connection from scanned profile
+  const handleAddScannedConnection = async (relationship = "friend") => {
+    try {
+      if (!scannedProfileData || !scannedProfileData.profile_uid) {
+        return;
+      }
+
+      const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
+      if (!loggedInProfileUID) {
+        // Handle not logged in
+        return;
+      }
+
+      if (loggedInProfileUID === scannedProfileData.profile_uid) {
+        // Handle cannot add self
+        return;
+      }
+
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      const circleDate = `${year}-${month}-${day}`;
+
+      const requestBody = {
+        circle_profile_id: loggedInProfileUID,
+        circle_related_person_id: scannedProfileData.profile_uid,
+        circle_relationship: relationship,
+        circle_date: circleDate,
+      };
+
+      const response = await fetch(CIRCLES_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (response.ok) {
+        // Refresh network data by refetching
+        const currentProfileUID = await AsyncStorage.getItem("profile_uid");
+        const currentDegree = (await AsyncStorage.getItem("network_degree")) || "2";
+        if (currentProfileUID) {
+          fetchNetwork(currentProfileUID, currentDegree);
+        }
+        setShowScannedProfilePopup(false);
+        setScannedProfileData(null);
+        // You might want to show a success message here
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to add connection");
+      }
+    } catch (error) {
+      console.error("Error adding scanned connection:", error);
+      // You might want to show an error alert here
     }
   };
 
@@ -1082,7 +1199,9 @@ const NetworkScreen = ({ navigation }) => {
                 if (e?.stopPropagation) {
                   e.stopPropagation();
                 }
-                navigation.navigate("Search");
+                navigation.navigate("QRScanner", {
+                  onScanComplete: handleQRScanComplete,
+                });
               }}
             >
               <Ionicons name='camera' size={20} color='#fff' />
@@ -1430,6 +1549,15 @@ const NetworkScreen = ({ navigation }) => {
         <BottomNavBar navigation={navigation} />
       </SafeAreaView>
       <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Network' instructions={networkFeedbackInstructions} questions={networkFeedbackQuestions} />
+      <ScannedProfilePopup
+        visible={showScannedProfilePopup}
+        profileData={scannedProfileData}
+        onClose={() => {
+          setShowScannedProfilePopup(false);
+          setScannedProfileData(null);
+        }}
+        onAddConnection={(relationship) => handleAddScannedConnection(relationship)}
+      />
     </View>
   );
 };
