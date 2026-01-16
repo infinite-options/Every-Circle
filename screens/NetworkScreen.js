@@ -50,6 +50,10 @@ const NetworkScreen = ({ navigation }) => {
   const [qrCodeData, setQrCodeData] = useState("");
   const [showAsyncStorage, setShowAsyncStorage] = useState(true);
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
+  const [dateFilter, setDateFilter] = useState("All"); // All, This Week, This Month, This Year
+  const [locationFilter, setLocationFilter] = useState("All");
+  const [eventFilter, setEventFilter] = useState("All"); 
+  const [availableEvents, setAvailableEvents] = useState([]);
   const [graphHtml, setGraphHtml] = useState(""); // For web iframe
   const iframeContainerRef = React.useRef(null); // Ref for web iframe container
   const [activeView, setActiveView] = useState("connections"); // "connections" or "circles" - default to connections
@@ -65,12 +69,15 @@ const NetworkScreen = ({ navigation }) => {
   const loadNetworkSettings = async () => {
     try {
       console.log("📥 Loading Network screen settings from AsyncStorage...");
-      const [showAsyncStorageValue, degreeValue, viewModeValue, networkDataValue, groupedNetworkValue] = await Promise.all([
+      const [showAsyncStorageValue, degreeValue, viewModeValue, networkDataValue, groupedNetworkValue, dateFilterValue, locationFilterValue, eventFilterValue] = await Promise.all([
         AsyncStorage.getItem("network_showAsyncStorage"),
         AsyncStorage.getItem("network_degree"),
         AsyncStorage.getItem("network_viewMode"),
         AsyncStorage.getItem("network_data"),
         AsyncStorage.getItem("network_grouped"),
+        AsyncStorage.getItem("network_dateFilter"),
+        AsyncStorage.getItem("network_locationFilter"),
+        AsyncStorage.getItem("network_eventFilter"),
       ]);
 
       console.log("📥 Loaded values:", {
@@ -99,6 +106,27 @@ const NetworkScreen = ({ navigation }) => {
         setViewMode(viewModeValue);
       } else {
         console.log("📥 No persisted viewMode value, using default: list");
+      }
+
+      if (dateFilterValue !== null) {
+        console.log("📥 Setting dateFilter to:", dateFilterValue);
+        setDateFilter(dateFilterValue);
+      } else {
+        console.log("📥 No persisted dateFilter value, using default: All");
+      }
+
+      if (locationFilterValue !== null) {
+        console.log("📥 Setting locationFilter to:", locationFilterValue);
+        setLocationFilter(locationFilterValue);
+      } else {
+        console.log("📥 No persisted locationFilter value, using default: All");
+      }
+
+      if (eventFilterValue !== null) {
+        console.log("📥 Setting eventFilter to:", eventFilterValue);
+        setEventFilter(eventFilterValue);
+      } else {
+        console.log("📥 No persisted eventFilter value, using default: All");
       }
 
       // Load network data if available
@@ -154,6 +182,9 @@ const NetworkScreen = ({ navigation }) => {
           AsyncStorage.setItem("network_showAsyncStorage", JSON.stringify(showAsyncStorage)),
           AsyncStorage.setItem("network_degree", degree),
           AsyncStorage.setItem("network_viewMode", viewMode),
+          AsyncStorage.setItem("network_dateFilter", dateFilter),
+          AsyncStorage.setItem("network_locationFilter", locationFilter),
+          AsyncStorage.setItem("network_eventFilter", eventFilter),
         ]);
         console.log("✅ Network screen settings saved successfully");
       } catch (e) {
@@ -161,7 +192,25 @@ const NetworkScreen = ({ navigation }) => {
       }
     };
     saveSettings();
-  }, [showAsyncStorage, degree, viewMode, settingsLoaded]);
+  }, [showAsyncStorage, degree, viewMode, dateFilter, locationFilter, eventFilter, settingsLoaded]);
+
+  // Extract unique events from network data
+  useEffect(() => {
+    if (networkData && networkData.length > 0) {
+      const events = new Set();
+      networkData.forEach((node) => {
+        const event = node.circle_event;
+        if (event && event.trim() !== "") {
+          events.add(event.trim());
+        }
+      });
+      const sortedEvents = Array.from(events).sort();
+      setAvailableEvents(sortedEvents);
+      console.log("📋 Available events:", sortedEvents);
+    } else {
+      setAvailableEvents([]);
+    }
+  }, [networkData]);
 
   useEffect(() => {
     const loadAsyncStorage = async () => {
@@ -1310,19 +1359,84 @@ const NetworkScreen = ({ navigation }) => {
                                   {relationshipFilter === "All" ? "Relationship" : relationshipFilter}
                                 </Text>
                               </TouchableOpacity>
-                              <TouchableOpacity style={[styles.filterButton, styles.filterButtonDisabled, darkMode && styles.darkFilterButton, darkMode && styles.darkFilterButtonDisabled]} disabled>
-                                <Text style={[styles.filterButtonText, styles.filterButtonTextDisabled, darkMode && styles.darkFilterButtonText, darkMode && styles.darkFilterButtonTextDisabled]}>
-                                  Date
+                              <TouchableOpacity
+                                style={[
+                                  styles.filterButton,
+                                  dateFilter !== "All" && styles.filterButtonActive,
+                                  darkMode && styles.darkFilterButton,
+                                  dateFilter !== "All" && darkMode && styles.darkFilterButtonActive,
+                                ]}
+                                onPress={() => {
+                                  const filters = ["All", "This Week", "This Month", "This Year"];
+                                  const currentIndex = filters.indexOf(dateFilter);
+                                  const nextIndex = (currentIndex + 1) % filters.length;
+                                  setDateFilter(filters[nextIndex]);
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    styles.filterButtonText,
+                                    dateFilter !== "All" && styles.filterButtonTextActive,
+                                    darkMode && styles.darkFilterButtonText,
+                                    dateFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                                  ]}
+                                >
+                                  {dateFilter === "All" ? "Date" : dateFilter}
                                 </Text>
                               </TouchableOpacity>
-                              <TouchableOpacity style={[styles.filterButton, styles.filterButtonDisabled, darkMode && styles.darkFilterButton, darkMode && styles.darkFilterButtonDisabled]} disabled>
-                                <Text style={[styles.filterButtonText, styles.filterButtonTextDisabled, darkMode && styles.darkFilterButtonText, darkMode && styles.darkFilterButtonTextDisabled]}>
-                                  Location
+                              <TouchableOpacity
+                                style={[
+                                  styles.filterButton,
+                                  locationFilter !== "All" && styles.filterButtonActive,
+                                  darkMode && styles.darkFilterButton,
+                                  locationFilter !== "All" && darkMode && styles.darkFilterButtonActive,
+                                ]}
+                                onPress={() => {
+                                  const filters = ["All", "Same City", "Same State", "Other"];
+                                  const currentIndex = filters.indexOf(locationFilter);
+                                  const nextIndex = (currentIndex + 1) % filters.length;
+                                  setLocationFilter(filters[nextIndex]);
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    styles.filterButtonText,
+                                    locationFilter !== "All" && styles.filterButtonTextActive,
+                                    darkMode && styles.darkFilterButtonText,
+                                    locationFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                                  ]}
+                                >
+                                  {locationFilter === "All" ? "Location" : locationFilter}
                                 </Text>
                               </TouchableOpacity>
-                              <TouchableOpacity style={[styles.filterButton, styles.filterButtonDisabled, darkMode && styles.darkFilterButton, darkMode && styles.darkFilterButtonDisabled]} disabled>
-                                <Text style={[styles.filterButtonText, styles.filterButtonTextDisabled, darkMode && styles.darkFilterButtonText, darkMode && styles.darkFilterButtonTextDisabled]}>
-                                  Event
+                              <TouchableOpacity
+                                style={[
+                                  styles.filterButton,
+                                  eventFilter !== "All" && styles.filterButtonActive,
+                                  darkMode && styles.darkFilterButton,
+                                  eventFilter !== "All" && darkMode && styles.darkFilterButtonActive,
+                                  availableEvents.length === 0 && styles.filterButtonDisabled, // Disable if no events
+                                ]}
+                                onPress={() => {
+                                  if (availableEvents.length === 0) return; // Don't allow clicking if no events
+                                  
+                                  const filters = ["All", ...availableEvents];
+                                  const currentIndex = filters.indexOf(eventFilter);
+                                  const nextIndex = (currentIndex + 1) % filters.length;
+                                  setEventFilter(filters[nextIndex]);
+                                }}
+                                disabled={availableEvents.length === 0}
+                              >
+                                <Text
+                                  style={[
+                                    styles.filterButtonText,
+                                    eventFilter !== "All" && styles.filterButtonTextActive,
+                                    darkMode && styles.darkFilterButtonText,
+                                    eventFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                                    availableEvents.length === 0 && styles.filterButtonTextDisabled,
+                                  ]}
+                                >
+                                  {eventFilter === "All" ? "Event" : eventFilter}
                                 </Text>
                               </TouchableOpacity>
                             </View>
@@ -1351,6 +1465,75 @@ const NetworkScreen = ({ navigation }) => {
                                   return true;
                                 });
                               }
+
+                              // Apply date filter
+                              if (dateFilter !== "All") {
+                                const now = new Date();
+                                const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                                const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+                                const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+
+                                list = list.filter((node) => {
+                                  // Get the circle date - this could be circle_date or another date field
+                                  const circleDateStr = node.circle_date || node.profile_personal_joined_timestamp;
+                                  
+                                  if (!circleDateStr) {
+                                    // If no date, exclude from filtered results
+                                    return false;
+                                  }
+
+                                  try {
+                                    const circleDate = new Date(circleDateStr);
+                                    
+                                    if (dateFilter === "This Week") {
+                                      return circleDate >= oneWeekAgo;
+                                    } else if (dateFilter === "This Month") {
+                                      return circleDate >= oneMonthAgo;
+                                    } else if (dateFilter === "This Year") {
+                                      return circleDate >= oneYearAgo;
+                                    }
+                                  } catch (e) {
+                                    console.error("Error parsing date:", circleDateStr, e);
+                                    return false;
+                                  }
+                                  
+                                  return true;
+                                });
+                              }
+
+                              // Apply location filter
+                              if (locationFilter !== "All") {
+                                // Get current user's location
+                                const userCity = userProfileData?.city?.toLowerCase().trim() || "";
+                                const userState = userProfileData?.state?.toLowerCase().trim() || "";
+
+                                list = list.filter((node) => {
+                                  // Get node's location
+                                  const nodeCity = (node.profile_personal_city || node.__mc?.city || "").toLowerCase().trim();
+                                  const nodeState = (node.profile_personal_state || node.__mc?.state || "").toLowerCase().trim();
+
+                                  if (locationFilter === "Same City") {
+                                    // Must have both city values and they must match
+                                    return userCity && nodeCity && userCity === nodeCity;
+                                  } else if (locationFilter === "Same State") {
+                                    // Must have both state values and they must match
+                                    return userState && nodeState && userState === nodeState;
+                                  } else if (locationFilter === "Other") {
+                                    // Different state or no location data
+                                    return !userState || !nodeState || userState !== nodeState;
+                                  }
+                                  
+                                  return true;
+                                });
+                              }
+
+                              //Apply event filter
+                              if (eventFilter !== "All") {
+                              list = list.filter((node) => {
+                                const nodeEvent = (node.circle_event || "").trim();
+                                return nodeEvent === eventFilter;
+                              });
+                            }
 
                               if (list.length === 0) {
                                 if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} has no items after filtering`);
