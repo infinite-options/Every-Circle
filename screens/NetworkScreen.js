@@ -381,7 +381,7 @@ const NetworkScreen = ({ navigation }) => {
   };
 
   // Handle adding connection from scanned profile
-  const handleAddScannedConnection = async (relationship = "friend") => {
+  const handleAddScannedConnection = async (connectionData) => {
     try {
       if (!scannedProfileData || !scannedProfileData.profile_uid) {
         return;
@@ -404,11 +404,24 @@ const NetworkScreen = ({ navigation }) => {
       const day = String(now.getDate()).padStart(2, "0");
       const circleDate = `${year}-${month}-${day}`;
 
+      // Handle both old format (just relationship string) and new format (object)
+      const relationship = typeof connectionData === "string" ? connectionData : connectionData.relationship;
+      const event = typeof connectionData === "object" ? connectionData.event || "" : "";
+      const note = typeof connectionData === "object" ? connectionData.note || "" : "";
+      const city = typeof connectionData === "object" ? connectionData.city || "" : "";
+      const state = typeof connectionData === "object" ? connectionData.state || "" : "";
+      const introducedBy = typeof connectionData === "object" ? connectionData.introducedBy || "" : "";
+
       const requestBody = {
         circle_profile_id: loggedInProfileUID,
         circle_related_person_id: scannedProfileData.profile_uid,
         circle_relationship: relationship,
         circle_date: circleDate,
+        ...(event && { circle_event: event }),
+        ...(note && { circle_note: note }),
+        ...(city && { circle_city: city }),
+        ...(state && { circle_state: state }),
+        ...(introducedBy && { circle_introduced_by: introducedBy }),
       };
 
       const response = await fetch(CIRCLES_ENDPOINT, {

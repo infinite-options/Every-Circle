@@ -1,13 +1,31 @@
 // ScannedProfilePopup.js - Popup to display scanned profile information
-import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ScrollView } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
+import WebTextInput from "./WebTextInput";
 
 const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection }) => {
   const { darkMode } = useDarkMode();
   const [selectedRelationship, setSelectedRelationship] = useState("friend");
+  const [event, setEvent] = useState("");
+  const [note, setNote] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [introducedBy, setIntroducedBy] = useState("");
+
+  // Reset form when popup closes
+  useEffect(() => {
+    if (!visible) {
+      setSelectedRelationship("friend");
+      setEvent("");
+      setNote("");
+      setCity("");
+      setState("");
+      setIntroducedBy("");
+    }
+  }, [visible]);
 
   if (!profileData) return null;
 
@@ -19,7 +37,14 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection })
 
   const handleAdd = () => {
     if (onAddConnection) {
-      onAddConnection(selectedRelationship);
+      onAddConnection({
+        relationship: selectedRelationship,
+        event: event.trim(),
+        note: note.trim(),
+        city: city.trim(),
+        state: state.trim(),
+        introducedBy: introducedBy.trim(),
+      });
     }
   };
 
@@ -34,38 +59,99 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection })
             </TouchableOpacity>
           </View>
 
-          <View style={styles.content}>
-            <MiniCard user={profileData} />
-          </View>
-
-          <View style={styles.relationshipContainer}>
-            <Text style={[styles.relationshipLabel, darkMode && styles.darkRelationshipLabel]}>Relationship:</Text>
-            <View style={styles.relationshipButtons}>
-              {relationships.map((rel) => (
-                <TouchableOpacity
-                  key={rel.value}
-                  style={[
-                    styles.relationshipButton,
-                    selectedRelationship === rel.value && styles.relationshipButtonActive,
-                    darkMode && styles.darkRelationshipButton,
-                    selectedRelationship === rel.value && darkMode && styles.darkRelationshipButtonActive,
-                  ]}
-                  onPress={() => setSelectedRelationship(rel.value)}
-                >
-                  <Text
-                    style={[
-                      styles.relationshipButtonText,
-                      selectedRelationship === rel.value && styles.relationshipButtonTextActive,
-                      darkMode && styles.darkRelationshipButtonText,
-                      selectedRelationship === rel.value && darkMode && styles.darkRelationshipButtonTextActive,
-                    ]}
-                  >
-                    {rel.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+          <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+            <View style={styles.content}>
+              <MiniCard user={profileData} />
             </View>
-          </View>
+
+            <View style={styles.relationshipContainer}>
+              <Text style={[styles.relationshipLabel, darkMode && styles.darkRelationshipLabel]}>Relationship:</Text>
+              <View style={styles.relationshipButtons}>
+                {relationships.map((rel) => (
+                  <TouchableOpacity
+                    key={rel.value}
+                    style={[
+                      styles.relationshipButton,
+                      selectedRelationship === rel.value && styles.relationshipButtonActive,
+                      darkMode && styles.darkRelationshipButton,
+                      selectedRelationship === rel.value && darkMode && styles.darkRelationshipButtonActive,
+                    ]}
+                    onPress={() => setSelectedRelationship(rel.value)}
+                  >
+                    <Text
+                      style={[
+                        styles.relationshipButtonText,
+                        selectedRelationship === rel.value && styles.relationshipButtonTextActive,
+                        darkMode && styles.darkRelationshipButtonText,
+                        selectedRelationship === rel.value && darkMode && styles.darkRelationshipButtonTextActive,
+                      ]}
+                    >
+                      {rel.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Event:</Text>
+              <WebTextInput
+                style={[styles.textInput, darkMode && styles.darkTextInput]}
+                value={event}
+                onChangeText={setEvent}
+                placeholder="Enter event name"
+                placeholderTextColor={darkMode ? "#666" : "#999"}
+              />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Note:</Text>
+              <WebTextInput
+                style={[styles.textInput, styles.textArea, darkMode && styles.darkTextInput]}
+                value={note}
+                onChangeText={setNote}
+                placeholder="Enter notes or comments"
+                placeholderTextColor={darkMode ? "#666" : "#999"}
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+
+            <View style={styles.inputRow}>
+              <View style={[styles.inputContainer, styles.inputHalf]}>
+                <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>City:</Text>
+                <WebTextInput
+                  style={[styles.textInput, darkMode && styles.darkTextInput]}
+                  value={city}
+                  onChangeText={setCity}
+                  placeholder="City"
+                  placeholderTextColor={darkMode ? "#666" : "#999"}
+                />
+              </View>
+
+              <View style={[styles.inputContainer, styles.inputHalf]}>
+                <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>State:</Text>
+                <WebTextInput
+                  style={[styles.textInput, darkMode && styles.darkTextInput]}
+                  value={state}
+                  onChangeText={setState}
+                  placeholder="State"
+                  placeholderTextColor={darkMode ? "#666" : "#999"}
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Introduced By:</Text>
+              <WebTextInput
+                style={[styles.textInput, darkMode && styles.darkTextInput]}
+                value={introducedBy}
+                onChangeText={setIntroducedBy}
+                placeholder="Who introduced you?"
+                placeholderTextColor={darkMode ? "#666" : "#999"}
+              />
+            </View>
+          </ScrollView>
 
           <View style={styles.buttonContainer}>
             <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
@@ -98,7 +184,7 @@ const styles = StyleSheet.create({
     padding: 20,
     width: "100%",
     maxWidth: 400,
-    maxHeight: "80%",
+    maxHeight: "85%",
     ...Platform.select({
       web: {
         boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
@@ -111,6 +197,12 @@ const styles = StyleSheet.create({
         shadowRadius: 3.84,
       },
     }),
+  },
+  scrollView: {
+    maxHeight: 400,
+  },
+  scrollContent: {
+    paddingBottom: 10,
   },
   darkModalContent: {
     backgroundColor: "#2a2a2a",
@@ -222,6 +314,43 @@ const styles = StyleSheet.create({
   },
   darkRelationshipButtonTextActive: {
     color: "#fff",
+  },
+  inputContainer: {
+    marginBottom: 16,
+  },
+  inputRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  inputHalf: {
+    flex: 1,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 6,
+  },
+  darkInputLabel: {
+    color: "#fff",
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    color: "#333",
+    backgroundColor: "#fff",
+  },
+  darkTextInput: {
+    borderColor: "#555",
+    backgroundColor: "#333",
+    color: "#fff",
+  },
+  textArea: {
+    minHeight: 80,
+    textAlignVertical: "top",
   },
 });
 
