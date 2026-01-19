@@ -53,6 +53,8 @@ const NetworkScreen = ({ navigation }) => {
   const [dateFilter, setDateFilter] = useState("All"); // All, This Week, This Month, This Year
   const [locationFilter, setLocationFilter] = useState("All");
   const [eventFilter, setEventFilter] = useState("All"); 
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const [showEventDropdown, setShowEventDropdown] = useState(false);
   const [availableEvents, setAvailableEvents] = useState([]);
   const [graphHtml, setGraphHtml] = useState(""); // For web iframe
   const iframeContainerRef = React.useRef(null); // Ref for web iframe container
@@ -1116,6 +1118,26 @@ const NetworkScreen = ({ navigation }) => {
     console.log("🔵 NetworkScreen - groupedNetwork keys:", Object.keys(groupedNetwork));
   }
 
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    if (Platform.OS === "web" && (showLocationDropdown || showEventDropdown)) {
+      const handleClickOutside = () => {
+        setShowLocationDropdown(false);
+        setShowEventDropdown(false);
+      };
+
+      // Small delay to prevent immediate closure
+      const timer = setTimeout(() => {
+        document.addEventListener("click", handleClickOutside);
+      }, 100);
+
+      return () => {
+        clearTimeout(timer);
+        document.removeEventListener("click", handleClickOutside);
+      };
+    }
+  }, [showLocationDropdown, showEventDropdown]);
+
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header */}
@@ -1130,6 +1152,7 @@ const NetworkScreen = ({ navigation }) => {
           contentContainerStyle={{ padding: 10, paddingBottom: 120 }}
           keyboardShouldPersistTaps='handled'
           showsVerticalScrollIndicator
+          nestedScrollEnabled={true}
         >
           {/* QR Code Section */}
           {(() => {
@@ -1384,61 +1407,122 @@ const NetworkScreen = ({ navigation }) => {
                                   {dateFilter === "All" ? "Date" : dateFilter}
                                 </Text>
                               </TouchableOpacity>
-                              <TouchableOpacity
-                                style={[
-                                  styles.filterButton,
-                                  locationFilter !== "All" && styles.filterButtonActive,
-                                  darkMode && styles.darkFilterButton,
-                                  locationFilter !== "All" && darkMode && styles.darkFilterButtonActive,
-                                ]}
-                                onPress={() => {
-                                  const filters = ["All", "Same City", "Same State", "Other"];
-                                  const currentIndex = filters.indexOf(locationFilter);
-                                  const nextIndex = (currentIndex + 1) % filters.length;
-                                  setLocationFilter(filters[nextIndex]);
-                                }}
-                              >
-                                <Text
+                              <View style={styles.dropdownContainer}>
+                                <TouchableOpacity
                                   style={[
-                                    styles.filterButtonText,
-                                    locationFilter !== "All" && styles.filterButtonTextActive,
-                                    darkMode && styles.darkFilterButtonText,
-                                    locationFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                                    styles.filterButton,
+                                    locationFilter !== "All" && styles.filterButtonActive,
+                                    darkMode && styles.darkFilterButton,
+                                    locationFilter !== "All" && darkMode && styles.darkFilterButtonActive,
                                   ]}
+                                  onPress={() => {
+                                    setShowLocationDropdown(!showLocationDropdown);
+                                    setShowEventDropdown(false); // Close event dropdown
+                                  }}
                                 >
-                                  {locationFilter === "All" ? "Location" : locationFilter}
-                                </Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                style={[
-                                  styles.filterButton,
-                                  eventFilter !== "All" && styles.filterButtonActive,
-                                  darkMode && styles.darkFilterButton,
-                                  eventFilter !== "All" && darkMode && styles.darkFilterButtonActive,
-                                  availableEvents.length === 0 && styles.filterButtonDisabled, // Disable if no events
-                                ]}
-                                onPress={() => {
-                                  if (availableEvents.length === 0) return; // Don't allow clicking if no events
-                                  
-                                  const filters = ["All", ...availableEvents];
-                                  const currentIndex = filters.indexOf(eventFilter);
-                                  const nextIndex = (currentIndex + 1) % filters.length;
-                                  setEventFilter(filters[nextIndex]);
-                                }}
-                                disabled={availableEvents.length === 0}
-                              >
-                                <Text
+                                  <Text
+                                    style={[
+                                      styles.filterButtonText,
+                                      locationFilter !== "All" && styles.filterButtonTextActive,
+                                      darkMode && styles.darkFilterButtonText,
+                                      locationFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                                    ]}
+                                  >
+                                    {locationFilter === "All" ? "Location" : locationFilter}
+                                  </Text>
+                                </TouchableOpacity>
+                                {showLocationDropdown && (
+                                  <ScrollView style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]}>
+                                    {["All", "Same City", "Same State", "Other"].map((option) => (
+                                      <TouchableOpacity
+                                        key={option}
+                                        style={[
+                                          styles.dropdownItem,
+                                          darkMode && styles.darkDropdownItem,
+                                          locationFilter === option && styles.dropdownItemSelected,
+                                          locationFilter === option && darkMode && styles.darkDropdownItemSelected,
+                                        ]}
+                                        onPress={() => {
+                                          setLocationFilter(option);
+                                          setShowLocationDropdown(false);
+                                        }}
+                                      >
+                                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
+                                          {option}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    ))}
+                                  </ScrollView>
+                                )}
+                              </View>
+                              <View style={styles.dropdownContainer}>
+                                <TouchableOpacity
                                   style={[
-                                    styles.filterButtonText,
-                                    eventFilter !== "All" && styles.filterButtonTextActive,
-                                    darkMode && styles.darkFilterButtonText,
-                                    eventFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
-                                    availableEvents.length === 0 && styles.filterButtonTextDisabled,
+                                    styles.filterButton,
+                                    eventFilter !== "All" && styles.filterButtonActive,
+                                    darkMode && styles.darkFilterButton,
+                                    eventFilter !== "All" && darkMode && styles.darkFilterButtonActive,
+                                    availableEvents.length === 0 && styles.filterButtonDisabled,
                                   ]}
+                                  onPress={() => {
+                                    if (availableEvents.length === 0) return;
+                                    setShowEventDropdown(!showEventDropdown);
+                                    setShowLocationDropdown(false); // Close location dropdown
+                                  }}
+                                  disabled={availableEvents.length === 0}
                                 >
-                                  {eventFilter === "All" ? "Event" : eventFilter}
-                                </Text>
-                              </TouchableOpacity>
+                                  <Text
+                                    style={[
+                                      styles.filterButtonText,
+                                      eventFilter !== "All" && styles.filterButtonTextActive,
+                                      darkMode && styles.darkFilterButtonText,
+                                      eventFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                                      availableEvents.length === 0 && styles.filterButtonTextDisabled,
+                                    ]}
+                                  >
+                                    {eventFilter === "All" ? "Event" : eventFilter}
+                                  </Text>
+                                </TouchableOpacity>
+                                {showEventDropdown && availableEvents.length > 0 && (
+                                  <ScrollView style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]}>
+                                    <TouchableOpacity
+                                      style={[
+                                        styles.dropdownItem,
+                                        darkMode && styles.darkDropdownItem,
+                                        eventFilter === "All" && styles.dropdownItemSelected,
+                                        eventFilter === "All" && darkMode && styles.darkDropdownItemSelected,
+                                      ]}
+                                      onPress={() => {
+                                        setEventFilter("All");
+                                        setShowEventDropdown(false);
+                                      }}
+                                    >
+                                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
+                                        All
+                                      </Text>
+                                    </TouchableOpacity>
+                                    {availableEvents.map((event) => (
+                                      <TouchableOpacity
+                                        key={event}
+                                        style={[
+                                          styles.dropdownItem,
+                                          darkMode && styles.darkDropdownItem,
+                                          eventFilter === event && styles.dropdownItemSelected,
+                                          eventFilter === event && darkMode && styles.darkDropdownItemSelected,
+                                        ]}
+                                        onPress={() => {
+                                          setEventFilter(event);
+                                          setShowEventDropdown(false);
+                                        }}
+                                      >
+                                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
+                                          {event}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    ))}
+                                  </ScrollView>
+                                )}
+                              </View>
                             </View>
                           );
                         })()}
@@ -1468,6 +1552,7 @@ const NetworkScreen = ({ navigation }) => {
 
                               // Apply date filter
                               if (dateFilter !== "All") {
+                                console.log(`🔵 NetworkScreen - Applying date filter: ${dateFilter}`);
                                 const now = new Date();
                                 const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
                                 const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
@@ -1503,6 +1588,7 @@ const NetworkScreen = ({ navigation }) => {
 
                               // Apply location filter
                               if (locationFilter !== "All") {
+                                console.log(`🔵 NetworkScreen - Applying location filter: ${locationFilter}`);
                                 // Get current user's location
                                 const userCity = userProfileData?.city?.toLowerCase().trim() || "";
                                 const userState = userProfileData?.state?.toLowerCase().trim() || "";
@@ -1529,6 +1615,7 @@ const NetworkScreen = ({ navigation }) => {
 
                               //Apply event filter
                               if (eventFilter !== "All") {
+                                console.log(`🔵 NetworkScreen - Applying event filter: ${eventFilter}`);
                               list = list.filter((node) => {
                                 const nodeEvent = (node.circle_event || "").trim();
                                 return nodeEvent === eventFilter;
@@ -1764,6 +1851,7 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     marginBottom: 15,
     gap: 8,
+    zIndex: 9998,
   },
   filterButton: {
     backgroundColor: "#fff",
@@ -1813,6 +1901,53 @@ const styles = StyleSheet.create({
   },
   darkFilterButtonTextDisabled: {
     color: "#666",
+  },
+  dropdownContainer: {
+    position: "relative",
+    zIndex: 9999,
+  },
+  dropdownMenu: {
+    position: "absolute",
+    top: 40,
+    left: 0,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    minWidth: 150,
+    maxHeight: 200,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 10, 
+    zIndex: 10000,
+  },
+  darkDropdownMenu: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  dropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  darkDropdownItem: {
+    borderBottomColor: "#404040",
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: "#333",
+  },
+  darkDropdownItemText: {
+    color: "#cccccc",
+  },
+  dropdownItemSelected: {
+    backgroundColor: "#f0f0f0",
+  },
+  darkDropdownItemSelected: {
+    backgroundColor: "#404040",
   },
 });
 

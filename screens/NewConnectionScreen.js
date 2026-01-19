@@ -39,6 +39,9 @@ const NewConnectionScreen = () => {
   const [existingRelationship, setExistingRelationship] = useState(null);
   const [circleUid, setCircleUid] = useState(null);
   const [checkingRelationship, setCheckingRelationship] = useState(false);
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [fetchingCityState, setFetchingCityState] = useState(false);
 
   // Relationship options matching ConnectScreen.js
   const relationshipOptions = [
@@ -83,6 +86,18 @@ const NewConnectionScreen = () => {
   const handleContinue = async () => {
     try {
       setSubmitting(true);
+
+      console.log("NewConnectionScreen - handleContinue - Form values:", {
+        city,
+        state,
+        introducedBy,
+        commentsNotes,
+        meetingLocation,
+        meetingEvent,
+        relationship,
+        latitude,
+        longitude,
+      });
 
       // Check if user is logged in
       const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
@@ -141,6 +156,8 @@ const NewConnectionScreen = () => {
             circle_note: commentsNotes || null,
             circle_introduced_by: introducedBy || null,
             circle_geotag: circleGeotag,
+            circle_city: city || null,
+            circle_state: state || null,
           }
         : {
             circle_profile_id: loggedInProfileUID,
@@ -151,6 +168,8 @@ const NewConnectionScreen = () => {
             circle_note: commentsNotes || null,
             circle_introduced_by: introducedBy || null,
             circle_geotag: circleGeotag,
+            circle_city: city || null,
+            circle_state: state || null,
           };
 
       console.log("NewConnectionScreen - Making API call:", {
@@ -248,6 +267,8 @@ const NewConnectionScreen = () => {
               setLocationError("Failed to get location: " + error.message);
               setFetchingLocation(false);
             },
+            // Automatically get city/state from coordinates
+            await getCityStateFromCoords(lat, lng),
             { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
           );
         } else {
@@ -275,6 +296,35 @@ const NewConnectionScreen = () => {
       console.error("Error fetching location:", err);
       setLocationError("Failed to get location");
       setFetchingLocation(false);
+    }
+  };
+
+  const getCityStateFromCoords = async (lat, lng) => {
+    try {
+      setFetchingCityState(true);
+      
+      // Use a reverse geocoding API (using Nominatim - free OpenStreetMap service)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        const address = data.address || {};
+        
+        // Extract city and state from the response
+        const cityName = address.city || address.town || address.village || address.county || "";
+        const stateName = address.state || "";
+        
+        setCity(cityName);
+        setState(stateName);
+        console.log("Auto-detected city/state:", cityName, stateName);
+      }
+    } catch (error) {
+      console.error("Error fetching city/state from coordinates:", error);
+      // Don't set error state - just leave city/state empty for manual input
+    } finally {
+      setFetchingCityState(false);
     }
   };
 
@@ -360,6 +410,12 @@ const NewConnectionScreen = () => {
               setLatitude(parseFloat(lat));
               setLongitude(parseFloat(lng));
             }
+          }
+          if (relationshipData.circle_city) {
+            setCity(relationshipData.circle_city);
+          }
+          if (relationshipData.circle_state) {
+            setState(relationshipData.circle_state);
           }
         } else {
           setExistingRelationship(null);
@@ -524,6 +580,48 @@ const NewConnectionScreen = () => {
                       </Text>
                     ) : (
                       <Text style={[styles.locationText, darkMode && styles.darkLocationText]}>Location not available</Text>
+                    )}
+                  </View>
+
+                  {/* City - ALWAYS show this field */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>
+                      City {latitude !== null && !fetchingCityState && city ? '(Auto-detected)' : ''}:
+                    </Text>
+                    {fetchingCityState ? (
+                      <View style={styles.locationLoading}>
+                        <ActivityIndicator size='small' color='#AF52DE' />
+                        <Text style={[styles.locationText, darkMode && styles.darkLocationText]}>Detecting city...</Text>
+                      </View>
+                    ) : (
+                      <WebTextInput
+                        style={[styles.textInput, darkMode && styles.darkTextInput]}
+                        value={city}
+                        onChangeText={setCity}
+                        placeholder='Enter city'
+                        placeholderTextColor={darkMode ? "#666" : "#999"}
+                      />
+                    )}
+                  </View>
+
+                  {/* State - ALWAYS show this field */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>
+                      State {latitude !== null && !fetchingCityState && state ? '(Auto-detected)' : ''}:
+                    </Text>
+                    {fetchingCityState ? (
+                      <View style={styles.locationLoading}>
+                        <ActivityIndicator size='small' color='#AF52DE' />
+                        <Text style={[styles.locationText, darkMode && styles.darkLocationText]}>Detecting state...</Text>
+                      </View>
+                    ) : (
+                      <WebTextInput
+                        style={[styles.textInput, darkMode && styles.darkTextInput]}
+                        value={state}
+                        onChangeText={setState}
+                        placeholder='Enter state'
+                        placeholderTextColor={darkMode ? "#666" : "#999"}
+                      />
                     )}
                   </View>
 
