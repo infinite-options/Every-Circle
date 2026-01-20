@@ -51,6 +51,13 @@ const NetworkScreen = ({ navigation }) => {
   const [qrCodeData, setQrCodeData] = useState("");
   const [showAsyncStorage, setShowAsyncStorage] = useState(true);
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
+  const [dateFilter, setDateFilter] = useState("All"); // All, This Week, This Month, This Year
+  const [locationFilter, setLocationFilter] = useState("All");
+  const [eventFilter, setEventFilter] = useState("All"); 
+  const [availableEvents, setAvailableEvents] = useState([]);
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const [showEventDropdown, setShowEventDropdown] = useState(false);
+  const [availableCities, setAvailableCities] = useState([]);
   const [graphHtml, setGraphHtml] = useState(""); // For web iframe
   const iframeContainerRef = React.useRef(null); // Ref for web iframe container
   const [activeView, setActiveView] = useState("connections"); // "connections" or "circles" - default to connections
@@ -68,12 +75,15 @@ const NetworkScreen = ({ navigation }) => {
   const loadNetworkSettings = async () => {
     try {
       console.log("📥 Loading Network screen settings from AsyncStorage...");
-      const [showAsyncStorageValue, degreeValue, viewModeValue, networkDataValue, groupedNetworkValue] = await Promise.all([
+      const [showAsyncStorageValue, degreeValue, viewModeValue, networkDataValue, groupedNetworkValue, dateFilterValue, locationFilterValue, eventFilterValue] = await Promise.all([
         AsyncStorage.getItem("network_showAsyncStorage"),
         AsyncStorage.getItem("network_degree"),
         AsyncStorage.getItem("network_viewMode"),
         AsyncStorage.getItem("network_data"),
         AsyncStorage.getItem("network_grouped"),
+        AsyncStorage.getItem("network_dateFilter"),
+        AsyncStorage.getItem("network_locationFilter"),
+        AsyncStorage.getItem("network_eventFilter"),
       ]);
 
       console.log("📥 Loaded values:", {
@@ -103,6 +113,28 @@ const NetworkScreen = ({ navigation }) => {
       } else {
         console.log("📥 No persisted viewMode value, using default: list");
       }
+
+      if (dateFilterValue !== null) {
+        console.log("📥 Setting dateFilter to:", dateFilterValue);
+        setDateFilter(dateFilterValue);
+      } else {
+        console.log("📥 No persisted dateFilter value, using default: All");
+      }
+
+      if (locationFilterValue !== null) {
+        console.log("📥 Setting locationFilter to:", locationFilterValue);
+        setLocationFilter(locationFilterValue);
+      } else {
+        console.log("📥 No persisted locationFilter value, using default: All");
+      }
+
+      if (eventFilterValue !== null) {
+        console.log("📥 Setting eventFilter to:", eventFilterValue);
+        setEventFilter(eventFilterValue);
+      } else {
+        console.log("📥 No persisted eventFilter value, using default: All");
+      }
+
 
       // Load network data if available
       if (networkDataValue !== null) {
@@ -157,6 +189,9 @@ const NetworkScreen = ({ navigation }) => {
           AsyncStorage.setItem("network_showAsyncStorage", JSON.stringify(showAsyncStorage)),
           AsyncStorage.setItem("network_degree", degree),
           AsyncStorage.setItem("network_viewMode", viewMode),
+          AsyncStorage.setItem("network_dateFilter", dateFilter),
+          AsyncStorage.setItem("network_locationFilter", locationFilter),
+          AsyncStorage.setItem("network_eventFilter", eventFilter),
         ]);
         console.log("✅ Network screen settings saved successfully");
       } catch (e) {
@@ -164,7 +199,50 @@ const NetworkScreen = ({ navigation }) => {
       }
     };
     saveSettings();
-  }, [showAsyncStorage, degree, viewMode, settingsLoaded]);
+  }, [showAsyncStorage, degree, viewMode, dateFilter, locationFilter, eventFilter, settingsLoaded]);
+
+  // Extract unique events from network data
+  useEffect(() => {
+    if (networkData && networkData.length > 0) {
+      const events = new Set();
+      networkData.forEach((node) => {
+        const event = node.circle_event;
+        if (event && event.trim() !== "") {
+          events.add(event.trim());
+        }
+      });
+      const sortedEvents = Array.from(events).sort();
+      setAvailableEvents(sortedEvents);
+      console.log("📋 Available events:", sortedEvents);
+    } else {
+      setAvailableEvents([]);
+    }
+  }, [networkData]);
+
+  // Extract unique cities from circle data
+  useEffect(() => {
+    if (networkData && networkData.length > 0) {
+      const locations = new Set();
+      networkData.forEach((node) => {
+        const city = node.circle_city || "";
+        const state = node.circle_state || "";
+        
+        // Create location string
+        if (city && state) {
+          locations.add(`${city.trim()}, ${state.trim()}`);
+        } else if (city) {
+          locations.add(city.trim());
+        } else if (state) {
+          locations.add(state.trim());
+        }
+      });
+      const sortedLocations = Array.from(locations).sort();
+      setAvailableCities(sortedLocations);
+      console.log("📋 Available locations:", sortedLocations);
+    } else {
+      setAvailableCities([]);
+    }
+  }, [networkData]);
 
   useEffect(() => {
     const loadAsyncStorage = async () => {
@@ -1197,6 +1275,27 @@ const NetworkScreen = ({ navigation }) => {
     console.log("🔵 NetworkScreen - groupedNetwork keys:", Object.keys(groupedNetwork));
   }
 
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    if (Platform.OS === "web" && (showLocationDropdown || showEventDropdown)) {
+      const handleClickOutside = () => {
+        setShowLocationDropdown(false);
+        setShowEventDropdown(false);
+      };
+
+      // Small delay to prevent immediate closure
+      const timer = setTimeout(() => {
+        document.addEventListener("click", handleClickOutside);
+      }, 100);
+
+      return () => {
+        clearTimeout(timer);
+        document.removeEventListener("click", handleClickOutside);
+      };
+    }
+  }, [showLocationDropdown, showEventDropdown]);
+
+
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header */}
@@ -1229,6 +1328,7 @@ const NetworkScreen = ({ navigation }) => {
           contentContainerStyle={{ padding: 10, paddingBottom: 120 }}
           keyboardShouldPersistTaps='handled'
           showsVerticalScrollIndicator
+          nestedScrollEnabled={true}
         >
           {/* QR Code Section */}
           {(() => {
@@ -1458,21 +1558,167 @@ const NetworkScreen = ({ navigation }) => {
                                   {relationshipFilter === "All" ? "Relationship" : relationshipFilter}
                                 </Text>
                               </TouchableOpacity>
-                              <TouchableOpacity style={[styles.filterButton, styles.filterButtonDisabled, darkMode && styles.darkFilterButton, darkMode && styles.darkFilterButtonDisabled]} disabled>
-                                <Text style={[styles.filterButtonText, styles.filterButtonTextDisabled, darkMode && styles.darkFilterButtonText, darkMode && styles.darkFilterButtonTextDisabled]}>
-                                  Date
+                              <TouchableOpacity
+                                style={[
+                                  styles.filterButton,
+                                  dateFilter !== "All" && styles.filterButtonActive,
+                                  darkMode && styles.darkFilterButton,
+                                  dateFilter !== "All" && darkMode && styles.darkFilterButtonActive,
+                                ]}
+                                onPress={() => {
+                                  const filters = ["All", "This Week", "This Month", "This Year"];
+                                  const currentIndex = filters.indexOf(dateFilter);
+                                  const nextIndex = (currentIndex + 1) % filters.length;
+                                  setDateFilter(filters[nextIndex]);
+                                }}
+                              >
+                                <Text
+                                  style={[
+                                    styles.filterButtonText,
+                                    dateFilter !== "All" && styles.filterButtonTextActive,
+                                    darkMode && styles.darkFilterButtonText,
+                                    dateFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                                  ]}
+                                >
+                                  {dateFilter === "All" ? "Date" : dateFilter}
                                 </Text>
                               </TouchableOpacity>
-                              <TouchableOpacity style={[styles.filterButton, styles.filterButtonDisabled, darkMode && styles.darkFilterButton, darkMode && styles.darkFilterButtonDisabled]} disabled>
-                                <Text style={[styles.filterButtonText, styles.filterButtonTextDisabled, darkMode && styles.darkFilterButtonText, darkMode && styles.darkFilterButtonTextDisabled]}>
-                                  Location
-                                </Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity style={[styles.filterButton, styles.filterButtonDisabled, darkMode && styles.darkFilterButton, darkMode && styles.darkFilterButtonDisabled]} disabled>
-                                <Text style={[styles.filterButtonText, styles.filterButtonTextDisabled, darkMode && styles.darkFilterButtonText, darkMode && styles.darkFilterButtonTextDisabled]}>
-                                  Event
-                                </Text>
-                              </TouchableOpacity>
+                              <View style={styles.dropdownContainer}>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.filterButton,
+                                    locationFilter !== "All" && styles.filterButtonActive,
+                                    darkMode && styles.darkFilterButton,
+                                    locationFilter !== "All" && darkMode && styles.darkFilterButtonActive,
+                                    availableCities.length === 0 && styles.filterButtonDisabled, // Disable if no cities
+                                  ]}
+                                  onPress={() => {
+                                    if (availableCities.length === 0) return; // Don't allow clicking if no cities
+                                    setShowLocationDropdown(!showLocationDropdown);
+                                    setShowEventDropdown(false); // Close event dropdown
+                                  }}
+                                  disabled={availableCities.length === 0}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.filterButtonText,
+                                      locationFilter !== "All" && styles.filterButtonTextActive,
+                                      darkMode && styles.darkFilterButtonText,
+                                      locationFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                                      availableCities.length === 0 && styles.filterButtonTextDisabled,
+                                    ]}
+                                  >
+                                    {locationFilter === "All" ? "Location" : locationFilter}
+                                  </Text>
+                                </TouchableOpacity>
+                                {showLocationDropdown && availableCities.length > 0 && (
+                                  <ScrollView style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]}>
+                                    <TouchableOpacity
+                                      style={[
+                                        styles.dropdownItem,
+                                        darkMode && styles.darkDropdownItem,
+                                        locationFilter === "All" && styles.dropdownItemSelected,
+                                        locationFilter === "All" && darkMode && styles.darkDropdownItemSelected,
+                                      ]}
+                                      onPress={() => {
+                                        setLocationFilter("All");
+                                        setShowLocationDropdown(false);
+                                      }}
+                                    >
+                                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
+                                        All
+                                      </Text>
+                                    </TouchableOpacity>
+                                    {availableCities.map((city) => (
+                                      <TouchableOpacity
+                                        key={city}
+                                        style={[
+                                          styles.dropdownItem,
+                                          darkMode && styles.darkDropdownItem,
+                                          locationFilter === city && styles.dropdownItemSelected,
+                                          locationFilter === city && darkMode && styles.darkDropdownItemSelected,
+                                        ]}
+                                        onPress={() => {
+                                          setLocationFilter(city);
+                                          setShowLocationDropdown(false);
+                                        }}
+                                      >
+                                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
+                                          {city}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    ))}
+                                  </ScrollView>
+                                )}
+                              </View>
+                              <View style={styles.dropdownContainer}>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.filterButton,
+                                    eventFilter !== "All" && styles.filterButtonActive,
+                                    darkMode && styles.darkFilterButton,
+                                    eventFilter !== "All" && darkMode && styles.darkFilterButtonActive,
+                                    availableEvents.length === 0 && styles.filterButtonDisabled,
+                                  ]}
+                                  onPress={() => {
+                                    if (availableEvents.length === 0) return;
+                                    setShowEventDropdown(!showEventDropdown);
+                                    setShowLocationDropdown(false); // Close location dropdown
+                                  }}
+                                  disabled={availableEvents.length === 0}
+                                >
+                                  <Text
+                                    style={[
+                                      styles.filterButtonText,
+                                      eventFilter !== "All" && styles.filterButtonTextActive,
+                                      darkMode && styles.darkFilterButtonText,
+                                      eventFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                                      availableEvents.length === 0 && styles.filterButtonTextDisabled,
+                                    ]}
+                                  >
+                                    {eventFilter === "All" ? "Event" : eventFilter}
+                                  </Text>
+                                </TouchableOpacity>
+                                {showEventDropdown && availableEvents.length > 0 && (
+                                  <ScrollView style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]}>
+                                    <TouchableOpacity
+                                      style={[
+                                        styles.dropdownItem,
+                                        darkMode && styles.darkDropdownItem,
+                                        eventFilter === "All" && styles.dropdownItemSelected,
+                                        eventFilter === "All" && darkMode && styles.darkDropdownItemSelected,
+                                      ]}
+                                      onPress={() => {
+                                        setEventFilter("All");
+                                        setShowEventDropdown(false);
+                                      }}
+                                    >
+                                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
+                                        All
+                                      </Text>
+                                    </TouchableOpacity>
+                                    {availableEvents.map((event) => (
+                                      <TouchableOpacity
+                                        key={event}
+                                        style={[
+                                          styles.dropdownItem,
+                                          darkMode && styles.darkDropdownItem,
+                                          eventFilter === event && styles.dropdownItemSelected,
+                                          eventFilter === event && darkMode && styles.darkDropdownItemSelected,
+                                        ]}
+                                        onPress={() => {
+                                          setEventFilter(event);
+                                          setShowEventDropdown(false);
+                                        }}
+                                      >
+                                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
+                                          {event}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    ))}
+                                  </ScrollView>
+                                )}
+                              </View>
                             </View>
                           );
                         })()}
@@ -1499,6 +1745,72 @@ const NetworkScreen = ({ navigation }) => {
                                   return true;
                                 });
                               }
+                              // Apply date filter
+                              if (dateFilter !== "All") {
+                                console.log(`🔵 NetworkScreen - Applying date filter: ${dateFilter}`);
+                                const now = new Date();
+                                const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                                const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+                                const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+
+                                list = list.filter((node) => {
+                                  // Get the circle date - this could be circle_date or another date field
+                                  const circleDateStr = node.circle_date || node.profile_personal_joined_timestamp;
+                                  
+                                  if (!circleDateStr) {
+                                    // If no date, exclude from filtered results
+                                    return false;
+                                  }
+
+                                  try {
+                                    const circleDate = new Date(circleDateStr);
+                                    
+                                    if (dateFilter === "This Week") {
+                                      return circleDate >= oneWeekAgo;
+                                    } else if (dateFilter === "This Month") {
+                                      return circleDate >= oneMonthAgo;
+                                    } else if (dateFilter === "This Year") {
+                                      return circleDate >= oneYearAgo;
+                                    }
+                                  } catch (e) {
+                                    console.error("Error parsing date:", circleDateStr, e);
+                                    return false;
+                                  }
+                                  
+                                  return true;
+                                });
+                              }
+
+                              // Apply location filter
+                              if (locationFilter !== "All") {
+                                console.log(`🔵 NetworkScreen - Applying location filter: ${locationFilter}`);
+                                list = list.filter((node) => {
+                                  const city = node.circle_city || "";
+                                  const state = node.circle_state || "";
+                                  
+                                  // Create location string to match the filter
+                                  let nodeLocation = "";
+                                  if (city && state) {
+                                    nodeLocation = `${city.trim()}, ${state.trim()}`;
+                                  } else if (city) {
+                                    nodeLocation = city.trim();
+                                  } else if (state) {
+                                    nodeLocation = state.trim();
+                                  }
+                                  
+                                  return nodeLocation === locationFilter;
+                                });
+                              }
+
+                              //Apply event filter
+                              if (eventFilter !== "All") {
+                                console.log(`🔵 NetworkScreen - Applying event filter: ${eventFilter}`);
+                              list = list.filter((node) => {
+                                const nodeEvent = (node.circle_event || "").trim();
+                                return nodeEvent === eventFilter;
+                              });
+                            }
+
 
                               if (list.length === 0) {
                                 if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} has no items after filtering`);
@@ -1738,6 +2050,7 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     marginBottom: 15,
     gap: 8,
+    zIndex: 9998,
   },
   filterButton: {
     backgroundColor: "#fff",
@@ -1788,11 +2101,52 @@ const styles = StyleSheet.create({
   darkFilterButtonTextDisabled: {
     color: "#666",
   },
-  cameraButton: {
-    padding: 4,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1,
+  dropdownContainer: {
+    position: "relative",
+    zIndex: 9999,
+  },
+  dropdownMenu: {
+    position: "absolute",
+    top: 40,
+    left: 0,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    minWidth: 150,
+    maxHeight: 200,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 10, 
+    zIndex: 10000,
+  },
+  darkDropdownMenu: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  dropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  darkDropdownItem: {
+    borderBottomColor: "#404040",
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: "#333",
+  },
+  darkDropdownItemText: {
+    color: "#cccccc",
+  },
+  dropdownItemSelected: {
+    backgroundColor: "#f0f0f0",
+  },
+  darkDropdownItemSelected: {
+    backgroundColor: "#404040",
   },
 });
 
