@@ -35,7 +35,7 @@ if (isWeb) {
 }
 
 // Web Stripe components
-import StripePayment from "../StripePayment";
+import StripePayment from "../components/StripePaymentWeb";
 import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
 import { Elements } from "@stripe/react-stripe-js";
@@ -773,16 +773,15 @@ const ShoppingCartScreen = ({ route, navigation }) => {
             }}
           />
           {stripePromise && customerUid && (
-            <Elements stripe={stripePromise}>
-              <StripePayment
-                message='ECTEST'
-                amount={calculateTotal() * 1.03} // Add 3% fee
-                paidBy={customerUid}
-                show={showStripePayment}
-                setShow={setShowStripePayment}
-                submit={handleWebPaymentSubmit}
-              />
-            </Elements>
+            <StripePayment
+              message='ECTEST'
+              amount={calculateTotal() * 1.03} // Add 3% fee
+              paidBy={customerUid}
+              show={showStripePayment}
+              setShow={setShowStripePayment}
+              submit={handleWebPaymentSubmit}
+              stripePromise={stripePromise}
+            />
           )}
           <PaymentFailure
             show={showPaymentFailure}

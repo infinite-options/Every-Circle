@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Modal, ActivityIndicator, Pla
 import { useElements, useStripe, CardElement, Elements } from "@stripe/react-stripe-js";
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { CREATE_PAYMENT_INTENT_ENDPOINT } from "../apiConfig";
 
 const StripePaymentWebContent = ({ message, amount, paidBy, show, setShow, submit, onError }) => {
   const { darkMode } = useDarkMode();
@@ -20,19 +21,41 @@ const StripePaymentWebContent = ({ message, amount, paidBy, show, setShow, submi
     setShowSpinner(true);
 
     try {
+      // Check if Stripe is ready
+      if (!stripe) {
+        throw new Error("Stripe is not initialized. Please wait and try again.");
+      }
+
+      console.log("StripePaymentWeb - Stripe object:", {
+        isReady: !!stripe,
+        hasConfirmCardPayment: typeof stripe.confirmCardPayment === "function",
+      });
+
       // Step 1: Create payment intent on backend
+      // Map business code: ECTEST → PMTEST, EC → PM (matching ShoppingCartScreen logic)
+      let businessCode = "PMTEST"; // default
+      if (message === "ECTEST") {
+        businessCode = "PMTEST";
+      } else if (message === "EC") {
+        businessCode = "PM";
+      } else if (message === "PMTEST" || message === "PM") {
+        businessCode = message;
+      }
+      
       const paymentData = {
         customer_uid: paidBy,
-        business_code: message === "PMTEST" ? message : "PM",
+        business_code: businessCode,
         payment_summary: {
           total: parseFloat(amount),
         },
       };
+      
+      console.log("StripePaymentWeb - Business code mapping:", { message, businessCode });
 
       console.log("StripePaymentWeb - Creating payment intent with data:", paymentData);
-      const createPaymentIntentURL = "https://huo8rhh76i.execute-api.us-west-1.amazonaws.com/dev/api/v2/createPaymentIntent";
+      console.log("StripePaymentWeb - Using endpoint:", CREATE_PAYMENT_INTENT_ENDPOINT);
 
-      const response = await fetch(createPaymentIntentURL, {
+      const response = await fetch(CREATE_PAYMENT_INTENT_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(paymentData),
@@ -44,7 +67,7 @@ const StripePaymentWebContent = ({ message, amount, paidBy, show, setShow, submi
 
       // The API returns the client secret as plain text (not JSON)
       let clientSecret = await response.text();
-      console.log("StripePaymentWeb - Received client secret");
+      console.log("StripePaymentWeb - Received client secret (raw):", JSON.stringify(clientSecret));
 
       // Handle case where response might be JSON wrapped
       if (clientSecret.startsWith("{") || clientSecret.startsWith("[")) {
@@ -56,8 +79,30 @@ const StripePaymentWebContent = ({ message, amount, paidBy, show, setShow, submi
         }
       }
 
-      if (!clientSecret || (!clientSecret.startsWith("pi_") && !clientSecret.includes("_secret_"))) {
-        throw new Error("Invalid client secret received from server");
+      // Clean the client secret: trim whitespace and remove quotes if present
+      if (typeof clientSecret === "string") {
+        clientSecret = clientSecret.trim();
+        // Remove surrounding quotes if present
+        if ((clientSecret.startsWith('"') && clientSecret.endsWith('"')) || 
+            (clientSecret.startsWith("'") && clientSecret.endsWith("'"))) {
+          clientSecret = clientSecret.slice(1, -1);
+        }
+      }
+
+      console.log("StripePaymentWeb - Cleaned client secret:", JSON.stringify(clientSecret));
+      console.log("StripePaymentWeb - Client secret length:", clientSecret?.length);
+      console.log("StripePaymentWeb - Client secret format check:", {
+        startsWithPi: clientSecret?.startsWith("pi_"),
+        containsSecret: clientSecret?.includes("_secret_"),
+        matchesPattern: /^pi_[a-zA-Z0-9]+_secret_[a-zA-Z0-9]+$/.test(clientSecret)
+      });
+
+      if (!clientSecret || typeof clientSecret !== "string") {
+        throw new Error("Invalid client secret: not a string");
+      }
+
+      if (!clientSecret.startsWith("pi_") || !clientSecret.includes("_secret_")) {
+        throw new Error(`Invalid client secret format. Expected format: pi_xxx_secret_xxx. Got: ${clientSecret.substring(0, 50)}...`);
       }
 
       // Step 2: Get card element and create payment method
@@ -84,7 +129,29 @@ const StripePaymentWebContent = ({ message, amount, paidBy, show, setShow, submi
 
       // Step 3: Confirm the payment
       console.log("StripePaymentWeb - Confirming payment");
-      const confirmedCardPayment = await stripe.confirmCardPayment(clientSecret, {
+      console.log("StripePaymentWeb - Client secret (first 30 chars):", clientSecret.substring(0, 30));
+      console.log("StripePaymentWeb - Client secret (last 20 chars):", clientSecret.substring(clientSecret.length - 20));
+      console.log("StripePaymentWeb - Client secret length:", clientSecret.length);
+      console.log("StripePaymentWeb - Payment method ID:", paymentMethodID);
+      console.log("StripePaymentWeb - Stripe object type:", typeof stripe);
+      console.log("StripePaymentWeb - Stripe has confirmCardPayment:", typeof stripe?.confirmCardPayment === "function");
+      
+      // Validate client secret one more time before passing to Stripe
+      // Stripe client secrets have format: pi_xxx_secret_xxx (where xxx can contain underscores)
+      if (!clientSecret || typeof clientSecret !== "string") {
+        throw new Error(`Invalid client secret: not a string`);
+      }
+      
+      if (!clientSecret.startsWith("pi_") || !clientSecret.includes("_secret_")) {
+        throw new Error(`Invalid client secret format. Expected: pi_xxx_secret_xxx. Got: ${clientSecret.substring(0, 50)}`);
+      }
+
+      // Ensure client secret doesn't have any hidden characters
+      const cleanClientSecret = clientSecret.trim().replace(/[\r\n\t]/g, "");
+      console.log("StripePaymentWeb - Cleaned client secret length:", cleanClientSecret.length);
+      console.log("StripePaymentWeb - Client secrets match:", clientSecret === cleanClientSecret);
+
+      const confirmedCardPayment = await stripe.confirmCardPayment(cleanClientSecret, {
         payment_method: paymentMethodID,
         setup_future_usage: "off_session",
       });
