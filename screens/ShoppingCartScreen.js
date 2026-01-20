@@ -34,17 +34,8 @@ if (isWeb) {
   }
 }
 
-// Web Stripe components (only load on web)
-let StripePayment = null;
-let Elements = null;
-if (isWeb) {
-  try {
-    StripePayment = require("../StripePayment").default;
-    Elements = require("@stripe/react-stripe-js").Elements;
-  } catch (e) {
-    console.warn("Stripe web components not available:", e.message);
-  }
-}
+// Web Stripe components
+import StripePayment from "../components/StripePaymentWeb";
 import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
 
@@ -84,13 +75,20 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     console.log("In shopping cart screen, STRIPE_PUBLISHABLE_KEY:", STRIPE_PUBLISHABLE_KEY);
     console.log("Initial cart items:", initialCartItems);
 
-    // Initialize Stripe with the publishable key
-    if (STRIPE_PUBLISHABLE_KEY) {
-      console.log("Initializing Stripe with publishable key");
+    // Initialize Stripe - for web, we load the key dynamically, for mobile we use env var
+    if (isWeb) {
+      // Web: Don't require env var, we'll load Stripe key dynamically when needed
+      console.log("Web platform detected - Stripe key will be loaded dynamically");
       setStripeInitialized(true);
     } else {
-      console.error("Stripe publishable key not found");
-      Alert.alert("Error", "Payment system is not properly configured");
+      // Mobile: Require env var for native Stripe
+      if (STRIPE_PUBLISHABLE_KEY) {
+        console.log("Initializing Stripe with publishable key");
+        setStripeInitialized(true);
+      } else {
+        console.error("Stripe publishable key not found");
+        Alert.alert("Error", "Payment system is not properly configured");
+      }
     }
 
     // Get customer UID for web Stripe
@@ -769,7 +767,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       </SafeAreaView>
 
       {/* Web Stripe Components */}
-      {isWeb && Elements && StripePayment && (
+      {isWeb && (
         <>
           <StripeFeesDialog
             show={showFeesDialog}
@@ -781,16 +779,15 @@ const ShoppingCartScreen = ({ route, navigation }) => {
             }}
           />
           {stripePromise && customerUid && (
-            <Elements stripe={stripePromise}>
-              <StripePayment
-                message='ECTEST'
-                amount={calculateTotal() * 1.03} // Add 3% fee
-                paidBy={customerUid}
-                show={showStripePayment}
-                setShow={setShowStripePayment}
-                submit={handleWebPaymentSubmit}
-              />
-            </Elements>
+            <StripePayment
+              message='ECTEST'
+              amount={calculateTotal() * 1.03} // Add 3% fee
+              paidBy={customerUid}
+              show={showStripePayment}
+              setShow={setShowStripePayment}
+              submit={handleWebPaymentSubmit}
+              stripePromise={stripePromise}
+            />
           )}
           <PaymentFailure
             show={showPaymentFailure}
