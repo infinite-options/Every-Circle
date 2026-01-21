@@ -588,13 +588,66 @@ const NetworkScreen = ({ navigation }) => {
     return String(value).replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\\;").replace(/\n/g, "\\n");
   };
 
-  // Update graph HTML when network data or view mode changes (for web)
+  // Update graph HTML when network data or view mode or filters change (for web)
   useEffect(() => {
     if (Platform.OS === "web" && viewMode === "graph" && networkData.length > 0 && profileUid) {
-      const html = generateVisHTML(networkData, profileUid || "YOU");
+      // Apply filters before generating HTML
+      let filtered = networkData;
+      
+      if (relationshipFilter !== "All") {
+        filtered = filtered.filter((node) => {
+          const relationship = node.circle_relationship;
+          if (relationshipFilter === "Colleagues") return relationship === "colleague";
+          if (relationshipFilter === "Friends") return relationship === "friend";
+          if (relationshipFilter === "Family") return relationship === "family";
+          return true;
+        });
+      }
+      
+      if (dateFilter !== "All") {
+        const now = new Date();
+        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+        const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+        
+        filtered = filtered.filter((node) => {
+          const circleDateStr = node.circle_date || node.profile_personal_joined_timestamp;
+          if (!circleDateStr) return false;
+          try {
+            const circleDate = new Date(circleDateStr);
+            if (dateFilter === "This Week") return circleDate >= oneWeekAgo;
+            if (dateFilter === "This Month") return circleDate >= oneMonthAgo;
+            if (dateFilter === "This Year") return circleDate >= oneYearAgo;
+          } catch (e) {
+            return false;
+          }
+          return true;
+        });
+      }
+      
+      if (locationFilter !== "All") {
+        filtered = filtered.filter((node) => {
+          const city = node.circle_city || "";
+          const state = node.circle_state || "";
+          let nodeLocation = "";
+          if (city && state) nodeLocation = `${city.trim()}, ${state.trim()}`;
+          else if (city) nodeLocation = city.trim();
+          else if (state) nodeLocation = state.trim();
+          return nodeLocation === locationFilter;
+        });
+      }
+      
+      if (eventFilter !== "All") {
+        filtered = filtered.filter((node) => {
+          const nodeEvent = (node.circle_event || "").trim();
+          return nodeEvent === eventFilter;
+        });
+      }
+      
+      const html = generateVisHTML(filtered, profileUid || "YOU");
       setGraphHtml(html);
     }
-  }, [viewMode, networkData, profileUid]);
+  }, [viewMode, networkData, profileUid, relationshipFilter, dateFilter, locationFilter, eventFilter]);
 
   // Create/update iframe element for web
   useEffect(() => {
@@ -1275,6 +1328,76 @@ const NetworkScreen = ({ navigation }) => {
     console.log("🔵 NetworkScreen - groupedNetwork keys:", Object.keys(groupedNetwork));
   }
 
+  // Apply filters to network data for graph view
+  let filteredNetworkData = networkData;
+
+  // Apply relationship filter
+  if (relationshipFilter !== "All") {
+    filteredNetworkData = filteredNetworkData.filter((node) => {
+      const relationship = node.circle_relationship;
+      if (relationshipFilter === "Colleagues") {
+        return relationship === "colleague";
+      } else if (relationshipFilter === "Friends") {
+        return relationship === "friend";
+      } else if (relationshipFilter === "Family") {
+        return relationship === "family";
+      }
+      return true;
+    });
+  }
+
+  // Apply date filter
+  if (dateFilter !== "All") {
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+    const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+
+    filteredNetworkData = filteredNetworkData.filter((node) => {
+      const circleDateStr = node.circle_date || node.profile_personal_joined_timestamp;
+      if (!circleDateStr) return false;
+      
+      try {
+        const circleDate = new Date(circleDateStr);
+        if (dateFilter === "This Week") {
+          return circleDate >= oneWeekAgo;
+        } else if (dateFilter === "This Month") {
+          return circleDate >= oneMonthAgo;
+        } else if (dateFilter === "This Year") {
+          return circleDate >= oneYearAgo;
+        }
+      } catch (e) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  // Apply location filter
+  if (locationFilter !== "All") {
+    filteredNetworkData = filteredNetworkData.filter((node) => {
+      const city = node.circle_city || "";
+      const state = node.circle_state || "";
+      let nodeLocation = "";
+      if (city && state) {
+        nodeLocation = `${city.trim()}, ${state.trim()}`;
+      } else if (city) {
+        nodeLocation = city.trim();
+      } else if (state) {
+        nodeLocation = state.trim();
+      }
+      return nodeLocation === locationFilter;
+    });
+  }
+
+  // Apply event filter
+  if (eventFilter !== "All") {
+    filteredNetworkData = filteredNetworkData.filter((node) => {
+      const nodeEvent = (node.circle_event || "").trim();
+      return nodeEvent === eventFilter;
+    });
+  }
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     if (Platform.OS === "web" && (showLocationDropdown || showEventDropdown)) {
@@ -1461,7 +1584,7 @@ const NetworkScreen = ({ navigation }) => {
                 {loading && <ActivityIndicator size='large' color='#AF52DE' />}
                 {error && <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>{error}</Text>}
 
-                {viewMode === "graph" && networkData.length > 0 && (
+                {viewMode === "graph" && filteredNetworkData.length > 0 && (
                   <View
                     style={{
                       height: 400,
@@ -1490,7 +1613,7 @@ const NetworkScreen = ({ navigation }) => {
                       // Native: Use WebView
                       <WebViewComponent
                         originWhitelist={["*"]}
-                        source={{ html: generateVisHTML(networkData, profileUid || "YOU") }}
+                        source={{ html: generateVisHTML(filteredNetworkData, profileUid || "YOU") }}
                         onMessage={(event) => {
                           const uid = event?.nativeEvent?.data;
                           if (uid && uid !== (profileUid || "YOU")) {
