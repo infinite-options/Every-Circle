@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
+import AppHeader from "../components/AppHeader";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
 // Only import Stripe on native platforms (not web)
@@ -22,7 +23,22 @@ if (!isWeb) {
 
 import { REACT_APP_STRIPE_PUBLIC_KEY } from "@env";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { CREATE_PAYMENT_INTENT_ENDPOINT, TRANSACTIONS_ENDPOINT } from "../apiConfig";
+import { CREATE_PAYMENT_INTENT_ENDPOINT, TRANSACTIONS_ENDPOINT, GET_STRIPE_PUBLIC_KEY_ENDPOINT } from "../apiConfig";
+
+// Web Stripe imports (only load on web)
+let loadStripe = null;
+if (isWeb) {
+  try {
+    loadStripe = require("@stripe/stripe-js").loadStripe;
+  } catch (e) {
+    console.warn("Stripe web library not available:", e.message);
+  }
+}
+
+// Web Stripe components
+import StripePayment from "../components/StripePaymentWeb";
+import StripeFeesDialog from "../components/StripeFeesDialog";
+import PaymentFailure from "../components/PaymentFailure";
 
 const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
 
@@ -45,14 +61,41 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
   const [stripeInitialized, setStripeInitialized] = useState(false);
   const [currentClientSecret, setCurrentClientSecret] = useState(null);
 
+  // Web Stripe state
+  const [stripePromise, setStripePromise] = useState(null);
+  const [showStripePayment, setShowStripePayment] = useState(false);
+  const [showFeesDialog, setShowFeesDialog] = useState(false);
+  const [showPaymentFailure, setShowPaymentFailure] = useState(false);
+  const [paymentError, setPaymentError] = useState(null);
+  const [customerUid, setCustomerUid] = useState(null);
+
   // Initialize Stripe on mount
   useEffect(() => {
-    if (STRIPE_PUBLISHABLE_KEY) {
-      console.log("Initializing Stripe with publishable key");
+    // Initialize Stripe - for web, we load the key dynamically, for mobile we use env var
+    if (isWeb) {
+      // Web: Don't require env var, we'll load Stripe key dynamically when needed
+      console.log("Web platform detected - Stripe key will be loaded dynamically");
       setStripeInitialized(true);
     } else {
-      console.error("Stripe publishable key not found");
+      // Mobile: Require env var for native Stripe
+      if (STRIPE_PUBLISHABLE_KEY) {
+        console.log("Initializing Stripe with publishable key");
+        setStripeInitialized(true);
+      } else {
+        console.error("Stripe publishable key not found");
+      }
     }
+
+    // Get customer UID for web Stripe
+    const getCustomerUid = async () => {
+      try {
+        const uid = await AsyncStorage.getItem("profile_uid");
+        setCustomerUid(uid);
+      } catch (error) {
+        console.error("Error getting customer UID:", error);
+      }
+    };
+    getCustomerUid();
   }, []);
 
   // Create user object for MiniCard
@@ -111,6 +154,166 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
     } catch (error) {
       console.error("Error creating payment intent:", error);
       throw error;
+    }
+  };
+
+  // Load Stripe public key for web
+  const loadStripePublicKey = async (businessCode = "ECTEST") => {
+    try {
+      console.log("============================================");
+      console.log("Loading Stripe public key for business code:", businessCode);
+      // Determine environment: ECTEST → PMTEST, EC → PM
+      const environment = businessCode === "ECTEST" ? "PMTEST" : businessCode === "EC" ? "PM" : "PMTEST";
+      console.log("Mapped environment for Stripe key lookup:", environment);
+      const url = `${GET_STRIPE_PUBLIC_KEY_ENDPOINT}/${environment}`;
+
+      console.log("Fetching Stripe key from URL:", url);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Stripe key: ${response.statusText}`);
+      }
+
+      const responseData = await response.json();
+      console.log("Full response data:", JSON.stringify(responseData, null, 2));
+      console.log("Response keys:", Object.keys(responseData));
+
+      // Handle both camelCase (publicKey) and UPPERCASE (PUBLISHABLE_KEY) response formats
+      const publicKey = responseData.publicKey || responseData.PUBLISHABLE_KEY;
+
+      if (!publicKey) {
+        console.error("Response structure:", responseData);
+        console.error("Available keys:", Object.keys(responseData));
+        throw new Error("Public key not found in response. Expected 'publicKey' or 'PUBLISHABLE_KEY'");
+      }
+      const last4Digits = publicKey.length >= 4 ? publicKey.slice(-4) : "N/A";
+      console.log("Stripe public key received (last 4 digits):", last4Digits);
+      console.log("Full public key length:", publicKey.length);
+      console.log("Public key starts with:", publicKey.substring(0, 10) + "...");
+
+      // Load Stripe with public key
+      if (loadStripe) {
+        const stripe = await loadStripe(publicKey);
+        setStripePromise(stripe);
+        console.log("Stripe loaded successfully with key ending in:", last4Digits);
+        console.log("============================================");
+        return stripe;
+      } else {
+        throw new Error("Stripe loadStripe function not available");
+      }
+    } catch (error) {
+      console.error("Error loading Stripe public key:", error);
+      console.error("Error details:", error.message);
+      console.log("============================================");
+      Alert.alert("Error", "Failed to initialize payment system. Please try again.");
+      throw error;
+    }
+  };
+
+  // Handle fees dialog continue
+  const handleFeesDialogContinue = async () => {
+    try {
+      setShowFeesDialog(false);
+      setLoading(true);
+
+      // Get the amount from stored state (we stored it as a string in currentClientSecret)
+      const amount = parseFloat(currentClientSecret || "0");
+
+      // Load Stripe public key
+      await loadStripePublicKey("ECTEST");
+
+      // Show Stripe payment modal
+      setShowStripePayment(true);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error loading Stripe:", error);
+      Alert.alert("Error", "Failed to initialize payment. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  // Web Stripe payment submission handler
+  const handleWebPaymentSubmit = async (paymentIntent, paymentMethod) => {
+    try {
+      setLoading(true);
+      console.log("Web payment submitted - paymentIntent:", paymentIntent, "paymentMethod:", paymentMethod);
+
+      // Get the buyer's ID
+      const buyerUid = await AsyncStorage.getItem("profile_uid");
+      if (!buyerUid) {
+        throw new Error("User ID not found");
+      }
+
+      // Parse cost amount
+      const costString = expertiseData?.cost || "0";
+      const match = costString.match(/[\d.]+/);
+      const amount = match ? parseFloat(match[0]) : 0;
+
+      // Calculate amounts with 3% processing fee
+      const processingFee = amount * 0.03;
+      const totalAmount = amount + processingFee;
+
+      console.log("Web payment amounts - Subtotal:", amount, "Processing Fee (3%):", processingFee, "Total:", totalAmount);
+
+      // Extract payment intent ID from client secret
+      const paymentIntentId = paymentIntent.split("_secret_")[0];
+
+      // Record the transaction - update to include fee in total_amount_paid but keep costs separate
+      // We'll modify recordTransaction to accept fee separately or update the transaction data
+      const transactionData = {
+        profile_id: buyerUid,
+        business_id: profile_uid,
+        stripe_payment_intent: paymentIntentId,
+        total_amount_paid: totalAmount,
+        total_costs: amount,
+        total_taxes: processingFee,
+        items: [
+          {
+            expertise_uid: expertiseData?.expertise_uid,
+            bounty: parseFloat(expertiseData?.bounty) || 0,
+            quantity: 1,
+            recommender_profile_id: profile_uid,
+          },
+        ],
+      };
+
+      const response = await fetch(TRANSACTIONS_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(transactionData),
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(`Failed to record transaction: ${result.message || "Unknown error"}`);
+      }
+
+      // Navigate back
+      if (returnTo === "Profile" && profileState) {
+        console.log("🔙 Returning to Profile after payment with preserved state");
+        navigation.navigate("Profile", profileState);
+      } else if (searchState) {
+        console.log("🔙 Returning to Search after payment with preserved state");
+        navigation.navigate("Search", {
+          restoreState: true,
+          searchState: searchState,
+        });
+      } else {
+        navigation.navigate("Search");
+      }
+
+      Alert.alert("Success", "Payment successful! Your purchase has been completed.");
+    } catch (error) {
+      console.error("Web payment submission error:", error);
+      setPaymentError(error);
+      setShowPaymentFailure(true);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -235,20 +438,35 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
       return;
     }
 
+    // Parse cost amount (handle formats like "25/hr", "USD 15", "$15", etc.)
+    const costString = expertiseData?.cost || "0";
+    const match = costString.match(/[\d.]+/);
+    const amount = match ? parseFloat(match[0]) : 0;
+
+    if (amount <= 0) {
+      Alert.alert("Error", "Invalid cost amount");
+      return;
+    }
+
+    // Web Stripe flow
+    if (isWeb) {
+      try {
+        setLoading(true);
+        // Show fees dialog first
+        setShowFeesDialog(true);
+        // Store amount for later use
+        setCurrentClientSecret(amount.toString()); // Reuse this state to store amount temporarily
+      } catch (error) {
+        console.error("Error starting web checkout:", error);
+        Alert.alert("Error", "An error occurred. Please try again.");
+        setLoading(false);
+      }
+      return;
+    }
+
+    // Native Stripe flow
     try {
       setLoading(true);
-
-      // Parse cost amount (handle formats like "25/hr", "USD 15", "$15", etc.)
-      const costString = expertiseData?.cost || "0";
-      // Extract the first number (before any "/" or space)
-      const match = costString.match(/[\d.]+/);
-      const amount = match ? parseFloat(match[0]) : 0;
-
-      if (amount <= 0) {
-        Alert.alert("Error", "Invalid cost amount");
-        setLoading(false);
-        return;
-      }
 
       const initResult = await initializePayment(amount);
       if (!initResult.success || !initResult.clientSecret) {
@@ -279,8 +497,6 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
       }
 
       // Extract payment intent ID from client secret
-      // Client secret format: pi_xxx_secret_yyy
-      // We need just the payment intent ID: pi_xxx
       if (!clientSecret) {
         console.error("clientSecret is null or undefined");
         throw new Error("Payment intent not found. Please try again.");
@@ -419,6 +635,49 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
       </SafeAreaView>
+
+      {/* Web Stripe Components */}
+      {isWeb && (
+        <>
+          <StripeFeesDialog
+            show={showFeesDialog}
+            setShow={setShowFeesDialog}
+            onContinue={handleFeesDialogContinue}
+            onCancel={() => {
+              setShowFeesDialog(false);
+              setLoading(false);
+            }}
+          />
+          {stripePromise && customerUid && currentClientSecret && (
+            <StripePayment
+              message='ECTEST'
+              amount={parseFloat(currentClientSecret) * 1.03} // Add 3% fee
+              paidBy={customerUid}
+              show={showStripePayment}
+              setShow={setShowStripePayment}
+              submit={handleWebPaymentSubmit}
+              stripePromise={stripePromise}
+            />
+          )}
+          <PaymentFailure
+            show={showPaymentFailure}
+            setShow={setShowPaymentFailure}
+            onGoToDashboard={() => {
+              setShowPaymentFailure(false);
+              if (returnTo === "Profile" && profileState) {
+                navigation.navigate("Profile", profileState);
+              } else if (searchState) {
+                navigation.navigate("Search", {
+                  restoreState: true,
+                  searchState: searchState,
+                });
+              } else {
+                navigation.navigate("Search");
+              }
+            }}
+          />
+        </>
+      )}
     </View>
   );
 };

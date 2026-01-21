@@ -4,6 +4,24 @@ import { View, Text, Image, StyleSheet, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 
+// Web-compatible asset helper
+// On web, require() for local assets may cause issues with Metro bundler
+// We'll handle this by conditionally setting defaultSource
+let PROFILE_IMAGE_SOURCE;
+if (Platform.OS !== "web") {
+  // On native, require works normally
+  try {
+    PROFILE_IMAGE_SOURCE = require("../assets/profile.png");
+  } catch (e) {
+    console.warn("Could not load profile.png on native");
+    PROFILE_IMAGE_SOURCE = null;
+  }
+} else {
+  // On web, we'll skip the require to avoid Metro bundler issues
+  // The Image component will handle missing images gracefully
+  PROFILE_IMAGE_SOURCE = null;
+}
+
 const MiniCard = ({ user, business, showRelationship = false }) => {
   const { darkMode } = useDarkMode();
 
@@ -53,13 +71,13 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
           if (__DEV__) console.log("🔵 MiniCard - Rendering business image");
           return (
             <Image
-              source={businessImage && businessImage.trim() !== "" ? { uri: businessImage } : require("../assets/profile.png")}
+              source={businessImage && businessImage.trim() !== "" ? { uri: businessImage } : (PROFILE_IMAGE_SOURCE || { uri: "" })}
               style={[styles.profileImage, darkMode && styles.darkProfileImage]}
               onError={(error) => {
                 console.log("MiniCard business image failed to load:", error.nativeEvent.error);
                 console.log("Problematic business image URI:", businessImage);
               }}
-              defaultSource={require("../assets/profile.png")}
+              {...(PROFILE_IMAGE_SOURCE && { defaultSource: PROFILE_IMAGE_SOURCE })}
             />
           );
         })()}
@@ -187,13 +205,13 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
           if (__DEV__) console.log("🔵 MiniCard - Rendering user image:", { profileImage, imageIsPublic, isSafe: isSafeForConditional(profileImage) });
           return (
             <Image
-              source={isSafeForConditional(profileImage) && imageIsPublic ? { uri: String(profileImage) } : require("../assets/profile.png")}
+              source={isSafeForConditional(profileImage) && imageIsPublic ? { uri: String(profileImage) } : (PROFILE_IMAGE_SOURCE || { uri: "" })}
               style={[styles.profileImage, darkMode && styles.darkProfileImage]}
               onError={(error) => {
                 console.log("MiniCard user image failed to load:", error.nativeEvent.error);
                 console.log("Problematic user image URI:", profileImage);
               }}
-              defaultSource={require("../assets/profile.png")}
+              {...(PROFILE_IMAGE_SOURCE && { defaultSource: PROFILE_IMAGE_SOURCE })}
             />
           );
         })()}

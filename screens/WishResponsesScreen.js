@@ -23,7 +23,22 @@ if (!isWeb) {
 
 import { REACT_APP_STRIPE_PUBLIC_KEY } from "@env";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { PROFILE_WISH_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, TRANSACTIONS_ENDPOINT } from "../apiConfig";
+import { PROFILE_WISH_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, TRANSACTIONS_ENDPOINT, GET_STRIPE_PUBLIC_KEY_ENDPOINT } from "../apiConfig";
+
+// Web Stripe imports (only load on web)
+let loadStripe = null;
+if (isWeb) {
+  try {
+    loadStripe = require("@stripe/stripe-js").loadStripe;
+  } catch (e) {
+    console.warn("Stripe web library not available:", e.message);
+  }
+}
+
+// Web Stripe components
+import StripePayment from "../components/StripePaymentWeb";
+import StripeFeesDialog from "../components/StripeFeesDialog";
+import PaymentFailure from "../components/PaymentFailure";
 
 const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
 
@@ -48,6 +63,15 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
   const [stripeInitialized, setStripeInitialized] = useState(false);
   const [currentClientSecret, setCurrentClientSecret] = useState(null);
 
+  // Web Stripe state
+  const [stripePromise, setStripePromise] = useState(null);
+  const [showStripePayment, setShowStripePayment] = useState(false);
+  const [showFeesDialog, setShowFeesDialog] = useState(false);
+  const [showPaymentFailure, setShowPaymentFailure] = useState(false);
+  const [paymentError, setPaymentError] = useState(null);
+  const [customerUid, setCustomerUid] = useState(null);
+  const [pendingAccept, setPendingAccept] = useState(null); // { responderProfileUid, wishResponseUid, subtotal }
+
   // Create user object for MiniCard
   const userForMiniCard = {
     firstName: profileData?.firstName || "",
@@ -64,13 +88,129 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
 
   // Initialize Stripe on mount
   useEffect(() => {
-    if (STRIPE_PUBLISHABLE_KEY) {
-      console.log("WishResponsesScreen - Initializing Stripe with publishable key");
+    // Initialize Stripe - for web, we load the key dynamically, for mobile we use env var
+    if (isWeb) {
+      console.log("WishResponsesScreen - Web platform detected - Stripe key will be loaded dynamically");
       setStripeInitialized(true);
     } else {
-      console.error("WishResponsesScreen - Stripe publishable key not found");
+      if (STRIPE_PUBLISHABLE_KEY) {
+        console.log("WishResponsesScreen - Initializing Stripe with publishable key");
+        setStripeInitialized(true);
+      } else {
+        console.error("WishResponsesScreen - Stripe publishable key not found");
+      }
     }
+
+    // Get customer UID for web Stripe
+    const getCustomerUid = async () => {
+      try {
+        const uid = await AsyncStorage.getItem("profile_uid");
+        setCustomerUid(uid);
+      } catch (error) {
+        console.error("WishResponsesScreen - Error getting customer UID:", error);
+      }
+    };
+    getCustomerUid();
   }, []);
+
+  // Load Stripe public key for web
+  const loadStripePublicKey = async (businessCode = "ECTEST") => {
+    try {
+      console.log("============================================");
+      console.log("WishResponsesScreen - Loading Stripe public key for business code:", businessCode);
+      // Determine environment: ECTEST → PMTEST, EC → PM
+      const environment = businessCode === "ECTEST" ? "PMTEST" : businessCode === "EC" ? "PM" : "PMTEST";
+      console.log("WishResponsesScreen - Mapped environment for Stripe key lookup:", environment);
+      const url = `${GET_STRIPE_PUBLIC_KEY_ENDPOINT}/${environment}`;
+
+      console.log("WishResponsesScreen - Fetching Stripe key from URL:", url);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch Stripe key: ${response.statusText}`);
+      }
+
+      const responseData = await response.json();
+      console.log("WishResponsesScreen - Full response data:", JSON.stringify(responseData, null, 2));
+      console.log("WishResponsesScreen - Response keys:", Object.keys(responseData));
+
+      // Handle both camelCase (publicKey) and UPPERCASE (PUBLISHABLE_KEY) response formats
+      const publicKey = responseData.publicKey || responseData.PUBLISHABLE_KEY;
+      if (!publicKey) {
+        console.error("WishResponsesScreen - Response structure:", responseData);
+        console.error("WishResponsesScreen - Available keys:", Object.keys(responseData));
+        throw new Error("Public key not found in response. Expected 'publicKey' or 'PUBLISHABLE_KEY'");
+      }
+
+      const last4Digits = publicKey.length >= 4 ? publicKey.slice(-4) : "N/A";
+      console.log("WishResponsesScreen - Stripe public key received (last 4 digits):", last4Digits);
+
+      // Load Stripe with public key
+      if (loadStripe) {
+        const stripe = await loadStripe(publicKey);
+        setStripePromise(stripe);
+        console.log("WishResponsesScreen - Stripe loaded successfully with key ending in:", last4Digits);
+        console.log("============================================");
+        return stripe;
+      }
+
+      throw new Error("Stripe loadStripe function not available");
+    } catch (error) {
+      console.error("WishResponsesScreen - Error loading Stripe public key:", error);
+      console.error("WishResponsesScreen - Error details:", error.message);
+      console.log("============================================");
+      Alert.alert("Error", "Failed to initialize payment system. Please try again.");
+      throw error;
+    }
+  };
+
+  // Handle fees dialog continue (web)
+  const handleFeesDialogContinue = async () => {
+    try {
+      setShowFeesDialog(false);
+      setLoading(true);
+      await loadStripePublicKey("ECTEST");
+      setShowStripePayment(true);
+    } catch (error) {
+      console.error("WishResponsesScreen - Error starting web Stripe modal:", error);
+      Alert.alert("Error", "Failed to initialize payment. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Web Stripe payment submission handler
+  const handleWebPaymentSubmit = async (paymentIntent, paymentMethod) => {
+    try {
+      setLoading(true);
+      console.log("WishResponsesScreen - Web payment submitted - paymentIntent:", paymentIntent, "paymentMethod:", paymentMethod);
+
+      const buyerUid = await AsyncStorage.getItem("profile_uid");
+      if (!buyerUid) throw new Error("User ID not found");
+      if (!pendingAccept) throw new Error("No pending acceptance found");
+
+      const { responderProfileUid, wishResponseUid, subtotal } = pendingAccept;
+
+      const processingFee = subtotal * 0.03;
+      const totalAmount = subtotal + processingFee;
+
+      await recordTransaction(buyerUid, paymentIntent, subtotal, responderProfileUid, wishResponseUid, processingFee, totalAmount);
+
+      Alert.alert("Success", "Response accepted and payment processed successfully!");
+      await fetchWishResponses();
+    } catch (error) {
+      console.error("WishResponsesScreen - Web payment submission error:", error);
+      setPaymentError(error);
+      setShowPaymentFailure(true);
+    } finally {
+      setPendingAccept(null);
+      setAccepting(null);
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchWishResponses();
@@ -157,7 +297,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
     }
   };
 
-  const recordTransaction = async (buyerUid, paymentIntent, amount, responderProfileUid, wishResponseUid) => {
+  const recordTransaction = async (buyerUid, paymentIntent, amount, responderProfileUid, wishResponseUid, processingFee = 0, totalAmountPaid = null) => {
     try {
       console.log("WishResponsesScreen - Recording transaction...");
       console.log("WishResponsesScreen - Buyer UID:", buyerUid);
@@ -169,17 +309,27 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
 
       // Format transaction data to match the API's expected format
       // For wish response acceptance, use responder's profile UID as business_id
+      const subtotal = parseFloat(amount);
+      const fee = parseFloat(processingFee) || 0;
+      const totalPaid = totalAmountPaid !== null ? parseFloat(totalAmountPaid) : subtotal + fee;
+
       const transactionData = {
         profile_id: buyerUid,
         business_id: responderProfileUid, // Use responder's profile UID as business_id
         stripe_payment_intent: paymentIntent,
-        total_amount_paid: parseFloat(amount),
-        total_costs: parseFloat(amount),
-        total_taxes: 0,
+        total_amount_paid: totalPaid,
+        total_costs: subtotal,
+        total_taxes: fee,
         items: [
           {
-            wish_response_uid: wishResponseUid, // Use wish_response_uid as ti_bs_id
-            bounty: parseFloat(amount),
+            // Keep both for backward compatibility + explicit ti_bs_id for API mapping
+            wish_response_uid: wishResponseUid,
+            ti_bs_id: wishResponseUid,
+            bs_uid: wishResponseUid,
+            // Backend mapping expects profile_wish_bounty -> ti_bs_cost
+            ti_bs_cost: subtotal,
+            // Keep legacy field too (some endpoints/screens may still read this)
+            bounty: subtotal,
             quantity: 1,
             recommender_profile_id: responderProfileUid, // Use responder's profile UID
           },
@@ -291,6 +441,23 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         return;
       }
 
+      // Web flow: open Stripe modal (same pattern as ShoppingCart)
+      if (isWeb) {
+        const wishResponseUid = response.wish_response_uid;
+        const responderProfileUid = response.profile_personal_uid;
+
+        console.log("WishResponsesScreen - Wish Response UID (ti_bs_id):", wishResponseUid);
+        console.log("WishResponsesScreen - Responder Profile UID (user_profile_id):", responderProfileUid);
+
+        if (!wishResponseUid) throw new Error("Wish Response ID not found");
+        if (!responderProfileUid) throw new Error("Responder profile ID not found");
+
+        setPendingAccept({ responderProfileUid, wishResponseUid, subtotal: amount });
+        setShowFeesDialog(true);
+        setLoading(false);
+        return;
+      }
+
       const initResult = await initializePayment(amount);
       if (!initResult.success || !initResult.clientSecret) {
         console.error("WishResponsesScreen - Payment initialization failed or client secret not returned");
@@ -364,7 +531,8 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
       console.error("WishResponsesScreen - Error processing payment:", error);
       Alert.alert("Error", error.message || "An error occurred during payment. Please try again.");
     } finally {
-      setAccepting(null);
+      // For web, we clear accepting after modal completion (success/failure/cancel)
+      if (!isWeb) setAccepting(null);
     }
   };
 
@@ -479,6 +647,46 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
             </View>
           )}
         </ScrollView>
+      )}
+
+      {/* Web Stripe Components */}
+      {isWeb && (
+        <>
+          <StripeFeesDialog
+            show={showFeesDialog}
+            setShow={setShowFeesDialog}
+            onContinue={handleFeesDialogContinue}
+            onCancel={() => {
+              setShowFeesDialog(false);
+              setPendingAccept(null);
+              setAccepting(null);
+              setLoading(false);
+            }}
+          />
+
+          {stripePromise && customerUid && pendingAccept && (
+            <StripePayment
+              message='ECTEST'
+              amount={pendingAccept.subtotal * 1.03} // Add 3% fee
+              paidBy={customerUid}
+              show={showStripePayment}
+              setShow={setShowStripePayment}
+              submit={handleWebPaymentSubmit}
+              stripePromise={stripePromise}
+            />
+          )}
+
+          <PaymentFailure
+            show={showPaymentFailure}
+            setShow={setShowPaymentFailure}
+            onGoToDashboard={() => {
+              setShowPaymentFailure(false);
+              setPendingAccept(null);
+              setAccepting(null);
+              navigation.navigate("Profile", profileState || { profile_uid });
+            }}
+          />
+        </>
       )}
     </SafeAreaView>
   );
