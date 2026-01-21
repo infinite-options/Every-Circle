@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, Touc
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
-import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL } from "../apiConfig";
+import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
 import { useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -18,6 +18,8 @@ export default function AccountScreen({ navigation }) {
   const [bountyLoading, setBountyLoading] = useState(true);
   const [transactionData, setTransactionData] = useState([]);
   const [transactionLoading, setTransactionLoading] = useState(true);
+  const [expertiseData, setExpertiseData] = useState([]);
+  const [expertiseLoading, setExpertiseLoading] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -130,11 +132,72 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
+ 
+  // Expertise data 
+  const refreshExpertiseData = async () => {
+    try {
+      setExpertiseLoading(true);
+      const profileId = await AsyncStorage.getItem("profile_uid");
+      if (profileId) {
+        const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log("Expertise API response:", result);
+
+        // Parse expertise_info similar to ProfileScreen
+        const expertise = result.expertise_info
+          ? (typeof result.expertise_info === "string" 
+              ? JSON.parse(result.expertise_info) 
+              : result.expertise_info
+            ).map((exp) => {
+              const costString = exp.profile_expertise_cost || "";
+              // Parse cost to separate amount and unit (e.g., "$75/hour" -> cost: "75", unit: "/hour")
+              let cost = "";
+              let unit = "";
+              if (costString) {
+                //for units without total
+                //const match = costString.match(/\$?(\d+(?:\.\d+)?)(\/\w+)?/);
+                const match = costString.match(/\$?(\d+(?:\.\d+)?)\s*(\/\w+|\w+)?/);
+                if (match) {
+                  cost = match[1] || "";
+                  unit = match[2] || "";
+                } else {
+                  cost = costString;
+                }
+              }
+              
+              return {
+                name: exp.profile_expertise_title || "",
+                cost: cost,
+                unit: unit,
+                bounty: exp.profile_expertise_bounty || "",
+                isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
+              };
+            })
+          : [];
+        
+        setExpertiseData(expertise);
+      }
+    } catch (error) {
+      console.error("Error loading expertise data:", error);
+      setExpertiseData([]);
+    } finally {
+      setExpertiseLoading(false);
+    }
+  };
+
+
+
   useFocusEffect(
     useCallback(() => {
       checkAuth();
       refreshBountyData();
       refreshTransactionData();
+      refreshExpertiseData();
     }, [])
   );
 
@@ -443,6 +506,39 @@ export default function AccountScreen({ navigation }) {
               <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>$30.00</Text>
               <Text style={[styles.tableCell, { flex: 1, textAlign: "right", color: "#777" }]}>$10.70</Text>
             </View>
+          </View>
+        </View>
+
+        {/* Expertise */}
+        <View style={styles.sectionContainer}>
+          <View style={styles.tableContainer}>
+            <View style={styles.tableHeader}>
+              <View style={{ flex: 1.5, flexDirection: "row", alignItems: "center" }}>
+                <Text style={[styles.tableHeaderText, { fontSize: 16, fontWeight: "600" }]}>Expertise</Text>
+                <View style={[styles.questionCircle, { marginLeft: 4 }]}>
+                  <Text style={styles.questionMark}>?</Text>
+                </View>
+              </View>
+              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Cost </Text>
+              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Unit</Text>
+              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Qty</Text>
+              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Bounty</Text>
+            </View>
+            {expertiseLoading ? (
+              <Text style={styles.loadingText}>Loading expertise data...</Text>
+            ) : expertiseData.length > 0 ? (
+              expertiseData.map((item, idx) => (
+                <View key={idx} style={styles.tableRow}>
+                  <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>{item.name}</Text>
+                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>${item.cost}</Text>
+                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>{item.unit}</Text>
+                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}></Text>
+                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>${item.bounty}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.noDataText}>No expertise data available.</Text>
+            )}
           </View>
         </View>
 
