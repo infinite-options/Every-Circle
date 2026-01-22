@@ -6,6 +6,8 @@ import { useFocusEffect } from "@react-navigation/native";
 import BusinessStep0 from "./BusinessStep0";
 import BusinessStep1 from "./BusinessStep1";
 import BusinessStep2 from "./BusinessStep2";
+// NOTE: BusinessStep3 and BusinessStep4 are no longer in the flow as of Jan 21, 2026.
+// They can be deleted in the future once confirmed they're no longer needed.
 import BusinessStep3 from "./BusinessStep3";
 import BusinessStep4 from "./BusinessStep4";
 import BusinessFooter from "../components/BusinessFooter";
@@ -135,7 +137,7 @@ export default function BusinessSetupController({ navigation, route }) {
 
   const handleNext = () => {
     console.log("activeStep", activeStep);
-    if (activeStep < 4) {
+    if (activeStep < 2) {
       setActiveStep((prev) => prev + 1);
     } else {
       submitBusinessData();
@@ -184,7 +186,7 @@ export default function BusinessSetupController({ navigation, route }) {
 
   const handleContinue = () => {
     if (validateCurrentStep()) {
-      if (activeStep < 4) {
+      if (activeStep < 2) {
         setActiveStep((prev) => prev + 1);
       } else {
         submitBusinessData();
@@ -426,7 +428,7 @@ export default function BusinessSetupController({ navigation, route }) {
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       <AppHeader title='Business Setup' backgroundColor='#FF9500' onBackPress={handleHeaderBack} />
       {renderStep()}
-      <BusinessFooter activeStep={activeStep} onBack={handleBack} onContinue={handleContinue} onSubmit={submitBusinessData} totalSteps={5} />
+      <BusinessFooter activeStep={activeStep} onBack={handleBack} onContinue={handleContinue} onSubmit={submitBusinessData} totalSteps={3} />
       <BottomNavBar navigation={navigation} />
     </View>
   );

@@ -144,7 +144,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
           <ScrollView
             style={{ flex: 1, width: "100%" }}
-            contentContainerStyle={{ paddingTop: 20, paddingHorizontal: 20, alignItems: "center", paddingBottom: 140 }}
+            contentContainerStyle={{ padding: 20, alignItems: "center", paddingBottom: 140 }}
             keyboardShouldPersistTaps='handled'
             nestedScrollEnabled={true}
           >
@@ -324,14 +324,14 @@ const styles = StyleSheet.create({
     color: "#333",
     fontWeight: "bold",
     marginBottom: 4,
-    marginTop: 10,
+    marginTop: 5,
   },
   input: {
     backgroundColor: "#fff",
     borderRadius: 10,
     padding: 12,
     width: "100%",
-    marginBottom: 15,
+    marginBottom: 8,
     borderWidth: 1,
     borderColor: "#ddd",
   },
@@ -341,8 +341,8 @@ const styles = StyleSheet.create({
   formCard: {
     backgroundColor: "#fff",
     borderRadius: 30,
-    padding: 24,
-    width: "90%",
+    padding: 0,
+    width: "100%",
     maxWidth: 420,
     alignSelf: "center",
     marginBottom: 16,
@@ -359,7 +359,8 @@ const styles = StyleSheet.create({
     textAlign: "center",
     width: "100%",
     color: "#666",
-    marginVertical: 20,
+    marginTop: 8,
+    marginBottom: 20,
   },
 
   // Dark mode styles

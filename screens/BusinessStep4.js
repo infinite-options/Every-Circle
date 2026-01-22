@@ -1,3 +1,6 @@
+// BusinessStep4.js
+// NOTE: This page is no longer in the business setup flow as of Jan 21, 2026.
+// It can be deleted in the future once confirmed it's no longer needed.
 import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";

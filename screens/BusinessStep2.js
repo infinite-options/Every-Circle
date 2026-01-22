@@ -173,7 +173,7 @@ export default function BusinessStep2({ formData, setFormData, navigation }) {
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#fff" }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
-        <View style={{ flex: 1, paddingTop: 20, paddingHorizontal: 20, alignItems: "center" }}>
+        <View style={{ flex: 1, padding: 20, alignItems: "center" }}>
           <ScrollView
             style={{ flex: 1, width: "100%" }}
             contentContainerStyle={{ justifyContent: "center", alignItems: "center", paddingBottom: 140 }}
@@ -184,24 +184,14 @@ export default function BusinessStep2({ formData, setFormData, navigation }) {
               <Text style={[styles.title, darkMode && styles.darkTitle]}>Select Category</Text>
               <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Select Tags for your business</Text>
 
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Brief Description</Text>
-              <TextInput
-                style={[styles.textarea, darkMode && styles.darkTextarea]}
-                placeholder='Describe your business...'
-                placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-                value={formData.shortBio || ""}
-                multiline
-                numberOfLines={4}
-                onChangeText={(text) => {
-                  const updated = { ...formData, shortBio: text };
-                  setFormData(updated);
-                  AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
-                }}
-              />
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Name</Text>
+              <Text style={[styles.businessNameDisplay, darkMode && styles.darkBusinessNameDisplay]}>
+                {formData.businessName || "No business name entered"}
+              </Text>
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Main Category *</Text>
               <Dropdown
-                style={[styles.input, darkMode && styles.darkInput]}
+                style={[styles.input, darkMode && styles.darkInput, styles.categoryInput]}
                 data={mainCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
                 labelField='label'
                 valueField='value'
@@ -209,41 +199,77 @@ export default function BusinessStep2({ formData, setFormData, navigation }) {
                 placeholderTextColor={darkMode ? "#ffffff" : "#666"}
                 value={selectedMain}
                 onChange={(item) => setSelectedMain(item.value)}
+                containerStyle={[{ borderRadius: 10, zIndex: 1000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
+                itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+                selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+                activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                maxHeight={250}
+                renderItem={(item) => (
+                  <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
+                    <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}>{item.label}</Text>
+                  </View>
+                )}
+                flatListProps={{
+                  nestedScrollEnabled: true,
+                  ItemSeparatorComponent: () => <View style={{ height: 2 }} />,
+                }}
               />
 
-              {subCategories.length > 0 && (
-                <>
-                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Sub Category (Optional)</Text>
-                  <Dropdown
-                    style={[styles.input, darkMode && styles.darkInput]}
-                    data={subCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-                    labelField='label'
-                    valueField='value'
-                    placeholder='Select Sub Category'
-                    placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-                    value={selectedSub}
-                    onChange={(item) => setSelectedSub(item.value)}
-                  />
-                </>
-              )}
+              <Text style={[styles.label, darkMode && styles.darkLabel, styles.subCategoryLabel]}>Sub Category (Optional)</Text>
+              <Dropdown
+                style={[styles.input, darkMode && styles.darkInput]}
+                data={subCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
+                labelField='label'
+                valueField='value'
+                placeholder={subCategories.length > 0 ? 'Select Sub Category' : 'Select Main Category first'}
+                placeholderTextColor={darkMode ? "#ffffff" : "#666"}
+                value={selectedSub}
+                onChange={(item) => setSelectedSub(item.value)}
+                disabled={subCategories.length === 0}
+                containerStyle={[{ borderRadius: 10, zIndex: 1000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
+                itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+                selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+                activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                maxHeight={250}
+                renderItem={(item) => (
+                  <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
+                    <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}>{item.label}</Text>
+                  </View>
+                )}
+                flatListProps={{
+                  nestedScrollEnabled: true,
+                  ItemSeparatorComponent: () => <View style={{ height: 2 }} />,
+                }}
+              />
 
-              {subSubCategories.length > 0 && (
-                <>
-                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Sub-Sub Category (Optional)</Text>
-                  <Dropdown
-                    style={[styles.input, darkMode && styles.darkInput]}
-                    data={subSubCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-                    labelField='label'
-                    valueField='value'
-                    placeholder='Select Sub-Sub Category'
-                    placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-                    value={selectedSubSub}
-                    onChange={(item) => setSelectedSubSub(item.value)}
-                  />
-                </>
-              )}
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Sub-Sub Category (Optional)</Text>
+              <Dropdown
+                style={[styles.input, darkMode && styles.darkInput]}
+                data={subSubCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
+                labelField='label'
+                valueField='value'
+                placeholder={subSubCategories.length > 0 ? 'Select Sub-Sub Category' : 'Select Sub Category first'}
+                placeholderTextColor={darkMode ? "#ffffff" : "#666"}
+                value={selectedSubSub}
+                onChange={(item) => setSelectedSubSub(item.value)}
+                disabled={subSubCategories.length === 0}
+                containerStyle={[{ borderRadius: 10, zIndex: 1000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
+                itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+                selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+                activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                maxHeight={250}
+                renderItem={(item) => (
+                  <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
+                    <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}>{item.label}</Text>
+                  </View>
+                )}
+                flatListProps={{
+                  nestedScrollEnabled: true,
+                  ItemSeparatorComponent: () => <View style={{ height: 2 }} />,
+                }}
+              />
 
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Custom Tags</Text>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Custom Tags (comma separated) (Optional)</Text>
               <View style={styles.tagRow}>
                 <TextInput
                   style={[styles.tagInput, darkMode && styles.darkTagInput]}
@@ -265,6 +291,21 @@ export default function BusinessStep2({ formData, setFormData, navigation }) {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Brief Description (Optional)</Text>
+              <TextInput
+                style={[styles.textarea, darkMode && styles.darkTextarea]}
+                placeholder='Describe your business...'
+                placeholderTextColor={darkMode ? "#ffffff" : "#666"}
+                value={formData.shortBio || ""}
+                multiline
+                numberOfLines={4}
+                onChangeText={(text) => {
+                  const updated = { ...formData, shortBio: text };
+                  setFormData(updated);
+                  AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+                }}
+              />
             </View>
           </ScrollView>
         </View>
@@ -331,6 +372,23 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     borderWidth: 1,
     borderColor: "#ddd",
+  },
+  businessNameDisplay: {
+    backgroundColor: "#f5f5f5",
+    borderRadius: 10,
+    padding: 12,
+    width: "100%",
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    fontSize: 16,
+    color: "#333",
+  },
+  categoryInput: {
+    marginBottom: 5,
+  },
+  subCategoryLabel: {
+    marginTop: 5,
   },
   textarea: {
     backgroundColor: "#fff",
@@ -444,8 +502,8 @@ const styles = StyleSheet.create({
   formCard: {
     backgroundColor: "#fff",
     borderRadius: 30,
-    padding: 24,
-    width: "90%",
+    padding: 0,
+    width: "100%",
     maxWidth: 420,
     alignSelf: "center",
     marginBottom: 16,
@@ -470,6 +528,12 @@ const styles = StyleSheet.create({
     color: "#ffffff",
   },
   darkInput: {
+    backgroundColor: "#404040",
+    color: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#404040",
+  },
+  darkBusinessNameDisplay: {
     backgroundColor: "#404040",
     color: "#ffffff",
     borderWidth: 1,

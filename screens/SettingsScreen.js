@@ -71,16 +71,16 @@ export default function SettingsScreen() {
       console.log("SettingsScreen.js - User confirmed logout:", userConfirmed);
     } else {
       // On native, show Alert with buttons
-      Alert.alert("Logout", "Are you sure you want to logout?", [
+      Alert.alert("Log Out", "Are you sure you want to log out?", [
         {
           text: "Cancel",
           style: "cancel",
           onPress: () => {
-            console.log("SettingsScreen.js - User cancelled logout");
+            console.log("SettingsScreen.js - User cancelled log out");
           },
         },
         {
-          text: "Logout",
+          text: "Log out",
           style: "destructive",
           onPress: async () => {
             userConfirmed = true;
@@ -316,7 +316,7 @@ export default function SettingsScreen() {
           {/* Logout Button */}
           <TouchableOpacity style={[styles.logoutButton, darkMode && styles.darkLogoutButton]} onPress={handleLogout}>
             <MaterialIcons name='logout' size={20} style={styles.icon} color={darkMode ? "#fff" : "#AF52DE"} />
-            <Text style={[styles.logoutText, darkMode && styles.darkLogoutText]}>Logout</Text>
+            <Text style={[styles.logoutText, darkMode && styles.darkLogoutText]}>Log out</Text>
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>

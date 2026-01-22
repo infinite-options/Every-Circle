@@ -1,4 +1,6 @@
 // BusinessStep3.js (Social Media Links with AsyncStorage)
+// NOTE: This page is no longer in the business setup flow as of Jan 21, 2026.
+// It can be deleted in the future once confirmed it's no longer needed.
 import React, { useEffect } from "react";
 import { View, Text, TextInput, StyleSheet, Dimensions, ScrollView } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";

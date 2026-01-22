@@ -950,7 +950,7 @@ export default function App() {
             >
               {/* <View style={[styles.circle, { backgroundColor: "#AF52DE" }]}> */}
               <View style={[styles.circle, { backgroundColor: "#2434C2" }]}>
-                <Text style={styles.circleText}>Login</Text>
+                <Text style={styles.circleText}>Log In</Text>
               </View>
             </TouchableOpacity>
           </View>

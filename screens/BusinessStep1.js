@@ -205,7 +205,7 @@ export default function BusinessStep1({ formData, setFormData, navigation }) {
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
           <ScrollView
             style={{ flex: 1, width: "100%" }}
-            contentContainerStyle={{ paddingTop: 20, paddingHorizontal: 20, alignItems: "center", paddingBottom: 140 }}
+            contentContainerStyle={{ paddingTop: 20, alignItems: "center", paddingBottom: 140 }}
             keyboardShouldPersistTaps='handled'
             nestedScrollEnabled={true}
           >
@@ -214,12 +214,17 @@ export default function BusinessStep1({ formData, setFormData, navigation }) {
               <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Let's Build Your Business Page! Step 1</Text>
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Name</Text>
+              <Text style={[styles.businessNameDisplay, darkMode && styles.darkBusinessNameDisplay]}>
+                {formData.businessName || "No business name entered"}
+              </Text>
+
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Location (Optional)</Text>
               <TextInput
                 style={[styles.input, darkMode && styles.darkInput]}
-                value={formData.businessName || ""}
-                placeholder='Enter business name'
+                value={formData.location || ""}
+                placeholder='Enter location'
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                onChangeText={(text) => updateFormData("businessName", text)}
+                onChangeText={(text) => updateFormData("location", text)}
               />
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Role</Text>
@@ -260,7 +265,7 @@ export default function BusinessStep1({ formData, setFormData, navigation }) {
                 onChangeText={(text) => updateFormData("einNumber", formatEINNumber(text))}
               />
 
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Upload Busines Images (Optional) </Text>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Upload Business Logo (Optional)</Text>
               <View style={styles.carousel}>
                 <View style={styles.imageRow}>
                   {combinedImages.map((img, index) => {
@@ -291,7 +296,7 @@ export default function BusinessStep1({ formData, setFormData, navigation }) {
                   })}
 
                   <TouchableOpacity style={[styles.uploadBox, darkMode && styles.darkUploadBox]} onPress={() => handleImagePick(userUploadedImages.length)}>
-                    <Text style={[styles.uploadText, darkMode && styles.darkUploadText]}>Upload Image</Text>
+                    <Text style={[styles.uploadText, darkMode && styles.darkUploadText]}>Upload Logo</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -353,6 +358,18 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     borderWidth: 1,
     borderColor: "#ddd",
+    fontSize: 16,
+  },
+  businessNameDisplay: {
+    backgroundColor: "#f5f5f5",
+    borderRadius: 10,
+    padding: 12,
+    width: "100%",
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    fontSize: 16,
+    color: "#333",
   },
   loadingOverlay: {
     position: "absolute",
@@ -394,8 +411,8 @@ const styles = StyleSheet.create({
   formCard: {
     backgroundColor: "#fff",
     borderRadius: 30,
-    padding: 24,
-    width: "90%",
+    padding: 0,
+    width: "100%",
     maxWidth: 420,
     alignSelf: "center",
     marginBottom: 16,
@@ -427,6 +444,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#404040",
   },
+  darkBusinessNameDisplay: {
+    backgroundColor: "#404040",
+    color: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#404040",
+  },
   darkHelperText: {
     color: "#cccccc",
   },
@@ -442,7 +465,8 @@ const styles = StyleSheet.create({
     borderColor: "#ddd",
   },
   carousel: {
-    marginVertical: 20,
+    marginTop: 0,
+    marginBottom: 20,
     width: "100%",
     height: 120,
   },
@@ -491,14 +515,13 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 10,
-    backgroundColor: "#f0f0f0",
+    backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 10,
     marginBottom: 10,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: "#ddd",
-    borderStyle: "dashed",
   },
   darkUploadBox: {
     backgroundColor: "#404040",
