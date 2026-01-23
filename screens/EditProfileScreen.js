@@ -1,6 +1,6 @@
 //EditProfileScreen.js
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Modal, ActivityIndicator, Keyboard, UIManager, findNodeHandle } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Modal, ActivityIndicator, Keyboard, UIManager, findNodeHandle, Platform } from "react-native";
 import axios from "axios";
 import ExperienceSection from "../components/ExperienceSection";
 import EducationSection from "../components/EducationSection";
@@ -32,6 +32,7 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [profileImageUri, setProfileImageUri] = useState(initialProfileImage);
   const [deleteProfileImage, setDeleteProfileImage] = useState("");
   const [imageError, setImageError] = useState(false);
+  const [webImageFile, setWebImageFile] = useState(null); // Store the actual File object for web uploads
   // const [pendingPicker, setPendingPicker] = useState(null);
 
   useEffect(() => {
@@ -121,6 +122,7 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [isChanged, setIsChanged] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [shortBioHeight, setShortBioHeight] = useState(40); // Initial height for Short Bio
+  const fileInputRef = useRef(null); // For web file input
 
   const toggleVisibility = (fieldName) => {
     setFormData((prev) => {
@@ -181,9 +183,59 @@ const EditProfileScreen = ({ route, navigation }) => {
     toggleVisibility(fieldName);
   };
 
+  // Web-specific image picker handler
+  const handleWebImagePick = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Check file size (2MB limit)
+    if (file.size > 2 * 1024 * 1024) {
+      Alert.alert("File not selectable", `Image size (${(file.size / 1024).toFixed(1)} KB) exceeds the 2MB upload limit.`);
+      return;
+    }
+
+    // Check if it's an image file
+    if (!file.type.startsWith("image/")) {
+      Alert.alert("Invalid file type", "Please select an image file.");
+      return;
+    }
+
+    // Store the actual File object for upload
+    setWebImageFile(file);
+
+    // Create a local URL for preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const imageUri = reader.result;
+      if (originalProfileImage && originalProfileImage !== imageUri) {
+        setDeleteProfileImage(originalProfileImage);
+      }
+      setProfileImageUri(imageUri);
+      setProfileImage(imageUri);
+      setImageError(false);
+      setIsChanged(true);
+    };
+    reader.readAsDataURL(file);
+
+    // Reset the input so the same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
   // Update image picker to set isChanged to true
   const handlePickImage = async () => {
     console.log("handlePickImage called");
+    
+    // On web, use file input instead of ImagePicker
+    if (Platform.OS === "web") {
+      if (fileInputRef.current) {
+        fileInputRef.current.click();
+      }
+      return;
+    }
+
+    // Mobile implementation
     try {
       console.log("Requesting media library permissions...");
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -450,20 +502,41 @@ const EditProfileScreen = ({ route, navigation }) => {
 
       let imageFileSize = 0;
       if (profileImageUri && !imageError && profileImageUri !== originalProfileImage) {
-        const fileInfo = await FileSystem.getInfoAsync(profileImageUri);
-        imageFileSize = fileInfo.size || 0;
-        console.log("Image file size (bytes):", imageFileSize);
+        if (Platform.OS === "web" && webImageFile) {
+          // On web, use the actual File object
+          imageFileSize = webImageFile.size || 0;
+          console.log("Image file size (bytes):", imageFileSize);
+          payload.append("profile_image", webImageFile);
+        } else {
+          // On mobile, use FileSystem to get file info
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(profileImageUri);
+            imageFileSize = fileInfo.size || 0;
+            console.log("Image file size (bytes):", imageFileSize);
 
-        const uriParts = profileImageUri.split(".");
-        const fileType = uriParts[uriParts.length - 1];
+            const uriParts = profileImageUri.split(".");
+            const fileType = uriParts[uriParts.length - 1];
 
-        const imageFile = {
-          uri: profileImageUri,
-          name: `profile.${fileType}`,
-          type: `image/${fileType}`,
-        };
+            const imageFile = {
+              uri: profileImageUri,
+              name: `profile.${fileType}`,
+              type: `image/${fileType}`,
+            };
 
-        payload.append("profile_image", imageFile);
+            payload.append("profile_image", imageFile);
+          } catch (error) {
+            console.error("Error getting file info:", error);
+            // If FileSystem fails, try to use the URI directly (for web fallback)
+            if (profileImageUri.startsWith("data:")) {
+              // Convert data URL to blob for web
+              const response = await fetch(profileImageUri);
+              const blob = await response.blob();
+              imageFileSize = blob.size || 0;
+              const file = new File([blob], "profile.jpg", { type: blob.type });
+              payload.append("profile_image", file);
+            }
+          }
+        }
       }
 
       // Only add delete_profile_image if there's an image to delete and it hasn't errored
@@ -515,6 +588,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         console.log("Profile update successful");
         Alert.alert("Success", "Profile updated successfully!");
         setOriginalProfileImage(profileImageUri); // Update the original image after successful save
+        setWebImageFile(null); // Clear the web file after successful upload
         setIsChanged(false);
 
         // Only show modal for new businesses (those without profile_business_uid)
@@ -735,6 +809,15 @@ const EditProfileScreen = ({ route, navigation }) => {
           <TouchableOpacity onPress={handlePickImage}>
             <Text style={[styles.uploadLink, darkMode && styles.darkUploadLink]}>Upload Image</Text>
           </TouchableOpacity>
+          {/* Hidden file input for web */}
+          {Platform.OS === "web" &&
+            React.createElement("input", {
+              ref: fileInputRef,
+              type: "file",
+              accept: "image/*",
+              style: { display: "none" },
+              onChange: handleWebImagePick,
+            })}
         </View>
         {renderField("Phone Number", formData.phoneNumber, formData.phoneIsPublic, "phoneNumber", "phoneIsPublic")}
         {renderField("Email", formData.email, formData.emailIsPublic, "email", "emailIsPublic")}
