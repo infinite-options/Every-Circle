@@ -73,6 +73,17 @@ const Stack = createNativeStackNavigator();
 export const mapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 const mapsApiKeyDisplay = mapsApiKey ? "..." + mapsApiKey.slice(-4) : "Not set";
 
+// Wrapper component for Connect screen to handle conditional rendering
+const ConnectScreenWrapper = (props) => {
+  // If profile_uid is present in route params or URL, use NewConnectionScreen
+  const profileUid = props.route?.params?.profile_uid || (isWeb && typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("profile_uid") : null);
+  if (profileUid) {
+    return <NewConnectionScreen {...props} />;
+  }
+  // Otherwise use the original Connect screen
+  return Platform.OS === "web" ? <ConnectWebScreen {...props} /> : <ConnectScreen {...props} />;
+};
+
 export default function App() {
   const [initialRoute, setInitialRoute] = useState("Home");
   const [loading, setLoading] = useState(true);
@@ -1043,15 +1054,7 @@ export default function App() {
             <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
             <Stack.Screen
               name='Connect'
-              component={(props) => {
-                // If profile_uid is present in route params or URL, use NewConnectionScreen
-                const profileUid = props.route?.params?.profile_uid || (isWeb && typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("profile_uid") : null);
-                if (profileUid) {
-                  return <NewConnectionScreen {...props} />;
-                }
-                // Otherwise use the original Connect screen
-                return Platform.OS === "web" ? <ConnectWebScreen {...props} /> : <ConnectScreen {...props} />;
-              }}
+              component={ConnectScreenWrapper}
             />
             <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
             <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
