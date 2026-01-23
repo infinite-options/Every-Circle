@@ -139,46 +139,97 @@ export default function AccountScreen({ navigation }) {
       setExpertiseLoading(true);
       const profileId = await AsyncStorage.getItem("profile_uid");
       if (profileId) {
-        const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+        // First, fetch profile expertise data
+        const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
         
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+        if (!profileResponse.ok) {
+          throw new Error(`HTTP error! status: ${profileResponse.status}`);
         }
 
-        const result = await response.json();
-        console.log("Expertise API response:", result);
+        const profileResult = await profileResponse.json();
+        console.log("Expertise API response:", profileResult);
 
-        // Parse expertise_info similar to ProfileScreen
-        const expertise = result.expertise_info
-          ? (typeof result.expertise_info === "string" 
-              ? JSON.parse(result.expertise_info) 
-              : result.expertise_info
-            ).map((exp) => {
-              const costString = exp.profile_expertise_cost || "";
-              // Parse cost to separate amount and unit (e.g., "$75/hour" -> cost: "75", unit: "/hour")
-              let cost = "";
-              let unit = "";
-              if (costString) {
-                //for units without total
-                //const match = costString.match(/\$?(\d+(?:\.\d+)?)(\/\w+)?/);
-                const match = costString.match(/\$?(\d+(?:\.\d+)?)\s*(\/\w+|\w+)?/);
-                if (match) {
-                  cost = match[1] || "";
-                  unit = match[2] || "";
-                } else {
-                  cost = costString;
-                }
-              }
-              
-              return {
-                name: exp.profile_expertise_title || "",
-                cost: cost,
-                unit: unit,
-                bounty: exp.profile_expertise_bounty || "",
-                isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
-              };
-            })
+        // Parse expertise_info
+        const expertiseList = profileResult.expertise_info
+          ? (typeof profileResult.expertise_info === "string" 
+              ? JSON.parse(profileResult.expertise_info) 
+              : profileResult.expertise_info
+            )
           : [];
+
+        // Fetch transactions where I am the SELLER
+        const sellerTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${profileId}`;
+        let sellerTransactions = [];
+        
+        try {
+          console.log("Fetching seller transactions from:", sellerTransactionsUrl);
+          const transactionsResponse = await fetch(sellerTransactionsUrl, {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (transactionsResponse.ok) {
+            const transactionsResult = await transactionsResponse.json();
+            console.log("Seller transactions result:", transactionsResult);
+            
+            if (transactionsResult && transactionsResult.code === 200 && Array.isArray(transactionsResult.data)) {
+              sellerTransactions = transactionsResult.data;
+            }
+          } else if (transactionsResponse.status === 400) {
+            console.log("No seller transactions found (400 status)");
+            sellerTransactions = [];
+          }
+        } catch (error) {
+          console.error("Error fetching seller transactions for expertise quantities:", error);
+        }
+
+        // Map expertise with quantities from seller transactions
+        const expertise = expertiseList.map((exp) => {
+          const expertiseUid = exp.profile_expertise_uid;
+          const costString = exp.profile_expertise_cost || "";
+          
+          // Parse cost to separate amount and unit
+          let cost = "";
+          let unit = "";
+          if (costString) {
+            const match = costString.match(/\$?(\d+(?:\.\d+)?)\s*(\/\w+|\w+)?/);
+            if (match) {
+              cost = match[1] || "";
+              unit = match[2] || "";
+            } else {
+              cost = costString;
+            }
+          }
+
+          // Calculate total quantity sold for this expertise
+          let totalQty = 0;
+          console.log(`Checking seller transactions for expertise: ${exp.profile_expertise_title} (UID: ${expertiseUid})`);
+          console.log(`Total seller transaction items to check: ${sellerTransactions.length}`);
+
+          sellerTransactions.forEach((transaction) => {
+            console.log(`Seller transaction item ti_bs_id: ${transaction.ti_bs_id}, ti_bs_qty: ${transaction.ti_bs_qty}`);
+            
+            if (transaction.ti_bs_id === expertiseUid) {
+              console.log(`✓ MATCH found for ${exp.profile_expertise_title}!`);
+              const qty = parseInt(transaction.ti_bs_qty) || 0;
+              totalQty += qty;
+              console.log(`Added quantity: ${qty}, New total: ${totalQty}`);
+            }
+          });
+
+          console.log(`Final quantity for ${exp.profile_expertise_title}: ${totalQty}`);
+          
+          return {
+            name: exp.profile_expertise_title || "",
+            cost: cost,
+            unit: unit,
+            bounty: exp.profile_expertise_bounty || "",
+            quantity: totalQty,
+            isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
+          };
+        });
         
         setExpertiseData(expertise);
       }
@@ -189,8 +240,6 @@ export default function AccountScreen({ navigation }) {
       setExpertiseLoading(false);
     }
   };
-
-
 
   useFocusEffect(
     useCallback(() => {
@@ -532,7 +581,7 @@ export default function AccountScreen({ navigation }) {
                   <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>{item.name}</Text>
                   <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>${item.cost}</Text>
                   <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>{item.unit}</Text>
-                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}></Text>
+                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>{item.quantity || 0}</Text>
                   <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>${item.bounty}</Text>
                 </View>
               ))
