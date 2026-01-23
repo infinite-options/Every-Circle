@@ -58,6 +58,7 @@ const NetworkScreen = ({ navigation }) => {
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [showEventDropdown, setShowEventDropdown] = useState(false);
   const [availableCities, setAvailableCities] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
   const [graphHtml, setGraphHtml] = useState(""); // For web iframe
   const iframeContainerRef = React.useRef(null); // Ref for web iframe container
   const [activeView, setActiveView] = useState("connections"); // "connections" or "circles" - default to connections
@@ -643,11 +644,32 @@ const NetworkScreen = ({ navigation }) => {
           return nodeEvent === eventFilter;
         });
       }
+
+      // SEARCH FILTER RIGHT HERE 
+      if (searchQuery.trim() !== "") {
+        const query = searchQuery.toLowerCase();
+        filtered = filtered.filter((node) => {
+          const searchableText = [
+            node.__mc?.firstName || "",
+            node.__mc?.lastName || "",
+            node.__mc?.tagLine || "",
+            node.__mc?.city || "",
+            node.__mc?.state || "",
+            node.__mc?.phoneNumber || "",
+            node.circle_event || "",
+            node.circle_note || "",
+            node.circle_relationship || "",
+            node.network_profile_personal_uid || "",
+          ].join(" ").toLowerCase();
+          
+          return searchableText.includes(query);
+        });
+      }
       
       const html = generateVisHTML(filtered, profileUid || "YOU");
       setGraphHtml(html);
     }
-  }, [viewMode, networkData, profileUid, relationshipFilter, dateFilter, locationFilter, eventFilter]);
+  }, [viewMode, networkData, profileUid, relationshipFilter, dateFilter, locationFilter, eventFilter, searchQuery]);
 
   // Create/update iframe element for web
   useEffect(() => {
@@ -1584,6 +1606,219 @@ const NetworkScreen = ({ navigation }) => {
                 {loading && <ActivityIndicator size='large' color='#AF52DE' />}
                 {error && <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>{error}</Text>}
 
+                {/* Filter Buttons - Show for both list and graph views */}
+                {Object.keys(groupedNetwork).length > 0 && (
+                        <View style={styles.filterContainer}>
+                          <TouchableOpacity
+                            style={[
+                              styles.filterButton,
+                              relationshipFilter !== "All" && styles.filterButtonActive,
+                              darkMode && styles.darkFilterButton,
+                              relationshipFilter !== "All" && darkMode && styles.darkFilterButtonActive,
+                            ]}
+                            onPress={() => {
+                              const filters = ["All", "Colleagues", "Friends", "Family"];
+                              const currentIndex = filters.indexOf(relationshipFilter);
+                              const nextIndex = (currentIndex + 1) % filters.length;
+                              setRelationshipFilter(filters[nextIndex]);
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.filterButtonText,
+                                relationshipFilter !== "All" && styles.filterButtonTextActive,
+                                darkMode && styles.darkFilterButtonText,
+                                relationshipFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                              ]}
+                            >
+                              {relationshipFilter === "All" ? "Relationship" : relationshipFilter}
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[
+                              styles.filterButton,
+                              dateFilter !== "All" && styles.filterButtonActive,
+                              darkMode && styles.darkFilterButton,
+                              dateFilter !== "All" && darkMode && styles.darkFilterButtonActive,
+                            ]}
+                            onPress={() => {
+                              const filters = ["All", "This Week", "This Month", "This Year"];
+                              const currentIndex = filters.indexOf(dateFilter);
+                              const nextIndex = (currentIndex + 1) % filters.length;
+                              setDateFilter(filters[nextIndex]);
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.filterButtonText,
+                                dateFilter !== "All" && styles.filterButtonTextActive,
+                                darkMode && styles.darkFilterButtonText,
+                                dateFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                              ]}
+                            >
+                              {dateFilter === "All" ? "Date" : dateFilter}
+                            </Text>
+                          </TouchableOpacity>
+                          <View style={styles.dropdownContainer}>
+                            <TouchableOpacity
+                              style={[
+                                styles.filterButton,
+                                locationFilter !== "All" && styles.filterButtonActive,
+                                darkMode && styles.darkFilterButton,
+                                locationFilter !== "All" && darkMode && styles.darkFilterButtonActive,
+                                availableCities.length === 0 && styles.filterButtonDisabled,
+                              ]}
+                              onPress={() => {
+                                if (availableCities.length === 0) return;
+                                setShowLocationDropdown(!showLocationDropdown);
+                                setShowEventDropdown(false);
+                              }}
+                              disabled={availableCities.length === 0}
+                            >
+                              <Text
+                                style={[
+                                  styles.filterButtonText,
+                                  locationFilter !== "All" && styles.filterButtonTextActive,
+                                  darkMode && styles.darkFilterButtonText,
+                                  locationFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                                  availableCities.length === 0 && styles.filterButtonTextDisabled,
+                                ]}
+                              >
+                                {locationFilter === "All" ? "Location" : locationFilter}
+                              </Text>
+                            </TouchableOpacity>
+                            {showLocationDropdown && availableCities.length > 0 && (
+                              <ScrollView style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]}>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.dropdownItem,
+                                    darkMode && styles.darkDropdownItem,
+                                    locationFilter === "All" && styles.dropdownItemSelected,
+                                    locationFilter === "All" && darkMode && styles.darkDropdownItemSelected,
+                                  ]}
+                                  onPress={() => {
+                                    setLocationFilter("All");
+                                    setShowLocationDropdown(false);
+                                  }}
+                                >
+                                  <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
+                                    All
+                                  </Text>
+                                </TouchableOpacity>
+                                {availableCities.map((city) => (
+                                  <TouchableOpacity
+                                    key={city}
+                                    style={[
+                                      styles.dropdownItem,
+                                      darkMode && styles.darkDropdownItem,
+                                      locationFilter === city && styles.dropdownItemSelected,
+                                      locationFilter === city && darkMode && styles.darkDropdownItemSelected,
+                                    ]}
+                                    onPress={() => {
+                                      setLocationFilter(city);
+                                      setShowLocationDropdown(false);
+                                    }}
+                                  >
+                                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
+                                      {city}
+                                    </Text>
+                                  </TouchableOpacity>
+                                ))}
+                              </ScrollView>
+                            )}
+                          </View>
+                          <View style={styles.dropdownContainer}>
+                            <TouchableOpacity
+                              style={[
+                                styles.filterButton,
+                                eventFilter !== "All" && styles.filterButtonActive,
+                                darkMode && styles.darkFilterButton,
+                                eventFilter !== "All" && darkMode && styles.darkFilterButtonActive,
+                                availableEvents.length === 0 && styles.filterButtonDisabled,
+                              ]}
+                              onPress={() => {
+                                if (availableEvents.length === 0) return;
+                                setShowEventDropdown(!showEventDropdown);
+                                setShowLocationDropdown(false);
+                              }}
+                              disabled={availableEvents.length === 0}
+                            >
+                              <Text
+                                style={[
+                                  styles.filterButtonText,
+                                  eventFilter !== "All" && styles.filterButtonTextActive,
+                                  darkMode && styles.darkFilterButtonText,
+                                  eventFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
+                                  availableEvents.length === 0 && styles.filterButtonTextDisabled,
+                                ]}
+                              >
+                                {eventFilter === "All" ? "Event" : eventFilter}
+                              </Text>
+                            </TouchableOpacity>
+                            {showEventDropdown && availableEvents.length > 0 && (
+                              <ScrollView style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]}>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.dropdownItem,
+                                    darkMode && styles.darkDropdownItem,
+                                    eventFilter === "All" && styles.dropdownItemSelected,
+                                    eventFilter === "All" && darkMode && styles.darkDropdownItemSelected,
+                                  ]}
+                                  onPress={() => {
+                                    setEventFilter("All");
+                                    setShowEventDropdown(false);
+                                  }}
+                                >
+                                  <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
+                                    All
+                                  </Text>
+                                </TouchableOpacity>
+                                {availableEvents.map((event) => (
+                                  <TouchableOpacity
+                                    key={event}
+                                    style={[
+                                      styles.dropdownItem,
+                                      darkMode && styles.darkDropdownItem,
+                                      eventFilter === event && styles.dropdownItemSelected,
+                                      eventFilter === event && darkMode && styles.darkDropdownItemSelected,
+                                    ]}
+                                    onPress={() => {
+                                      setEventFilter(event);
+                                      setShowEventDropdown(false);
+                                    }}
+                                  >
+                                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
+                                      {event}
+                                    </Text>
+                                  </TouchableOpacity>
+                                ))}
+                              </ScrollView>
+                            )}
+                          </View>
+                        </View>
+                )}
+
+                {/* Search Input */}
+                      {Object.keys(groupedNetwork).length > 0 && (
+                        <View style={styles.searchContainer}>
+                          <WebTextInput
+                            style={[styles.searchInput, darkMode && styles.darkSearchInput]}
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                            placeholder="Search Connections..."
+                            placeholderTextColor={darkMode ? "#888" : "#999"}
+                          />
+                          {searchQuery.length > 0 && (
+                            <TouchableOpacity
+                              style={styles.clearSearchButton}
+                              onPress={() => setSearchQuery("")}
+                            >
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      )}
+
+                {/* Graph View */}
                 {viewMode === "graph" && filteredNetworkData.length > 0 && (
                   <View
                     style={{
@@ -1647,339 +1882,155 @@ const NetworkScreen = ({ navigation }) => {
 
                 {(() => {
                   if (__DEV__) console.log("🔵 NetworkScreen - Checking list view mode");
-                  if (viewMode === "list" && Object.keys(groupedNetwork).length > 0) {
-                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering list view, groupedNetwork keys:", Object.keys(groupedNetwork));
-                    return (
-                      <View style={{ marginTop: 10 }}>
-                        {/* Filter Buttons */}
-                        {(() => {
-                          if (__DEV__) console.log("🔵 NetworkScreen - Rendering filter buttons");
-                          return (
-                            <View style={styles.filterContainer}>
-                              <TouchableOpacity
-                                style={[
-                                  styles.filterButton,
-                                  relationshipFilter !== "All" && styles.filterButtonActive,
-                                  darkMode && styles.darkFilterButton,
-                                  relationshipFilter !== "All" && darkMode && styles.darkFilterButtonActive,
-                                ]}
-                                onPress={() => {
-                                  const filters = ["All", "Colleagues", "Friends", "Family"];
-                                  const currentIndex = filters.indexOf(relationshipFilter);
-                                  const nextIndex = (currentIndex + 1) % filters.length;
-                                  setRelationshipFilter(filters[nextIndex]);
-                                }}
-                              >
-                                <Text
-                                  style={[
-                                    styles.filterButtonText,
-                                    relationshipFilter !== "All" && styles.filterButtonTextActive,
-                                    darkMode && styles.darkFilterButtonText,
-                                    relationshipFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
-                                  ]}
-                                >
-                                  {relationshipFilter === "All" ? "Relationship" : relationshipFilter}
-                                </Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                style={[
-                                  styles.filterButton,
-                                  dateFilter !== "All" && styles.filterButtonActive,
-                                  darkMode && styles.darkFilterButton,
-                                  dateFilter !== "All" && darkMode && styles.darkFilterButtonActive,
-                                ]}
-                                onPress={() => {
-                                  const filters = ["All", "This Week", "This Month", "This Year"];
-                                  const currentIndex = filters.indexOf(dateFilter);
-                                  const nextIndex = (currentIndex + 1) % filters.length;
-                                  setDateFilter(filters[nextIndex]);
-                                }}
-                              >
-                                <Text
-                                  style={[
-                                    styles.filterButtonText,
-                                    dateFilter !== "All" && styles.filterButtonTextActive,
-                                    darkMode && styles.darkFilterButtonText,
-                                    dateFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
-                                  ]}
-                                >
-                                  {dateFilter === "All" ? "Date" : dateFilter}
-                                </Text>
-                              </TouchableOpacity>
-                              <View style={styles.dropdownContainer}>
-                                <TouchableOpacity
-                                  style={[
-                                    styles.filterButton,
-                                    locationFilter !== "All" && styles.filterButtonActive,
-                                    darkMode && styles.darkFilterButton,
-                                    locationFilter !== "All" && darkMode && styles.darkFilterButtonActive,
-                                    availableCities.length === 0 && styles.filterButtonDisabled, // Disable if no cities
-                                  ]}
-                                  onPress={() => {
-                                    if (availableCities.length === 0) return; // Don't allow clicking if no cities
-                                    setShowLocationDropdown(!showLocationDropdown);
-                                    setShowEventDropdown(false); // Close event dropdown
-                                  }}
-                                  disabled={availableCities.length === 0}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.filterButtonText,
-                                      locationFilter !== "All" && styles.filterButtonTextActive,
-                                      darkMode && styles.darkFilterButtonText,
-                                      locationFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
-                                      availableCities.length === 0 && styles.filterButtonTextDisabled,
-                                    ]}
-                                  >
-                                    {locationFilter === "All" ? "Location" : locationFilter}
-                                  </Text>
-                                </TouchableOpacity>
-                                {showLocationDropdown && availableCities.length > 0 && (
-                                  <ScrollView style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]}>
-                                    <TouchableOpacity
-                                      style={[
-                                        styles.dropdownItem,
-                                        darkMode && styles.darkDropdownItem,
-                                        locationFilter === "All" && styles.dropdownItemSelected,
-                                        locationFilter === "All" && darkMode && styles.darkDropdownItemSelected,
-                                      ]}
-                                      onPress={() => {
-                                        setLocationFilter("All");
-                                        setShowLocationDropdown(false);
-                                      }}
-                                    >
-                                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
-                                        All
-                                      </Text>
-                                    </TouchableOpacity>
-                                    {availableCities.map((city) => (
-                                      <TouchableOpacity
-                                        key={city}
-                                        style={[
-                                          styles.dropdownItem,
-                                          darkMode && styles.darkDropdownItem,
-                                          locationFilter === city && styles.dropdownItemSelected,
-                                          locationFilter === city && darkMode && styles.darkDropdownItemSelected,
-                                        ]}
-                                        onPress={() => {
-                                          setLocationFilter(city);
-                                          setShowLocationDropdown(false);
-                                        }}
-                                      >
-                                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
-                                          {city}
-                                        </Text>
-                                      </TouchableOpacity>
-                                    ))}
-                                  </ScrollView>
-                                )}
-                              </View>
-                              <View style={styles.dropdownContainer}>
-                                <TouchableOpacity
-                                  style={[
-                                    styles.filterButton,
-                                    eventFilter !== "All" && styles.filterButtonActive,
-                                    darkMode && styles.darkFilterButton,
-                                    eventFilter !== "All" && darkMode && styles.darkFilterButtonActive,
-                                    availableEvents.length === 0 && styles.filterButtonDisabled,
-                                  ]}
-                                  onPress={() => {
-                                    if (availableEvents.length === 0) return;
-                                    setShowEventDropdown(!showEventDropdown);
-                                    setShowLocationDropdown(false); // Close location dropdown
-                                  }}
-                                  disabled={availableEvents.length === 0}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.filterButtonText,
-                                      eventFilter !== "All" && styles.filterButtonTextActive,
-                                      darkMode && styles.darkFilterButtonText,
-                                      eventFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
-                                      availableEvents.length === 0 && styles.filterButtonTextDisabled,
-                                    ]}
-                                  >
-                                    {eventFilter === "All" ? "Event" : eventFilter}
-                                  </Text>
-                                </TouchableOpacity>
-                                {showEventDropdown && availableEvents.length > 0 && (
-                                  <ScrollView style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]}>
-                                    <TouchableOpacity
-                                      style={[
-                                        styles.dropdownItem,
-                                        darkMode && styles.darkDropdownItem,
-                                        eventFilter === "All" && styles.dropdownItemSelected,
-                                        eventFilter === "All" && darkMode && styles.darkDropdownItemSelected,
-                                      ]}
-                                      onPress={() => {
-                                        setEventFilter("All");
-                                        setShowEventDropdown(false);
-                                      }}
-                                    >
-                                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
-                                        All
-                                      </Text>
-                                    </TouchableOpacity>
-                                    {availableEvents.map((event) => (
-                                      <TouchableOpacity
-                                        key={event}
-                                        style={[
-                                          styles.dropdownItem,
-                                          darkMode && styles.darkDropdownItem,
-                                          eventFilter === event && styles.dropdownItemSelected,
-                                          eventFilter === event && darkMode && styles.darkDropdownItemSelected,
-                                        ]}
-                                        onPress={() => {
-                                          setEventFilter(event);
-                                          setShowEventDropdown(false);
-                                        }}
-                                      >
-                                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
-                                          {event}
-                                        </Text>
-                                      </TouchableOpacity>
-                                    ))}
-                                  </ScrollView>
-                                )}
-                              </View>
-                            </View>
-                          );
-                        })()}
+                  return (
+                    <>
 
-                        {(() => {
-                          if (__DEV__) console.log("🔵 NetworkScreen - Rendering network list items");
-                          return Object.keys(groupedNetwork)
-                            .map((d) => Number(d))
-                            .sort((a, b) => a - b)
-                            .map((deg) => {
-                              if (__DEV__) console.log(`🔵 NetworkScreen - Processing degree ${deg}`);
-                              // Filter the list based on relationship type
-                              let list = groupedNetwork[deg];
-                              if (relationshipFilter !== "All") {
-                                list = list.filter((node) => {
-                                  const relationship = node.circle_relationship;
-                                  if (relationshipFilter === "Colleagues") {
-                                    return relationship === "colleague";
-                                  } else if (relationshipFilter === "Friends") {
-                                    return relationship === "friend";
-                                  } else if (relationshipFilter === "Family") {
-                                    return relationship === "family";
-                                  }
-                                  return true;
-                                });
-                              }
-                              // Apply date filter
-                              if (dateFilter !== "All") {
-                                console.log(`🔵 NetworkScreen - Applying date filter: ${dateFilter}`);
-                                const now = new Date();
-                                const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                                const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-                                const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+                      {/* List View */}
+                      {viewMode === "list" && Object.keys(groupedNetwork).length > 0 && (
+                        <View style={{ marginTop: 10 }}>
+                          {(() => {
+                            if (__DEV__) console.log("🔵 NetworkScreen - Rendering network list items");
+                            return Object.keys(groupedNetwork)
+                              .map((d) => Number(d))
+                              .sort((a, b) => a - b)
+                              .map((deg) => {
+                                if (__DEV__) console.log(`🔵 NetworkScreen - Processing degree ${deg}`);
+                                // Filter the list based on relationship type
+                                let list = groupedNetwork[deg];
+                                if (relationshipFilter !== "All") {
+                                  list = list.filter((node) => {
+                                    const relationship = node.circle_relationship;
+                                    if (relationshipFilter === "Colleagues") {
+                                      return relationship === "colleague";
+                                    } else if (relationshipFilter === "Friends") {
+                                      return relationship === "friend";
+                                    } else if (relationshipFilter === "Family") {
+                                      return relationship === "family";
+                                    }
+                                    return true;
+                                  });
+                                }
+                                // Apply date filter
+                                if (dateFilter !== "All") {
+                                  console.log(`🔵 NetworkScreen - Applying date filter: ${dateFilter}`);
+                                  const now = new Date();
+                                  const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                                  const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+                                  const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
 
-                                list = list.filter((node) => {
-                                  // Get the circle date - this could be circle_date or another date field
-                                  const circleDateStr = node.circle_date || node.profile_personal_joined_timestamp;
-                                  
-                                  if (!circleDateStr) {
-                                    // If no date, exclude from filtered results
-                                    return false;
-                                  }
+                                  list = list.filter((node) => {
+                                    const circleDateStr = node.circle_date || node.profile_personal_joined_timestamp;
+                                    if (!circleDateStr) return false;
 
-                                  try {
-                                    const circleDate = new Date(circleDateStr);
+                                    try {
+                                      const circleDate = new Date(circleDateStr);
+                                      if (dateFilter === "This Week") {
+                                        return circleDate >= oneWeekAgo;
+                                      } else if (dateFilter === "This Month") {
+                                        return circleDate >= oneMonthAgo;
+                                      } else if (dateFilter === "This Year") {
+                                        return circleDate >= oneYearAgo;
+                                      }
+                                    } catch (e) {
+                                      console.error("Error parsing date:", circleDateStr, e);
+                                      return false;
+                                    }
+                                    return true;
+                                  });
+                                }
+
+                                // Apply location filter
+                                if (locationFilter !== "All") {
+                                  console.log(`🔵 NetworkScreen - Applying location filter: ${locationFilter}`);
+                                  list = list.filter((node) => {
+                                    const city = node.circle_city || "";
+                                    const state = node.circle_state || "";
+                                    let nodeLocation = "";
+                                    if (city && state) {
+                                      nodeLocation = `${city.trim()}, ${state.trim()}`;
+                                    } else if (city) {
+                                      nodeLocation = city.trim();
+                                    } else if (state) {
+                                      nodeLocation = state.trim();
+                                    }
+                                    return nodeLocation === locationFilter;
+                                  });
+                                }
+
+                                // Apply event filter
+                                if (eventFilter !== "All") {
+                                  console.log(`🔵 NetworkScreen - Applying event filter: ${eventFilter}`);
+                                  list = list.filter((node) => {
+                                    const nodeEvent = (node.circle_event || "").trim();
+                                    return nodeEvent === eventFilter;
+                                  });
+                                }
+
+                                // Apply search filter
+                                if (searchQuery.trim() !== "") {
+                                  const query = searchQuery.toLowerCase();
+                                  list = list.filter((node) => {
+                                    const searchableText = [
+                                      node.__mc?.firstName || "",
+                                      node.__mc?.lastName || "",
+                                      node.__mc?.tagLine || "",
+                                      node.__mc?.city || "",
+                                      node.__mc?.state || "",
+                                      node.__mc?.phoneNumber || "",
+                                      node.circle_event || "",
+                                      node.circle_note || "",
+                                      node.circle_relationship || "",
+                                      node.network_profile_personal_uid || "",
+                                    ].join(" ").toLowerCase();
                                     
-                                    if (dateFilter === "This Week") {
-                                      return circleDate >= oneWeekAgo;
-                                    } else if (dateFilter === "This Month") {
-                                      return circleDate >= oneMonthAgo;
-                                    } else if (dateFilter === "This Year") {
-                                      return circleDate >= oneYearAgo;
-                                    }
-                                  } catch (e) {
-                                    console.error("Error parsing date:", circleDateStr, e);
-                                    return false;
-                                  }
-                                  
-                                  return true;
-                                });
-                              }
+                                    return searchableText.includes(query);
+                                  });
+                                }
 
-                              // Apply location filter
-                              if (locationFilter !== "All") {
-                                console.log(`🔵 NetworkScreen - Applying location filter: ${locationFilter}`);
-                                list = list.filter((node) => {
-                                  const city = node.circle_city || "";
-                                  const state = node.circle_state || "";
-                                  
-                                  // Create location string to match the filter
-                                  let nodeLocation = "";
-                                  if (city && state) {
-                                    nodeLocation = `${city.trim()}, ${state.trim()}`;
-                                  } else if (city) {
-                                    nodeLocation = city.trim();
-                                  } else if (state) {
-                                    nodeLocation = state.trim();
-                                  }
-                                  
-                                  return nodeLocation === locationFilter;
-                                });
-                              }
+                                if (list.length === 0) {
+                                  if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} has no items after filtering`);
+                                  return null;
+                                }
 
-                              //Apply event filter
-                              if (eventFilter !== "All") {
-                                console.log(`🔵 NetworkScreen - Applying event filter: ${eventFilter}`);
-                              list = list.filter((node) => {
-                                const nodeEvent = (node.circle_event || "").trim();
-                                return nodeEvent === eventFilter;
+                                if (__DEV__) console.log(`🔵 NetworkScreen - Rendering degree ${deg} with ${list.length} items`);
+                                return (
+                                  <View key={deg} style={{ marginBottom: 20 }}>
+                                    {(() => {
+                                      const label = degreeLabel(Number(deg));
+                                      if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} label:`, label);
+                                      return <Text style={[styles.degreeHeader, darkMode && styles.darkDegreeHeader]}>{label}</Text>;
+                                    })()}
+
+                                    {list.map((node, index) => {
+                                      if (__DEV__) console.log(`🔵 NetworkScreen - Rendering node ${deg}-${index}, __mc:`, node.__mc);
+                                      if (!node.__mc) {
+                                        if (__DEV__) console.log(`🔵 NetworkScreen - Node ${deg}-${index} has no __mc, skipping`);
+                                        return null;
+                                      }
+                                      if (__DEV__) console.log(`🔵 NetworkScreen - Rendering MiniCard for node ${deg}-${index}`);
+                                      return (
+                                        <TouchableOpacity
+                                          key={`${deg}-${index}`}
+                                          onPress={() =>
+                                            navigation.navigate("Profile", {
+                                              profile_uid: node.network_profile_personal_uid,
+                                              returnTo: "Network",
+                                            })
+                                          }
+                                          style={{ marginVertical: 6 }}
+                                        >
+                                          <MiniCard user={node.__mc} showRelationship={true} />
+                                        </TouchableOpacity>
+                                      );
+                                    })}
+                                  </View>
+                                );
                               });
-                            }
-
-
-                              if (list.length === 0) {
-                                if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} has no items after filtering`);
-                                return null; // Don't render degree section if no items after filtering
-                              }
-
-                              if (__DEV__) console.log(`🔵 NetworkScreen - Rendering degree ${deg} with ${list.length} items`);
-                              return (
-                                <View key={deg} style={{ marginBottom: 20 }}>
-                                  {(() => {
-                                    const label = degreeLabel(Number(deg));
-                                    if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} label:`, label);
-                                    return <Text style={[styles.degreeHeader, darkMode && styles.darkDegreeHeader]}>{label}</Text>;
-                                  })()}
-
-                                  {list.map((node, index) => {
-                                    if (__DEV__) console.log(`🔵 NetworkScreen - Rendering node ${deg}-${index}, __mc:`, node.__mc);
-                                    // Data is already sanitized when __mc is created, but double-check
-                                    if (!node.__mc) {
-                                      if (__DEV__) console.log(`🔵 NetworkScreen - Node ${deg}-${index} has no __mc, skipping`);
-                                      return null;
-                                    }
-                                    if (__DEV__) console.log(`🔵 NetworkScreen - Rendering MiniCard for node ${deg}-${index}`);
-                                    return (
-                                      <TouchableOpacity
-                                        key={`${deg}-${index}`}
-                                        onPress={() =>
-                                          navigation.navigate("Profile", {
-                                            profile_uid: node.network_profile_personal_uid,
-                                            returnTo: "Network",
-                                          })
-                                        }
-                                        style={{ marginVertical: 6 }}
-                                      >
-                                        <MiniCard user={node.__mc} showRelationship={true} />
-                                      </TouchableOpacity>
-                                    );
-                                  })}
-                                </View>
-                              );
-                            });
-                        })()}
-                      </View>
-                    );
-                  }
-                  return null;
+                          })()}
+                        </View>
+                      )}
+                    </>
+                  );
                 })()}
 
                 {(() => {
@@ -2172,6 +2223,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     marginBottom: 15,
+    marginTop: 15,
     gap: 8,
     zIndex: 9998,
   },
@@ -2270,6 +2322,34 @@ const styles = StyleSheet.create({
   },
   darkDropdownItemSelected: {
     backgroundColor: "#404040",
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    position: "relative",
+    minWidth: 200,
+    flex: 1,
+  },
+  searchInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingRight: 35,
+    backgroundColor: "#fff",
+    fontSize: 14,
+  },
+  darkSearchInput: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+    color: "#fff",
+  },
+  clearSearchButton: {
+    position: "absolute",
+    right: 10,
+    padding: 5,
   },
 });
 
