@@ -410,6 +410,12 @@ const ProfileScreen = ({ route, navigation }) => {
 
           // Return business object matching BusinessProfileScreen structure for MiniCard
           // Sanitize all text fields to prevent "Unexpected text node" errors
+          const firstImage = businessImages && businessImages.length > 0 ? businessImages[0] : null;
+          console.log("ProfileScreen - Business image data for", rawBusiness.business_name, ":", {
+            businessImagesLength: businessImages?.length || 0,
+            firstImage: firstImage,
+            firstImageType: typeof firstImage,
+          });
           return {
             business_name: sanitizeText(rawBusiness.business_name, ""),
             business_address_line_1: sanitizeText(rawBusiness.business_address_line_1, ""),
@@ -417,7 +423,7 @@ const ProfileScreen = ({ route, navigation }) => {
             business_phone_number: sanitizeText(rawBusiness.business_phone_number, ""),
             business_email: sanitizeText(rawBusiness.business_email_id, ""),
             business_website: sanitizeText(rawBusiness.business_website, ""),
-            first_image: businessImages && businessImages.length > 0 ? businessImages[0] : null,
+            first_image: firstImage,
             phoneIsPublic:
               rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1 || rawBusiness.phone_is_public === "1" || rawBusiness.phone_is_public === 1,
             emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1 || rawBusiness.email_is_public === "1" || rawBusiness.email_is_public === 1,

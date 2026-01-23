@@ -65,19 +65,37 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
       else if (business.first_image.photo_url) businessImage = business.first_image.photo_url;
     }
 
+    // Determine the image source with proper fallback
+    let imageSource;
+    if (businessImage && typeof businessImage === "string" && businessImage.trim() !== "") {
+      imageSource = { uri: businessImage };
+    } else if (PROFILE_IMAGE_SOURCE) {
+      imageSource = PROFILE_IMAGE_SOURCE;
+    } else {
+      // Fallback for web - use require() which should work in React Native Web
+      try {
+        imageSource = require("../assets/profile.png");
+      } catch (e) {
+        // If require fails on web, use empty URI as last resort
+        imageSource = { uri: "" };
+      }
+    }
+
     return (
       <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
         {(() => {
           if (__DEV__) console.log("🔵 MiniCard - Rendering business image");
+          if (__DEV__) console.log("🔵 MiniCard - businessImage:", businessImage);
+          if (__DEV__) console.log("🔵 MiniCard - imageSource:", imageSource);
           return (
             <Image
-              source={businessImage && businessImage.trim() !== "" ? { uri: businessImage } : (PROFILE_IMAGE_SOURCE || { uri: "" })}
+              source={imageSource}
               style={[styles.profileImage, darkMode && styles.darkProfileImage]}
               onError={(error) => {
                 console.log("MiniCard business image failed to load:", error.nativeEvent.error);
                 console.log("Problematic business image URI:", businessImage);
               }}
-              {...(PROFILE_IMAGE_SOURCE && { defaultSource: PROFILE_IMAGE_SOURCE })}
+              defaultSource={PROFILE_IMAGE_SOURCE || require("../assets/profile.png")}
             />
           );
         })()}
