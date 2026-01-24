@@ -1,17 +1,19 @@
 // BusinessProfileScreen.js
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TouchableOpacity, Alert, Modal, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { MaterialIcons, Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
 import ProductCard from "../components/ProductCard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { getHeaderColors } from "../config/headerColors";
+import FeedbackPopup from "../components/FeedbackPopup";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -30,8 +32,12 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [allReviews, setAllReviews] = useState([]);
   const [currentUserProfileId, setCurrentUserProfileId] = useState(null);
   const [businessUsers, setBusinessUsers] = useState([]);
-  const [reviewerProfiles, setReviewerProfiles] = useState({}); // Store reviewer profile data by profile_id
-  const [viewportWidth, setViewportWidth] = useState(null); // Track viewport width for web responsiveness
+  const [reviewerProfiles, setReviewerProfiles] = useState({});
+  const [viewportWidth, setViewportWidth] = useState(null);
+
+  const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
+  const businessFeedbackInstructions = "Instructions for Business Profile";
+  const businessFeedbackQuestions = ["Business Profile - Question 1?", "Business Profile - Question 2?", "Business Profile - Question 3?"];
 
   // Handle viewport resize on web (for DevTools opening/closing)
   useEffect(() => {
@@ -39,16 +45,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
       const updateViewportWidth = () => {
         setViewportWidth(window.innerWidth);
       };
-
-      // Set initial width
       updateViewportWidth();
-
-      // Listen for resize events
       window.addEventListener("resize", updateViewportWidth);
-
-      // Also listen for orientation changes
       window.addEventListener("orientationchange", updateViewportWidth);
-
       return () => {
         window.removeEventListener("resize", updateViewportWidth);
         window.removeEventListener("orientationchange", updateViewportWidth);
@@ -69,7 +68,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
         console.error("Error loading cart items:", error);
       }
     };
-
     loadCartItems();
   }, [business_uid]);
 
@@ -89,7 +87,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
   // Fetch reviewer profile data
   const fetchReviewerProfile = async (profileId) => {
     if (!profileId || reviewerProfiles[profileId]) {
-      return; // Already fetched or invalid
+      return;
     }
 
     try {
@@ -123,33 +121,18 @@ export default function BusinessProfileScreen({ route, navigation }) {
       let userReviewFromAPI = null;
       let otherReviews = [];
 
-      console.log("Processing ratings from business data:");
-      console.log("Current user profile ID:", currentUserProfileId);
-      console.log("All ratings from business:", business.ratings);
-
       if (business.ratings && Array.isArray(business.ratings)) {
         business.ratings.forEach((rating) => {
-          console.log("Processing rating:", rating.rating_uid, "Profile ID:", rating.rating_profile_id);
           if (rating.rating_profile_id === currentUserProfileId) {
-            console.log("Found user review:", rating.rating_uid);
             userReviewFromAPI = rating;
           } else {
-            console.log("Adding to other reviews:", rating.rating_uid);
             otherReviews.push(rating);
-            // Fetch reviewer profile data for each review
             if (rating.rating_profile_id) {
               fetchReviewerProfile(rating.rating_profile_id);
             }
           }
         });
       }
-
-      console.log("User review found:", userReviewFromAPI ? userReviewFromAPI.rating_uid : "None");
-      console.log("Other reviews count:", otherReviews.length);
-      console.log(
-        "Other reviews:",
-        otherReviews.map((r) => r.rating_uid)
-      );
 
       setUserReview(userReviewFromAPI);
       setAllReviews(otherReviews);
@@ -168,26 +151,18 @@ export default function BusinessProfileScreen({ route, navigation }) {
         throw new Error("Business not found or malformed response");
       }
 
-      console.log("BusinessProfileScreen received data:", JSON.stringify(result, null, 2));
-
       const rawBusiness = result.business;
-      console.log("BusinessProfileScreen - business_role in rawBusiness:", rawBusiness?.business_role);
-      console.log("BusinessProfileScreen - bu_role in rawBusiness:", rawBusiness?.bu_role);
-      console.log("BusinessProfileScreen - All business fields:", Object.keys(rawBusiness || {}));
-      console.log("BusinessProfileScreen - Full rawBusiness object:", JSON.stringify(rawBusiness, null, 2));
 
-      // Handle social_links - now it's an array of objects
+      // Handle social_links
       let socialLinksData = {};
       if (rawBusiness.social_links) {
         if (Array.isArray(rawBusiness.social_links)) {
-          // New format: array of objects with social_link_name and business_link_url
           rawBusiness.social_links.forEach((link) => {
             if (link.business_link_url && link.business_link_url.trim() !== "") {
               socialLinksData[link.social_link_name] = link.business_link_url;
             }
           });
         } else if (typeof rawBusiness.social_links === "string") {
-          // Old format: JSON string
           try {
             socialLinksData = JSON.parse(rawBusiness.social_links);
           } catch (e) {
@@ -197,9 +172,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         }
       }
 
-      console.log("Processed social links:", socialLinksData);
-
-      // Handle business_google_photos - it might be a string or array
+      // Handle business_google_photos
       let businessImages = [];
       if (rawBusiness.business_google_photos) {
         if (typeof rawBusiness.business_google_photos === "string") {
@@ -227,77 +200,47 @@ export default function BusinessProfileScreen({ route, navigation }) {
         } else if (Array.isArray(rawBusiness.business_images_url)) {
           uploadedImages = rawBusiness.business_images_url;
         }
-        // URLs should already be full S3 URLs, but handle both cases
         uploadedImages = uploadedImages
           .map((img) => {
             if (img && typeof img === "string") {
-              // If it's already a full URL, use it; otherwise construct it
               if (img.startsWith("http://") || img.startsWith("https://")) {
                 return img;
               }
-              // Construct full S3 URL if only filename is provided
               return `https://s3-us-west-1.amazonaws.com/every-circle/business_personal/${rawBusiness.business_uid}/${img}`;
             }
             return null;
           })
-          .filter(Boolean); // Remove any null values
-        // Merge uploaded images with Google photos (uploaded images first)
+          .filter(Boolean);
         businessImages = [...uploadedImages, ...businessImages];
-        console.log("Combined business images (uploaded + Google):", businessImages);
       }
 
-      // Filter out problematic URLs that won't work in React Native
+      // Filter out problematic URLs
       businessImages = businessImages.filter((uri) => {
-        // Check if URI is valid
         if (!uri || typeof uri !== "string" || uri.trim() === "" || uri === "null" || uri === "undefined") {
           return false;
         }
-
-        // Filter out Google Maps API URLs that don't work in React Native
         if (uri.includes("maps.googleapis.com/maps/api/place/js/PhotoService") || uri.includes("PhotoService.GetPhoto") || uri.includes("callback=none")) {
-          console.log("Filtering out Google API URL that won't work in React Native:", uri.substring(0, 100) + "...");
           return false;
         }
-
-        // Only allow direct image URLs or valid http/https URLs
         const isValidImageUrl = uri.match(/\.(jpeg|jpg|gif|png|webp)(\?.*)?$/i) || uri.startsWith("http://") || uri.startsWith("https://");
-
-        if (!isValidImageUrl) {
-          console.log("Filtering out invalid image URL:", uri.substring(0, 100));
-          return false;
-        }
-
-        return true;
+        return isValidImageUrl;
       });
 
-      console.log("Processed business images after filtering:", businessImages);
-
-      // Handle custom tags if available
-      // Check both rawBusiness.custom_tags and result.tags (root level)
+      // Handle custom tags
       let customTags = [];
-
-      // First check root level 'tags' from API response
       if (result.tags && Array.isArray(result.tags)) {
         customTags = result.tags;
-        console.log("BusinessProfileScreen - Using root level tags:", customTags);
-      }
-      // Then check rawBusiness.custom_tags
-      else if (rawBusiness.custom_tags) {
+      } else if (rawBusiness.custom_tags) {
         if (typeof rawBusiness.custom_tags === "string") {
           try {
             customTags = JSON.parse(rawBusiness.custom_tags);
-            console.log("BusinessProfileScreen - Parsed custom_tags string:", customTags);
           } catch (e) {
-            console.log("Failed to parse custom_tags as JSON");
             customTags = [];
           }
         } else if (Array.isArray(rawBusiness.custom_tags)) {
           customTags = rawBusiness.custom_tags;
-          console.log("BusinessProfileScreen - Using custom_tags array:", customTags);
         }
       }
-
-      console.log("BusinessProfileScreen - Final customTags:", customTags);
 
       // Fetch category name if business_category_id is present
       let categoryName = rawBusiness.business_category || null;
@@ -306,7 +249,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
           const categoryResponse = await fetch(CATEGORY_LIST_ENDPOINT);
           const categoryResult = await categoryResponse.json();
           if (categoryResult && categoryResult.result) {
-            // business_category_id might be a single ID or comma-separated IDs
             const categoryIds = rawBusiness.business_category_id.split(",").map((id) => id.trim());
             const categoryNames = categoryIds
               .map((id) => {
@@ -321,17 +263,16 @@ export default function BusinessProfileScreen({ route, navigation }) {
         }
       }
 
-      // Store ratings in business object for later processing when profile ID is available
       const businessWithRatings = {
         ...rawBusiness,
-        business_user_id: rawBusiness.business_user_id || "", // Include business_user_id for ownership check
+        business_user_id: rawBusiness.business_user_id || "",
         business_email_id: rawBusiness.business_email_id || "",
         business_phone_number: rawBusiness.business_phone_number || "",
         tagline: rawBusiness.business_tag_line || rawBusiness.tagline || "",
         business_short_bio: rawBusiness.business_short_bio || rawBusiness.short_bio || "",
         business_role: rawBusiness.business_role || rawBusiness.role || rawBusiness.bu_role || "",
         business_ein_number: rawBusiness.business_ein_number || "",
-        ein_number: rawBusiness.business_ein_number || "", // Alias for display
+        ein_number: rawBusiness.business_ein_number || "",
         facebook: socialLinksData.facebook || "",
         instagram: socialLinksData.instagram || "",
         linkedin: socialLinksData.linkedin || "",
@@ -339,7 +280,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         images: businessImages,
         customTags: customTags,
         business_category: categoryName || rawBusiness.business_category || null,
-        ratings: result.ratings, // Store ratings for later processing
+        ratings: result.ratings,
         emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1 || rawBusiness.email_is_public === "1" || rawBusiness.email_is_public === 1,
         phoneIsPublic:
           rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1 || rawBusiness.phone_is_public === "1" || rawBusiness.phone_is_public === 1,
@@ -353,14 +294,12 @@ export default function BusinessProfileScreen({ route, navigation }) {
               try {
                 return JSON.parse(rawBusiness.business_services);
               } catch (e) {
-                console.log("Failed to parse business_services as JSON");
                 return [];
               }
             } else if (Array.isArray(rawBusiness.business_services)) {
               return rawBusiness.business_services;
             }
           }
-          // Fallback: use result.services if present
           if (Array.isArray(result.services)) {
             return result.services;
           }
@@ -370,9 +309,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
       setBusiness(businessWithRatings);
 
-      // Store business_users if available
       if (result.business_users && Array.isArray(result.business_users)) {
-        console.log("BusinessProfileScreen - business_users:", JSON.stringify(result.business_users, null, 2));
         setBusinessUsers(result.business_users);
       } else {
         setBusinessUsers([]);
@@ -387,59 +324,32 @@ export default function BusinessProfileScreen({ route, navigation }) {
   useEffect(() => {
     const checkBusinessOwnership = async () => {
       try {
-        // Method 1: Check business_user_id directly from business object (most reliable)
         if (business && business.business_user_id) {
           const currentUserUid = await AsyncStorage.getItem("user_uid");
-          console.log("BusinessProfileScreen - Checking ownership via business_user_id:");
-          console.log("  - business.business_user_id:", business.business_user_id);
-          console.log("  - currentUserUid:", currentUserUid);
-
           if (business.business_user_id === currentUserUid) {
-            console.log("BusinessProfileScreen - User is owner (via business_user_id match)");
             setIsOwner(true);
             return;
           }
         }
 
-        // Method 2: Check via user profile business_info array (fallback)
         const userUid = await AsyncStorage.getItem("user_uid");
         const profileUID = await AsyncStorage.getItem("profile_uid");
-        console.log("BusinessProfileScreen - Checking ownership via profile business_info:");
-        console.log("  - user_uid:", userUid);
-        console.log("  - profile_uid:", profileUID);
-        console.log("  - business_uid:", business_uid);
-
         if (!userUid && !profileUID) {
-          console.log("BusinessProfileScreen - No user/profile UID found");
           setIsOwner(false);
           return;
         }
 
-        // Try with profile_uid first (more accurate)
         let uidToUse = profileUID || userUid;
         const response = await fetch(`${ProfileScreenAPI}/${uidToUse}`);
         const userData = await response.json();
-        console.log("BusinessProfileScreen - Profile API response:", JSON.stringify(userData, null, 2));
 
         if (userData && userData.business_info) {
           const businessInfo = typeof userData.business_info === "string" ? JSON.parse(userData.business_info) : userData.business_info;
-          // console.log("BusinessProfileScreen - business_info array:", JSON.stringify(businessInfo, null, 2));
-
           const isBusinessOwner = businessInfo.some((biz) => {
-            const matches = biz.business_uid === business_uid || biz.profile_business_business_id === business_uid;
-            console.log(`BusinessProfileScreen - Checking business:`, {
-              biz_business_uid: biz.business_uid,
-              biz_profile_business_business_id: biz.profile_business_business_id,
-              target_business_uid: business_uid,
-              matches: matches,
-            });
-            return matches;
+            return biz.business_uid === business_uid || biz.profile_business_business_id === business_uid;
           });
-
-          console.log("BusinessProfileScreen - isBusinessOwner result:", isBusinessOwner);
           setIsOwner(isBusinessOwner);
         } else {
-          console.log("BusinessProfileScreen - No business_info in user profile");
           setIsOwner(false);
         }
       } catch (error) {
@@ -448,24 +358,18 @@ export default function BusinessProfileScreen({ route, navigation }) {
       }
     };
 
-    // Only check ownership if we have business data
     if (business) {
       checkBusinessOwnership();
     }
   }, [business_uid, business]);
 
-  // Add focus listener to refresh data when returning to this screen
-  useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", () => {
-      console.log("BusinessProfileScreen focused - refreshing data");
+  // Use useFocusEffect like ProfileScreen
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log("BusinessProfileScreen - useFocusEffect triggered, reloading business data");
       fetchBusinessInfo();
-    });
-
-    // Initial fetch
-    fetchBusinessInfo();
-
-    return unsubscribe;
-  }, [navigation, business_uid]);
+    }, [business_uid])
+  );
 
   const handleProductPress = (service) => {
     if (!isOwner) {
@@ -483,12 +387,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
         totalPrice: (parseFloat(selectedService.bs_cost) * quantity).toFixed(2),
       };
 
-      // Check if the item already exists in the cart
       const existingItemIndex = cartItems.findIndex((item) => item.bs_uid === selectedService.bs_uid);
 
       let newCartItems;
       if (existingItemIndex !== -1) {
-        // Item exists, update its quantity
         newCartItems = [...cartItems];
         const existingItem = newCartItems[existingItemIndex];
         const newQuantity = (existingItem.quantity || 1) + quantity;
@@ -497,16 +399,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
           quantity: newQuantity,
           totalPrice: (parseFloat(existingItem.bs_cost) * newQuantity).toFixed(2),
         };
-        console.log(`Updated quantity for existing item ${selectedService.bs_service_name} to ${newQuantity}`);
       } else {
-        // Item doesn't exist, add it as new
         newCartItems = [...cartItems, serviceWithQuantity];
-        console.log(`Added new item ${selectedService.bs_service_name} with quantity ${quantity}`);
       }
 
       setCartItems(newCartItems);
-
-      // Save to AsyncStorage
       await AsyncStorage.setItem(
         `cart_${business_uid}`,
         JSON.stringify({
@@ -525,8 +422,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
     try {
       const newCartItems = cartItems.filter((_, i) => i !== index);
       setCartItems(newCartItems);
-
-      // Update AsyncStorage
       await AsyncStorage.setItem(
         `cart_${business_uid}`,
         JSON.stringify({
@@ -559,28 +454,40 @@ export default function BusinessProfileScreen({ route, navigation }) {
     );
   };
 
+  const renderField = (label, value, isPublic) => {
+    if (isPublic && value && value.trim() !== "") {
+      return (
+        <View style={styles.fieldContainer}>
+          <Text style={[styles.label, darkMode && styles.darkLabel]}>{label}:</Text>
+          <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(value)}</Text>
+        </View>
+      );
+    }
+    return null;
+  };
+
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size='large' color='#00C721' />
+      <View style={[styles.pageContainer, darkMode && styles.darkPageContainer, { flex: 1, justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size='large' color={darkMode ? "#ffffff" : "#007BFF"} style={{ marginTop: 50 }} />
       </View>
     );
   }
 
   if (!business) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.errorText}>Failed to load business data.</Text>
+      <View style={[styles.pageContainer, darkMode && styles.darkPageContainer, { flex: 1, justifyContent: "center", alignItems: "center" }]}>
+        <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>Failed to load business data.</Text>
       </View>
     );
   }
 
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]} key={Platform.OS === "web" ? `viewport-${viewportWidth}` : undefined}>
-      {/* Header */}
       <AppHeader
         title='Business Profile'
         {...getHeaderColors("businessProfile")}
+        onTitlePress={() => setShowFeedbackPopup(true)}
         rightButton={
           isOwner ? (
             <TouchableOpacity
@@ -613,138 +520,123 @@ export default function BusinessProfileScreen({ route, navigation }) {
             style: [styles.scrollContainer, darkMode && styles.darkScrollContainer, { zIndex: 1 }],
           })}
         >
-          {/* Business Card (MiniCard at top) */}
-          <View style={[styles.card, darkMode && styles.darkCard]}>
-            <MiniCard
-              business={{
-                business_name: sanitizeText(business.business_name),
-                business_address_line_1: sanitizeText(business.business_address_line_1),
-                business_zip_code: sanitizeText(business.business_zip_code),
-                business_phone_number: sanitizeText(business.business_phone_number),
-                business_email: sanitizeText(business.business_email_id),
-                business_website: sanitizeText(business.business_website),
-                first_image: business.images && business.images.length > 0 ? business.images[0] : null,
-                phoneIsPublic: business.phoneIsPublic,
-                emailIsPublic: business.emailIsPublic,
-              }}
-            />
+          {/* Business Header Card */}
+          <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
+            <View style={styles.profileHeaderContainer}>
+              <Text style={[styles.nameText, darkMode && styles.darkNameText]}>{sanitizeText(business.business_name)}</Text>
+              <Text style={[styles.profileId, darkMode && styles.darkProfileId]}>Business ID: {business_uid}</Text>
+            </View>
           </View>
 
-          {/* Contact Information Card */}
-          <View style={[styles.card, darkMode && styles.darkCard]}>
-            <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Contact Information</Text>
-
-            <View style={styles.infoRow}>
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Location:</Text>
-              <Text style={[styles.value, darkMode && styles.darkValue]}>
-                {(() => {
-                  const parts = [
-                    sanitizeText(business.business_address_line_1),
-                    sanitizeText(business.business_address_line_2),
-                    sanitizeText(business.business_city),
-                    sanitizeText(business.business_state),
-                    sanitizeText(business.business_zip_code),
-                    sanitizeText(business.business_country),
-                  ].filter((part) => part && part !== ".");
-                  return parts.length > 0 ? parts.join(", ") : "N/A";
-                })()}
-              </Text>
-            </View>
-
-            {business.phoneIsPublic && isSafeForConditional(business.business_phone_number) && (
-              <View style={styles.infoRow}>
-                <Text style={[styles.label, darkMode && styles.darkLabel]}>Phone:</Text>
-                <Text style={[styles.value, darkMode && styles.darkValue]}>{sanitizeText(business.business_phone_number)}</Text>
-              </View>
-            )}
-
-            {business.emailIsPublic && isSafeForConditional(business.business_email_id) && (
-              <View style={styles.infoRow}>
-                <Text style={[styles.label, darkMode && styles.darkLabel]}>Email:</Text>
-                <Text style={[styles.value, darkMode && styles.darkValue]}>{sanitizeText(business.business_email_id)}</Text>
-              </View>
-            )}
-
-            <View style={styles.infoRow}>
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Category:</Text>
-              <Text style={[styles.value, darkMode && styles.darkValue]}>{sanitizeText(business.business_category, "N/A")}</Text>
-            </View>
-
-            {isSafeForConditional(business.business_website) && (
-              <View style={styles.infoRow}>
-                <Text style={[styles.label, darkMode && styles.darkLabel]}>Website:</Text>
-                <Text style={[styles.link, darkMode && styles.darkLink]}>🌐 {sanitizeText(business.business_website)}</Text>
-              </View>
-            )}
-
-            {isSafeForConditional(business.business_role || business.role || business.bu_role) && (
-              <View style={styles.infoRow}>
-                <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Role:</Text>
-                <Text style={[styles.value, darkMode && styles.darkValue]}>{sanitizeText(business.business_role || business.role || business.bu_role)}</Text>
-              </View>
-            )}
-
-            {isSafeForConditional(business.ein_number) && (
-              <View style={styles.infoRow}>
-                <Text style={[styles.label, darkMode && styles.darkLabel]}>EIN Number:</Text>
-                <Text style={[styles.value, darkMode && styles.darkValue]}>{sanitizeText(business.ein_number)}</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Business Details Card */}
-          {business.taglineIsPublic && isSafeForConditional(business.tagline) && (
-            <View style={[styles.card, darkMode && styles.darkCard]}>
-              <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Tagline</Text>
-              <Text style={[styles.bioText, darkMode && styles.darkBioText]}>{sanitizeText(business.tagline)}</Text>
-            </View>
-          )}
+          {/* MiniCard */}
+          <MiniCard
+            business={{
+              business_name: sanitizeText(business.business_name),
+              business_address_line_1: sanitizeText(business.business_address_line_1),
+              business_zip_code: sanitizeText(business.business_zip_code),
+              business_phone_number: sanitizeText(business.business_phone_number),
+              business_email: sanitizeText(business.business_email_id),
+              business_website: sanitizeText(business.business_website),
+              first_image: business.images && business.images.length > 0 ? business.images[0] : null,
+              phoneIsPublic: business.phoneIsPublic,
+              emailIsPublic: business.emailIsPublic,
+            }}
+          />
 
           {/* About Section */}
           {business.shortBioIsPublic && isSafeForConditional(business.business_short_bio) && (
-            <View style={[styles.card, darkMode && styles.darkCard]}>
-              <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>About</Text>
-              <Text style={[styles.bioText, darkMode && styles.darkBioText]}>{sanitizeText(business.business_short_bio)}</Text>
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>About:</Text>
+              {business.business_short_bio && business.business_short_bio.trim() !== "" ? (
+                <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(business.business_short_bio)}</Text>
+                </View>
+              ) : (
+                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: darkMode ? "#999" : "#666" }]}>No description added yet</Text>
+              )}
             </View>
           )}
 
+          {/* Tagline Section */}
+          {business.taglineIsPublic && isSafeForConditional(business.tagline) && (
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Tagline:</Text>
+              {business.tagline && business.tagline.trim() !== "" ? (
+                <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(business.tagline)}</Text>
+                </View>
+              ) : null}
+            </View>
+          )}
+
+          {/* Contact Information */}
+          <View style={styles.fieldContainer}>
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Contact Information:</Text>
+            <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
+              {renderField("Location", (() => {
+                const parts = [
+                  sanitizeText(business.business_address_line_1),
+                  sanitizeText(business.business_address_line_2),
+                  sanitizeText(business.business_city),
+                  sanitizeText(business.business_state),
+                  sanitizeText(business.business_zip_code),
+                  sanitizeText(business.business_country),
+                ].filter((part) => part && part !== ".");
+                return parts.length > 0 ? parts.join(", ") : "N/A";
+              })(), true)}
+              {business.phoneIsPublic && isSafeForConditional(business.business_phone_number) && (
+                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Phone: {sanitizeText(business.business_phone_number)}</Text>
+              )}
+              {business.emailIsPublic && isSafeForConditional(business.business_email_id) && (
+                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Email: {sanitizeText(business.business_email_id)}</Text>
+              )}
+              <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Business Category: {sanitizeText(business.business_category, "N/A")}</Text>
+              {isSafeForConditional(business.business_website) && (
+                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Website: 🌐 {sanitizeText(business.business_website)}</Text>
+              )}
+              {isSafeForConditional(business.business_role || business.role || business.bu_role) && (
+                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Business Role: {sanitizeText(business.business_role || business.role || business.bu_role)}</Text>
+              )}
+              {isSafeForConditional(business.ein_number) && (
+                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>EIN Number: {sanitizeText(business.ein_number)}</Text>
+              )}
+            </View>
+          </View>
+
           {/* Business Hours */}
           {isSafeForConditional(business.business_hours) && (
-            <View style={[styles.card, darkMode && styles.darkCard]}>
-              <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Business Hours</Text>
-              <Text style={[styles.bioText, darkMode && styles.darkBioText]}>{sanitizeText(business.business_hours)}</Text>
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Hours:</Text>
+              <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
+                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(business.business_hours)}</Text>
+              </View>
             </View>
           )}
 
           {/* Rating and Price Level */}
           {(business.google_rating || business.price_level) && (
-            <View style={[styles.card, darkMode && styles.darkCard]}>
-              <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Rating & Pricing</Text>
-              {isSafeForConditional(business.google_rating) && (
-                <View style={styles.infoRow}>
-                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Google Rating:</Text>
-                  <Text style={[styles.value, darkMode && styles.darkValue]}>⭐ {sanitizeText(business.google_rating)}</Text>
-                </View>
-              )}
-              {business.price_level && (
-                <View style={styles.infoRow}>
-                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Price Level:</Text>
-                  <Text style={[styles.value, darkMode && styles.darkValue]}>{"$".repeat(parseInt(business.price_level) || 1)}</Text>
-                </View>
-              )}
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Rating & Pricing:</Text>
+              <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
+                {isSafeForConditional(business.google_rating) && (
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Google Rating: ⭐ {sanitizeText(business.google_rating)}</Text>
+                )}
+                {business.price_level && (
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Price Level: {"$".repeat(parseInt(business.price_level) || 1)}</Text>
+                )}
+              </View>
             </View>
           )}
 
           {/* Custom Tags - Only visible to owners/editors */}
           {isOwner && business.customTags && business.customTags.length > 0 && (
-            <View style={[styles.card, darkMode && styles.darkCard]}>
-              <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Tags</Text>
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Tags:</Text>
               <View style={styles.tagsContainer}>
                 {business.customTags
                   .map((tag) => sanitizeText(tag))
                   .filter((tag) => tag && tag !== "." && tag.trim() !== "" && !tag.match(/^[\s.,;:!?\-_=+]*$/))
                   .map((tag, index) => {
-                    // Final safety check before rendering
                     if (!tag || tag === "." || tag.trim() === "") return null;
                     return (
                       <View key={index} style={[styles.tag, darkMode && styles.darkTag]}>
@@ -757,26 +649,28 @@ export default function BusinessProfileScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* Social Links Card */}
+          {/* Social Links */}
           {(() => {
             const hasSocialLinks = business.facebook || business.instagram || business.linkedin || business.youtube;
             if (!hasSocialLinks) return null;
 
             return (
-              <View style={[styles.card, darkMode && styles.darkCard]}>
-                <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Social Links</Text>
-                {isSafeForConditional(business.facebook) && <Text style={[styles.socialLink, darkMode && styles.darkSocialLink]}>📘 Facebook: {sanitizeText(business.facebook)}</Text>}
-                {isSafeForConditional(business.instagram) && <Text style={[styles.socialLink, darkMode && styles.darkSocialLink]}>📸 Instagram: {sanitizeText(business.instagram)}</Text>}
-                {isSafeForConditional(business.linkedin) && <Text style={[styles.socialLink, darkMode && styles.darkSocialLink]}>🔗 LinkedIn: {sanitizeText(business.linkedin)}</Text>}
-                {isSafeForConditional(business.youtube) && <Text style={[styles.socialLink, darkMode && styles.darkSocialLink]}>▶️ YouTube: {sanitizeText(business.youtube)}</Text>}
+              <View style={styles.fieldContainer}>
+                <Text style={[styles.label, darkMode && styles.darkLabel]}>Social Links:</Text>
+                <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
+                  {isSafeForConditional(business.facebook) && <Text style={[styles.inputText, darkMode && styles.darkInputText]}>📘 Facebook: {sanitizeText(business.facebook)}</Text>}
+                  {isSafeForConditional(business.instagram) && <Text style={[styles.inputText, darkMode && styles.darkInputText]}>📸 Instagram: {sanitizeText(business.instagram)}</Text>}
+                  {isSafeForConditional(business.linkedin) && <Text style={[styles.inputText, darkMode && styles.darkInputText]}>🔗 LinkedIn: {sanitizeText(business.linkedin)}</Text>}
+                  {isSafeForConditional(business.youtube) && <Text style={[styles.inputText, darkMode && styles.darkInputText]}>▶️ YouTube: {sanitizeText(business.youtube)}</Text>}
+                </View>
               </View>
             );
           })()}
 
-          {/* Business Images Card - Only show if there are images */}
+          {/* Business Images */}
           {Array.isArray(business.images) && business.images.length > 0 && (
-            <View style={[styles.card, darkMode && styles.darkCard]}>
-              <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Business Images</Text>
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Images:</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll}>
                 {business.images.map((uri, index) => (
                   <View key={index} style={styles.imageContainer}>
@@ -785,76 +679,41 @@ export default function BusinessProfileScreen({ route, navigation }) {
                       style={styles.image}
                       onError={(error) => {
                         console.log(`Business image ${index} failed to load:`, error.nativeEvent.error);
-                        console.log(`Problematic URI:`, uri);
                       }}
-                      onLoad={() => console.log(`Business image ${index} loaded successfully`)}
                       defaultSource={require("../assets/profile.png")}
                       resizeMode='cover'
                     />
                   </View>
                 ))}
               </ScrollView>
-              {business.images.length === 0 && <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>No compatible images available</Text>}
             </View>
           )}
 
           {/* Business Editors/Owners Section - Only visible to owners/editors */}
           {isOwner && businessUsers.length > 0 && (
-            <View style={[styles.card, darkMode && styles.darkCard]}>
-              <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Business Editors & Owners</Text>
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Editors & Owners:</Text>
               {businessUsers.map((businessUser, index) => {
-                // Debug logging for each business user
-                if (__DEV__) {
-                  console.log(`🔍 BusinessProfileScreen - Processing businessUser ${index}:`, {
-                    first_name: businessUser.first_name,
-                    last_name: businessUser.last_name,
-                    user_email: businessUser.user_email,
-                    business_role: businessUser.business_role,
-                    profile_photo: businessUser.profile_photo,
-                    raw: businessUser,
-                  });
-                }
-
-                // Format user data for MiniCard component - sanitize everything
                 const firstName = sanitizeText(businessUser.first_name);
                 const lastName = sanitizeText(businessUser.last_name);
                 const email = sanitizeText(businessUser.user_email);
                 const profileImage = sanitizeText(businessUser.profile_photo);
                 const role = sanitizeText(businessUser.business_role, "N/A");
 
-                // Debug after sanitization
-                if (__DEV__) {
-                  console.log(`🔍 BusinessProfileScreen - After sanitization ${index}:`, {
-                    firstName,
-                    lastName,
-                    email,
-                    profileImage,
-                    role,
-                  });
-                }
-
                 const userForMiniCard = {
                   firstName,
                   lastName,
                   email,
                   profileImage,
-                  // Note: We don't have visibility flags from business_users, so we'll show email/phone if they exist
-                  emailIsPublic: true, // Assume public since we're showing to owners/editors
-                  phoneIsPublic: false, // No phone in business_users data
-                  phoneNumber: "", // No phone in business_users data
+                  emailIsPublic: true,
+                  phoneIsPublic: false,
+                  phoneNumber: "",
                 };
 
                 return (
                   <View key={businessUser.business_user_id || index} style={[styles.businessUserCard, darkMode && styles.darkBusinessUserCard]}>
                     <MiniCard user={userForMiniCard} />
-                    {(() => {
-                      // Extra defensive check for role rendering
-                      const roleText = role && role !== "." && role.trim() !== "" ? role : "N/A";
-                      if (__DEV__ && (role === "." || role === "")) {
-                        console.warn(`⚠️ BusinessProfileScreen - Invalid role detected for user ${index}:`, businessUser.business_role, "-> sanitized to:", role);
-                      }
-                      return <Text style={[styles.businessUserRole, darkMode && styles.darkBusinessUserRole]}>Role: {roleText}</Text>;
-                    })()}
+                    <Text style={[styles.businessUserRole, darkMode && styles.darkBusinessUserRole]}>Role: {role && role !== "." && role.trim() !== "" ? role : "N/A"}</Text>
                   </View>
                 );
               })}
@@ -917,18 +776,18 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
           {/* All Reviews Section */}
           {allReviews.length > 0 && (
-            <View style={[styles.card, darkMode && styles.darkCard]}>
-              <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Reviews ({allReviews.length})</Text>
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Reviews ({allReviews.length}):</Text>
               {allReviews.map((review, index) => (
                 <TouchableOpacity
                   key={review.rating_uid || index}
-                  style={[styles.reviewCard, darkMode && styles.darkReviewCard]}
+                  style={[styles.reviewCard, darkMode && styles.darkReviewCard, index > 0 && { marginTop: 10 }]}
                   onPress={() =>
                     navigation.navigate("ReviewDetail", {
                       business_uid: business_uid,
                       business_name: business.business_name,
                       reviewer_profile_id: review.rating_profile_id,
-                      business_data: business, // Pass the entire business object
+                      business_data: business,
                     })
                   }
                   activeOpacity={0.7}
@@ -998,9 +857,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
           {/* Business Services Section - Only show if no reviews */}
           {Array.isArray(business.business_services) && business.business_services.length > 0 && allReviews.length === 0 && (
-            <View style={[styles.card, darkMode && styles.darkCard]}>
+            <View style={styles.fieldContainer}>
               <View style={styles.servicesHeader}>
-                <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Products & Services</Text>
+                <Text style={[styles.label, darkMode && styles.darkLabel]}>Products & Services:</Text>
                 {!isOwner && cartItems.length > 0 && (
                   <TouchableOpacity style={[styles.cartButton, darkMode && styles.darkCartButton]} onPress={handleViewCart}>
                     <Ionicons name='cart' size={24} color={darkMode ? "#fff" : "#9C45F7"} />
@@ -1016,7 +875,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
           {/* Shopping Cart Button - Only show if there are reviews */}
           {!isOwner && allReviews.length > 0 && (
-            <View style={[styles.card, darkMode && styles.darkCard]}>
+            <View style={styles.fieldContainer}>
               <TouchableOpacity
                 style={[styles.shoppingCartButton, darkMode && styles.darkShoppingCartButton]}
                 onPress={() =>
@@ -1035,40 +894,42 @@ export default function BusinessProfileScreen({ route, navigation }) {
         </ScrollView>
 
         <BottomNavBar navigation={navigation} />
+      </SafeAreaView>
 
-        <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Select Quantity</Text>
-              <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
+      <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Business Profile' instructions={businessFeedbackInstructions} questions={businessFeedbackQuestions} />
 
-              <View style={styles.quantityContainer}>
-                <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => Math.max(1, prev - 1))}>
-                  <Ionicons name='remove' size={24} color='#9C45F7' />
-                </TouchableOpacity>
+      <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Quantity</Text>
+            <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
 
-                <Text style={styles.quantityText}>{quantity}</Text>
+            <View style={styles.quantityContainer}>
+              <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => Math.max(1, prev - 1))}>
+                <Ionicons name='remove' size={24} color='#9C45F7' />
+              </TouchableOpacity>
 
-                <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => prev + 1)}>
-                  <Ionicons name='add' size={24} color='#9C45F7' />
-                </TouchableOpacity>
-              </View>
+              <Text style={styles.quantityText}>{quantity}</Text>
 
-              <Text style={styles.totalPrice}>Total: ${selectedService ? (parseFloat(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
+              <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => prev + 1)}>
+                <Ionicons name='add' size={24} color='#9C45F7' />
+              </TouchableOpacity>
+            </View>
 
-              <View style={styles.modalButtons}>
-                <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setQuantityModalVisible(false)}>
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
+            <Text style={styles.totalPrice}>Total: ${selectedService ? (parseFloat(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
 
-                <TouchableOpacity style={[styles.modalButton, styles.confirmButton]} onPress={handleQuantityConfirm}>
-                  <Text style={styles.confirmButtonText}>Add to Cart</Text>
-                </TouchableOpacity>
-              </View>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setQuantityModalVisible(false)}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.modalButton, styles.confirmButton]} onPress={handleQuantityConfirm}>
+                <Text style={styles.confirmButtonText}>Add to Cart</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        </Modal>
-      </SafeAreaView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1080,7 +941,7 @@ const styles = StyleSheet.create({
     padding: 0,
     ...(Platform.OS === "web" && {
       position: "relative",
-      zIndex: 1, // Lower z-index so dropdown can appear above
+      zIndex: 1,
       width: "100%",
     }),
   },
@@ -1097,10 +958,6 @@ const styles = StyleSheet.create({
       width: "100%",
     }),
   },
-  container: {
-    flex: 1,
-    backgroundColor: "#F5F5F5",
-  },
   content: {
     padding: 20,
     paddingBottom: 100,
@@ -1109,65 +966,61 @@ const styles = StyleSheet.create({
       maxWidth: "100%",
     }),
   },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
+  cardContainer: {
+    padding: 0,
+    alignItems: "flex-start",
+    marginBottom: 0,
+  },
+  profileHeaderContainer: {
+    width: "100%",
     alignItems: "center",
+    marginBottom: 8,
   },
-  editButtonContainer: {
-    alignItems: "flex-end",
-    marginBottom: 10,
-  },
-  card: {
-    backgroundColor: "#fff",
-    padding: 20,
-    marginBottom: 15,
-    borderRadius: 12,
-    ...(Platform.OS === "web"
-      ? {
-          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.05)",
-        }
-      : {
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.05,
-          shadowRadius: 4,
-          elevation: 2,
-        }),
-  },
-  cardTitle: {
-    fontSize: 18,
+  nameText: {
+    fontSize: 26,
     fontWeight: "bold",
-    marginBottom: 15,
-    color: "#333",
+    color: "#000",
+    marginBottom: 8,
+    textAlign: "center",
   },
-  infoRow: {
-    marginBottom: 10,
+  profileId: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 8,
+    fontStyle: "italic",
+    textAlign: "center",
+  },
+  fieldContainer: {
+    marginTop: 15,
+    marginBottom: 0,
   },
   label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#666",
-    marginBottom: 2,
-  },
-  value: {
     fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 5,
+  },
+  inputContainer: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 10,
+    borderRadius: 5,
+    backgroundColor: "#f5f5f5",
+    marginBottom: 4,
+  },
+  inputText: {
+    fontSize: 15,
     color: "#333",
+    marginBottom: 4,
   },
-  link: {
-    fontSize: 16,
-    color: "#1a73e8",
-    textDecorationLine: "underline",
+  editButton: {
+    padding: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1,
   },
-  bioText: {
-    fontSize: 16,
-    color: "#333",
-    lineHeight: 22,
-  },
-  socialLink: {
-    fontSize: 16,
-    color: "#1a73e8",
-    marginBottom: 8,
+  editIcon: {
+    width: 20,
+    height: 20,
   },
   tagsContainer: {
     flexDirection: "row",
@@ -1187,17 +1040,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
-  noDataText: {
-    fontSize: 16,
-    color: "#777",
-    textAlign: "center",
-    fontStyle: "italic",
-    paddingVertical: 20,
-  },
-  errorText: {
-    fontSize: 16,
-    color: "red",
-  },
   imageScroll: {
     marginVertical: 10,
   },
@@ -1212,16 +1054,6 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     borderRadius: 10,
-  },
-  editButton: {
-    padding: 4,
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1,
-  },
-  editIcon: {
-    width: 20,
-    height: 20,
   },
   servicesHeader: {
     flexDirection: "row",
@@ -1474,6 +1306,24 @@ const styles = StyleSheet.create({
     color: "#9C45F7",
     fontWeight: "bold",
   },
+  businessUserCard: {
+    marginBottom: 15,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+  },
+  businessUserRole: {
+    fontSize: 14,
+    color: "#666",
+    marginTop: 8,
+    fontStyle: "italic",
+  },
+  errorText: {
+    fontSize: 18,
+    color: "red",
+    textAlign: "center",
+    marginTop: 20,
+  },
 
   // Dark mode styles
   darkPageContainer: {
@@ -1485,49 +1335,31 @@ const styles = StyleSheet.create({
   darkScrollContainer: {
     backgroundColor: "#1a1a1a",
   },
-  darkContainer: {
-    backgroundColor: "#1a1a1a",
-  },
-  darkCard: {
+  darkCardContainer: {
     backgroundColor: "#2d2d2d",
-    ...(Platform.OS === "web"
-      ? {
-          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.2)",
-        }
-      : {
-          shadowColor: "#000",
-          shadowOpacity: 0.2,
-        }),
   },
-  darkCardTitle: {
+  darkNameText: {
     color: "#ffffff",
   },
-  darkBioText: {
+  darkProfileId: {
     color: "#cccccc",
   },
   darkLabel: {
-    color: "#cccccc",
-  },
-  darkValue: {
     color: "#ffffff",
   },
-  darkLink: {
-    color: "#64b5f6",
+  darkInputContainer: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
   },
-  darkSocialLink: {
-    color: "#64b5f6",
+  darkInputText: {
+    color: "#ffffff",
   },
+  darkEditIcon: {},
   darkTag: {
     backgroundColor: "#404040",
   },
   darkTagText: {
     color: "#64b5f6",
-  },
-  darkNoDataText: {
-    color: "#cccccc",
-  },
-  darkEditIcon: {
-    // tintColor moved to Image prop
   },
   darkCartButton: {
     backgroundColor: "#404040",
@@ -1585,22 +1417,13 @@ const styles = StyleSheet.create({
   darkReviewMetadataText: {
     color: "#cccccc",
   },
-  businessUserCard: {
-    marginBottom: 15,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
-  },
-  businessUserRole: {
-    fontSize: 14,
-    color: "#666",
-    marginTop: 8,
-    fontStyle: "italic",
-  },
   darkBusinessUserCard: {
     borderBottomColor: "#404040",
   },
   darkBusinessUserRole: {
     color: "#cccccc",
+  },
+  darkErrorText: {
+    color: "#ff6b6b",
   },
 });

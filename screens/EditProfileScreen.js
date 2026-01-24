@@ -2,19 +2,21 @@
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Modal, ActivityIndicator, Keyboard, UIManager, findNodeHandle, Platform } from "react-native";
 import axios from "axios";
-import ExperienceSection from "../components/ExperienceSection";
-import EducationSection from "../components/EducationSection";
-import SeekingSection from "../components/SeekingSection";
 import MiniCard from "../components/MiniCard";
-import ExpertiseSection from "../components/ExpertiseSection";
-import BusinessSection from "../components/BusinessSection";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
-import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { getHeaderColors } from "../config/headerColors";
+
+// PROFILE-SPECIFIC
+import ExperienceSection from "../components/ExperienceSection";
+import EducationSection from "../components/EducationSection";
+import SeekingSection from "../components/SeekingSection";
+import ExpertiseSection from "../components/ExpertiseSection";
+import BusinessSection from "../components/BusinessSection";
+import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 const DEFAULT_PROFILE_IMAGE = require("../assets/profile.png");

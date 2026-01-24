@@ -59,10 +59,17 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
     }
 
     let businessImage = null;
+    // Check for first_image (used for multiple images - first one)
     if (business.first_image) {
       if (typeof business.first_image === "string") businessImage = business.first_image;
       else if (business.first_image.url) businessImage = business.first_image.url;
       else if (business.first_image.photo_url) businessImage = business.first_image.photo_url;
+    }
+    // Also check for business_image (used for single image upload)
+    else if (business.business_image) {
+      if (typeof business.business_image === "string") businessImage = business.business_image;
+      else if (business.business_image.url) businessImage = business.business_image.url;
+      else if (business.business_image.photo_url) businessImage = business.business_image.photo_url;
     }
 
     // Determine the image source with proper fallback
