@@ -158,16 +158,17 @@ export default function ReviewDetailScreen({ route, navigation }) {
 
       setBusiness({
         ...rawBusiness,
+        tagline: rawBusiness.business_tag_line || rawBusiness.tagline || "",
         facebook: socialLinksData.facebook || "",
         instagram: socialLinksData.instagram || "",
         linkedin: socialLinksData.linkedin || "",
         youtube: socialLinksData.youtube || "",
         images: businessImages,
         customTags: customTags,
-        emailIsPublic: rawBusiness.email_is_public === "1",
-        phoneIsPublic: rawBusiness.phone_is_public === "1",
-        taglineIsPublic: rawBusiness.tagline_is_public === "1",
-        shortBioIsPublic: rawBusiness.short_bio_is_public === "1",
+        emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1 || rawBusiness.email_is_public === "1" || rawBusiness.email_is_public === 1,
+        phoneIsPublic: rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1 || rawBusiness.phone_is_public === "1" || rawBusiness.phone_is_public === 1,
+        taglineIsPublic: rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1 || rawBusiness.tagline_is_public === "1" || rawBusiness.tagline_is_public === 1,
+        shortBioIsPublic: rawBusiness.business_short_bio_is_public === "1" || rawBusiness.business_short_bio_is_public === 1 || rawBusiness.short_bio_is_public === "1" || rawBusiness.short_bio_is_public === 1,
         business_services: (() => {
           if (rawBusiness.business_services) {
             if (typeof rawBusiness.business_services === "string") {
@@ -448,12 +449,16 @@ export default function ReviewDetailScreen({ route, navigation }) {
                 <MiniCard
                   business={{
                     business_name: sanitizeText(business.business_name),
+                    tagline: sanitizeText(business.tagline || business.business_tag_line || ""),
                     business_address_line_1: sanitizeText(business.business_address_line_1),
+                    business_city: sanitizeText(business.business_city || ""),
+                    business_state: sanitizeText(business.business_state || ""),
                     business_zip_code: sanitizeText(business.business_zip_code),
                     business_phone_number: sanitizeText(business.business_phone_number),
                     business_website: sanitizeText(business.business_website),
                     first_image: business.images && business.images.length > 0 ? business.images[0] : null,
                     phoneIsPublic: business.phoneIsPublic,
+                    taglineIsPublic: business.taglineIsPublic,
                   }}
                 />
               </View>

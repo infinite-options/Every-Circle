@@ -418,7 +418,10 @@ const ProfileScreen = ({ route, navigation }) => {
           });
           return {
             business_name: sanitizeText(rawBusiness.business_name, ""),
+            tagline: sanitizeText(rawBusiness.business_tag_line || rawBusiness.tagline || "", ""),
             business_address_line_1: sanitizeText(rawBusiness.business_address_line_1, ""),
+            business_city: sanitizeText(rawBusiness.business_city || "", ""),
+            business_state: sanitizeText(rawBusiness.business_state || "", ""),
             business_zip_code: sanitizeText(rawBusiness.business_zip_code, ""),
             business_phone_number: sanitizeText(rawBusiness.business_phone_number, ""),
             business_email: sanitizeText(rawBusiness.business_email_id, ""),
@@ -427,6 +430,8 @@ const ProfileScreen = ({ route, navigation }) => {
             phoneIsPublic:
               rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1 || rawBusiness.phone_is_public === "1" || rawBusiness.phone_is_public === 1,
             emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1 || rawBusiness.email_is_public === "1" || rawBusiness.email_is_public === 1,
+            taglineIsPublic:
+              rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1 || rawBusiness.tagline_is_public === "1" || rawBusiness.tagline_is_public === 1,
             business_uid: sanitizeText(rawBusiness.business_uid, ""),
             profile_business_uid: bus.profile_business_uid || "",
             role: sanitizeText(originalBusiness?.role, ""),

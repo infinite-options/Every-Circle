@@ -431,6 +431,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     }
 
     setIsLoading(true);
+    // Declare imageFileSize outside try block so it's accessible in catch block
+    let imageFileSize = 0;
     try {
       // BUSINESS-SPECIFIC: Retrieves user_uid (EditProfileScreen doesn't need this at start)
       // Retrieve user_uid from AsyncStorage
@@ -474,7 +476,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("custom_tags", JSON.stringify(formData.customTags));
 
       // Business image handling - backend expects business_img_0 (not business_image)
-      let imageFileSize = 0;
       if (businessImageUri && !imageError && businessImageUri !== originalBusinessImage) {
         if (Platform.OS === "web" && webImageFile) {
           // On web, use the actual File object
@@ -631,19 +632,22 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   // EditProfileScreen renderField signature: (label, value, isPublic, fieldName, visibilityFieldName, editable = true)
   const renderField = (label, value, key, placeholder, visibilityKey = null, keyboardType = "default", maxLength = null, formatter = null) => (
     <View style={styles.fieldContainer}>
+      {/* Row: Label and Toggle */}
       <View style={styles.labelRow}>
         <Text style={[styles.label, darkMode && styles.darkLabel]}>{label}</Text>
         {visibilityKey && (
           <TouchableOpacity onPress={() => handleToggleVisibility(visibilityKey)}>
-            <Text style={{ color: formData[visibilityKey] ? (darkMode ? "#4CAF50" : "green") : darkMode ? "#FF6B6B" : "red" }}>{formData[visibilityKey] ? "Display" : "Hide"}</Text>
+            <Text style={[styles.toggleText, { color: formData[visibilityKey] ? (darkMode ? "#4ade80" : "green") : darkMode ? "#f87171" : "red" }]}>
+              {formData[visibilityKey] ? "Display" : "Hide"}
+            </Text>
           </TouchableOpacity>
         )}
       </View>
       <TextInput
         style={[styles.input, darkMode && styles.darkInput]}
         value={value}
-        placeholder={placeholder || label}
-        placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+        placeholder={placeholder || `Enter ${label.toLowerCase()}`}
+        placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
         keyboardType={keyboardType}
         maxLength={maxLength}
         onChangeText={(text) => {
@@ -785,12 +789,16 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const previewBusiness = {
     business_name: formData.name,
     tagline: formData.tagline,
+    business_address_line_1: formData.location,
+    business_city: formData.city,
+    business_state: formData.state,
     business_short_bio: formData.shortBio,
     business_phone_number: formData.phone,
     business_email: formData.email,
     business_email_id: formData.email,
     phoneIsPublic: formData.phoneIsPublic,
     emailIsPublic: formData.emailIsPublic,
+    taglineIsPublic: formData.taglineIsPublic,
     imageIsPublic: formData.imageIsPublic,
     // Include the business image - MiniCard checks first_image field
     first_image: businessImageUri || "",

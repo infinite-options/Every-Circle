@@ -288,6 +288,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
           rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1 || rawBusiness.tagline_is_public === "1" || rawBusiness.tagline_is_public === 1,
         shortBioIsPublic:
           rawBusiness.business_short_bio_is_public === "1" || rawBusiness.business_short_bio_is_public === 1 || rawBusiness.short_bio_is_public === "1" || rawBusiness.short_bio_is_public === 1,
+        imageIsPublic:
+          rawBusiness.business_image_is_public === "1" || rawBusiness.business_image_is_public === 1 || rawBusiness.image_is_public === "1" || rawBusiness.image_is_public === 1,
         business_services: (() => {
           if (rawBusiness.business_services) {
             if (typeof rawBusiness.business_services === "string") {
@@ -523,6 +525,19 @@ export default function BusinessProfileScreen({ route, navigation }) {
           {/* Business Header Card */}
           <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
             <View style={styles.profileHeaderContainer}>
+              <Image
+                source={
+                  business.images && business.images.length > 0 && (isOwner || business.imageIsPublic) && business.images[0] !== "" && String(business.images[0]).trim() !== ""
+                    ? { uri: String(business.images[0]) }
+                    : require("../assets/profile.png")
+                }
+                style={styles.profileImage}
+                onError={(error) => {
+                  console.log("BusinessProfileScreen image failed to load:", error.nativeEvent.error);
+                  console.log("Problematic business image URI:", business.images && business.images[0]);
+                }}
+                defaultSource={require("../assets/profile.png")}
+              />
               <Text style={[styles.nameText, darkMode && styles.darkNameText]}>{sanitizeText(business.business_name)}</Text>
               <Text style={[styles.profileId, darkMode && styles.darkProfileId]}>Business ID: {business_uid}</Text>
             </View>
@@ -532,7 +547,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
           <MiniCard
             business={{
               business_name: sanitizeText(business.business_name),
+              tagline: sanitizeText(business.tagline),
               business_address_line_1: sanitizeText(business.business_address_line_1),
+              business_city: sanitizeText(business.business_city),
+              business_state: sanitizeText(business.business_state),
               business_zip_code: sanitizeText(business.business_zip_code),
               business_phone_number: sanitizeText(business.business_phone_number),
               business_email: sanitizeText(business.business_email_id),
@@ -540,6 +558,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
               first_image: business.images && business.images.length > 0 ? business.images[0] : null,
               phoneIsPublic: business.phoneIsPublic,
               emailIsPublic: business.emailIsPublic,
+              taglineIsPublic: business.taglineIsPublic,
             }}
           />
 
@@ -666,28 +685,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
               </View>
             );
           })()}
-
-          {/* Business Images */}
-          {Array.isArray(business.images) && business.images.length > 0 && (
-            <View style={styles.fieldContainer}>
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Images:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll}>
-                {business.images.map((uri, index) => (
-                  <View key={index} style={styles.imageContainer}>
-                    <Image
-                      source={{ uri: uri }}
-                      style={styles.image}
-                      onError={(error) => {
-                        console.log(`Business image ${index} failed to load:`, error.nativeEvent.error);
-                      }}
-                      defaultSource={require("../assets/profile.png")}
-                      resizeMode='cover'
-                    />
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          )}
 
           {/* Business Editors/Owners Section - Only visible to owners/editors */}
           {isOwner && businessUsers.length > 0 && (
@@ -989,6 +986,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontStyle: "italic",
     textAlign: "center",
+  },
+  profileImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    marginBottom: 10,
+    backgroundColor: "#eee",
   },
   fieldContainer: {
     marginTop: 15,
