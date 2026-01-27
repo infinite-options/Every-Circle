@@ -3,13 +3,14 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, Touc
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
-import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_BOUNTY_RESULTS_ENDPOINT } from "../apiConfig";
 import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
 import { useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
+import { Picker } from '@react-native-picker/picker';
 export default function AccountScreen({ navigation }) {
   const { darkMode } = useDarkMode();
   const [userUID, setUserUID] = useState(null);
@@ -20,6 +21,12 @@ export default function AccountScreen({ navigation }) {
   const [transactionLoading, setTransactionLoading] = useState(true);
   const [expertiseData, setExpertiseData] = useState([]);
   const [expertiseLoading, setExpertiseLoading] = useState(true);
+  const [accountType, setAccountType] = useState('personal'); // 'personal' or 'business'
+  const [businessTransactionData, setBusinessTransactionData] = useState([]);
+  const [businessTransactionLoading, setBusinessTransactionLoading] = useState(true);
+  const [businessUID, setBusinessUID] = useState(null);
+  const [businessBountyData, setBusinessBountyData] = useState(null);
+  const [businessBountyLoading, setBusinessBountyLoading] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -241,12 +248,267 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
+  // Fetch user's businesses to get business_uid
+  const fetchUserBusinesses = async () => {
+    try {
+      const profileId = await AsyncStorage.getItem("profile_uid");
+      if (!profileId) return;
+
+      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+      if (!response.ok) return;
+
+      const result = await response.json();
+      console.log("User businesses:", result.business_info);
+
+      // Parse business_info to get business UIDs
+      const businesses = result.business_info
+        ? (typeof result.business_info === "string" 
+            ? JSON.parse(result.business_info) 
+            : result.business_info
+          )
+        : [];
+
+      // Get the first business UID (you can add a picker later to select which business)
+      if (businesses.length > 0) {
+        const firstBusiness = businesses[0];
+        const businessId = firstBusiness.business_uid || firstBusiness.profile_business_uid;
+        console.log("Setting business UID:", businessId);
+        setBusinessUID(businessId);
+        return businessId;
+      }
+    } catch (error) {
+      console.error("Error fetching user businesses:", error);
+    }
+    return null;
+  };
+
+  // Business Transaction data 
+  const refreshBusinessTransactionData = async () => {
+    try {
+      console.log("=== STARTING BUSINESS TRANSACTION DATA LOAD ===");
+      setBusinessTransactionLoading(true);
+      
+      const profileId = await AsyncStorage.getItem("profile_uid");
+      if (!profileId) {
+        console.log("No profile ID found");
+        setBusinessTransactionData([]);
+        setBusinessTransactionLoading(false);
+        return;
+      }
+
+      // Fetch user's business info to get ALL business UIDs
+      const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+      if (!profileResponse.ok) {
+        throw new Error(`HTTP error! status: ${profileResponse.status}`);
+      }
+
+      const profileResult = await profileResponse.json();
+      const businesses = profileResult.business_info
+        ? (typeof profileResult.business_info === "string" 
+            ? JSON.parse(profileResult.business_info) 
+            : profileResult.business_info
+          )
+        : [];
+
+      if (businesses.length === 0) {
+        console.log("No businesses found for this user");
+        setBusinessTransactionData([]);
+        setBusinessTransactionLoading(false);
+        return;
+      }
+
+      console.log(`Found ${businesses.length} businesses for user`);
+
+      // Fetch transactions for ALL businesses
+      const allTransactions = [];
+      
+      for (const business of businesses) {
+        const businessId = business.business_uid || business.profile_business_uid;
+        if (!businessId) continue;
+
+        console.log(`Fetching transactions for business: ${businessId}`);
+        
+        try {
+          const businessTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${businessId}`;
+          const response = await fetch(businessTransactionsUrl, {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (response.status === 400) {
+            console.log(`No transactions found for business ${businessId}`);
+            continue;
+          }
+
+          if (!response.ok) {
+            console.error(`Error fetching transactions for business ${businessId}`);
+            continue;
+          }
+
+          const result = await response.json();
+          
+          if (result && result.code === 200 && Array.isArray(result.data)) {
+            // Filter to only business service transactions (250-)
+            const businessTransactions = result.data.filter(
+              item => item.ti_bs_id && item.ti_bs_id.startsWith('250-')
+            );
+            
+            // Add business name to each transaction for display
+            businessTransactions.forEach(txn => {
+              txn.business_name = business.business_name || business.profile_business_name || "Unknown Business";
+            });
+            
+            allTransactions.push(...businessTransactions);
+          }
+        } catch (error) {
+          console.error(`Error fetching transactions for business ${businessId}:`, error);
+        }
+      }
+
+      // Remove duplicates and group by transaction_uid
+      const transactionMap = {};
+      allTransactions.forEach(item => {
+        const txnId = item.transaction_uid;
+        if (!transactionMap[txnId]) {
+          transactionMap[txnId] = {
+            transaction_uid: item.transaction_uid,
+            transaction_datetime: item.transaction_datetime,
+            transaction_profile_id: item.transaction_profile_id,
+            transaction_business_id: item.transaction_business_id,
+            transaction_total: parseFloat(item.transaction_total || 0),
+            business_name: item.business_name,
+          };
+        }
+      });
+
+      // Convert to array and sort by date (most recent first)
+      const filteredTransactions = Object.values(transactionMap).sort((a, b) => {
+        const dateA = new Date(a.transaction_datetime);
+        const dateB = new Date(b.transaction_datetime);
+        return dateB - dateA; // Descending order (newest first)
+      });
+
+      console.log(`Total business transactions found: ${filteredTransactions.length}`);
+      setBusinessTransactionData(filteredTransactions);
+      
+    } catch (error) {
+      console.error("Error loading business transaction data:", error);
+      setBusinessTransactionData([]);
+    } finally {
+      setBusinessTransactionLoading(false);
+    }
+  };
+
+ // Business Bounty data 
+  const refreshBusinessBountyData = async () => {
+    try {
+      setBusinessBountyLoading(true);
+      
+      const profileId = await AsyncStorage.getItem("profile_uid");
+      if (!profileId) {
+        console.log("No profile ID found");
+        setBusinessBountyData(null);
+        setBusinessBountyLoading(false);
+        return;
+      }
+
+      // Fetch user's business info to get ALL business UIDs
+      const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+      if (!profileResponse.ok) {
+        throw new Error(`HTTP error! status: ${profileResponse.status}`);
+      }
+
+      const profileResult = await profileResponse.json();
+      const businesses = profileResult.business_info
+        ? (typeof profileResult.business_info === "string" 
+            ? JSON.parse(profileResult.business_info) 
+            : profileResult.business_info
+          )
+        : [];
+
+      if (businesses.length === 0) {
+        console.log("No businesses found for this user");
+        setBusinessBountyData(null);
+        setBusinessBountyLoading(false);
+        return;
+      }
+
+      // Fetch bounties for ALL businesses and combine them
+      const allBountyData = [];
+      let totalBountyEarned = 0;
+
+      for (const business of businesses) {
+        const businessId = business.business_uid || business.profile_business_uid;
+        if (!businessId) continue;
+
+        console.log(`Fetching bounty results for business: ${businessId}`);
+        
+        try {
+          const response = await fetch(`${BUSINESS_BOUNTY_RESULTS_ENDPOINT}/${businessId}`);
+
+          if (!response.ok) {
+            console.error(`Error fetching bounties for business ${businessId}`);
+            continue;
+          }
+
+          const result = await response.json();
+          
+          if (result && result.data && Array.isArray(result.data)) {
+            // Add business name to each bounty record
+            result.data.forEach(bounty => {
+              bounty.business_name = business.business_name || business.profile_business_name || "Unknown Business";
+            });
+            
+            allBountyData.push(...result.data);
+            totalBountyEarned += result.total_bounty_earned || 0;
+          }
+        } catch (error) {
+          console.error(`Error fetching bounties for business ${businessId}:`, error);
+        }
+      }
+
+      // Sort by date (most recent first)
+      allBountyData.sort((a, b) => {
+        const dateA = new Date(a.transaction_datetime);
+        const dateB = new Date(b.transaction_datetime);
+        return dateB - dateA; // Descending order (newest first)
+      });
+
+      const combinedBountyData = {
+        code: 200,
+        message: 'Business bounty results retrieved successfully',
+        data: allBountyData,
+        total_bounties: allBountyData.length,
+        total_bounty_earned: totalBountyEarned
+      };
+
+      console.log("Combined Business Bounty results:", combinedBountyData);
+      setBusinessBountyData(combinedBountyData);
+      
+    } catch (error) {
+      console.error("Error loading business bounty data:", error);
+      setBusinessBountyData({ error: error.message });
+    } finally {
+      setBusinessBountyLoading(false);
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
       checkAuth();
       refreshBountyData();
       refreshTransactionData();
       refreshExpertiseData();
+      
+      // Fetch businesses first, then business transactions and bounties
+      const loadBusinessData = async () => {
+        await fetchUserBusinesses();
+        await refreshBusinessTransactionData();
+        await refreshBusinessBountyData();  // ← ADD THIS LINE
+      };
+      loadBusinessData();
     }, [])
   );
 
@@ -318,6 +580,62 @@ export default function AccountScreen({ navigation }) {
       dates: recentDates,
       dailyBounty,
       cumulativeBounty,
+      maxDaily,
+      maxCumulative,
+    };
+  };
+
+  // Process business transaction data for  business Net Earnings chart 
+  const processBusinessTransactionDataForChart = () => {
+    if (!businessTransactionData || !Array.isArray(businessTransactionData) || businessTransactionData.length === 0) {
+      return {
+        dates: [],
+        dailyEarnings: [],
+        cumulativeEarnings: [],
+        maxDaily: 0,
+        maxCumulative: 0,
+      };
+    }
+
+    // Group earnings by date
+    const earningsByDate = {};
+
+    businessTransactionData.forEach((transaction) => {
+      if (!transaction.transaction_datetime || !transaction.transaction_total) return;
+
+      const date = new Date(transaction.transaction_datetime);
+      const dateKey = date.toISOString().split("T")[0]; // YYYY-MM-DD
+
+      if (!earningsByDate[dateKey]) {
+        earningsByDate[dateKey] = 0;
+      }
+      earningsByDate[dateKey] += parseFloat(transaction.transaction_total) || 0;
+    });
+
+    // Sort dates
+    const sortedDates = Object.keys(earningsByDate).sort();
+
+    // Get last 12 data points (or all if less than 12)
+    const recentDates = sortedDates.slice(-12);
+
+    // Build daily earnings array
+    const dailyEarnings = recentDates.map((date) => earningsByDate[date]);
+
+    // Build cumulative earnings array
+    const cumulativeEarnings = [];
+    let runningTotal = 0;
+    recentDates.forEach((date) => {
+      runningTotal += earningsByDate[date];
+      cumulativeEarnings.push(runningTotal);
+    });
+
+    const maxDaily = Math.max(...dailyEarnings, 0.01);
+    const maxCumulative = Math.max(...cumulativeEarnings, 0.01);
+
+    return {
+      dates: recentDates,
+      dailyEarnings,
+      cumulativeEarnings,
       maxDaily,
       maxCumulative,
     };
@@ -497,6 +815,140 @@ export default function AccountScreen({ navigation }) {
     );
   };
 
+  const BusinessNetEarningChart = () => {
+  const chartData = processBusinessTransactionDataForChart();
+  const chartWidth = screenWidth;
+  const chartHeight = 180;
+  const paddingLeft = 50;
+  const paddingRight = 50;
+  const paddingTop = 20;
+  const paddingBottom = 30;
+  const plotWidth = chartWidth - paddingLeft - paddingRight;
+  const plotHeight = chartHeight - paddingTop - paddingBottom;
+
+  if (chartData.dates.length === 0) {
+    return (
+      <View style={{ width: chartWidth, height: chartHeight, justifyContent: "center", alignItems: "center" }}>
+        <Text style={{ color: "#888" }}>No data available</Text>
+      </View>
+    );
+  }
+
+  const dataPoints = chartData.dates.length;
+  const xStep = plotWidth / Math.max(dataPoints - 1, 1);
+
+  const dailyYPositions = chartData.dailyEarnings.map((value) => {
+    const normalized = Math.max(0, Math.min(1, value / chartData.maxDaily));
+    const y = paddingTop + plotHeight - normalized * plotHeight;
+    return isFinite(y) ? y : paddingTop + plotHeight;
+  });
+
+  const cumulativeYPositions = chartData.cumulativeEarnings.map((value) => {
+    const y = paddingTop + linearScale(value, chartData.maxCumulative, plotHeight);
+    return isFinite(y) ? y : paddingTop + plotHeight;
+  });
+
+  const xPositions = chartData.dates.map((_, index) => paddingLeft + index * xStep);
+
+  const leftTicks = 6;
+  const leftTickValues = [];
+  for (let i = 0; i <= leftTicks; i++) {
+    leftTickValues.push((chartData.maxDaily / leftTicks) * i);
+  }
+
+  const rightTickValues = generateLinearTicks(chartData.maxCumulative, 6);
+
+  const buildPath = (positions) => {
+    return positions
+      .map((y, index) => {
+        const x = xPositions[index];
+        const safeX = isFinite(x) ? x : 0;
+        const safeY = isFinite(y) ? y : paddingTop + plotHeight;
+        return index === 0 ? `M ${safeX} ${safeY}` : `L ${safeX} ${safeY}`;
+      })
+      .join(" ");
+  };
+
+  const dailyPath = buildPath(dailyYPositions);
+  const cumulativePath = buildPath(cumulativeYPositions);
+
+  return (
+    <View style={{ width: chartWidth, height: chartHeight, marginVertical: 8 }}>
+      {/* Legend */}
+      <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 20 }}>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <View style={{ width: 12, height: 3, backgroundColor: "#B71C1C", marginRight: 6 }} />
+          <Text style={{ fontSize: 12, color: "#666" }}>Daily Earnings</Text>
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <View style={{ width: 12, height: 3, backgroundColor: "#000", marginRight: 6 }} />
+          <Text style={{ fontSize: 12, color: "#666" }}>Cumulative Earnings</Text>
+        </View>
+      </View>
+      <Svg width={chartWidth} height={chartHeight}>
+        {/* Grid lines */}
+        {leftTickValues.map((tick, index) => {
+          const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
+          return <Line key={`grid-${index}`} x1={paddingLeft} y1={y} x2={paddingLeft + plotWidth} y2={y} stroke='#ddd' strokeWidth='1' />;
+        })}
+
+        {/* Left Y-axis */}
+        <Line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
+        {leftTickValues.map((tick, index) => {
+          const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
+          return (
+            <G key={`left-tick-${index}`}>
+              <Line x1={paddingLeft} y1={y} x2={paddingLeft - 5} y2={y} stroke='#666' strokeWidth='1' />
+              <SvgText x={paddingLeft - 8} y={y + 4} fontSize='10' fill='#666' textAnchor='end'>
+                {formatYLabel(tick)}
+              </SvgText>
+            </G>
+          );
+        })}
+
+        {/* Right Y-axis */}
+        <Line x1={paddingLeft + plotWidth} y1={paddingTop} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
+        {rightTickValues.map((tick, index) => {
+          const y = paddingTop + linearScale(tick, chartData.maxCumulative, plotHeight);
+          return (
+            <G key={`right-tick-${index}`}>
+              <Line x1={paddingLeft + plotWidth} y1={y} x2={paddingLeft + plotWidth + 5} y2={y} stroke='#666' strokeWidth='1' />
+              <SvgText x={paddingLeft + plotWidth + 8} y={y + 4} fontSize='10' fill='#666' textAnchor='start'>
+                {formatYLabel(tick)}
+              </SvgText>
+            </G>
+          );
+        })}
+
+        {/* X-axis */}
+        <Line x1={paddingLeft} y1={paddingTop + plotHeight} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
+
+        {/* X-axis labels */}
+        {chartData.dates.map((date, index) => {
+          const x = xPositions[index];
+          return (
+            <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
+              {formatDateLabel(date)}
+            </SvgText>
+          );
+        })}
+
+        {/* Daily earnings line */}
+        <Path d={dailyPath} stroke='#B71C1C' strokeWidth='3' fill='none' />
+        {dailyYPositions.map((y, index) => (
+          <Circle key={`daily-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='#B71C1C' />
+        ))}
+
+        {/* Cumulative earnings line */}
+        <Path d={cumulativePath} stroke='black' strokeWidth='3' fill='none' />
+        {cumulativeYPositions.map((y, index) => (
+          <Circle key={`cumulative-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='black' />
+        ))}
+      </Svg>
+    </View>
+  );
+  };
+
   if (isLoading) {
     return (
       <View style={styles.centeredContainer}>
@@ -513,9 +965,31 @@ export default function AccountScreen({ navigation }) {
       <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
         <AppHeader title='Account' {...getHeaderColors("account")} />
       </TouchableOpacity>
-
+      {/* Account Type Selector */}
+      <View style={styles.accountTypeContainer}>
+        <View style={styles.pickerRow}>
+          <TouchableOpacity
+            style={[styles.accountTypeButton, accountType === 'personal' && styles.accountTypeButtonActive]}
+            onPress={() => setAccountType('personal')}
+          >
+            <Text style={[styles.accountTypeText, accountType === 'personal' && styles.accountTypeTextActive]}>
+              Personal Account
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.accountTypeButton, accountType === 'business' && styles.accountTypeButtonActive]}
+            onPress={() => setAccountType('business')}
+          >
+            <Text style={[styles.accountTypeText, accountType === 'business' && styles.accountTypeTextActive]}>
+              Business Account
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
       {/* Main content */}
       <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContentContainer} showsVerticalScrollIndicator={true}>
+        {accountType === 'personal' ? (
+          <>
         {/* Balance */}
         <View style={styles.balanceContainer}>
           <Text style={styles.sectionLabel}>Balance:</Text>
@@ -684,7 +1158,130 @@ export default function AccountScreen({ navigation }) {
             <Text style={styles.noDataText}>No bounty data available.</Text>
           )}
         </View>
-      </ScrollView>
+      </>
+    ) : (
+      <>
+        {/* Business Transaction History */}
+        <View style={styles.sectionContainer}>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.sectionTitle}>Business Transaction History</Text>
+            <View style={styles.questionCircle}>
+              <Text style={styles.questionMark}>?</Text>
+            </View>
+          </View>
+          {businessTransactionLoading ? (
+            <Text style={styles.loadingText}>Loading business transaction data...</Text>
+          ) : businessTransactionData.length > 0 ? (
+            <View style={styles.transactionsContainer}>
+              {/* Table Header */}
+              <View style={styles.transactionHeaderRow}>
+                <Text style={styles.transactionHeaderDate}>Date</Text>
+                <Text style={styles.transactionHeaderId}>Transaction ID</Text>
+                <Text style={styles.transactionHeaderBusiness}>Business</Text>
+                <Text style={styles.transactionHeaderBusiness}>Buyer</Text>
+                <Text style={styles.transactionHeaderAmount}>Amount</Text>
+              </View>
+              {/* Table Rows */}
+              {businessTransactionData.map((transaction, i) => {
+                return (
+                  <View key={transaction.transaction_uid || i} style={styles.transactionRow}>
+                    <Text style={styles.transactionDate}>
+                      {formatTransactionDate(transaction.transaction_datetime)}
+                    </Text>
+                    <Text style={[styles.transactionId, { width: 80 }]}>
+                      {transaction.transaction_uid || "N/A"}
+                    </Text>
+                    <Text style={[styles.transactionBusiness, { flex: 1 }]}>
+                      {transaction.business_name || "N/A"}
+                    </Text>
+                    <Text style={[styles.transactionBusiness, { width: 80 }]}>
+                      {transaction.transaction_profile_id?.substring(0, 8) || "N/A"}
+                    </Text>
+                    <Text style={styles.transactionAmount}>
+                      ${parseFloat(transaction.transaction_total || 0).toFixed(2)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            <View>
+              <Text style={styles.noDataText}>No business transaction data available.</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Business Net Earning */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Net Earning</Text>
+          <BusinessNetEarningChart />
+        </View>
+        
+        {/* Business Bounty Results */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Business Bounty Results</Text>
+          {businessBountyLoading ? (
+            <Text style={styles.loadingText}>Loading business bounty data...</Text>
+          ) : businessBountyData?.error ? (
+            <Text style={styles.errorText}>Error: {businessBountyData.error}</Text>
+          ) : businessBountyData?.data ? (
+            <View>
+              {/* Totals */}
+              <View style={styles.bountyTotals}>
+                <Text style={styles.bountyTotalText}>
+                  Total Transactions: {businessBountyData.total_bounties}
+                </Text>
+                <Text style={styles.bountyTotalText}>
+                  Total Amount Paid Out: ${businessBountyData.total_bounty_earned?.toFixed(2)}
+                </Text>
+              </View>
+              {/* Table Header */}
+              <View style={styles.bountyTableHeader}>
+                <Text style={styles.bountyTableHeaderCell}>ID</Text>
+                <Text style={styles.bountyTableHeaderCell}>Date</Text>
+                <Text style={styles.bountyTableHeaderCell}>Purchaser</Text>
+                <Text style={styles.bountyTableHeaderCell}>Business</Text>
+                <Text style={styles.bountyTableHeaderCell}>Bounty Paid</Text>
+              </View>
+              {/* Table Rows */}
+              {businessBountyData.data.map((transaction, index) => {
+                // Format date to MM/DD
+                const formatDate = (dateString) => {
+                  if (!dateString) return "N/A";
+                  const date = new Date(dateString);
+                  const month = String(date.getMonth() + 1).padStart(2, "0");
+                  const day = String(date.getDate()).padStart(2, "0");
+                  return `${month}/${day}`;
+                };
+                return (
+                  <View key={transaction.transaction_uid || index} style={styles.bountyTableRow}>
+                    <Text style={styles.bountyTableCell}>
+                      {transaction.transaction_uid}
+                    </Text>
+                    <Text style={styles.bountyTableCell}>
+                      {formatDate(transaction.transaction_datetime)}
+                    </Text>
+                    <Text style={styles.bountyTableCell}>
+                      {transaction.transaction_profile_id || "N/A"}
+                    </Text>
+                    <Text style={styles.bountyTableCell}>
+                      {transaction.transaction_business_id || "N/A"}
+                    </Text>
+                    <Text style={styles.bountyTableCell}>
+                      ${transaction.bounty_earned?.toFixed(2)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            <Text style={styles.noDataText}>No business bounty data available.</Text>
+          )}
+        </View>
+  
+      </>
+    )}
+  </ScrollView>
 
       <BottomNavBar navigation={navigation} />
       <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Account' instructions={accountFeedbackInstructions} questions={accountFeedbackQuestions} />
@@ -798,5 +1395,39 @@ const styles = StyleSheet.create({
   },
   noDataText: {
     color: "#888",
+  },
+  accountTypeContainer: {
+  backgroundColor: '#f5f5f5',
+  paddingHorizontal: 20,
+  paddingVertical: 10,
+  borderBottomWidth: 1,
+  borderBottomColor: '#ddd',
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  accountTypeButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    alignItems: 'center',
+  },
+  accountTypeButtonActive: {
+    backgroundColor: '#18884A',
+    borderColor: '#18884A',
+  },
+  accountTypeText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+  },
+  accountTypeTextActive: {
+    color: '#fff',
+    fontWeight: '600',
   },
 });

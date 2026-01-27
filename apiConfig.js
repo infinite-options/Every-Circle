@@ -48,6 +48,7 @@ export const EXPERTISE_RESULTS_ENDPOINT = `${SEARCH_BASE_URL}/search_expertise`;
 export const WISHES_RESULTS_ENDPOINT = `${SEARCH_BASE_URL}/search_wishes`;
 
 export const BOUNTY_RESULTS_ENDPOINT = `${API_BASE_URL}/api/bountyresults`;
+export const BUSINESS_BOUNTY_RESULTS_ENDPOINT = `${API_BASE_URL}/api/business-bountyresults`;
 export const TAG_SEARCH_DISTINCT_ENDPOINT = `${API_BASE_URL}/api/tagsearchdistinct`;
 export const TAG_CATEGORY_DISTINCT_ENDPOINT = `${API_BASE_URL}/api/tagcategorydistinct`;
 
