@@ -27,6 +27,7 @@ export default function AccountScreen({ navigation }) {
   const [businessUID, setBusinessUID] = useState(null);
   const [businessBountyData, setBusinessBountyData] = useState(null);
   const [businessBountyLoading, setBusinessBountyLoading] = useState(true);
+  const [showAccountDropdown, setShowAccountDropdown] = useState(false);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -512,6 +513,21 @@ export default function AccountScreen({ navigation }) {
     }, [])
   );
 
+  // Load business data when switching to business account
+  useEffect(() => {
+    if (accountType === 'business') {
+      console.log("Switched to business account, loading business data...");
+      const loadBusinessData = async () => {
+        await fetchUserBusinesses();
+        await refreshBusinessTransactionData();
+        await refreshBusinessBountyData();
+      };
+      loadBusinessData();
+    }
+  }, [accountType]);
+
+  
+
   // Format date to dd/mm format
   const formatTransactionDate = (dateString) => {
     if (!dateString) return "N/A";
@@ -960,31 +976,69 @@ export default function AccountScreen({ navigation }) {
 
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
-      {/* Header */}
-      {/* <AppHeader title="Account" backgroundColor="#18884A" /> */}
-      <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
-        <AppHeader title='Account' {...getHeaderColors("account")} />
-      </TouchableOpacity>
-      {/* Account Type Selector */}
-      <View style={styles.accountTypeContainer}>
-        <View style={styles.pickerRow}>
-          <TouchableOpacity
-            style={[styles.accountTypeButton, accountType === 'personal' && styles.accountTypeButtonActive]}
-            onPress={() => setAccountType('personal')}
-          >
-            <Text style={[styles.accountTypeText, accountType === 'personal' && styles.accountTypeTextActive]}>
-              Personal Account
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.accountTypeButton, accountType === 'business' && styles.accountTypeButtonActive]}
-            onPress={() => setAccountType('business')}
-          >
-            <Text style={[styles.accountTypeText, accountType === 'business' && styles.accountTypeTextActive]}>
-              Business Account
-            </Text>
-          </TouchableOpacity>
-        </View>
+      {/* Header with Dropdown */}
+      <View>
+        <AppHeader 
+          title='Account' 
+          {...getHeaderColors("account")}
+          onTitlePress={() => setShowFeedbackPopup(true)}
+          rightButton={
+            <View style={{ position: 'relative', zIndex: 1000 }}>
+              <TouchableOpacity
+                style={styles.dropdownButton}
+                onPress={() => {
+                  console.log("Dropdown arrow clicked, toggling from:", showAccountDropdown);
+                  const newState = !showAccountDropdown;
+                  setShowAccountDropdown(newState);
+                  console.log("Setting showAccountDropdown to:", newState);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.dropdownArrow}>▼</Text>
+              </TouchableOpacity>
+              
+              {showAccountDropdown && (
+                <View style={styles.dropdownMenu}>
+                  <TouchableOpacity
+                    style={styles.dropdownItem}
+                    onPress={() => {
+                      console.log("Personal clicked");
+                      setAccountType('personal');
+                      setShowAccountDropdown(false);
+                    }}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={[
+                      styles.dropdownItemText,
+                      accountType === 'personal' && styles.dropdownItemTextActive
+                    ]}>
+                      Personal
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  <View style={styles.dropdownDivider} />
+                  
+                  <TouchableOpacity
+                    style={styles.dropdownItem}
+                    onPress={() => {
+                      console.log("Business clicked");
+                      setAccountType('business');
+                      setShowAccountDropdown(false);
+                    }}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={[
+                      styles.dropdownItemText,
+                      accountType === 'business' && styles.dropdownItemTextActive
+                    ]}>
+                      Business
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          }
+        />
       </View>
       {/* Main content */}
       <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContentContainer} showsVerticalScrollIndicator={true}>
@@ -1160,6 +1214,7 @@ export default function AccountScreen({ navigation }) {
         </View>
       </>
     ) : (
+      
       <>
         {/* Business Transaction History */}
         <View style={styles.sectionContainer}>
@@ -1396,38 +1451,49 @@ const styles = StyleSheet.create({
   noDataText: {
     color: "#888",
   },
-  accountTypeContainer: {
-  backgroundColor: '#f5f5f5',
-  paddingHorizontal: 20,
-  paddingVertical: 10,
-  borderBottomWidth: 1,
-  borderBottomColor: '#ddd',
+  // Dropdown styles
+  dropdownButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  pickerRow: {
-    flexDirection: 'row',
-    gap: 10,
+  dropdownArrow: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
-  accountTypeButton: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+  dropdownMenu: {
+    position: 'absolute',
+    top: 42,
+    right: 0,
     backgroundColor: '#fff',
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    alignItems: 'center',
+    paddingVertical: 4,
+    minWidth: 140,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 10000,  
+    pointerEvents: 'auto',  
   },
-  accountTypeButtonActive: {
-    backgroundColor: '#18884A',
-    borderColor: '#18884A',
+  dropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
-  accountTypeText: {
-    fontSize: 14,
-    fontWeight: '500',
+  dropdownItemText: {
+    fontSize: 15,
     color: '#333',
   },
-  accountTypeTextActive: {
-    color: '#fff',
+  dropdownItemTextActive: {
+    color: '#18884A',
     fontWeight: '600',
+  },
+  dropdownDivider: {
+    height: 1,
+    backgroundColor: '#e0e0e0',
+    marginHorizontal: 8,
   },
 });
