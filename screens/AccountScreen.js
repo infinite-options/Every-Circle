@@ -28,6 +28,8 @@ export default function AccountScreen({ navigation }) {
   const [businessBountyData, setBusinessBountyData] = useState(null);
   const [businessBountyLoading, setBusinessBountyLoading] = useState(true);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
+  const [businesses, setBusinesses] = useState([]);
+  const [selectedAccount, setSelectedAccount] = useState('personal'); // 'personal' or business UID
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -253,34 +255,46 @@ export default function AccountScreen({ navigation }) {
   const fetchUserBusinesses = async () => {
     try {
       const profileId = await AsyncStorage.getItem("profile_uid");
-      if (!profileId) return;
+      if (!profileId) {
+        console.log("No profile ID found");
+        return null;
+      }
 
       const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-      if (!response.ok) return;
+      if (!response.ok) {
+        console.log("Failed to fetch user profile");
+        return null;
+      }
 
       const result = await response.json();
       console.log("User businesses:", result.business_info);
 
       // Parse business_info to get business UIDs
-      const businesses = result.business_info
+      const businessList = result.business_info
         ? (typeof result.business_info === "string" 
             ? JSON.parse(result.business_info) 
             : result.business_info
           )
         : [];
 
-      // Get the first business UID (you can add a picker later to select which business)
-      if (businesses.length > 0) {
-        const firstBusiness = businesses[0];
+      // Store all businesses in state
+      setBusinesses(businessList);
+
+      // Get the first business UID
+      if (businessList.length > 0) {
+        const firstBusiness = businessList[0];
         const businessId = firstBusiness.business_uid || firstBusiness.profile_business_uid;
         console.log("Setting business UID:", businessId);
         setBusinessUID(businessId);
         return businessId;
       }
+      
+      console.log("No businesses found for user");
+      return null;
     } catch (error) {
       console.error("Error fetching user businesses:", error);
+      return null;
     }
-    return null;
   };
 
   // Business Transaction data 
@@ -289,110 +303,81 @@ export default function AccountScreen({ navigation }) {
       console.log("=== STARTING BUSINESS TRANSACTION DATA LOAD ===");
       setBusinessTransactionLoading(true);
       
-      const profileId = await AsyncStorage.getItem("profile_uid");
-      if (!profileId) {
-        console.log("No profile ID found");
-        setBusinessTransactionData([]);
-        setBusinessTransactionLoading(false);
-        return;
-      }
-
-      // Fetch user's business info to get ALL business UIDs
-      const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-      if (!profileResponse.ok) {
-        throw new Error(`HTTP error! status: ${profileResponse.status}`);
-      }
-
-      const profileResult = await profileResponse.json();
-      const businesses = profileResult.business_info
-        ? (typeof profileResult.business_info === "string" 
-            ? JSON.parse(profileResult.business_info) 
-            : profileResult.business_info
-          )
-        : [];
-
-      if (businesses.length === 0) {
-        console.log("No businesses found for this user");
-        setBusinessTransactionData([]);
-        setBusinessTransactionLoading(false);
-        return;
-      }
-
-      console.log(`Found ${businesses.length} businesses for user`);
-
-      // Fetch transactions for ALL businesses
-      const allTransactions = [];
+      // If specific business is selected, only load that business's data
+      const targetBusinessUID = selectedAccount !== 'personal' ? selectedAccount : businessUID;
       
-      for (const business of businesses) {
-        const businessId = business.business_uid || business.profile_business_uid;
-        if (!businessId) continue;
+      if (!targetBusinessUID) {
+        console.log("No business UID available");
+        setBusinessTransactionData([]);
+        setBusinessTransactionLoading(false);
+        return;
+      }
 
-        console.log(`Fetching transactions for business: ${businessId}`);
+      console.log(`Fetching transactions for business: ${targetBusinessUID}`);
+      
+      try {
+        const businessTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${targetBusinessUID}`;
+        const response = await fetch(businessTransactionsUrl, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (response.status === 400) {
+          console.log(`No transactions found for business ${targetBusinessUID}`);
+          setBusinessTransactionData([]);
+          setBusinessTransactionLoading(false);
+          return;
+        }
+
+        if (!response.ok) {
+          console.error(`Error fetching transactions for business ${targetBusinessUID}`);
+          setBusinessTransactionData([]);
+          setBusinessTransactionLoading(false);
+          return;
+        }
+
+        const result = await response.json();
         
-        try {
-          const businessTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${businessId}`;
-          const response = await fetch(businessTransactionsUrl, {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-            },
+        if (result && result.code === 200 && Array.isArray(result.data)) {
+          // Filter to only business service transactions (250-)
+          const businessTransactions = result.data.filter(
+            item => item.ti_bs_id && item.ti_bs_id.startsWith('250-')
+          );
+          
+          // Group by transaction_uid and calculate total quantity
+          const transactionMap = {};
+          businessTransactions.forEach(item => {
+            const txnId = item.transaction_uid;
+            if (!transactionMap[txnId]) {
+              transactionMap[txnId] = {
+                transaction_uid: item.transaction_uid,
+                transaction_datetime: item.transaction_datetime,
+                transaction_profile_id: item.transaction_profile_id,
+                transaction_business_id: item.transaction_business_id,
+                transaction_total: parseFloat(item.transaction_total || 0),
+                total_quantity: 0,
+              };
+            }
+            // Add quantity for this item
+            transactionMap[txnId].total_quantity += parseInt(item.ti_bs_qty || 0);
+          });
+          
+          // Convert to array and sort by date (most recent first)
+          const filteredTransactions = Object.values(transactionMap).sort((a, b) => {
+            const dateA = new Date(a.transaction_datetime);
+            const dateB = new Date(b.transaction_datetime);
+            return dateB - dateA;
           });
 
-          if (response.status === 400) {
-            console.log(`No transactions found for business ${businessId}`);
-            continue;
-          }
-
-          if (!response.ok) {
-            console.error(`Error fetching transactions for business ${businessId}`);
-            continue;
-          }
-
-          const result = await response.json();
-          
-          if (result && result.code === 200 && Array.isArray(result.data)) {
-            // Filter to only business service transactions (250-)
-            const businessTransactions = result.data.filter(
-              item => item.ti_bs_id && item.ti_bs_id.startsWith('250-')
-            );
-            
-            // Add business name to each transaction for display
-            businessTransactions.forEach(txn => {
-              txn.business_name = business.business_name || business.profile_business_name || "Unknown Business";
-            });
-            
-            allTransactions.push(...businessTransactions);
-          }
-        } catch (error) {
-          console.error(`Error fetching transactions for business ${businessId}:`, error);
+          console.log(`Total business transactions found: ${filteredTransactions.length}`);
+          setBusinessTransactionData(filteredTransactions);
         }
+      } catch (error) {
+        console.error(`Error fetching transactions for business:`, error);
+        setBusinessTransactionData([]);
       }
-
-      // Remove duplicates and group by transaction_uid
-      const transactionMap = {};
-      allTransactions.forEach(item => {
-        const txnId = item.transaction_uid;
-        if (!transactionMap[txnId]) {
-          transactionMap[txnId] = {
-            transaction_uid: item.transaction_uid,
-            transaction_datetime: item.transaction_datetime,
-            transaction_profile_id: item.transaction_profile_id,
-            transaction_business_id: item.transaction_business_id,
-            transaction_total: parseFloat(item.transaction_total || 0),
-            business_name: item.business_name,
-          };
-        }
-      });
-
-      // Convert to array and sort by date (most recent first)
-      const filteredTransactions = Object.values(transactionMap).sort((a, b) => {
-        const dateA = new Date(a.transaction_datetime);
-        const dateB = new Date(b.transaction_datetime);
-        return dateB - dateA; // Descending order (newest first)
-      });
-
-      console.log(`Total business transactions found: ${filteredTransactions.length}`);
-      setBusinessTransactionData(filteredTransactions);
       
     } catch (error) {
       console.error("Error loading business transaction data:", error);
@@ -407,86 +392,56 @@ export default function AccountScreen({ navigation }) {
     try {
       setBusinessBountyLoading(true);
       
-      const profileId = await AsyncStorage.getItem("profile_uid");
-      if (!profileId) {
-        console.log("No profile ID found");
+      // If specific business is selected, only load that business's data
+      const targetBusinessUID = selectedAccount !== 'personal' ? selectedAccount : businessUID;
+      
+      if (!targetBusinessUID) {
+        console.log("No business UID available");
         setBusinessBountyData(null);
         setBusinessBountyLoading(false);
         return;
       }
 
-      // Fetch user's business info to get ALL business UIDs
-      const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-      if (!profileResponse.ok) {
-        throw new Error(`HTTP error! status: ${profileResponse.status}`);
-      }
+      console.log(`Fetching bounty results for business: ${targetBusinessUID}`);
+      
+      try {
+        const response = await fetch(`${BUSINESS_BOUNTY_RESULTS_ENDPOINT}/${targetBusinessUID}`);
 
-      const profileResult = await profileResponse.json();
-      const businesses = profileResult.business_info
-        ? (typeof profileResult.business_info === "string" 
-            ? JSON.parse(profileResult.business_info) 
-            : profileResult.business_info
-          )
-        : [];
-
-      if (businesses.length === 0) {
-        console.log("No businesses found for this user");
-        setBusinessBountyData(null);
-        setBusinessBountyLoading(false);
-        return;
-      }
-
-      // Fetch bounties for ALL businesses and combine them
-      const allBountyData = [];
-      let totalBountyEarned = 0;
-
-      for (const business of businesses) {
-        const businessId = business.business_uid || business.profile_business_uid;
-        if (!businessId) continue;
-
-        console.log(`Fetching bounty results for business: ${businessId}`);
-        
-        try {
-          const response = await fetch(`${BUSINESS_BOUNTY_RESULTS_ENDPOINT}/${businessId}`);
-
-          if (!response.ok) {
-            console.error(`Error fetching bounties for business ${businessId}`);
-            continue;
-          }
-
-          const result = await response.json();
-          
-          if (result && result.data && Array.isArray(result.data)) {
-            // Add business name to each bounty record
-            result.data.forEach(bounty => {
-              bounty.business_name = business.business_name || business.profile_business_name || "Unknown Business";
-            });
-            
-            allBountyData.push(...result.data);
-            totalBountyEarned += result.total_bounty_earned || 0;
-          }
-        } catch (error) {
-          console.error(`Error fetching bounties for business ${businessId}:`, error);
+        if (!response.ok) {
+          console.error(`Error fetching bounties for business ${targetBusinessUID}`);
+          setBusinessBountyData(null);
+          setBusinessBountyLoading(false);
+          return;
         }
+
+        const result = await response.json();
+        
+        if (result && result.data && Array.isArray(result.data)) {
+          // Add business name to each bounty record
+          const selectedBusiness = businesses.find(
+            b => (b.business_uid || b.profile_business_uid) === targetBusinessUID
+          );
+          
+          result.data.forEach(bounty => {
+            bounty.business_name = selectedBusiness?.business_name || 
+                                  selectedBusiness?.profile_business_name || 
+                                  "Unknown Business";
+          });
+          
+          // Sort by date (most recent first)
+          result.data.sort((a, b) => {
+            const dateA = new Date(a.transaction_datetime);
+            const dateB = new Date(b.transaction_datetime);
+            return dateB - dateA;
+          });
+
+          console.log("Business Bounty results:", result);
+          setBusinessBountyData(result);
+        }
+      } catch (error) {
+        console.error(`Error fetching bounties for business:`, error);
+        setBusinessBountyData({ error: error.message });
       }
-
-      // Sort by date (most recent first)
-      allBountyData.sort((a, b) => {
-        const dateA = new Date(a.transaction_datetime);
-        const dateB = new Date(b.transaction_datetime);
-        return dateB - dateA; // Descending order (newest first)
-      });
-
-      const combinedBountyData = {
-        code: 200,
-        message: 'Business bounty results retrieved successfully',
-        data: allBountyData,
-        total_bounties: allBountyData.length,
-        total_bounty_earned: totalBountyEarned
-      };
-
-      console.log("Combined Business Bounty results:", combinedBountyData);
-      setBusinessBountyData(combinedBountyData);
       
     } catch (error) {
       console.error("Error loading business bounty data:", error);
@@ -515,16 +470,16 @@ export default function AccountScreen({ navigation }) {
 
   // Load business data when switching to business account
   useEffect(() => {
-    if (accountType === 'business') {
-      console.log("Switched to business account, loading business data...");
+    if (selectedAccount !== 'personal') {
+      console.log("Switched to business account, loading business data for:", selectedAccount);
+      setBusinessUID(selectedAccount);
       const loadBusinessData = async () => {
-        await fetchUserBusinesses();
         await refreshBusinessTransactionData();
         await refreshBusinessBountyData();
       };
       loadBusinessData();
     }
-  }, [accountType]);
+  }, [selectedAccount]);
 
   
 
@@ -691,154 +646,165 @@ export default function AccountScreen({ navigation }) {
   };
 
   const NetEarningChart = () => {
-    const chartData = processBountyDataForChart();
-    const chartWidth = screenWidth;
-    const chartHeight = 180;
-    const paddingLeft = 50; // Space for left Y-axis
-    const paddingRight = 50; // Space for right Y-axis
-    const paddingTop = 20;
-    const paddingBottom = 30; // Space for X-axis labels
-    const plotWidth = chartWidth - paddingLeft - paddingRight;
-    const plotHeight = chartHeight - paddingTop - paddingBottom;
+  const chartData = processBountyDataForChart();
+  const chartWidth = screenWidth;
+  const chartHeight = 200; // Increased from 180 to make room for x-axis label
+  const paddingLeft = 50;
+  const paddingRight = 50;
+  const paddingTop = 20;
+  const paddingBottom = 50; // Increased from 30 to make room for x-axis label
+  const plotWidth = chartWidth - paddingLeft - paddingRight;
+  const plotHeight = chartHeight - paddingTop - paddingBottom;
 
-    if (chartData.dates.length === 0) {
-      return (
-        <View style={{ width: chartWidth, height: chartHeight, justifyContent: "center", alignItems: "center" }}>
-          <Text style={{ color: "#888" }}>No data available</Text>
-        </View>
-      );
-    }
-
-    const dataPoints = chartData.dates.length;
-    const xStep = plotWidth / Math.max(dataPoints - 1, 1);
-
-    // Calculate Y positions for daily bounty (linear, left axis)
-    const dailyYPositions = chartData.dailyBounty.map((value) => {
-      const normalized = Math.max(0, Math.min(1, value / chartData.maxDaily)); // Clamp between 0 and 1
-      const y = paddingTop + plotHeight - normalized * plotHeight;
-      return isFinite(y) ? y : paddingTop + plotHeight; // Fallback if Infinity
-    });
-
-    // Calculate Y positions for cumulative bounty (linear, right axis with different scale)
-    const cumulativeYPositions = chartData.cumulativeBounty.map((value) => {
-      const y = paddingTop + linearScale(value, chartData.maxCumulative, plotHeight);
-      return isFinite(y) ? y : paddingTop + plotHeight; // Fallback if Infinity
-    });
-
-    // Generate X positions
-    const xPositions = chartData.dates.map((_, index) => paddingLeft + index * xStep);
-
-    // Generate left Y-axis ticks (linear)
-    const leftTicks = 6;
-    const leftTickValues = [];
-    for (let i = 0; i <= leftTicks; i++) {
-      leftTickValues.push((chartData.maxDaily / leftTicks) * i);
-    }
-
-    // Generate right Y-axis ticks (linear)
-    const rightTickValues = generateLinearTicks(chartData.maxCumulative, 6);
-
-    // Build path strings for lines
-    const buildPath = (positions) => {
-      return positions
-        .map((y, index) => {
-          const x = xPositions[index];
-          // Ensure both x and y are finite numbers
-          const safeX = isFinite(x) ? x : 0;
-          const safeY = isFinite(y) ? y : paddingTop + plotHeight;
-          return index === 0 ? `M ${safeX} ${safeY}` : `L ${safeX} ${safeY}`;
-        })
-        .join(" ");
-    };
-
-    const dailyPath = buildPath(dailyYPositions);
-    const cumulativePath = buildPath(cumulativeYPositions);
-
+  if (chartData.dates.length === 0) {
     return (
-      <View style={{ width: chartWidth, height: chartHeight, marginVertical: 8 }}>
-        {/* Legend */}
-        <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 20 }}>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <View style={{ width: 12, height: 3, backgroundColor: "#B71C1C", marginRight: 6 }} />
-            <Text style={{ fontSize: 12, color: "#666" }}>Daily Bounty</Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <View style={{ width: 12, height: 3, backgroundColor: "#000", marginRight: 6 }} />
-            <Text style={{ fontSize: 12, color: "#666" }}>Cumulative Bounty</Text>
-          </View>
-        </View>
-        <Svg width={chartWidth} height={chartHeight}>
-          {/* Grid lines (horizontal) */}
-          {leftTickValues.map((tick, index) => {
-            const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
-            return <Line key={`grid-${index}`} x1={paddingLeft} y1={y} x2={paddingLeft + plotWidth} y2={y} stroke='#ddd' strokeWidth='1' />;
-          })}
-
-          {/* Left Y-axis (linear) */}
-          <Line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
-          {leftTickValues.map((tick, index) => {
-            const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
-            return (
-              <G key={`left-tick-${index}`}>
-                <Line x1={paddingLeft} y1={y} x2={paddingLeft - 5} y2={y} stroke='#666' strokeWidth='1' />
-                <SvgText x={paddingLeft - 8} y={y + 4} fontSize='10' fill='#666' textAnchor='end'>
-                  {formatYLabel(tick)}
-                </SvgText>
-              </G>
-            );
-          })}
-
-          {/* Right Y-axis (linear) */}
-          <Line x1={paddingLeft + plotWidth} y1={paddingTop} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
-          {rightTickValues.map((tick, index) => {
-            const y = paddingTop + linearScale(tick, chartData.maxCumulative, plotHeight);
-            return (
-              <G key={`right-tick-${index}`}>
-                <Line x1={paddingLeft + plotWidth} y1={y} x2={paddingLeft + plotWidth + 5} y2={y} stroke='#666' strokeWidth='1' />
-                <SvgText x={paddingLeft + plotWidth + 8} y={y + 4} fontSize='10' fill='#666' textAnchor='start'>
-                  {formatYLabel(tick)}
-                </SvgText>
-              </G>
-            );
-          })}
-
-          {/* X-axis */}
-          <Line x1={paddingLeft} y1={paddingTop + plotHeight} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
-
-          {/* X-axis labels (dates) */}
-          {chartData.dates.map((date, index) => {
-            const x = xPositions[index];
-            return (
-              <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
-                {formatDateLabel(date)}
-              </SvgText>
-            );
-          })}
-
-          {/* Daily bounty line (red, left axis) */}
-          <Path d={dailyPath} stroke='#B71C1C' strokeWidth='3' fill='none' />
-          {dailyYPositions.map((y, index) => (
-            <Circle key={`daily-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='#B71C1C' />
-          ))}
-
-          {/* Cumulative bounty line (black, right axis) */}
-          <Path d={cumulativePath} stroke='black' strokeWidth='3' fill='none' />
-          {cumulativeYPositions.map((y, index) => (
-            <Circle key={`cumulative-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='black' />
-          ))}
-        </Svg>
+      <View style={{ width: chartWidth, height: chartHeight, justifyContent: "center", alignItems: "center" }}>
+        <Text style={{ color: "#888" }}>No data available</Text>
       </View>
     );
+  }
+
+  const dataPoints = chartData.dates.length;
+  const xStep = plotWidth / Math.max(dataPoints - 1, 1);
+
+  // Calculate Y positions for daily bounty (linear, left axis)
+  const dailyYPositions = chartData.dailyBounty.map((value) => {
+    const normalized = Math.max(0, Math.min(1, value / chartData.maxDaily));
+    const y = paddingTop + plotHeight - normalized * plotHeight;
+    return isFinite(y) ? y : paddingTop + plotHeight;
+  });
+
+  // Calculate Y positions for cumulative bounty (linear, right axis with different scale)
+  const cumulativeYPositions = chartData.cumulativeBounty.map((value) => {
+    const y = paddingTop + linearScale(value, chartData.maxCumulative, plotHeight);
+    return isFinite(y) ? y : paddingTop + plotHeight;
+  });
+
+  // Generate X positions
+  const xPositions = chartData.dates.map((_, index) => paddingLeft + index * xStep);
+
+  // Generate left Y-axis ticks (linear)
+  const leftTicks = 6;
+  const leftTickValues = [];
+  for (let i = 0; i <= leftTicks; i++) {
+    leftTickValues.push((chartData.maxDaily / leftTicks) * i);
+  }
+
+  // Generate right Y-axis ticks (linear)
+  const rightTickValues = generateLinearTicks(chartData.maxCumulative, 6);
+
+  // Build path strings for lines
+  const buildPath = (positions) => {
+    return positions
+      .map((y, index) => {
+        const x = xPositions[index];
+        const safeX = isFinite(x) ? x : 0;
+        const safeY = isFinite(y) ? y : paddingTop + plotHeight;
+        return index === 0 ? `M ${safeX} ${safeY}` : `L ${safeX} ${safeY}`;
+      })
+      .join(" ");
+  };
+
+  const dailyPath = buildPath(dailyYPositions);
+  const cumulativePath = buildPath(cumulativeYPositions);
+
+  return (
+    <View style={{ width: chartWidth, height: chartHeight, marginVertical: 8 }}>
+      {/* Legend */}
+      <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 20 }}>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <View style={{ width: 12, height: 3, backgroundColor: "#B71C1C", marginRight: 6 }} />
+          <Text style={{ fontSize: 12, color: "#666" }}>Daily Bounty</Text>
+        </View>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <View style={{ width: 12, height: 3, backgroundColor: "#000", marginRight: 6 }} />
+          <Text style={{ fontSize: 12, color: "#666" }}>Cumulative Bounty</Text>
+        </View>
+      </View>
+      <Svg width={chartWidth} height={chartHeight}>
+        {/* Grid lines (horizontal) */}
+        {leftTickValues.map((tick, index) => {
+          const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
+          return <Line key={`grid-${index}`} x1={paddingLeft} y1={y} x2={paddingLeft + plotWidth} y2={y} stroke='#ddd' strokeWidth='1' />;
+        })}
+
+        {/* Left Y-axis (linear) */}
+        <Line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
+        {leftTickValues.map((tick, index) => {
+          const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
+          return (
+            <G key={`left-tick-${index}`}>
+              <Line x1={paddingLeft} y1={y} x2={paddingLeft - 5} y2={y} stroke='#666' strokeWidth='1' />
+              <SvgText x={paddingLeft - 8} y={y + 4} fontSize='10' fill='#666' textAnchor='end'>
+                {formatYLabel(tick)}
+              </SvgText>
+            </G>
+          );
+        })}
+
+        {/* Right Y-axis (linear) */}
+        <Line x1={paddingLeft + plotWidth} y1={paddingTop} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
+        {rightTickValues.map((tick, index) => {
+          const y = paddingTop + linearScale(tick, chartData.maxCumulative, plotHeight);
+          return (
+            <G key={`right-tick-${index}`}>
+              <Line x1={paddingLeft + plotWidth} y1={y} x2={paddingLeft + plotWidth + 5} y2={y} stroke='#666' strokeWidth='1' />
+              <SvgText x={paddingLeft + plotWidth + 8} y={y + 4} fontSize='10' fill='#666' textAnchor='start'>
+                {formatYLabel(tick)}
+              </SvgText>
+            </G>
+          );
+        })}
+
+        {/* X-axis */}
+        <Line x1={paddingLeft} y1={paddingTop + plotHeight} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
+
+        {/* X-axis labels (dates) */}
+        {chartData.dates.map((date, index) => {
+          const x = xPositions[index];
+          return (
+            <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
+              {formatDateLabel(date)}
+            </SvgText>
+          );
+        })}
+
+        {/* X-axis title label */}
+        <SvgText 
+          x={paddingLeft + plotWidth / 2} 
+          y={paddingTop + plotHeight + 35} 
+          fontSize='12' 
+          fill='#333' 
+          fontWeight='600'
+          textAnchor='middle'
+        >
+          Date
+        </SvgText>
+
+        {/* Daily bounty line (red, left axis) */}
+        <Path d={dailyPath} stroke='#B71C1C' strokeWidth='3' fill='none' />
+        {dailyYPositions.map((y, index) => (
+          <Circle key={`daily-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='#B71C1C' />
+        ))}
+
+        {/* Cumulative bounty line (black, right axis) */}
+        <Path d={cumulativePath} stroke='black' strokeWidth='3' fill='none' />
+        {cumulativeYPositions.map((y, index) => (
+          <Circle key={`cumulative-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='black' />
+        ))}
+      </Svg>
+    </View>
+  );
   };
 
   const BusinessNetEarningChart = () => {
   const chartData = processBusinessTransactionDataForChart();
   const chartWidth = screenWidth;
-  const chartHeight = 180;
+  const chartHeight = 200; // Increased from 180
   const paddingLeft = 50;
   const paddingRight = 50;
   const paddingTop = 20;
-  const paddingBottom = 30;
+  const paddingBottom = 50; // Increased from 30
   const plotWidth = chartWidth - paddingLeft - paddingRight;
   const plotHeight = chartHeight - paddingTop - paddingBottom;
 
@@ -949,6 +915,18 @@ export default function AccountScreen({ navigation }) {
           );
         })}
 
+        {/* X-axis title label */}
+        <SvgText 
+          x={paddingLeft + plotWidth / 2} 
+          y={paddingTop + plotHeight + 35} 
+          fontSize='12' 
+          fill='#333' 
+          fontWeight='600'
+          textAnchor='middle'
+        >
+          Date
+        </SvgText>
+
         {/* Daily earnings line */}
         <Path d={dailyPath} stroke='#B71C1C' strokeWidth='3' fill='none' />
         {dailyYPositions.map((y, index) => (
@@ -998,42 +976,57 @@ export default function AccountScreen({ navigation }) {
         
         {/* Dropdown positioned outside header to avoid clipping */}
         {showAccountDropdown && (
-          <View style={styles.dropdownMenuAbsolute}>
+          <View style={styles.dropdownMenu}>
+            {/* Personal Account Option */}
             <TouchableOpacity
               style={styles.dropdownItem}
               onPress={() => {
                 console.log("Personal clicked");
                 setAccountType('personal');
+                setSelectedAccount('personal');
                 setShowAccountDropdown(false);
               }}
               activeOpacity={0.6}
             >
               <Text style={[
                 styles.dropdownItemText,
-                accountType === 'personal' && styles.dropdownItemTextActive
+                selectedAccount === 'personal' && styles.dropdownItemTextActive
               ]}>
                 Personal
               </Text>
             </TouchableOpacity>
             
-            <View style={styles.dropdownDivider} />
-            
-            <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={() => {
-                console.log("Business clicked");
-                setAccountType('business');
-                setShowAccountDropdown(false);
-              }}
-              activeOpacity={0.6}
-            >
-              <Text style={[
-                styles.dropdownItemText,
-                accountType === 'business' && styles.dropdownItemTextActive
-              ]}>
-                Business
-              </Text>
-            </TouchableOpacity>
+            {/* Business Account Options */}
+            {businesses.length > 0 && (
+              <>
+                <View style={styles.dropdownDivider} />
+                {businesses.map((business, index) => {
+                  const businessId = business.business_uid || business.profile_business_uid;
+                  const businessName = business.business_name || business.profile_business_name || `Business ${index + 1}`;
+                  
+                  return (
+                    <TouchableOpacity
+                      key={businessId || index}
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        console.log("Business clicked:", businessName);
+                        setAccountType('business');
+                        setSelectedAccount(businessId);
+                        setShowAccountDropdown(false);
+                      }}
+                      activeOpacity={0.6}
+                    >
+                      <Text style={[
+                        styles.dropdownItemText,
+                        selectedAccount === businessId && styles.dropdownItemTextActive
+                      ]}>
+                        {businessName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </>
+            )}
           </View>
         )}
       </View>
@@ -1229,8 +1222,8 @@ export default function AccountScreen({ navigation }) {
               <View style={styles.transactionHeaderRow}>
                 <Text style={styles.transactionHeaderDate}>Date</Text>
                 <Text style={styles.transactionHeaderId}>Transaction ID</Text>
-                <Text style={styles.transactionHeaderBusiness}>Business</Text>
                 <Text style={styles.transactionHeaderBusiness}>Buyer</Text>
+                <Text style={styles.transactionHeaderQty}>Qty</Text>
                 <Text style={styles.transactionHeaderAmount}>Amount</Text>
               </View>
               {/* Table Rows */}
@@ -1240,14 +1233,14 @@ export default function AccountScreen({ navigation }) {
                     <Text style={styles.transactionDate}>
                       {formatTransactionDate(transaction.transaction_datetime)}
                     </Text>
-                    <Text style={[styles.transactionId, { width: 80 }]}>
+                    <Text style={[styles.transactionId, { width: 95 }]}>
                       {transaction.transaction_uid || "N/A"}
                     </Text>
                     <Text style={[styles.transactionBusiness, { flex: 1 }]}>
-                      {transaction.business_name || "N/A"}
-                    </Text>
-                    <Text style={[styles.transactionBusiness, { width: 80 }]}>
                       {transaction.transaction_profile_id?.substring(0, 8) || "N/A"}
+                    </Text>
+                    <Text style={styles.transactionQty}>
+                      {transaction.total_quantity || 0}
                     </Text>
                     <Text style={styles.transactionAmount}>
                       ${parseFloat(transaction.transaction_total || 0).toFixed(2)}
@@ -1289,11 +1282,10 @@ export default function AccountScreen({ navigation }) {
               </View>
               {/* Table Header */}
               <View style={styles.bountyTableHeader}>
-                <Text style={styles.bountyTableHeaderCell}>ID</Text>
-                <Text style={styles.bountyTableHeaderCell}>Date</Text>
-                <Text style={styles.bountyTableHeaderCell}>Purchaser</Text>
-                <Text style={styles.bountyTableHeaderCell}>Business</Text>
-                <Text style={styles.bountyTableHeaderCell}>Bounty Paid</Text>
+                <Text style={[styles.bountyTableHeaderCell, { flex: 0.25 }]}>ID</Text>
+                <Text style={[styles.bountyTableHeaderCell, { flex: 0.2 }]}>Date</Text>
+                <Text style={[styles.bountyTableHeaderCell, { flex: 0.3 }]}>Purchaser</Text>
+                <Text style={[styles.bountyTableHeaderCell, { flex: 0.25 }]}>Bounty Paid</Text>
               </View>
               {/* Table Rows */}
               {businessBountyData.data.map((transaction, index) => {
@@ -1307,19 +1299,16 @@ export default function AccountScreen({ navigation }) {
                 };
                 return (
                   <View key={transaction.transaction_uid || index} style={styles.bountyTableRow}>
-                    <Text style={styles.bountyTableCell}>
+                    <Text style={[styles.bountyTableCell, { flex: 0.25 }]}>
                       {transaction.transaction_uid}
                     </Text>
-                    <Text style={styles.bountyTableCell}>
+                    <Text style={[styles.bountyTableCell, { flex: 0.2 }]}>
                       {formatDate(transaction.transaction_datetime)}
                     </Text>
-                    <Text style={styles.bountyTableCell}>
+                    <Text style={[styles.bountyTableCell, { flex: 0.3 }]}>
                       {transaction.transaction_profile_id || "N/A"}
                     </Text>
-                    <Text style={styles.bountyTableCell}>
-                      {transaction.transaction_business_id || "N/A"}
-                    </Text>
-                    <Text style={styles.bountyTableCell}>
+                    <Text style={[styles.bountyTableCell, { flex: 0.25 }]}>
                       ${transaction.bounty_earned?.toFixed(2)}
                     </Text>
                   </View>
@@ -1492,5 +1481,18 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#e0e0e0',
     marginHorizontal: 8,
+  },
+  transactionHeaderQty: { 
+    width: 50, 
+    fontSize: 13, 
+    color: "#fff", 
+    fontWeight: "bold", 
+    textAlign: "center" 
+  },
+  transactionQty: { 
+    width: 50, 
+    fontSize: 11, 
+    color: "#333", 
+    textAlign: "center" 
   },
 });
