@@ -977,68 +977,65 @@ export default function AccountScreen({ navigation }) {
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header with Dropdown */}
-      <View>
+      <View style={{ position: 'relative', overflow: 'visible', zIndex: 1000 }}>
         <AppHeader 
           title='Account' 
           {...getHeaderColors("account")}
           onTitlePress={() => setShowFeedbackPopup(true)}
           rightButton={
-            <View style={{ position: 'relative', zIndex: 1000 }}>
-              <TouchableOpacity
-                style={styles.dropdownButton}
-                onPress={() => {
-                  console.log("Dropdown arrow clicked, toggling from:", showAccountDropdown);
-                  const newState = !showAccountDropdown;
-                  setShowAccountDropdown(newState);
-                  console.log("Setting showAccountDropdown to:", newState);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.dropdownArrow}>▼</Text>
-              </TouchableOpacity>
-              
-              {showAccountDropdown && (
-                <View style={styles.dropdownMenu}>
-                  <TouchableOpacity
-                    style={styles.dropdownItem}
-                    onPress={() => {
-                      console.log("Personal clicked");
-                      setAccountType('personal');
-                      setShowAccountDropdown(false);
-                    }}
-                    activeOpacity={0.6}
-                  >
-                    <Text style={[
-                      styles.dropdownItemText,
-                      accountType === 'personal' && styles.dropdownItemTextActive
-                    ]}>
-                      Personal
-                    </Text>
-                  </TouchableOpacity>
-                  
-                  <View style={styles.dropdownDivider} />
-                  
-                  <TouchableOpacity
-                    style={styles.dropdownItem}
-                    onPress={() => {
-                      console.log("Business clicked");
-                      setAccountType('business');
-                      setShowAccountDropdown(false);
-                    }}
-                    activeOpacity={0.6}
-                  >
-                    <Text style={[
-                      styles.dropdownItemText,
-                      accountType === 'business' && styles.dropdownItemTextActive
-                    ]}>
-                      Business
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
+            <TouchableOpacity
+              style={styles.dropdownButton}
+              onPress={() => {
+                console.log("Dropdown arrow clicked, toggling from:", showAccountDropdown);
+                setShowAccountDropdown(!showAccountDropdown);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.dropdownArrow}>▼</Text>
+            </TouchableOpacity>
           }
         />
+        
+        {/* Dropdown positioned outside header to avoid clipping */}
+        {showAccountDropdown && (
+          <View style={styles.dropdownMenuAbsolute}>
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => {
+                console.log("Personal clicked");
+                setAccountType('personal');
+                setShowAccountDropdown(false);
+              }}
+              activeOpacity={0.6}
+            >
+              <Text style={[
+                styles.dropdownItemText,
+                accountType === 'personal' && styles.dropdownItemTextActive
+              ]}>
+                Personal
+              </Text>
+            </TouchableOpacity>
+            
+            <View style={styles.dropdownDivider} />
+            
+            <TouchableOpacity
+              style={styles.dropdownItem}
+              onPress={() => {
+                console.log("Business clicked");
+                setAccountType('business');
+                setShowAccountDropdown(false);
+              }}
+              activeOpacity={0.6}
+            >
+              <Text style={[
+                styles.dropdownItemText,
+                accountType === 'business' && styles.dropdownItemTextActive
+              ]}>
+                Business
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
       {/* Main content */}
       <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContentContainer} showsVerticalScrollIndicator={true}>
