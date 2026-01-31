@@ -30,6 +30,8 @@ export default function AccountScreen({ navigation }) {
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const [businesses, setBusinesses] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState('personal'); // 'personal' or business UID
+  const [expandedTransactionId, setExpandedTransactionId] = useState(null);
+  const [transactionServices, setTransactionServices] = useState({});
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -297,14 +299,55 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
-  // Business Transaction data 
+  const fetchTransactionServices = async (transactionUid) => {
+  try {
+    // Check if we already have this data cached
+    if (transactionServices[transactionUid]) {
+      return transactionServices[transactionUid];
+    }
+
+    const response = await fetch(
+      `${API_BASE_URL}/api/v1/business_services/transaction/${transactionUid}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (response.ok) {
+      const result = await response.json();
+      if (result && result.code === 200 && Array.isArray(result.data)) {
+        // Cache the data
+        setTransactionServices(prev => ({
+          ...prev,
+          [transactionUid]: result.data
+        }));
+        return result.data;
+      }
+    }
+    return [];
+  } catch (error) {
+    console.error("Error fetching transaction services:", error);
+    return [];
+  }
+};
+
   const refreshBusinessTransactionData = async () => {
     try {
       console.log("=== STARTING BUSINESS TRANSACTION DATA LOAD ===");
       setBusinessTransactionLoading(true);
       
-      // If specific business is selected, only load that business's data
-      const targetBusinessUID = selectedAccount !== 'personal' ? selectedAccount : businessUID;
+      // If personal account is selected, don't load business data
+      if (selectedAccount === 'personal') {
+        setBusinessTransactionData([]);
+        setBusinessTransactionLoading(false);
+        return;
+      }
+
+      // Get the selected business UID
+      const targetBusinessUID = selectedAccount;
       
       if (!targetBusinessUID) {
         console.log("No business UID available");
@@ -315,68 +358,102 @@ export default function AccountScreen({ navigation }) {
 
       console.log(`Fetching transactions for business: ${targetBusinessUID}`);
       
-      try {
-        const businessTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${targetBusinessUID}`;
-        const response = await fetch(businessTransactionsUrl, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
+      const businessTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${targetBusinessUID}`;
+      const response = await fetch(businessTransactionsUrl, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.status === 400) {
+        console.log(`No transactions found for business ${targetBusinessUID}`);
+        setBusinessTransactionData([]);
+        setBusinessTransactionLoading(false);
+        return;
+      }
+
+      if (!response.ok) {
+        console.error(`Error fetching transactions for business ${targetBusinessUID}`);
+        setBusinessTransactionData([]);
+        setBusinessTransactionLoading(false);
+        return;
+      }
+
+      const result = await response.json();
+      
+      if (result && result.code === 200 && Array.isArray(result.data)) {
+        // Filter to only business service transactions (250-)
+        const businessTransactions = result.data.filter(
+          item => item.ti_bs_id && item.ti_bs_id.startsWith('250-')
+        );
+        
+        // Add business name
+        const selectedBusiness = businesses.find(
+          b => (b.business_uid || b.profile_business_uid) === targetBusinessUID
+        );
+        businessTransactions.forEach(txn => {
+          txn.business_name = selectedBusiness?.business_name || 
+                            selectedBusiness?.profile_business_name || 
+                            "Unknown Business";
         });
 
-        if (response.status === 400) {
-          console.log(`No transactions found for business ${targetBusinessUID}`);
-          setBusinessTransactionData([]);
-          setBusinessTransactionLoading(false);
-          return;
-        }
-
-        if (!response.ok) {
-          console.error(`Error fetching transactions for business ${targetBusinessUID}`);
-          setBusinessTransactionData([]);
-          setBusinessTransactionLoading(false);
-          return;
-        }
-
-        const result = await response.json();
-        
-        if (result && result.code === 200 && Array.isArray(result.data)) {
-          // Filter to only business service transactions (250-)
-          const businessTransactions = result.data.filter(
-            item => item.ti_bs_id && item.ti_bs_id.startsWith('250-')
-          );
-          
-          // Group by transaction_uid and calculate total quantity
-          const transactionMap = {};
-          businessTransactions.forEach(item => {
-            const txnId = item.transaction_uid;
-            if (!transactionMap[txnId]) {
-              transactionMap[txnId] = {
-                transaction_uid: item.transaction_uid,
-                transaction_datetime: item.transaction_datetime,
-                transaction_profile_id: item.transaction_profile_id,
-                transaction_business_id: item.transaction_business_id,
-                transaction_total: parseFloat(item.transaction_total || 0),
-                total_quantity: 0,
-              };
+        // Fetch bounty data for each transaction
+        const bountyPromises = businessTransactions.map(async (txn) => {
+          try {
+            const bountyResponse = await fetch(`${BUSINESS_BOUNTY_RESULTS_ENDPOINT}/${targetBusinessUID}`);
+            if (bountyResponse.ok) {
+              const bountyResult = await bountyResponse.json();
+              if (bountyResult && bountyResult.data) {
+                const transactionBounty = bountyResult.data.find(
+                  b => b.transaction_uid === txn.transaction_uid
+                );
+                if (transactionBounty) {
+                  txn.bounty_paid = parseFloat(transactionBounty.bounty_earned) || 0;
+                }
+              }
             }
-            // Add quantity for this item
-            transactionMap[txnId].total_quantity += parseInt(item.ti_bs_qty || 0);
-          });
-          
-          // Convert to array and sort by date (most recent first)
-          const filteredTransactions = Object.values(transactionMap).sort((a, b) => {
-            const dateA = new Date(a.transaction_datetime);
-            const dateB = new Date(b.transaction_datetime);
-            return dateB - dateA;
-          });
+          } catch (error) {
+            console.error(`Error fetching bounty for transaction ${txn.transaction_uid}:`, error);
+          }
+          return txn;
+        });
 
-          console.log(`Total business transactions found: ${filteredTransactions.length}`);
-          setBusinessTransactionData(filteredTransactions);
-        }
-      } catch (error) {
-        console.error(`Error fetching transactions for business:`, error);
-        setBusinessTransactionData([]);
+        const transactionsWithBounty = await Promise.all(bountyPromises);
+
+        // Remove duplicates and group by transaction_uid
+        const transactionMap = {};
+        transactionsWithBounty.forEach(item => {
+          const txnId = item.transaction_uid;
+          if (!transactionMap[txnId]) {
+            const total = parseFloat(item.transaction_total || 0);
+            const taxes = parseFloat(item.transaction_taxes || 0);
+            const bounty = item.bounty_paid || 0;
+            const netEarning = total - bounty - taxes;
+
+            transactionMap[txnId] = {
+              transaction_uid: item.transaction_uid,
+              transaction_datetime: item.transaction_datetime,
+              transaction_profile_id: item.transaction_profile_id,
+              transaction_business_id: item.transaction_business_id,
+              transaction_total: total,
+              transaction_taxes: taxes,
+              bounty_paid: bounty,
+              net_earning: netEarning,
+              business_name: item.business_name,
+            };
+          }
+        });
+
+        // Convert to array and sort by date
+        const filteredTransactions = Object.values(transactionMap).sort((a, b) => {
+          const dateA = new Date(a.transaction_datetime);
+          const dateB = new Date(b.transaction_datetime);
+          return dateB - dateA;
+        });
+
+        console.log(`Total business transactions found: ${filteredTransactions.length}`);
+        setBusinessTransactionData(filteredTransactions);
       }
       
     } catch (error) {
@@ -472,16 +549,14 @@ export default function AccountScreen({ navigation }) {
   useEffect(() => {
     if (selectedAccount !== 'personal') {
       console.log("Switched to business account, loading business data for:", selectedAccount);
-      setBusinessUID(selectedAccount);
       const loadBusinessData = async () => {
         await refreshBusinessTransactionData();
         await refreshBusinessBountyData();
       };
       loadBusinessData();
     }
-  }, [selectedAccount]);
-
-  
+  }, [selectedAccount, businesses]); // Add 'businesses' as dependency
+    
 
   // Format date to dd/mm format
   const formatTransactionDate = (dateString) => {
@@ -572,7 +647,7 @@ export default function AccountScreen({ navigation }) {
     const earningsByDate = {};
 
     businessTransactionData.forEach((transaction) => {
-      if (!transaction.transaction_datetime || !transaction.transaction_total) return;
+      if (!transaction.transaction_datetime || !transaction.net_earning) return;
 
       const date = new Date(transaction.transaction_datetime);
       const dateKey = date.toISOString().split("T")[0]; // YYYY-MM-DD
@@ -580,19 +655,14 @@ export default function AccountScreen({ navigation }) {
       if (!earningsByDate[dateKey]) {
         earningsByDate[dateKey] = 0;
       }
-      earningsByDate[dateKey] += parseFloat(transaction.transaction_total) || 0;
+      earningsByDate[dateKey] += parseFloat(transaction.net_earning) || 0; // Changed from transaction_total
     });
 
-    // Sort dates
+    // Rest of the function stays the same
     const sortedDates = Object.keys(earningsByDate).sort();
-
-    // Get last 12 data points (or all if less than 12)
     const recentDates = sortedDates.slice(-12);
-
-    // Build daily earnings array
     const dailyEarnings = recentDates.map((date) => earningsByDate[date]);
 
-    // Build cumulative earnings array
     const cumulativeEarnings = [];
     let runningTotal = 0;
     recentDates.forEach((date) => {
@@ -647,6 +717,7 @@ export default function AccountScreen({ navigation }) {
 
   const NetEarningChart = () => {
   const chartData = processBountyDataForChart();
+  const screenWidth = Dimensions.get("window").width - 40;
   const chartWidth = screenWidth;
   const chartHeight = 200; // Increased from 180 to make room for x-axis label
   const paddingLeft = 50;
@@ -799,6 +870,7 @@ export default function AccountScreen({ navigation }) {
 
   const BusinessNetEarningChart = () => {
   const chartData = processBusinessTransactionDataForChart();
+  const screenWidth = Dimensions.get("window").width - 40;
   const chartWidth = screenWidth;
   const chartHeight = 200; // Increased from 180
   const paddingLeft = 50;
@@ -860,11 +932,11 @@ export default function AccountScreen({ navigation }) {
       <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 20 }}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <View style={{ width: 12, height: 3, backgroundColor: "#B71C1C", marginRight: 6 }} />
-          <Text style={{ fontSize: 12, color: "#666" }}>Daily Earnings</Text>
+          <Text style={{ fontSize: 12, color: "#666" }}>Daily Net Earnings</Text>
         </View>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <View style={{ width: 12, height: 3, backgroundColor: "#000", marginRight: 6 }} />
-          <Text style={{ fontSize: 12, color: "#666" }}>Cumulative Earnings</Text>
+          <Text style={{ fontSize: 12, color: "#666" }}>Cumulative Net Earnings</Text>
         </View>
       </View>
       <Svg width={chartWidth} height={chartHeight}>
@@ -1206,6 +1278,75 @@ export default function AccountScreen({ navigation }) {
     ) : (
       
       <>
+
+        {/* Product Results formerly Business Bounty Results */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Product Results</Text>
+          {businessBountyLoading ? (
+            <Text style={styles.loadingText}>Loading business bounty data...</Text>
+          ) : businessBountyData?.error ? (
+            <Text style={styles.errorText}>Error: {businessBountyData.error}</Text>
+          ) : businessBountyData?.data ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+              <View>
+                {/* Table Header */}
+                <View style={styles.businessBountyTableHeader}>
+                  <Text style={styles.businessBountyHeaderCell}>Date</Text>
+                  <Text style={styles.businessBountyHeaderCell}>Product UID</Text>
+                  <Text style={styles.businessBountyHeaderCell}>Product Name</Text>
+                  <Text style={styles.businessBountyHeaderCell}>Cost</Text>
+                  <Text style={styles.businessBountyHeaderCell}>Bounty</Text>
+                  <Text style={styles.businessBountyHeaderCell}>Qty</Text>
+                  <Text style={styles.businessBountyHeaderCell}>Bounty Paid</Text>
+                </View>
+                {/* Table Rows */}
+                {businessBountyData.data.map((transaction, index) => {
+                  const formatDate = (dateString) => {
+                    if (!dateString) return "N/A";
+                    const date = new Date(dateString);
+                    const month = String(date.getMonth() + 1).padStart(2, "0");
+                    const day = String(date.getDate()).padStart(2, "0");
+                    return `${month}/${day}`;
+                  };
+                  return (
+                    <View key={transaction.transaction_uid || index} style={styles.businessBountyTableRow}>
+                      <Text style={styles.businessBountyCell}>
+                        {formatDate(transaction.transaction_datetime)}
+                      </Text>
+                      <Text style={styles.businessBountyCell}>
+                        {transaction.bs_uid || "N/A"}
+                      </Text>
+                      <Text style={styles.businessBountyCell}>
+                        {transaction.bs_service_name || "N/A"}
+                      </Text>
+                      <Text style={styles.businessBountyCell}>
+                        ${parseFloat(transaction.bs_cost || 0).toFixed(2)}
+                      </Text>
+                      <Text style={styles.businessBountyCell}>
+                        ${parseFloat(transaction.bs_bounty || 0).toFixed(2)}
+                      </Text>
+                      <Text style={styles.businessBountyCell}>
+                        {transaction.ti_bs_qty || 0}
+                      </Text>
+                      <Text style={styles.businessBountyCell}>
+                        ${parseFloat(transaction.bounty_paid || 0).toFixed(2)}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          ) : (
+            <Text style={styles.noDataText}>No business bounty data available.</Text>
+          )}
+        </View>
+
+        {/* Business Net Earning */}
+        <View style={styles.sectionContainer}>
+          <Text style={styles.sectionTitle}>Net Earning</Text>
+          <BusinessNetEarningChart />
+        </View>
+
         {/* Business Transaction History */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionTitleRow}>
@@ -1217,106 +1358,100 @@ export default function AccountScreen({ navigation }) {
           {businessTransactionLoading ? (
             <Text style={styles.loadingText}>Loading business transaction data...</Text>
           ) : businessTransactionData.length > 0 ? (
-            <View style={styles.transactionsContainer}>
-              {/* Table Header */}
-              <View style={styles.transactionHeaderRow}>
-                <Text style={styles.transactionHeaderDate}>Date</Text>
-                <Text style={styles.transactionHeaderId}>Transaction ID</Text>
-                <Text style={styles.transactionHeaderBusiness}>Buyer</Text>
-                <Text style={styles.transactionHeaderQty}>Qty</Text>
-                <Text style={styles.transactionHeaderAmount}>Amount</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+              <View style={styles.transactionsContainer}>
+                {/* Table Header */}
+                <View style={styles.businessTransactionHeaderRow}>
+                  <Text style={styles.businessTransactionHeaderCell}>Transaction ID</Text>
+                  <Text style={styles.businessTransactionHeaderCell}>Date</Text>
+                  <Text style={styles.businessTransactionHeaderCell}>Buyer</Text>
+                  <Text style={styles.businessTransactionHeaderCell}>Total</Text>
+                  <Text style={styles.businessTransactionHeaderCell}>Bounty</Text>
+                  <Text style={styles.businessTransactionHeaderCell}>Tax</Text>
+                  <Text style={styles.businessTransactionHeaderCell}>Net Earning</Text>
+                </View>
+                {/* Table Rows */}
+                {businessTransactionData.map((transaction, i) => {
+                  const isExpanded = expandedTransactionId === transaction.transaction_uid;
+                  
+                  // Get services for this transaction from businessBountyData
+                  const transactionServices = businessBountyData?.data?.filter(
+                    item => item.transaction_uid === transaction.transaction_uid
+                  ) || [];
+                  
+                  return (
+                    <View key={transaction.transaction_uid || i}>
+                      {/* Main Transaction Row */}
+                      <TouchableOpacity
+                        style={styles.businessTransactionRow}
+                        onPress={() => {
+                          setExpandedTransactionId(isExpanded ? null : transaction.transaction_uid);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.businessTransactionCell}>
+                          {transaction.transaction_uid || "N/A"} {isExpanded ? "▲" : "▼"}
+                        </Text>
+                        <Text style={styles.businessTransactionCell}>
+                          {formatTransactionDate(transaction.transaction_datetime)}
+                        </Text>
+                        <Text style={styles.businessTransactionCell}>
+                          {transaction.transaction_profile_id?.substring(0, 10) || "N/A"}
+                        </Text>
+                        <Text style={styles.businessTransactionCell}>
+                          ${transaction.transaction_total.toFixed(2)}
+                        </Text>
+                        <Text style={styles.businessTransactionCell}>
+                          ${transaction.bounty_paid.toFixed(2)}
+                        </Text>
+                        <Text style={styles.businessTransactionCell}>
+                          ${transaction.transaction_taxes.toFixed(2)}
+                        </Text>
+                        <Text style={styles.businessTransactionCell}>
+                          ${transaction.net_earning.toFixed(2)}
+                        </Text>
+                      </TouchableOpacity>
+
+                      {/* Expanded Services Details */}
+                      {isExpanded && (
+                        <View style={styles.expandedServicesContainer}>
+                          {transactionServices.length > 0 ? (
+                            <>
+                              {/* Services Header */}
+                              <View style={styles.servicesHeaderRow}>
+                                <Text style={styles.servicesHeaderCell}>Product UID</Text>
+                                <Text style={styles.servicesHeaderCell}>Product Name</Text>
+                                <Text style={styles.servicesHeaderCell}>Cost</Text>
+                                <Text style={styles.servicesHeaderCell}>Bounty</Text>
+                                <Text style={styles.servicesHeaderCell}>Qty</Text>
+                                <Text style={styles.servicesHeaderCell}>Bounty Paid</Text>
+                              </View>
+                              {/* Services Rows */}
+                              {transactionServices.map((service, idx) => (
+                                <View key={idx} style={styles.servicesRow}>
+                                  <Text style={styles.servicesCell}>{service.bs_uid || "N/A"}</Text>
+                                  <Text style={styles.servicesCell}>{service.bs_service_name || "N/A"}</Text>
+                                  <Text style={styles.servicesCell}>${parseFloat(service.bs_cost || 0).toFixed(2)}</Text>
+                                  <Text style={styles.servicesCell}>${parseFloat(service.bs_bounty || 0).toFixed(2)}</Text>
+                                  <Text style={styles.servicesCell}>{service.ti_bs_qty || 0}</Text>
+                                  <Text style={styles.servicesCell}>${parseFloat(service.bounty_paid || 0).toFixed(2)}</Text>
+                                </View>
+                              ))}
+                            </>
+                          ) : (
+                            <Text style={styles.noServicesText}>No services data available</Text>
+                          )}
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
               </View>
-              {/* Table Rows */}
-              {businessTransactionData.map((transaction, i) => {
-                return (
-                  <View key={transaction.transaction_uid || i} style={styles.transactionRow}>
-                    <Text style={styles.transactionDate}>
-                      {formatTransactionDate(transaction.transaction_datetime)}
-                    </Text>
-                    <Text style={[styles.transactionId, { width: 95 }]}>
-                      {transaction.transaction_uid || "N/A"}
-                    </Text>
-                    <Text style={[styles.transactionBusiness, { flex: 1 }]}>
-                      {transaction.transaction_profile_id?.substring(0, 8) || "N/A"}
-                    </Text>
-                    <Text style={styles.transactionQty}>
-                      {transaction.total_quantity || 0}
-                    </Text>
-                    <Text style={styles.transactionAmount}>
-                      ${parseFloat(transaction.transaction_total || 0).toFixed(2)}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
+            </ScrollView>
           ) : (
             <View>
               <Text style={styles.noDataText}>No business transaction data available.</Text>
             </View>
-          )}
-        </View>
-
-        {/* Business Net Earning */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Net Earning</Text>
-          <BusinessNetEarningChart />
-        </View>
-        
-        {/* Business Bounty Results */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Business Bounty Results</Text>
-          {businessBountyLoading ? (
-            <Text style={styles.loadingText}>Loading business bounty data...</Text>
-          ) : businessBountyData?.error ? (
-            <Text style={styles.errorText}>Error: {businessBountyData.error}</Text>
-          ) : businessBountyData?.data ? (
-            <View>
-              {/* Totals */}
-              <View style={styles.bountyTotals}>
-                <Text style={styles.bountyTotalText}>
-                  Total Transactions: {businessBountyData.total_bounties}
-                </Text>
-                <Text style={styles.bountyTotalText}>
-                  Total Amount Paid Out: ${businessBountyData.total_bounty_earned?.toFixed(2)}
-                </Text>
-              </View>
-              {/* Table Header */}
-              <View style={styles.bountyTableHeader}>
-                <Text style={[styles.bountyTableHeaderCell, { flex: 0.25 }]}>ID</Text>
-                <Text style={[styles.bountyTableHeaderCell, { flex: 0.2 }]}>Date</Text>
-                <Text style={[styles.bountyTableHeaderCell, { flex: 0.3 }]}>Purchaser</Text>
-                <Text style={[styles.bountyTableHeaderCell, { flex: 0.25 }]}>Bounty Paid</Text>
-              </View>
-              {/* Table Rows */}
-              {businessBountyData.data.map((transaction, index) => {
-                // Format date to MM/DD
-                const formatDate = (dateString) => {
-                  if (!dateString) return "N/A";
-                  const date = new Date(dateString);
-                  const month = String(date.getMonth() + 1).padStart(2, "0");
-                  const day = String(date.getDate()).padStart(2, "0");
-                  return `${month}/${day}`;
-                };
-                return (
-                  <View key={transaction.transaction_uid || index} style={styles.bountyTableRow}>
-                    <Text style={[styles.bountyTableCell, { flex: 0.25 }]}>
-                      {transaction.transaction_uid}
-                    </Text>
-                    <Text style={[styles.bountyTableCell, { flex: 0.2 }]}>
-                      {formatDate(transaction.transaction_datetime)}
-                    </Text>
-                    <Text style={[styles.bountyTableCell, { flex: 0.3 }]}>
-                      {transaction.transaction_profile_id || "N/A"}
-                    </Text>
-                    <Text style={[styles.bountyTableCell, { flex: 0.25 }]}>
-                      ${transaction.bounty_earned?.toFixed(2)}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-          ) : (
-            <Text style={styles.noDataText}>No business bounty data available.</Text>
           )}
         </View>
   
@@ -1387,20 +1522,7 @@ const styles = StyleSheet.create({
   transactionHeaderAmount: { width: 70, fontSize: 13, color: "#fff", fontWeight: "bold", textAlign: "right" },
   centeredContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-  // Bounty Results styles
-  bountyTotals: {
-    backgroundColor: "#f0f0f0",
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 10,
-  },
-  bountyTotalText: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#333",
-    marginBottom: 5,
-  },
-  bountyTableHeader: {
+  businessBountyTableHeader: {
     flexDirection: "row",
     backgroundColor: "#18884A",
     paddingVertical: 6,
@@ -1408,25 +1530,27 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 2,
   },
-  bountyTableHeaderCell: {
-    flex: 0.2,
+  businessBountyHeaderCell: {
+    width: 100,
+    fontSize: 12,
     color: "#fff",
     fontWeight: "bold",
-    fontSize: 13,
-    paddingHorizontal: 0,
+    paddingHorizontal: 4,
+    textAlign: 'center',
   },
-  bountyTableRow: {
+  businessBountyTableRow: {
     flexDirection: "row",
     paddingVertical: 6,
-    paddingHorizontal: 1,
+    paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
   },
-  bountyTableCell: {
-    flex: 0.2,
-    fontSize: 12,
-    paddingHorizontal: 0,
+  businessBountyCell: {
+    width: 100,
+    fontSize: 11,
     color: "#333",
+    paddingHorizontal: 4,
+    textAlign: 'center',
   },
   loadingText: {
     color: "#888",
@@ -1494,5 +1618,77 @@ const styles = StyleSheet.create({
     fontSize: 11, 
     color: "#333", 
     textAlign: "center" 
+  },
+  businessTransactionHeaderRow: {
+    flexDirection: "row",
+    backgroundColor: "#18884A",
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    marginBottom: 2,
+  },
+  businessTransactionHeaderCell: {
+    width: 110,
+    fontSize: 12,
+    color: "#fff",
+    fontWeight: "bold",
+    paddingHorizontal: 4,
+    textAlign: 'center',
+  },
+  businessTransactionRow: {
+    flexDirection: "row",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  businessTransactionCell: {
+    width: 110,
+    fontSize: 11,
+    color: "#333",
+    paddingHorizontal: 4,
+    textAlign: 'center',
+  },
+  expandedServicesContainer: {
+    backgroundColor: '#f5f5f5',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 4,
+  },
+  servicesHeaderRow: {
+    flexDirection: "row",
+    backgroundColor: "#2a5a3a",
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 4,
+    marginBottom: 2,
+  },
+  servicesHeaderCell: {
+    width: 100,
+    fontSize: 11,
+    color: "#fff",
+    fontWeight: "bold",
+    paddingHorizontal: 4,
+    textAlign: 'center',
+  },
+  servicesRow: {
+    flexDirection: "row",
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ddd",
+  },
+  servicesCell: {
+    width: 100,
+    fontSize: 10,
+    color: "#333",
+    paddingHorizontal: 4,
+    textAlign: 'center',
+  },
+  noServicesText: {
+    fontSize: 12,
+    color: "#888",
+    textAlign: 'center',
+    paddingVertical: 10,
   },
 });
