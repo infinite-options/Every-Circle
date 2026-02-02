@@ -22,7 +22,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
       description: "",
       cost: "",
       bounty: "",
-      isPublic: false,
+      isPublic: true,
     };
     setExpertise([...expertise, newEntry]);
   };
@@ -168,9 +168,9 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               value={parseCost(item.cost).amount}
               onChangeText={(text) => handleCostAmountChange(index, text)}
               onFocus={() => {
-                if (onInputFocus && costInputRefs.current[index]) {
-                  onInputFocus(costInputRefs.current[index]);
-                }
+                // if (onInputFocus && costInputRefs.current[index]) {
+                //   onInputFocus(costInputRefs.current[index]);
+                // }
               }}
             />
             {(() => {

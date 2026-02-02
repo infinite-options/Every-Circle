@@ -17,7 +17,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
   ];
 
   const addWish = () => {
-    const newEntry = { helpNeeds: "", details: "", amount: "", isPublic: false };
+    const newEntry = { helpNeeds: "", details: "", amount: "", isPublic: true };
     setWishes([...wishes, newEntry]);
   };
 
@@ -162,9 +162,9 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               value={parseBounty(item.amount).amount}
               onChangeText={(text) => handleBountyAmountChange(index, text)}
               onFocus={() => {
-                if (onInputFocus && bountyInputRefs.current[index]) {
-                  onInputFocus(bountyInputRefs.current[index]);
-                }
+                // if (onInputFocus && bountyInputRefs.current[index]) {
+                //   onInputFocus(bountyInputRefs.current[index]);
+                // }
               }}
             />
             {(() => {

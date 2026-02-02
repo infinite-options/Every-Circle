@@ -636,7 +636,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     <View style={styles.fieldContainer}>
       {/* Row: Label and Toggle */}
       <View style={styles.labelRow}>
-        <Text style={[styles.label, darkMode && styles.darkLabel]}>Short Bio</Text>
+        <Text style={[styles.label, darkMode && styles.darkLabel]}>Short Bio (max 500 characters)</Text>
         <TouchableOpacity onPress={() => handleToggleVisibility("shortBioIsPublic")}>
           <Text style={[styles.toggleText, { color: formData.shortBioIsPublic ? (darkMode ? "#4ade80" : "green") : darkMode ? "#f87171" : "red" }]}>
             {formData.shortBioIsPublic ? "Display" : "Hide"}
@@ -769,6 +769,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         contentContainerStyle={{ paddingBottom: 100 }}
         keyboardShouldPersistTaps='handled'
         showsVerticalScrollIndicator={true}
+        
       >
         {/* Profile Image Upload Section */}
         <View style={[styles.imageSection, darkMode && styles.darkImageSection]}>
