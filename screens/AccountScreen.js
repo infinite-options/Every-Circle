@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, Touc
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
-import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_BOUNTY_RESULTS_ENDPOINT } from "../apiConfig";
+import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_BOUNTY_RESULTS_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
 import { useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -11,6 +11,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
 import { Picker } from '@react-native-picker/picker';
+import MiniCard from "../components/MiniCard";
 export default function AccountScreen({ navigation }) {
   const { darkMode } = useDarkMode();
   const [userUID, setUserUID] = useState(null);
@@ -30,6 +31,7 @@ export default function AccountScreen({ navigation }) {
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const [businesses, setBusinesses] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState('personal'); // 'personal' or business UID
+  const [selectedBusinessFullData, setSelectedBusinessFullData] = useState(null);
   const [expandedTransactionId, setExpandedTransactionId] = useState(null);
   const [transactionServices, setTransactionServices] = useState({});
 
@@ -299,6 +301,52 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
+  // const fetchUserBusinesses = async () => {
+  //   try {
+  //     const profileId = await AsyncStorage.getItem("profile_uid");
+  //     if (!profileId) {
+  //       console.log("No profile ID found");
+  //       return null;
+  //     }
+
+  //     const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+  //     if (!response.ok) {
+  //       console.log("Failed to fetch user profile");
+  //       return null;
+  //     }
+
+  //     const result = await response.json();
+  //     console.log("User businesses:", result.business_info);
+
+  //     // Parse business_info to get business UIDs
+  //     const businessList = result.business_info
+  //       ? (typeof result.business_info === "string" 
+  //           ? JSON.parse(result.business_info) 
+  //           : result.business_info
+  //         )
+  //       : [];
+
+  //     // Business details are already in the array — use them directly
+  //     console.log("Businesses:", businessList);
+  //     setBusinesses(businessList);
+
+  //     // Get the first business UID
+  //     if (businessList.length > 0) {
+  //       const firstBusiness = businessList[0];
+  //       const businessId = firstBusiness.business_uid || firstBusiness.profile_business_uid;
+  //       console.log("Setting business UID:", businessId);
+  //       setBusinessUID(businessId);
+  //       return businessId;
+  //     }
+      
+  //     console.log("No businesses found for user");
+  //     return null;
+  //   } catch (error) {
+  //     console.error("Error fetching user businesses:", error);
+  //     return null;
+  //   }
+  // };
+
   const fetchTransactionServices = async (transactionUid) => {
   try {
     // Check if we already have this data cached
@@ -557,6 +605,46 @@ export default function AccountScreen({ navigation }) {
     }
   }, [selectedAccount, businesses]); // Add 'businesses' as dependency
     
+  // Add this with your other useEffects
+  useEffect(() => {
+    const fetchSelectedBusinessFullData = async () => {
+      if (selectedAccount === 'personal' || !selectedAccount) {
+        setSelectedBusinessFullData(null);
+        return;
+      }
+      
+      try {
+        const response = await fetch(`${BUSINESS_INFO_ENDPOINT}/${selectedAccount}`);
+        const result = await response.json();
+        
+        if (result && result.business) {
+          const rawBusiness = result.business;
+          
+          setSelectedBusinessFullData({
+            business_name: rawBusiness.business_name,
+            business_address_line_1: rawBusiness.business_address_line_1,
+            business_city: rawBusiness.business_city,
+            business_state: rawBusiness.business_state,
+            business_zip_code: rawBusiness.business_zip_code,
+            business_phone_number: rawBusiness.business_phone_number,
+            business_website: rawBusiness.business_website,
+            business_tag_line: rawBusiness.business_tag_line,
+            first_image: rawBusiness.business_images_url?.[0] || rawBusiness.business_google_photos?.[0],
+            phoneIsPublic: true,
+            taglineIsPublic: true,
+            imageIsPublic: true,
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching selected business full data:", error);
+        setSelectedBusinessFullData(null);
+      }
+    };
+    
+    fetchSelectedBusinessFullData();
+  }, [selectedAccount]);
+
+  
 
   // Format date to dd/mm format
   const formatTransactionDate = (dateString) => {
@@ -1279,6 +1367,15 @@ export default function AccountScreen({ navigation }) {
       
       <>
 
+        {/* Business MiniCard */}
+        <View style={styles.sectionContainer}>
+          {selectedBusinessFullData && (
+            <View style={{ alignSelf: 'flex-start', maxWidth: '100%' }}>
+              <MiniCard business={selectedBusinessFullData} />
+            </View>
+          )}
+        </View>
+
         {/* Product Results formerly Business Bounty Results */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Product Results</Text>
@@ -1522,7 +1619,21 @@ const styles = StyleSheet.create({
   transactionHeaderAmount: { width: 70, fontSize: 13, color: "#fff", fontWeight: "bold", textAlign: "right" },
   centeredContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-  businessBountyTableHeader: {
+  bountyTotals: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 8,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 4,
+  },
+  bountyTotalText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
+  },
+  bountyTableHeader: {
     flexDirection: "row",
     backgroundColor: "#18884A",
     paddingVertical: 6,
@@ -1530,26 +1641,26 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 2,
   },
-  businessBountyHeaderCell: {
-    width: 100,
+  bountyTableHeaderCell: {
+    flex: 1,
     fontSize: 12,
     color: "#fff",
     fontWeight: "bold",
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     textAlign: 'center',
   },
-  businessBountyTableRow: {
+  bountyTableRow: {
     flexDirection: "row",
     paddingVertical: 6,
     paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
   },
-  businessBountyCell: {
-    width: 100,
-    fontSize: 11,
+  bountyTableCell: {
+    flex: 1,
+    fontSize: 10,
     color: "#333",
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     textAlign: 'center',
   },
   loadingText: {
@@ -1619,6 +1730,36 @@ const styles = StyleSheet.create({
     color: "#333", 
     textAlign: "center" 
   },
+  businessBountyTableHeader: {
+    flexDirection: "row",
+    backgroundColor: "#18884A",
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    marginBottom: 2,
+  },
+  businessBountyHeaderCell: {
+    width: 100,
+    fontSize: 12,
+    color: "#fff",
+    fontWeight: "bold",
+    paddingHorizontal: 4,
+    textAlign: 'center',
+  },
+  businessBountyTableRow: {
+    flexDirection: "row",
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  businessBountyCell: {
+    width: 100,
+    fontSize: 11,
+    color: "#333",
+    paddingHorizontal: 4,
+    textAlign: 'center',
+  },
   businessTransactionHeaderRow: {
     flexDirection: "row",
     backgroundColor: "#18884A",
@@ -1648,12 +1789,6 @@ const styles = StyleSheet.create({
     color: "#333",
     paddingHorizontal: 4,
     textAlign: 'center',
-  },
-  expandedServicesContainer: {
-    backgroundColor: '#f5f5f5',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    marginBottom: 4,
   },
   servicesHeaderRow: {
     flexDirection: "row",
@@ -1685,10 +1820,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     textAlign: 'center',
   },
+  expandedServicesContainer: {
+    backgroundColor: '#f5f5f5',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 4,
+  },
+  
   noServicesText: {
     fontSize: 12,
     color: "#888",
     textAlign: 'center',
     paddingVertical: 10,
+  },
+  businessCardContainer: {
+    marginBottom: 10,
+    borderRadius: 10,
+    overflow: "visible",
+  },
+  darkBusinessCardContainer: {
+    backgroundColor: "transparent",
   },
 });
