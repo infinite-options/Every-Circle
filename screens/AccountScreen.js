@@ -1238,35 +1238,36 @@ export default function AccountScreen({ navigation }) {
 
         {/* Expertise */}
         <View style={styles.sectionContainer}>
-          <View style={styles.tableContainer}>
-            <View style={styles.tableHeader}>
-              <View style={{ flex: 1.5, flexDirection: "row", alignItems: "center" }}>
-                <Text style={[styles.tableHeaderText, { fontSize: 16, fontWeight: "600" }]}>Expertise</Text>
-                <View style={[styles.questionCircle, { marginLeft: 4 }]}>
-                  <Text style={styles.questionMark}>?</Text>
-                </View>
-              </View>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Cost </Text>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Unit</Text>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Qty</Text>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Bounty</Text>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.sectionTitle}>Expertise</Text>
+            <View style={styles.questionCircle}>
+              <Text style={styles.questionMark}>?</Text>
             </View>
-            {expertiseLoading ? (
-              <Text style={styles.loadingText}>Loading expertise data...</Text>
-            ) : expertiseData.length > 0 ? (
-              expertiseData.map((item, idx) => (
+          </View>
+          {expertiseLoading ? (
+            <Text style={styles.loadingText}>Loading expertise data...</Text>
+          ) : expertiseData.length > 0 ? (
+            <View style={styles.tableContainer}>
+              <View style={styles.transactionHeaderRow}>
+                <Text style={[styles.transactionHeaderBusiness, { flex: 1.5 }]}>Expertise</Text>
+                <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Cost</Text>
+                <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Unit</Text>
+                <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Qty</Text>
+                <Text style={[styles.transactionHeaderAmount, { flex: 1, textAlign: 'right'}]}>Bounty</Text>
+              </View>
+              {expertiseData.map((item, idx) => (
                 <View key={idx} style={styles.tableRow}>
                   <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>{item.name}</Text>
-                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>${item.cost}</Text>
-                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>{item.unit}</Text>
-                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>{item.quantity || 0}</Text>
-                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>${item.bounty}</Text>
+                  <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
+                  <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
+                  <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.quantity || 0}</Text>
+                  <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: 'right', marginRight: 15 }]}>${item.bounty}</Text>
                 </View>
-              ))
-            ) : (
-              <Text style={styles.noDataText}>No expertise data available.</Text>
-            )}
-          </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.noDataText}>No expertise data available.</Text>
+          )}
         </View>
 
         {/* Transaction History */}
@@ -1370,7 +1371,7 @@ export default function AccountScreen({ navigation }) {
         {/* Business MiniCard */}
         <View style={styles.sectionContainer}>
           {selectedBusinessFullData && (
-            <View style={{ alignSelf: 'flex-start', maxWidth: '100%' }}>
+            <View>
               <MiniCard business={selectedBusinessFullData} />
             </View>
           )}
@@ -1384,7 +1385,6 @@ export default function AccountScreen({ navigation }) {
           ) : businessBountyData?.error ? (
             <Text style={styles.errorText}>Error: {businessBountyData.error}</Text>
           ) : businessBountyData?.data ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
               <View>
                 {/* Table Header */}
                 <View style={styles.businessBountyTableHeader}>
@@ -1432,7 +1432,6 @@ export default function AccountScreen({ navigation }) {
                   );
                 })}
               </View>
-            </ScrollView>
           ) : (
             <Text style={styles.noDataText}>No business bounty data available.</Text>
           )}
@@ -1455,7 +1454,6 @@ export default function AccountScreen({ navigation }) {
           {businessTransactionLoading ? (
             <Text style={styles.loadingText}>Loading business transaction data...</Text>
           ) : businessTransactionData.length > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
               <View style={styles.transactionsContainer}>
                 {/* Table Header */}
                 <View style={styles.businessTransactionHeaderRow}>
@@ -1544,7 +1542,6 @@ export default function AccountScreen({ navigation }) {
                   );
                 })}
               </View>
-            </ScrollView>
           ) : (
             <View>
               <Text style={styles.noDataText}>No business transaction data available.</Text>
@@ -1737,13 +1734,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 8,
     marginBottom: 2,
+    minWidth: 700, //ensures table stretches
+    width: '100%',
+    flex: 1,
   },
   businessBountyHeaderCell: {
-    width: 100,
+    //width: 100, // Keep fixed width for horizontal scroll
+    flex: 1,
     fontSize: 12,
     color: "#fff",
     fontWeight: "bold",
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     textAlign: 'center',
   },
   businessBountyTableRow: {
@@ -1752,12 +1753,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
+    width: '100%',
+    flex: 1,
   },
   businessBountyCell: {
-    width: 100,
-    fontSize: 11,
+    flex: 1,
+    fontSize: 10,
     color: "#333",
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     textAlign: 'center',
   },
   businessTransactionHeaderRow: {
@@ -1767,9 +1770,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 8,
     marginBottom: 2,
+    minWidth: 770, 
+    width: '100%',
+    flex: 1,
   },
   businessTransactionHeaderCell: {
-    width: 110,
+    //width: 110, 
+    flex: 1,
     fontSize: 12,
     color: "#fff",
     fontWeight: "bold",
@@ -1782,9 +1789,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
+    width: '100%',
+    flex: 1,
   },
   businessTransactionCell: {
-    width: 110,
+    //width: 110,
+    flex: 1,
     fontSize: 11,
     color: "#333",
     paddingHorizontal: 4,
@@ -1797,9 +1807,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 4,
     marginBottom: 2,
+    width: '100%',
+    flex: 1,
   },
   servicesHeaderCell: {
-    width: 100,
+    //width: 100,
+    flex: 1,
     fontSize: 11,
     color: "#fff",
     fontWeight: "bold",
@@ -1812,9 +1825,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: "#ddd",
+    width: '100%',
+    flex: 1,
   },
   servicesCell: {
-    width: 100,
+    //width: 100,
+    flex: 1,
     fontSize: 10,
     color: "#333",
     paddingHorizontal: 4,

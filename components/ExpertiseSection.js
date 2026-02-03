@@ -64,6 +64,19 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
     return { amount: cleaned, unit: "" };
   };
 
+  // Parse bounty (simpler than cost - no units)
+  const parseBounty = (bounty) => {
+    if (!bounty || bounty.trim() === "") {
+      return { amount: "", unit: "" };
+    }
+    if (bounty.toLowerCase() === "free") {
+      return { amount: "Free", unit: "" };
+    }
+    // Remove $ if present
+    const cleaned = bounty.replace(/\$/g, "").trim();
+    return { amount: cleaned, unit: "" };
+  };
+
   // Handle cost amount change
   const handleCostAmountChange = (index, value) => {
     const updated = [...expertise];
@@ -84,6 +97,13 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
         updated[index].cost = newAmount;
       }
     }
+    setExpertise(updated);
+  };
+
+  // Handle bounty change
+  const handleBountyAmountChange = (index, value) => {
+    const updated = [...expertise];
+    updated[index].bounty = value;
     setExpertise(updated);
   };
 
@@ -165,8 +185,21 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
                 // Use default keyboard if amount is "Free" or starts with non-numeric
                 return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "numeric";
               })()}
-              value={parseCost(item.cost).amount}
-              onChangeText={(text) => handleCostAmountChange(index, text)}
+              value={(() => {
+                const parsed = parseCost(item.cost);
+                const amount = parsed.amount;
+                // If amount is empty, return empty string
+                if (!amount) return "";
+                // If amount is "Free", return as is
+                if (amount.toLowerCase() === "free") return "Free";
+                // Otherwise add $ prefix
+                return `$${amount}`;
+              })()}
+              onChangeText={(text) => {
+                // Remove $ sign if user types it
+                const cleanedText = text.replace(/\$/g, "");
+                handleCostAmountChange(index, cleanedText);
+              }}
               onFocus={() => {
                 // if (onInputFocus && costInputRefs.current[index]) {
                 //   onInputFocus(costInputRefs.current[index]);
@@ -201,8 +234,21 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               style={styles.bountyInput}
               placeholder='Bounty'
               keyboardType='numeric'
-              value={item.bounty}
-              onChangeText={(text) => handleInputChange(index, "bounty", text.replace(/\$/g, ""))}
+              value={(() => {
+                const parsed = parseBounty(item.bounty);
+                const amount = parsed.amount;
+                // If amount is empty, return empty string
+                if (!amount) return "";
+                // If amount is "Free", return as is
+                if (amount.toLowerCase() === "free") return "Free";
+                // Otherwise add $ prefix
+                return `$${amount}`;
+              })()}
+              onChangeText={(text) => {
+                // Remove $ sign if user types it
+                const cleanedText = text.replace(/\$/g, "");
+                handleBountyAmountChange(index, cleanedText);
+              }}
             />
             <TouchableOpacity onPress={() => deleteExpertise(index)}>
               <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />

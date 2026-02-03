@@ -145,68 +145,51 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
             scrollEnabled={false}
           />
 
+          {/* Cost Row */}
           <View style={styles.amountRow}>
-            <Text style={styles.dollar}>💰</Text>
+            <Text style={styles.costLabel}>Cost</Text>
+            <TextInput
+              style={styles.costInput}
+              placeholder="Cost"
+              placeholderTextColor="#999999"
+              value={item.cost ? `$${item.cost}` : ""}
+              onChangeText={(text) => {
+                // Remove $ sign if user types it
+                const cleanedText = text.replace(/\$/g, "");
+                handleInputChange(index, 'cost', cleanedText);
+              }}
+              keyboardType="numeric"
+            />
+  
+            <Text style={styles.bountyLabel}>💰</Text>
             <TextInput
               ref={(ref) => {
                 if (ref) bountyInputRefs.current[index] = ref;
               }}
-              style={styles.bountyAmountInput}
+              style={styles.bountyInput}
               placeholder='Amount or Free'
               keyboardType={(() => {
                 const parsed = parseBounty(item.amount);
                 const amount = parsed.amount;
-                // Use default keyboard if amount is "Free" or starts with non-numeric
                 return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "numeric";
               })()}
-              value={parseBounty(item.amount).amount}
-              onChangeText={(text) => handleBountyAmountChange(index, text)}
-              onFocus={() => {
-                // if (onInputFocus && bountyInputRefs.current[index]) {
-                //   onInputFocus(bountyInputRefs.current[index]);
-                // }
+              value={(() => {
+                const parsed = parseBounty(item.amount);
+                const amount = parsed.amount;
+                // If amount is empty, return empty string
+                if (!amount) return "";
+                // If amount is "Free", return as is
+                if (amount.toLowerCase() === "free") return "Free";
+                // Otherwise add $ prefix
+                return `$${amount}`;
+              })()}
+              onChangeText={(text) => {
+                // Remove $ sign if user types it
+                const cleanedText = text.replace(/\$/g, "");
+                handleBountyAmountChange(index, cleanedText);
               }}
             />
-            {(() => {
-              const parsed = parseBounty(item.amount);
-              const amount = parsed.amount;
-              // Only show dropdown if amount is numeric (contains at least one digit)
-              const isNumeric = amount && /^\d/.test(amount.trim());
-              return (
-                isNumeric && (
-                  <Dropdown
-                    style={[
-                      styles.bountyUnitDropdown,
-                      Platform.OS === "web" && {
-                        shadowColor: undefined,
-                        shadowOffset: undefined,
-                        shadowOpacity: undefined,
-                        shadowRadius: undefined,
-                      },
-                    ]}
-                    data={bountyUnitOptions}
-                    labelField='label'
-                    valueField='value'
-                    placeholder='Select unit'
-                    value={parsed.unit}
-                    onChange={(item) => handleBountyUnitChange(index, item)}
-                    containerStyle={[
-                      styles.dropdownContainer,
-                      Platform.OS === "web" && {
-                        boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.1)",
-                        shadowColor: undefined,
-                        shadowOffset: undefined,
-                        shadowOpacity: undefined,
-                        shadowRadius: undefined,
-                      },
-                    ]}
-                    itemTextStyle={styles.dropdownItemText}
-                    selectedTextStyle={styles.dropdownSelectedText}
-                    activeColor='#f0f0f0'
-                  />
-                )
-              );
-            })()}
+            
             <TouchableOpacity onPress={() => deleteWish(index)}>
               <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
             </TouchableOpacity>
@@ -326,6 +309,36 @@ const styles = StyleSheet.create({
   deleteIcon: { width: 20, height: 20 },
   cardSpacing: {
     marginTop: 16,
+  },
+  costLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+    marginRight: 8,
+  },
+  costInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    flex: 1,
+    marginRight: 12,
+    height: 40,
+  },
+  bountyLabel: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  bountyInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    flex: 1,
+    marginRight: 8,
+    height: 40,
+    textAlignVertical: "center",
   },
 });
 

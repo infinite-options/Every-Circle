@@ -102,6 +102,7 @@ const EditProfileScreen = ({ route, navigation }) => {
       helpNeeds: e.helpNeeds || e.profile_wish_title || "",
       details: e.details || e.profile_wish_description || "",
       amount: e.amount || e.profile_wish_bounty || "",
+      cost: e.cost || e.profile_wish_cost || "",
       isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_wish_is_public === 1,
     })) || [{ helpNeeds: "", details: "", amount: "", isPublic: true }],
     facebook: user?.facebook || "",
@@ -396,6 +397,7 @@ const EditProfileScreen = ({ route, navigation }) => {
       console.log("EditProfileScreen - Sending businessIsPublic:", formData.businessIsPublic);
       console.log("EditProfileScreen - As value:", formData.businessIsPublic ? 1 : 0);
       payload.append("profile_personal_image_is_public", formData.imageIsPublic ? 1 : 0);
+      payload.append("wishes_info", JSON.stringify(formData.wishes || []));
 
       // Map experience data to backend field names - using frontend field names for consistency
       const experiencePayload = (formData.experience || [])
