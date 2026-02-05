@@ -6,6 +6,7 @@ import { useRoute } from "@react-navigation/native";
 import { CommonActions } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import FeedbackPopup from "../components/FeedbackPopup";
+import HowItWorksScreen from "./HowItWorksScreen";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -310,6 +311,17 @@ export default function SettingsScreen() {
             <View style={styles.itemLabel}>
               <MaterialIcons name='lock' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
               <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* How It Works */}
+          <TouchableOpacity 
+            style={[styles.settingItem, darkMode && styles.darkSettingItem]} 
+            onPress={() => navigation.navigate("HowItWorksScreen")}
+          >
+            <View style={styles.itemLabel}>
+              <MaterialIcons name='help-outline' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+              <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How It Works</Text>
             </View>
           </TouchableOpacity>
 

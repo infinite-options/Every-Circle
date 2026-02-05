@@ -1,6 +1,6 @@
 //EditProfileScreen.js
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Modal, ActivityIndicator, Keyboard, UIManager, findNodeHandle, Platform } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Modal, ActivityIndicator, Keyboard, UIManager, findNodeHandle, Platform,  BackHandler  } from "react-native";
 import axios from "axios";
 import MiniCard from "../components/MiniCard";
 import BottomNavBar from "../components/BottomNavBar";
@@ -37,9 +37,17 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [webImageFile, setWebImageFile] = useState(null); // Store the actual File object for web uploads
   // const [pendingPicker, setPendingPicker] = useState(null);
 
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false);
+
   useEffect(() => {
     // This useEffect is only used to log the screen being mounted
     console.log("EditProfileScreen - Screen Mounted");
+  }, []);
+
+  // Add this at the very top of EditProfileScreen component (around line 19, right after the route params)
+  useEffect(() => {
+    console.log("=== RAW USER DATA FROM BACKEND ===");
+    console.log("user?.wishes:", JSON.stringify(user?.wishes, null, 2));
   }, []);
 
   const [formData, setFormData] = useState({
@@ -104,12 +112,14 @@ const EditProfileScreen = ({ route, navigation }) => {
       amount: e.amount || e.profile_wish_bounty || "",
       cost: e.cost || e.profile_wish_cost || "",
       isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_wish_is_public === 1,
-    })) || [{ helpNeeds: "", details: "", amount: "", isPublic: true }],
+    })) || [{ helpNeeds: "", details: "", amount: "", cost: "", isPublic: true }],
     facebook: user?.facebook || "",
     twitter: user?.twitter || "",
     linkedin: user?.linkedin || "",
     youtube: user?.youtube || "",
   });
+  // Add this right after the formData useState (around line 94)
+  console.log("Wishes data loaded:", JSON.stringify(formData.wishes, null, 2));
   // console.log("EditProfileScreen business_info:", formData.businesses);
 
   // Add state to track deleted items
@@ -762,9 +772,49 @@ const EditProfileScreen = ({ route, navigation }) => {
     };
   }, []);
 
+  // Handle back button press with unsaved changes warning
+  useEffect(() => {
+    const handleBackPress = () => {
+      if (isChanged) {
+        Alert.alert(
+          "Unsaved Changes",
+          "You have unsaved changes. Are you sure you want to go back?",
+          [
+            {
+              text: "No",
+              style: "cancel",
+            },
+            {
+              text: "Yes",
+              onPress: () => navigation.goBack(),
+            },
+          ]
+        );
+        return true; // Prevent default back action
+      }
+      return false; // Allow default back action
+    };
+
+    if (Platform.OS === 'android') {
+      BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+      return () => BackHandler.removeEventListener('hardwareBackPress', handleBackPress);
+    }
+  }, [isChanged, navigation]);
+
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}>
-      <AppHeader title='Edit Profile' {...getHeaderColors("editProfile")} onBackPress={() => navigation.goBack()} />
+      <AppHeader 
+        title='Edit Profile' 
+        {...getHeaderColors("editProfile")} 
+        onBackPress={() => {
+          console.log("Back button pressed, isChanged:", isChanged);
+          if (isChanged) {
+            setShowUnsavedChangesModal(true);
+          } else {
+            navigation.goBack();
+          }
+        }}
+      />
       <ScrollView
         ref={scrollViewRef}
         style={{ flex: 1, padding: 20, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}
@@ -912,6 +962,34 @@ const EditProfileScreen = ({ route, navigation }) => {
             >
               <Text style={[styles.modalButtonText, darkMode && styles.darkModalButtonText]}>Continue</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Unsaved Changes Modal */}
+      <Modal visible={showUnsavedChangesModal} transparent={true} animationType='fade' onRequestClose={() => setShowUnsavedChangesModal(false)}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", alignItems: "center" }}>
+          <View style={[styles.modalContainer, darkMode && styles.darkModalContainer]}>
+            <Text style={[styles.modalText, darkMode && styles.darkModalText]}>
+              You have unsaved changes. Are you sure you want to go back?
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: '#999' }]}
+                onPress={() => setShowUnsavedChangesModal(false)}
+              >
+                <Text style={[styles.modalButtonText, darkMode && styles.darkModalButtonText]}>No</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, darkMode && styles.darkModalButton]}
+                onPress={() => {
+                  setShowUnsavedChangesModal(false);
+                  navigation.goBack();
+                }}
+              >
+                <Text style={[styles.modalButtonText, darkMode && styles.darkModalButtonText]}>Yes</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

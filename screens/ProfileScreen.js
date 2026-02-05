@@ -247,6 +247,7 @@ const ProfileScreen = ({ route, navigation }) => {
             helpNeeds: wish.profile_wish_title || "",
             details: wish.profile_wish_description || "",
             amount: wish.profile_wish_bounty || "",
+            cost: wish.profile_wish_cost || "",
             isPublic: wish.profile_wish_is_public === 1 || wish.isPublic === true,
             wish_responses: wish.wish_responses || 0,
           }))
@@ -1167,19 +1168,21 @@ const ProfileScreen = ({ route, navigation }) => {
                         {sanitizeText(exp.name) ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(exp.name)}</Text> : null}
                         {sanitizeText(exp.description) ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(exp.description)}</Text> : null}
                         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          {exp.cost && (
-                            <View style={{ flexDirection: "row", alignItems: "center" }}>
-                              <View style={styles.moneyBagIconContainer}>
-                                <Text style={styles.moneyBagDollarSymbol}>$</Text>
-                              </View>
-                              <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{exp.cost.toLowerCase() !== "free" ? `Cost: ${exp.cost}` : `Cost: ${exp.cost}`}</Text>
-                            </View>
-                          )}
-                          {exp.bounty && (
-                            <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
-                              {exp.bounty.toLowerCase() !== "free" ? `💰 $${exp.bounty}` : `💰 ${exp.bounty}`}
-                            </Text>
-                          )}
+  {exp.cost && (
+    <View style={{ flexDirection: "row", alignItems: "center" }}>
+      <View style={styles.moneyBagIconContainer}>
+        <Text style={styles.moneyBagDollarSymbol}>$</Text>
+      </View>
+      <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
+        {exp.cost.toLowerCase() !== "free" ? `Cost: $${exp.cost.replace(/^\$/, '')}` : `Cost: ${exp.cost}`}
+      </Text>
+    </View>
+  )}
+  {exp.bounty && (
+    <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
+      {exp.bounty.toLowerCase() !== "free" ? `💰 $${exp.bounty.replace(/^\$/, '')}` : `💰 ${exp.bounty}`}
+    </Text>
+  )}
                         </View>
                       </View>
                     );
@@ -1264,6 +1267,7 @@ const ProfileScreen = ({ route, navigation }) => {
                                 title: wish.helpNeeds,
                                 description: wish.details,
                                 bounty: wish.amount,
+                                cost: wish.cost,
                               };
                               // Prepare profile data
                               const profileDataForNavigation = {
@@ -1299,8 +1303,22 @@ const ProfileScreen = ({ route, navigation }) => {
                         )}
                         <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{wish.helpNeeds || ""}</Text>
                         <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{wish.details || ""}</Text>
-                        <View style={{ flexDirection: "row", justifyContent: "flex-end", alignItems: "center" }}>
-                          <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>{wish.amount ? `💰 $${wish.amount}` : ""}</Text>
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                          {wish.cost && (
+                            <View style={{ flexDirection: "row", alignItems: "center" }}>
+                              <View style={styles.moneyBagIconContainer}>
+                                <Text style={styles.moneyBagDollarSymbol}>$</Text>
+                              </View>
+                              <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
+                                {wish.cost.toLowerCase() !== "free" ? `Cost: $${wish.cost.replace(/^\$/, '')}` : `Cost: ${wish.cost}`}
+                              </Text>
+                            </View>
+                          )}
+                          {wish.amount && (
+                            <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
+                              {wish.amount.toLowerCase() !== "free" ? `💰 $${wish.amount.replace(/^\$/, '')}` : `💰 ${wish.amount}`}
+                            </Text>
+                          )}
                         </View>
                       </View>
                     );
@@ -1319,6 +1337,7 @@ const ProfileScreen = ({ route, navigation }) => {
                               title: wish.helpNeeds,
                               description: wish.details,
                               bounty: wish.amount,
+                              cost: wish.cost,
                             };
                             // Prepare profile data
                             const profileData = {

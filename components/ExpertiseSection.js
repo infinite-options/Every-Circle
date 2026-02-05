@@ -171,88 +171,64 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
             scrollEnabled={false}
           />
 
+          {/* Cost Row */}
           <View style={styles.amountRow}>
-            <Text style={styles.costLabel}>Cost</Text>
-            <TextInput
-              ref={(ref) => {
-                if (ref) costInputRefs.current[index] = ref;
-              }}
-              style={styles.costAmountInput}
-              placeholder='100 or Free'
-              keyboardType={(() => {
-                const parsed = parseCost(item.cost);
-                const amount = parsed.amount;
-                // Use default keyboard if amount is "Free" or starts with non-numeric
-                return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "numeric";
-              })()}
-              value={(() => {
-                const parsed = parseCost(item.cost);
-                const amount = parsed.amount;
-                // If amount is empty, return empty string
-                if (!amount) return "";
-                // If amount is "Free", return as is
-                if (amount.toLowerCase() === "free") return "Free";
-                // Otherwise add $ prefix
-                return `$${amount}`;
-              })()}
-              onChangeText={(text) => {
-                // Remove $ sign if user types it
-                const cleanedText = text.replace(/\$/g, "");
-                handleCostAmountChange(index, cleanedText);
-              }}
-              onFocus={() => {
-                // if (onInputFocus && costInputRefs.current[index]) {
-                //   onInputFocus(costInputRefs.current[index]);
-                // }
-              }}
-            />
-            {(() => {
-              const parsed = parseCost(item.cost);
-              const amount = parsed.amount;
-              // Only show dropdown if amount is numeric (contains at least one digit)
-              const isNumeric = amount && /^\d/.test(amount.trim());
-              return (
-                isNumeric && (
-                  <Dropdown
-                    style={styles.costUnitDropdown}
-                    data={costUnitOptions}
-                    labelField='label'
-                    valueField='value'
-                    placeholder='Select unit'
-                    value={parsed.unit}
-                    onChange={(item) => handleCostUnitChange(index, item)}
-                    containerStyle={styles.dropdownContainer}
-                    itemTextStyle={styles.dropdownItemText}
-                    selectedTextStyle={styles.dropdownSelectedText}
-                    activeColor='#f0f0f0'
-                  />
-                )
-              );
-            })()}
-            <Text style={styles.dollar}>💰</Text>
-            <TextInput
-              style={styles.bountyInput}
-              placeholder='Bounty'
-              keyboardType='numeric'
-              value={(() => {
-                const parsed = parseBounty(item.bounty);
-                const amount = parsed.amount;
-                // If amount is empty, return empty string
-                if (!amount) return "";
-                // If amount is "Free", return as is
-                if (amount.toLowerCase() === "free") return "Free";
-                // Otherwise add $ prefix
-                return `$${amount}`;
-              })()}
-              onChangeText={(text) => {
-                // Remove $ sign if user types it
-                const cleanedText = text.replace(/\$/g, "");
-                handleBountyAmountChange(index, cleanedText);
-              }}
-            />
-            <TouchableOpacity onPress={() => deleteExpertise(index)}>
-              <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
-            </TouchableOpacity>
+  <Text style={styles.costLabel}>Cost</Text>
+  <TextInput
+    ref={(ref) => {
+      if (ref) costInputRefs.current[index] = ref;
+    }}
+    style={styles.costAmountInput}
+    keyboardType={(() => {
+      const parsed = parseCost(item.cost);
+      const amount = parsed.amount;
+      return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "numeric";
+    })()}
+    value={(() => {
+      const parsed = parseCost(item.cost);
+      const amount = parsed.amount;
+      if (!amount) return "";
+      if (amount.toLowerCase() === "free") return "Free";
+      return `$${amount}`;
+    })()}
+    onChangeText={(text) => {
+      const cleanedText = text.replace(/\$/g, "");
+      handleCostAmountChange(index, cleanedText);
+    }}
+  />
+  <Dropdown
+    style={styles.costUnitDropdown}
+    data={costUnitOptions}
+    labelField='label'
+    valueField='value'
+    placeholder='Select unit'
+    value={parseCost(item.cost).unit}
+    onChange={(item) => handleCostUnitChange(index, item)}
+    containerStyle={styles.dropdownContainer}
+    itemTextStyle={styles.dropdownItemText}
+    selectedTextStyle={styles.dropdownSelectedText}
+    activeColor='#f0f0f0'
+  />
+  <Text style={styles.dollar}>💰</Text>
+  <TextInput
+    style={styles.bountyInput}
+    placeholder='Bounty'
+    keyboardType='numeric'
+    value={(() => {
+      const parsed = parseBounty(item.bounty);
+      const amount = parsed.amount;
+      if (!amount) return "";
+      if (amount.toLowerCase() === "free") return "Free";
+      return `$${amount}`;
+    })()}
+    onChangeText={(text) => {
+      const cleanedText = text.replace(/\$/g, "");
+      handleBountyAmountChange(index, cleanedText);
+    }}
+  />
+  <TouchableOpacity onPress={() => deleteExpertise(index)}>
+    <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
+  </TouchableOpacity>
           </View>
         </View>
       ))}

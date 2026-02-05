@@ -406,6 +406,36 @@ export default function AccountScreen({ navigation }) {
 
       console.log(`Fetching transactions for business: ${targetBusinessUID}`);
       
+      // First, fetch the business bounty data which has bs_bounty and ti_bs_qty
+      let bountyDataByTransaction = {};
+      try {
+        const bountyResponse = await fetch(`${BUSINESS_BOUNTY_RESULTS_ENDPOINT}/${targetBusinessUID}`);
+        if (bountyResponse.ok) {
+          const bountyResult = await bountyResponse.json();
+          console.log("Business bounty result:", bountyResult);
+          
+          if (bountyResult && bountyResult.data && Array.isArray(bountyResult.data)) {
+            // Group by transaction_uid and sum bounty_paid
+            bountyResult.data.forEach(item => {
+              const txnId = item.transaction_uid;
+              if (!bountyDataByTransaction[txnId]) {
+                bountyDataByTransaction[txnId] = {
+                  total_bounty: 0,
+                  items: []
+                };
+              }
+              // bounty_paid is already calculated as bs_bounty * ti_bs_qty in the API
+              const bountyPaid = parseFloat(item.bounty_paid) || 0;
+              bountyDataByTransaction[txnId].total_bounty += bountyPaid;
+              bountyDataByTransaction[txnId].items.push(item);
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching bounty data:", error);
+      }
+
+      // Now fetch transaction data
       const businessTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${targetBusinessUID}`;
       const response = await fetch(businessTransactionsUrl, {
         method: "GET",
@@ -446,37 +476,16 @@ export default function AccountScreen({ navigation }) {
                             "Unknown Business";
         });
 
-        // Fetch bounty data for each transaction
-        const bountyPromises = businessTransactions.map(async (txn) => {
-          try {
-            const bountyResponse = await fetch(`${BUSINESS_BOUNTY_RESULTS_ENDPOINT}/${targetBusinessUID}`);
-            if (bountyResponse.ok) {
-              const bountyResult = await bountyResponse.json();
-              if (bountyResult && bountyResult.data) {
-                const transactionBounty = bountyResult.data.find(
-                  b => b.transaction_uid === txn.transaction_uid
-                );
-                if (transactionBounty) {
-                  txn.bounty_paid = parseFloat(transactionBounty.bounty_earned) || 0;
-                }
-              }
-            }
-          } catch (error) {
-            console.error(`Error fetching bounty for transaction ${txn.transaction_uid}:`, error);
-          }
-          return txn;
-        });
-
-        const transactionsWithBounty = await Promise.all(bountyPromises);
-
-        // Remove duplicates and group by transaction_uid
+        // Group by transaction_uid
         const transactionMap = {};
-        transactionsWithBounty.forEach(item => {
+        businessTransactions.forEach(item => {
           const txnId = item.transaction_uid;
+          
           if (!transactionMap[txnId]) {
             const total = parseFloat(item.transaction_total || 0);
             const taxes = parseFloat(item.transaction_taxes || 0);
-            const bounty = item.bounty_paid || 0;
+            // Get bounty from bountyDataByTransaction
+            const bounty = bountyDataByTransaction[txnId]?.total_bounty || 0;
             const netEarning = total - bounty - taxes;
 
             transactionMap[txnId] = {
@@ -501,6 +510,7 @@ export default function AccountScreen({ navigation }) {
         });
 
         console.log(`Total business transactions found: ${filteredTransactions.length}`);
+        console.log("Sample transaction with bounty:", filteredTransactions[0]);
         setBusinessTransactionData(filteredTransactions);
       }
       
