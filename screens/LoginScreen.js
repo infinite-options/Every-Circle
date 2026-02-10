@@ -79,8 +79,8 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
   const [passwordError, setPasswordError] = useState("");
 
   const validateInputs = (email, password) => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const isEmailValid = emailRegex.test(email);
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{3,}$/;
+    const isEmailValid = email.trim() !== '' && emailRegex.test(email);
     const isPasswordValid = password.length >= 6;
     setIsValid(isEmailValid && isPasswordValid);
   };

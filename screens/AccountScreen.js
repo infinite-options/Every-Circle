@@ -853,14 +853,27 @@ export default function AccountScreen({ navigation }) {
   const xPositions = chartData.dates.map((_, index) => paddingLeft + index * xStep);
 
   // Generate left Y-axis ticks (linear)
-  const leftTicks = 6;
+  // const leftTicks = 6;
+  // const leftTickValues = [];
+  // for (let i = 0; i <= leftTicks; i++) {
+  //   leftTickValues.push((chartData.maxDaily / leftTicks) * i);
+  // }
+
+  // Generate left Y-axis ticks (increment by $1.50)
   const leftTickValues = [];
-  for (let i = 0; i <= leftTicks; i++) {
-    leftTickValues.push((chartData.maxDaily / leftTicks) * i);
+  const increment = 1.50;
+  const maxTicks = Math.ceil(chartData.maxDaily / increment);
+  for (let i = 0; i <= maxTicks; i++) {
+    leftTickValues.push(increment * i);
   }
 
   // Generate right Y-axis ticks (linear)
-  const rightTickValues = generateLinearTicks(chartData.maxCumulative, 6);
+  const rightTickValues = [];
+  const rightIncrement = 1.50;
+  const maxRightTicks = Math.ceil(chartData.maxCumulative / rightIncrement);
+  for (let i = 0; i <= maxRightTicks; i++) {
+    rightTickValues.push(rightIncrement * i);
+  }
 
   // Build path strings for lines
   const buildPath = (positions) => {
