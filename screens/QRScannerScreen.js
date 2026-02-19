@@ -68,12 +68,19 @@ export default function QRScannerScreen({ route }) {
       }
 
       if (parsed?.profile_uid) {
+        console.log("📋 QRScannerScreen - Parsed QR code data:", JSON.stringify(parsed, null, 2));
+        console.log("📡 QRScannerScreen - Ably channel name from QR:", parsed.ably_channel_name);
+        
         if (onScanComplete) {
           onScanComplete(parsed);
           navigation.goBack();
         } else {
           // Navigate to NewConnection (not Connect) to pass form_switch_enabled and ably_channel_name
-          console.log("📡 QRScannerScreen - Passing Ably channel name to NewConnection:", parsed.ably_channel_name);
+          console.log("📡 QRScannerScreen - Navigating to NewConnection with:");
+          console.log("   profile_uid:", parsed.profile_uid);
+          console.log("   form_switch_enabled:", parsed.form_switch_enabled || false);
+          console.log("   ably_channel_name:", parsed.ably_channel_name || null);
+          
           navigation.navigate("NewConnection", {
             profile_uid: parsed.profile_uid,
             form_switch_enabled: parsed.form_switch_enabled || false,
