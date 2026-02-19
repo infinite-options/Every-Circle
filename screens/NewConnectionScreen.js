@@ -394,48 +394,62 @@ const NewConnectionScreen = () => {
   // Send Ably message to User 1 with User 2's profile info
   const sendAblyConnectionRequest = async () => {
     try {
+      console.log("📤 Ably: Starting to send connection request...");
+      console.log("📤 Ably: Form switch enabled:", formSwitchEnabled);
+      console.log("📤 Ably: Profile UID (User 1):", profileUid);
+      
       // Dynamically import Ably
       let Ably;
       try {
         Ably = require("ably");
+        console.log("📤 Ably: Module loaded successfully");
       } catch (e) {
-        console.warn("Ably not installed. Skipping Ably message.");
+        console.warn("❌ Ably: Module not installed. Skipping Ably message.", e);
         return;
       }
 
       const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
       if (!ablyApiKey) {
-        console.warn("Ably API key not configured. Skipping Ably message.");
+        console.warn("❌ Ably: API key not configured. Skipping Ably message.");
         return;
       }
+      console.log("📤 Ably: API key found (length:", ablyApiKey.length, ")");
 
       // Get User 1's profile to find their user_uid for the channel
+      console.log("📤 Ably: Fetching User 1's profile...");
       const user1ProfileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
       if (!user1ProfileResponse.ok) {
-        console.warn("Could not fetch User 1's profile for Ably message.");
+        console.warn("❌ Ably: Could not fetch User 1's profile. Status:", user1ProfileResponse.status);
         return;
       }
       const user1Profile = await user1ProfileResponse.json();
+      console.log("📤 Ably: User 1 profile fetched:", JSON.stringify(user1Profile, null, 2));
+      
       const user1Uid = user1Profile?.user_uid || user1Profile?.user?.user_uid;
+      console.log("📤 Ably: User 1's user_uid:", user1Uid);
 
       if (!user1Uid) {
-        console.warn("User 1's user_uid not found. Skipping Ably message.");
+        console.warn("❌ Ably: User 1's user_uid not found in profile. Profile keys:", Object.keys(user1Profile));
         return;
       }
 
       // Get User 2's (logged in user's) profile info
       const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
       if (!loggedInProfileUID) {
-        console.warn("Logged in user profile UID not found. Skipping Ably message.");
+        console.warn("❌ Ably: Logged in user profile UID not found.");
         return;
       }
+      console.log("📤 Ably: User 2's profile_uid:", loggedInProfileUID);
 
+      console.log("📤 Ably: Fetching User 2's profile...");
       const user2ProfileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${loggedInProfileUID}`);
       if (!user2ProfileResponse.ok) {
-        console.warn("Could not fetch User 2's profile for Ably message.");
+        console.warn("❌ Ably: Could not fetch User 2's profile. Status:", user2ProfileResponse.status);
         return;
       }
       const user2Profile = await user2ProfileResponse.json();
+      console.log("📤 Ably: User 2 profile fetched");
+      
       const p2 = user2Profile?.personal_info || {};
 
       // Extract public miniCard information for User 2
@@ -462,18 +476,58 @@ const NewConnectionScreen = () => {
         locationIsPublic: locationIsPublic2,
       };
 
+      console.log("📤 Ably: User 2 public data to send:", JSON.stringify(user2PublicData, null, 2));
+
       // Create Ably client and send message
+      console.log("📤 Ably: Creating Realtime client...");
       const client = new Ably.Realtime({ key: ablyApiKey });
+      
       const channelName = `profile:${user1Uid}`;
+      console.log("📤 Ably: Channel name:", channelName);
       const channel = client.channels.get(channelName);
 
-      await channel.publish("connection-request", user2PublicData);
-      console.log("✅ Ably message sent to User 1:", channelName);
+      // Wait for connection to be ready
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error("Ably connection timeout"));
+        }, 10000);
 
-      // Close Ably connection
-      client.close();
+        client.connection.on("connected", () => {
+          clearTimeout(timeout);
+          console.log("✅ Ably: Client connected, ready to publish");
+          resolve();
+        });
+
+        client.connection.on("failed", (stateChange) => {
+          clearTimeout(timeout);
+          console.error("❌ Ably: Connection failed:", stateChange);
+          reject(new Error("Ably connection failed"));
+        });
+
+        // If already connected, resolve immediately
+        if (client.connection.state === "connected") {
+          clearTimeout(timeout);
+          resolve();
+        }
+      });
+
+      console.log("📤 Ably: Publishing message to channel:", channelName);
+      console.log("📤 Ably: Message event name: connection-request");
+      console.log("📤 Ably: Message data:", JSON.stringify(user2PublicData, null, 2));
+      
+      await channel.publish("connection-request", user2PublicData);
+      
+      console.log("✅ Ably: Message published successfully to channel:", channelName);
+      console.log("✅ Ably: Response - Message sent to User 1");
+
+      // Close Ably connection after a short delay to ensure message is sent
+      setTimeout(() => {
+        client.close();
+        console.log("📤 Ably: Client closed");
+      }, 1000);
     } catch (error) {
-      console.error("Error sending Ably message:", error);
+      console.error("❌ Ably: Error sending message:", error);
+      console.error("❌ Ably: Error stack:", error.stack);
       // Don't show error to user - this is a background operation
     }
   };

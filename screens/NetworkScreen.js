@@ -495,41 +495,94 @@ const NetworkScreen = ({ navigation }) => {
 
   // Initialize Ably and set up listener when profileUid is available
   useEffect(() => {
-    if (!profileUid) return;
+    if (!profileUid) {
+      console.log("🔵 Ably: No profileUid, skipping initialization");
+      return;
+    }
 
     const initializeAbly = async () => {
       try {
+        console.log("🔵 Ably: Starting initialization for profileUid:", profileUid);
+        
         // Dynamically import Ably to handle cases where it's not installed
         let Ably;
         try {
           Ably = require("ably");
+          console.log("🔵 Ably: Module loaded successfully");
         } catch (e) {
-          console.warn("Ably not installed. Please run: npm install ably");
+          console.warn("❌ Ably: Module not installed. Please run: npm install ably", e);
           return;
         }
 
         // Get Ably API key from environment or use a default
-        // You'll need to add EXPO_PUBLIC_ABLY_API_KEY to your .env file
         const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
         
         if (!ablyApiKey) {
-          console.warn("Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
+          console.warn("❌ Ably: API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
+          return;
+        }
+        console.log("🔵 Ably: API key found (length:", ablyApiKey.length, ")");
+
+        // Fetch user profile to get user_uid (the 110 number) for channel name
+        let userUid = null;
+        try {
+          const userUidFromStorage = await AsyncStorage.getItem("user_uid");
+          if (userUidFromStorage) {
+            userUid = String(userUidFromStorage).trim();
+            console.log("🔵 Ably: Got user_uid from AsyncStorage:", userUid);
+          } else {
+            // Fallback: fetch from API
+            const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
+            if (profileResponse.ok) {
+              const profileData = await profileResponse.json();
+              userUid = profileData?.user_uid || profileData?.user?.user_uid;
+              console.log("🔵 Ably: Got user_uid from API:", userUid);
+            }
+          }
+        } catch (e) {
+          console.error("❌ Ably: Error fetching user_uid:", e);
+        }
+
+        if (!userUid) {
+          console.warn("❌ Ably: user_uid not found. Cannot create channel.");
           return;
         }
 
         // Create Ably client
+        console.log("🔵 Ably: Creating Realtime client...");
         const client = new Ably.Realtime({ key: ablyApiKey });
         setAblyClient(client);
 
-        // Create channel name based on profile_uid
-        const channelName = `profile:${profileUid}`;
+        // Create channel name based on user_uid (to match NewConnectionScreen)
+        const channelName = `profile:${userUid}`;
+        console.log("🔵 Ably: Channel name:", channelName);
         const channel = client.channels.get(channelName);
         setAblyChannel(channel);
 
+        // Wait for connection to be ready
+        client.connection.on("connected", () => {
+          console.log("✅ Ably: Client connected");
+        });
+
+        client.connection.on("failed", () => {
+          console.error("❌ Ably: Connection failed");
+        });
+
         // Subscribe to connection messages
         channel.subscribe("connection-request", (message) => {
-          console.log("📨 Received Ably message:", message.data);
+          console.log("📨 Ably: Received connection-request message");
+          console.log("📨 Ably: Message data:", JSON.stringify(message.data, null, 2));
+          console.log("📨 Ably: Message name:", message.name);
+          console.log("📨 Ably: Full message:", JSON.stringify(message, null, 2));
+          
           const connectionData = message.data;
+          
+          if (!connectionData || !connectionData.profile_uid) {
+            console.error("❌ Ably: Invalid connection data received:", connectionData);
+            return;
+          }
+          
+          console.log("✅ Ably: Valid connection data, showing form modal");
           
           // Set received connection data and show form modal
           setReceivedConnectionData(connectionData);
@@ -544,9 +597,11 @@ const NetworkScreen = ({ navigation }) => {
           fetchReceivedConnectionLocation();
         });
 
-        console.log("✅ Ably initialized and listening on channel:", channelName);
+        console.log("✅ Ably: Initialized and listening on channel:", channelName);
+        console.log("✅ Ably: Waiting for connection-request messages...");
       } catch (error) {
-        console.error("Error initializing Ably:", error);
+        console.error("❌ Ably: Error initializing:", error);
+        console.error("❌ Ably: Error stack:", error.stack);
       }
     };
 
@@ -554,11 +609,14 @@ const NetworkScreen = ({ navigation }) => {
 
     // Cleanup on unmount
     return () => {
+      console.log("🔵 Ably: Cleaning up...");
       if (ablyChannel) {
         ablyChannel.unsubscribe();
+        console.log("🔵 Ably: Unsubscribed from channel");
       }
       if (ablyClient) {
         ablyClient.close();
+        console.log("🔵 Ably: Client closed");
       }
     };
   }, [profileUid]);
