@@ -184,29 +184,50 @@ const NewConnectionScreen = () => {
   // Check for form_switch_enabled and ably_channel_name in route params (from QR code)
   useEffect(() => {
     console.log("🔵 NewConnectionScreen - Route params changed:", route.params);
+    console.log("🔵 NewConnectionScreen - Route params type:", typeof route.params);
+    console.log("🔵 NewConnectionScreen - Route params keys:", route.params ? Object.keys(route.params) : "null");
     
+    // Check route params
     if (route.params?.form_switch_enabled !== undefined) {
       setFormSwitchEnabled(route.params.form_switch_enabled);
       console.log("✅ NewConnectionScreen - Form switch enabled set to:", route.params.form_switch_enabled);
     }
     
-    // Store Ably channel name for display
-    if (route.params?.ably_channel_name) {
-      setAblyChannelName(route.params.ably_channel_name);
-      console.log("📡 NewConnectionScreen - Ably channel name set for display:", route.params.ably_channel_name);
+    // Store Ably channel name for display - check both route.params and direct access
+    const channelNameFromParams = route.params?.ably_channel_name;
+    console.log("📡 NewConnectionScreen - Channel name from route.params:", channelNameFromParams);
+    console.log("📡 NewConnectionScreen - Channel name type:", typeof channelNameFromParams);
+    console.log("📡 NewConnectionScreen - Channel name truthy check:", !!channelNameFromParams);
+    
+    if (channelNameFromParams) {
+      setAblyChannelName(channelNameFromParams);
+      console.log("✅ NewConnectionScreen - Ably channel name set for display:", channelNameFromParams);
+    } else {
+      console.warn("⚠️ NewConnectionScreen - No ably_channel_name in route.params");
+      // Also check if it might be in the URL (for web)
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlChannelName = urlParams.get("ably_channel_name");
+        console.log("📡 NewConnectionScreen - Checking URL params for channel name:", urlChannelName);
+        if (urlChannelName) {
+          setAblyChannelName(urlChannelName);
+          console.log("✅ NewConnectionScreen - Ably channel name set from URL:", urlChannelName);
+        }
+      }
     }
     
     // If we have an Ably channel name from QR code, send "QR code was scanned" message
-    if (route.params?.ably_channel_name && profileUid) {
-      console.log("📡 NewConnectionScreen - Detected Ably channel name from QR code:", route.params.ably_channel_name);
+    const channelNameToUse = channelNameFromParams || (Platform.OS === "web" && typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("ably_channel_name") : null);
+    if (channelNameToUse && profileUid) {
+      console.log("📡 NewConnectionScreen - Detected Ably channel name from QR code:", channelNameToUse);
       console.log("📡 NewConnectionScreen - Profile UID available:", profileUid);
-      sendQRCodeScannedMessage(route.params.ably_channel_name).catch((error) => {
+      sendQRCodeScannedMessage(channelNameToUse).catch((error) => {
         console.error("❌ NewConnectionScreen - Failed to send QR code scanned message:", error);
       });
     } else {
-      if (!route.params?.ably_channel_name) {
-        console.warn("⚠️ NewConnectionScreen - No ably_channel_name in route params");
-        console.log("📋 NewConnectionScreen - Route params:", JSON.stringify(route.params, null, 2));
+      if (!channelNameToUse) {
+        console.warn("⚠️ NewConnectionScreen - No ably_channel_name found in route params or URL");
+        console.log("📋 NewConnectionScreen - Full route.params:", JSON.stringify(route.params, null, 2));
       }
       if (!profileUid) {
         console.warn("⚠️ NewConnectionScreen - No profileUid available yet");
@@ -844,9 +865,17 @@ const NewConnectionScreen = () => {
                       )}
                     </>
                   ) : (
-                    <Text style={[styles.ablyLabel, darkMode && styles.darkAblyLabel]}>
-                      ⚠️ No Ably Channel Name in QR Code
-                    </Text>
+                    <>
+                      <Text style={[styles.ablyLabel, darkMode && styles.darkAblyLabel]}>
+                        ⚠️ No Ably Channel Name in QR Code
+                      </Text>
+                      <Text style={[styles.ablyInfoText, darkMode && styles.darkAblyInfoText]}>
+                        Debug: route.params?.ably_channel_name = {route.params?.ably_channel_name ? String(route.params.ably_channel_name) : "undefined/null"}
+                      </Text>
+                      <Text style={[styles.ablyInfoText, darkMode && styles.darkAblyInfoText]}>
+                        Debug: ablyChannelName state = {ablyChannelName ? String(ablyChannelName) : "null"}
+                      </Text>
+                    </>
                   )}
                 </View>
               </View>

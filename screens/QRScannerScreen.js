@@ -81,11 +81,21 @@ export default function QRScannerScreen({ route }) {
           console.log("   form_switch_enabled:", parsed.form_switch_enabled || false);
           console.log("   ably_channel_name:", parsed.ably_channel_name || null);
           
-          navigation.navigate("NewConnection", {
+          const navParams = {
             profile_uid: parsed.profile_uid,
-            form_switch_enabled: parsed.form_switch_enabled || false,
-            ably_channel_name: parsed.ably_channel_name || null,
-          });
+            form_switch_enabled: parsed.form_switch_enabled !== undefined ? parsed.form_switch_enabled : false,
+          };
+          
+          // Only include ably_channel_name if it exists and is not null/empty
+          if (parsed.ably_channel_name && parsed.ably_channel_name !== null && parsed.ably_channel_name !== "") {
+            navParams.ably_channel_name = parsed.ably_channel_name;
+            console.log("✅ QRScannerScreen - Including ably_channel_name in nav params:", parsed.ably_channel_name);
+          } else {
+            console.warn("⚠️ QRScannerScreen - ably_channel_name is missing or invalid:", parsed.ably_channel_name);
+          }
+          
+          console.log("📡 QRScannerScreen - Final navigation params:", JSON.stringify(navParams, null, 2));
+          navigation.navigate("NewConnection", navParams);
         }
       } else {
         throw new Error("Invalid QR format");
