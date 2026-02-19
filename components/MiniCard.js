@@ -4,6 +4,28 @@ import { View, Text, Image, StyleSheet, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 
+// Debug flag to control MiniCard console logs
+const ENABLE_MINICARD_LOGS = false;
+
+// Helper function to conditionally log MiniCard messages
+const miniCardLog = (...args) => {
+  if (ENABLE_MINICARD_LOGS) {
+    console.log(...args);
+  }
+};
+
+const miniCardWarn = (...args) => {
+  if (ENABLE_MINICARD_LOGS) {
+    console.warn(...args);
+  }
+};
+
+const miniCardError = (...args) => {
+  if (ENABLE_MINICARD_LOGS) {
+    console.error(...args);
+  }
+};
+
 // Web-compatible asset helper
 // On web, require() for local assets may cause issues with Metro bundler
 // We'll handle this by conditionally setting defaultSource
@@ -26,16 +48,16 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
   const { darkMode } = useDarkMode();
 
   if (__DEV__) {
-    console.log("🔵 MiniCard - RENDER START", { hasUser: !!user, hasBusiness: !!business });
+    miniCardLog("🔵 MiniCard - RENDER START", { hasUser: !!user, hasBusiness: !!business });
   }
 
   // --------------------------
   // HANDLE BUSINESS CARD
   // --------------------------
   if (business) {
-    if (__DEV__) console.log("🔵 MiniCard - Rendering BUSINESS card");
+    if (__DEV__) miniCardLog("🔵 MiniCard - Rendering BUSINESS card");
     if (__DEV__) {
-      console.log("🔍 MiniCard - Business data received:", {
+      miniCardLog("🔍 MiniCard - Business data received:", {
         business_name: business.business_name,
         business_address_line_1: business.business_address_line_1,
         business_zip_code: business.business_zip_code,
@@ -60,7 +82,7 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
     if (__DEV__) {
       const sanitized = { businessName, location, zipCode, phone, website };
       if (Object.values(sanitized).some((v) => v === ".")) {
-        console.error("🚨 MiniCard - PERIOD DETECTED in sanitized values:", sanitized);
+        miniCardError("🚨 MiniCard - PERIOD DETECTED in sanitized values:", sanitized);
       }
     }
 
@@ -100,10 +122,10 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
         <View style={styles.headerContainer}>
           {/* BUSINESS NAME */}
           {(() => {
-            if (__DEV__) console.log("🔵 MiniCard - Rendering business name:", businessName);
+            if (__DEV__) miniCardLog("🔵 MiniCard - Rendering business name:", businessName);
             const name = businessName || "Business";
             if (name === "." || name.trim() === "") {
-              if (__DEV__) console.log("🔵 MiniCard - Invalid business name, using fallback");
+              if (__DEV__) miniCardLog("🔵 MiniCard - Invalid business name, using fallback");
               return <Text style={[styles.name, darkMode && styles.darkName]}>Business</Text>;
             }
             return <Text style={[styles.name, darkMode && styles.darkName]}>{name}</Text>;
@@ -111,9 +133,9 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
 
           {/* TAGLINE */}
           {(() => {
-            if (__DEV__) console.log("🔵 MiniCard - Checking business tagline:", { tagline, taglineIsPublic, isSafe: isSafeForConditional(tagline) });
+            if (__DEV__) miniCardLog("🔵 MiniCard - Checking business tagline:", { tagline, taglineIsPublic, isSafe: isSafeForConditional(tagline) });
             if (taglineIsPublic && isSafeForConditional(tagline) && tagline !== "." && tagline.trim() !== "") {
-              if (__DEV__) console.log("🔵 MiniCard - Rendering business tagline");
+              if (__DEV__) miniCardLog("🔵 MiniCard - Rendering business tagline");
               return <Text style={[styles.tagline, darkMode && styles.darkText]}>{tagline}</Text>;
             }
             return null;
@@ -125,9 +147,9 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
           {(() => {
             // Check if image should be displayed based on imageIsPublic flag
             const shouldShowImage = business.imageIsPublic !== false && business.imageIsPublic !== "0";
-            if (__DEV__) console.log("🔵 MiniCard - Rendering business image", { shouldShowImage, imageIsPublic: business.imageIsPublic });
-            if (__DEV__) console.log("🔵 MiniCard - businessImage:", businessImage);
-            if (__DEV__) console.log("🔵 MiniCard - imageSource:", imageSource);
+            if (__DEV__) miniCardLog("🔵 MiniCard - Rendering business image", { shouldShowImage, imageIsPublic: business.imageIsPublic });
+            if (__DEV__) miniCardLog("🔵 MiniCard - businessImage:", businessImage);
+            if (__DEV__) miniCardLog("🔵 MiniCard - imageSource:", imageSource);
             
             if (!shouldShowImage) {
               // If image is hidden, show placeholder
@@ -144,8 +166,8 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
                 source={imageSource}
                 style={[styles.profileImage, darkMode && styles.darkProfileImage]}
                 onError={(error) => {
-                  console.log("MiniCard business image failed to load:", error.nativeEvent.error);
-                  console.log("Problematic business image URI:", businessImage);
+                  miniCardLog("MiniCard business image failed to load:", error.nativeEvent.error);
+                  miniCardLog("Problematic business image URI:", businessImage);
                 }}
                 defaultSource={PROFILE_IMAGE_SOURCE || require("../assets/profile.png")}
               />
@@ -155,9 +177,9 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
           <View style={styles.textContainer}>
             {/* BUSINESS PHONE */}
             {(() => {
-              if (__DEV__) console.log("🔵 MiniCard - Checking business phone:", { phone, phoneIsPublic, isSafe: isSafeForConditional(phone) });
+              if (__DEV__) miniCardLog("🔵 MiniCard - Checking business phone:", { phone, phoneIsPublic, isSafe: isSafeForConditional(phone) });
               if (phoneIsPublic && isSafeForConditional(phone) && phone !== "." && phone.trim() !== "") {
-                if (__DEV__) console.log("🔵 MiniCard - Rendering business phone");
+                if (__DEV__) miniCardLog("🔵 MiniCard - Rendering business phone");
                 return <Text style={[styles.phone, darkMode && styles.darkText]}>{phone}</Text>;
               }
               return null;
@@ -165,9 +187,9 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
 
             {/* LOCATION (Address Line 1) */}
             {(() => {
-              if (__DEV__) console.log("🔵 MiniCard - Rendering location:", { location, locationIsPublic });
+              if (__DEV__) miniCardLog("🔵 MiniCard - Rendering location:", { location, locationIsPublic });
               if (locationIsPublic && location && location !== "." && location.trim() !== "" && isSafeForConditional(location)) {
-                if (__DEV__) console.log("🔵 MiniCard - Rendering location");
+                if (__DEV__) miniCardLog("🔵 MiniCard - Rendering location");
                 return <Text style={[styles.location, darkMode && styles.darkText]}>{location}</Text>;
               }
               return null;
@@ -175,19 +197,39 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
 
             {/* CITY, STATE (on same line) */}
             {(() => {
-              if (__DEV__) console.log("🔵 MiniCard - Checking city/state:", { city, state, locationIsPublic, isSafeCity: isSafeForConditional(city), isSafeState: isSafeForConditional(state) });
+              if (__DEV__) miniCardLog("🔵 MiniCard - Checking city/state:", { city, state, locationIsPublic, isSafeCity: isSafeForConditional(city), isSafeState: isSafeForConditional(state) });
               
               if (locationIsPublic && (isSafeForConditional(city) || isSafeForConditional(state))) {
                 const locationParts = [];
-                if (city && city !== "." && city.trim() !== "") locationParts.push(city);
-                if (state && state !== "." && state.trim() !== "") locationParts.push(state);
+                // Only add city if it's valid and not just a period
+                if (city && typeof city === 'string' && city !== "." && city.trim() !== "" && isSafeForConditional(city)) {
+                  locationParts.push(city.trim());
+                }
+                // Only add state if it's valid and not just a period
+                if (state && typeof state === 'string' && state !== "." && state.trim() !== "" && isSafeForConditional(state)) {
+                  locationParts.push(state.trim());
+                }
+
+                // Only create locationText if we have valid parts
+                if (locationParts.length === 0) {
+                  return null;
+                }
 
                 const locationText = locationParts.join(", ");
 
-                if (locationText && locationText.trim() !== "") {
-                  if (__DEV__) console.log("🔵 MiniCard - Rendering city/state:", locationText);
-                  return <Text style={[styles.city, darkMode && styles.darkText]}>{locationText}</Text>;
+                // Double-check that locationText is valid before rendering
+                // Ensure it's not empty, not just a period, and passes safety checks
+                const trimmedLocationText = locationText ? locationText.trim() : "";
+                if (!locationText || 
+                    trimmedLocationText === "" || 
+                    trimmedLocationText === "." || 
+                    !isSafeForConditional(trimmedLocationText) ||
+                    trimmedLocationText.match(/^[\s.,;:!?\-_=+]*$/)) {
+                  return null;
                 }
+
+                if (__DEV__) miniCardLog("🔵 MiniCard - Rendering city/state:", locationText);
+                return <Text style={[styles.city, darkMode && styles.darkText]}>{trimmedLocationText}</Text>;
               }
               return null;
             })()}
@@ -200,7 +242,7 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
   // --------------------------
   // HANDLE USER CARD
   // --------------------------
-  if (__DEV__) console.log("🔵 MiniCard - Rendering USER card, user data:", user);
+  if (__DEV__) miniCardLog("🔵 MiniCard - Rendering USER card, user data:", user);
   const firstName = sanitizeText(user?.firstName || user?.personal_info?.profile_personal_first_name);
   const lastName = sanitizeText(user?.lastName || user?.personal_info?.profile_personal_last_name);
   const tagLine = sanitizeText(user?.tagLine || user?.personal_info?.profile_personal_tagline);
@@ -209,10 +251,10 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
   const profileImage = sanitizeText(user?.profileImage);
 
   if (__DEV__) {
-    console.log("🔵 MiniCard - After sanitization:", { firstName, lastName, tagLine, email, phone, profileImage });
+    miniCardLog("🔵 MiniCard - After sanitization:", { firstName, lastName, tagLine, email, phone, profileImage });
     const hasPeriod = [firstName, lastName, tagLine, email, phone, profileImage].some((v) => v === ".");
     if (hasPeriod) {
-      console.error("🚨 MiniCard - PERIOD DETECTED in user data after sanitization!");
+      miniCardError("🚨 MiniCard - PERIOD DETECTED in user data after sanitization!");
     }
   }
 
@@ -231,14 +273,14 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
       <View style={styles.headerContainer}>
         {/* NAME */}
         {(() => {
-          if (__DEV__) console.log("🔵 MiniCard - Rendering user name:", { firstName, lastName });
+          if (__DEV__) miniCardLog("🔵 MiniCard - Rendering user name:", { firstName, lastName });
           const nameParts = [firstName, lastName].filter((part) => part && part !== "." && part.trim() !== "" && !part.match(/^[\s.,;:!?\-_=+]*$/));
 
           const name = nameParts.length ? nameParts.join(" ") : "Unknown";
-          if (__DEV__) console.log("🔵 MiniCard - User name result:", name);
+          if (__DEV__) miniCardLog("🔵 MiniCard - User name result:", name);
 
           if (!name || name === "." || name.trim() === "") {
-            if (__DEV__) console.log("🔵 MiniCard - Invalid user name, using fallback");
+            if (__DEV__) miniCardLog("🔵 MiniCard - Invalid user name, using fallback");
             return <Text style={[styles.name, darkMode && styles.darkName]}>Unknown</Text>;
           }
 
@@ -247,9 +289,9 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
 
         {/* TAGLINE */}
         {(() => {
-          if (__DEV__) console.log("🔵 MiniCard - Checking tagline:", { tagLine, tagLineIsPublic, isSafe: isSafeForConditional(tagLine) });
+          if (__DEV__) miniCardLog("🔵 MiniCard - Checking tagline:", { tagLine, tagLineIsPublic, isSafe: isSafeForConditional(tagLine) });
           if (tagLineIsPublic && isSafeForConditional(tagLine) && tagLine !== "." && tagLine.trim() !== "") {
-            if (__DEV__) console.log("🔵 MiniCard - Rendering tagline");
+            if (__DEV__) miniCardLog("🔵 MiniCard - Rendering tagline");
             return <Text style={[styles.tagline, darkMode && styles.darkText]}>{tagLine}</Text>;
           }
           return null;
@@ -259,7 +301,7 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
       {/* BODY: Image on left, details on right */}
       <View style={styles.bodyContainer}>
         {(() => {
-          if (__DEV__) console.log("🔵 MiniCard - Rendering user image:", { profileImage, imageIsPublic, isSafe: isSafeForConditional(profileImage) });
+          if (__DEV__) miniCardLog("🔵 MiniCard - Rendering user image:", { profileImage, imageIsPublic, isSafe: isSafeForConditional(profileImage) });
           
           // Determine image source - avoid empty string URIs
           // Check if profileImage is valid (not empty, not null, not undefined)
@@ -286,8 +328,8 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
               onError={(error) => {
                 // Only log errors in dev mode and if we have a non-empty profileImage
                 if (__DEV__ && hasValidProfileImage) {
-                  console.log("MiniCard user image failed to load:", error.nativeEvent.error);
-                  console.log("Problematic user image URI:", profileImage);
+                  miniCardLog("MiniCard user image failed to load:", error.nativeEvent.error);
+                  miniCardLog("Problematic user image URI:", profileImage);
                 }
               }}
               {...(PROFILE_IMAGE_SOURCE && { defaultSource: PROFILE_IMAGE_SOURCE })}
@@ -298,9 +340,9 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
         <View style={styles.textContainer}>
           {/* EMAIL */}
           {(() => {
-            if (__DEV__) console.log("🔵 MiniCard - Checking email:", { email, emailIsPublic, isSafe: isSafeForConditional(email) });
+            if (__DEV__) miniCardLog("🔵 MiniCard - Checking email:", { email, emailIsPublic, isSafe: isSafeForConditional(email) });
             if (emailIsPublic && isSafeForConditional(email) && email !== "." && email.trim() !== "") {
-              if (__DEV__) console.log("🔵 MiniCard - Rendering email");
+              if (__DEV__) miniCardLog("🔵 MiniCard - Rendering email");
               return <Text style={[styles.email, darkMode && styles.darkText]}>{email}</Text>;
             }
             return null;
@@ -308,9 +350,9 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
 
           {/* PHONE */}
           {(() => {
-            if (__DEV__) console.log("🔵 MiniCard - Checking phone:", { phone, phoneIsPublic, isSafe: isSafeForConditional(phone) });
+            if (__DEV__) miniCardLog("🔵 MiniCard - Checking phone:", { phone, phoneIsPublic, isSafe: isSafeForConditional(phone) });
             if (phoneIsPublic && isSafeForConditional(phone) && phone !== "." && phone.trim() !== "") {
-              if (__DEV__) console.log("🔵 MiniCard - Rendering phone");
+              if (__DEV__) miniCardLog("🔵 MiniCard - Rendering phone");
               return <Text style={[styles.phone, darkMode && styles.darkText]}>{phone}</Text>;
             }
             return null;
@@ -318,19 +360,39 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
 
           {/* CITY, STATE */}
           {(() => {
-            if (__DEV__) console.log("🔵 MiniCard - Checking city/state:", { city, state, locationIsPublic, isSafeCity: isSafeForConditional(city), isSafeState: isSafeForConditional(state) });
+            if (__DEV__) miniCardLog("🔵 MiniCard - Checking city/state:", { city, state, locationIsPublic, isSafeCity: isSafeForConditional(city), isSafeState: isSafeForConditional(state) });
 
             if (locationIsPublic && (isSafeForConditional(city) || isSafeForConditional(state))) {
               const locationParts = [];
-              if (city && city !== "." && city.trim() !== "") locationParts.push(city);
-              if (state && state !== "." && state.trim() !== "") locationParts.push(state);
+              // Only add city if it's valid and not just a period
+              if (city && typeof city === 'string' && city !== "." && city.trim() !== "" && isSafeForConditional(city)) {
+                locationParts.push(city.trim());
+              }
+              // Only add state if it's valid and not just a period
+              if (state && typeof state === 'string' && state !== "." && state.trim() !== "" && isSafeForConditional(state)) {
+                locationParts.push(state.trim());
+              }
+
+              // Only create locationText if we have valid parts
+              if (locationParts.length === 0) {
+                return null;
+              }
 
               const locationText = locationParts.join(", ");
 
-              if (locationText && locationText.trim() !== "") {
-                if (__DEV__) console.log("🔵 MiniCard - Rendering city/state:", locationText);
-                return <Text style={[styles.city, darkMode && styles.darkText]}>{locationText}</Text>;
+              // Double-check that locationText is valid before rendering
+              // Ensure it's not empty, not just a period, and passes safety checks
+              const trimmedLocationText = locationText ? locationText.trim() : "";
+              if (!locationText || 
+                  trimmedLocationText === "" || 
+                  trimmedLocationText === "." || 
+                  !isSafeForConditional(trimmedLocationText) ||
+                  trimmedLocationText.match(/^[\s.,;:!?\-_=+]*$/)) {
+                return null;
               }
+
+              if (__DEV__) miniCardLog("🔵 MiniCard - Rendering city/state:", locationText);
+              return <Text style={[styles.city, darkMode && styles.darkText]}>{trimmedLocationText}</Text>;
             }
             return null;
           })()}
@@ -339,9 +401,9 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
           {showRelationship &&
             (() => {
               const relationship = user?.relationship || user?.circle_relationship;
-              if (__DEV__) console.log("🔵 MiniCard - Checking relationship:", relationship);
+              if (__DEV__) miniCardLog("🔵 MiniCard - Checking relationship:", relationship);
               const relationshipText = relationship && relationship !== null && relationship.trim() !== "" ? relationship.charAt(0).toUpperCase() + relationship.slice(1) : "Relationship not Assigned";
-              if (__DEV__) console.log("🔵 MiniCard - Rendering relationship:", relationshipText);
+              if (__DEV__) miniCardLog("🔵 MiniCard - Rendering relationship:", relationshipText);
               return <Text style={[styles.relationship, darkMode && styles.darkText]}>{relationshipText}</Text>;
             })()}
         </View>

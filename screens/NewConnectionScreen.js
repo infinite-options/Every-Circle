@@ -57,12 +57,61 @@ const NewConnectionScreen = () => {
       ? new URLSearchParams(window.location.search).get("profile_uid") || window.location.pathname.split("/newconnection/")[1]?.split("?")[0] || window.location.pathname.split("/newconnection/")[1]
       : null);
 
-  // Check for form_switch_enabled in route params (from QR code)
+  // Helper function to send "QR code was scanned" message to User 1
+  const sendQRCodeScannedMessage = async (channelName) => {
+    try {
+      console.log("📡 NewConnectionScreen - Sending 'QR code was scanned' message to channel:", channelName);
+      
+      // Dynamically import Ably
+      let Ably;
+      try {
+        Ably = require("ably");
+      } catch (e) {
+        console.warn("Ably not installed. Skipping QR code scanned message.");
+        return;
+      }
+
+      const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
+      if (!ablyApiKey) {
+        console.warn("Ably API key not configured. Skipping QR code scanned message.");
+        return;
+      }
+
+      if (!channelName) {
+        console.warn("No channel name provided. Skipping QR code scanned message.");
+        return;
+      }
+
+      // Create Ably client and send message
+      const client = new Ably.Realtime({ key: ablyApiKey });
+      const channel = client.channels.get(channelName);
+
+      await channel.publish("qr-code-scanned", {
+        message: "QR code was scanned",
+        timestamp: new Date().toISOString(),
+        profile_uid: profileUid,
+      });
+      console.log(`✅ NewConnectionScreen - 'QR code was scanned' message sent to channel: ${channelName}`);
+
+      // Close Ably connection
+      client.close();
+    } catch (error) {
+      console.error("❌ NewConnectionScreen - Error sending 'QR code was scanned' message:", error);
+    }
+  };
+
+  // Check for form_switch_enabled and ably_channel_name in route params (from QR code)
   useEffect(() => {
     if (route.params?.form_switch_enabled !== undefined) {
       setFormSwitchEnabled(route.params.form_switch_enabled);
     }
-  }, [route.params]);
+    
+    // If we have an Ably channel name from QR code, send "QR code was scanned" message
+    if (route.params?.ably_channel_name && profileUid) {
+      console.log("📡 NewConnectionScreen - Detected Ably channel name from QR code:", route.params.ably_channel_name);
+      sendQRCodeScannedMessage(route.params.ably_channel_name);
+    }
+  }, [route.params, profileUid]);
 
   // Check login status on mount
   useEffect(() => {

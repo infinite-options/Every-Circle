@@ -72,10 +72,12 @@ export default function QRScannerScreen({ route }) {
           onScanComplete(parsed);
           navigation.goBack();
         } else {
-          // Navigate to NewConnection (not Connect) to pass form_switch_enabled
+          // Navigate to NewConnection (not Connect) to pass form_switch_enabled and ably_channel_name
+          console.log("📡 QRScannerScreen - Passing Ably channel name to NewConnection:", parsed.ably_channel_name);
           navigation.navigate("NewConnection", {
             profile_uid: parsed.profile_uid,
             form_switch_enabled: parsed.form_switch_enabled || false,
+            ably_channel_name: parsed.ably_channel_name || null,
           });
         }
       } else {

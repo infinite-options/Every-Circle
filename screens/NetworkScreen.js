@@ -18,6 +18,28 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors } from "../config/headerColors";
 
+// Debug flag to control NetworkScreen console logs
+const ENABLE_NETWORKSCREEN_LOGS = false;
+
+// Helper function to conditionally log NetworkScreen messages
+const networkLog = (...args) => {
+  if (ENABLE_NETWORKSCREEN_LOGS) {
+    console.log(...args);
+  }
+};
+
+const networkWarn = (...args) => {
+  if (ENABLE_NETWORKSCREEN_LOGS) {
+    console.warn(...args);
+  }
+};
+
+const networkError = (...args) => {
+  if (ENABLE_NETWORKSCREEN_LOGS) {
+    console.error(...args);
+  }
+};
+
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
 try {
@@ -437,8 +459,8 @@ const NetworkScreen = ({ navigation }) => {
   // Load settings when screen is focused
   useFocusEffect(
     React.useCallback(() => {
-      console.log("🔄 NetworkScreen - Screen focused - loading settings...");
-      console.log("🔄 NetworkScreen - Current profileUid:", profileUid);
+      networkLog("🔄 NetworkScreen - Screen focused - loading settings...");
+      networkLog("🔄 NetworkScreen - Current profileUid:", profileUid);
       loadNetworkSettings();
 
       // Refetch network data when screen is focused to get updated relationship information
@@ -478,8 +500,8 @@ const NetworkScreen = ({ navigation }) => {
 
   // Also load settings on initial mount
   useEffect(() => {
-    console.log("🔄 NetworkScreen - Component mounted - loading settings...");
-    console.log("🔄 NetworkScreen - Initial profileUid:", profileUid);
+    networkLog("🔄 NetworkScreen - Component mounted - loading settings...");
+    networkLog("🔄 NetworkScreen - Initial profileUid:", profileUid);
     loadNetworkSettings();
   }, []);
 
@@ -497,24 +519,24 @@ const NetworkScreen = ({ navigation }) => {
 
   // Initialize Ably and set up listener when profileUid is available
   useEffect(() => {
-    console.log("🔵 NetworkScreen - Ably initialization useEffect triggered");
-    console.log("🔵 NetworkScreen - profileUid:", profileUid);
+    networkLog("🔵 NetworkScreen - Ably initialization useEffect triggered");
+    networkLog("🔵 NetworkScreen - profileUid:", profileUid);
     
     if (!profileUid) {
-      console.log("⚠️ NetworkScreen - No profileUid, skipping Ably initialization");
+      networkLog("⚠️ NetworkScreen - No profileUid, skipping Ably initialization");
       return;
     }
 
     const initializeAbly = async () => {
-      console.log("🚀 NetworkScreen - Starting Ably initialization...");
+      networkLog("🚀 NetworkScreen - Starting Ably initialization...");
       try {
         // Dynamically import Ably to handle cases where it's not installed
         let Ably;
         try {
           Ably = require("ably");
-          console.log("✅ NetworkScreen - Ably module loaded successfully");
+          networkLog("✅ NetworkScreen - Ably module loaded successfully");
         } catch (e) {
-          console.warn("❌ NetworkScreen - Ably not installed. Please run: npm install ably");
+          networkWarn("❌ NetworkScreen - Ably not installed. Please run: npm install ably");
           return;
         }
 
@@ -523,87 +545,147 @@ const NetworkScreen = ({ navigation }) => {
         const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
         
         if (!ablyApiKey) {
-          console.warn("❌ NetworkScreen - Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
+          networkWarn("❌ NetworkScreen - Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
           return;
         }
-        console.log("✅ NetworkScreen - Ably API key found (length:", ablyApiKey.length, ")");
+        networkLog("✅ NetworkScreen - Ably API key found (length:", ablyApiKey.length, ")");
 
         // Create Ably client
-        console.log("🔵 NetworkScreen - Creating Ably Realtime client...");
+        networkLog("🔵 NetworkScreen - Creating Ably Realtime client...");
         const client = new Ably.Realtime({ key: ablyApiKey });
         setAblyClient(client);
 
         // Set up connection event listeners
         client.connection.on("connected", () => {
-          console.log("✅ NetworkScreen - Ably client connected successfully");
+          console.log("✅ NetworkScreen - Ably CONNECTION READY - State: connected");
+          networkLog("✅ NetworkScreen - Ably client connected successfully");
+          
+          // Log full status when connection is ready
+          console.log("📡 NetworkScreen - Ably Connection Status:");
+          console.log("   Connection State:", client.connection.state);
+          console.log("   Channel Name:", channelName);
+          console.log("   Channel State:", channel.state);
         });
 
         client.connection.on("disconnected", () => {
-          console.log("⚠️ NetworkScreen - Ably client disconnected");
+          console.log("⚠️ NetworkScreen - Ably CONNECTION DISCONNECTED");
+          networkLog("⚠️ NetworkScreen - Ably client disconnected");
         });
 
         client.connection.on("failed", (stateChange) => {
-          console.error("❌ NetworkScreen - Ably connection failed:", stateChange);
+          console.error("❌ NetworkScreen - Ably CONNECTION FAILED:", stateChange);
+          networkError("❌ NetworkScreen - Ably connection failed:", stateChange);
         });
 
         // Get user_uid (the 110 number) for the channel name
         // This matches what NewConnectionScreen uses
-        console.log("🔵 NetworkScreen - Fetching user_uid for channel name...");
+        networkLog("🔵 NetworkScreen - Fetching user_uid for channel name...");
         let userUid = null;
         try {
           userUid = await AsyncStorage.getItem("user_uid");
           if (userUid) {
             userUid = String(userUid).trim();
-            console.log("✅ NetworkScreen - Got user_uid from AsyncStorage:", userUid);
+            networkLog("✅ NetworkScreen - Got user_uid from AsyncStorage:", userUid);
           } else {
-            console.log("🔵 NetworkScreen - user_uid not in AsyncStorage, fetching from API...");
+            networkLog("🔵 NetworkScreen - user_uid not in AsyncStorage, fetching from API...");
             // Fallback: fetch from API
             const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
             if (profileResponse.ok) {
               const profileData = await profileResponse.json();
               userUid = profileData?.user_uid || profileData?.user?.user_uid;
-              console.log("✅ NetworkScreen - Got user_uid from API:", userUid);
+              networkLog("✅ NetworkScreen - Got user_uid from API:", userUid);
             } else {
-              console.warn("⚠️ NetworkScreen - Failed to fetch profile from API, status:", profileResponse.status);
+              networkWarn("⚠️ NetworkScreen - Failed to fetch profile from API, status:", profileResponse.status);
             }
           }
         } catch (e) {
-          console.error("❌ NetworkScreen - Error fetching user_uid for Ably channel:", e);
+          networkError("❌ NetworkScreen - Error fetching user_uid for Ably channel:", e);
         }
 
         if (!userUid) {
-          console.warn("❌ NetworkScreen - user_uid not found. Cannot create Ably channel.");
+          networkWarn("❌ NetworkScreen - user_uid not found. Cannot create Ably channel.");
           return;
         }
 
         // Create channel name based on user_uid (to match NewConnectionScreen)
         const channelName = `profile:${userUid}`;
-        console.log("🔵 NetworkScreen - Channel name:", channelName);
+        console.log("🔵 NetworkScreen - Ably Channel Name:", channelName);
+        networkLog("🔵 NetworkScreen - Channel name:", channelName);
         const channel = client.channels.get(channelName);
         setAblyChannel(channel);
-        console.log("✅ NetworkScreen - Ably channel created:", channelName);
+        networkLog("✅ NetworkScreen - Ably channel created:", channelName);
+        
+        // Wait for channel to be attached and log status
+        channel.on("attached", () => {
+          console.log("✅ NetworkScreen - Ably CHANNEL ATTACHED and READY:", channelName);
+          networkLog("✅ NetworkScreen - Ably channel attached:", channelName);
+          
+          // Log full status when channel is ready
+          console.log("📡 NetworkScreen - Ably Channel FULLY READY:");
+          console.log("   Channel Name:", channelName);
+          console.log("   Channel State:", channel.state);
+          console.log("   Connection State:", client.connection.state);
+          console.log("   Channel Ready: YES ✅");
+        });
+        
+        channel.on("detached", () => {
+          console.log("⚠️ NetworkScreen - Ably Channel DETACHED:", channelName);
+          networkLog("⚠️ NetworkScreen - Ably channel detached:", channelName);
+        });
+        
+        channel.on("suspended", () => {
+          console.log("⚠️ NetworkScreen - Ably Channel SUSPENDED:", channelName);
+          networkLog("⚠️ NetworkScreen - Ably channel suspended:", channelName);
+        });
+        
+        // Attach to the channel to make it active
+        channel.attach((err) => {
+          if (err) {
+            console.error("❌ NetworkScreen - Error attaching to Ably channel:", channelName, err);
+            networkError("❌ NetworkScreen - Error attaching to channel:", err);
+          } else {
+            console.log("✅ NetworkScreen - Ably Channel ATTACH request sent:", channelName);
+            networkLog("✅ NetworkScreen - Ably channel attach request sent:", channelName);
+          }
+        });
+
+        // Subscribe to qr-code-scanned messages
+        channel.subscribe("qr-code-scanned", (message) => {
+          console.log("📨 NetworkScreen - Received Ably message (qr-code-scanned):", message.data);
+          networkLog("📨 NetworkScreen - Received Ably message (qr-code-scanned):", message.data);
+          if (message.data && message.data.message) {
+            console.log("✅ NetworkScreen - QR Code was scanned by User 2!");
+            networkLog("✅ NetworkScreen -", message.data.message);
+          }
+        });
+        networkLog("✅ NetworkScreen - Subscribed to 'qr-code-scanned' messages");
 
         // Subscribe to form-opened messages
         channel.subscribe("form-opened", (message) => {
           console.log("📨 NetworkScreen - Received Ably message (form-opened):", message.data);
+          networkLog("📨 NetworkScreen - Received Ably message (form-opened):", message.data);
           if (message.data && message.data.message) {
             console.log("✅ NetworkScreen -", message.data.message);
+            networkLog("✅ NetworkScreen -", message.data.message);
           }
         });
-        console.log("✅ NetworkScreen - Subscribed to 'form-opened' messages");
+        networkLog("✅ NetworkScreen - Subscribed to 'form-opened' messages");
 
         // Subscribe to continue-clicked messages
         channel.subscribe("continue-clicked", (message) => {
           console.log("📨 NetworkScreen - Received Ably message (continue-clicked):", message.data);
+          networkLog("📨 NetworkScreen - Received Ably message (continue-clicked):", message.data);
           if (message.data && message.data.message) {
             console.log("✅ NetworkScreen -", message.data.message);
+            networkLog("✅ NetworkScreen -", message.data.message);
           }
         });
-        console.log("✅ NetworkScreen - Subscribed to 'continue-clicked' messages");
+        networkLog("✅ NetworkScreen - Subscribed to 'continue-clicked' messages");
 
         // Subscribe to connection messages
         channel.subscribe("connection-request", (message) => {
           console.log("📨 NetworkScreen - Received Ably message (connection-request):", message.data);
+          networkLog("📨 NetworkScreen - Received Ably message (connection-request):", message.data);
           const connectionData = message.data;
           
           // Set received connection data and show form modal
@@ -618,14 +700,56 @@ const NetworkScreen = ({ navigation }) => {
           // Fetch location for the received connection
           fetchReceivedConnectionLocation();
         });
-        console.log("✅ NetworkScreen - Subscribed to 'connection-request' messages");
+        networkLog("✅ NetworkScreen - Subscribed to 'connection-request' messages");
 
-        console.log("✅ NetworkScreen - Ably initialized successfully!");
-        console.log("✅ NetworkScreen - Listening on channel:", channelName);
-        console.log("✅ NetworkScreen - Current connection state:", client.connection.state);
+        networkLog("✅ NetworkScreen - Ably initialized successfully!");
+        networkLog("✅ NetworkScreen - Listening on channel:", channelName);
+        networkLog("✅ NetworkScreen - Current connection state:", client.connection.state);
+        
+        // Log initial channel status (may not be ready yet)
+        console.log("📡 NetworkScreen - Ably Initial Status:");
+        console.log("   Channel Name:", channelName);
+        console.log("   Channel State:", channel.state);
+        console.log("   Connection State:", client.connection.state);
+        console.log("   Channel Ready:", channel.state === "attached" && client.connection.state === "connected" ? "YES ✅" : "NO ⏳ (waiting for connection and attachment...)");
+        
+        // Set up a check to log when both connection and channel are ready
+        const checkReadyStatus = () => {
+          const isConnectionReady = client.connection.state === "connected";
+          const isChannelReady = channel.state === "attached";
+          const isFullyReady = isConnectionReady && isChannelReady;
+          
+          if (isFullyReady) {
+            console.log("🎉 NetworkScreen - Ably FULLY READY:");
+            console.log("   Channel Name:", channelName);
+            console.log("   Channel State:", channel.state);
+            console.log("   Connection State:", client.connection.state);
+            console.log("   Channel Ready: YES ✅");
+            console.log("   Ready to receive messages!");
+          } else {
+            console.log("⏳ NetworkScreen - Ably Status Check:");
+            console.log("   Connection Ready:", isConnectionReady ? "YES ✅" : "NO ⏳");
+            console.log("   Channel Ready:", isChannelReady ? "YES ✅" : "NO ⏳");
+          }
+        };
+        
+        // Check status after a short delay to allow connection to establish
+        setTimeout(() => {
+          checkReadyStatus();
+        }, 1000);
+        
+        // Also check when connection state changes
+        client.connection.on("connected", () => {
+          setTimeout(() => checkReadyStatus(), 500);
+        });
+        
+        // Also check when channel state changes
+        channel.on("attached", () => {
+          setTimeout(() => checkReadyStatus(), 500);
+        });
       } catch (error) {
-        console.error("❌ NetworkScreen - Error initializing Ably:", error);
-        console.error("❌ NetworkScreen - Error stack:", error.stack);
+        networkError("❌ NetworkScreen - Error initializing Ably:", error);
+        networkError("❌ NetworkScreen - Error stack:", error.stack);
       }
     };
 
@@ -633,14 +757,14 @@ const NetworkScreen = ({ navigation }) => {
 
     // Cleanup on unmount
     return () => {
-      console.log("🔵 NetworkScreen - Cleaning up Ably connection...");
+      networkLog("🔵 NetworkScreen - Cleaning up Ably connection...");
       if (ablyChannel) {
         ablyChannel.unsubscribe();
-        console.log("✅ NetworkScreen - Unsubscribed from channel");
+        networkLog("✅ NetworkScreen - Unsubscribed from channel");
       }
       if (ablyClient) {
         ablyClient.close();
-        console.log("✅ NetworkScreen - Closed Ably client");
+        networkLog("✅ NetworkScreen - Closed Ably client");
       }
     };
   }, [profileUid]);
@@ -689,10 +813,10 @@ const NetworkScreen = ({ navigation }) => {
         userUid = await AsyncStorage.getItem("user_uid");
         if (userUid) {
           userUid = String(userUid).trim();
-          console.log("NetworkScreen - Fetched user_uid for QR code:", userUid);
+          networkLog("NetworkScreen - Fetched user_uid for QR code:", userUid);
         }
       } catch (e) {
-        console.warn("NetworkScreen - Could not fetch user_uid from AsyncStorage:", e);
+        networkWarn("NetworkScreen - Could not fetch user_uid from AsyncStorage:", e);
       }
 
       // Extract public miniCard information
@@ -728,6 +852,25 @@ const NetworkScreen = ({ navigation }) => {
       };
 
       setUserProfileData(publicData);
+      
+      // Get user_uid for Ably channel name (needed for QR code)
+      let qrUserUid = userUid;
+      if (!qrUserUid) {
+        // Try to get from API if not in AsyncStorage
+        try {
+          const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUID}`);
+          if (profileResponse.ok) {
+            const profileData = await profileResponse.json();
+            qrUserUid = profileData?.user_uid || profileData?.user?.user_uid;
+          }
+        } catch (e) {
+          console.warn("Could not fetch user_uid for QR code channel name:", e);
+        }
+      }
+      
+      // Create Ably channel name
+      const ablyChannelName = qrUserUid ? `profile:${qrUserUid}` : null;
+      
       // Create QR code data with EveryCircle identifier
       // Format: JSON with type identifier for app scanning, URL for web compatibility
       const qrData = {
@@ -738,9 +881,16 @@ const NetworkScreen = ({ navigation }) => {
         url: `https://everycircle.com/newconnection/${profileUID}`,
         // Include Form Switch value in QR code
         form_switch_enabled: formSwitchEnabled,
+        // Include Ably channel name so scanner can send messages
+        ably_channel_name: ablyChannelName,
       };
       const qrDataString = JSON.stringify(qrData);
       console.log("🔗 QR Code Data:", qrDataString);
+      if (ablyChannelName) {
+        console.log("📡 QR Code includes Ably Channel Name:", ablyChannelName);
+      } else {
+        console.warn("⚠️ QR Code does NOT include Ably Channel Name (user_uid not found)");
+      }
       // For display, we'll use the JSON string, but also support URL format for backward compatibility
       setQrCodeData(qrDataString);
     } catch (error) {
@@ -1680,11 +1830,11 @@ const NetworkScreen = ({ navigation }) => {
 
   // Debug: Log render start
   if (__DEV__) {
-    console.log("🔵 NetworkScreen - RENDER START");
-    console.log("🔵 NetworkScreen - profileUid:", profileUid, "type:", typeof profileUid);
-    console.log("🔵 NetworkScreen - storageData length:", storageData.length);
-    console.log("🔵 NetworkScreen - networkData length:", networkData.length);
-    console.log("🔵 NetworkScreen - groupedNetwork keys:", Object.keys(groupedNetwork));
+    networkLog("🔵 NetworkScreen - RENDER START");
+    networkLog("🔵 NetworkScreen - profileUid:", profileUid, "type:", typeof profileUid);
+    networkLog("🔵 NetworkScreen - storageData length:", storageData.length);
+    networkLog("🔵 NetworkScreen - networkData length:", networkData.length);
+    networkLog("🔵 NetworkScreen - groupedNetwork keys:", Object.keys(groupedNetwork));
   }
 
   // Apply filters to network data for graph view
@@ -1814,9 +1964,9 @@ const NetworkScreen = ({ navigation }) => {
         >
           {/* QR Code Section */}
           {(() => {
-            if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR Code Section");
+            if (__DEV__) networkLog("🔵 NetworkScreen - Rendering QR Code Section");
             if (qrCodeData && userProfileData && QRCodeComponent) {
-              if (__DEV__) console.log("🔵 NetworkScreen - QR Code data exists, rendering QR section");
+              if (__DEV__) networkLog("🔵 NetworkScreen - QR Code data exists, rendering QR section");
               return (
                 <View style={[styles.qrCodeContainer, darkMode && styles.darkQrCodeContainer]}>
                   <Text style={[styles.qrCodeTitle, darkMode && styles.darkQrCodeTitle]}>My Contact QR Code</Text>
@@ -1843,7 +1993,7 @@ const NetworkScreen = ({ navigation }) => {
 
                   {/* Display MiniCard showing what information will be transferred */}
                   {(() => {
-                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
+                    if (__DEV__) networkLog("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
                     if (userProfileData) {
                       return (
                         <View style={styles.qrCodeMiniCardContainer}>
@@ -1856,12 +2006,12 @@ const NetworkScreen = ({ navigation }) => {
                 </View>
               );
             }
-            if (__DEV__) console.log("🔵 NetworkScreen - QR Code section not rendered (missing data)");
+            if (__DEV__) networkLog("🔵 NetworkScreen - QR Code section not rendered (missing data)");
             return null;
           })()}
 
           {(() => {
-            if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage Section");
+            if (__DEV__) networkLog("🔵 NetworkScreen - Rendering AsyncStorage Section");
             return (
               <View>
                 <View style={styles.sectionTitleRow}>
@@ -1878,9 +2028,9 @@ const NetworkScreen = ({ navigation }) => {
                   </TouchableOpacity>
                 </View>
                 {(() => {
-                  if (__DEV__) console.log("🔵 NetworkScreen - showAsyncStorage:", showAsyncStorage);
+                  if (__DEV__) networkLog("🔵 NetworkScreen - showAsyncStorage:", showAsyncStorage);
                   if (showAsyncStorage) {
-                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage data, length:", storageData.length);
+                    if (__DEV__) networkLog("🔵 NetworkScreen - Rendering AsyncStorage data, length:", storageData.length);
                     return (
                       <>
                         {storageData.length === 0 ? (
@@ -1888,12 +2038,12 @@ const NetworkScreen = ({ navigation }) => {
                         ) : (
                           storageData
                             .map(([key, value], idx) => {
-                              if (__DEV__) console.log(`🔵 NetworkScreen - Processing AsyncStorage item ${idx}:`, { key, value, keyType: typeof key, valueType: typeof value });
+                              if (__DEV__) networkLog(`🔵 NetworkScreen - Processing AsyncStorage item ${idx}:`, { key, value, keyType: typeof key, valueType: typeof value });
                               const sanitizedKey = sanitizeText(key, "Unknown");
                               const sanitizedValue = sanitizeText(value, "N/A");
-                              if (__DEV__) console.log(`🔵 NetworkScreen - After sanitization ${idx}:`, { sanitizedKey, sanitizedValue });
+                              if (__DEV__) networkLog(`🔵 NetworkScreen - After sanitization ${idx}:`, { sanitizedKey, sanitizedValue });
                               if (!isSafeForConditional(sanitizedKey) && !isSafeForConditional(sanitizedValue)) {
-                                if (__DEV__) console.log(`🔵 NetworkScreen - Skipping item ${idx} (unsafe)`);
+                                if (__DEV__) networkLog(`🔵 NetworkScreen - Skipping item ${idx} (unsafe)`);
                                 return null;
                               }
                               return (
@@ -1915,10 +2065,10 @@ const NetworkScreen = ({ navigation }) => {
           })()}
 
           {(() => {
-            if (__DEV__) console.log("🔵 NetworkScreen - Rendering Network Section");
-            if (__DEV__) console.log("🔵 NetworkScreen - profileUid for title:", profileUid, "type:", typeof profileUid);
+            if (__DEV__) networkLog("🔵 NetworkScreen - Rendering Network Section");
+            if (__DEV__) networkLog("🔵 NetworkScreen - profileUid for title:", profileUid, "type:", typeof profileUid);
             const titleSuffix = profileUid ? ` (${profileUid})` : "";
-            if (__DEV__) console.log("🔵 NetworkScreen - titleSuffix:", titleSuffix);
+            if (__DEV__) networkLog("🔵 NetworkScreen - titleSuffix:", titleSuffix);
             return (
               <View style={{ marginTop: 20 }}>
                 <Text style={[styles.sectionTitle, darkMode && styles.darkSectionTitle]}>My Network{titleSuffix}</Text>
@@ -2234,7 +2384,7 @@ const NetworkScreen = ({ navigation }) => {
                 )}
 
                 {(() => {
-                  if (__DEV__) console.log("🔵 NetworkScreen - Checking list view mode");
+                  if (__DEV__) networkLog("🔵 NetworkScreen - Checking list view mode");
                   return (
                     <>
 
@@ -2242,12 +2392,12 @@ const NetworkScreen = ({ navigation }) => {
                       {viewMode === "list" && Object.keys(groupedNetwork).length > 0 && (
                         <View style={{ marginTop: 10 }}>
                           {(() => {
-                            if (__DEV__) console.log("🔵 NetworkScreen - Rendering network list items");
+                            if (__DEV__) networkLog("🔵 NetworkScreen - Rendering network list items");
                             return Object.keys(groupedNetwork)
                               .map((d) => Number(d))
                               .sort((a, b) => a - b)
                               .map((deg) => {
-                                if (__DEV__) console.log(`🔵 NetworkScreen - Processing degree ${deg}`);
+                                if (__DEV__) networkLog(`🔵 NetworkScreen - Processing degree ${deg}`);
                                 // Filter the list based on relationship type
                                 let list = groupedNetwork[deg];
                                 if (relationshipFilter !== "All") {
@@ -2265,7 +2415,7 @@ const NetworkScreen = ({ navigation }) => {
                                 }
                                 // Apply date filter
                                 if (dateFilter !== "All") {
-                                  console.log(`🔵 NetworkScreen - Applying date filter: ${dateFilter}`);
+                                  networkLog(`🔵 NetworkScreen - Applying date filter: ${dateFilter}`);
                                   const now = new Date();
                                   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
                                   const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
@@ -2294,7 +2444,7 @@ const NetworkScreen = ({ navigation }) => {
 
                                 // Apply location filter
                                 if (locationFilter !== "All") {
-                                  console.log(`🔵 NetworkScreen - Applying location filter: ${locationFilter}`);
+                                  networkLog(`🔵 NetworkScreen - Applying location filter: ${locationFilter}`);
                                   list = list.filter((node) => {
                                     const city = node.circle_city || "";
                                     const state = node.circle_state || "";
@@ -2312,7 +2462,7 @@ const NetworkScreen = ({ navigation }) => {
 
                                 // Apply event filter
                                 if (eventFilter !== "All") {
-                                  console.log(`🔵 NetworkScreen - Applying event filter: ${eventFilter}`);
+                                  networkLog(`🔵 NetworkScreen - Applying event filter: ${eventFilter}`);
                                   list = list.filter((node) => {
                                     const nodeEvent = (node.circle_event || "").trim();
                                     return nodeEvent === eventFilter;
@@ -2341,26 +2491,26 @@ const NetworkScreen = ({ navigation }) => {
                                 }
 
                                 if (list.length === 0) {
-                                  if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} has no items after filtering`);
+                                  if (__DEV__) networkLog(`🔵 NetworkScreen - Degree ${deg} has no items after filtering`);
                                   return null;
                                 }
 
-                                if (__DEV__) console.log(`🔵 NetworkScreen - Rendering degree ${deg} with ${list.length} items`);
+                                if (__DEV__) networkLog(`🔵 NetworkScreen - Rendering degree ${deg} with ${list.length} items`);
                                 return (
                                   <View key={deg} style={{ marginBottom: 20 }}>
                                     {(() => {
                                       const label = degreeLabel(Number(deg));
-                                      if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} label:`, label);
+                                      if (__DEV__) networkLog(`🔵 NetworkScreen - Degree ${deg} label:`, label);
                                       return <Text style={[styles.degreeHeader, darkMode && styles.darkDegreeHeader]}>{label}</Text>;
                                     })()}
 
                                     {list.map((node, index) => {
-                                      if (__DEV__) console.log(`🔵 NetworkScreen - Rendering node ${deg}-${index}, __mc:`, node.__mc);
+                                      if (__DEV__) networkLog(`🔵 NetworkScreen - Rendering node ${deg}-${index}, __mc:`, node.__mc);
                                       if (!node.__mc) {
-                                        if (__DEV__) console.log(`🔵 NetworkScreen - Node ${deg}-${index} has no __mc, skipping`);
+                                        if (__DEV__) networkLog(`🔵 NetworkScreen - Node ${deg}-${index} has no __mc, skipping`);
                                         return null;
                                       }
-                                      if (__DEV__) console.log(`🔵 NetworkScreen - Rendering MiniCard for node ${deg}-${index}`);
+                                      if (__DEV__) networkLog(`🔵 NetworkScreen - Rendering MiniCard for node ${deg}-${index}`);
                                       return (
                                         <TouchableOpacity
                                           key={`${deg}-${index}`}
@@ -2387,7 +2537,7 @@ const NetworkScreen = ({ navigation }) => {
                 })()}
 
                 {(() => {
-                  if (__DEV__) console.log("🔵 NetworkScreen - Rendering 'No connections' message");
+                  if (__DEV__) networkLog("🔵 NetworkScreen - Rendering 'No connections' message");
                   if (!loading && !error && Object.keys(groupedNetwork).length === 0) {
                     return <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>No network connections found.</Text>;
                   }
