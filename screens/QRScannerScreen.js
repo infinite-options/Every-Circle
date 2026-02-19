@@ -85,6 +85,7 @@ export default function QRScannerScreen({ route }) {
           const navParams = {
             profile_uid: parsed.profile_uid,
             form_switch_enabled: parsed.form_switch_enabled !== undefined ? parsed.form_switch_enabled : false,
+            qr_code_data: JSON.stringify(parsed), // Pass full QR code data as string
           };
           
           // Only include ably_channel_name if it exists and is not null/empty
@@ -95,7 +96,8 @@ export default function QRScannerScreen({ route }) {
             // Also store in AsyncStorage as backup in case navigation params don't work
             try {
               await AsyncStorage.setItem(`ably_channel_${parsed.profile_uid}`, String(parsed.ably_channel_name));
-              console.log("✅ QRScannerScreen - Stored ably_channel_name in AsyncStorage as backup");
+              await AsyncStorage.setItem(`qr_code_data_${parsed.profile_uid}`, JSON.stringify(parsed));
+              console.log("✅ QRScannerScreen - Stored ably_channel_name and QR code data in AsyncStorage as backup");
             } catch (e) {
               console.warn("⚠️ QRScannerScreen - Could not store channel name in AsyncStorage:", e);
             }

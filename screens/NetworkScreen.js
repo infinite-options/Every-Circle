@@ -1995,6 +1995,18 @@ const NetworkScreen = ({ navigation }) => {
                     />
                   </View>
 
+                  {/* Display QR Code Data */}
+                  {qrCodeData && (
+                    <View style={[styles.qrCodeDataContainer, darkMode && styles.darkQrCodeDataContainer]}>
+                      <Text style={[styles.qrCodeDataTitle, darkMode && styles.darkQrCodeDataTitle]}>🔗 QR Code Data:</Text>
+                      <View style={[styles.qrCodeDataContent, darkMode && styles.darkQrCodeDataContent]}>
+                        <Text style={[styles.qrCodeDataText, darkMode && styles.darkQrCodeDataText]}>
+                          {qrCodeData}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
                   {/* Display Ably Channel Name */}
                   {ablyChannelName && (
                     <View style={[styles.ablyInfoContainer, darkMode && styles.darkAblyInfoContainer]}>
@@ -2868,6 +2880,50 @@ const styles = StyleSheet.create({
   qrCodeMiniCardContainer: {
     marginTop: 15,
     width: "100%",
+  },
+  qrCodeDataContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#f0f8ff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4a90e2",
+    width: "100%",
+  },
+  darkQrCodeDataContainer: {
+    backgroundColor: "#1a2332",
+    borderColor: "#4a90e2",
+  },
+  qrCodeDataTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#2c5282",
+    marginBottom: 8,
+  },
+  darkQrCodeDataTitle: {
+    color: "#90cdf4",
+  },
+  qrCodeDataContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e0",
+    maxHeight: 200,
+  },
+  darkQrCodeDataContent: {
+    backgroundColor: "#0f172a",
+    borderColor: "#334155",
+  },
+  qrCodeDataText: {
+    fontSize: 11,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#1a202c",
+    lineHeight: 16,
+  },
+  darkQrCodeDataText: {
+    color: "#e2e8f0",
   },
   ablyInfoContainer: {
     marginTop: 16,

@@ -43,6 +43,7 @@ const NewConnectionScreen = () => {
   const formOpenedMessageSent = useRef(false); // Track if we've already sent the "Form is Open" message
   const [ablyChannelName, setAblyChannelName] = useState(null); // Track Ably channel name from QR code
   const [ablyMessageSent, setAblyMessageSent] = useState(false); // Track if Ably message was sent successfully
+  const [qrCodeData, setQrCodeData] = useState(null); // Store full QR code data for display
 
   // Relationship options matching ConnectScreen.js
   const relationshipOptions = [
@@ -188,24 +189,62 @@ const NewConnectionScreen = () => {
       console.log("🔵 NewConnectionScreen - Route params type:", typeof route.params);
       console.log("🔵 NewConnectionScreen - Route params keys:", route.params ? Object.keys(route.params) : "null");
       
-      // Check route params
+      // First, try to get full QR code data from route params or AsyncStorage
+      let qrDataString = route.params?.qr_code_data;
+      if (!qrDataString && profileUid) {
+        try {
+          qrDataString = await AsyncStorage.getItem(`qr_code_data_${profileUid}`);
+          if (qrDataString) {
+            console.log("✅ NewConnectionScreen - Found QR code data in AsyncStorage backup");
+            await AsyncStorage.removeItem(`qr_code_data_${profileUid}`);
+          }
+        } catch (e) {
+          console.warn("⚠️ NewConnectionScreen - Error reading QR code data from AsyncStorage:", e);
+        }
+      }
+      
+      // Parse and display QR code data
+      if (qrDataString) {
+        try {
+          const qrData = JSON.parse(qrDataString);
+          setQrCodeData(qrData);
+          console.log("✅ NewConnectionScreen - QR code data parsed and stored:", qrData);
+          
+          // Extract ably_channel_name from parsed QR data
+          if (qrData.ably_channel_name) {
+            setAblyChannelName(qrData.ably_channel_name);
+            console.log("✅ NewConnectionScreen - Ably channel name extracted from QR code data:", qrData.ably_channel_name);
+          }
+          
+          // Extract form_switch_enabled from parsed QR data
+          if (qrData.form_switch_enabled !== undefined) {
+            setFormSwitchEnabled(qrData.form_switch_enabled);
+            console.log("✅ NewConnectionScreen - Form switch enabled extracted from QR code data:", qrData.form_switch_enabled);
+          }
+        } catch (e) {
+          console.error("❌ NewConnectionScreen - Error parsing QR code data:", e);
+        }
+      }
+      
+      // Check route params (fallback if QR code data not available)
       if (route.params?.form_switch_enabled !== undefined) {
         setFormSwitchEnabled(route.params.form_switch_enabled);
         console.log("✅ NewConnectionScreen - Form switch enabled set to:", route.params.form_switch_enabled);
       }
       
-      // Store Ably channel name for display - check route.params first
+      // Store Ably channel name for display - check route.params first (if not already set from QR data)
       let channelNameFromParams = route.params?.ably_channel_name;
-      console.log("📡 NewConnectionScreen - Channel name from route.params:", channelNameFromParams);
-      console.log("📡 NewConnectionScreen - Channel name type:", typeof channelNameFromParams);
-      console.log("📡 NewConnectionScreen - Channel name truthy check:", !!channelNameFromParams);
+      if (!ablyChannelName && channelNameFromParams) {
+        console.log("📡 NewConnectionScreen - Channel name from route.params:", channelNameFromParams);
+        setAblyChannelName(channelNameFromParams);
+      }
       
-      // If not in route params, try AsyncStorage backup (set by QRScannerScreen)
-      if (!channelNameFromParams && profileUid) {
+      // If not in route params or QR data, try AsyncStorage backup (set by QRScannerScreen)
+      if (!ablyChannelName && profileUid) {
         try {
           const storedChannelName = await AsyncStorage.getItem(`ably_channel_${profileUid}`);
           if (storedChannelName) {
-            channelNameFromParams = storedChannelName;
+            setAblyChannelName(storedChannelName);
             console.log("✅ NewConnectionScreen - Found channel name in AsyncStorage backup:", storedChannelName);
             // Clean up after reading
             await AsyncStorage.removeItem(`ably_channel_${profileUid}`);
@@ -216,30 +255,26 @@ const NewConnectionScreen = () => {
       }
       
       // Also check if it might be in the URL (for web)
-      if (!channelNameFromParams && Platform.OS === "web" && typeof window !== "undefined") {
+      if (!ablyChannelName && Platform.OS === "web" && typeof window !== "undefined") {
         const urlParams = new URLSearchParams(window.location.search);
         const urlChannelName = urlParams.get("ably_channel_name");
         console.log("📡 NewConnectionScreen - Checking URL params for channel name:", urlChannelName);
         if (urlChannelName) {
-          channelNameFromParams = urlChannelName;
+          setAblyChannelName(urlChannelName);
         }
       }
       
-      if (channelNameFromParams) {
-        setAblyChannelName(channelNameFromParams);
-        console.log("✅ NewConnectionScreen - Ably channel name set for display:", channelNameFromParams);
-        
-        // If we have an Ably channel name from QR code, send "QR code was scanned" message
-        if (profileUid) {
-          console.log("📡 NewConnectionScreen - Detected Ably channel name from QR code:", channelNameFromParams);
-          console.log("📡 NewConnectionScreen - Profile UID available:", profileUid);
-          sendQRCodeScannedMessage(channelNameFromParams).catch((error) => {
-            console.error("❌ NewConnectionScreen - Failed to send QR code scanned message:", error);
-          });
-        }
+      // If we have an Ably channel name, send "QR code was scanned" message
+      if (ablyChannelName && profileUid) {
+        console.log("📡 NewConnectionScreen - Detected Ably channel name from QR code:", ablyChannelName);
+        console.log("📡 NewConnectionScreen - Profile UID available:", profileUid);
+        sendQRCodeScannedMessage(ablyChannelName).catch((error) => {
+          console.error("❌ NewConnectionScreen - Failed to send QR code scanned message:", error);
+        });
       } else {
-        console.warn("⚠️ NewConnectionScreen - No ably_channel_name found in route params, AsyncStorage, or URL");
-        console.log("📋 NewConnectionScreen - Full route.params:", JSON.stringify(route.params, null, 2));
+        if (!ablyChannelName) {
+          console.warn("⚠️ NewConnectionScreen - No ably_channel_name found");
+        }
         if (!profileUid) {
           console.warn("⚠️ NewConnectionScreen - No profileUid available yet");
         }
@@ -1117,6 +1152,88 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     marginTop: 20,
+  },
+  qrCodeDataContainer: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: "#f0f8ff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4a90e2",
+  },
+  darkQrCodeDataContainer: {
+    backgroundColor: "#1a2332",
+    borderColor: "#4a90e2",
+  },
+  qrCodeDataTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#2c5282",
+    marginBottom: 8,
+  },
+  darkQrCodeDataTitle: {
+    color: "#90cdf4",
+  },
+  qrCodeDataContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e0",
+  },
+  darkQrCodeDataContent: {
+    backgroundColor: "#0f172a",
+    borderColor: "#334155",
+  },
+  qrCodeDataText: {
+    fontSize: 11,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#1a202c",
+    lineHeight: 16,
+  },
+  darkQrCodeDataText: {
+    color: "#e2e8f0",
+  },
+  qrCodeDataContainer: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: "#f0f8ff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4a90e2",
+  },
+  darkQrCodeDataContainer: {
+    backgroundColor: "#1a2332",
+    borderColor: "#4a90e2",
+  },
+  qrCodeDataTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#2c5282",
+    marginBottom: 8,
+  },
+  darkQrCodeDataTitle: {
+    color: "#90cdf4",
+  },
+  qrCodeDataContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e0",
+  },
+  darkQrCodeDataContent: {
+    backgroundColor: "#0f172a",
+    borderColor: "#334155",
+  },
+  qrCodeDataText: {
+    fontSize: 11,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#1a202c",
+    lineHeight: 16,
+  },
+  darkQrCodeDataText: {
+    color: "#e2e8f0",
   },
   ablyInfoContainer: {
     marginTop: 16,
