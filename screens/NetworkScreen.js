@@ -73,6 +73,7 @@ const NetworkScreen = ({ navigation }) => {
   const [viewMode, setViewMode] = useState("list");
   const [userProfileData, setUserProfileData] = useState(null);
   const [qrCodeData, setQrCodeData] = useState("");
+  const [ablyChannelName, setAblyChannelName] = useState(null); // Store Ably channel name for display
   const [showAsyncStorage, setShowAsyncStorage] = useState(true);
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
   const [dateFilter, setDateFilter] = useState("All"); // All, This Week, This Month, This Year
@@ -888,8 +889,11 @@ const NetworkScreen = ({ navigation }) => {
       console.log("🔗 QR Code Data:", qrDataString);
       if (ablyChannelName) {
         console.log("📡 QR Code includes Ably Channel Name:", ablyChannelName);
+        // Store channel name for display
+        setAblyChannelName(ablyChannelName);
       } else {
         console.warn("⚠️ QR Code does NOT include Ably Channel Name (user_uid not found)");
+        setAblyChannelName(null);
       }
       // For display, we'll use the JSON string, but also support URL format for backward compatibility
       setQrCodeData(qrDataString);
@@ -1991,6 +1995,17 @@ const NetworkScreen = ({ navigation }) => {
                     />
                   </View>
 
+                  {/* Display Ably Channel Name */}
+                  {ablyChannelName && (
+                    <View style={[styles.ablyInfoContainer, darkMode && styles.darkAblyInfoContainer]}>
+                      <Text style={[styles.ablyLabel, darkMode && styles.darkAblyLabel]}>Ably Channel Name:</Text>
+                      <Text style={[styles.ablyChannelName, darkMode && styles.darkAblyChannelName]}>{ablyChannelName}</Text>
+                      <Text style={[styles.ablyInfoText, darkMode && styles.darkAblyInfoText]}>
+                        This channel name is included in your QR code
+                      </Text>
+                    </View>
+                  )}
+
                   {/* Display MiniCard showing what information will be transferred */}
                   {(() => {
                     if (__DEV__) networkLog("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
@@ -2853,6 +2868,46 @@ const styles = StyleSheet.create({
   qrCodeMiniCardContainer: {
     marginTop: 15,
     width: "100%",
+  },
+  ablyInfoContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    width: "100%",
+  },
+  darkAblyInfoContainer: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  ablyLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 4,
+  },
+  darkAblyLabel: {
+    color: "#aaa",
+  },
+  ablyChannelName: {
+    fontSize: 14,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#333",
+    marginBottom: 8,
+  },
+  darkAblyChannelName: {
+    color: "#fff",
+  },
+  ablyInfoText: {
+    fontSize: 11,
+    color: "#888",
+    fontStyle: "italic",
+  },
+  darkAblyInfoText: {
+    color: "#999",
   },
   filterContainer: {
     flexDirection: "row",

@@ -777,21 +777,27 @@ const NewConnectionScreen = () => {
                 <MiniCard user={profileData} />
                 
                 {/* Display Ably Channel Name and Status */}
-                {ablyChannelName && (
-                  <View style={[styles.ablyInfoContainer, darkMode && styles.darkAblyInfoContainer]}>
-                    <Text style={[styles.ablyLabel, darkMode && styles.darkAblyLabel]}>Ably Channel:</Text>
-                    <Text style={[styles.ablyChannelName, darkMode && styles.darkAblyChannelName]}>{ablyChannelName}</Text>
-                    {ablyMessageSent ? (
-                      <View style={styles.ablyStatusContainer}>
-                        <Text style={[styles.ablyStatusSent, darkMode && styles.darkAblyStatusSent]}>✅ Ably Note Sent</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.ablyStatusContainer}>
-                        <Text style={[styles.ablyStatusPending, darkMode && styles.darkAblyStatusPending]}>⏳ Sending Ably Note...</Text>
-                      </View>
-                    )}
-                  </View>
-                )}
+                <View style={[styles.ablyInfoContainer, darkMode && styles.darkAblyInfoContainer]}>
+                  {ablyChannelName ? (
+                    <>
+                      <Text style={[styles.ablyLabel, darkMode && styles.darkAblyLabel]}>Ably Channel:</Text>
+                      <Text style={[styles.ablyChannelName, darkMode && styles.darkAblyChannelName]}>{ablyChannelName}</Text>
+                      {ablyMessageSent ? (
+                        <View style={styles.ablyStatusContainer}>
+                          <Text style={[styles.ablyStatusSent, darkMode && styles.darkAblyStatusSent]}>✅ Ably Note Sent</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.ablyStatusContainer}>
+                          <Text style={[styles.ablyStatusPending, darkMode && styles.darkAblyStatusPending]}>⏳ Sending Ably Note...</Text>
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <Text style={[styles.ablyLabel, darkMode && styles.darkAblyLabel]}>
+                      ⚠️ No Ably Channel Name in QR Code
+                    </Text>
+                  )}
+                </View>
               </View>
 
               {/* Login/SignUp buttons for non-logged-in users */}
