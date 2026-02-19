@@ -72,8 +72,10 @@ export default function QRScannerScreen({ route }) {
           onScanComplete(parsed);
           navigation.goBack();
         } else {
-          navigation.navigate("Connect", {
+          // Navigate to NewConnection (not Connect) to pass form_switch_enabled
+          navigation.navigate("NewConnection", {
             profile_uid: parsed.profile_uid,
+            form_switch_enabled: parsed.form_switch_enabled || false,
           });
         }
       } else {

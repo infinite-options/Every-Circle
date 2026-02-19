@@ -39,6 +39,7 @@ const NewConnectionScreen = () => {
   const [existingRelationship, setExistingRelationship] = useState(null);
   const [circleUid, setCircleUid] = useState(null);
   const [checkingRelationship, setCheckingRelationship] = useState(false);
+  const [formSwitchEnabled, setFormSwitchEnabled] = useState(false); // Track if Form Switch is enabled from QR code
 
   // Relationship options matching ConnectScreen.js
   const relationshipOptions = [
@@ -54,6 +55,13 @@ const NewConnectionScreen = () => {
     (Platform.OS === "web" && typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("profile_uid") || window.location.pathname.split("/newconnection/")[1]?.split("?")[0] || window.location.pathname.split("/newconnection/")[1]
       : null);
+
+  // Check for form_switch_enabled in route params (from QR code)
+  useEffect(() => {
+    if (route.params?.form_switch_enabled !== undefined) {
+      setFormSwitchEnabled(route.params.form_switch_enabled);
+    }
+  }, [route.params]);
 
   // Check login status on mount
   useEffect(() => {
@@ -174,6 +182,11 @@ const NewConnectionScreen = () => {
       const isSuccess = response.ok || (response.status >= 200 && response.status < 300);
 
       if (isSuccess) {
+        // If Form Switch is enabled, send Ably message to User 1
+        if (formSwitchEnabled && !isUpdate) {
+          await sendAblyConnectionRequest();
+        }
+
         const successMessage = isUpdate ? "Contact successfully updated" : "Contact successfully added";
         console.log("NewConnectionScreen - Success! Showing alert:", successMessage);
 
@@ -378,6 +391,93 @@ const NewConnectionScreen = () => {
     }
   };
 
+  // Send Ably message to User 1 with User 2's profile info
+  const sendAblyConnectionRequest = async () => {
+    try {
+      // Dynamically import Ably
+      let Ably;
+      try {
+        Ably = require("ably");
+      } catch (e) {
+        console.warn("Ably not installed. Skipping Ably message.");
+        return;
+      }
+
+      const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
+      if (!ablyApiKey) {
+        console.warn("Ably API key not configured. Skipping Ably message.");
+        return;
+      }
+
+      // Get User 1's profile to find their user_uid for the channel
+      const user1ProfileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
+      if (!user1ProfileResponse.ok) {
+        console.warn("Could not fetch User 1's profile for Ably message.");
+        return;
+      }
+      const user1Profile = await user1ProfileResponse.json();
+      const user1Uid = user1Profile?.user_uid || user1Profile?.user?.user_uid;
+
+      if (!user1Uid) {
+        console.warn("User 1's user_uid not found. Skipping Ably message.");
+        return;
+      }
+
+      // Get User 2's (logged in user's) profile info
+      const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
+      if (!loggedInProfileUID) {
+        console.warn("Logged in user profile UID not found. Skipping Ably message.");
+        return;
+      }
+
+      const user2ProfileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${loggedInProfileUID}`);
+      if (!user2ProfileResponse.ok) {
+        console.warn("Could not fetch User 2's profile for Ably message.");
+        return;
+      }
+      const user2Profile = await user2ProfileResponse.json();
+      const p2 = user2Profile?.personal_info || {};
+
+      // Extract public miniCard information for User 2
+      const tagLineIsPublic2 = p2.profile_personal_tag_line_is_public === 1 || p2.profile_personal_tagline_is_public === 1;
+      const emailIsPublic2 = p2.profile_personal_email_is_public === 1;
+      const phoneIsPublic2 = p2.profile_personal_phone_number_is_public === 1;
+      const imageIsPublic2 = p2.profile_personal_image_is_public === 1;
+      const locationIsPublic2 = p2.profile_personal_location_is_public === 1;
+
+      const user2PublicData = {
+        profile_uid: loggedInProfileUID,
+        firstName: sanitizeText(p2.profile_personal_first_name || ""),
+        lastName: sanitizeText(p2.profile_personal_last_name || ""),
+        tagLine: tagLineIsPublic2 ? sanitizeText(p2.profile_personal_tag_line || p2.profile_personal_tagline) : "",
+        email: emailIsPublic2 ? sanitizeText(user2Profile?.user_email || "") : "",
+        phoneNumber: phoneIsPublic2 ? sanitizeText(p2.profile_personal_phone_number || "") : "",
+        profileImage: imageIsPublic2 ? sanitizeText(p2.profile_personal_image ? String(p2.profile_personal_image) : "") : "",
+        city: locationIsPublic2 ? sanitizeText(p2.profile_personal_city || "") : "",
+        state: locationIsPublic2 ? sanitizeText(p2.profile_personal_state || "") : "",
+        tagLineIsPublic: tagLineIsPublic2,
+        emailIsPublic: emailIsPublic2,
+        phoneIsPublic: phoneIsPublic2,
+        imageIsPublic: imageIsPublic2,
+        locationIsPublic: locationIsPublic2,
+      };
+
+      // Create Ably client and send message
+      const client = new Ably.Realtime({ key: ablyApiKey });
+      const channelName = `profile:${user1Uid}`;
+      const channel = client.channels.get(channelName);
+
+      await channel.publish("connection-request", user2PublicData);
+      console.log("✅ Ably message sent to User 1:", channelName);
+
+      // Close Ably connection
+      client.close();
+    } catch (error) {
+      console.error("Error sending Ably message:", error);
+      // Don't show error to user - this is a background operation
+    }
+  };
+
   const fetchProfileData = async () => {
     try {
       setLoading(true);
@@ -529,7 +629,7 @@ const NewConnectionScreen = () => {
 
                   {/* Relationship */}
                   <View style={styles.fieldContainer}>
-                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Relationship:</Text>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Relationship (defaults to Friend):</Text>
                     <Dropdown
                       style={[styles.dropdown, darkMode && styles.darkDropdown]}
                       data={relationshipOptions}
@@ -558,7 +658,7 @@ const NewConnectionScreen = () => {
 
                   {/* Introduced By */}
                   <View style={styles.fieldContainer}>
-                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Introduced By:</Text>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Introduced By (optional):</Text>
                     <WebTextInput
                       style={[styles.textInput, darkMode && styles.darkTextInput]}
                       value={introducedBy}
@@ -570,7 +670,7 @@ const NewConnectionScreen = () => {
 
                   {/* Meeting Location */}
                   <View style={styles.fieldContainer}>
-                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Meeting Location:</Text>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Meeting Location (optional):</Text>
                     <WebTextInput
                       style={[styles.textInput, darkMode && styles.darkTextInput]}
                       value={meetingLocation}
@@ -582,7 +682,7 @@ const NewConnectionScreen = () => {
 
                   {/* Meeting Event */}
                   <View style={styles.fieldContainer}>
-                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Meeting Event:</Text>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Meeting Event (optional):</Text>
                     <WebTextInput
                       style={[styles.textInput, darkMode && styles.darkTextInput]}
                       value={meetingEvent}
@@ -594,7 +694,7 @@ const NewConnectionScreen = () => {
 
                   {/* Comments, Notes, Reminder */}
                   <View style={styles.fieldContainer}>
-                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Comments, Notes, Reminder:</Text>
+                    <Text style={[styles.fieldLabel, darkMode && styles.darkFieldLabel]}>Comments, Notes, Reminder (optional):</Text>
                     <WebTextInput
                       style={[styles.textArea, darkMode && styles.darkTextInput]}
                       value={commentsNotes}

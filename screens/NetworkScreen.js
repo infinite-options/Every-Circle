@@ -1,6 +1,6 @@
 // NetworkScreen.js - Web-compatible version
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform } from "react-native";
+import React, { useEffect, useState, useRef } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, Modal, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
@@ -11,6 +11,8 @@ import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../a
 import MiniCard from "../components/MiniCard";
 import WebTextInput from "../components/WebTextInput";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
+import { Dropdown } from "react-native-element-dropdown";
+import * as Location from "expo-location";
 
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
@@ -66,17 +68,147 @@ const NetworkScreen = ({ navigation }) => {
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [scannedProfileData, setScannedProfileData] = useState(null);
   const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
+  
+  // Form Switch state
+  const [formSwitchEnabled, setFormSwitchEnabled] = useState(false);
+  const [ablyClient, setAblyClient] = useState(null);
+  const [ablyChannel, setAblyChannel] = useState(null);
+  
+  // Form modal state (for when User 1 receives Ably message)
+  const [showConnectionFormModal, setShowConnectionFormModal] = useState(false);
+  const [receivedConnectionData, setReceivedConnectionData] = useState(null);
+  
+  // Form fields for the received connection
+  const [receivedIntroducedBy, setReceivedIntroducedBy] = useState("");
+  const [receivedCommentsNotes, setReceivedCommentsNotes] = useState("");
+  const [receivedMeetingLocation, setReceivedMeetingLocation] = useState("");
+  const [receivedMeetingEvent, setReceivedMeetingEvent] = useState("");
+  const [receivedRelationship, setReceivedRelationship] = useState("friend");
+  const [receivedDateTimeStamp, setReceivedDateTimeStamp] = useState("");
+  const [receivedLatitude, setReceivedLatitude] = useState(null);
+  const [receivedLongitude, setReceivedLongitude] = useState(null);
+  const [submittingReceivedForm, setSubmittingReceivedForm] = useState(false);
 
   const networkFeedbackInstructions = "Instructions for Connect";
 
   //Define custom questions for the Network page
   const networkFeedbackQuestions = ["Connect - Question 1?", "Connect - Question 2?", "Connect - Question 3?"];
 
+  // Relationship options for the form modal
+  const relationshipOptions = [
+    { label: "Friend", value: "friend" },
+    { label: "Colleague", value: "colleague" },
+    { label: "Family", value: "family" },
+  ];
+
+  // Handle submitting the received connection form
+  const handleSubmitReceivedConnection = async () => {
+    try {
+      setSubmittingReceivedForm(true);
+
+      const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
+      if (!loggedInProfileUID) {
+        Alert.alert("Not Logged In", "Please log in to add connections.");
+        setSubmittingReceivedForm(false);
+        return;
+      }
+
+      if (!receivedConnectionData || !receivedConnectionData.profile_uid) {
+        Alert.alert("Error", "Invalid connection data.");
+        setSubmittingReceivedForm(false);
+        return;
+      }
+
+      // Check if trying to add self
+      if (loggedInProfileUID === receivedConnectionData.profile_uid) {
+        Alert.alert("Cannot Add Self", "You cannot add yourself as a connection.");
+        setSubmittingReceivedForm(false);
+        return;
+      }
+
+      // Format date
+      let circleDate = "";
+      if (receivedDateTimeStamp) {
+        const date = new Date(receivedDateTimeStamp);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, "0");
+        const day = String(date.getDate()).padStart(2, "0");
+        circleDate = `${year}-${month}-${day}`;
+      } else {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, "0");
+        const day = String(now.getDate()).padStart(2, "0");
+        circleDate = `${year}-${month}-${day}`;
+      }
+
+      // Format geotag
+      let circleGeotag = null;
+      if (receivedLatitude !== null && receivedLongitude !== null) {
+        circleGeotag = `${receivedLatitude},${receivedLongitude}`;
+      }
+
+      // Make API call
+      const requestBody = {
+        circle_profile_id: loggedInProfileUID,
+        circle_related_person_id: receivedConnectionData.profile_uid,
+        circle_relationship: receivedRelationship || "None",
+        circle_date: circleDate,
+        circle_event: receivedMeetingEvent || null,
+        circle_note: receivedCommentsNotes || null,
+        circle_introduced_by: receivedIntroducedBy || null,
+        circle_geotag: circleGeotag,
+      };
+
+      const response = await fetch(CIRCLES_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (response.ok) {
+        Alert.alert("Success", "Contact successfully added", [
+          {
+            text: "OK",
+            onPress: () => {
+              setShowConnectionFormModal(false);
+              setReceivedConnectionData(null);
+              // Reset form fields
+              setReceivedIntroducedBy("");
+              setReceivedCommentsNotes("");
+              setReceivedMeetingLocation("");
+              setReceivedMeetingEvent("");
+              setReceivedRelationship("friend");
+              setReceivedDateTimeStamp("");
+              setReceivedLatitude(null);
+              setReceivedLongitude(null);
+              // Refresh network data
+              if (profileUid) {
+                fetchNetwork(profileUid, degree);
+              }
+            },
+          },
+        ]);
+      } else {
+        const errorData = await response.json();
+        const errorMessage = errorData.message || errorData.error || "Failed to add connection";
+        Alert.alert("Error", errorMessage);
+      }
+    } catch (err) {
+      console.error("Error adding connection:", err);
+      Alert.alert("Error", err.message || "Failed to add connection. Please try again.");
+    } finally {
+      setSubmittingReceivedForm(false);
+    }
+  };
+
   // Load persisted Network screen settings
   const loadNetworkSettings = async () => {
     try {
       console.log("📥 Loading Network screen settings from AsyncStorage...");
-      const [showAsyncStorageValue, degreeValue, viewModeValue, networkDataValue, groupedNetworkValue, dateFilterValue, locationFilterValue, eventFilterValue] = await Promise.all([
+      const [showAsyncStorageValue, degreeValue, viewModeValue, networkDataValue, groupedNetworkValue, dateFilterValue, locationFilterValue, eventFilterValue, formSwitchValue] = await Promise.all([
         AsyncStorage.getItem("network_showAsyncStorage"),
         AsyncStorage.getItem("network_degree"),
         AsyncStorage.getItem("network_viewMode"),
@@ -85,6 +217,7 @@ const NetworkScreen = ({ navigation }) => {
         AsyncStorage.getItem("network_dateFilter"),
         AsyncStorage.getItem("network_locationFilter"),
         AsyncStorage.getItem("network_eventFilter"),
+        AsyncStorage.getItem("network_formSwitchEnabled"),
       ]);
 
       console.log("📥 Loaded values:", {
@@ -136,6 +269,13 @@ const NetworkScreen = ({ navigation }) => {
         console.log("📥 No persisted eventFilter value, using default: All");
       }
 
+      if (formSwitchValue !== null) {
+        const parsedValue = JSON.parse(formSwitchValue);
+        console.log("📥 Setting formSwitchEnabled to:", parsedValue);
+        setFormSwitchEnabled(parsedValue);
+      } else {
+        console.log("📥 No persisted formSwitchEnabled value, using default: false");
+      }
 
       // Load network data if available
       if (networkDataValue !== null) {
@@ -341,6 +481,119 @@ const NetworkScreen = ({ navigation }) => {
     loadNetworkSettings();
   }, []);
 
+  // Update QR code when formSwitchEnabled changes
+  useEffect(() => {
+    if (profileUid) {
+      fetchUserProfileForQR(profileUid);
+    }
+  }, [formSwitchEnabled, profileUid]);
+
+  // Save formSwitchEnabled to AsyncStorage when it changes
+  useEffect(() => {
+    AsyncStorage.setItem("network_formSwitchEnabled", JSON.stringify(formSwitchEnabled));
+  }, [formSwitchEnabled]);
+
+  // Initialize Ably and set up listener when profileUid is available
+  useEffect(() => {
+    if (!profileUid) return;
+
+    const initializeAbly = async () => {
+      try {
+        // Dynamically import Ably to handle cases where it's not installed
+        let Ably;
+        try {
+          Ably = require("ably");
+        } catch (e) {
+          console.warn("Ably not installed. Please run: npm install ably");
+          return;
+        }
+
+        // Get Ably API key from environment or use a default
+        // You'll need to add EXPO_PUBLIC_ABLY_API_KEY to your .env file
+        const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
+        
+        if (!ablyApiKey) {
+          console.warn("Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
+          return;
+        }
+
+        // Create Ably client
+        const client = new Ably.Realtime({ key: ablyApiKey });
+        setAblyClient(client);
+
+        // Create channel name based on profile_uid
+        const channelName = `profile:${profileUid}`;
+        const channel = client.channels.get(channelName);
+        setAblyChannel(channel);
+
+        // Subscribe to connection messages
+        channel.subscribe("connection-request", (message) => {
+          console.log("📨 Received Ably message:", message.data);
+          const connectionData = message.data;
+          
+          // Set received connection data and show form modal
+          setReceivedConnectionData(connectionData);
+          setShowConnectionFormModal(true);
+          
+          // Set initial form values
+          const now = new Date();
+          setReceivedDateTimeStamp(now.toISOString());
+          setReceivedRelationship("friend");
+          
+          // Fetch location for the received connection
+          fetchReceivedConnectionLocation();
+        });
+
+        console.log("✅ Ably initialized and listening on channel:", channelName);
+      } catch (error) {
+        console.error("Error initializing Ably:", error);
+      }
+    };
+
+    initializeAbly();
+
+    // Cleanup on unmount
+    return () => {
+      if (ablyChannel) {
+        ablyChannel.unsubscribe();
+      }
+      if (ablyClient) {
+        ablyClient.close();
+      }
+    };
+  }, [profileUid]);
+
+  // Fetch location for received connection
+  const fetchReceivedConnectionLocation = async () => {
+    try {
+      if (Platform.OS === "web") {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              setReceivedLatitude(position.coords.latitude);
+              setReceivedLongitude(position.coords.longitude);
+            },
+            (error) => {
+              console.error("Geolocation error:", error);
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          );
+        }
+      } else {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === "granted") {
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          setReceivedLatitude(location.coords.latitude);
+          setReceivedLongitude(location.coords.longitude);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching location:", err);
+    }
+  };
+
   // Fetch user profile data to create QR code with public miniCard info
   const fetchUserProfileForQR = async (profileUID) => {
     try {
@@ -401,6 +654,8 @@ const NetworkScreen = ({ navigation }) => {
         version: "1.0",
         // Include URL for web compatibility
         url: `https://everycircle.com/newconnection/${profileUID}`,
+        // Include Form Switch value in QR code
+        form_switch_enabled: formSwitchEnabled,
       };
       const qrDataString = JSON.stringify(qrData);
       console.log("🔗 QR Code Data:", qrDataString);
@@ -1488,6 +1743,22 @@ const NetworkScreen = ({ navigation }) => {
                     <QRCodeComponent value={qrCodeData} size={200} color={darkMode ? "#ffffff" : "#000000"} backgroundColor={darkMode ? "#1a1a1a" : "#ffffff"} />
                   </View>
 
+                  {/* Form Switch */}
+                  <View style={[styles.formSwitchContainer, darkMode && styles.darkFormSwitchContainer]}>
+                    <Text style={[styles.formSwitchLabel, darkMode && styles.darkFormSwitchLabel]}>
+                      Enable Form on Scan: Allow others to add you to their Circle when they scan your QR code
+                    </Text>
+                    <Switch
+                      value={formSwitchEnabled}
+                      onValueChange={(value) => {
+                        setFormSwitchEnabled(value);
+                        // QR code will be updated automatically via useEffect
+                      }}
+                      trackColor={{ false: "#767577", true: "#81b0ff" }}
+                      thumbColor={formSwitchEnabled ? "#f5dd4b" : "#f4f3f4"}
+                    />
+                  </View>
+
                   {/* Display MiniCard showing what information will be transferred */}
                   {(() => {
                     if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
@@ -2057,6 +2328,138 @@ const NetworkScreen = ({ navigation }) => {
         }}
         onAddConnection={(relationship) => handleAddScannedConnection(relationship)}
       />
+
+      {/* Connection Form Modal - appears when Ably message is received */}
+      <Modal
+        visible={showConnectionFormModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowConnectionFormModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.connectionFormModal, darkMode && styles.darkConnectionFormModal]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, darkMode && styles.darkModalTitle]}>Add Connection</Text>
+              <TouchableOpacity
+                onPress={() => setShowConnectionFormModal(false)}
+                style={styles.closeModalButton}
+              >
+                <Ionicons name="close" size={24} color={darkMode ? "#fff" : "#333"} />
+              </TouchableOpacity>
+            </View>
+
+            {receivedConnectionData && (
+              <View style={styles.modalMiniCardContainer}>
+                <MiniCard user={receivedConnectionData} />
+              </View>
+            )}
+
+            <ScrollView style={styles.modalScrollView} contentContainerStyle={styles.modalScrollContent}>
+              {/* Date Time Stamp */}
+              <View style={styles.modalFieldContainer}>
+                <Text style={[styles.modalFieldLabel, darkMode && styles.darkModalFieldLabel]}>Date Time Stamp:</Text>
+                <Text style={[styles.modalFieldValue, darkMode && styles.darkModalFieldValue]}>
+                  {receivedDateTimeStamp ? new Date(receivedDateTimeStamp).toLocaleString() : "Not set"}
+                </Text>
+              </View>
+
+              {/* Geo Location */}
+              <View style={styles.modalFieldContainer}>
+                <Text style={[styles.modalFieldLabel, darkMode && styles.darkModalFieldLabel]}>Geo Location:</Text>
+                {receivedLatitude !== null && receivedLongitude !== null ? (
+                  <Text style={[styles.modalLocationText, darkMode && styles.darkModalLocationText]}>
+                    Latitude: {receivedLatitude.toFixed(6)}, Longitude: {receivedLongitude.toFixed(6)}
+                  </Text>
+                ) : (
+                  <Text style={[styles.modalLocationText, darkMode && styles.darkModalLocationText]}>Location not available</Text>
+                )}
+              </View>
+
+              {/* Relationship */}
+              <View style={styles.modalFieldContainer}>
+                <Text style={[styles.modalFieldLabel, darkMode && styles.darkModalFieldLabel]}>Relationship:</Text>
+                <Dropdown
+                  style={[styles.modalDropdown, darkMode && styles.darkModalDropdown]}
+                  data={relationshipOptions}
+                  labelField='label'
+                  valueField='value'
+                  placeholder='Select relationship'
+                  placeholderTextColor={darkMode ? "#666" : "#999"}
+                  value={receivedRelationship}
+                  onChange={(item) => setReceivedRelationship(item.value)}
+                  containerStyle={[styles.modalDropdownContainer, darkMode && styles.darkModalDropdownContainer]}
+                  itemTextStyle={[styles.modalDropdownItemText, darkMode && styles.darkModalDropdownItemText]}
+                  selectedTextStyle={[styles.modalDropdownSelectedText, darkMode && styles.darkModalDropdownSelectedText]}
+                  activeColor={darkMode ? "#404040" : "#f0f0f0"}
+                />
+              </View>
+
+              {/* Introduced By */}
+              <View style={styles.modalFieldContainer}>
+                <Text style={[styles.modalFieldLabel, darkMode && styles.darkModalFieldLabel]}>Introduced By (optional):</Text>
+                <WebTextInput
+                  style={[styles.modalTextInput, darkMode && styles.darkModalTextInput]}
+                  value={receivedIntroducedBy}
+                  onChangeText={setReceivedIntroducedBy}
+                  placeholder='Enter who introduced you to this person'
+                  placeholderTextColor={darkMode ? "#666" : "#999"}
+                />
+              </View>
+
+              {/* Meeting Location */}
+              <View style={styles.modalFieldContainer}>
+                <Text style={[styles.modalFieldLabel, darkMode && styles.darkModalFieldLabel]}>Meeting Location (optional):</Text>
+                <WebTextInput
+                  style={[styles.modalTextInput, darkMode && styles.darkModalTextInput]}
+                  value={receivedMeetingLocation}
+                  onChangeText={setReceivedMeetingLocation}
+                  placeholder='Enter where you met this person'
+                  placeholderTextColor={darkMode ? "#666" : "#999"}
+                />
+              </View>
+
+              {/* Meeting Event */}
+              <View style={styles.modalFieldContainer}>
+                <Text style={[styles.modalFieldLabel, darkMode && styles.darkModalFieldLabel]}>Meeting Event (optional):</Text>
+                <WebTextInput
+                  style={[styles.modalTextInput, darkMode && styles.darkModalTextInput]}
+                  value={receivedMeetingEvent}
+                  onChangeText={setReceivedMeetingEvent}
+                  placeholder='Enter the event where you met'
+                  placeholderTextColor={darkMode ? "#666" : "#999"}
+                />
+              </View>
+
+              {/* Comments, Notes, Reminder */}
+              <View style={styles.modalFieldContainer}>
+                <Text style={[styles.modalFieldLabel, darkMode && styles.darkModalFieldLabel]}>Comments, Notes, Reminder (optional):</Text>
+                <WebTextInput
+                  style={[styles.modalTextArea, darkMode && styles.darkModalTextInput]}
+                  value={receivedCommentsNotes}
+                  onChangeText={setReceivedCommentsNotes}
+                  placeholder='Enter any comments, notes, or reminders about this connection'
+                  placeholderTextColor={darkMode ? "#666" : "#999"}
+                  multiline
+                  numberOfLines={4}
+                />
+              </View>
+
+              {/* Submit Button */}
+              <TouchableOpacity
+                style={[styles.modalSubmitButton, darkMode && styles.darkModalSubmitButton, submittingReceivedForm && styles.modalSubmitButtonDisabled]}
+                onPress={handleSubmitReceivedConnection}
+                disabled={submittingReceivedForm}
+              >
+                {submittingReceivedForm ? (
+                  <ActivityIndicator size='small' color='#fff' />
+                ) : (
+                  <Text style={styles.modalSubmitButtonText}>Add Connection</Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -2350,6 +2753,185 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 10,
     padding: 5,
+  },
+  // Form Switch styles
+  formSwitchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 20,
+    marginBottom: 20,
+    padding: 15,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  darkFormSwitchContainer: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  formSwitchLabel: {
+    flex: 1,
+    fontSize: 14,
+    color: "#333",
+    marginRight: 15,
+  },
+  darkFormSwitchLabel: {
+    color: "#ccc",
+  },
+  // Connection Form Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  connectionFormModal: {
+    width: "90%",
+    maxWidth: 500,
+    maxHeight: "90%",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 20,
+  },
+  darkConnectionFormModal: {
+    backgroundColor: "#2d2d2d",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+  },
+  darkModalTitle: {
+    color: "#fff",
+  },
+  closeModalButton: {
+    padding: 5,
+  },
+  modalMiniCardContainer: {
+    marginBottom: 20,
+  },
+  modalScrollView: {
+    maxHeight: 500,
+  },
+  modalScrollContent: {
+    paddingBottom: 20,
+  },
+  modalFieldContainer: {
+    marginBottom: 20,
+  },
+  modalFieldLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+  },
+  darkModalFieldLabel: {
+    color: "#ccc",
+  },
+  modalFieldValue: {
+    fontSize: 14,
+    color: "#666",
+    fontFamily: Platform.OS === "web" ? "monospace" : "monospace",
+  },
+  darkModalFieldValue: {
+    color: "#aaa",
+  },
+  modalLocationText: {
+    fontSize: 14,
+    color: "#666",
+    fontFamily: Platform.OS === "web" ? "monospace" : "monospace",
+  },
+  darkModalLocationText: {
+    color: "#aaa",
+  },
+  modalTextInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    backgroundColor: "#fff",
+    color: "#333",
+  },
+  darkModalTextInput: {
+    backgroundColor: "#1a1a1a",
+    borderColor: "#404040",
+    color: "#fff",
+  },
+  modalTextArea: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    backgroundColor: "#fff",
+    color: "#333",
+    minHeight: 100,
+    textAlignVertical: "top",
+  },
+  modalDropdown: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: "#fff",
+    minHeight: 48,
+  },
+  darkModalDropdown: {
+    backgroundColor: "#1a1a1a",
+    borderColor: "#404040",
+  },
+  modalDropdownContainer: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    backgroundColor: "#fff",
+  },
+  darkModalDropdownContainer: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  modalDropdownItemText: {
+    fontSize: 16,
+    color: "#333",
+  },
+  darkModalDropdownItemText: {
+    color: "#fff",
+  },
+  modalDropdownSelectedText: {
+    fontSize: 16,
+    color: "#333",
+  },
+  darkModalDropdownSelectedText: {
+    color: "#fff",
+  },
+  modalSubmitButton: {
+    backgroundColor: "#FF9500",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 20,
+  },
+  darkModalSubmitButton: {
+    backgroundColor: "#FF9500",
+  },
+  modalSubmitButtonDisabled: {
+    opacity: 0.6,
+  },
+  modalSubmitButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
   },
 });
 
