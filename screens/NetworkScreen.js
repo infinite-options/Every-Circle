@@ -437,7 +437,8 @@ const NetworkScreen = ({ navigation }) => {
   // Load settings when screen is focused
   useFocusEffect(
     React.useCallback(() => {
-      console.log("🔄 Network screen focused - loading settings...");
+      console.log("🔄 NetworkScreen - Screen focused - loading settings...");
+      console.log("🔄 NetworkScreen - Current profileUid:", profileUid);
       loadNetworkSettings();
 
       // Refetch network data when screen is focused to get updated relationship information
@@ -477,7 +478,8 @@ const NetworkScreen = ({ navigation }) => {
 
   // Also load settings on initial mount
   useEffect(() => {
-    console.log("🔄 Network screen mounted - loading settings...");
+    console.log("🔄 NetworkScreen - Component mounted - loading settings...");
+    console.log("🔄 NetworkScreen - Initial profileUid:", profileUid);
     loadNetworkSettings();
   }, []);
 
@@ -495,16 +497,24 @@ const NetworkScreen = ({ navigation }) => {
 
   // Initialize Ably and set up listener when profileUid is available
   useEffect(() => {
-    if (!profileUid) return;
+    console.log("🔵 NetworkScreen - Ably initialization useEffect triggered");
+    console.log("🔵 NetworkScreen - profileUid:", profileUid);
+    
+    if (!profileUid) {
+      console.log("⚠️ NetworkScreen - No profileUid, skipping Ably initialization");
+      return;
+    }
 
     const initializeAbly = async () => {
+      console.log("🚀 NetworkScreen - Starting Ably initialization...");
       try {
         // Dynamically import Ably to handle cases where it's not installed
         let Ably;
         try {
           Ably = require("ably");
+          console.log("✅ NetworkScreen - Ably module loaded successfully");
         } catch (e) {
-          console.warn("Ably not installed. Please run: npm install ably");
+          console.warn("❌ NetworkScreen - Ably not installed. Please run: npm install ably");
           return;
         }
 
@@ -513,62 +523,87 @@ const NetworkScreen = ({ navigation }) => {
         const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
         
         if (!ablyApiKey) {
-          console.warn("Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
+          console.warn("❌ NetworkScreen - Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
           return;
         }
+        console.log("✅ NetworkScreen - Ably API key found (length:", ablyApiKey.length, ")");
 
         // Create Ably client
+        console.log("🔵 NetworkScreen - Creating Ably Realtime client...");
         const client = new Ably.Realtime({ key: ablyApiKey });
         setAblyClient(client);
 
+        // Set up connection event listeners
+        client.connection.on("connected", () => {
+          console.log("✅ NetworkScreen - Ably client connected successfully");
+        });
+
+        client.connection.on("disconnected", () => {
+          console.log("⚠️ NetworkScreen - Ably client disconnected");
+        });
+
+        client.connection.on("failed", (stateChange) => {
+          console.error("❌ NetworkScreen - Ably connection failed:", stateChange);
+        });
+
         // Get user_uid (the 110 number) for the channel name
         // This matches what NewConnectionScreen uses
+        console.log("🔵 NetworkScreen - Fetching user_uid for channel name...");
         let userUid = null;
         try {
           userUid = await AsyncStorage.getItem("user_uid");
           if (userUid) {
             userUid = String(userUid).trim();
+            console.log("✅ NetworkScreen - Got user_uid from AsyncStorage:", userUid);
           } else {
+            console.log("🔵 NetworkScreen - user_uid not in AsyncStorage, fetching from API...");
             // Fallback: fetch from API
             const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
             if (profileResponse.ok) {
               const profileData = await profileResponse.json();
               userUid = profileData?.user_uid || profileData?.user?.user_uid;
+              console.log("✅ NetworkScreen - Got user_uid from API:", userUid);
+            } else {
+              console.warn("⚠️ NetworkScreen - Failed to fetch profile from API, status:", profileResponse.status);
             }
           }
         } catch (e) {
-          console.error("Error fetching user_uid for Ably channel:", e);
+          console.error("❌ NetworkScreen - Error fetching user_uid for Ably channel:", e);
         }
 
         if (!userUid) {
-          console.warn("user_uid not found. Cannot create Ably channel.");
+          console.warn("❌ NetworkScreen - user_uid not found. Cannot create Ably channel.");
           return;
         }
 
         // Create channel name based on user_uid (to match NewConnectionScreen)
         const channelName = `profile:${userUid}`;
+        console.log("🔵 NetworkScreen - Channel name:", channelName);
         const channel = client.channels.get(channelName);
         setAblyChannel(channel);
+        console.log("✅ NetworkScreen - Ably channel created:", channelName);
 
         // Subscribe to form-opened messages
         channel.subscribe("form-opened", (message) => {
-          console.log("📨 Received Ably message (form-opened):", message.data);
+          console.log("📨 NetworkScreen - Received Ably message (form-opened):", message.data);
           if (message.data && message.data.message) {
-            console.log("✅", message.data.message);
+            console.log("✅ NetworkScreen -", message.data.message);
           }
         });
+        console.log("✅ NetworkScreen - Subscribed to 'form-opened' messages");
 
         // Subscribe to continue-clicked messages
         channel.subscribe("continue-clicked", (message) => {
-          console.log("📨 Received Ably message (continue-clicked):", message.data);
+          console.log("📨 NetworkScreen - Received Ably message (continue-clicked):", message.data);
           if (message.data && message.data.message) {
-            console.log("✅", message.data.message);
+            console.log("✅ NetworkScreen -", message.data.message);
           }
         });
+        console.log("✅ NetworkScreen - Subscribed to 'continue-clicked' messages");
 
         // Subscribe to connection messages
         channel.subscribe("connection-request", (message) => {
-          console.log("📨 Received Ably message (connection-request):", message.data);
+          console.log("📨 NetworkScreen - Received Ably message (connection-request):", message.data);
           const connectionData = message.data;
           
           // Set received connection data and show form modal
@@ -583,10 +618,14 @@ const NetworkScreen = ({ navigation }) => {
           // Fetch location for the received connection
           fetchReceivedConnectionLocation();
         });
+        console.log("✅ NetworkScreen - Subscribed to 'connection-request' messages");
 
-        console.log("✅ Ably initialized and listening on channel:", channelName);
+        console.log("✅ NetworkScreen - Ably initialized successfully!");
+        console.log("✅ NetworkScreen - Listening on channel:", channelName);
+        console.log("✅ NetworkScreen - Current connection state:", client.connection.state);
       } catch (error) {
-        console.error("Error initializing Ably:", error);
+        console.error("❌ NetworkScreen - Error initializing Ably:", error);
+        console.error("❌ NetworkScreen - Error stack:", error.stack);
       }
     };
 
@@ -594,11 +633,14 @@ const NetworkScreen = ({ navigation }) => {
 
     // Cleanup on unmount
     return () => {
+      console.log("🔵 NetworkScreen - Cleaning up Ably connection...");
       if (ablyChannel) {
         ablyChannel.unsubscribe();
+        console.log("✅ NetworkScreen - Unsubscribed from channel");
       }
       if (ablyClient) {
         ablyClient.close();
+        console.log("✅ NetworkScreen - Closed Ably client");
       }
     };
   }, [profileUid]);
