@@ -935,7 +935,7 @@ export default function App() {
 
             {/* Build Timestamp - Last Change Date/Time with Version */}
             <Text style={styles.dateTimeText}>
-              PM 1.0.5 Version {versionData.major}.{versionData.build} - Last Change: {versionData.last_change}
+              PM 1.0.6 Version {versionData.major}.{versionData.build} - Last Change: {versionData.last_change}
             </Text>
           </View>
 

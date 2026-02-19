@@ -911,17 +911,27 @@ const NewConnectionScreen = () => {
               <View style={styles.cardContainer}>
                 <MiniCard user={profileData} />
                 
-                {/* Display Full QR Code Data */}
-                {qrCodeData && (
-                  <View style={[styles.qrCodeDataContainer, darkMode && styles.darkQrCodeDataContainer]}>
-                    <Text style={[styles.qrCodeDataTitle, darkMode && styles.darkQrCodeDataTitle]}>🔗 QR Code Data Received:</Text>
-                    <View style={[styles.qrCodeDataContent, darkMode && styles.darkQrCodeDataContent]}>
+                {/* Display Full QR Code Data - Always show if we have route params or data */}
+                <View style={[styles.qrCodeDataContainer, darkMode && styles.darkQrCodeDataContainer]}>
+                  <Text style={[styles.qrCodeDataTitle, darkMode && styles.darkQrCodeDataTitle]}>🔗 QR Code Data Received:</Text>
+                  <View style={[styles.qrCodeDataContent, darkMode && styles.darkQrCodeDataContent]}>
+                    <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled={true}>
                       <Text style={[styles.qrCodeDataText, darkMode && styles.darkQrCodeDataText]}>
-                        {JSON.stringify(qrCodeData, null, 2)}
+                        {qrCodeData 
+                          ? JSON.stringify(qrCodeData, null, 2) 
+                          : (route.params?.qr_code_data 
+                            ? (() => {
+                                try {
+                                  return JSON.stringify(JSON.parse(route.params.qr_code_data), null, 2);
+                                } catch (e) {
+                                  return route.params.qr_code_data;
+                                }
+                              })()
+                            : "No QR code data available - route.params keys: " + (route.params ? Object.keys(route.params).join(", ") : "null"))}
                       </Text>
-                    </View>
+                    </ScrollView>
                   </View>
-                )}
+                </View>
                 
                 {/* Display Ably Channel Name and Status */}
                 <View style={[styles.ablyInfoContainer, darkMode && styles.darkAblyInfoContainer]}>
@@ -1183,47 +1193,6 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     marginTop: 20,
-  },
-  qrCodeDataContainer: {
-    marginTop: 16,
-    padding: 12,
-    backgroundColor: "#f0f8ff",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#4a90e2",
-  },
-  darkQrCodeDataContainer: {
-    backgroundColor: "#1a2332",
-    borderColor: "#4a90e2",
-  },
-  qrCodeDataTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#2c5282",
-    marginBottom: 8,
-  },
-  darkQrCodeDataTitle: {
-    color: "#90cdf4",
-  },
-  qrCodeDataContent: {
-    backgroundColor: "#ffffff",
-    borderRadius: 4,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: "#cbd5e0",
-  },
-  darkQrCodeDataContent: {
-    backgroundColor: "#0f172a",
-    borderColor: "#334155",
-  },
-  qrCodeDataText: {
-    fontSize: 11,
-    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
-    color: "#1a202c",
-    lineHeight: 16,
-  },
-  darkQrCodeDataText: {
-    color: "#e2e8f0",
   },
   qrCodeDataContainer: {
     marginTop: 16,
