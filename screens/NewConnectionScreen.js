@@ -183,56 +183,70 @@ const NewConnectionScreen = () => {
 
   // Check for form_switch_enabled and ably_channel_name in route params (from QR code)
   useEffect(() => {
-    console.log("🔵 NewConnectionScreen - Route params changed:", route.params);
-    console.log("🔵 NewConnectionScreen - Route params type:", typeof route.params);
-    console.log("🔵 NewConnectionScreen - Route params keys:", route.params ? Object.keys(route.params) : "null");
-    
-    // Check route params
-    if (route.params?.form_switch_enabled !== undefined) {
-      setFormSwitchEnabled(route.params.form_switch_enabled);
-      console.log("✅ NewConnectionScreen - Form switch enabled set to:", route.params.form_switch_enabled);
-    }
-    
-    // Store Ably channel name for display - check both route.params and direct access
-    const channelNameFromParams = route.params?.ably_channel_name;
-    console.log("📡 NewConnectionScreen - Channel name from route.params:", channelNameFromParams);
-    console.log("📡 NewConnectionScreen - Channel name type:", typeof channelNameFromParams);
-    console.log("📡 NewConnectionScreen - Channel name truthy check:", !!channelNameFromParams);
-    
-    if (channelNameFromParams) {
-      setAblyChannelName(channelNameFromParams);
-      console.log("✅ NewConnectionScreen - Ably channel name set for display:", channelNameFromParams);
-    } else {
-      console.warn("⚠️ NewConnectionScreen - No ably_channel_name in route.params");
+    const loadChannelName = async () => {
+      console.log("🔵 NewConnectionScreen - Route params changed:", route.params);
+      console.log("🔵 NewConnectionScreen - Route params type:", typeof route.params);
+      console.log("🔵 NewConnectionScreen - Route params keys:", route.params ? Object.keys(route.params) : "null");
+      
+      // Check route params
+      if (route.params?.form_switch_enabled !== undefined) {
+        setFormSwitchEnabled(route.params.form_switch_enabled);
+        console.log("✅ NewConnectionScreen - Form switch enabled set to:", route.params.form_switch_enabled);
+      }
+      
+      // Store Ably channel name for display - check route.params first
+      let channelNameFromParams = route.params?.ably_channel_name;
+      console.log("📡 NewConnectionScreen - Channel name from route.params:", channelNameFromParams);
+      console.log("📡 NewConnectionScreen - Channel name type:", typeof channelNameFromParams);
+      console.log("📡 NewConnectionScreen - Channel name truthy check:", !!channelNameFromParams);
+      
+      // If not in route params, try AsyncStorage backup (set by QRScannerScreen)
+      if (!channelNameFromParams && profileUid) {
+        try {
+          const storedChannelName = await AsyncStorage.getItem(`ably_channel_${profileUid}`);
+          if (storedChannelName) {
+            channelNameFromParams = storedChannelName;
+            console.log("✅ NewConnectionScreen - Found channel name in AsyncStorage backup:", storedChannelName);
+            // Clean up after reading
+            await AsyncStorage.removeItem(`ably_channel_${profileUid}`);
+          }
+        } catch (e) {
+          console.warn("⚠️ NewConnectionScreen - Error reading from AsyncStorage:", e);
+        }
+      }
+      
       // Also check if it might be in the URL (for web)
-      if (Platform.OS === "web" && typeof window !== "undefined") {
+      if (!channelNameFromParams && Platform.OS === "web" && typeof window !== "undefined") {
         const urlParams = new URLSearchParams(window.location.search);
         const urlChannelName = urlParams.get("ably_channel_name");
         console.log("📡 NewConnectionScreen - Checking URL params for channel name:", urlChannelName);
         if (urlChannelName) {
-          setAblyChannelName(urlChannelName);
-          console.log("✅ NewConnectionScreen - Ably channel name set from URL:", urlChannelName);
+          channelNameFromParams = urlChannelName;
         }
       }
-    }
-    
-    // If we have an Ably channel name from QR code, send "QR code was scanned" message
-    const channelNameToUse = channelNameFromParams || (Platform.OS === "web" && typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("ably_channel_name") : null);
-    if (channelNameToUse && profileUid) {
-      console.log("📡 NewConnectionScreen - Detected Ably channel name from QR code:", channelNameToUse);
-      console.log("📡 NewConnectionScreen - Profile UID available:", profileUid);
-      sendQRCodeScannedMessage(channelNameToUse).catch((error) => {
-        console.error("❌ NewConnectionScreen - Failed to send QR code scanned message:", error);
-      });
-    } else {
-      if (!channelNameToUse) {
-        console.warn("⚠️ NewConnectionScreen - No ably_channel_name found in route params or URL");
+      
+      if (channelNameFromParams) {
+        setAblyChannelName(channelNameFromParams);
+        console.log("✅ NewConnectionScreen - Ably channel name set for display:", channelNameFromParams);
+        
+        // If we have an Ably channel name from QR code, send "QR code was scanned" message
+        if (profileUid) {
+          console.log("📡 NewConnectionScreen - Detected Ably channel name from QR code:", channelNameFromParams);
+          console.log("📡 NewConnectionScreen - Profile UID available:", profileUid);
+          sendQRCodeScannedMessage(channelNameFromParams).catch((error) => {
+            console.error("❌ NewConnectionScreen - Failed to send QR code scanned message:", error);
+          });
+        }
+      } else {
+        console.warn("⚠️ NewConnectionScreen - No ably_channel_name found in route params, AsyncStorage, or URL");
         console.log("📋 NewConnectionScreen - Full route.params:", JSON.stringify(route.params, null, 2));
+        if (!profileUid) {
+          console.warn("⚠️ NewConnectionScreen - No profileUid available yet");
+        }
       }
-      if (!profileUid) {
-        console.warn("⚠️ NewConnectionScreen - No profileUid available yet");
-      }
-    }
+    };
+    
+    loadChannelName();
   }, [route.params, profileUid]);
 
   // Check login status on mount

@@ -14,6 +14,7 @@ import { Camera, CameraView } from "expo-camera";
 import { BarCodeScanner } from "expo-barcode-scanner";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import AppHeader from "../components/AppHeader";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
@@ -43,7 +44,7 @@ export default function QRScannerScreen({ route }) {
     })();
   }, []);
 
-  const handleBarCodeScanned = ({ data }) => {
+  const handleBarCodeScanned = async ({ data }) => {
     if (scanned) return;
 
     setScanned(true);
@@ -88,13 +89,22 @@ export default function QRScannerScreen({ route }) {
           
           // Only include ably_channel_name if it exists and is not null/empty
           if (parsed.ably_channel_name && parsed.ably_channel_name !== null && parsed.ably_channel_name !== "") {
-            navParams.ably_channel_name = parsed.ably_channel_name;
+            navParams.ably_channel_name = String(parsed.ably_channel_name); // Ensure it's a string
             console.log("✅ QRScannerScreen - Including ably_channel_name in nav params:", parsed.ably_channel_name);
+            
+            // Also store in AsyncStorage as backup in case navigation params don't work
+            try {
+              await AsyncStorage.setItem(`ably_channel_${parsed.profile_uid}`, String(parsed.ably_channel_name));
+              console.log("✅ QRScannerScreen - Stored ably_channel_name in AsyncStorage as backup");
+            } catch (e) {
+              console.warn("⚠️ QRScannerScreen - Could not store channel name in AsyncStorage:", e);
+            }
           } else {
             console.warn("⚠️ QRScannerScreen - ably_channel_name is missing or invalid:", parsed.ably_channel_name);
           }
           
           console.log("📡 QRScannerScreen - Final navigation params:", JSON.stringify(navParams, null, 2));
+          console.log("📡 QRScannerScreen - Navigating with params object:", navParams);
           navigation.navigate("NewConnection", navParams);
         }
       } else {
