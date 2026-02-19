@@ -568,33 +568,71 @@ const NetworkScreen = ({ navigation }) => {
           console.error("❌ Ably: Connection failed");
         });
 
-        // Subscribe to connection messages
-        channel.subscribe("connection-request", (message) => {
-          console.log("📨 Ably: Received connection-request message");
-          console.log("📨 Ably: Message data:", JSON.stringify(message.data, null, 2));
+        // Subscribe to all message types
+        channel.subscribe((message) => {
+          console.log("📨 Ably: Received message");
           console.log("📨 Ably: Message name:", message.name);
-          console.log("📨 Ably: Full message:", JSON.stringify(message, null, 2));
+          console.log("📨 Ably: Message data:", JSON.stringify(message.data, null, 2));
           
-          const connectionData = message.data;
+          const messageData = message.data;
           
-          if (!connectionData || !connectionData.profile_uid) {
-            console.error("❌ Ably: Invalid connection data received:", connectionData);
-            return;
+          // Handle "form-opened" message
+          if (message.name === "form-opened") {
+            console.log("✅ Ably: Form is Open on User 2's screen");
+            console.log("✅ Ably: Timestamp:", messageData?.timestamp);
           }
           
-          console.log("✅ Ably: Valid connection data, showing form modal");
+          // Handle "continue-pressed" message
+          if (message.name === "continue-pressed") {
+            console.log("✅ Ably: Continue button has been pressed on User 2's screen");
+            console.log("✅ Ably: Timestamp:", messageData?.timestamp);
+            
+            // If Form Switch is enabled, show User 2's info
+            if (formSwitchEnabled && messageData?.userData) {
+              console.log("✅ Ably: Form Switch is enabled, displaying User 2's info");
+              console.log("✅ Ably: User 2 data:", JSON.stringify(messageData.userData, null, 2));
+              
+              // Set received connection data and show form modal
+              setReceivedConnectionData(messageData.userData);
+              setShowConnectionFormModal(true);
+              
+              // Set initial form values
+              const now = new Date();
+              setReceivedDateTimeStamp(now.toISOString());
+              setReceivedRelationship("friend");
+              
+              // Fetch location for the received connection
+              fetchReceivedConnectionLocation();
+            } else {
+              console.log("ℹ️ Ably: Form Switch is disabled, not showing User 2's info");
+            }
+          }
           
-          // Set received connection data and show form modal
-          setReceivedConnectionData(connectionData);
-          setShowConnectionFormModal(true);
-          
-          // Set initial form values
-          const now = new Date();
-          setReceivedDateTimeStamp(now.toISOString());
-          setReceivedRelationship("friend");
-          
-          // Fetch location for the received connection
-          fetchReceivedConnectionLocation();
+          // Handle "connection-request" message (original functionality)
+          if (message.name === "connection-request") {
+            console.log("📨 Ably: Received connection-request message");
+            
+            const connectionData = messageData;
+            
+            if (!connectionData || !connectionData.profile_uid) {
+              console.error("❌ Ably: Invalid connection data received:", connectionData);
+              return;
+            }
+            
+            console.log("✅ Ably: Valid connection data, showing form modal");
+            
+            // Set received connection data and show form modal
+            setReceivedConnectionData(connectionData);
+            setShowConnectionFormModal(true);
+            
+            // Set initial form values
+            const now = new Date();
+            setReceivedDateTimeStamp(now.toISOString());
+            setReceivedRelationship("friend");
+            
+            // Fetch location for the received connection
+            fetchReceivedConnectionLocation();
+          }
         });
 
         console.log("✅ Ably: Initialized and listening on channel:", channelName);

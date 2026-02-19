@@ -1,5 +1,5 @@
 // NewConnectionScreen.js - Simple Hello World page or MiniCard display
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { View, Text, StyleSheet, SafeAreaView, ActivityIndicator, ScrollView, Platform, TextInput, TouchableOpacity, Alert } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -40,6 +40,7 @@ const NewConnectionScreen = () => {
   const [circleUid, setCircleUid] = useState(null);
   const [checkingRelationship, setCheckingRelationship] = useState(false);
   const [formSwitchEnabled, setFormSwitchEnabled] = useState(false); // Track if Form Switch is enabled from QR code
+  const formOpenedMessageSent = useRef(false); // Track if we've already sent the "form-opened" message
 
   // Relationship options matching ConnectScreen.js
   const relationshipOptions = [
@@ -88,12 +89,30 @@ const NewConnectionScreen = () => {
     }
   }, [isLoggedIn, profileData]);
 
+  // Send "Form is Open" message to User 1 when form loads
+  useEffect(() => {
+    if (isLoggedIn && profileUid && formSwitchEnabled && !formOpenedMessageSent.current) {
+      console.log("📤 Sending 'Form is Open' message to User 1");
+      formOpenedMessageSent.current = true;
+      sendAblyMessage("form-opened", {
+        message: "Form is Open",
+        timestamp: new Date().toISOString(),
+      }).catch((error) => {
+        console.error("Error sending form-opened message:", error);
+        formOpenedMessageSent.current = false; // Reset on error so we can retry
+      });
+    }
+  }, [isLoggedIn, profileUid, formSwitchEnabled]);
+
   const handleContinue = async () => {
+    console.log("🟢 NewConnectionScreen - handleContinue called");
     try {
       setSubmitting(true);
+      console.log("🟢 NewConnectionScreen - Submitting set to true");
 
       // Check if user is logged in
       const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
+      console.log("🟢 NewConnectionScreen - Logged in profile UID:", loggedInProfileUID);
       if (!loggedInProfileUID) {
         Alert.alert("Not Logged In", "Please log in to add connections.");
         navigation.navigate("Login");
@@ -182,13 +201,64 @@ const NewConnectionScreen = () => {
       const isSuccess = response.ok || (response.status >= 200 && response.status < 300);
 
       if (isSuccess) {
-        // If Form Switch is enabled, send Ably message to User 1
-        if (formSwitchEnabled && !isUpdate) {
-          await sendAblyConnectionRequest();
-        }
-
         const successMessage = isUpdate ? "Contact successfully updated" : "Contact successfully added";
         console.log("NewConnectionScreen - Success! Showing alert:", successMessage);
+
+        // Send "Continue button pressed" message to User 1
+        if (formSwitchEnabled && !isUpdate) {
+          console.log("📤 Sending 'Continue button pressed' message to User 1");
+          
+          // Get User 2's profile info to send
+          const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
+          if (loggedInProfileUID) {
+            try {
+              const user2ProfileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${loggedInProfileUID}`);
+              if (user2ProfileResponse.ok) {
+                const user2Profile = await user2ProfileResponse.json();
+                const p2 = user2Profile?.personal_info || {};
+
+                const tagLineIsPublic2 = p2.profile_personal_tag_line_is_public === 1 || p2.profile_personal_tagline_is_public === 1;
+                const emailIsPublic2 = p2.profile_personal_email_is_public === 1;
+                const phoneIsPublic2 = p2.profile_personal_phone_number_is_public === 1;
+                const imageIsPublic2 = p2.profile_personal_image_is_public === 1;
+                const locationIsPublic2 = p2.profile_personal_location_is_public === 1;
+
+                const user2PublicData = {
+                  profile_uid: loggedInProfileUID,
+                  firstName: sanitizeText(p2.profile_personal_first_name || ""),
+                  lastName: sanitizeText(p2.profile_personal_last_name || ""),
+                  tagLine: tagLineIsPublic2 ? sanitizeText(p2.profile_personal_tag_line || p2.profile_personal_tagline) : "",
+                  email: emailIsPublic2 ? sanitizeText(user2Profile?.user_email || "") : "",
+                  phoneNumber: phoneIsPublic2 ? sanitizeText(p2.profile_personal_phone_number || "") : "",
+                  profileImage: imageIsPublic2 ? sanitizeText(p2.profile_personal_image ? String(p2.profile_personal_image) : "") : "",
+                  city: locationIsPublic2 ? sanitizeText(p2.profile_personal_city || "") : "",
+                  state: locationIsPublic2 ? sanitizeText(p2.profile_personal_state || "") : "",
+                  tagLineIsPublic: tagLineIsPublic2,
+                  emailIsPublic: emailIsPublic2,
+                  phoneIsPublic: phoneIsPublic2,
+                  imageIsPublic: imageIsPublic2,
+                  locationIsPublic: locationIsPublic2,
+                };
+
+                // Send Continue button pressed message with User 2's info
+                sendAblyMessage("continue-pressed", {
+                  message: "Continue button has been pressed",
+                  timestamp: new Date().toISOString(),
+                  userData: user2PublicData,
+                }).catch((error) => {
+                  console.error("Error sending Continue button message:", error);
+                });
+
+                // Also send the connection request
+                sendAblyConnectionRequest().catch((error) => {
+                  console.error("NewConnectionScreen - Ably message failed (non-critical):", error);
+                });
+              }
+            } catch (error) {
+              console.error("Error fetching User 2 profile for Ably message:", error);
+            }
+          }
+        }
 
         // Handle web vs native differently for alerts
         if (Platform.OS === "web") {
@@ -388,6 +458,69 @@ const NewConnectionScreen = () => {
       setCircleUid(null);
     } finally {
       setCheckingRelationship(false);
+    }
+  };
+
+  // Helper function to send Ably messages to User 1
+  const sendAblyMessage = async (eventName, data) => {
+    try {
+      // Dynamically import Ably
+      let Ably;
+      try {
+        Ably = require("ably");
+      } catch (e) {
+        console.warn("Ably not installed. Skipping Ably message.");
+        return;
+      }
+
+      const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
+      if (!ablyApiKey) {
+        console.warn("Ably API key not configured. Skipping Ably message.");
+        return;
+      }
+
+      // Get User 1's profile to find their user_uid for the channel
+      const user1ProfileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
+      if (!user1ProfileResponse.ok) {
+        console.warn("Could not fetch User 1's profile for Ably message.");
+        return;
+      }
+      const user1Profile = await user1ProfileResponse.json();
+      const user1Uid = user1Profile?.user_uid || user1Profile?.user?.user_uid;
+
+      if (!user1Uid) {
+        console.warn("User 1's user_uid not found. Skipping Ably message.");
+        return;
+      }
+
+      // Create Ably client and send message
+      const client = new Ably.Realtime({ key: ablyApiKey });
+      const channelName = `profile:${user1Uid}`;
+      const channel = client.channels.get(channelName);
+
+      // Wait for connection to be ready (with timeout)
+      await Promise.race([
+        new Promise((resolve) => {
+          if (client.connection.state === "connected") {
+            resolve();
+            return;
+          }
+          client.connection.once("connected", resolve);
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000))
+      ]).catch(() => {
+        // Continue even if connection times out
+      });
+
+      await channel.publish(eventName, data);
+      console.log(`✅ Ably message sent: ${eventName} to channel: ${channelName}`);
+
+      // Close Ably connection after a short delay
+      setTimeout(() => {
+        client.close();
+      }, 500);
+    } catch (error) {
+      console.error(`Error sending Ably message (${eventName}):`, error);
     }
   };
 
