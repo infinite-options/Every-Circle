@@ -554,8 +554,48 @@ const NewConnectionScreen = () => {
   };
 
   // Helper function to send simple Ably messages to User 1
+  // Uses the channel name from the QR code (User 1's channel)
   const sendAblyMessage = async (messageType, messageText) => {
     try {
+      // Use the channel name from QR code if available, otherwise fall back to fetching User 1's profile
+      let channelName = ablyChannelName;
+      
+      if (!channelName) {
+        console.warn("⚠️ NewConnectionScreen - No channel name from QR code, fetching User 1's profile...");
+        // Dynamically import Ably
+        let Ably;
+        try {
+          Ably = require("ably");
+        } catch (e) {
+          console.warn("Ably not installed. Skipping Ably message.");
+          return;
+        }
+
+        const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
+        if (!ablyApiKey) {
+          console.warn("Ably API key not configured. Skipping Ably message.");
+          return;
+        }
+
+        // Get User 1's profile to find their user_uid for the channel (fallback)
+        const user1ProfileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
+        if (!user1ProfileResponse.ok) {
+          console.warn("Could not fetch User 1's profile for Ably message.");
+          return;
+        }
+        const user1Profile = await user1ProfileResponse.json();
+        const user1Uid = user1Profile?.user_uid || user1Profile?.user?.user_uid;
+
+        if (!user1Uid) {
+          console.warn("User 1's user_uid not found. Skipping Ably message.");
+          return;
+        }
+
+        channelName = `profile:${user1Uid}`;
+      }
+
+      console.log(`📡 NewConnectionScreen - Sending Ably message (${messageType}) to User 1's channel: ${channelName}`);
+
       // Dynamically import Ably
       let Ably;
       try {
@@ -571,42 +611,68 @@ const NewConnectionScreen = () => {
         return;
       }
 
-      // Get User 1's profile to find their user_uid for the channel
-      const user1ProfileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
-      if (!user1ProfileResponse.ok) {
-        console.warn("Could not fetch User 1's profile for Ably message.");
-        return;
-      }
-      const user1Profile = await user1ProfileResponse.json();
-      const user1Uid = user1Profile?.user_uid || user1Profile?.user?.user_uid;
-
-      if (!user1Uid) {
-        console.warn("User 1's user_uid not found. Skipping Ably message.");
-        return;
-      }
-
-      // Create Ably client and send message
+      // Create Ably client and send message to User 1's channel
       const client = new Ably.Realtime({ key: ablyApiKey });
-      const channelName = `profile:${user1Uid}`;
       const channel = client.channels.get(channelName);
 
       await channel.publish(messageType, {
         message: messageText,
         timestamp: new Date().toISOString(),
       });
-      console.log(`✅ Ably message sent to User 1 (${messageType}):`, messageText);
+      console.log(`✅ NewConnectionScreen - Ably message sent to User 1's channel (${messageType}):`, messageText);
+      console.log(`✅ NewConnectionScreen - Channel used: ${channelName}`);
 
       // Close Ably connection
       client.close();
     } catch (error) {
-      console.error("Error sending Ably message:", error);
+      console.error("❌ NewConnectionScreen - Error sending Ably message:", error);
       // Don't show error to user - this is a background operation
     }
   };
 
   // Send Ably message to User 1 with User 2's profile info
+  // Uses the channel name from the QR code (User 1's channel)
   const sendAblyConnectionRequest = async () => {
     try {
+      // Use the channel name from QR code if available, otherwise fall back to fetching User 1's profile
+      let channelName = ablyChannelName;
+      
+      if (!channelName) {
+        console.warn("⚠️ NewConnectionScreen - No channel name from QR code, fetching User 1's profile...");
+        // Dynamically import Ably
+        let Ably;
+        try {
+          Ably = require("ably");
+        } catch (e) {
+          console.warn("Ably not installed. Skipping Ably message.");
+          return;
+        }
+
+        const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
+        if (!ablyApiKey) {
+          console.warn("Ably API key not configured. Skipping Ably message.");
+          return;
+        }
+
+        // Get User 1's profile to find their user_uid for the channel (fallback)
+        const user1ProfileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
+        if (!user1ProfileResponse.ok) {
+          console.warn("Could not fetch User 1's profile for Ably message.");
+          return;
+        }
+        const user1Profile = await user1ProfileResponse.json();
+        const user1Uid = user1Profile?.user_uid || user1Profile?.user?.user_uid;
+
+        if (!user1Uid) {
+          console.warn("User 1's user_uid not found. Skipping Ably message.");
+          return;
+        }
+
+        channelName = `profile:${user1Uid}`;
+      }
+
+      console.log(`📡 NewConnectionScreen - Sending connection request to User 1's channel: ${channelName}`);
+
       // Dynamically import Ably
       let Ably;
       try {
@@ -619,20 +685,6 @@ const NewConnectionScreen = () => {
       const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
       if (!ablyApiKey) {
         console.warn("Ably API key not configured. Skipping Ably message.");
-        return;
-      }
-
-      // Get User 1's profile to find their user_uid for the channel
-      const user1ProfileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
-      if (!user1ProfileResponse.ok) {
-        console.warn("Could not fetch User 1's profile for Ably message.");
-        return;
-      }
-      const user1Profile = await user1ProfileResponse.json();
-      const user1Uid = user1Profile?.user_uid || user1Profile?.user?.user_uid;
-
-      if (!user1Uid) {
-        console.warn("User 1's user_uid not found. Skipping Ably message.");
         return;
       }
 
@@ -680,13 +732,12 @@ const NewConnectionScreen = () => {
         locationIsPublic: locationIsPublic2,
       };
 
-      // Create Ably client and send message
+      // Create Ably client and send message to User 1's channel (from QR code)
       const client = new Ably.Realtime({ key: ablyApiKey });
-      const channelName = `profile:${user1Uid}`;
       const channel = client.channels.get(channelName);
 
       await channel.publish("connection-request", user2PublicData);
-      console.log("✅ Ably message sent to User 1:", channelName);
+      console.log(`✅ NewConnectionScreen - Connection request sent to User 1's channel: ${channelName}`);
 
       // Close Ably connection
       client.close();
