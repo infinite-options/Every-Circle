@@ -260,13 +260,35 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
       <View style={styles.bodyContainer}>
         {(() => {
           if (__DEV__) console.log("🔵 MiniCard - Rendering user image:", { profileImage, imageIsPublic, isSafe: isSafeForConditional(profileImage) });
+          
+          // Determine image source - avoid empty string URIs
+          // Check if profileImage is valid (not empty, not null, not undefined)
+          const profileImageStr = profileImage ? String(profileImage).trim() : "";
+          const hasValidProfileImage = profileImageStr !== "" && 
+                                       isSafeForConditional(profileImage) && 
+                                       imageIsPublic;
+          
+          let imageSource;
+          if (hasValidProfileImage) {
+            imageSource = { uri: String(profileImage) };
+          } else if (PROFILE_IMAGE_SOURCE) {
+            imageSource = PROFILE_IMAGE_SOURCE;
+          } else {
+            // On web when PROFILE_IMAGE_SOURCE is null, don't render the image
+            // This prevents the { uri: "" } error
+            return null;
+          }
+          
           return (
             <Image
-              source={isSafeForConditional(profileImage) && imageIsPublic ? { uri: String(profileImage) } : (PROFILE_IMAGE_SOURCE || { uri: "" })}
+              source={imageSource}
               style={[styles.profileImage, darkMode && styles.darkProfileImage]}
               onError={(error) => {
-                console.log("MiniCard user image failed to load:", error.nativeEvent.error);
-                console.log("Problematic user image URI:", profileImage);
+                // Only log errors in dev mode and if we have a non-empty profileImage
+                if (__DEV__ && hasValidProfileImage) {
+                  console.log("MiniCard user image failed to load:", error.nativeEvent.error);
+                  console.log("Problematic user image URI:", profileImage);
+                }
               }}
               {...(PROFILE_IMAGE_SOURCE && { defaultSource: PROFILE_IMAGE_SOURCE })}
             />
