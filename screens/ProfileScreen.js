@@ -261,6 +261,8 @@ const ProfileScreen = ({ route, navigation }) => {
       console.log("ProfileScreen - Profile UID in userData:", userData.profile_uid);
       setUser(userData);
 
+      userData.ratings = apiUser.ratings_info || [];
+
       console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
       console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
 
@@ -1408,6 +1410,36 @@ const ProfileScreen = ({ route, navigation }) => {
               ) : (
                 <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: darkMode ? "#999" : "#666" }]}>No businesses added yet</Text>
               )}
+            </View>
+          )}
+
+          {/* Reviewed Section */}
+          {user.ratings && user.ratings.length > 0 && (
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Reviewed:</Text>
+              {user.ratings.map((review, index) => (
+                <TouchableOpacity
+                  key={review.rating_uid || index}
+                  style={[styles.inputContainer, darkMode && styles.darkInputContainer, index > 0 && { marginTop: 4 }]}
+                  onPress={() => navigation.navigate("BusinessProfile", { business_uid: review.rating_business_id })}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>
+                      {review.rating_business_id}
+                    </Text>
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#999", fontSize: 12 }]}>
+                      {review.rating_receipt_date}
+                    </Text>
+                  </View>
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
+                    {"⭐".repeat(review.rating_star)} {review.rating_star}/5
+                  </Text>
+                  {review.rating_description ? (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.rating_description}</Text>
+                  ) : null}
+                </TouchableOpacity>
+              ))}
             </View>
           )}
         </ScrollView>

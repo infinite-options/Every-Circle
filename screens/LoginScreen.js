@@ -77,6 +77,7 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
   const [showPassModal, setShowPassModal] = useState(false);
   const [showForgotPasswordSpinner, setShowForgotPasswordSpinner] = useState(false);
   const [passwordError, setPasswordError] = useState("");
+  const [emailError, setEmailError] = useState("");
 
   const validateInputs = (email, password) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{3,}$/;
@@ -86,8 +87,8 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
   };
 
   const handleEmailChange = (text) => {
-    // console.log("handleEmailChange", text);
     setEmail(text);
+    setEmailError(""); 
     validateInputs(text, password);
   };
 
@@ -103,6 +104,11 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
 
   const handleContinue = async () => {
     console.log("LoginScreen - Continue Button Pressed");
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{3,}$/;
+    if (!emailRegex.test(email)) {
+      setEmailError("Email is not valid. Please sign up first.");
+      return;
+    }
     try {
       // console.log("LoginScreen - handleContinue - try block");
       setShowSpinner(true);
@@ -120,8 +126,8 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
 
       if (saltObject.code !== 200) {
         setShowSpinner(false);
-        setPasswordError(""); // Clear password error if email doesn't exist
-        Alert.alert("Error", "User does not exist. Please Sign Up.");
+        setPasswordError("");
+        setEmailError("Email is not valid");
         return;
       }
 
@@ -295,6 +301,7 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
         <View style={styles.fieldContainer}>
           <Text style={styles.label}>Email</Text>
           <TextInput style={styles.input} placeholder='Email' value={email} onChangeText={handleEmailChange} keyboardType='email-address' autoCapitalize='none' />
+          {!!emailError && <Text style={styles.emailErrorText}>{emailError}</Text>}
         </View>
         <View style={styles.fieldContainer}>
           <Text style={styles.label}>Password</Text>
@@ -317,7 +324,7 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]} onPress={handleContinue} disabled={!isValid || showSpinner}>
+      <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]} onPress={handleContinue} disabled={showSpinner}>
         {showSpinner ? <ActivityIndicator color='#fff' /> : <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : styles.continueButtonTextDisabled]}>Continue</Text>}
       </TouchableOpacity>
 
@@ -565,6 +572,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: -10,
     marginBottom: 8,
+  },
+    emailErrorText: {
+    color: "red",
+    fontSize: 14,
+    marginTop: 4,
+    marginLeft: 10,
   },
   modalOverlay: {
     flex: 1,

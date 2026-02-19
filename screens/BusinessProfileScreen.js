@@ -853,7 +853,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           )}
 
           {/* Business Services Section - Only show if no reviews */}
-          {Array.isArray(business.business_services) && business.business_services.length > 0 && allReviews.length === 0 && (
+          {Array.isArray(business.business_services) && business.business_services.length > 0 && (
             <View style={styles.fieldContainer}>
               <View style={styles.servicesHeader}>
                 <Text style={[styles.label, darkMode && styles.darkLabel]}>Products & Services:</Text>
@@ -871,7 +871,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           )}
 
           {/* Shopping Cart Button - Only show if there are reviews */}
-          {!isOwner && allReviews.length > 0 && (
+          {/* {!isOwner && allReviews.length > 0 && (
             <View style={styles.fieldContainer}>
               <TouchableOpacity
                 style={[styles.shoppingCartButton, darkMode && styles.darkShoppingCartButton]}
@@ -887,7 +887,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 <Text style={[styles.shoppingCartButtonText, darkMode && styles.darkShoppingCartButtonText]}>Shopping Cart</Text>
               </TouchableOpacity>
             </View>
-          )}
+          )} */}
         </ScrollView>
 
         <BottomNavBar navigation={navigation} />
