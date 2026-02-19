@@ -191,6 +191,8 @@ const NewConnectionScreen = () => {
       
       // First, try to get full QR code data from route params or AsyncStorage
       let qrDataString = route.params?.qr_code_data;
+      console.log("📡 NewConnectionScreen - QR code data string from route.params:", qrDataString);
+      
       if (!qrDataString && profileUid) {
         try {
           qrDataString = await AsyncStorage.getItem(`qr_code_data_${profileUid}`);
@@ -204,48 +206,43 @@ const NewConnectionScreen = () => {
       }
       
       // Parse and display QR code data
+      let parsedQrData = null;
       if (qrDataString) {
         try {
-          const qrData = JSON.parse(qrDataString);
-          setQrCodeData(qrData);
-          console.log("✅ NewConnectionScreen - QR code data parsed and stored:", qrData);
-          
-          // Extract ably_channel_name from parsed QR data
-          if (qrData.ably_channel_name) {
-            setAblyChannelName(qrData.ably_channel_name);
-            console.log("✅ NewConnectionScreen - Ably channel name extracted from QR code data:", qrData.ably_channel_name);
-          }
-          
-          // Extract form_switch_enabled from parsed QR data
-          if (qrData.form_switch_enabled !== undefined) {
-            setFormSwitchEnabled(qrData.form_switch_enabled);
-            console.log("✅ NewConnectionScreen - Form switch enabled extracted from QR code data:", qrData.form_switch_enabled);
-          }
+          parsedQrData = JSON.parse(qrDataString);
+          setQrCodeData(parsedQrData);
+          console.log("✅ NewConnectionScreen - QR code data parsed and stored:", parsedQrData);
+          console.log("✅ NewConnectionScreen - QR code data ably_channel_name:", parsedQrData.ably_channel_name);
         } catch (e) {
           console.error("❌ NewConnectionScreen - Error parsing QR code data:", e);
+          console.error("❌ NewConnectionScreen - QR code data string that failed to parse:", qrDataString);
         }
+      } else {
+        console.warn("⚠️ NewConnectionScreen - No QR code data string found in route.params or AsyncStorage");
       }
       
-      // Check route params (fallback if QR code data not available)
-      if (route.params?.form_switch_enabled !== undefined) {
-        setFormSwitchEnabled(route.params.form_switch_enabled);
-        console.log("✅ NewConnectionScreen - Form switch enabled set to:", route.params.form_switch_enabled);
+      // Determine the channel name from multiple sources (priority order)
+      let finalChannelName = null;
+      
+      // Priority 1: From parsed QR code data
+      if (parsedQrData?.ably_channel_name) {
+        finalChannelName = parsedQrData.ably_channel_name;
+        console.log("✅ NewConnectionScreen - Channel name from parsed QR data:", finalChannelName);
       }
       
-      // Store Ably channel name for display - check route.params first (if not already set from QR data)
-      let channelNameFromParams = route.params?.ably_channel_name;
-      if (!ablyChannelName && channelNameFromParams) {
-        console.log("📡 NewConnectionScreen - Channel name from route.params:", channelNameFromParams);
-        setAblyChannelName(channelNameFromParams);
+      // Priority 2: From route.params directly
+      if (!finalChannelName && route.params?.ably_channel_name) {
+        finalChannelName = route.params.ably_channel_name;
+        console.log("✅ NewConnectionScreen - Channel name from route.params:", finalChannelName);
       }
       
-      // If not in route params or QR data, try AsyncStorage backup (set by QRScannerScreen)
-      if (!ablyChannelName && profileUid) {
+      // Priority 3: From AsyncStorage backup
+      if (!finalChannelName && profileUid) {
         try {
           const storedChannelName = await AsyncStorage.getItem(`ably_channel_${profileUid}`);
           if (storedChannelName) {
-            setAblyChannelName(storedChannelName);
-            console.log("✅ NewConnectionScreen - Found channel name in AsyncStorage backup:", storedChannelName);
+            finalChannelName = storedChannelName;
+            console.log("✅ NewConnectionScreen - Channel name from AsyncStorage backup:", finalChannelName);
             // Clean up after reading
             await AsyncStorage.removeItem(`ably_channel_${profileUid}`);
           }
@@ -254,29 +251,46 @@ const NewConnectionScreen = () => {
         }
       }
       
-      // Also check if it might be in the URL (for web)
-      if (!ablyChannelName && Platform.OS === "web" && typeof window !== "undefined") {
+      // Priority 4: From URL params (for web)
+      if (!finalChannelName && Platform.OS === "web" && typeof window !== "undefined") {
         const urlParams = new URLSearchParams(window.location.search);
         const urlChannelName = urlParams.get("ably_channel_name");
-        console.log("📡 NewConnectionScreen - Checking URL params for channel name:", urlChannelName);
         if (urlChannelName) {
-          setAblyChannelName(urlChannelName);
+          finalChannelName = urlChannelName;
+          console.log("✅ NewConnectionScreen - Channel name from URL params:", finalChannelName);
         }
       }
       
+      // Set the channel name in state
+      if (finalChannelName) {
+        setAblyChannelName(finalChannelName);
+        console.log("✅ NewConnectionScreen - Ably channel name set in state:", finalChannelName);
+      } else {
+        console.warn("⚠️ NewConnectionScreen - No ably_channel_name found from any source");
+      }
+      
+      // Extract form_switch_enabled from parsed QR data or route params
+      if (parsedQrData?.form_switch_enabled !== undefined) {
+        setFormSwitchEnabled(parsedQrData.form_switch_enabled);
+        console.log("✅ NewConnectionScreen - Form switch enabled from QR data:", parsedQrData.form_switch_enabled);
+      } else if (route.params?.form_switch_enabled !== undefined) {
+        setFormSwitchEnabled(route.params.form_switch_enabled);
+        console.log("✅ NewConnectionScreen - Form switch enabled from route.params:", route.params.form_switch_enabled);
+      }
+      
       // If we have an Ably channel name, send "QR code was scanned" message
-      if (ablyChannelName && profileUid) {
-        console.log("📡 NewConnectionScreen - Detected Ably channel name from QR code:", ablyChannelName);
+      if (finalChannelName && profileUid) {
+        console.log("📡 NewConnectionScreen - Sending QR code scanned message with channel:", finalChannelName);
         console.log("📡 NewConnectionScreen - Profile UID available:", profileUid);
-        sendQRCodeScannedMessage(ablyChannelName).catch((error) => {
+        sendQRCodeScannedMessage(finalChannelName).catch((error) => {
           console.error("❌ NewConnectionScreen - Failed to send QR code scanned message:", error);
         });
       } else {
-        if (!ablyChannelName) {
-          console.warn("⚠️ NewConnectionScreen - No ably_channel_name found");
+        if (!finalChannelName) {
+          console.warn("⚠️ NewConnectionScreen - Cannot send QR code scanned message: no channel name");
         }
         if (!profileUid) {
-          console.warn("⚠️ NewConnectionScreen - No profileUid available yet");
+          console.warn("⚠️ NewConnectionScreen - Cannot send QR code scanned message: no profileUid");
         }
       }
     };
@@ -897,6 +911,18 @@ const NewConnectionScreen = () => {
               <View style={styles.cardContainer}>
                 <MiniCard user={profileData} />
                 
+                {/* Display Full QR Code Data */}
+                {qrCodeData && (
+                  <View style={[styles.qrCodeDataContainer, darkMode && styles.darkQrCodeDataContainer]}>
+                    <Text style={[styles.qrCodeDataTitle, darkMode && styles.darkQrCodeDataTitle]}>🔗 QR Code Data Received:</Text>
+                    <View style={[styles.qrCodeDataContent, darkMode && styles.darkQrCodeDataContent]}>
+                      <Text style={[styles.qrCodeDataText, darkMode && styles.darkQrCodeDataText]}>
+                        {JSON.stringify(qrCodeData, null, 2)}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+                
                 {/* Display Ably Channel Name and Status */}
                 <View style={[styles.ablyInfoContainer, darkMode && styles.darkAblyInfoContainer]}>
                   {ablyChannelName ? (
@@ -924,6 +950,11 @@ const NewConnectionScreen = () => {
                       <Text style={[styles.ablyInfoText, darkMode && styles.darkAblyInfoText]}>
                         Debug: ablyChannelName state = {ablyChannelName ? String(ablyChannelName) : "null"}
                       </Text>
+                      {qrCodeData && (
+                        <Text style={[styles.ablyInfoText, darkMode && styles.darkAblyInfoText]}>
+                          Debug: qrCodeData.ably_channel_name = {qrCodeData?.ably_channel_name ? String(qrCodeData.ably_channel_name) : "undefined/null"}
+                        </Text>
+                      )}
                     </>
                   )}
                 </View>
