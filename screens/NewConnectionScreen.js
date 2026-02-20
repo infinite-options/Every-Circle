@@ -12,6 +12,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import WebTextInput from "../components/WebTextInput";
 import * as Location from "expo-location";
 import { Dropdown } from "react-native-element-dropdown";
+import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
 
 const NewConnectionScreen = () => {
   const { darkMode } = useDarkMode();
@@ -162,8 +163,9 @@ const NewConnectionScreen = () => {
         return;
       }
 
-      const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
+      const ablyApiKey = EXPO_PUBLIC_ABLY_API_KEY || "";
       console.log("🔵 NewConnectionScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
+      console.log("🔵 NewConnectionScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
       if (!ablyApiKey) {
         console.warn("⚠️ NewConnectionScreen - Ably API key not configured");
         setAblyMessageSent({
@@ -762,6 +764,14 @@ const NewConnectionScreen = () => {
                       <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeReceivedData.profile_uid}</Text>
                     </View>
                   )}
+                  <View style={styles.ablyMessageRow}>
+                    <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
+                    <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                      {EXPO_PUBLIC_ABLY_API_KEY 
+                        ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
+                        : "Not configured"}
+                    </Text>
+                  </View>
                 </View>
               </View>
 

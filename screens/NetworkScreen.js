@@ -15,6 +15,7 @@ import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors } from "../config/headerColors";
+import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -482,8 +483,9 @@ const NetworkScreen = ({ navigation }) => {
         return;
       }
 
-      const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
+      const ablyApiKey = EXPO_PUBLIC_ABLY_API_KEY || "";
       console.log("🔵 NetworkScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
+      console.log("🔵 NetworkScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
       if (!ablyApiKey) {
         console.warn("⚠️ NetworkScreen - Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
         setAblyMessageReceived({
@@ -1731,6 +1733,14 @@ const NetworkScreen = ({ navigation }) => {
                             <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel Status:</Text>
                             <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
                               {ablyChannel?.state || "Not attached"}
+                            </Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                              {EXPO_PUBLIC_ABLY_API_KEY 
+                                ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
+                                : "Not configured"}
                             </Text>
                           </View>
                         </>
