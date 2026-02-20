@@ -1,6 +1,6 @@
 // NetworkScreen.js - Web-compatible version
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Alert, Modal, Switch, TextInput } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
@@ -55,16 +55,7 @@ const NetworkScreen = ({ navigation }) => {
   const [ablyChannel, setAblyChannel] = useState(null); // Store Ably channel instance
   const [ablyMessageReceived, setAblyMessageReceived] = useState(null); // Store Ably message received info: { channel, message, timestamp }
   const [formSwitchEnabled, setFormSwitchEnabled] = useState(false); // Form Switch: show form when others scan your QR code
-  const [showConnectionFormModal, setShowConnectionFormModal] = useState(false); // Modal to add User 2 to User 1's circle
-  const [scannedUserProfile, setScannedUserProfile] = useState(null); // User 2's profile data for the form
-  const [connectionFormData, setConnectionFormData] = useState({
-    relationship: "friend",
-    introducedBy: "",
-    meetingLocation: "",
-    meetingEvent: "",
-    commentsNotes: "",
-  });
-  const [submittingConnection, setSubmittingConnection] = useState(false);
+  const formSwitchEnabledRef = React.useRef(false); // Ref to track current value for Ably callback
   const [showAsyncStorage, setShowAsyncStorage] = useState(true);
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
   const [dateFilter, setDateFilter] = useState("All"); // All, This Week, This Month, This Year
@@ -309,6 +300,7 @@ const NetworkScreen = ({ navigation }) => {
         if (formSwitchSetting !== null) {
           const isEnabled = formSwitchSetting === "true";
           setFormSwitchEnabled(isEnabled);
+          formSwitchEnabledRef.current = isEnabled; // Update ref
           console.log("📋 Loaded form_switch_enabled from AsyncStorage:", isEnabled);
         }
       } catch (e) {
@@ -589,10 +581,17 @@ const NetworkScreen = ({ navigation }) => {
             scanner_profile_uid: message.data.scanner_profile_uid || null,
           });
 
-          // If Form Switch is enabled and we have User 2's profile_uid, show the form
-          if (formSwitchEnabled && message.data.scanner_profile_uid) {
-            console.log("🔵 NetworkScreen - Form Switch is ON, fetching User 2's profile:", message.data.scanner_profile_uid);
-            await fetchScannedUserProfile(message.data.scanner_profile_uid);
+          // If Form Switch is enabled and we have User 2's profile_uid, navigate to New Connection page
+          console.log("🔵 NetworkScreen - Checking Form Switch:", formSwitchEnabledRef.current, "scanner_profile_uid:", message.data.scanner_profile_uid);
+          if (formSwitchEnabledRef.current && message.data.scanner_profile_uid) {
+            console.log("🔵 NetworkScreen - Form Switch is ON, navigating to NewConnection page for User 2:", message.data.scanner_profile_uid);
+            // Navigate to New Connection page with User 2's profile_uid
+            navigation.navigate("NewConnection", {
+              profile_uid: message.data.scanner_profile_uid,
+              fromFormSwitch: true, // Flag to indicate this came from Form Switch
+            });
+          } else {
+            console.log("🔵 NetworkScreen - Form Switch is OFF or no scanner_profile_uid, not navigating");
           }
         } else {
           console.warn("⚠️ NetworkScreen - Message received but data structure unexpected:", message.data);
@@ -608,115 +607,6 @@ const NetworkScreen = ({ navigation }) => {
 
     } catch (error) {
       console.error("❌ NetworkScreen - Error initializing Ably:", error);
-    }
-  };
-
-  // Fetch User 2's profile when they scan the QR code (for Form Switch feature)
-  const fetchScannedUserProfile = async (scannerProfileUid) => {
-    if (!scannerProfileUid) {
-      console.warn("⚠️ NetworkScreen - Cannot fetch scanned user profile: no profile_uid");
-      return;
-    }
-
-    try {
-      console.log("🔵 NetworkScreen - Fetching User 2's profile for form:", scannerProfileUid);
-      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${scannerProfileUid}`);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch profile: ${response.status}`);
-      }
-
-      const apiUser = await response.json();
-      const p = apiUser?.personal_info || {};
-
-      const userData = {
-        profile_uid: scannerProfileUid,
-        firstName: sanitizeText(p.profile_personal_first_name || ""),
-        lastName: sanitizeText(p.profile_personal_last_name || ""),
-        tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || ""),
-        email: sanitizeText(apiUser?.user_email || ""),
-        phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
-        profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-        city: sanitizeText(p.profile_personal_city || ""),
-        state: sanitizeText(p.profile_personal_state || ""),
-      };
-
-      console.log("✅ NetworkScreen - User 2's profile fetched:", userData.firstName, userData.lastName);
-      setScannedUserProfile(userData);
-      setShowConnectionFormModal(true);
-      
-      // Reset form data
-      setConnectionFormData({
-        relationship: "friend",
-        introducedBy: "",
-        meetingLocation: "",
-        meetingEvent: "",
-        commentsNotes: "",
-      });
-    } catch (error) {
-      console.error("❌ NetworkScreen - Error fetching User 2's profile:", error);
-      Alert.alert("Error", "Could not fetch the scanner's profile information.");
-    }
-  };
-
-  // Submit connection form (User 1 adding User 2 to their circle)
-  const handleSubmitConnectionForm = async () => {
-    if (!scannedUserProfile || !profileUid) {
-      Alert.alert("Error", "Missing profile information.");
-      return;
-    }
-
-    try {
-      setSubmittingConnection(true);
-      
-      const user1ProfileUid = await AsyncStorage.getItem("profile_uid");
-      if (!user1ProfileUid) {
-        Alert.alert("Error", "You must be logged in to add connections.");
-        return;
-      }
-
-      // Create the circle entry (User 1 adding User 2)
-      const circleData = {
-        circle_user_id: user1ProfileUid,
-        circle_contact_uid: scannedUserProfile.profile_uid,
-        circle_relationship: connectionFormData.relationship,
-        circle_introduced_by: connectionFormData.introducedBy || null,
-        circle_location: connectionFormData.meetingLocation || null,
-        circle_event: connectionFormData.meetingEvent || null,
-        circle_note: connectionFormData.commentsNotes || null,
-        circle_date: new Date().toISOString(),
-      };
-
-      console.log("🔵 NetworkScreen - Submitting connection form:", circleData);
-
-      const response = await fetch(CIRCLES_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(circleData),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to save connection: ${response.status}`);
-      }
-
-      const result = await response.json();
-      console.log("✅ NetworkScreen - Connection saved:", result);
-
-      Alert.alert(
-        "Success!",
-        `${scannedUserProfile.firstName} ${scannedUserProfile.lastName} has been added to your Circle!`,
-        [{ text: "OK", onPress: () => setShowConnectionFormModal(false) }]
-      );
-
-      // Refresh the network data
-      fetchNetwork();
-    } catch (error) {
-      console.error("❌ NetworkScreen - Error saving connection:", error);
-      Alert.alert("Error", "Could not save the connection. Please try again.");
-    } finally {
-      setSubmittingConnection(false);
     }
   };
 
@@ -1821,6 +1711,7 @@ const NetworkScreen = ({ navigation }) => {
                       value={formSwitchEnabled}
                       onValueChange={async (value) => {
                         setFormSwitchEnabled(value);
+                        formSwitchEnabledRef.current = value; // Update ref
                         // Persist the setting
                         await AsyncStorage.setItem("form_switch_enabled", value ? "true" : "false");
                         console.log("🔵 NetworkScreen - Form Switch set to:", value);
@@ -2480,157 +2371,6 @@ const NetworkScreen = ({ navigation }) => {
         onAddConnection={(relationship) => handleAddScannedConnection(relationship)}
       />
 
-      {/* Connection Form Modal - Shows when User 2 scans User 1's QR code and Form Switch is ON */}
-      <Modal
-        visible={showConnectionFormModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowConnectionFormModal(false)}
-      >
-        <View style={styles.connectionFormModalOverlay}>
-          <View style={[styles.connectionFormModalContent, darkMode && styles.darkConnectionFormModalContent]}>
-            <View style={styles.connectionFormModalHeader}>
-              <Text style={[styles.connectionFormModalTitle, darkMode && styles.darkConnectionFormModalTitle]}>
-                Add to Your Circle
-              </Text>
-              <TouchableOpacity
-                onPress={() => setShowConnectionFormModal(false)}
-                style={styles.connectionFormModalCloseButton}
-              >
-                <Ionicons name="close" size={24} color={darkMode ? "#fff" : "#333"} />
-              </TouchableOpacity>
-            </View>
-
-            {scannedUserProfile && (
-              <ScrollView style={styles.connectionFormScrollView}>
-                {/* User 2's Info */}
-                <View style={[styles.scannedUserInfoContainer, darkMode && styles.darkScannedUserInfoContainer]}>
-                  <Text style={[styles.scannedUserName, darkMode && styles.darkScannedUserName]}>
-                    {scannedUserProfile.firstName} {scannedUserProfile.lastName}
-                  </Text>
-                  {scannedUserProfile.tagLine ? (
-                    <Text style={[styles.scannedUserTagline, darkMode && styles.darkScannedUserTagline]}>
-                      {scannedUserProfile.tagLine}
-                    </Text>
-                  ) : null}
-                  {(scannedUserProfile.city || scannedUserProfile.state) ? (
-                    <Text style={[styles.scannedUserLocation, darkMode && styles.darkScannedUserLocation]}>
-                      {[scannedUserProfile.city, scannedUserProfile.state].filter(Boolean).join(", ")}
-                    </Text>
-                  ) : null}
-                </View>
-
-                {/* Relationship Selector */}
-                <View style={styles.connectionFormField}>
-                  <Text style={[styles.connectionFormLabel, darkMode && styles.darkConnectionFormLabel]}>
-                    Relationship
-                  </Text>
-                  <View style={styles.relationshipButtonsContainer}>
-                    {[
-                      { label: "Friend", value: "friend" },
-                      { label: "Colleague", value: "colleague" },
-                      { label: "Family", value: "family" },
-                      { label: "Acquaintance", value: "acquaintance" },
-                    ].map((option) => (
-                      <TouchableOpacity
-                        key={option.value}
-                        style={[
-                          styles.relationshipButton,
-                          connectionFormData.relationship === option.value && styles.relationshipButtonSelected,
-                          darkMode && styles.darkRelationshipButton,
-                          connectionFormData.relationship === option.value && darkMode && styles.darkRelationshipButtonSelected,
-                        ]}
-                        onPress={() => setConnectionFormData({ ...connectionFormData, relationship: option.value })}
-                      >
-                        <Text
-                          style={[
-                            styles.relationshipButtonText,
-                            connectionFormData.relationship === option.value && styles.relationshipButtonTextSelected,
-                            darkMode && styles.darkRelationshipButtonText,
-                          ]}
-                        >
-                          {option.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                {/* Introduced By */}
-                <View style={styles.connectionFormField}>
-                  <Text style={[styles.connectionFormLabel, darkMode && styles.darkConnectionFormLabel]}>
-                    Introduced By (optional)
-                  </Text>
-                  <TextInput
-                    style={[styles.connectionFormInput, darkMode && styles.darkConnectionFormInput]}
-                    value={connectionFormData.introducedBy}
-                    onChangeText={(text) => setConnectionFormData({ ...connectionFormData, introducedBy: text })}
-                    placeholder="Who introduced you?"
-                    placeholderTextColor={darkMode ? "#888" : "#aaa"}
-                  />
-                </View>
-
-                {/* Meeting Location */}
-                <View style={styles.connectionFormField}>
-                  <Text style={[styles.connectionFormLabel, darkMode && styles.darkConnectionFormLabel]}>
-                    Where did you meet? (optional)
-                  </Text>
-                  <TextInput
-                    style={[styles.connectionFormInput, darkMode && styles.darkConnectionFormInput]}
-                    value={connectionFormData.meetingLocation}
-                    onChangeText={(text) => setConnectionFormData({ ...connectionFormData, meetingLocation: text })}
-                    placeholder="City, venue, etc."
-                    placeholderTextColor={darkMode ? "#888" : "#aaa"}
-                  />
-                </View>
-
-                {/* Meeting Event */}
-                <View style={styles.connectionFormField}>
-                  <Text style={[styles.connectionFormLabel, darkMode && styles.darkConnectionFormLabel]}>
-                    Event (optional)
-                  </Text>
-                  <TextInput
-                    style={[styles.connectionFormInput, darkMode && styles.darkConnectionFormInput]}
-                    value={connectionFormData.meetingEvent}
-                    onChangeText={(text) => setConnectionFormData({ ...connectionFormData, meetingEvent: text })}
-                    placeholder="Conference, party, etc."
-                    placeholderTextColor={darkMode ? "#888" : "#aaa"}
-                  />
-                </View>
-
-                {/* Notes */}
-                <View style={styles.connectionFormField}>
-                  <Text style={[styles.connectionFormLabel, darkMode && styles.darkConnectionFormLabel]}>
-                    Notes (optional)
-                  </Text>
-                  <TextInput
-                    style={[styles.connectionFormInput, styles.connectionFormTextArea, darkMode && styles.darkConnectionFormInput]}
-                    value={connectionFormData.commentsNotes}
-                    onChangeText={(text) => setConnectionFormData({ ...connectionFormData, commentsNotes: text })}
-                    placeholder="Any notes about this connection..."
-                    placeholderTextColor={darkMode ? "#888" : "#aaa"}
-                    multiline
-                    numberOfLines={3}
-                  />
-                </View>
-
-                {/* Submit Button */}
-                <TouchableOpacity
-                  style={[styles.connectionFormSubmitButton, submittingConnection && styles.connectionFormSubmitButtonDisabled]}
-                  onPress={handleSubmitConnectionForm}
-                  disabled={submittingConnection}
-                >
-                  {submittingConnection ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.connectionFormSubmitButtonText}>Add to My Circle</Text>
-                  )}
-                </TouchableOpacity>
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 };
@@ -3077,168 +2817,6 @@ const styles = StyleSheet.create({
   },
   darkFormSwitchDescription: {
     color: "#aaa",
-  },
-  // Connection Form Modal styles
-  connectionFormModalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  connectionFormModalContent: {
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    width: "100%",
-    maxWidth: 500,
-    maxHeight: "90%",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  darkConnectionFormModalContent: {
-    backgroundColor: "#1a1a1a",
-  },
-  connectionFormModalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
-  },
-  connectionFormModalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  darkConnectionFormModalTitle: {
-    color: "#fff",
-  },
-  connectionFormModalCloseButton: {
-    padding: 5,
-  },
-  connectionFormScrollView: {
-    padding: 20,
-  },
-  scannedUserInfoContainer: {
-    backgroundColor: "#f0f4ff",
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 20,
-    alignItems: "center",
-  },
-  darkScannedUserInfoContainer: {
-    backgroundColor: "#2d3748",
-  },
-  scannedUserName: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#333",
-    marginBottom: 5,
-  },
-  darkScannedUserName: {
-    color: "#fff",
-  },
-  scannedUserTagline: {
-    fontSize: 14,
-    color: "#666",
-    textAlign: "center",
-    marginBottom: 5,
-  },
-  darkScannedUserTagline: {
-    color: "#aaa",
-  },
-  scannedUserLocation: {
-    fontSize: 13,
-    color: "#888",
-  },
-  darkScannedUserLocation: {
-    color: "#999",
-  },
-  connectionFormField: {
-    marginBottom: 18,
-  },
-  connectionFormLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
-  },
-  darkConnectionFormLabel: {
-    color: "#ccc",
-  },
-  connectionFormInput: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 15,
-    backgroundColor: "#fff",
-    color: "#333",
-  },
-  darkConnectionFormInput: {
-    backgroundColor: "#2d2d2d",
-    borderColor: "#404040",
-    color: "#fff",
-  },
-  connectionFormTextArea: {
-    minHeight: 80,
-    textAlignVertical: "top",
-  },
-  relationshipButtonsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  relationshipButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    backgroundColor: "#f8f9fa",
-  },
-  darkRelationshipButton: {
-    backgroundColor: "#2d2d2d",
-    borderColor: "#404040",
-  },
-  relationshipButtonSelected: {
-    backgroundColor: "#007AFF",
-    borderColor: "#007AFF",
-  },
-  darkRelationshipButtonSelected: {
-    backgroundColor: "#007AFF",
-    borderColor: "#007AFF",
-  },
-  relationshipButtonText: {
-    fontSize: 14,
-    color: "#666",
-  },
-  darkRelationshipButtonText: {
-    color: "#aaa",
-  },
-  relationshipButtonTextSelected: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-  connectionFormSubmitButton: {
-    backgroundColor: "#007AFF",
-    borderRadius: 10,
-    padding: 16,
-    alignItems: "center",
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  connectionFormSubmitButtonDisabled: {
-    opacity: 0.6,
-  },
-  connectionFormSubmitButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
   },
 });
 
