@@ -262,19 +262,24 @@ const ProfileScreen = ({ route, navigation }) => {
       setUser(userData);
 
       userData.ratings = apiUser.ratings_info || [];
-
+      setUser(userData);
       console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
       console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
 
-      if (userData.businesses && userData.businesses.length > 0) {
-        console.log("ProfileScreen - Calling fetchBusinessesData with businesses:", userData.businesses);
-        fetchBusinessesData(userData.businesses);
-      } else {
-        console.log("ProfileScreen - No businesses found or empty array. Setting businessesData to []");
-        console.log("ProfileScreen - userData.businesses:", userData.businesses);
-        setBusinessesData([]);
-        setLoading(false);
-      }
+      const mappedBusinesses = (apiUser.business_info || []).map((bus, index) => ({
+        business_name: bus.business_name || "",
+        business_city: bus.business_city || "",
+        business_state: bus.business_state || "",
+        business_phone_number: bus.phone_number || "",
+        business_uid: bus.business_uid || "",
+        profile_business_uid: bus.business_uid || "",
+        role: bus.bu_role || "",
+        individualIsPublic: bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === true,
+        first_image: null,
+        index,
+      }));
+      setBusinessesData(mappedBusinesses);
+      setLoading(false);
     } catch (error) {
       setUser(null);
       setLoading(false);
@@ -1426,7 +1431,7 @@ const ProfileScreen = ({ route, navigation }) => {
                 >
                   <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                     <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>
-                      {review.rating_business_id}
+                      {review.business_name || review.rating_business_id}
                     </Text>
                     <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#999", fontSize: 12 }]}>
                       {review.rating_receipt_date}
