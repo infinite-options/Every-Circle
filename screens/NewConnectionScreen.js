@@ -44,6 +44,7 @@ const NewConnectionScreen = () => {
   const [ablyChannelName, setAblyChannelName] = useState(null); // Track Ably channel name from QR code
   const [ablyMessageSent, setAblyMessageSent] = useState(false); // Track if Ably message was sent successfully
   const [qrCodeData, setQrCodeData] = useState(null); // Store full QR code data for display
+  const [qrDataRetryCount, setQrDataRetryCount] = useState(0); // Track retry attempts for QR data
 
   // Relationship options matching ConnectScreen.js
   const relationshipOptions = [
@@ -189,20 +190,42 @@ const NewConnectionScreen = () => {
       console.log("🔵 NewConnectionScreen - Route params type:", typeof route.params);
       console.log("🔵 NewConnectionScreen - Route params keys:", route.params ? Object.keys(route.params) : "null");
       
-      // First, try to get full QR code data from route params or AsyncStorage
+      // Get the scanned profile_uid (User 1's profile_uid from the QR code)
+      const scannedProfileUid = route.params?.profile_uid;
+      console.log("📡 NewConnectionScreen - Scanned profile_uid (User 1):", scannedProfileUid);
+      
+      // First, try to get full QR code data from route params
       let qrDataString = route.params?.qr_code_data;
       console.log("📡 NewConnectionScreen - QR code data string from route.params:", qrDataString);
       
-      if (!qrDataString && profileUid) {
+      // If not in route params, try AsyncStorage using the SCANNED profile_uid (User 1's UID)
+      if (!qrDataString && scannedProfileUid) {
         try {
-          qrDataString = await AsyncStorage.getItem(`qr_code_data_${profileUid}`);
+          qrDataString = await AsyncStorage.getItem(`qr_code_data_${scannedProfileUid}`);
           if (qrDataString) {
-            console.log("✅ NewConnectionScreen - Found QR code data in AsyncStorage backup");
-            await AsyncStorage.removeItem(`qr_code_data_${profileUid}`);
+            console.log("✅ NewConnectionScreen - Found QR code data in AsyncStorage backup using scanned profile_uid:", scannedProfileUid);
+            await AsyncStorage.removeItem(`qr_code_data_${scannedProfileUid}`);
+          } else {
+            console.warn("⚠️ NewConnectionScreen - No QR code data in AsyncStorage for scanned profile_uid:", scannedProfileUid);
           }
         } catch (e) {
           console.warn("⚠️ NewConnectionScreen - Error reading QR code data from AsyncStorage:", e);
         }
+      }
+      
+      // If still no data, try to reconstruct from route params
+      if (!qrDataString && scannedProfileUid) {
+        console.log("⚠️ NewConnectionScreen - Attempting to reconstruct QR code data from route params");
+        const reconstructed = {
+          type: "everycircle",
+          profile_uid: scannedProfileUid,
+          version: "1.0",
+          url: `https://everycircle.com/newconnection/${scannedProfileUid}`,
+          form_switch_enabled: route.params?.form_switch_enabled !== undefined ? route.params.form_switch_enabled : false,
+          ably_channel_name: route.params?.ably_channel_name || null,
+        };
+        qrDataString = JSON.stringify(reconstructed);
+        console.log("📡 NewConnectionScreen - Reconstructed QR code data:", qrDataString);
       }
       
       // Parse and display QR code data
@@ -236,15 +259,15 @@ const NewConnectionScreen = () => {
         console.log("✅ NewConnectionScreen - Channel name from route.params:", finalChannelName);
       }
       
-      // Priority 3: From AsyncStorage backup
-      if (!finalChannelName && profileUid) {
+      // Priority 3: From AsyncStorage backup (using scanned profile_uid, not current user's profile_uid)
+      if (!finalChannelName && scannedProfileUid) {
         try {
-          const storedChannelName = await AsyncStorage.getItem(`ably_channel_${profileUid}`);
+          const storedChannelName = await AsyncStorage.getItem(`ably_channel_${scannedProfileUid}`);
           if (storedChannelName) {
             finalChannelName = storedChannelName;
-            console.log("✅ NewConnectionScreen - Channel name from AsyncStorage backup:", finalChannelName);
+            console.log("✅ NewConnectionScreen - Channel name from AsyncStorage backup (using scanned profile_uid):", finalChannelName);
             // Clean up after reading
-            await AsyncStorage.removeItem(`ably_channel_${profileUid}`);
+            await AsyncStorage.removeItem(`ably_channel_${scannedProfileUid}`);
           }
         } catch (e) {
           console.warn("⚠️ NewConnectionScreen - Error reading from AsyncStorage:", e);
@@ -296,7 +319,23 @@ const NewConnectionScreen = () => {
     };
     
     loadChannelName();
-  }, [route.params, profileUid]);
+  }, [route.params, profileUid, qrDataRetryCount]);
+  
+  // Retry logic to keep checking for QR code data if it's not found initially
+  useEffect(() => {
+    const scannedProfileUid = route.params?.profile_uid;
+    const hasQrData = qrCodeData || route.params?.qr_code_data;
+    
+    // If we have a scanned profile_uid but no QR data yet, retry
+    if (scannedProfileUid && !hasQrData && qrDataRetryCount < 10) {
+      const retryTimer = setTimeout(() => {
+        console.log(`🔄 NewConnectionScreen - Retrying QR data retrieval (attempt ${qrDataRetryCount + 1}/10)`);
+        setQrDataRetryCount(prev => prev + 1);
+      }, 500); // Retry every 500ms
+      
+      return () => clearTimeout(retryTimer);
+    }
+  }, [route.params, qrCodeData, qrDataRetryCount]);
 
   // Check login status on mount
   useEffect(() => {
