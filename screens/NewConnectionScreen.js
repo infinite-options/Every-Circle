@@ -40,6 +40,7 @@ const NewConnectionScreen = () => {
   const [circleUid, setCircleUid] = useState(null);
   const [checkingRelationship, setCheckingRelationship] = useState(false);
   const [qrCodeReceivedData, setQrCodeReceivedData] = useState(null); // Store received QR code data object for display
+  const [ablyMessageSent, setAblyMessageSent] = useState(null); // Store Ably message sent info: { channel, message, timestamp }
 
   // Relationship options matching ConnectScreen.js
   const relationshipOptions = [
@@ -173,13 +174,26 @@ const NewConnectionScreen = () => {
       });
 
       // Publish message
-      await channel.publish("new-connection-opened", {
+      const messageData = {
         message: "New Connection Page Opened",
         timestamp: new Date().toISOString(),
         profile_uid: profileUid,
-      });
+      };
+
+      console.log("🔵 NewConnectionScreen - Publishing message to channel:", channelName);
+      console.log("🔵 NewConnectionScreen - Message data:", JSON.stringify(messageData, null, 2));
+      console.log("🔵 NewConnectionScreen - Channel state before publish:", channel.state);
+
+      await channel.publish("new-connection-opened", messageData);
 
       console.log("✅ NewConnectionScreen - Ably message sent successfully to channel:", channelName);
+
+      // Update state to display message info
+      setAblyMessageSent({
+        channel: channelName,
+        message: messageData.message,
+        timestamp: messageData.timestamp,
+      });
 
       // Close connection after a short delay to ensure message is sent
       setTimeout(() => {
@@ -188,6 +202,13 @@ const NewConnectionScreen = () => {
 
     } catch (error) {
       console.error("❌ NewConnectionScreen - Error sending Ably message:", error);
+      // Update state to show error
+      setAblyMessageSent({
+        channel: `/${profileUid}`,
+        message: "Error: Failed to send message",
+        timestamp: new Date().toISOString(),
+        error: error.message,
+      });
     }
   };
 
@@ -892,6 +913,64 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   darkQrCodeReceivedValue: {
+    color: "#e2e8f0",
+  },
+  ablyMessageContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#f0fdf4",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#22c55e",
+    width: "100%",
+  },
+  darkAblyMessageContainer: {
+    backgroundColor: "#1a2e1a",
+    borderColor: "#22c55e",
+  },
+  ablyMessageTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#166534",
+    marginBottom: 10,
+  },
+  darkAblyMessageTitle: {
+    color: "#86efac",
+  },
+  ablyMessageContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e0",
+  },
+  darkAblyMessageContent: {
+    backgroundColor: "#0f172a",
+    borderColor: "#334155",
+  },
+  ablyMessageRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+    flexWrap: "wrap",
+  },
+  ablyMessageKey: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4a5568",
+    marginRight: 8,
+    minWidth: 100,
+  },
+  darkAblyMessageKey: {
+    color: "#cbd5e0",
+  },
+  ablyMessageValue: {
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#1a202c",
+    flex: 1,
+  },
+  darkAblyMessageValue: {
     color: "#e2e8f0",
   },
   helloText: {

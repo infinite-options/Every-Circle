@@ -52,6 +52,7 @@ const NetworkScreen = ({ navigation }) => {
   const [qrCodeDataObject, setQrCodeDataObject] = useState(null); // Store parsed QR code data object for display
   const [ablyClient, setAblyClient] = useState(null); // Store Ably client instance
   const [ablyChannel, setAblyChannel] = useState(null); // Store Ably channel instance
+  const [ablyMessageReceived, setAblyMessageReceived] = useState(null); // Store Ably message received info: { channel, message, timestamp }
   const [showAsyncStorage, setShowAsyncStorage] = useState(true);
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
   const [dateFilter, setDateFilter] = useState("All"); // All, This Week, This Month, This Year
@@ -476,10 +477,29 @@ const NetworkScreen = ({ navigation }) => {
 
       // Subscribe to messages on this channel
       channel.subscribe("new-connection-opened", (message) => {
-        console.log("📨 NetworkScreen - Received message:", message.data);
+        console.log("📨 NetworkScreen - Received message on channel:", channelName);
+        console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
+        console.log("📨 NetworkScreen - Message name:", message.name);
+        
         if (message.data && message.data.message) {
           console.log("✅ NetworkScreen -", message.data.message);
+          
+          // Update state to display message info
+          setAblyMessageReceived({
+            channel: channelName,
+            message: message.data.message,
+            timestamp: message.data.timestamp || new Date().toISOString(),
+          });
+        } else {
+          console.warn("⚠️ NetworkScreen - Message received but data structure unexpected:", message.data);
         }
+      });
+
+      // Also subscribe to all messages for debugging
+      channel.subscribe((message) => {
+        console.log("📨 NetworkScreen - Received ANY message on channel:", channelName);
+        console.log("📨 NetworkScreen - Message name:", message.name);
+        console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
       });
 
     } catch (error) {
@@ -1593,6 +1613,29 @@ const NetworkScreen = ({ navigation }) => {
                     </View>
                   )}
 
+                  {/* Display Ably Messages Received Block */}
+                  {ablyMessageReceived && (
+                    <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
+                      <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📨 Ably Messages Received:</Text>
+                      <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
+                        <View style={styles.ablyMessageRow}>
+                          <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
+                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.channel}</Text>
+                        </View>
+                        <View style={styles.ablyMessageRow}>
+                          <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
+                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.message}</Text>
+                        </View>
+                        <View style={styles.ablyMessageRow}>
+                          <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
+                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                            {new Date(ablyMessageReceived.timestamp).toLocaleString()}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+
                   {/* Display MiniCard showing what information will be transferred */}
                   {(() => {
                     if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
@@ -2380,6 +2423,64 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   darkQrCodeContainsValue: {
+    color: "#e2e8f0",
+  },
+  ablyMessageContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#fef3c7",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#f59e0b",
+    width: "100%",
+  },
+  darkAblyMessageContainer: {
+    backgroundColor: "#2e1f0a",
+    borderColor: "#f59e0b",
+  },
+  ablyMessageTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#92400e",
+    marginBottom: 10,
+  },
+  darkAblyMessageTitle: {
+    color: "#fcd34d",
+  },
+  ablyMessageContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e0",
+  },
+  darkAblyMessageContent: {
+    backgroundColor: "#0f172a",
+    borderColor: "#334155",
+  },
+  ablyMessageRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+    flexWrap: "wrap",
+  },
+  ablyMessageKey: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4a5568",
+    marginRight: 8,
+    minWidth: 100,
+  },
+  darkAblyMessageKey: {
+    color: "#cbd5e0",
+  },
+  ablyMessageValue: {
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#1a202c",
+    flex: 1,
+  },
+  darkAblyMessageValue: {
     color: "#e2e8f0",
   },
   filterContainer: {
