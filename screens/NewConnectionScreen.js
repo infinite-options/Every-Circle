@@ -196,14 +196,27 @@ const NewConnectionScreen = () => {
       
       // First, try to get full QR code data from route params
       let qrDataString = route.params?.qr_code_data;
-      console.log("📡 NewConnectionScreen - QR code data string from route.params:", qrDataString);
+      let dataSource = "none";
+      console.log("📡 NewConnectionScreen - QR code data string from route.params:", qrDataString ? "EXISTS" : "MISSING");
+      console.log("📡 NewConnectionScreen - route.params keys:", route.params ? Object.keys(route.params) : "null");
+      console.log("📡 NewConnectionScreen - route.params.qr_code_data type:", typeof route.params?.qr_code_data);
+      console.log("📡 NewConnectionScreen - route.params.qr_code_data length:", route.params?.qr_code_data ? route.params.qr_code_data.length : 0);
+      
+      if (qrDataString) {
+        dataSource = "route.params";
+        console.log("✅ NewConnectionScreen - Found QR code data in route.params");
+        // Log first 200 chars to verify it's the full data
+        console.log("📡 NewConnectionScreen - QR code data preview:", qrDataString.substring(0, 200));
+      }
       
       // If not in route params, try AsyncStorage using the SCANNED profile_uid (User 1's UID)
       if (!qrDataString && scannedProfileUid) {
         try {
           qrDataString = await AsyncStorage.getItem(`qr_code_data_${scannedProfileUid}`);
           if (qrDataString) {
+            dataSource = "AsyncStorage";
             console.log("✅ NewConnectionScreen - Found QR code data in AsyncStorage backup using scanned profile_uid:", scannedProfileUid);
+            console.log("📡 NewConnectionScreen - QR code data from AsyncStorage preview:", qrDataString.substring(0, 200));
             await AsyncStorage.removeItem(`qr_code_data_${scannedProfileUid}`);
           } else {
             console.warn("⚠️ NewConnectionScreen - No QR code data in AsyncStorage for scanned profile_uid:", scannedProfileUid);
@@ -213,35 +226,56 @@ const NewConnectionScreen = () => {
         }
       }
       
-      // If still no data, try to reconstruct from route params
+      // NO RECONSTRUCTION - If we don't have the actual QR code data, we can't proceed
+      // The QR code should always contain the complete data, so if it's missing, we need to retry
       if (!qrDataString && scannedProfileUid) {
-        console.log("⚠️ NewConnectionScreen - Attempting to reconstruct QR code data from route params");
-        const reconstructed = {
-          type: "everycircle",
-          profile_uid: scannedProfileUid,
-          version: "1.0",
-          url: `https://everycircle.com/newconnection/${scannedProfileUid}`,
-          form_switch_enabled: route.params?.form_switch_enabled !== undefined ? route.params.form_switch_enabled : false,
-          ably_channel_name: route.params?.ably_channel_name || null,
-        };
-        qrDataString = JSON.stringify(reconstructed);
-        console.log("📡 NewConnectionScreen - Reconstructed QR code data:", qrDataString);
+        console.error("❌ NewConnectionScreen - ERROR: QR code data not found in route.params or AsyncStorage");
+        console.error("❌ NewConnectionScreen - This should not happen - the QR code must contain the data");
+        console.error("❌ NewConnectionScreen - Scanned profile_uid:", scannedProfileUid);
+        console.error("❌ NewConnectionScreen - Will retry to get actual QR code data");
+        // Don't set qrDataString - let retry logic handle it
       }
       
-      // Parse and display QR code data
+      console.log("📡 NewConnectionScreen - Final QR data source:", dataSource);
+      
+      // Parse and display QR code data - ONLY if we have the actual data
       let parsedQrData = null;
       if (qrDataString) {
         try {
           parsedQrData = JSON.parse(qrDataString);
-          setQrCodeData(parsedQrData);
-          console.log("✅ NewConnectionScreen - QR code data parsed and stored:", parsedQrData);
-          console.log("✅ NewConnectionScreen - QR code data ably_channel_name:", parsedQrData.ably_channel_name);
+          
+          // Validate that required fields are present
+          if (!parsedQrData.profile_uid) {
+            console.error("❌ NewConnectionScreen - ERROR: Parsed QR data missing profile_uid");
+            console.error("❌ NewConnectionScreen - Parsed data:", parsedQrData);
+            // Don't set invalid data - retry will handle it
+            parsedQrData = null;
+          }
+          
+          // Check for null values in critical fields - if found, the data is incomplete
+          if (parsedQrData && (parsedQrData.ably_channel_name === null || parsedQrData.ably_channel_name === undefined)) {
+            console.error("❌ NewConnectionScreen - ERROR: QR code data has null/undefined ably_channel_name");
+            console.error("❌ NewConnectionScreen - This should not happen - QR code must contain this data");
+            console.error("❌ NewConnectionScreen - Parsed data:", parsedQrData);
+            console.error("❌ NewConnectionScreen - Will retry to get complete data");
+            // Don't set incomplete data - retry will handle it
+            parsedQrData = null;
+          }
+          
+          // Data is valid - set it
+          if (parsedQrData) {
+            setQrCodeData(parsedQrData);
+            console.log("✅ NewConnectionScreen - QR code data parsed and validated:", parsedQrData);
+            console.log("✅ NewConnectionScreen - QR code data ably_channel_name:", parsedQrData.ably_channel_name);
+            console.log("✅ NewConnectionScreen - QR code data form_switch_enabled:", parsedQrData.form_switch_enabled);
+          }
         } catch (e) {
           console.error("❌ NewConnectionScreen - Error parsing QR code data:", e);
           console.error("❌ NewConnectionScreen - QR code data string that failed to parse:", qrDataString);
         }
       } else {
-        console.warn("⚠️ NewConnectionScreen - No QR code data string found in route.params or AsyncStorage");
+        console.warn("⚠️ NewConnectionScreen - No QR code data string found - will retry");
+        console.warn("⚠️ NewConnectionScreen - route.params keys:", route.params ? Object.keys(route.params) : "null");
       }
       
       // Determine the channel name from multiple sources (priority order)
@@ -321,19 +355,25 @@ const NewConnectionScreen = () => {
     loadChannelName();
   }, [route.params, profileUid, qrDataRetryCount]);
   
-  // Retry logic to keep checking for QR code data if it's not found initially
+  // Retry logic to keep checking for QR code data if it's not found initially or is incomplete
   useEffect(() => {
     const scannedProfileUid = route.params?.profile_uid;
-    const hasQrData = qrCodeData || route.params?.qr_code_data;
+    const hasValidQrData = qrCodeData && qrCodeData.ably_channel_name && qrCodeData.profile_uid;
+    const hasQrDataString = route.params?.qr_code_data;
     
-    // If we have a scanned profile_uid but no QR data yet, retry
-    if (scannedProfileUid && !hasQrData && qrDataRetryCount < 10) {
+    // If we have a scanned profile_uid but no valid QR data yet, retry
+    // We know the QR code must contain the data, so keep trying
+    if (scannedProfileUid && !hasValidQrData && qrDataRetryCount < 20) {
       const retryTimer = setTimeout(() => {
-        console.log(`🔄 NewConnectionScreen - Retrying QR data retrieval (attempt ${qrDataRetryCount + 1}/10)`);
+        console.log(`🔄 NewConnectionScreen - Retrying QR data retrieval (attempt ${qrDataRetryCount + 1}/20)`);
+        console.log(`🔄 NewConnectionScreen - Has QR data string: ${!!hasQrDataString}, Has valid parsed data: ${!!hasValidQrData}`);
         setQrDataRetryCount(prev => prev + 1);
       }, 500); // Retry every 500ms
       
       return () => clearTimeout(retryTimer);
+    } else if (scannedProfileUid && !hasValidQrData && qrDataRetryCount >= 20) {
+      console.error("❌ NewConnectionScreen - ERROR: Failed to retrieve valid QR code data after 20 attempts");
+      console.error("❌ NewConnectionScreen - This indicates a serious issue with data transmission");
     }
   }, [route.params, qrCodeData, qrDataRetryCount]);
 

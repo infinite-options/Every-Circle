@@ -872,6 +872,17 @@ const NetworkScreen = ({ navigation }) => {
       // Create Ably channel name
       const ablyChannelName = qrUserUid ? `profile:${qrUserUid}` : null;
       
+      // Validate required data before generating QR code
+      if (!qrUserUid || !ablyChannelName) {
+        console.error("❌ NetworkScreen - Cannot generate QR code: user_uid is missing");
+        console.error("❌ NetworkScreen - qrUserUid:", qrUserUid);
+        console.error("❌ NetworkScreen - ablyChannelName would be:", ablyChannelName);
+        setError("Cannot generate QR code: User UID is missing. Please ensure your profile is properly set up.");
+        setQrCodeData("");
+        setAblyChannelName(null);
+        return;
+      }
+      
       // Create QR code data with EveryCircle identifier
       // Format: JSON with type identifier for app scanning, URL for web compatibility
       const qrData = {
@@ -882,19 +893,28 @@ const NetworkScreen = ({ navigation }) => {
         url: `https://everycircle.com/newconnection/${profileUID}`,
         // Include Form Switch value in QR code
         form_switch_enabled: formSwitchEnabled,
-        // Include Ably channel name so scanner can send messages
+        // Include Ably channel name so scanner can send messages (REQUIRED)
         ably_channel_name: ablyChannelName,
       };
+      
+      // Final validation: ensure all required fields are present
+      if (!qrData.profile_uid || !qrData.ably_channel_name) {
+        console.error("❌ NetworkScreen - QR code data validation failed:");
+        console.error("❌ NetworkScreen - profile_uid:", qrData.profile_uid);
+        console.error("❌ NetworkScreen - ably_channel_name:", qrData.ably_channel_name);
+        setError("Cannot generate QR code: Required data is missing. Please refresh the page.");
+        setQrCodeData("");
+        setAblyChannelName(null);
+        return;
+      }
+      
       const qrDataString = JSON.stringify(qrData);
       console.log("🔗 QR Code Data:", qrDataString);
-      if (ablyChannelName) {
-        console.log("📡 QR Code includes Ably Channel Name:", ablyChannelName);
-        // Store channel name for display
-        setAblyChannelName(ablyChannelName);
-      } else {
-        console.warn("⚠️ QR Code does NOT include Ably Channel Name (user_uid not found)");
-        setAblyChannelName(null);
-      }
+      console.log("✅ NetworkScreen - QR Code validation passed - all required fields present");
+      console.log("📡 QR Code includes Ably Channel Name:", ablyChannelName);
+      
+      // Store channel name for display
+      setAblyChannelName(ablyChannelName);
       // For display, we'll use the JSON string, but also support URL format for backward compatibility
       setQrCodeData(qrDataString);
     } catch (error) {
