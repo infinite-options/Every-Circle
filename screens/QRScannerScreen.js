@@ -82,27 +82,48 @@ export default function QRScannerScreen({ route }) {
           console.log("   form_switch_enabled:", parsed.form_switch_enabled || false);
           console.log("   ably_channel_name:", parsed.ably_channel_name || null);
           
+          // Validate that required data is present in the scanned QR code
+          if (!parsed.ably_channel_name || parsed.ably_channel_name === null || parsed.ably_channel_name === "") {
+            console.error("❌ QRScannerScreen - ERROR: Scanned QR code is missing ably_channel_name");
+            console.error("❌ QRScannerScreen - Parsed QR data:", parsed);
+            Alert.alert(
+              "Invalid QR Code",
+              "This QR code is missing required information (Ably channel name). Please ask the user to regenerate their QR code.",
+              [{ text: "OK", onPress: () => setScanned(false) }]
+            );
+            return;
+          }
+          
+          if (parsed.form_switch_enabled === undefined || parsed.form_switch_enabled === null) {
+            console.error("❌ QRScannerScreen - ERROR: Scanned QR code is missing form_switch_enabled");
+            console.error("❌ QRScannerScreen - Parsed QR data:", parsed);
+            Alert.alert(
+              "Invalid QR Code",
+              "This QR code is missing required information (Form switch enabled). Please ask the user to regenerate their QR code.",
+              [{ text: "OK", onPress: () => setScanned(false) }]
+            );
+            return;
+          }
+          
           const navParams = {
             profile_uid: parsed.profile_uid,
-            form_switch_enabled: parsed.form_switch_enabled !== undefined ? parsed.form_switch_enabled : false,
+            form_switch_enabled: parsed.form_switch_enabled,
             qr_code_data: JSON.stringify(parsed), // Pass full QR code data as string
+            ably_channel_name: String(parsed.ably_channel_name), // Always include if we got this far
           };
           
-          // Only include ably_channel_name if it exists and is not null/empty
-          if (parsed.ably_channel_name && parsed.ably_channel_name !== null && parsed.ably_channel_name !== "") {
-            navParams.ably_channel_name = String(parsed.ably_channel_name); // Ensure it's a string
-            console.log("✅ QRScannerScreen - Including ably_channel_name in nav params:", parsed.ably_channel_name);
-            
-            // Also store in AsyncStorage as backup in case navigation params don't work
-            try {
-              await AsyncStorage.setItem(`ably_channel_${parsed.profile_uid}`, String(parsed.ably_channel_name));
-              await AsyncStorage.setItem(`qr_code_data_${parsed.profile_uid}`, JSON.stringify(parsed));
-              console.log("✅ QRScannerScreen - Stored ably_channel_name and QR code data in AsyncStorage as backup");
-            } catch (e) {
-              console.warn("⚠️ QRScannerScreen - Could not store channel name in AsyncStorage:", e);
-            }
-          } else {
-            console.warn("⚠️ QRScannerScreen - ably_channel_name is missing or invalid:", parsed.ably_channel_name);
+          console.log("✅ QRScannerScreen - QR code validated - all required fields present");
+          console.log("📡 QRScannerScreen - Including ably_channel_name in nav params:", parsed.ably_channel_name);
+          console.log("📡 QRScannerScreen - Including form_switch_enabled in nav params:", parsed.form_switch_enabled);
+          console.log("📡 QRScannerScreen - Full qr_code_data:", navParams.qr_code_data);
+          
+          // Always store in AsyncStorage as backup in case navigation params don't work
+          try {
+            await AsyncStorage.setItem(`ably_channel_${parsed.profile_uid}`, String(parsed.ably_channel_name));
+            await AsyncStorage.setItem(`qr_code_data_${parsed.profile_uid}`, JSON.stringify(parsed));
+            console.log("✅ QRScannerScreen - Stored ably_channel_name and QR code data in AsyncStorage as backup");
+          } catch (e) {
+            console.warn("⚠️ QRScannerScreen - Could not store data in AsyncStorage:", e);
           }
           
           console.log("📡 QRScannerScreen - Final navigation params:", JSON.stringify(navParams, null, 2));

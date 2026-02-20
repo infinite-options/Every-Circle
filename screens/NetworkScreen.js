@@ -898,20 +898,40 @@ const NetworkScreen = ({ navigation }) => {
       };
       
       // Final validation: ensure all required fields are present
-      if (!qrData.profile_uid || !qrData.ably_channel_name) {
-        console.error("❌ NetworkScreen - QR code data validation failed:");
+      if (!qrData.profile_uid) {
+        console.error("❌ NetworkScreen - QR code data validation failed: profile_uid is missing");
+        setError("Cannot generate QR code: Profile UID is missing. Please refresh the page.");
+        setQrCodeData("");
+        setAblyChannelName(null);
+        return;
+      }
+      
+      if (!qrData.ably_channel_name) {
+        console.error("❌ NetworkScreen - QR code data validation failed: ably_channel_name is missing");
         console.error("❌ NetworkScreen - profile_uid:", qrData.profile_uid);
         console.error("❌ NetworkScreen - ably_channel_name:", qrData.ably_channel_name);
-        setError("Cannot generate QR code: Required data is missing. Please refresh the page.");
+        setError("Cannot generate QR code: Ably channel name is missing. Please ensure your user UID is set up correctly.");
+        setQrCodeData("");
+        setAblyChannelName(null);
+        return;
+      }
+      
+      if (qrData.form_switch_enabled === undefined || qrData.form_switch_enabled === null) {
+        console.error("❌ NetworkScreen - QR code data validation failed: form_switch_enabled is missing");
+        console.error("❌ NetworkScreen - form_switch_enabled:", qrData.form_switch_enabled);
+        setError("Cannot generate QR code: Form switch enabled value is missing. Please refresh the page.");
         setQrCodeData("");
         setAblyChannelName(null);
         return;
       }
       
       const qrDataString = JSON.stringify(qrData);
-      console.log("🔗 QR Code Data:", qrDataString);
+      console.log("🔗 NetworkScreen - QR Code Data Generated:");
+      console.log("   Full JSON:", qrDataString);
+      console.log("   profile_uid:", qrData.profile_uid);
+      console.log("   form_switch_enabled:", qrData.form_switch_enabled);
+      console.log("   ably_channel_name:", qrData.ably_channel_name);
       console.log("✅ NetworkScreen - QR Code validation passed - all required fields present");
-      console.log("📡 QR Code includes Ably Channel Name:", ablyChannelName);
       
       // Store channel name for display
       setAblyChannelName(ablyChannelName);

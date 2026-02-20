@@ -990,23 +990,24 @@ const NewConnectionScreen = () => {
               <View style={styles.cardContainer}>
                 <MiniCard user={profileData} />
                 
-                {/* Display Full QR Code Data - Always show if we have route params or data */}
+                {/* Display Full QR Code Data - Only show actual received data */}
                 <View style={[styles.qrCodeDataContainer, darkMode && styles.darkQrCodeDataContainer]}>
                   <Text style={[styles.qrCodeDataTitle, darkMode && styles.darkQrCodeDataTitle]}>🔗 QR Code Data Received:</Text>
                   <View style={[styles.qrCodeDataContent, darkMode && styles.darkQrCodeDataContent]}>
                     <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled={true}>
                       <Text style={[styles.qrCodeDataText, darkMode && styles.darkQrCodeDataText]}>
                         {qrCodeData 
-                          ? JSON.stringify(qrCodeData, null, 2) 
-                          : (route.params?.qr_code_data 
+                          ? JSON.stringify(qrCodeData, null, 2)
+                          : (route.params?.qr_code_data
                             ? (() => {
                                 try {
-                                  return JSON.stringify(JSON.parse(route.params.qr_code_data), null, 2);
+                                  const parsed = JSON.parse(route.params.qr_code_data);
+                                  return JSON.stringify(parsed, null, 2);
                                 } catch (e) {
                                   return route.params.qr_code_data;
                                 }
                               })()
-                            : "No QR code data available - route.params keys: " + (route.params ? Object.keys(route.params).join(", ") : "null"))}
+                            : "Waiting for QR code data... (route.params keys: " + (route.params ? Object.keys(route.params).join(", ") : "null") + ")")}
                       </Text>
                     </ScrollView>
                   </View>
