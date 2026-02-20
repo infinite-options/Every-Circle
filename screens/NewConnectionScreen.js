@@ -366,14 +366,23 @@ const NewConnectionScreen = () => {
     if (scannedProfileUid && !hasValidQrData && qrDataRetryCount < 20) {
       const retryTimer = setTimeout(() => {
         console.log(`🔄 NewConnectionScreen - Retrying QR data retrieval (attempt ${qrDataRetryCount + 1}/20)`);
-        console.log(`🔄 NewConnectionScreen - Has QR data string: ${!!hasQrDataString}, Has valid parsed data: ${!!hasValidQrData}`);
+        console.log(`🔄 NewConnectionScreen - Has QR data string in route.params: ${!!hasQrDataString}`);
+        console.log(`🔄 NewConnectionScreen - Has valid parsed data in state: ${!!hasValidQrData}`);
+        console.log(`🔄 NewConnectionScreen - route.params keys:`, route.params ? Object.keys(route.params) : "null");
+        if (hasQrDataString) {
+          console.log(`🔄 NewConnectionScreen - QR data string length:`, route.params.qr_code_data.length);
+          console.log(`🔄 NewConnectionScreen - QR data string preview:`, route.params.qr_code_data.substring(0, 200));
+        }
+        // Increment retry count to trigger the main useEffect
         setQrDataRetryCount(prev => prev + 1);
-      }, 500); // Retry every 500ms
+      }, 1000); // Retry every 1 second (slower to avoid spam)
       
       return () => clearTimeout(retryTimer);
     } else if (scannedProfileUid && !hasValidQrData && qrDataRetryCount >= 20) {
       console.error("❌ NewConnectionScreen - ERROR: Failed to retrieve valid QR code data after 20 attempts");
       console.error("❌ NewConnectionScreen - This indicates a serious issue with data transmission");
+      console.error("❌ NewConnectionScreen - route.params:", route.params);
+      console.error("❌ NewConnectionScreen - qrCodeData state:", qrCodeData);
     }
   }, [route.params, qrCodeData, qrDataRetryCount]);
 
@@ -996,18 +1005,51 @@ const NewConnectionScreen = () => {
                   <View style={[styles.qrCodeDataContent, darkMode && styles.darkQrCodeDataContent]}>
                     <ScrollView style={{ maxHeight: 200 }} nestedScrollEnabled={true}>
                       <Text style={[styles.qrCodeDataText, darkMode && styles.darkQrCodeDataText]}>
-                        {qrCodeData 
-                          ? JSON.stringify(qrCodeData, null, 2)
-                          : (route.params?.qr_code_data
-                            ? (() => {
-                                try {
-                                  const parsed = JSON.parse(route.params.qr_code_data);
-                                  return JSON.stringify(parsed, null, 2);
-                                } catch (e) {
-                                  return route.params.qr_code_data;
+                        {(() => {
+                          // Priority 1: Use parsed state data if available and valid
+                          if (qrCodeData && qrCodeData.profile_uid && qrCodeData.ably_channel_name) {
+                            return JSON.stringify(qrCodeData, null, 2);
+                          }
+                          
+                          // Priority 2: Try to parse from route.params and display it
+                          if (route.params?.qr_code_data) {
+                            try {
+                              const parsed = JSON.parse(route.params.qr_code_data);
+                              // If valid, also set it in state for future use
+                              if (parsed.profile_uid && parsed.ably_channel_name) {
+                                // Set state if not already set (avoid infinite loop)
+                                if (!qrCodeData || !qrCodeData.profile_uid) {
+                                  setTimeout(() => setQrCodeData(parsed), 0);
                                 }
-                              })()
-                            : "Waiting for QR code data... (route.params keys: " + (route.params ? Object.keys(route.params).join(", ") : "null") + ")")}
+                                return JSON.stringify(parsed, null, 2);
+                              } else {
+                                return "QR code data incomplete:\n" + JSON.stringify(parsed, null, 2) + 
+                                       "\n\nMissing: " + (!parsed.profile_uid ? "profile_uid " : "") + 
+                                       (!parsed.ably_channel_name ? "ably_channel_name" : "");
+                              }
+                            } catch (e) {
+                              return "Error parsing QR code data: " + e.message + 
+                                     "\n\nRaw data (first 300 chars):\n" + route.params.qr_code_data.substring(0, 300);
+                            }
+                          }
+                          
+                          // Priority 3: Show waiting message with debug info
+                          const debugInfo = [];
+                          if (route.params) {
+                            debugInfo.push("route.params keys: " + Object.keys(route.params).join(", "));
+                            if (route.params.profile_uid) {
+                              debugInfo.push("profile_uid: " + route.params.profile_uid);
+                            }
+                            if (route.params.qr_code_data) {
+                              debugInfo.push("qr_code_data exists (length: " + route.params.qr_code_data.length + ")");
+                            }
+                          } else {
+                            debugInfo.push("route.params is null");
+                          }
+                          debugInfo.push("Retry count: " + qrDataRetryCount + "/20");
+                          debugInfo.push("State qrCodeData: " + (qrCodeData ? "exists" : "null"));
+                          return "Waiting for QR code data...\n\n" + debugInfo.join("\n");
+                        })()}
                       </Text>
                     </ScrollView>
                   </View>

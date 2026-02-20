@@ -927,11 +927,13 @@ const NetworkScreen = ({ navigation }) => {
       
       const qrDataString = JSON.stringify(qrData);
       console.log("🔗 NetworkScreen - QR Code Data Generated:");
-      console.log("   Full JSON:", qrDataString);
-      console.log("   profile_uid:", qrData.profile_uid);
-      console.log("   form_switch_enabled:", qrData.form_switch_enabled);
-      console.log("   ably_channel_name:", qrData.ably_channel_name);
+      console.log("   Full JSON String:", qrDataString);
+      console.log("   Parsed Object:", JSON.stringify(qrData, null, 2));
+      console.log("   ✅ profile_uid:", qrData.profile_uid);
+      console.log("   ✅ form_switch_enabled:", qrData.form_switch_enabled, "(type:", typeof qrData.form_switch_enabled, ")");
+      console.log("   ✅ ably_channel_name:", qrData.ably_channel_name, "(type:", typeof qrData.ably_channel_name, ")");
       console.log("✅ NetworkScreen - QR Code validation passed - all required fields present");
+      console.log("✅ NetworkScreen - QR Code is ready to be scanned");
       
       // Store channel name for display
       setAblyChannelName(ablyChannelName);
