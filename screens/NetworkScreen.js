@@ -50,6 +50,8 @@ const NetworkScreen = ({ navigation }) => {
   const [userProfileData, setUserProfileData] = useState(null);
   const [qrCodeData, setQrCodeData] = useState("");
   const [qrCodeDataObject, setQrCodeDataObject] = useState(null); // Store parsed QR code data object for display
+  const [ablyClient, setAblyClient] = useState(null); // Store Ably client instance
+  const [ablyChannel, setAblyChannel] = useState(null); // Store Ably channel instance
   const [showAsyncStorage, setShowAsyncStorage] = useState(true);
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
   const [dateFilter, setDateFilter] = useState("All"); // All, This Week, This Month, This Year
@@ -408,11 +410,94 @@ const NetworkScreen = ({ navigation }) => {
       // Store both the string (for QR code) and the object (for display)
       setQrCodeData(qrDataString);
       setQrCodeDataObject(qrData);
-      setQrCodeDataObject(qrData);
+
+      // Initialize Ably channel when QR code is generated
+      initializeAblyChannel(profileUID);
     } catch (error) {
       console.error("Error fetching user profile for QR code:", error);
     }
   };
+
+  // Initialize Ably channel when QR code is generated
+  const initializeAblyChannel = async (profileUid) => {
+    if (!profileUid) {
+      console.warn("⚠️ NetworkScreen - Cannot initialize Ably: no profile_uid");
+      return;
+    }
+
+    try {
+      // Dynamically import Ably
+      let Ably;
+      try {
+        Ably = require("ably");
+        console.log("✅ NetworkScreen - Ably module loaded");
+      } catch (e) {
+        console.warn("⚠️ NetworkScreen - Ably not installed. Please run: npm install ably");
+        return;
+      }
+
+      const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
+      if (!ablyApiKey) {
+        console.warn("⚠️ NetworkScreen - Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
+        return;
+      }
+
+      console.log("🔵 NetworkScreen - Initializing Ably channel for profile_uid:", profileUid);
+      
+      // Create Ably client
+      const client = new Ably.Realtime({ key: ablyApiKey });
+      setAblyClient(client);
+
+      // Create channel name using profile_uid (e.g., /110-000014)
+      const channelName = `/${profileUid}`;
+      console.log("🔵 NetworkScreen - Ably Channel Name:", channelName);
+      
+      const channel = client.channels.get(channelName);
+      setAblyChannel(channel);
+
+      // Listen for connection events
+      client.connection.on("connected", () => {
+        console.log("✅ NetworkScreen - Ably client connected");
+      });
+
+      client.connection.on("disconnected", () => {
+        console.log("⚠️ NetworkScreen - Ably client disconnected");
+      });
+
+      // Attach to channel
+      channel.attach((err) => {
+        if (err) {
+          console.error("❌ NetworkScreen - Error attaching to Ably channel:", err);
+        } else {
+          console.log("✅ NetworkScreen - Ably channel attached:", channelName);
+          console.log("✅ NetworkScreen - Ready to receive messages on channel:", channelName);
+        }
+      });
+
+      // Subscribe to messages on this channel
+      channel.subscribe("new-connection-opened", (message) => {
+        console.log("📨 NetworkScreen - Received message:", message.data);
+        if (message.data && message.data.message) {
+          console.log("✅ NetworkScreen -", message.data.message);
+        }
+      });
+
+    } catch (error) {
+      console.error("❌ NetworkScreen - Error initializing Ably:", error);
+    }
+  };
+
+  // Cleanup Ably connection when component unmounts or profile changes
+  useEffect(() => {
+    return () => {
+      if (ablyClient) {
+        console.log("🔵 NetworkScreen - Closing Ably connection");
+        ablyClient.close();
+        setAblyClient(null);
+        setAblyChannel(null);
+      }
+    };
+  }, [ablyClient]);
 
   // Handle QR scan complete - fetch profile data and show popup
   const handleQRScanComplete = async (scanData) => {

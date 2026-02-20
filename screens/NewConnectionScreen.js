@@ -56,21 +56,23 @@ const NewConnectionScreen = () => {
       ? new URLSearchParams(window.location.search).get("profile_uid") || window.location.pathname.split("/newconnection/")[1]?.split("?")[0] || window.location.pathname.split("/newconnection/")[1]
       : null);
 
-  // Parse and store QR code data when received
+  // Parse and store QR code data when received, and send Ably message
   useEffect(() => {
-    const parseQRCodeData = () => {
+    const parseQRCodeDataAndSendMessage = async () => {
+      let parsedData = null;
+      
       // Check if QR code data is in route params (as JSON string)
       if (route.params?.qr_code_data) {
         try {
-          const parsed = JSON.parse(route.params.qr_code_data);
-          setQrCodeReceivedData(parsed);
-          console.log("✅ NewConnectionScreen - QR code data received and parsed:", parsed);
+          parsedData = JSON.parse(route.params.qr_code_data);
+          setQrCodeReceivedData(parsedData);
+          console.log("✅ NewConnectionScreen - QR code data received and parsed:", parsedData);
         } catch (e) {
           console.error("❌ NewConnectionScreen - Error parsing QR code data:", e);
         }
       } else if (route.params?.profile_uid) {
         // If only profile_uid is available, create a minimal data object from route params
-        const minimalData = {
+        parsedData = {
           type: route.params?.type || "everycircle",
           profile_uid: route.params.profile_uid,
           version: route.params?.version || "1.0",
@@ -78,18 +80,116 @@ const NewConnectionScreen = () => {
         };
         // Add any other params that might be present
         if (route.params?.form_switch_enabled !== undefined) {
-          minimalData.form_switch_enabled = route.params.form_switch_enabled;
+          parsedData.form_switch_enabled = route.params.form_switch_enabled;
         }
         if (route.params?.ably_channel_name) {
-          minimalData.ably_channel_name = route.params.ably_channel_name;
+          parsedData.ably_channel_name = route.params.ably_channel_name;
         }
-        setQrCodeReceivedData(minimalData);
-        console.log("✅ NewConnectionScreen - Created QR code data from route params:", minimalData);
+        setQrCodeReceivedData(parsedData);
+        console.log("✅ NewConnectionScreen - Created QR code data from route params:", parsedData);
+      }
+
+      // Send Ably message if we have a profile_uid
+      if (parsedData?.profile_uid) {
+        await sendAblyMessage(parsedData.profile_uid);
       }
     };
 
-    parseQRCodeData();
+    parseQRCodeDataAndSendMessage();
   }, [route.params]);
+
+  // Function to send "New Connection Page Opened" message via Ably
+  const sendAblyMessage = async (profileUid) => {
+    if (!profileUid) {
+      console.warn("⚠️ NewConnectionScreen - Cannot send Ably message: no profile_uid");
+      return;
+    }
+
+    try {
+      // Dynamically import Ably
+      let Ably;
+      try {
+        Ably = require("ably");
+        console.log("✅ NewConnectionScreen - Ably module loaded");
+      } catch (e) {
+        console.warn("⚠️ NewConnectionScreen - Ably not installed. Please run: npm install ably");
+        return;
+      }
+
+      const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
+      if (!ablyApiKey) {
+        console.warn("⚠️ NewConnectionScreen - Ably API key not configured");
+        return;
+      }
+
+      console.log("🔵 NewConnectionScreen - Sending Ably message to channel:", `/${profileUid}`);
+
+      // Create Ably client
+      const client = new Ably.Realtime({ key: ablyApiKey });
+      const channelName = `/${profileUid}`;
+      const channel = client.channels.get(channelName);
+
+      // Wait for connection
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error("Timeout waiting for Ably connection"));
+        }, 10000);
+
+        client.connection.on("connected", () => {
+          clearTimeout(timeout);
+          console.log("✅ NewConnectionScreen - Ably client connected");
+          resolve();
+        });
+
+        client.connection.on("failed", (stateChange) => {
+          clearTimeout(timeout);
+          reject(new Error("Ably connection failed"));
+        });
+      });
+
+      // Wait for channel to be attached
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error("Timeout waiting for channel attachment"));
+        }, 5000);
+
+        if (channel.state === "attached") {
+          clearTimeout(timeout);
+          resolve();
+        } else {
+          channel.on("attached", () => {
+            clearTimeout(timeout);
+            console.log("✅ NewConnectionScreen - Channel attached");
+            resolve();
+          });
+
+          channel.attach((err) => {
+            if (err) {
+              clearTimeout(timeout);
+              reject(err);
+            }
+          });
+        }
+      });
+
+      // Publish message
+      await channel.publish("new-connection-opened", {
+        message: "New Connection Page Opened",
+        timestamp: new Date().toISOString(),
+        profile_uid: profileUid,
+      });
+
+      console.log("✅ NewConnectionScreen - Ably message sent successfully to channel:", channelName);
+
+      // Close connection after a short delay to ensure message is sent
+      setTimeout(() => {
+        client.close();
+      }, 500);
+
+    } catch (error) {
+      console.error("❌ NewConnectionScreen - Error sending Ably message:", error);
+    }
+  };
 
   // Check login status on mount
   useEffect(() => {
