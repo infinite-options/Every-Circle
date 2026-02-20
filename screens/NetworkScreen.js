@@ -427,13 +427,58 @@ const NetworkScreen = ({ navigation }) => {
     }
 
     try {
-      // Dynamically import Ably
+      // Dynamically import Ably - handle web vs native differently
       let Ably;
+      const isWeb = Platform.OS === "web";
+      
       try {
-        Ably = require("ably");
-        console.log("✅ NetworkScreen - Ably module loaded");
+        if (isWeb) {
+          // On web, try dynamic import or use Ably from window if available
+          if (typeof window !== "undefined" && window.Ably) {
+            Ably = window.Ably;
+            console.log("✅ NetworkScreen - Ably loaded from window.Ably (web)");
+          } else {
+            // Try require for web (might work with bundler)
+            try {
+              Ably = require("ably");
+              console.log("✅ NetworkScreen - Ably module loaded via require (web)");
+            } catch (requireError) {
+              // Try dynamic import for web
+              console.warn("⚠️ NetworkScreen - require() failed on web, trying dynamic import");
+              throw new Error("Ably package not available on web. Please install: npm install ably");
+            }
+          }
+        } else {
+          // On native, use require
+          Ably = require("ably");
+          console.log("✅ NetworkScreen - Ably module loaded (native)");
+        }
       } catch (e) {
-        console.warn("⚠️ NetworkScreen - Ably not installed. Please run: npm install ably");
+        const errorMessage = e.message || String(e);
+        console.warn("⚠️ NetworkScreen - Ably not available:", errorMessage);
+        console.error("❌ NetworkScreen - Ably import error details:", e);
+        console.error("❌ NetworkScreen - Platform:", Platform.OS);
+        console.error("❌ NetworkScreen - Is Web:", isWeb);
+        
+        setAblyMessageReceived({
+          channel: `/${profileUid}`,
+          message: "Error: Ably module not found",
+          timestamp: new Date().toISOString(),
+          error: `Ably not installed or not available on ${Platform.OS}. Please run: npm install ably`,
+        });
+        return;
+      }
+      
+      // Verify Ably is actually available
+      if (!Ably || !Ably.Realtime) {
+        const errorMsg = "Ably module loaded but Realtime class not found";
+        console.error("❌ NetworkScreen -", errorMsg);
+        setAblyMessageReceived({
+          channel: `/${profileUid}`,
+          message: "Error: Ably module incomplete",
+          timestamp: new Date().toISOString(),
+          error: errorMsg,
+        });
         return;
       }
 
