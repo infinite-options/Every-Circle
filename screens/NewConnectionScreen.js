@@ -264,11 +264,21 @@ const NewConnectionScreen = () => {
         }
       });
 
-      // Publish message
+      // Get User 2's (the scanner's) profile_uid from AsyncStorage
+      let user2ProfileUid = null;
+      try {
+        user2ProfileUid = await AsyncStorage.getItem("profile_uid");
+        console.log("🔵 NewConnectionScreen - User 2 (scanner) profile_uid:", user2ProfileUid);
+      } catch (e) {
+        console.warn("⚠️ NewConnectionScreen - Could not get User 2 profile_uid:", e);
+      }
+
+      // Publish message with both User 1's and User 2's profile_uid
       const messageData = {
         message: "New Connection Page Opened",
         timestamp: new Date().toISOString(),
-        profile_uid: profileUid,
+        profile_uid: profileUid, // User 1's profile_uid (the QR code owner)
+        scanner_profile_uid: user2ProfileUid, // User 2's profile_uid (the person who scanned)
       };
 
       console.log("🔵 NewConnectionScreen - Publishing message to channel:", channelName);
