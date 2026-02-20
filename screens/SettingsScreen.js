@@ -323,7 +323,7 @@ export default function SettingsScreen() {
           {/* Build Timestamp - Last Change Date/Time with Version */}
           <View style={styles.buildInfoContainer}>
             <Text style={[styles.dateTimeText, darkMode && styles.darkDateTimeText]}>
-              PM 1.0.4 Version {versionData.major}.{versionData.build} - Last Change: {versionData.last_change}
+              PM {versionData.pm_version} Version {versionData.major}.{versionData.build} - Last Change: {versionData.last_change}
             </Text>
           </View>
         </ScrollView>

@@ -438,8 +438,15 @@ const NetworkScreen = ({ navigation }) => {
       }
 
       const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
+      console.log("🔵 NetworkScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
       if (!ablyApiKey) {
         console.warn("⚠️ NetworkScreen - Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
+        setAblyMessageReceived({
+          channel: `/${profileUid}`,
+          message: "Error: Ably API key not configured",
+          timestamp: new Date().toISOString(),
+          error: "EXPO_PUBLIC_ABLY_API_KEY environment variable is missing",
+        });
         return;
       }
 
@@ -457,6 +464,8 @@ const NetworkScreen = ({ navigation }) => {
       setAblyChannel(channel);
 
       // Listen for connection events
+      console.log("🔵 NetworkScreen - Initial connection state:", client.connection.state);
+      
       client.connection.on("connected", () => {
         console.log("✅ NetworkScreen - Ably client connected");
       });
@@ -465,14 +474,34 @@ const NetworkScreen = ({ navigation }) => {
         console.log("⚠️ NetworkScreen - Ably client disconnected");
       });
 
+      client.connection.on("failed", (stateChange) => {
+        console.error("❌ NetworkScreen - Ably connection failed:", stateChange);
+      });
+
+      client.connection.on("suspended", () => {
+        console.warn("⚠️ NetworkScreen - Ably connection suspended");
+      });
+
       // Attach to channel
+      console.log("🔵 NetworkScreen - Initial channel state:", channel.state);
+      console.log("🔵 NetworkScreen - Attaching to channel:", channelName);
+      
       channel.attach((err) => {
         if (err) {
           console.error("❌ NetworkScreen - Error attaching to Ably channel:", err);
         } else {
           console.log("✅ NetworkScreen - Ably channel attached:", channelName);
+          console.log("✅ NetworkScreen - Channel state after attach:", channel.state);
           console.log("✅ NetworkScreen - Ready to receive messages on channel:", channelName);
         }
+      });
+
+      channel.on("detached", () => {
+        console.warn("⚠️ NetworkScreen - Channel detached");
+      });
+
+      channel.on("suspended", () => {
+        console.warn("⚠️ NetworkScreen - Channel suspended");
       });
 
       // Subscribe to messages on this channel
@@ -1613,28 +1642,56 @@ const NetworkScreen = ({ navigation }) => {
                     </View>
                   )}
 
-                  {/* Display Ably Messages Received Block */}
-                  {ablyMessageReceived && (
-                    <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
-                      <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📨 Ably Messages Received:</Text>
-                      <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
+                  {/* Display Ably Messages Received Block - Always Visible */}
+                  <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
+                    <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📨 Ably Messages Received:</Text>
+                    <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
+                      {ablyMessageReceived ? (
+                        <>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.channel}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.message}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                              {new Date(ablyMessageReceived.timestamp).toLocaleString()}
+                            </Text>
+                          </View>
+                        </>
+                      ) : (
                         <View style={styles.ablyMessageRow}>
-                          <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
-                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.channel}</Text>
-                        </View>
-                        <View style={styles.ablyMessageRow}>
-                          <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
-                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.message}</Text>
-                        </View>
-                        <View style={styles.ablyMessageRow}>
-                          <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
-                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                            {new Date(ablyMessageReceived.timestamp).toLocaleString()}
+                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue, { fontStyle: "italic", color: "#999" }]}>
+                            No messages received yet. Listening for messages...
                           </Text>
                         </View>
-                      </View>
+                      )}
+                      {qrCodeDataObject?.profile_uid && (
+                        <>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Listening on Channel:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeDataObject.profile_uid}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Connection Status:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                              {ablyClient?.connection?.state || "Not connected"}
+                            </Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel Status:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                              {ablyChannel?.state || "Not attached"}
+                            </Text>
+                          </View>
+                        </>
+                      )}
                     </View>
-                  )}
+                  </View>
 
                   {/* Display MiniCard showing what information will be transferred */}
                   {(() => {

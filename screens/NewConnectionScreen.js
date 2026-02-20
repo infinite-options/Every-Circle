@@ -114,12 +114,26 @@ const NewConnectionScreen = () => {
         console.log("✅ NewConnectionScreen - Ably module loaded");
       } catch (e) {
         console.warn("⚠️ NewConnectionScreen - Ably not installed. Please run: npm install ably");
+        console.error("❌ NewConnectionScreen - Ably import error:", e);
+        setAblyMessageSent({
+          channel: `/${profileUid}`,
+          message: "Error: Ably module not found",
+          timestamp: new Date().toISOString(),
+          error: `Ably not installed: ${e.message}`,
+        });
         return;
       }
 
       const ablyApiKey = process.env.EXPO_PUBLIC_ABLY_API_KEY || "";
+      console.log("🔵 NewConnectionScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
       if (!ablyApiKey) {
         console.warn("⚠️ NewConnectionScreen - Ably API key not configured");
+        setAblyMessageSent({
+          channel: `/${profileUid}`,
+          message: "Error: Ably API key not configured",
+          timestamp: new Date().toISOString(),
+          error: "EXPO_PUBLIC_ABLY_API_KEY environment variable is missing",
+        });
         return;
       }
 
@@ -131,10 +145,22 @@ const NewConnectionScreen = () => {
       const channel = client.channels.get(channelName);
 
       // Wait for connection
+      console.log("🔵 NewConnectionScreen - Waiting for Ably connection...");
+      console.log("🔵 NewConnectionScreen - Initial connection state:", client.connection.state);
+      
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
-          reject(new Error("Timeout waiting for Ably connection"));
+          console.error("❌ NewConnectionScreen - Timeout waiting for Ably connection. Current state:", client.connection.state);
+          reject(new Error(`Timeout waiting for Ably connection. State: ${client.connection.state}`));
         }, 10000);
+
+        // Check if already connected
+        if (client.connection.state === "connected") {
+          clearTimeout(timeout);
+          console.log("✅ NewConnectionScreen - Already connected");
+          resolve();
+          return;
+        }
 
         client.connection.on("connected", () => {
           clearTimeout(timeout);
@@ -144,18 +170,32 @@ const NewConnectionScreen = () => {
 
         client.connection.on("failed", (stateChange) => {
           clearTimeout(timeout);
-          reject(new Error("Ably connection failed"));
+          console.error("❌ NewConnectionScreen - Ably connection failed. State:", stateChange);
+          reject(new Error(`Ably connection failed. State: ${stateChange.reason || stateChange}`));
+        });
+
+        client.connection.on("suspended", () => {
+          console.warn("⚠️ NewConnectionScreen - Ably connection suspended");
+        });
+
+        client.connection.on("disconnected", () => {
+          console.warn("⚠️ NewConnectionScreen - Ably connection disconnected");
         });
       });
 
       // Wait for channel to be attached
+      console.log("🔵 NewConnectionScreen - Waiting for channel attachment...");
+      console.log("🔵 NewConnectionScreen - Initial channel state:", channel.state);
+      
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
-          reject(new Error("Timeout waiting for channel attachment"));
+          console.error("❌ NewConnectionScreen - Timeout waiting for channel attachment. Current state:", channel.state);
+          reject(new Error(`Timeout waiting for channel attachment. State: ${channel.state}`));
         }, 5000);
 
         if (channel.state === "attached") {
           clearTimeout(timeout);
+          console.log("✅ NewConnectionScreen - Channel already attached");
           resolve();
         } else {
           channel.on("attached", () => {
@@ -164,10 +204,21 @@ const NewConnectionScreen = () => {
             resolve();
           });
 
+          channel.on("detached", () => {
+            console.warn("⚠️ NewConnectionScreen - Channel detached");
+          });
+
+          channel.on("suspended", () => {
+            console.warn("⚠️ NewConnectionScreen - Channel suspended");
+          });
+
           channel.attach((err) => {
             if (err) {
               clearTimeout(timeout);
+              console.error("❌ NewConnectionScreen - Error attaching channel:", err);
               reject(err);
+            } else {
+              console.log("🔵 NewConnectionScreen - Channel attach called, waiting for attached event...");
             }
           });
         }
@@ -632,6 +683,49 @@ const NewConnectionScreen = () => {
                   </View>
                 </View>
               )}
+
+              {/* Display Ably Messages Sent Block - Always Visible */}
+              <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
+                <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📤 Ably Messages Sent:</Text>
+                <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
+                  {ablyMessageSent ? (
+                    <>
+                      <View style={styles.ablyMessageRow}>
+                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
+                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageSent.channel}</Text>
+                      </View>
+                      <View style={styles.ablyMessageRow}>
+                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
+                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageSent.message}</Text>
+                      </View>
+                      <View style={styles.ablyMessageRow}>
+                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
+                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                          {new Date(ablyMessageSent.timestamp).toLocaleString()}
+                        </Text>
+                      </View>
+                      {ablyMessageSent.error && (
+                        <View style={styles.ablyMessageRow}>
+                          <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Error:</Text>
+                          <Text style={[styles.ablyMessageValue, { color: "#ef4444" }]}>{ablyMessageSent.error}</Text>
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <View style={styles.ablyMessageRow}>
+                      <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue, { fontStyle: "italic", color: "#999" }]}>
+                        No message sent yet. Waiting for QR code scan...
+                      </Text>
+                    </View>
+                  )}
+                  {qrCodeReceivedData?.profile_uid && (
+                    <View style={styles.ablyMessageRow}>
+                      <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Target Channel:</Text>
+                      <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeReceivedData.profile_uid}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
 
               {/* Login/SignUp buttons for non-logged-in users */}
               {(() => {
