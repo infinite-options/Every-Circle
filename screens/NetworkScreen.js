@@ -49,6 +49,7 @@ const NetworkScreen = ({ navigation }) => {
   const [viewMode, setViewMode] = useState("list");
   const [userProfileData, setUserProfileData] = useState(null);
   const [qrCodeData, setQrCodeData] = useState("");
+  const [qrCodeDataObject, setQrCodeDataObject] = useState(null); // Store parsed QR code data object for display
   const [showAsyncStorage, setShowAsyncStorage] = useState(true);
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
   const [dateFilter, setDateFilter] = useState("All"); // All, This Week, This Month, This Year
@@ -404,8 +405,10 @@ const NetworkScreen = ({ navigation }) => {
       };
       const qrDataString = JSON.stringify(qrData);
       console.log("🔗 QR Code Data:", qrDataString);
-      // For display, we'll use the JSON string, but also support URL format for backward compatibility
+      // Store both the string (for QR code) and the object (for display)
       setQrCodeData(qrDataString);
+      setQrCodeDataObject(qrData);
+      setQrCodeDataObject(qrData);
     } catch (error) {
       console.error("Error fetching user profile for QR code:", error);
     }
@@ -1488,6 +1491,23 @@ const NetworkScreen = ({ navigation }) => {
                     <QRCodeComponent value={qrCodeData} size={200} color={darkMode ? "#ffffff" : "#000000"} backgroundColor={darkMode ? "#1a1a1a" : "#ffffff"} />
                   </View>
 
+                  {/* Display QR Code Contains Block */}
+                  {qrCodeDataObject && (
+                    <View style={[styles.qrCodeContainsContainer, darkMode && styles.darkQrCodeContainsContainer]}>
+                      <Text style={[styles.qrCodeContainsTitle, darkMode && styles.darkQrCodeContainsTitle]}>📋 QR Code Contains:</Text>
+                      <View style={[styles.qrCodeContainsContent, darkMode && styles.darkQrCodeContainsContent]}>
+                        {Object.entries(qrCodeDataObject).map(([key, value]) => (
+                          <View key={key} style={styles.qrCodeContainsRow}>
+                            <Text style={[styles.qrCodeContainsKey, darkMode && styles.darkQrCodeContainsKey]}>{key}:</Text>
+                            <Text style={[styles.qrCodeContainsValue, darkMode && styles.darkQrCodeContainsValue]}>
+                              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
                   {/* Display MiniCard showing what information will be transferred */}
                   {(() => {
                     if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
@@ -2218,6 +2238,64 @@ const styles = StyleSheet.create({
   qrCodeMiniCardContainer: {
     marginTop: 15,
     width: "100%",
+  },
+  qrCodeContainsContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#f0f8ff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4a90e2",
+    width: "100%",
+  },
+  darkQrCodeContainsContainer: {
+    backgroundColor: "#1a2332",
+    borderColor: "#4a90e2",
+  },
+  qrCodeContainsTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#2c5282",
+    marginBottom: 10,
+  },
+  darkQrCodeContainsTitle: {
+    color: "#90cdf4",
+  },
+  qrCodeContainsContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e0",
+  },
+  darkQrCodeContainsContent: {
+    backgroundColor: "#0f172a",
+    borderColor: "#334155",
+  },
+  qrCodeContainsRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+    flexWrap: "wrap",
+  },
+  qrCodeContainsKey: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4a5568",
+    marginRight: 8,
+    minWidth: 120,
+  },
+  darkQrCodeContainsKey: {
+    color: "#cbd5e0",
+  },
+  qrCodeContainsValue: {
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#1a202c",
+    flex: 1,
+  },
+  darkQrCodeContainsValue: {
+    color: "#e2e8f0",
   },
   filterContainer: {
     flexDirection: "row",

@@ -72,8 +72,11 @@ export default function QRScannerScreen({ route }) {
           onScanComplete(parsed);
           navigation.goBack();
         } else {
+          // Pass the full parsed QR code data
           navigation.navigate("Connect", {
             profile_uid: parsed.profile_uid,
+            qr_code_data: JSON.stringify(parsed), // Pass full QR code data as JSON string
+            ...parsed, // Also spread individual fields for backward compatibility
           });
         }
       } else {

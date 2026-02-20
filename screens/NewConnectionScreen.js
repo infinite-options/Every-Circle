@@ -39,6 +39,7 @@ const NewConnectionScreen = () => {
   const [existingRelationship, setExistingRelationship] = useState(null);
   const [circleUid, setCircleUid] = useState(null);
   const [checkingRelationship, setCheckingRelationship] = useState(false);
+  const [qrCodeReceivedData, setQrCodeReceivedData] = useState(null); // Store received QR code data object for display
 
   // Relationship options matching ConnectScreen.js
   const relationshipOptions = [
@@ -54,6 +55,41 @@ const NewConnectionScreen = () => {
     (Platform.OS === "web" && typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("profile_uid") || window.location.pathname.split("/newconnection/")[1]?.split("?")[0] || window.location.pathname.split("/newconnection/")[1]
       : null);
+
+  // Parse and store QR code data when received
+  useEffect(() => {
+    const parseQRCodeData = () => {
+      // Check if QR code data is in route params (as JSON string)
+      if (route.params?.qr_code_data) {
+        try {
+          const parsed = JSON.parse(route.params.qr_code_data);
+          setQrCodeReceivedData(parsed);
+          console.log("✅ NewConnectionScreen - QR code data received and parsed:", parsed);
+        } catch (e) {
+          console.error("❌ NewConnectionScreen - Error parsing QR code data:", e);
+        }
+      } else if (route.params?.profile_uid) {
+        // If only profile_uid is available, create a minimal data object from route params
+        const minimalData = {
+          type: route.params?.type || "everycircle",
+          profile_uid: route.params.profile_uid,
+          version: route.params?.version || "1.0",
+          url: route.params?.url || `https://everycircle.com/newconnection/${route.params.profile_uid}`,
+        };
+        // Add any other params that might be present
+        if (route.params?.form_switch_enabled !== undefined) {
+          minimalData.form_switch_enabled = route.params.form_switch_enabled;
+        }
+        if (route.params?.ably_channel_name) {
+          minimalData.ably_channel_name = route.params.ably_channel_name;
+        }
+        setQrCodeReceivedData(minimalData);
+        console.log("✅ NewConnectionScreen - Created QR code data from route params:", minimalData);
+      }
+    };
+
+    parseQRCodeData();
+  }, [route.params]);
 
   // Check login status on mount
   useEffect(() => {
@@ -459,6 +495,23 @@ const NewConnectionScreen = () => {
                 <MiniCard user={profileData} />
               </View>
 
+              {/* Display QR Code Received Block */}
+              {qrCodeReceivedData && (
+                <View style={[styles.qrCodeReceivedContainer, darkMode && styles.darkQrCodeReceivedContainer]}>
+                  <Text style={[styles.qrCodeReceivedTitle, darkMode && styles.darkQrCodeReceivedTitle]}>📥 QR Code Received:</Text>
+                  <View style={[styles.qrCodeReceivedContent, darkMode && styles.darkQrCodeReceivedContent]}>
+                    {Object.entries(qrCodeReceivedData).map(([key, value]) => (
+                      <View key={key} style={styles.qrCodeReceivedRow}>
+                        <Text style={[styles.qrCodeReceivedKey, darkMode && styles.darkQrCodeReceivedKey]}>{key}:</Text>
+                        <Text style={[styles.qrCodeReceivedValue, darkMode && styles.darkQrCodeReceivedValue]}>
+                          {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
               {/* Login/SignUp buttons for non-logged-in users */}
               {(() => {
                 const shouldShowAuth = !checkingLogin && !isLoggedIn;
@@ -682,6 +735,64 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     marginTop: 20,
+  },
+  qrCodeReceivedContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#f0f8ff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4a90e2",
+    width: "100%",
+  },
+  darkQrCodeReceivedContainer: {
+    backgroundColor: "#1a2332",
+    borderColor: "#4a90e2",
+  },
+  qrCodeReceivedTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#2c5282",
+    marginBottom: 10,
+  },
+  darkQrCodeReceivedTitle: {
+    color: "#90cdf4",
+  },
+  qrCodeReceivedContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e0",
+  },
+  darkQrCodeReceivedContent: {
+    backgroundColor: "#0f172a",
+    borderColor: "#334155",
+  },
+  qrCodeReceivedRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+    flexWrap: "wrap",
+  },
+  qrCodeReceivedKey: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4a5568",
+    marginRight: 8,
+    minWidth: 120,
+  },
+  darkQrCodeReceivedKey: {
+    color: "#cbd5e0",
+  },
+  qrCodeReceivedValue: {
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#1a202c",
+    flex: 1,
+  },
+  darkQrCodeReceivedValue: {
+    color: "#e2e8f0",
   },
   helloText: {
     fontSize: 32,
