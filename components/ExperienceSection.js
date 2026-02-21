@@ -59,7 +59,7 @@ const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPubl
       description: "",
       startDate: "",
       endDate: "",
-      isPublic: false,
+      isPublic: true,
     };
     setExperience([...experience, newEntry]);
   };

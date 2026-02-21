@@ -3,14 +3,15 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, Touc
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
-import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_BOUNTY_RESULTS_ENDPOINT } from "../apiConfig";
+import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_BOUNTY_RESULTS_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
 import { useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
-// import { Picker } from '@react-native-picker/picker';
+import { Picker } from '@react-native-picker/picker';
+import MiniCard from "../components/MiniCard";
 export default function AccountScreen({ navigation }) {
   const { darkMode } = useDarkMode();
   const [userUID, setUserUID] = useState(null);
@@ -30,6 +31,7 @@ export default function AccountScreen({ navigation }) {
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const [businesses, setBusinesses] = useState([]);
   const [selectedAccount, setSelectedAccount] = useState('personal'); // 'personal' or business UID
+  const [selectedBusinessFullData, setSelectedBusinessFullData] = useState(null);
   const [expandedTransactionId, setExpandedTransactionId] = useState(null);
   const [transactionServices, setTransactionServices] = useState({});
 
@@ -299,6 +301,52 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
+  // const fetchUserBusinesses = async () => {
+  //   try {
+  //     const profileId = await AsyncStorage.getItem("profile_uid");
+  //     if (!profileId) {
+  //       console.log("No profile ID found");
+  //       return null;
+  //     }
+
+  //     const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+  //     if (!response.ok) {
+  //       console.log("Failed to fetch user profile");
+  //       return null;
+  //     }
+
+  //     const result = await response.json();
+  //     console.log("User businesses:", result.business_info);
+
+  //     // Parse business_info to get business UIDs
+  //     const businessList = result.business_info
+  //       ? (typeof result.business_info === "string" 
+  //           ? JSON.parse(result.business_info) 
+  //           : result.business_info
+  //         )
+  //       : [];
+
+  //     // Business details are already in the array — use them directly
+  //     console.log("Businesses:", businessList);
+  //     setBusinesses(businessList);
+
+  //     // Get the first business UID
+  //     if (businessList.length > 0) {
+  //       const firstBusiness = businessList[0];
+  //       const businessId = firstBusiness.business_uid || firstBusiness.profile_business_uid;
+  //       console.log("Setting business UID:", businessId);
+  //       setBusinessUID(businessId);
+  //       return businessId;
+  //     }
+      
+  //     console.log("No businesses found for user");
+  //     return null;
+  //   } catch (error) {
+  //     console.error("Error fetching user businesses:", error);
+  //     return null;
+  //   }
+  // };
+
   const fetchTransactionServices = async (transactionUid) => {
   try {
     // Check if we already have this data cached
@@ -358,6 +406,36 @@ export default function AccountScreen({ navigation }) {
 
       console.log(`Fetching transactions for business: ${targetBusinessUID}`);
       
+      // First, fetch the business bounty data which has bs_bounty and ti_bs_qty
+      let bountyDataByTransaction = {};
+      try {
+        const bountyResponse = await fetch(`${BUSINESS_BOUNTY_RESULTS_ENDPOINT}/${targetBusinessUID}`);
+        if (bountyResponse.ok) {
+          const bountyResult = await bountyResponse.json();
+          console.log("Business bounty result:", bountyResult);
+          
+          if (bountyResult && bountyResult.data && Array.isArray(bountyResult.data)) {
+            // Group by transaction_uid and sum bounty_paid
+            bountyResult.data.forEach(item => {
+              const txnId = item.transaction_uid;
+              if (!bountyDataByTransaction[txnId]) {
+                bountyDataByTransaction[txnId] = {
+                  total_bounty: 0,
+                  items: []
+                };
+              }
+              // bounty_paid is already calculated as bs_bounty * ti_bs_qty in the API
+              const bountyPaid = parseFloat(item.bounty_paid) || 0;
+              bountyDataByTransaction[txnId].total_bounty += bountyPaid;
+              bountyDataByTransaction[txnId].items.push(item);
+            });
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching bounty data:", error);
+      }
+
+      // Now fetch transaction data
       const businessTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${targetBusinessUID}`;
       const response = await fetch(businessTransactionsUrl, {
         method: "GET",
@@ -398,37 +476,16 @@ export default function AccountScreen({ navigation }) {
                             "Unknown Business";
         });
 
-        // Fetch bounty data for each transaction
-        const bountyPromises = businessTransactions.map(async (txn) => {
-          try {
-            const bountyResponse = await fetch(`${BUSINESS_BOUNTY_RESULTS_ENDPOINT}/${targetBusinessUID}`);
-            if (bountyResponse.ok) {
-              const bountyResult = await bountyResponse.json();
-              if (bountyResult && bountyResult.data) {
-                const transactionBounty = bountyResult.data.find(
-                  b => b.transaction_uid === txn.transaction_uid
-                );
-                if (transactionBounty) {
-                  txn.bounty_paid = parseFloat(transactionBounty.bounty_earned) || 0;
-                }
-              }
-            }
-          } catch (error) {
-            console.error(`Error fetching bounty for transaction ${txn.transaction_uid}:`, error);
-          }
-          return txn;
-        });
-
-        const transactionsWithBounty = await Promise.all(bountyPromises);
-
-        // Remove duplicates and group by transaction_uid
+        // Group by transaction_uid
         const transactionMap = {};
-        transactionsWithBounty.forEach(item => {
+        businessTransactions.forEach(item => {
           const txnId = item.transaction_uid;
+          
           if (!transactionMap[txnId]) {
             const total = parseFloat(item.transaction_total || 0);
             const taxes = parseFloat(item.transaction_taxes || 0);
-            const bounty = item.bounty_paid || 0;
+            // Get bounty from bountyDataByTransaction
+            const bounty = bountyDataByTransaction[txnId]?.total_bounty || 0;
             const netEarning = total - bounty - taxes;
 
             transactionMap[txnId] = {
@@ -453,6 +510,7 @@ export default function AccountScreen({ navigation }) {
         });
 
         console.log(`Total business transactions found: ${filteredTransactions.length}`);
+        console.log("Sample transaction with bounty:", filteredTransactions[0]);
         setBusinessTransactionData(filteredTransactions);
       }
       
@@ -557,6 +615,46 @@ export default function AccountScreen({ navigation }) {
     }
   }, [selectedAccount, businesses]); // Add 'businesses' as dependency
     
+  // Add this with your other useEffects
+  useEffect(() => {
+    const fetchSelectedBusinessFullData = async () => {
+      if (selectedAccount === 'personal' || !selectedAccount) {
+        setSelectedBusinessFullData(null);
+        return;
+      }
+      
+      try {
+        const response = await fetch(`${BUSINESS_INFO_ENDPOINT}/${selectedAccount}`);
+        const result = await response.json();
+        
+        if (result && result.business) {
+          const rawBusiness = result.business;
+          
+          setSelectedBusinessFullData({
+            business_name: rawBusiness.business_name,
+            business_address_line_1: rawBusiness.business_address_line_1,
+            business_city: rawBusiness.business_city,
+            business_state: rawBusiness.business_state,
+            business_zip_code: rawBusiness.business_zip_code,
+            business_phone_number: rawBusiness.business_phone_number,
+            business_website: rawBusiness.business_website,
+            business_tag_line: rawBusiness.business_tag_line,
+            first_image: rawBusiness.business_images_url?.[0] || rawBusiness.business_google_photos?.[0],
+            phoneIsPublic: true,
+            taglineIsPublic: true,
+            imageIsPublic: true,
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching selected business full data:", error);
+        setSelectedBusinessFullData(null);
+      }
+    };
+    
+    fetchSelectedBusinessFullData();
+  }, [selectedAccount]);
+
+  
 
   // Format date to dd/mm format
   const formatTransactionDate = (dateString) => {
@@ -755,14 +853,27 @@ export default function AccountScreen({ navigation }) {
   const xPositions = chartData.dates.map((_, index) => paddingLeft + index * xStep);
 
   // Generate left Y-axis ticks (linear)
-  const leftTicks = 6;
+  // const leftTicks = 6;
+  // const leftTickValues = [];
+  // for (let i = 0; i <= leftTicks; i++) {
+  //   leftTickValues.push((chartData.maxDaily / leftTicks) * i);
+  // }
+
+  // Generate left Y-axis ticks (increment by $1.50)
   const leftTickValues = [];
-  for (let i = 0; i <= leftTicks; i++) {
-    leftTickValues.push((chartData.maxDaily / leftTicks) * i);
+  const increment = 1.50;
+  const maxTicks = Math.ceil(chartData.maxDaily / increment);
+  for (let i = 0; i <= maxTicks; i++) {
+    leftTickValues.push(increment * i);
   }
 
   // Generate right Y-axis ticks (linear)
-  const rightTickValues = generateLinearTicks(chartData.maxCumulative, 6);
+  const rightTickValues = [];
+  const rightIncrement = 1.50;
+  const maxRightTicks = Math.ceil(chartData.maxCumulative / rightIncrement);
+  for (let i = 0; i <= maxRightTicks; i++) {
+    rightTickValues.push(rightIncrement * i);
+  }
 
   // Build path strings for lines
   const buildPath = (positions) => {
@@ -1150,35 +1261,36 @@ export default function AccountScreen({ navigation }) {
 
         {/* Expertise */}
         <View style={styles.sectionContainer}>
-          <View style={styles.tableContainer}>
-            <View style={styles.tableHeader}>
-              <View style={{ flex: 1.5, flexDirection: "row", alignItems: "center" }}>
-                <Text style={[styles.tableHeaderText, { fontSize: 16, fontWeight: "600" }]}>Expertise</Text>
-                <View style={[styles.questionCircle, { marginLeft: 4 }]}>
-                  <Text style={styles.questionMark}>?</Text>
-                </View>
-              </View>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Cost </Text>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Unit</Text>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Qty</Text>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Bounty</Text>
+          <View style={styles.sectionTitleRow}>
+            <Text style={styles.sectionTitle}>Expertise</Text>
+            <View style={styles.questionCircle}>
+              <Text style={styles.questionMark}>?</Text>
             </View>
-            {expertiseLoading ? (
-              <Text style={styles.loadingText}>Loading expertise data...</Text>
-            ) : expertiseData.length > 0 ? (
-              expertiseData.map((item, idx) => (
+          </View>
+          {expertiseLoading ? (
+            <Text style={styles.loadingText}>Loading expertise data...</Text>
+          ) : expertiseData.length > 0 ? (
+            <View style={styles.tableContainer}>
+              <View style={styles.transactionHeaderRow}>
+                <Text style={[styles.transactionHeaderBusiness, { flex: 1.5 }]}>Expertise</Text>
+                <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Cost</Text>
+                <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Unit</Text>
+                <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Qty</Text>
+                <Text style={[styles.transactionHeaderAmount, { flex: 1, textAlign: 'right'}]}>Bounty</Text>
+              </View>
+              {expertiseData.map((item, idx) => (
                 <View key={idx} style={styles.tableRow}>
                   <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>{item.name}</Text>
-                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>${item.cost}</Text>
-                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>{item.unit}</Text>
-                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>{item.quantity || 0}</Text>
-                  <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>${item.bounty}</Text>
+                  <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
+                  <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
+                  <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.quantity || 0}</Text>
+                  <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: 'right', marginRight: 15 }]}>${item.bounty}</Text>
                 </View>
-              ))
-            ) : (
-              <Text style={styles.noDataText}>No expertise data available.</Text>
-            )}
-          </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.noDataText}>No expertise data available.</Text>
+          )}
         </View>
 
         {/* Transaction History */}
@@ -1279,6 +1391,15 @@ export default function AccountScreen({ navigation }) {
       
       <>
 
+        {/* Business MiniCard */}
+        <View style={styles.sectionContainer}>
+          {selectedBusinessFullData && (
+            <View>
+              <MiniCard business={selectedBusinessFullData} />
+            </View>
+          )}
+        </View>
+
         {/* Product Results formerly Business Bounty Results */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Product Results</Text>
@@ -1287,7 +1408,6 @@ export default function AccountScreen({ navigation }) {
           ) : businessBountyData?.error ? (
             <Text style={styles.errorText}>Error: {businessBountyData.error}</Text>
           ) : businessBountyData?.data ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
               <View>
                 {/* Table Header */}
                 <View style={styles.businessBountyTableHeader}>
@@ -1335,7 +1455,6 @@ export default function AccountScreen({ navigation }) {
                   );
                 })}
               </View>
-            </ScrollView>
           ) : (
             <Text style={styles.noDataText}>No business bounty data available.</Text>
           )}
@@ -1358,7 +1477,6 @@ export default function AccountScreen({ navigation }) {
           {businessTransactionLoading ? (
             <Text style={styles.loadingText}>Loading business transaction data...</Text>
           ) : businessTransactionData.length > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={true}>
               <View style={styles.transactionsContainer}>
                 {/* Table Header */}
                 <View style={styles.businessTransactionHeaderRow}>
@@ -1447,7 +1565,6 @@ export default function AccountScreen({ navigation }) {
                   );
                 })}
               </View>
-            </ScrollView>
           ) : (
             <View>
               <Text style={styles.noDataText}>No business transaction data available.</Text>
@@ -1522,7 +1639,21 @@ const styles = StyleSheet.create({
   transactionHeaderAmount: { width: 70, fontSize: 13, color: "#fff", fontWeight: "bold", textAlign: "right" },
   centeredContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-  businessBountyTableHeader: {
+  bountyTotals: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 8,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 4,
+  },
+  bountyTotalText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
+  },
+  bountyTableHeader: {
     flexDirection: "row",
     backgroundColor: "#18884A",
     paddingVertical: 6,
@@ -1530,26 +1661,26 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 2,
   },
-  businessBountyHeaderCell: {
-    width: 100,
+  bountyTableHeaderCell: {
+    flex: 1,
     fontSize: 12,
     color: "#fff",
     fontWeight: "bold",
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     textAlign: 'center',
   },
-  businessBountyTableRow: {
+  bountyTableRow: {
     flexDirection: "row",
     paddingVertical: 6,
     paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
   },
-  businessBountyCell: {
-    width: 100,
-    fontSize: 11,
+  bountyTableCell: {
+    flex: 1,
+    fontSize: 10,
     color: "#333",
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     textAlign: 'center',
   },
   loadingText: {
@@ -1619,6 +1750,42 @@ const styles = StyleSheet.create({
     color: "#333", 
     textAlign: "center" 
   },
+  businessBountyTableHeader: {
+    flexDirection: "row",
+    backgroundColor: "#18884A",
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    marginBottom: 2,
+    minWidth: 700, //ensures table stretches
+    width: '100%',
+    flex: 1,
+  },
+  businessBountyHeaderCell: {
+    //width: 100, // Keep fixed width for horizontal scroll
+    flex: 1,
+    fontSize: 12,
+    color: "#fff",
+    fontWeight: "bold",
+    paddingHorizontal: 2,
+    textAlign: 'center',
+  },
+  businessBountyTableRow: {
+    flexDirection: "row",
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    width: '100%',
+    flex: 1,
+  },
+  businessBountyCell: {
+    flex: 1,
+    fontSize: 10,
+    color: "#333",
+    paddingHorizontal: 2,
+    textAlign: 'center',
+  },
   businessTransactionHeaderRow: {
     flexDirection: "row",
     backgroundColor: "#18884A",
@@ -1626,9 +1793,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 8,
     marginBottom: 2,
+    minWidth: 770, 
+    width: '100%',
+    flex: 1,
   },
   businessTransactionHeaderCell: {
-    width: 110,
+    //width: 110, 
+    flex: 1,
     fontSize: 12,
     color: "#fff",
     fontWeight: "bold",
@@ -1641,19 +1812,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
+    width: '100%',
+    flex: 1,
   },
   businessTransactionCell: {
-    width: 110,
+    //width: 110,
+    flex: 1,
     fontSize: 11,
     color: "#333",
     paddingHorizontal: 4,
     textAlign: 'center',
-  },
-  expandedServicesContainer: {
-    backgroundColor: '#f5f5f5',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    marginBottom: 4,
   },
   servicesHeaderRow: {
     flexDirection: "row",
@@ -1662,9 +1830,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 4,
     marginBottom: 2,
+    width: '100%',
+    flex: 1,
   },
   servicesHeaderCell: {
-    width: 100,
+    //width: 100,
+    flex: 1,
     fontSize: 11,
     color: "#fff",
     fontWeight: "bold",
@@ -1677,18 +1848,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: "#ddd",
+    width: '100%',
+    flex: 1,
   },
   servicesCell: {
-    width: 100,
+    //width: 100,
+    flex: 1,
     fontSize: 10,
     color: "#333",
     paddingHorizontal: 4,
     textAlign: 'center',
   },
+  expandedServicesContainer: {
+    backgroundColor: '#f5f5f5',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 4,
+  },
+  
   noServicesText: {
     fontSize: 12,
     color: "#888",
     textAlign: 'center',
     paddingVertical: 10,
+  },
+  businessCardContainer: {
+    marginBottom: 10,
+    borderRadius: 10,
+    overflow: "visible",
+  },
+  darkBusinessCardContainer: {
+    backgroundColor: "transparent",
   },
 });

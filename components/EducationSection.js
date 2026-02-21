@@ -53,7 +53,7 @@ const EducationSection = ({ education, setEducation, toggleVisibility, isPublic,
   };
 
   const addEducation = () => {
-    const newEntry = { school: "", degree: "", startDate: "", endDate: "", isPublic: false };
+    const newEntry = { school: "", degree: "", startDate: "", endDate: "", isPublic: true };
     setEducation([...education, newEntry]);
   };
 

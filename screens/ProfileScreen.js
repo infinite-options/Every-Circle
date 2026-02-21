@@ -247,6 +247,7 @@ const ProfileScreen = ({ route, navigation }) => {
             helpNeeds: wish.profile_wish_title || "",
             details: wish.profile_wish_description || "",
             amount: wish.profile_wish_bounty || "",
+            cost: wish.profile_wish_cost || "",
             isPublic: wish.profile_wish_is_public === 1 || wish.isPublic === true,
             wish_responses: wish.wish_responses || 0,
           }))
@@ -260,18 +261,32 @@ const ProfileScreen = ({ route, navigation }) => {
       console.log("ProfileScreen - Profile UID in userData:", userData.profile_uid);
       setUser(userData);
 
+      userData.ratings = apiUser.ratings_info || [];
+      setUser(userData);
       console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
       console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
 
-      if (userData.businesses && userData.businesses.length > 0) {
-        console.log("ProfileScreen - Calling fetchBusinessesData with businesses:", userData.businesses);
-        fetchBusinessesData(userData.businesses);
-      } else {
-        console.log("ProfileScreen - No businesses found or empty array. Setting businessesData to []");
-        console.log("ProfileScreen - userData.businesses:", userData.businesses);
-        setBusinessesData([]);
-        setLoading(false);
-      }
+      const mappedBusinesses = (apiUser.business_info || []).map((bus, index) => {
+        console.log("RAW bus from API:", JSON.stringify(bus, null, 2));  // ← add this
+        return {
+          business_name: bus.business_name || "",
+          business_city: bus.business_city || "",
+          business_state: bus.business_state || "",
+          business_zip_code: bus.business_zip_code || "",
+          business_phone_number: bus.business_phone_number || "",
+          business_address_line_1: bus.business_address_line_1 || "",
+          phoneIsPublic: bus.business_phone_number_is_public === 1 || bus.business_phone_number_is_public === "1" || bus.business_phone_number_is_public === true,
+          business_uid: bus.business_uid || "",
+          profile_business_uid: bus.business_uid || "",
+          role: bus.bu_role || "",
+          individualIsPublic: bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === true,
+          first_image: null,
+          index,
+        };
+      });
+      console.log("mappedBusinesses result:", JSON.stringify(mappedBusinesses, null, 2));  // ← add this
+      setBusinessesData(mappedBusinesses);
+      setLoading(false);
     } catch (error) {
       setUser(null);
       setLoading(false);
@@ -1167,19 +1182,21 @@ const ProfileScreen = ({ route, navigation }) => {
                         {sanitizeText(exp.name) ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(exp.name)}</Text> : null}
                         {sanitizeText(exp.description) ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(exp.description)}</Text> : null}
                         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                          {exp.cost && (
-                            <View style={{ flexDirection: "row", alignItems: "center" }}>
-                              <View style={styles.moneyBagIconContainer}>
-                                <Text style={styles.moneyBagDollarSymbol}>$</Text>
-                              </View>
-                              <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{exp.cost.toLowerCase() !== "free" ? `Cost: ${exp.cost}` : `Cost: ${exp.cost}`}</Text>
-                            </View>
-                          )}
-                          {exp.bounty && (
-                            <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
-                              {exp.bounty.toLowerCase() !== "free" ? `💰 $${exp.bounty}` : `💰 ${exp.bounty}`}
-                            </Text>
-                          )}
+  {exp.cost && (
+    <View style={{ flexDirection: "row", alignItems: "center" }}>
+      <View style={styles.moneyBagIconContainer}>
+        <Text style={styles.moneyBagDollarSymbol}>$</Text>
+      </View>
+      <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
+        {exp.cost.toLowerCase() !== "free" ? `Cost: $${exp.cost.replace(/^\$/, '')}` : `Cost: ${exp.cost}`}
+      </Text>
+    </View>
+  )}
+  {exp.bounty && (
+    <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
+      {exp.bounty.toLowerCase() !== "free" ? `💰 $${exp.bounty.replace(/^\$/, '')}` : `💰 ${exp.bounty}`}
+    </Text>
+  )}
                         </View>
                       </View>
                     );
@@ -1264,6 +1281,7 @@ const ProfileScreen = ({ route, navigation }) => {
                                 title: wish.helpNeeds,
                                 description: wish.details,
                                 bounty: wish.amount,
+                                cost: wish.cost,
                               };
                               // Prepare profile data
                               const profileDataForNavigation = {
@@ -1299,8 +1317,22 @@ const ProfileScreen = ({ route, navigation }) => {
                         )}
                         <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{wish.helpNeeds || ""}</Text>
                         <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{wish.details || ""}</Text>
-                        <View style={{ flexDirection: "row", justifyContent: "flex-end", alignItems: "center" }}>
-                          <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>{wish.amount ? `💰 $${wish.amount}` : ""}</Text>
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                          {wish.cost && (
+                            <View style={{ flexDirection: "row", alignItems: "center" }}>
+                              <View style={styles.moneyBagIconContainer}>
+                                <Text style={styles.moneyBagDollarSymbol}>$</Text>
+                              </View>
+                              <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
+                                {wish.cost.toLowerCase() !== "free" ? `Cost: $${wish.cost.replace(/^\$/, '')}` : `Cost: ${wish.cost}`}
+                              </Text>
+                            </View>
+                          )}
+                          {wish.amount && (
+                            <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
+                              {wish.amount.toLowerCase() !== "free" ? `💰 $${wish.amount.replace(/^\$/, '')}` : `💰 ${wish.amount}`}
+                            </Text>
+                          )}
                         </View>
                       </View>
                     );
@@ -1319,6 +1351,7 @@ const ProfileScreen = ({ route, navigation }) => {
                               title: wish.helpNeeds,
                               description: wish.details,
                               bounty: wish.amount,
+                              cost: wish.cost,
                             };
                             // Prepare profile data
                             const profileData = {
@@ -1389,6 +1422,44 @@ const ProfileScreen = ({ route, navigation }) => {
               ) : (
                 <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: darkMode ? "#999" : "#666" }]}>No businesses added yet</Text>
               )}
+            </View>
+          )}
+
+          {/* Reviewed Section */}
+          {user.ratings && user.ratings.length > 0 && (
+            <View style={styles.fieldContainer}>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Reviewed:</Text>
+              {user.ratings.map((review, index) => (
+                <TouchableOpacity
+                  key={review.rating_uid || index}
+                  style={[styles.inputContainer, darkMode && styles.darkInputContainer, index > 0 && { marginTop: 4 }]}
+                  onPress={() => navigation.navigate("BusinessProfile", { business_uid: review.rating_business_id })}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>
+                      {review.business_name || review.rating_business_id}
+                    </Text>
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#999", fontSize: 12 }]}>
+                      {review.rating_receipt_date}
+                    </Text>
+                  </View>
+                  {review.business_phone_number ? (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.business_phone_number}</Text>
+                  ) : null}
+                  {(review.business_city || review.business_state) ? (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
+                      {[review.business_city, review.business_state].filter(Boolean).join(", ")}
+                    </Text>
+                  ) : null}
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
+                    {"⭐".repeat(review.rating_star)} {review.rating_star}/5
+                  </Text>
+                  {review.rating_description ? (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.rating_description}</Text>
+                  ) : null}
+                </TouchableOpacity>
+              ))}
             </View>
           )}
         </ScrollView>

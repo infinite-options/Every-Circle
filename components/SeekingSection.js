@@ -17,7 +17,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
   ];
 
   const addWish = () => {
-    const newEntry = { helpNeeds: "", details: "", amount: "", isPublic: false };
+    const newEntry = { helpNeeds: "", details: "", amount: "", isPublic: true };
     setWishes([...wishes, newEntry]);
   };
 
@@ -56,6 +56,80 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       return { amount, unit };
     }
     return { amount: cleaned, unit: "" };
+  };
+
+  // Parse cost into amount and unit (same as parseBounty structure)
+  const parseCost = (cost) => {
+    if (!cost || cost.trim() === "") {
+      return { amount: "", unit: "" };
+    }
+    if (cost.toLowerCase() === "free") {
+      return { amount: "Free", unit: "" };
+    }
+    // Remove $ if present
+    const cleaned = cost.replace(/\$/g, "").trim();
+
+    // Check if it ends with "total" (no leading /)
+    if (cleaned.toLowerCase().endsWith("total")) {
+      const amount = cleaned.replace(/total$/i, "").trim();
+      return { amount: amount || "Free", unit: "total" };
+    }
+
+    // Try to split by / to get unit
+    const parts = cleaned.split("/");
+    if (parts.length >= 2) {
+      const amount = parts[0].trim();
+      const unit = parts.slice(1).join("/").trim();
+      return { amount, unit };
+    }
+    return { amount: cleaned, unit: "" };
+  };
+
+  // Handle cost amount change
+  const handleCostAmountChange = (index, value) => {
+    const updated = [...wishes];
+    const currentCost = updated[index].cost || "";
+    const parsed = parseCost(currentCost);
+    const newAmount = value.replace(/\$/g, "");
+
+    // If amount is "Free", set cost to "Free"
+    if (newAmount.toLowerCase() === "free") {
+      updated[index].cost = "Free";
+    } else {
+      // Combine amount and unit
+      if (parsed.unit === "total") {
+        updated[index].cost = newAmount ? `${newAmount} total` : "total";
+      } else if (parsed.unit) {
+        updated[index].cost = `${newAmount}/${parsed.unit}`;
+      } else {
+        updated[index].cost = newAmount;
+      }
+    }
+    setWishes(updated);
+  };
+
+  // Handle cost unit change (from dropdown)
+  const handleCostUnitChange = (index, selectedItem) => {
+    const updated = [...wishes];
+    const currentCost = updated[index].cost || "";
+    const parsed = parseCost(currentCost);
+
+    // If current amount is "Free", don't update
+    if (parsed.amount.toLowerCase() === "free") {
+      return;
+    }
+
+    // Combine amount and unit
+    if (!selectedItem || !selectedItem.value) {
+      updated[index].cost = parsed.amount;
+    } else if (selectedItem.value === "total") {
+      // For "total", don't add a leading /
+      updated[index].cost = parsed.amount ? `${parsed.amount} total` : "total";
+    } else {
+      // For other units, add leading /
+      updated[index].cost = `${parsed.amount}/${selectedItem.value}`;
+    }
+    setWishes(updated);
   };
 
   // Handle bounty amount change
@@ -145,71 +219,69 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
             scrollEnabled={false}
           />
 
+          {/*Cost Row*/}
           <View style={styles.amountRow}>
-            <Text style={styles.dollar}>💰</Text>
-            <TextInput
-              ref={(ref) => {
-                if (ref) bountyInputRefs.current[index] = ref;
-              }}
-              style={styles.bountyAmountInput}
-              placeholder='Amount or Free'
-              keyboardType={(() => {
-                const parsed = parseBounty(item.amount);
-                const amount = parsed.amount;
-                // Use default keyboard if amount is "Free" or starts with non-numeric
-                return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "numeric";
-              })()}
-              value={parseBounty(item.amount).amount}
-              onChangeText={(text) => handleBountyAmountChange(index, text)}
-              onFocus={() => {
-                if (onInputFocus && bountyInputRefs.current[index]) {
-                  onInputFocus(bountyInputRefs.current[index]);
-                }
-              }}
-            />
-            {(() => {
-              const parsed = parseBounty(item.amount);
-              const amount = parsed.amount;
-              // Only show dropdown if amount is numeric (contains at least one digit)
-              const isNumeric = amount && /^\d/.test(amount.trim());
-              return (
-                isNumeric && (
-                  <Dropdown
-                    style={[
-                      styles.bountyUnitDropdown,
-                      Platform.OS === "web" && {
-                        shadowColor: undefined,
-                        shadowOffset: undefined,
-                        shadowOpacity: undefined,
-                        shadowRadius: undefined,
-                      },
-                    ]}
-                    data={bountyUnitOptions}
-                    labelField='label'
-                    valueField='value'
-                    placeholder='Select unit'
-                    value={parsed.unit}
-                    onChange={(item) => handleBountyUnitChange(index, item)}
-                    containerStyle={[
-                      styles.dropdownContainer,
-                      Platform.OS === "web" && {
-                        boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.1)",
-                        shadowColor: undefined,
-                        shadowOffset: undefined,
-                        shadowOpacity: undefined,
-                        shadowRadius: undefined,
-                      },
-                    ]}
-                    itemTextStyle={styles.dropdownItemText}
-                    selectedTextStyle={styles.dropdownSelectedText}
-                    activeColor='#f0f0f0'
-                  />
-                )
-              );
-            })()}
-            <TouchableOpacity onPress={() => deleteWish(index)}>
-              <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
-            </TouchableOpacity>
+  <Text style={styles.costLabel}>Cost</Text>
+  <TextInput
+    style={styles.costAmountInput}
+    keyboardType={(() => {
+      const parsed = parseCost(item.cost);
+      const amount = parsed.amount;
+      return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "numeric";
+    })()}
+    value={(() => {
+      const parsed = parseCost(item.cost);
+      const amount = parsed.amount;
+      if (!amount) return "";
+      if (amount.toLowerCase() === "free") return "Free";
+      return `$${amount}`;
+    })()}
+    onChangeText={(text) => {
+      const cleanedText = text.replace(/\$/g, "");
+      handleCostAmountChange(index, cleanedText);
+    }}
+  />
+  <Dropdown
+    style={styles.costUnitDropdown}
+    data={bountyUnitOptions}
+    labelField='label'
+    valueField='value'
+    placeholder='Select unit'
+    value={parseCost(item.cost).unit || null}
+    // value={(() => {
+    //   const parsed = parseCost(item.cost);
+    //   // Handle empty unit
+    //   if (!parsed.unit) return null;
+    //   // If unit is just "hr", "day", etc., return as-is
+    //   // If it's "2 weeks", return as-is
+    //   return parsed.unit;
+    // })()}
+    onChange={(item) => handleCostUnitChange(index, item)}
+    containerStyle={styles.dropdownContainer}
+    itemTextStyle={styles.dropdownItemText}
+    selectedTextStyle={styles.dropdownSelectedText}
+    activeColor='#f0f0f0'
+  />
+  <Text style={styles.dollar}>💰</Text>
+  <TextInput
+    style={styles.bountyInput}
+    placeholder='Bounty'
+    keyboardType='numeric'
+    value={(() => {
+      const parsed = parseBounty(item.amount);
+      const amount = parsed.amount;
+      if (!amount) return "";
+      if (amount.toLowerCase() === "free") return "Free";
+      return `$${amount}`;
+    })()}
+    onChangeText={(text) => {
+      const cleanedText = text.replace(/\$/g, "");
+      handleBountyAmountChange(index, cleanedText);
+    }}
+  />
+  <TouchableOpacity onPress={() => deleteWish(index)}>
+    <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
+  </TouchableOpacity>
           </View>
         </View>
       ))}
@@ -326,6 +398,61 @@ const styles = StyleSheet.create({
   deleteIcon: { width: 20, height: 20 },
   cardSpacing: {
     marginTop: 16,
+  },
+  
+  costInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    flex: 1,
+    marginRight: 12,
+    height: 40,
+  },
+  bountyLabel: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  
+  costLabel: {
+    fontWeight: "bold",
+    marginRight: 5,
+  },
+  costAmountInput: {
+  borderWidth: 1,
+  borderColor: "#ccc",
+  padding: 8,
+  borderRadius: 5,
+  backgroundColor: "#fff",
+  width: "25%",
+  height: 40,
+  textAlignVertical: "center",
+  },
+  costUnitDropdown: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    width: "30%",
+    marginLeft: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    minHeight: 40,
+  },
+  dollar: { 
+    fontSize: 20, 
+    marginHorizontal: 5 
+  },
+  bountyInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    width: "20%",
+    height: 40,
+    textAlignVertical: "center",
   },
 });
 
