@@ -266,18 +266,25 @@ const ProfileScreen = ({ route, navigation }) => {
       console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
       console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
 
-      const mappedBusinesses = (apiUser.business_info || []).map((bus, index) => ({
-        business_name: bus.business_name || "",
-        business_city: bus.business_city || "",
-        business_state: bus.business_state || "",
-        business_phone_number: bus.phone_number || "",
-        business_uid: bus.business_uid || "",
-        profile_business_uid: bus.business_uid || "",
-        role: bus.bu_role || "",
-        individualIsPublic: bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === true,
-        first_image: null,
-        index,
-      }));
+      const mappedBusinesses = (apiUser.business_info || []).map((bus, index) => {
+        console.log("RAW bus from API:", JSON.stringify(bus, null, 2));  // ← add this
+        return {
+          business_name: bus.business_name || "",
+          business_city: bus.business_city || "",
+          business_state: bus.business_state || "",
+          business_zip_code: bus.business_zip_code || "",
+          business_phone_number: bus.business_phone_number || "",
+          business_address_line_1: bus.business_address_line_1 || "",
+          phoneIsPublic: bus.business_phone_number_is_public === 1 || bus.business_phone_number_is_public === "1" || bus.business_phone_number_is_public === true,
+          business_uid: bus.business_uid || "",
+          profile_business_uid: bus.business_uid || "",
+          role: bus.bu_role || "",
+          individualIsPublic: bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === true,
+          first_image: null,
+          index,
+        };
+      });
+      console.log("mappedBusinesses result:", JSON.stringify(mappedBusinesses, null, 2));  // ← add this
       setBusinessesData(mappedBusinesses);
       setLoading(false);
     } catch (error) {
@@ -1437,6 +1444,14 @@ const ProfileScreen = ({ route, navigation }) => {
                       {review.rating_receipt_date}
                     </Text>
                   </View>
+                  {review.business_phone_number ? (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.business_phone_number}</Text>
+                  ) : null}
+                  {(review.business_city || review.business_state) ? (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
+                      {[review.business_city, review.business_state].filter(Boolean).join(", ")}
+                    </Text>
+                  ) : null}
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
                     {"⭐".repeat(review.rating_star)} {review.rating_star}/5
                   </Text>

@@ -114,25 +114,19 @@ export default function BusinessProfileScreen({ route, navigation }) {
   };
 
   // Process reviews when currentUserProfileId becomes available
+  // Update the process reviews useEffect:
   useEffect(() => {
     if (currentUserProfileId && business && business.ratings) {
-      console.log("Reprocessing reviews with profile ID:", currentUserProfileId);
-
       let userReviewFromAPI = null;
       let otherReviews = [];
 
-      if (business.ratings && Array.isArray(business.ratings)) {
-        business.ratings.forEach((rating) => {
-          if (rating.rating_profile_id === currentUserProfileId) {
-            userReviewFromAPI = rating;
-          } else {
-            otherReviews.push(rating);
-            if (rating.rating_profile_id) {
-              fetchReviewerProfile(rating.rating_profile_id);
-            }
-          }
-        });
-      }
+      business.ratings.forEach((rating) => {
+        if (rating.rating_profile_id === currentUserProfileId) {
+          userReviewFromAPI = rating;
+        } else {
+          otherReviews.push(rating);
+        }
+      });
 
       setUserReview(userReviewFromAPI);
       setAllReviews(otherReviews);
@@ -326,36 +320,18 @@ export default function BusinessProfileScreen({ route, navigation }) {
   useEffect(() => {
     const checkBusinessOwnership = async () => {
       try {
-        if (business && business.business_user_id) {
-          const currentUserUid = await AsyncStorage.getItem("user_uid");
-          if (business.business_user_id === currentUserUid) {
-            setIsOwner(true);
-            return;
-          }
-        }
-
         const userUid = await AsyncStorage.getItem("user_uid");
-        const profileUID = await AsyncStorage.getItem("profile_uid");
-        if (!userUid && !profileUID) {
+        if (!userUid || !business) {
           setIsOwner(false);
           return;
         }
-
-        let uidToUse = profileUID || userUid;
-        const response = await fetch(`${ProfileScreenAPI}/${uidToUse}`);
-        const userData = await response.json();
-
-        if (userData && userData.business_info) {
-          const businessInfo = typeof userData.business_info === "string" ? JSON.parse(userData.business_info) : userData.business_info;
-          const isBusinessOwner = businessInfo.some((biz) => {
-            return biz.business_uid === business_uid || biz.profile_business_business_id === business_uid;
-          });
-          setIsOwner(isBusinessOwner);
-        } else {
-          setIsOwner(false);
-        }
+        // Check business_users array already fetched with business data
+        const isBusinessOwner = businessUsers.some(
+          (bu) => bu.user_uid === userUid || bu.bu_user_id === userUid
+        );
+        setIsOwner(isBusinessOwner);
       } catch (error) {
-        console.error("BusinessProfileScreen - Error checking business ownership:", error);
+        console.error("Error checking business ownership:", error);
         setIsOwner(false);
       }
     };
@@ -363,7 +339,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
     if (business) {
       checkBusinessOwnership();
     }
-  }, [business_uid, business]);
+  }, [business_uid, business, businessUsers]);
 
   // Use useFocusEffect like ProfileScreen
   useFocusEffect(
@@ -791,41 +767,23 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 >
                   <View style={styles.reviewCardHeader}>
                     <View style={styles.reviewProfileInfo}>
-                      {reviewerProfiles[review.rating_profile_id]?.profileImage ? (
-                        <Image
-                          source={{ uri: reviewerProfiles[review.rating_profile_id].profileImage }}
-                          style={[styles.reviewProfileAvatar, darkMode && styles.darkReviewProfileAvatar]}
-                          defaultSource={require("../assets/profile.png")}
-                        />
-                      ) : (
-                        <View style={[styles.reviewProfileAvatar, darkMode && styles.darkReviewProfileAvatar]}>
-                          <Text style={[styles.reviewProfileInitial, darkMode && styles.darkReviewProfileInitial]}>
-                            {(() => {
-                              const profile = reviewerProfiles[review.rating_profile_id];
-                              if (profile) {
-                                const firstChar = (profile.firstName?.charAt(0) || profile.lastName?.charAt(0) || "").toUpperCase();
-                                if (firstChar && firstChar !== ".") {
-                                  return firstChar;
-                                }
-                              }
-                              const fallback = (review.rating_profile_id?.charAt(0) || "U").toUpperCase();
-                              return fallback !== "." ? fallback : "U";
-                            })()}
-                          </Text>
-                        </View>
-                      )}
+                      {review.profile_personal_image ? (
+                      <Image
+                        source={{ uri: review.profile_personal_image }}
+                        style={[styles.reviewProfileAvatar, darkMode && styles.darkReviewProfileAvatar]}
+                        defaultSource={require("../assets/profile.png")}
+                      />
+                    ) : (
+                      <View style={[styles.reviewProfileAvatar, darkMode && styles.darkReviewProfileAvatar]}>
+                        <Text style={[styles.reviewProfileInitial, darkMode && styles.darkReviewProfileInitial]}>
+                          {(review.profile_personal_first_name?.charAt(0) || "U").toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
                       <View style={styles.reviewProfileDetails}>
                         <Text style={[styles.reviewProfileName, darkMode && styles.darkReviewProfileName]}>
-                          {(() => {
-                            const profile = reviewerProfiles[review.rating_profile_id];
-                            if (profile) {
-                              const name = [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim();
-                              if (name && name !== ".") {
-                                return name;
-                              }
-                            }
-                            return `User ${review.rating_profile_id || "Unknown"}`;
-                          })()}
+                          {[review.profile_personal_first_name, review.profile_personal_last_name]
+                            .filter(Boolean).join(" ") || `User ${review.rating_profile_id}`}
                         </Text>
                         <Text style={[styles.reviewDate, darkMode && styles.darkReviewDate]}>{review.rating_receipt_date}</Text>
                       </View>
