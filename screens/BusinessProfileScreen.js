@@ -320,16 +320,42 @@ export default function BusinessProfileScreen({ route, navigation }) {
   useEffect(() => {
     const checkBusinessOwnership = async () => {
       try {
-        const userUid = await AsyncStorage.getItem("user_uid");
-        if (!userUid || !business) {
+        if (!business) {
           setIsOwner(false);
           return;
         }
-        // Check business_users array already fetched with business data
-        const isBusinessOwner = businessUsers.some(
-          (bu) => bu.user_uid === userUid || bu.bu_user_id === userUid
+        const userUid = await AsyncStorage.getItem("user_uid");
+        const profileUid = await AsyncStorage.getItem("profile_uid");
+        if (!userUid && !profileUid) {
+          setIsOwner(false);
+          return;
+        }
+        // Check business_users array: API may use user_uid, bu_user_id, business_user_id, or profile identifiers
+        const matchInBusinessUsers = businessUsers.some(
+          (bu) =>
+            (userUid && (bu.user_uid === userUid || bu.bu_user_id === userUid || bu.business_user_id === userUid)) ||
+            (profileUid &&
+              (bu.profile_uid === profileUid || bu.profile_personal_uid === profileUid || String(bu.profile_uid || bu.profile_personal_uid || "").trim() === String(profileUid || "").trim()))
         );
-        setIsOwner(isBusinessOwner);
+        if (matchInBusinessUsers) {
+          setIsOwner(true);
+          return;
+        }
+        // Fallback: profile screen shows "my businesses" from profile API business_info. If this business
+        // appears there, treat as owner (handles APIs that link business→user by profile, not user_uid).
+        if (profileUid) {
+          const response = await fetch(`${ProfileScreenAPI}/${profileUid}`);
+          const userData = await response.json();
+          if (userData && userData.business_info) {
+            const businessInfo = typeof userData.business_info === "string" ? JSON.parse(userData.business_info) : userData.business_info;
+            const isInProfileBusinesses = Array.isArray(businessInfo) && businessInfo.some(
+              (biz) => (biz.business_uid || biz.profile_business_uid || biz.profile_business_business_id) === business_uid
+            );
+            setIsOwner(isInProfileBusinesses);
+            return;
+          }
+        }
+        setIsOwner(false);
       } catch (error) {
         console.error("Error checking business ownership:", error);
         setIsOwner(false);
@@ -465,6 +491,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       <AppHeader
         title='Business Profile'
         {...getHeaderColors("businessProfile")}
+        onBackPress={() => navigation.goBack()}
         onTitlePress={() => setShowFeedbackPopup(true)}
         rightButton={
           isOwner ? (
