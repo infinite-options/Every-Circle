@@ -1,6 +1,6 @@
 // NetworkScreen.js - Web-compatible version
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
@@ -15,6 +15,7 @@ import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors } from "../config/headerColors";
+import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -49,6 +50,12 @@ const NetworkScreen = ({ navigation }) => {
   const [viewMode, setViewMode] = useState("list");
   const [userProfileData, setUserProfileData] = useState(null);
   const [qrCodeData, setQrCodeData] = useState("");
+  const [qrCodeDataObject, setQrCodeDataObject] = useState(null); // Store parsed QR code data object for display
+  const [ablyClient, setAblyClient] = useState(null); // Store Ably client instance
+  const [ablyChannel, setAblyChannel] = useState(null); // Store Ably channel instance
+  const [ablyMessageReceived, setAblyMessageReceived] = useState(null); // Store Ably message received info: { channel, message, timestamp }
+  const [formSwitchEnabled, setFormSwitchEnabled] = useState(false); // Form Switch: show form when others scan your QR code
+  const formSwitchEnabledRef = React.useRef(false); // Ref to track current value for Ably callback
   const [showAsyncStorage, setShowAsyncStorage] = useState(true);
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
   const [dateFilter, setDateFilter] = useState("All"); // All, This Week, This Month, This Year
@@ -287,6 +294,15 @@ const NetworkScreen = ({ navigation }) => {
             console.warn("⚠️ Invalid profile_uid loaded:", uid);
           }
         }
+
+        // Load Form Switch setting
+        const formSwitchSetting = await AsyncStorage.getItem("form_switch_enabled");
+        if (formSwitchSetting !== null) {
+          const isEnabled = formSwitchSetting === "true";
+          setFormSwitchEnabled(isEnabled);
+          formSwitchEnabledRef.current = isEnabled; // Update ref
+          console.log("📋 Loaded form_switch_enabled from AsyncStorage:", isEnabled);
+        }
       } catch (e) {
         setStorageData([["error", e.message]]);
       }
@@ -401,15 +417,210 @@ const NetworkScreen = ({ navigation }) => {
         version: "1.0",
         // Include URL for web compatibility
         url: `https://everycircle.com/newconnection/${profileUID}`,
+        // Form Switch: if true, User 1 will see a form to add User 2 when they scan
+        form_switch_enabled: formSwitchEnabled,
       };
       const qrDataString = JSON.stringify(qrData);
       console.log("🔗 QR Code Data:", qrDataString);
-      // For display, we'll use the JSON string, but also support URL format for backward compatibility
+      // Store both the string (for QR code) and the object (for display)
       setQrCodeData(qrDataString);
+      setQrCodeDataObject(qrData);
+
+      // Initialize Ably channel when QR code is generated
+      initializeAblyChannel(profileUID);
     } catch (error) {
       console.error("Error fetching user profile for QR code:", error);
     }
   };
+
+  // Initialize Ably channel when QR code is generated
+  const initializeAblyChannel = async (profileUid) => {
+    if (!profileUid) {
+      console.warn("⚠️ NetworkScreen - Cannot initialize Ably: no profile_uid");
+      return;
+    }
+
+    try {
+      // Dynamically import Ably - handle web vs native differently
+      let Ably;
+      const isWeb = Platform.OS === "web";
+      
+      try {
+        if (isWeb) {
+          // On web, try dynamic import or use Ably from window if available
+          if (typeof window !== "undefined" && window.Ably) {
+            Ably = window.Ably;
+            console.log("✅ NetworkScreen - Ably loaded from window.Ably (web)");
+          } else {
+            // Try require for web (might work with bundler)
+            try {
+              Ably = require("ably");
+              console.log("✅ NetworkScreen - Ably module loaded via require (web)");
+            } catch (requireError) {
+              // Try dynamic import for web
+              console.warn("⚠️ NetworkScreen - require() failed on web, trying dynamic import");
+              throw new Error("Ably package not available on web. Please install: npm install ably");
+            }
+          }
+        } else {
+          // On native, use require
+          Ably = require("ably");
+          console.log("✅ NetworkScreen - Ably module loaded (native)");
+        }
+      } catch (e) {
+        const errorMessage = e.message || String(e);
+        console.warn("⚠️ NetworkScreen - Ably not available:", errorMessage);
+        console.error("❌ NetworkScreen - Ably import error details:", e);
+        console.error("❌ NetworkScreen - Platform:", Platform.OS);
+        console.error("❌ NetworkScreen - Is Web:", isWeb);
+        
+        setAblyMessageReceived({
+          channel: `/${profileUid}`,
+          message: "Error: Ably module not found",
+          timestamp: new Date().toISOString(),
+          error: `Ably not installed or not available on ${Platform.OS}. Please run: npm install ably`,
+        });
+        return;
+      }
+      
+      // Verify Ably is actually available
+      if (!Ably || !Ably.Realtime) {
+        const errorMsg = "Ably module loaded but Realtime class not found";
+        console.error("❌ NetworkScreen -", errorMsg);
+        setAblyMessageReceived({
+          channel: `/${profileUid}`,
+          message: "Error: Ably module incomplete",
+          timestamp: new Date().toISOString(),
+          error: errorMsg,
+        });
+        return;
+      }
+
+      const ablyApiKey = EXPO_PUBLIC_ABLY_API_KEY || "";
+      console.log("🔵 NetworkScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
+      console.log("🔵 NetworkScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
+      if (!ablyApiKey) {
+        console.warn("⚠️ NetworkScreen - Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
+        setAblyMessageReceived({
+          channel: `/${profileUid}`,
+          message: "Error: Ably API key not configured",
+          timestamp: new Date().toISOString(),
+          error: "EXPO_PUBLIC_ABLY_API_KEY environment variable is missing",
+        });
+        return;
+      }
+
+      console.log("🔵 NetworkScreen - Initializing Ably channel for profile_uid:", profileUid);
+      
+      // Create Ably client
+      const client = new Ably.Realtime({ key: ablyApiKey });
+      setAblyClient(client);
+
+      // Create channel name using profile_uid (e.g., /110-000014)
+      const channelName = `/${profileUid}`;
+      console.log("🔵 NetworkScreen - Ably Channel Name:", channelName);
+      
+      const channel = client.channels.get(channelName);
+      setAblyChannel(channel);
+
+      // Listen for connection events
+      console.log("🔵 NetworkScreen - Initial connection state:", client.connection.state);
+      
+      client.connection.on("connected", () => {
+        console.log("✅ NetworkScreen - Ably client connected");
+      });
+
+      client.connection.on("disconnected", () => {
+        console.log("⚠️ NetworkScreen - Ably client disconnected");
+      });
+
+      client.connection.on("failed", (stateChange) => {
+        console.error("❌ NetworkScreen - Ably connection failed:", stateChange);
+      });
+
+      client.connection.on("suspended", () => {
+        console.warn("⚠️ NetworkScreen - Ably connection suspended");
+      });
+
+      // Attach to channel
+      console.log("🔵 NetworkScreen - Initial channel state:", channel.state);
+      console.log("🔵 NetworkScreen - Attaching to channel:", channelName);
+      
+      channel.attach((err) => {
+        if (err) {
+          console.error("❌ NetworkScreen - Error attaching to Ably channel:", err);
+        } else {
+          console.log("✅ NetworkScreen - Ably channel attached:", channelName);
+          console.log("✅ NetworkScreen - Channel state after attach:", channel.state);
+          console.log("✅ NetworkScreen - Ready to receive messages on channel:", channelName);
+        }
+      });
+
+      channel.on("detached", () => {
+        console.warn("⚠️ NetworkScreen - Channel detached");
+      });
+
+      channel.on("suspended", () => {
+        console.warn("⚠️ NetworkScreen - Channel suspended");
+      });
+
+      // Subscribe to messages on this channel
+      channel.subscribe("new-connection-opened", async (message) => {
+        console.log("📨 NetworkScreen - Received message on channel:", channelName);
+        console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
+        console.log("📨 NetworkScreen - Message name:", message.name);
+        
+        if (message.data && message.data.message) {
+          console.log("✅ NetworkScreen -", message.data.message);
+          
+          // Update state to display message info
+          setAblyMessageReceived({
+            channel: channelName,
+            message: message.data.message,
+            timestamp: message.data.timestamp || new Date().toISOString(),
+            scanner_profile_uid: message.data.scanner_profile_uid || null,
+          });
+
+          // If Form Switch is enabled and we have User 2's profile_uid, navigate to New Connection page
+          console.log("🔵 NetworkScreen - Checking Form Switch:", formSwitchEnabledRef.current, "scanner_profile_uid:", message.data.scanner_profile_uid);
+          if (formSwitchEnabledRef.current && message.data.scanner_profile_uid) {
+            console.log("🔵 NetworkScreen - Form Switch is ON, navigating to NewConnection page for User 2:", message.data.scanner_profile_uid);
+            // Navigate to New Connection page with User 2's profile_uid
+            navigation.navigate("NewConnection", {
+              profile_uid: message.data.scanner_profile_uid,
+              fromFormSwitch: true, // Flag to indicate this came from Form Switch
+            });
+          } else {
+            console.log("🔵 NetworkScreen - Form Switch is OFF or no scanner_profile_uid, not navigating");
+          }
+        } else {
+          console.warn("⚠️ NetworkScreen - Message received but data structure unexpected:", message.data);
+        }
+      });
+
+      // Also subscribe to all messages for debugging
+      channel.subscribe((message) => {
+        console.log("📨 NetworkScreen - Received ANY message on channel:", channelName);
+        console.log("📨 NetworkScreen - Message name:", message.name);
+        console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
+      });
+
+    } catch (error) {
+      console.error("❌ NetworkScreen - Error initializing Ably:", error);
+    }
+  };
+
+  // Cleanup Ably connection when component unmounts or profile changes
+  useEffect(() => {
+    return () => {
+      if (ablyClient) {
+        console.log("🔵 NetworkScreen - Closing Ably connection");
+        ablyClient.close();
+        setAblyClient(null);
+        setAblyChannel(null);
+      }
+    };
+  }, [ablyClient]);
 
   // Handle QR scan complete - fetch profile data and show popup
   const handleQRScanComplete = async (scanData) => {
@@ -1488,6 +1699,108 @@ const NetworkScreen = ({ navigation }) => {
                     <QRCodeComponent value={qrCodeData} size={200} color={darkMode ? "#ffffff" : "#000000"} backgroundColor={darkMode ? "#1a1a1a" : "#ffffff"} />
                   </View>
 
+                  {/* Form Switch Toggle */}
+                  <View style={[styles.formSwitchContainer, darkMode && styles.darkFormSwitchContainer]}>
+                    <View style={styles.formSwitchTextContainer}>
+                      <Text style={[styles.formSwitchLabel, darkMode && styles.darkFormSwitchLabel]}>Enable Form on Scan</Text>
+                      <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>
+                        Add others to your Circle when they scan your QR code
+                      </Text>
+                    </View>
+                    <Switch
+                      value={formSwitchEnabled}
+                      onValueChange={async (value) => {
+                        setFormSwitchEnabled(value);
+                        formSwitchEnabledRef.current = value; // Update ref
+                        // Persist the setting
+                        await AsyncStorage.setItem("form_switch_enabled", value ? "true" : "false");
+                        console.log("🔵 NetworkScreen - Form Switch set to:", value);
+                        // Update QR code with new setting
+                        if (profileUid) {
+                          fetchUserProfileForQR(profileUid);
+                        }
+                      }}
+                      trackColor={{ false: "#767577", true: "#81b0ff" }}
+                      thumbColor={formSwitchEnabled ? "#007AFF" : "#f4f3f4"}
+                    />
+                  </View>
+
+                  {/* Display QR Code Contains Block */}
+                  {qrCodeDataObject && (
+                    <View style={[styles.qrCodeContainsContainer, darkMode && styles.darkQrCodeContainsContainer]}>
+                      <Text style={[styles.qrCodeContainsTitle, darkMode && styles.darkQrCodeContainsTitle]}>📋 QR Code Contains:</Text>
+                      <View style={[styles.qrCodeContainsContent, darkMode && styles.darkQrCodeContainsContent]}>
+                        {Object.entries(qrCodeDataObject).map(([key, value]) => (
+                          <View key={key} style={styles.qrCodeContainsRow}>
+                            <Text style={[styles.qrCodeContainsKey, darkMode && styles.darkQrCodeContainsKey]}>{key}:</Text>
+                            <Text style={[styles.qrCodeContainsValue, darkMode && styles.darkQrCodeContainsValue]}>
+                              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Display Ably Messages Received Block - Always Visible */}
+                  <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
+                    <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📨 Ably Messages Received:</Text>
+                    <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
+                      {ablyMessageReceived ? (
+                        <>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.channel}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.message}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                              {new Date(ablyMessageReceived.timestamp).toLocaleString()}
+                            </Text>
+                          </View>
+                        </>
+                      ) : (
+                        <View style={styles.ablyMessageRow}>
+                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue, { fontStyle: "italic", color: "#999" }]}>
+                            No messages received yet. Listening for messages...
+                          </Text>
+                        </View>
+                      )}
+                      {qrCodeDataObject?.profile_uid && (
+                        <>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Listening on Channel:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeDataObject.profile_uid}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Connection Status:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                              {ablyClient?.connection?.state || "Not connected"}
+                            </Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel Status:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                              {ablyChannel?.state || "Not attached"}
+                            </Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                              {EXPO_PUBLIC_ABLY_API_KEY 
+                                ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
+                                : "Not configured"}
+                            </Text>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  </View>
+
                   {/* Display MiniCard showing what information will be transferred */}
                   {(() => {
                     if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
@@ -2057,6 +2370,7 @@ const NetworkScreen = ({ navigation }) => {
         }}
         onAddConnection={(relationship) => handleAddScannedConnection(relationship)}
       />
+
     </View>
   );
 };
@@ -2219,6 +2533,122 @@ const styles = StyleSheet.create({
     marginTop: 15,
     width: "100%",
   },
+  qrCodeContainsContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#f0f8ff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4a90e2",
+    width: "100%",
+  },
+  darkQrCodeContainsContainer: {
+    backgroundColor: "#1a2332",
+    borderColor: "#4a90e2",
+  },
+  qrCodeContainsTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#2c5282",
+    marginBottom: 10,
+  },
+  darkQrCodeContainsTitle: {
+    color: "#90cdf4",
+  },
+  qrCodeContainsContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e0",
+  },
+  darkQrCodeContainsContent: {
+    backgroundColor: "#0f172a",
+    borderColor: "#334155",
+  },
+  qrCodeContainsRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+    flexWrap: "wrap",
+  },
+  qrCodeContainsKey: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4a5568",
+    marginRight: 8,
+    minWidth: 120,
+  },
+  darkQrCodeContainsKey: {
+    color: "#cbd5e0",
+  },
+  qrCodeContainsValue: {
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#1a202c",
+    flex: 1,
+  },
+  darkQrCodeContainsValue: {
+    color: "#e2e8f0",
+  },
+  ablyMessageContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#fef3c7",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#f59e0b",
+    width: "100%",
+  },
+  darkAblyMessageContainer: {
+    backgroundColor: "#2e1f0a",
+    borderColor: "#f59e0b",
+  },
+  ablyMessageTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#92400e",
+    marginBottom: 10,
+  },
+  darkAblyMessageTitle: {
+    color: "#fcd34d",
+  },
+  ablyMessageContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e0",
+  },
+  darkAblyMessageContent: {
+    backgroundColor: "#0f172a",
+    borderColor: "#334155",
+  },
+  ablyMessageRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+    flexWrap: "wrap",
+  },
+  ablyMessageKey: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4a5568",
+    marginRight: 8,
+    minWidth: 100,
+  },
+  darkAblyMessageKey: {
+    color: "#cbd5e0",
+  },
+  ablyMessageValue: {
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#1a202c",
+    flex: 1,
+  },
+  darkAblyMessageValue: {
+    color: "#e2e8f0",
+  },
   filterContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -2350,6 +2780,43 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 10,
     padding: 5,
+  },
+  // Form Switch styles
+  formSwitchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#f8f9fa",
+    borderRadius: 10,
+    padding: 15,
+    marginTop: 15,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  darkFormSwitchContainer: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  formSwitchTextContainer: {
+    flex: 1,
+    marginRight: 10,
+  },
+  formSwitchLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 4,
+  },
+  darkFormSwitchLabel: {
+    color: "#fff",
+  },
+  formSwitchDescription: {
+    fontSize: 13,
+    color: "#666",
+  },
+  darkFormSwitchDescription: {
+    color: "#aaa",
   },
 });
 

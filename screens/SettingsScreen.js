@@ -25,6 +25,7 @@ import AppHeader from "../components/AppHeader";
 import QRCode from "react-native-qrcode-svg";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { getHeaderColors } from "../config/headerColors";
+import versionData from "../version.json";
 
 export default function SettingsScreen() {
   const navigation = useNavigation();
@@ -330,6 +331,13 @@ export default function SettingsScreen() {
             <MaterialIcons name='logout' size={20} style={styles.icon} color={darkMode ? "#fff" : "#AF52DE"} />
             <Text style={[styles.logoutText, darkMode && styles.darkLogoutText]}>Log out</Text>
           </TouchableOpacity>
+
+          {/* Build Timestamp - Last Change Date/Time with Version */}
+          <View style={styles.buildInfoContainer}>
+            <Text style={[styles.dateTimeText, darkMode && styles.darkDateTimeText]}>
+              PM {versionData.pm_version} Version {versionData.major}.{versionData.build} - Last Change: {versionData.last_change}
+            </Text>
+          </View>
         </ScrollView>
       </SafeAreaView>
 
@@ -463,5 +471,19 @@ const styles = StyleSheet.create({
     padding: 15,
     backgroundColor: "#f8f8f8",
     borderRadius: 10,
+  },
+  buildInfoContainer: {
+    marginTop: 20,
+    marginBottom: 10,
+    paddingHorizontal: 16,
+    alignItems: "center",
+  },
+  dateTimeText: {
+    fontSize: 12,
+    color: "#666",
+    textAlign: "center",
+  },
+  darkDateTimeText: {
+    color: "#999",
   },
 });

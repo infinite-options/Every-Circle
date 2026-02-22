@@ -12,6 +12,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import WebTextInput from "../components/WebTextInput";
 import * as Location from "expo-location";
 import { Dropdown } from "react-native-element-dropdown";
+import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
 
 const NewConnectionScreen = () => {
   const { darkMode } = useDarkMode();
@@ -39,6 +40,8 @@ const NewConnectionScreen = () => {
   const [existingRelationship, setExistingRelationship] = useState(null);
   const [circleUid, setCircleUid] = useState(null);
   const [checkingRelationship, setCheckingRelationship] = useState(false);
+  const [qrCodeReceivedData, setQrCodeReceivedData] = useState(null); // Store received QR code data object for display
+  const [ablyMessageSent, setAblyMessageSent] = useState(null); // Store Ably message sent info: { channel, message, timestamp }
 
   // Relationship options matching ConnectScreen.js
   const relationshipOptions = [
@@ -54,6 +57,261 @@ const NewConnectionScreen = () => {
     (Platform.OS === "web" && typeof window !== "undefined"
       ? new URLSearchParams(window.location.search).get("profile_uid") || window.location.pathname.split("/newconnection/")[1]?.split("?")[0] || window.location.pathname.split("/newconnection/")[1]
       : null);
+
+  // Parse and store QR code data when received, and send Ably message
+  useEffect(() => {
+    const parseQRCodeDataAndSendMessage = async () => {
+      let parsedData = null;
+      
+      // Check if QR code data is in route params (as JSON string)
+      if (route.params?.qr_code_data) {
+        try {
+          parsedData = JSON.parse(route.params.qr_code_data);
+          setQrCodeReceivedData(parsedData);
+          console.log("✅ NewConnectionScreen - QR code data received and parsed:", parsedData);
+        } catch (e) {
+          console.error("❌ NewConnectionScreen - Error parsing QR code data:", e);
+        }
+      } else if (route.params?.profile_uid) {
+        // If only profile_uid is available, create a minimal data object from route params
+        parsedData = {
+          type: route.params?.type || "everycircle",
+          profile_uid: route.params.profile_uid,
+          version: route.params?.version || "1.0",
+          url: route.params?.url || `https://everycircle.com/newconnection/${route.params.profile_uid}`,
+        };
+        // Add any other params that might be present
+        if (route.params?.form_switch_enabled !== undefined) {
+          parsedData.form_switch_enabled = route.params.form_switch_enabled;
+        }
+        if (route.params?.ably_channel_name) {
+          parsedData.ably_channel_name = route.params.ably_channel_name;
+        }
+        setQrCodeReceivedData(parsedData);
+        console.log("✅ NewConnectionScreen - Created QR code data from route params:", parsedData);
+      }
+
+      // Send Ably message if we have a profile_uid
+      if (parsedData?.profile_uid) {
+        await sendAblyMessage(parsedData.profile_uid);
+      }
+    };
+
+    parseQRCodeDataAndSendMessage();
+  }, [route.params]);
+
+  // Function to send "New Connection Page Opened" message via Ably
+  const sendAblyMessage = async (profileUid) => {
+    if (!profileUid) {
+      console.warn("⚠️ NewConnectionScreen - Cannot send Ably message: no profile_uid");
+      return;
+    }
+
+    try {
+      // Dynamically import Ably - handle web vs native differently
+      let Ably;
+      const isWeb = Platform.OS === "web";
+      
+      try {
+        if (isWeb) {
+          // On web, try dynamic import or use Ably from window if available
+          if (typeof window !== "undefined" && window.Ably) {
+            Ably = window.Ably;
+            console.log("✅ NewConnectionScreen - Ably loaded from window.Ably (web)");
+          } else {
+            // Try require for web (might work with bundler)
+            try {
+              Ably = require("ably");
+              console.log("✅ NewConnectionScreen - Ably module loaded via require (web)");
+            } catch (requireError) {
+              // Try dynamic import for web
+              console.warn("⚠️ NewConnectionScreen - require() failed on web, trying dynamic import");
+              throw new Error("Ably package not available on web. Please install: npm install ably");
+            }
+          }
+        } else {
+          // On native, use require
+          Ably = require("ably");
+          console.log("✅ NewConnectionScreen - Ably module loaded (native)");
+        }
+      } catch (e) {
+        const errorMessage = e.message || String(e);
+        console.warn("⚠️ NewConnectionScreen - Ably not available:", errorMessage);
+        console.error("❌ NewConnectionScreen - Ably import error details:", e);
+        console.error("❌ NewConnectionScreen - Platform:", Platform.OS);
+        console.error("❌ NewConnectionScreen - Is Web:", isWeb);
+        
+        setAblyMessageSent({
+          channel: `/${profileUid}`,
+          message: "Error: Ably module not found",
+          timestamp: new Date().toISOString(),
+          error: `Ably not installed or not available on ${Platform.OS}. Please run: npm install ably`,
+        });
+        return;
+      }
+      
+      // Verify Ably is actually available
+      if (!Ably || !Ably.Realtime) {
+        const errorMsg = "Ably module loaded but Realtime class not found";
+        console.error("❌ NewConnectionScreen -", errorMsg);
+        setAblyMessageSent({
+          channel: `/${profileUid}`,
+          message: "Error: Ably module incomplete",
+          timestamp: new Date().toISOString(),
+          error: errorMsg,
+        });
+        return;
+      }
+
+      const ablyApiKey = EXPO_PUBLIC_ABLY_API_KEY || "";
+      console.log("🔵 NewConnectionScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
+      console.log("🔵 NewConnectionScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
+      if (!ablyApiKey) {
+        console.warn("⚠️ NewConnectionScreen - Ably API key not configured");
+        setAblyMessageSent({
+          channel: `/${profileUid}`,
+          message: "Error: Ably API key not configured",
+          timestamp: new Date().toISOString(),
+          error: "EXPO_PUBLIC_ABLY_API_KEY environment variable is missing",
+        });
+        return;
+      }
+
+      console.log("🔵 NewConnectionScreen - Sending Ably message to channel:", `/${profileUid}`);
+
+      // Create Ably client
+      const client = new Ably.Realtime({ key: ablyApiKey });
+      const channelName = `/${profileUid}`;
+      const channel = client.channels.get(channelName);
+
+      // Wait for connection
+      console.log("🔵 NewConnectionScreen - Waiting for Ably connection...");
+      console.log("🔵 NewConnectionScreen - Initial connection state:", client.connection.state);
+      
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          console.error("❌ NewConnectionScreen - Timeout waiting for Ably connection. Current state:", client.connection.state);
+          reject(new Error(`Timeout waiting for Ably connection. State: ${client.connection.state}`));
+        }, 10000);
+
+        // Check if already connected
+        if (client.connection.state === "connected") {
+          clearTimeout(timeout);
+          console.log("✅ NewConnectionScreen - Already connected");
+          resolve();
+          return;
+        }
+
+        client.connection.on("connected", () => {
+          clearTimeout(timeout);
+          console.log("✅ NewConnectionScreen - Ably client connected");
+          resolve();
+        });
+
+        client.connection.on("failed", (stateChange) => {
+          clearTimeout(timeout);
+          console.error("❌ NewConnectionScreen - Ably connection failed. State:", stateChange);
+          reject(new Error(`Ably connection failed. State: ${stateChange.reason || stateChange}`));
+        });
+
+        client.connection.on("suspended", () => {
+          console.warn("⚠️ NewConnectionScreen - Ably connection suspended");
+        });
+
+        client.connection.on("disconnected", () => {
+          console.warn("⚠️ NewConnectionScreen - Ably connection disconnected");
+        });
+      });
+
+      // Wait for channel to be attached
+      console.log("🔵 NewConnectionScreen - Waiting for channel attachment...");
+      console.log("🔵 NewConnectionScreen - Initial channel state:", channel.state);
+      
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          console.error("❌ NewConnectionScreen - Timeout waiting for channel attachment. Current state:", channel.state);
+          reject(new Error(`Timeout waiting for channel attachment. State: ${channel.state}`));
+        }, 5000);
+
+        if (channel.state === "attached") {
+          clearTimeout(timeout);
+          console.log("✅ NewConnectionScreen - Channel already attached");
+          resolve();
+        } else {
+          channel.on("attached", () => {
+            clearTimeout(timeout);
+            console.log("✅ NewConnectionScreen - Channel attached");
+            resolve();
+          });
+
+          channel.on("detached", () => {
+            console.warn("⚠️ NewConnectionScreen - Channel detached");
+          });
+
+          channel.on("suspended", () => {
+            console.warn("⚠️ NewConnectionScreen - Channel suspended");
+          });
+
+          channel.attach((err) => {
+            if (err) {
+              clearTimeout(timeout);
+              console.error("❌ NewConnectionScreen - Error attaching channel:", err);
+              reject(err);
+            } else {
+              console.log("🔵 NewConnectionScreen - Channel attach called, waiting for attached event...");
+            }
+          });
+        }
+      });
+
+      // Get User 2's (the scanner's) profile_uid from AsyncStorage
+      let user2ProfileUid = null;
+      try {
+        user2ProfileUid = await AsyncStorage.getItem("profile_uid");
+        console.log("🔵 NewConnectionScreen - User 2 (scanner) profile_uid:", user2ProfileUid);
+      } catch (e) {
+        console.warn("⚠️ NewConnectionScreen - Could not get User 2 profile_uid:", e);
+      }
+
+      // Publish message with both User 1's and User 2's profile_uid
+      const messageData = {
+        message: "New Connection Page Opened",
+        timestamp: new Date().toISOString(),
+        profile_uid: profileUid, // User 1's profile_uid (the QR code owner)
+        scanner_profile_uid: user2ProfileUid, // User 2's profile_uid (the person who scanned)
+      };
+
+      console.log("🔵 NewConnectionScreen - Publishing message to channel:", channelName);
+      console.log("🔵 NewConnectionScreen - Message data:", JSON.stringify(messageData, null, 2));
+      console.log("🔵 NewConnectionScreen - Channel state before publish:", channel.state);
+
+      await channel.publish("new-connection-opened", messageData);
+
+      console.log("✅ NewConnectionScreen - Ably message sent successfully to channel:", channelName);
+
+      // Update state to display message info
+      setAblyMessageSent({
+        channel: channelName,
+        message: messageData.message,
+        timestamp: messageData.timestamp,
+      });
+
+      // Close connection after a short delay to ensure message is sent
+      setTimeout(() => {
+        client.close();
+      }, 500);
+
+    } catch (error) {
+      console.error("❌ NewConnectionScreen - Error sending Ably message:", error);
+      // Update state to show error
+      setAblyMessageSent({
+        channel: `/${profileUid}`,
+        message: "Error: Failed to send message",
+        timestamp: new Date().toISOString(),
+        error: error.message,
+      });
+    }
+  };
 
   // Check login status on mount
   useEffect(() => {
@@ -459,6 +717,74 @@ const NewConnectionScreen = () => {
                 <MiniCard user={profileData} />
               </View>
 
+              {/* Display QR Code Received Block */}
+              {qrCodeReceivedData && (
+                <View style={[styles.qrCodeReceivedContainer, darkMode && styles.darkQrCodeReceivedContainer]}>
+                  <Text style={[styles.qrCodeReceivedTitle, darkMode && styles.darkQrCodeReceivedTitle]}>📥 QR Code Received:</Text>
+                  <View style={[styles.qrCodeReceivedContent, darkMode && styles.darkQrCodeReceivedContent]}>
+                    {Object.entries(qrCodeReceivedData).map(([key, value]) => (
+                      <View key={key} style={styles.qrCodeReceivedRow}>
+                        <Text style={[styles.qrCodeReceivedKey, darkMode && styles.darkQrCodeReceivedKey]}>{key}:</Text>
+                        <Text style={[styles.qrCodeReceivedValue, darkMode && styles.darkQrCodeReceivedValue]}>
+                          {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Display Ably Messages Sent Block - Always Visible */}
+              <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
+                <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📤 Ably Messages Sent:</Text>
+                <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
+                  {ablyMessageSent ? (
+                    <>
+                      <View style={styles.ablyMessageRow}>
+                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
+                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageSent.channel}</Text>
+                      </View>
+                      <View style={styles.ablyMessageRow}>
+                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
+                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageSent.message}</Text>
+                      </View>
+                      <View style={styles.ablyMessageRow}>
+                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
+                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                          {new Date(ablyMessageSent.timestamp).toLocaleString()}
+                        </Text>
+                      </View>
+                      {ablyMessageSent.error && (
+                        <View style={styles.ablyMessageRow}>
+                          <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Error:</Text>
+                          <Text style={[styles.ablyMessageValue, { color: "#ef4444" }]}>{ablyMessageSent.error}</Text>
+                        </View>
+                      )}
+                    </>
+                  ) : (
+                    <View style={styles.ablyMessageRow}>
+                      <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue, { fontStyle: "italic", color: "#999" }]}>
+                        No message sent yet. Waiting for QR code scan...
+                      </Text>
+                    </View>
+                  )}
+                  {qrCodeReceivedData?.profile_uid && (
+                    <View style={styles.ablyMessageRow}>
+                      <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Target Channel:</Text>
+                      <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeReceivedData.profile_uid}</Text>
+                    </View>
+                  )}
+                  <View style={styles.ablyMessageRow}>
+                    <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
+                    <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                      {EXPO_PUBLIC_ABLY_API_KEY 
+                        ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
+                        : "Not configured"}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
               {/* Login/SignUp buttons for non-logged-in users */}
               {(() => {
                 const shouldShowAuth = !checkingLogin && !isLoggedIn;
@@ -682,6 +1008,122 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     marginTop: 20,
+  },
+  qrCodeReceivedContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#f0f8ff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4a90e2",
+    width: "100%",
+  },
+  darkQrCodeReceivedContainer: {
+    backgroundColor: "#1a2332",
+    borderColor: "#4a90e2",
+  },
+  qrCodeReceivedTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#2c5282",
+    marginBottom: 10,
+  },
+  darkQrCodeReceivedTitle: {
+    color: "#90cdf4",
+  },
+  qrCodeReceivedContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e0",
+  },
+  darkQrCodeReceivedContent: {
+    backgroundColor: "#0f172a",
+    borderColor: "#334155",
+  },
+  qrCodeReceivedRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+    flexWrap: "wrap",
+  },
+  qrCodeReceivedKey: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4a5568",
+    marginRight: 8,
+    minWidth: 120,
+  },
+  darkQrCodeReceivedKey: {
+    color: "#cbd5e0",
+  },
+  qrCodeReceivedValue: {
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#1a202c",
+    flex: 1,
+  },
+  darkQrCodeReceivedValue: {
+    color: "#e2e8f0",
+  },
+  ablyMessageContainer: {
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: "#f0fdf4",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#22c55e",
+    width: "100%",
+  },
+  darkAblyMessageContainer: {
+    backgroundColor: "#1a2e1a",
+    borderColor: "#22c55e",
+  },
+  ablyMessageTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#166534",
+    marginBottom: 10,
+  },
+  darkAblyMessageTitle: {
+    color: "#86efac",
+  },
+  ablyMessageContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 4,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#cbd5e0",
+  },
+  darkAblyMessageContent: {
+    backgroundColor: "#0f172a",
+    borderColor: "#334155",
+  },
+  ablyMessageRow: {
+    flexDirection: "row",
+    marginBottom: 8,
+    flexWrap: "wrap",
+  },
+  ablyMessageKey: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4a5568",
+    marginRight: 8,
+    minWidth: 100,
+  },
+  darkAblyMessageKey: {
+    color: "#cbd5e0",
+  },
+  ablyMessageValue: {
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
+    color: "#1a202c",
+    flex: 1,
+  },
+  darkAblyMessageValue: {
+    color: "#e2e8f0",
   },
   helloText: {
     fontSize: 32,
