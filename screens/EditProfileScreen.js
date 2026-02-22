@@ -701,6 +701,7 @@ const EditProfileScreen = ({ route, navigation }) => {
       ...prev,
       imageIsPublic: !prev.imageIsPublic,
     }));
+    setIsChanged(true);
   };
 
   // Track the currently focused input

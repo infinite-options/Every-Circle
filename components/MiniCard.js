@@ -4,22 +4,26 @@ import { View, Text, Image, StyleSheet, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 
-// Web-compatible asset helper
-// On web, require() for local assets may cause issues with Metro bundler
-// We'll handle this by conditionally setting defaultSource
+// Web-compatible asset helper: default profile image for MiniCard (user and business)
+// On native, require() works; on web we try require() so the default shows on both platforms
 let PROFILE_IMAGE_SOURCE;
-if (Platform.OS !== "web") {
-  // On native, require works normally
-  try {
-    PROFILE_IMAGE_SOURCE = require("../assets/profile.png");
-  } catch (e) {
+try {
+  PROFILE_IMAGE_SOURCE = require("../assets/profile.png");
+} catch (e) {
+  if (Platform.OS !== "web") {
     console.warn("Could not load profile.png on native");
-    PROFILE_IMAGE_SOURCE = null;
   }
-} else {
-  // On web, we'll skip the require to avoid Metro bundler issues
-  // The Image component will handle missing images gracefully
   PROFILE_IMAGE_SOURCE = null;
+}
+
+/** Returns a source suitable for Image component when no custom image or Display is off. Works on web and mobile. */
+function getDefaultProfileImageSource() {
+  if (PROFILE_IMAGE_SOURCE) return PROFILE_IMAGE_SOURCE;
+  try {
+    return require("../assets/profile.png");
+  } catch (e) {
+    return { uri: "" };
+  }
 }
 
 const MiniCard = ({ user, business, showRelationship = false }) => {
@@ -78,20 +82,12 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
       else if (business.business_image.photo_url) businessImage = business.business_image.photo_url;
     }
 
-    // Determine the image source with proper fallback
+    // Determine the image source with proper fallback (same default helper as user card for web + mobile)
     let imageSource;
     if (businessImage && typeof businessImage === "string" && businessImage.trim() !== "") {
       imageSource = { uri: businessImage };
-    } else if (PROFILE_IMAGE_SOURCE) {
-      imageSource = PROFILE_IMAGE_SOURCE;
     } else {
-      // Fallback for web - use require() which should work in React Native Web
-      try {
-        imageSource = require("../assets/profile.png");
-      } catch (e) {
-        // If require fails on web, use empty URI as last resort
-        imageSource = { uri: "" };
-      }
+      imageSource = getDefaultProfileImageSource();
     }
 
     return (
@@ -130,15 +126,15 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
             if (__DEV__) console.log("🔵 MiniCard - imageSource:", imageSource);
             
             if (!shouldShowImage) {
-              // If image is hidden, show placeholder
               return (
                 <Image
-                  source={PROFILE_IMAGE_SOURCE || require("../assets/profile.png")}
+                  source={getDefaultProfileImageSource()}
                   style={[styles.profileImage, darkMode && styles.darkProfileImage]}
                 />
               );
             }
-            
+            const defaultImg = getDefaultProfileImageSource();
+            const hasValidDefault = defaultImg && (typeof defaultImg === "number" || (typeof defaultImg === "object" && defaultImg?.uri !== ""));
             return (
               <Image
                 source={imageSource}
@@ -147,7 +143,7 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
                   console.log("MiniCard business image failed to load:", error.nativeEvent.error);
                   console.log("Problematic business image URI:", businessImage);
                 }}
-                defaultSource={PROFILE_IMAGE_SOURCE || require("../assets/profile.png")}
+                {...(hasValidDefault ? { defaultSource: defaultImg } : {})}
               />
             );
           })()}
@@ -206,7 +202,9 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
   const tagLine = sanitizeText(user?.tagLine || user?.personal_info?.profile_personal_tagline);
   const email = sanitizeText(user?.email || user?.user_email);
   const phone = sanitizeText(user?.phoneNumber || user?.personal_info?.profile_personal_phone_number);
-  const profileImage = sanitizeText(user?.profileImage);
+  // Resolve profile image URL from either flattened (profileImage) or API shape (personal_info.profile_personal_image)
+  const profileImageRaw = user?.profileImage ?? user?.personal_info?.profile_personal_image ?? "";
+  const profileImage = sanitizeText(typeof profileImageRaw === "string" ? profileImageRaw : String(profileImageRaw || ""));
 
   if (__DEV__) {
     console.log("🔵 MiniCard - After sanitization:", { firstName, lastName, tagLine, email, phone, profileImage });
@@ -219,12 +217,17 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
   const emailIsPublic = user?.personal_info?.profile_personal_email_is_public == 1 || user?.emailIsPublic;
   const phoneIsPublic = user?.personal_info?.profile_personal_phone_number_is_public == 1 || user?.phoneIsPublic;
   const tagLineIsPublic = user?.personal_info?.profile_personal_tagline_is_public == 1 || user?.tagLineIsPublic;
-  const imageIsPublic = user?.personal_info?.profile_personal_image_is_public == 1 || user?.imageIsPublic;
+  // Display = TRUE: show uploaded image when user has chosen to display it (works with 1, "1", true from API or flattened shape)
+  const imageIsPublic = user?.personal_info?.profile_personal_image_is_public == 1 || user?.imageIsPublic === true || user?.imageIsPublic === 1 || user?.imageIsPublic === "1";
   const city = sanitizeText(user?.personal_info?.profile_personal_city || user?.city || "");
   const state = sanitizeText(user?.personal_info?.profile_personal_state || user?.state || "");
   const locationIsPublic = user?.personal_info?.profile_personal_location_is_public === 1 || user?.locationIsPublic === true;
-  
-  
+
+  // Profile image rule: show uploaded image only when (image uploaded AND Display is TRUE); otherwise show default (web + mobile)
+  const hasUploadedImage = profileImage && String(profileImage).trim() !== "" && isSafeForConditional(profileImage);
+  const showUploadedImage = hasUploadedImage && imageIsPublic;
+  const userImageSource = showUploadedImage ? { uri: String(profileImage) } : getDefaultProfileImageSource();
+
   return (
     <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
       {/* HEADER: Name and Tagline */}
@@ -259,16 +262,18 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
       {/* BODY: Image on left, details on right */}
       <View style={styles.bodyContainer}>
         {(() => {
-          if (__DEV__) console.log("🔵 MiniCard - Rendering user image:", { profileImage, imageIsPublic, isSafe: isSafeForConditional(profileImage) });
+          if (__DEV__) console.log("🔵 MiniCard - Rendering user image:", { hasUploadedImage, imageIsPublic, showUploadedImage });
+          const defaultImgSource = getDefaultProfileImageSource();
+          const hasValidDefault = defaultImgSource && (typeof defaultImgSource === "number" || (typeof defaultImgSource === "object" && defaultImgSource?.uri !== ""));
           return (
             <Image
-              source={isSafeForConditional(profileImage) && imageIsPublic ? { uri: String(profileImage) } : (PROFILE_IMAGE_SOURCE || { uri: "" })}
+              source={userImageSource}
               style={[styles.profileImage, darkMode && styles.darkProfileImage]}
               onError={(error) => {
                 console.log("MiniCard user image failed to load:", error.nativeEvent.error);
                 console.log("Problematic user image URI:", profileImage);
               }}
-              {...(PROFILE_IMAGE_SOURCE && { defaultSource: PROFILE_IMAGE_SOURCE })}
+              {...(hasValidDefault ? { defaultSource: defaultImgSource } : {})}
             />
           );
         })()}
