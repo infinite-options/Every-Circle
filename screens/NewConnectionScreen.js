@@ -12,6 +12,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import WebTextInput from "../components/WebTextInput";
 import * as Location from "expo-location";
 import { Dropdown } from "react-native-element-dropdown";
+import { Ionicons } from "@expo/vector-icons";
 import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
 
 const NewConnectionScreen = () => {
@@ -42,6 +43,7 @@ const NewConnectionScreen = () => {
   const [checkingRelationship, setCheckingRelationship] = useState(false);
   const [qrCodeReceivedData, setQrCodeReceivedData] = useState(null); // Store received QR code data object for display
   const [ablyMessageSent, setAblyMessageSent] = useState(null); // Store Ably message sent info: { channel, message, timestamp }
+  const [showDebugBlocks, setShowDebugBlocks] = useState(true); // Toggle visibility of QR Code Received and Ably Messages Sent blocks
 
   // Relationship options matching ConnectScreen.js
   const relationshipOptions = [
@@ -717,73 +719,94 @@ const NewConnectionScreen = () => {
                 <MiniCard user={profileData} />
               </View>
 
-              {/* Display QR Code Received Block */}
-              {qrCodeReceivedData && (
-                <View style={[styles.qrCodeReceivedContainer, darkMode && styles.darkQrCodeReceivedContainer]}>
-                  <Text style={[styles.qrCodeReceivedTitle, darkMode && styles.darkQrCodeReceivedTitle]}>📥 QR Code Received:</Text>
-                  <View style={[styles.qrCodeReceivedContent, darkMode && styles.darkQrCodeReceivedContent]}>
-                    {Object.entries(qrCodeReceivedData).map(([key, value]) => (
-                      <View key={key} style={styles.qrCodeReceivedRow}>
-                        <Text style={[styles.qrCodeReceivedKey, darkMode && styles.darkQrCodeReceivedKey]}>{key}:</Text>
-                        <Text style={[styles.qrCodeReceivedValue, darkMode && styles.darkQrCodeReceivedValue]}>
-                          {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                        </Text>
+              {/* Toggle and Debug blocks: QR Code Received + Ably Messages Sent */}
+              <View style={[styles.debugToggleRow, darkMode && styles.darkDebugToggleRow]}>
+                <Text style={[styles.debugToggleLabel, darkMode && styles.darkDebugToggleLabel]}>
+                  {showDebugBlocks ? "Hide" : "Show"} QR / Ably debug
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowDebugBlocks((prev) => !prev)}
+                  style={[styles.eyeToggleButton, darkMode && styles.darkEyeToggleButton]}
+                  accessibilityLabel={showDebugBlocks ? "Hide debug blocks" : "Show debug blocks"}
+                >
+                  <Ionicons
+                    name={showDebugBlocks ? "eye-off-outline" : "eye-outline"}
+                    size={24}
+                    color={darkMode ? "#e0e0e0" : "#333"}
+                  />
+                </TouchableOpacity>
+              </View>
+              {showDebugBlocks && (
+                <>
+                  {/* Display QR Code Received Block */}
+                  {qrCodeReceivedData && (
+                    <View style={[styles.qrCodeReceivedContainer, darkMode && styles.darkQrCodeReceivedContainer]}>
+                      <Text style={[styles.qrCodeReceivedTitle, darkMode && styles.darkQrCodeReceivedTitle]}>📥 QR Code Received:</Text>
+                      <View style={[styles.qrCodeReceivedContent, darkMode && styles.darkQrCodeReceivedContent]}>
+                        {Object.entries(qrCodeReceivedData).map(([key, value]) => (
+                          <View key={key} style={styles.qrCodeReceivedRow}>
+                            <Text style={[styles.qrCodeReceivedKey, darkMode && styles.darkQrCodeReceivedKey]}>{key}:</Text>
+                            <Text style={[styles.qrCodeReceivedValue, darkMode && styles.darkQrCodeReceivedValue]}>
+                              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                            </Text>
+                          </View>
+                        ))}
                       </View>
-                    ))}
-                  </View>
-                </View>
-              )}
+                    </View>
+                  )}
 
-              {/* Display Ably Messages Sent Block - Always Visible */}
-              <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
-                <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📤 Ably Messages Sent:</Text>
-                <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
-                  {ablyMessageSent ? (
-                    <>
-                      <View style={styles.ablyMessageRow}>
-                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
-                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageSent.channel}</Text>
-                      </View>
-                      <View style={styles.ablyMessageRow}>
-                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
-                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageSent.message}</Text>
-                      </View>
-                      <View style={styles.ablyMessageRow}>
-                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
-                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                          {new Date(ablyMessageSent.timestamp).toLocaleString()}
-                        </Text>
-                      </View>
-                      {ablyMessageSent.error && (
+                  {/* Display Ably Messages Sent Block */}
+                  <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
+                    <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📤 Ably Messages Sent:</Text>
+                    <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
+                      {ablyMessageSent ? (
+                        <>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageSent.channel}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageSent.message}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                              {new Date(ablyMessageSent.timestamp).toLocaleString()}
+                            </Text>
+                          </View>
+                          {ablyMessageSent.error && (
+                            <View style={styles.ablyMessageRow}>
+                              <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Error:</Text>
+                              <Text style={[styles.ablyMessageValue, { color: "#ef4444" }]}>{ablyMessageSent.error}</Text>
+                            </View>
+                          )}
+                        </>
+                      ) : (
                         <View style={styles.ablyMessageRow}>
-                          <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Error:</Text>
-                          <Text style={[styles.ablyMessageValue, { color: "#ef4444" }]}>{ablyMessageSent.error}</Text>
+                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue, { fontStyle: "italic", color: "#999" }]}>
+                            No message sent yet. Waiting for QR code scan...
+                          </Text>
                         </View>
                       )}
-                    </>
-                  ) : (
-                    <View style={styles.ablyMessageRow}>
-                      <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue, { fontStyle: "italic", color: "#999" }]}>
-                        No message sent yet. Waiting for QR code scan...
-                      </Text>
+                      {qrCodeReceivedData?.profile_uid && (
+                        <View style={styles.ablyMessageRow}>
+                          <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Target Channel:</Text>
+                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeReceivedData.profile_uid}</Text>
+                        </View>
+                      )}
+                      <View style={styles.ablyMessageRow}>
+                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
+                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                          {EXPO_PUBLIC_ABLY_API_KEY 
+                            ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
+                            : "Not configured"}
+                        </Text>
+                      </View>
                     </View>
-                  )}
-                  {qrCodeReceivedData?.profile_uid && (
-                    <View style={styles.ablyMessageRow}>
-                      <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Target Channel:</Text>
-                      <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeReceivedData.profile_uid}</Text>
-                    </View>
-                  )}
-                  <View style={styles.ablyMessageRow}>
-                    <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
-                    <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                      {EXPO_PUBLIC_ABLY_API_KEY 
-                        ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
-                        : "Not configured"}
-                    </Text>
                   </View>
-                </View>
-              </View>
+                </>
+              )}
 
               {/* Login/SignUp buttons for non-logged-in users */}
               {(() => {
@@ -1008,6 +1031,34 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     marginTop: 20,
+  },
+  debugToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 16,
+    marginBottom: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    width: "100%",
+  },
+  darkDebugToggleRow: {
+    backgroundColor: "#2a2a2a",
+  },
+  debugToggleLabel: {
+    fontSize: 14,
+    color: "#555",
+  },
+  darkDebugToggleLabel: {
+    color: "#b0b0b0",
+  },
+  eyeToggleButton: {
+    padding: 8,
+  },
+  darkEyeToggleButton: {
+    padding: 8,
   },
   qrCodeReceivedContainer: {
     marginTop: 16,

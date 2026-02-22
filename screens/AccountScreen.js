@@ -1217,48 +1217,7 @@ export default function AccountScreen({ navigation }) {
       <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContentContainer} showsVerticalScrollIndicator={true}>
         {accountType === 'personal' ? (
           <>
-        {/* Balance */}
-        <View style={styles.balanceContainer}>
-          <Text style={styles.sectionLabel}>Balance:</Text>
-          <Text style={styles.balanceAmount}>$48.20</Text>
-        </View>
-
-        {/* Budget */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.tableContainer}>
-            <View style={styles.tableHeader}>
-              <View style={{ flex: 1.5, flexDirection: "row", alignItems: "center" }}>
-                <Text style={[styles.tableHeaderText, { fontSize: 16, fontWeight: "600" }]}>Budget</Text>
-                <View style={[styles.questionCircle, { marginLeft: 4 }]}>
-                  <Text style={styles.questionMark}>?</Text>
-                </View>
-              </View>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Cost per</Text>
-              <Text style={[styles.tableHeaderText, { flex: 1 }]}>Monthly Cap</Text>
-              <Text style={[styles.tableHeaderText, { flex: 1, textAlign: "right" }]}>Current Spend</Text>
-            </View>
-            {budgetData.map((item, idx) => (
-              <View key={idx} style={styles.tableRow}>
-                <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>{item.item}</Text>
-                <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>{item.costPer}</Text>
-                <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>{item.monthlyCap}</Text>
-                <Text style={[styles.tableCell, { flex: 1, textAlign: "right", color: "#777" }]}>{item.currentSpend}</Text>
-              </View>
-            ))}
-            <View style={styles.tableRow}>
-              <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>Max Monthly Spend</Text>
-              <View style={{ flexDirection: "row", alignItems: "center", marginRight: 5 }}>
-                <View style={styles.questionCircle}>
-                  <Text style={styles.questionMark}>?</Text>
-                </View>
-              </View>
-              <Text style={[styles.tableCell, { flex: 0.2, color: "#777" }]}>:</Text>
-              <Text style={[styles.tableCell, { flex: 1, color: "#777" }]}>$30.00</Text>
-              <Text style={[styles.tableCell, { flex: 1, textAlign: "right", color: "#777" }]}>$10.70</Text>
-            </View>
-          </View>
-        </View>
-
+        {/* Balance and Budget sections hidden */}
         {/* Expertise */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionTitleRow}>

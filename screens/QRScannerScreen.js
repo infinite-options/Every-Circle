@@ -9,9 +9,6 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Camera, CameraView } from "expo-camera";
-// Note: BarCodeScanner is deprecated and doesn't show camera preview on web
-// Using CameraView for web (shows preview) and BarCodeScanner as fallback for native if needed
-import { BarCodeScanner } from "expo-barcode-scanner";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import AppHeader from "../components/AppHeader";
@@ -131,23 +128,13 @@ export default function QRScannerScreen({ route }) {
     <View style={styles.container}>
       <AppHeader title="QR Scanner" onBackPress={() => navigation.goBack()} />
 
-      {Platform.OS === "web" ? (
-        // Use CameraView on web - it shows the actual camera preview
-        <CameraView
-          style={StyleSheet.absoluteFillObject}
-          onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
-          barcodeScannerSettings={{
-            barcodeTypes: ["qr"],
-          }}
-        />
-      ) : (
-        // Use BarCodeScanner on native platforms
-        <BarCodeScanner
-          onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
-          barCodeTypes={[BarCodeScanner.Constants.BarCodeType.qr]}
-          style={StyleSheet.absoluteFillObject}
-        />
-      )}
+      <CameraView
+        style={StyleSheet.absoluteFillObject}
+        onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+        barcodeScannerSettings={{
+          barcodeTypes: ["qr"],
+        }}
+      />
 
       <View style={styles.frameContainer}>
         <View style={styles.scanFrame} />
