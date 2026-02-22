@@ -247,7 +247,7 @@ const ProfileScreen = ({ route, navigation }) => {
             helpNeeds: wish.profile_wish_title || "",
             details: wish.profile_wish_description || "",
             amount: wish.profile_wish_bounty || "",
-            cost: wish.profile_wish_cost || "",
+            cost: wish.profile_wish_cost != null && wish.profile_wish_cost !== "" ? wish.profile_wish_cost : "0",
             isPublic: wish.profile_wish_is_public === 1 || wish.isPublic === true,
             wish_responses: wish.wish_responses || 0,
           }))

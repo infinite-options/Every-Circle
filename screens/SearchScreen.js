@@ -431,7 +431,7 @@ export default function SearchScreen({ route }) {
             title: item.profile_wish_title,
             description: item.profile_wish_description,
             bounty: item.profile_wish_bounty,
-            cost: item.profile_wish_cost,
+            cost: item.profile_wish_cost != null && item.profile_wish_cost !== "" ? item.profile_wish_cost : "0",
             wish_uid: item.profile_wish_uid,
           },
           // Store profile data for MiniCard-like display
