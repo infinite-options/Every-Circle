@@ -181,7 +181,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         }
       }
 
-      // Handle business_images_url - user uploaded images from S3
+      // Handle business_images_url - other/gallery images only (profile image comes from business_profile_img)
       if (rawBusiness.business_images_url) {
         let uploadedImages = [];
         if (typeof rawBusiness.business_images_url === "string") {
@@ -207,6 +207,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
           .filter(Boolean);
         businessImages = [...uploadedImages, ...businessImages];
       }
+
+      // Profile image URL (backend business_profile_img) - separate from gallery; used for header and MiniCard
+      const businessProfileImgUrl =
+        rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
 
       // Filter out problematic URLs
       businessImages = businessImages.filter((uri) => {
@@ -283,7 +287,15 @@ export default function BusinessProfileScreen({ route, navigation }) {
         shortBioIsPublic:
           rawBusiness.business_short_bio_is_public === "1" || rawBusiness.business_short_bio_is_public === 1 || rawBusiness.short_bio_is_public === "1" || rawBusiness.short_bio_is_public === 1,
         imageIsPublic:
-          rawBusiness.business_image_is_public === "1" || rawBusiness.business_image_is_public === 1 || rawBusiness.image_is_public === "1" || rawBusiness.image_is_public === 1,
+          rawBusiness.business_profile_img_is_public === "1" ||
+          rawBusiness.business_profile_img_is_public === 1 ||
+          rawBusiness.business_image_is_public === "1" ||
+          rawBusiness.business_image_is_public === 1 ||
+          rawBusiness.image_is_public === "1" ||
+          rawBusiness.image_is_public === 1,
+        business_profile_img: businessProfileImgUrl,
+        business_profile_img_is_public:
+          rawBusiness.business_profile_img_is_public === "1" || rawBusiness.business_profile_img_is_public === 1,
         business_services: (() => {
           if (rawBusiness.business_services) {
             if (typeof rawBusiness.business_services === "string") {
@@ -525,28 +537,34 @@ export default function BusinessProfileScreen({ route, navigation }) {
             style: [styles.scrollContainer, darkMode && styles.darkScrollContainer, { zIndex: 1 }],
           })}
         >
-          {/* Business Header Card */}
+          {/* Business Header Card - profile image always shown here; Hide/Display status shown */}
           <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
             <View style={styles.profileHeaderContainer}>
               <Image
                 source={
-                  business.images && business.images.length > 0 && (isOwner || business.imageIsPublic) && business.images[0] !== "" && String(business.images[0]).trim() !== ""
-                    ? { uri: String(business.images[0]) }
-                    : require("../assets/profile.png")
+                  business.business_profile_img && String(business.business_profile_img).trim() !== ""
+                    ? { uri: String(business.business_profile_img) }
+                    : business.images && business.images.length > 0 && business.images[0] !== "" && String(business.images[0]).trim() !== ""
+                      ? { uri: String(business.images[0]) }
+                      : require("../assets/profile.png")
                 }
                 style={styles.profileImage}
                 onError={(error) => {
                   console.log("BusinessProfileScreen image failed to load:", error.nativeEvent.error);
-                  console.log("Problematic business image URI:", business.images && business.images[0]);
+                  console.log("Problematic business image URI:", business.business_profile_img || (business.images && business.images[0]));
                 }}
                 defaultSource={require("../assets/profile.png")}
               />
               <Text style={[styles.nameText, darkMode && styles.darkNameText]}>{sanitizeText(business.business_name)}</Text>
               <Text style={[styles.profileId, darkMode && styles.darkProfileId]}>Business ID: {business_uid}</Text>
+              {/* Hide/Display status always shown on Business Profile */}
+              <Text style={[styles.profileId, darkMode && styles.darkProfileId, { marginTop: 4, fontSize: 12 }]}>
+                Profile image: {business.imageIsPublic ? "Display" : "Hide"}
+              </Text>
             </View>
           </View>
 
-          {/* MiniCard */}
+          {/* MiniCard - uses business_profile_img; image only shown when set and Display */}
           <MiniCard
             business={{
               business_name: sanitizeText(business.business_name),
@@ -558,7 +576,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
               business_phone_number: sanitizeText(business.business_phone_number),
               business_email: sanitizeText(business.business_email_id),
               business_website: sanitizeText(business.business_website),
-              first_image: business.images && business.images.length > 0 ? business.images[0] : null,
+              first_image: business.business_profile_img || (business.images && business.images.length > 0 ? business.images[0] : null),
+              business_profile_img: business.business_profile_img || null,
+              imageIsPublic: business.imageIsPublic,
               phoneIsPublic: business.phoneIsPublic,
               emailIsPublic: business.emailIsPublic,
               taglineIsPublic: business.taglineIsPublic,
@@ -689,25 +709,59 @@ export default function BusinessProfileScreen({ route, navigation }) {
             );
           })()}
 
-          {/* Business Editors/Owners Section - Only visible to owners/editors */}
-          {isOwner && businessUsers.length > 0 && (
+          {/* Business Editors/Owners Section - Only visible to owners/editors; only show users with bu_individual_business_is_public === 1 */}
+          {(() => {
+            const visibleBusinessUsers = businessUsers.filter(
+              (u) => u.bu_individual_business_is_public === 1 || u.bu_individual_business_is_public === "1" || u.bu_individual_business_is_public === true
+            );
+            if (!isOwner || visibleBusinessUsers.length === 0) return null;
+            return (
             <View style={styles.fieldContainer}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Editors & Owners:</Text>
-              {businessUsers.map((businessUser, index) => {
-                const firstName = sanitizeText(businessUser.first_name);
-                const lastName = sanitizeText(businessUser.last_name);
-                const email = sanitizeText(businessUser.user_email);
-                const profileImage = sanitizeText(businessUser.profile_photo);
+              {visibleBusinessUsers.map((businessUser, index) => {
                 const role = sanitizeText(businessUser.business_role, "N/A");
-
+                const profileImageUrl =
+                  businessUser.profile_photo && String(businessUser.profile_photo).trim() !== ""
+                    ? String(businessUser.profile_photo).trim()
+                    : businessUser.profile_personal_image && String(businessUser.profile_personal_image).trim() !== ""
+                      ? String(businessUser.profile_personal_image).trim()
+                      : "";
+                const imageIsPublic =
+                  businessUser.profile_photo_is_public === 1 ||
+                  businessUser.profile_photo_is_public === "1" ||
+                  businessUser.profile_personal_image_is_public === 1 ||
+                  businessUser.profile_personal_image_is_public === "1" ||
+                  businessUser.image_is_public === 1 ||
+                  businessUser.image_is_public === "1";
                 const userForMiniCard = {
-                  firstName,
-                  lastName,
-                  email,
-                  profileImage,
-                  emailIsPublic: true,
-                  phoneIsPublic: false,
-                  phoneNumber: "",
+                  firstName: businessUser.first_name || "",
+                  lastName: businessUser.last_name || "",
+                  email: businessUser.user_email || "",
+                  profileImage: profileImageUrl,
+                  imageIsPublic: !!imageIsPublic,
+                  emailIsPublic:
+                    businessUser.user_email_is_public === 1 ||
+                    businessUser.user_email_is_public === "1" ||
+                    businessUser.profile_personal_email_is_public === 1 ||
+                    businessUser.profile_personal_email_is_public === "1" ||
+                    businessUser.email_is_public === 1,
+                  phoneIsPublic:
+                    businessUser.phone_is_public === 1 ||
+                    businessUser.phone_is_public === "1" ||
+                    businessUser.profile_personal_phone_number_is_public === 1 ||
+                    businessUser.profile_personal_phone_number_is_public === "1",
+                  phoneNumber: businessUser.phone || businessUser.profile_personal_phone_number || businessUser.phone_number || "",
+                  tagLine: businessUser.profile_personal_tag_line || businessUser.tag_line || businessUser.tagline || "",
+                  tagLineIsPublic:
+                    businessUser.profile_personal_tag_line_is_public === 1 || businessUser.profile_personal_tag_line_is_public === "1" || false,
+                  city: businessUser.city || businessUser.profile_personal_city || "",
+                  state: businessUser.state || businessUser.profile_personal_state || "",
+                  locationIsPublic:
+                    businessUser.location_is_public === 1 ||
+                    businessUser.location_is_public === "1" ||
+                    businessUser.profile_personal_location_is_public === 1 ||
+                    businessUser.profile_personal_location_is_public === "1" ||
+                    false,
                 };
 
                 return (
@@ -718,7 +772,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 );
               })}
             </View>
-          )}
+            );
+          })()}
 
           {/* Review Business Button or User Review */}
           {!isOwner &&

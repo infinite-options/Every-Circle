@@ -68,23 +68,26 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
       }
     }
 
+    // Business profile image: prefer business_profile_img, then first_image, then business_image
     let businessImage = null;
-    // Check for first_image (used for multiple images - first one)
-    if (business.first_image) {
+    if (business.business_profile_img && typeof business.business_profile_img === "string" && business.business_profile_img.trim() !== "") {
+      businessImage = business.business_profile_img;
+    } else if (business.first_image) {
       if (typeof business.first_image === "string") businessImage = business.first_image;
       else if (business.first_image.url) businessImage = business.first_image.url;
       else if (business.first_image.photo_url) businessImage = business.first_image.photo_url;
-    }
-    // Also check for business_image (used for single image upload)
-    else if (business.business_image) {
+    } else if (business.business_image) {
       if (typeof business.business_image === "string") businessImage = business.business_image;
       else if (business.business_image.url) businessImage = business.business_image.url;
       else if (business.business_image.photo_url) businessImage = business.business_image.photo_url;
     }
 
-    // Determine the image source with proper fallback (same default helper as user card for web + mobile)
+    // MiniCard: show profile image only when there is an image AND it is set to Display; otherwise default
+    const hasProfileImage = businessImage && typeof businessImage === "string" && businessImage.trim() !== "";
+    const shouldShowProfileImage = hasProfileImage && (business.imageIsPublic === true || business.imageIsPublic === "1" || business.imageIsPublic === 1);
+
     let imageSource;
-    if (businessImage && typeof businessImage === "string" && businessImage.trim() !== "") {
+    if (shouldShowProfileImage) {
       imageSource = { uri: businessImage };
     } else {
       imageSource = getDefaultProfileImageSource();
@@ -119,20 +122,10 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
         {/* BODY: Image on left, details on right */}
         <View style={styles.bodyContainer}>
           {(() => {
-            // Check if image should be displayed based on imageIsPublic flag
-            const shouldShowImage = business.imageIsPublic !== false && business.imageIsPublic !== "0";
-            if (__DEV__) console.log("🔵 MiniCard - Rendering business image", { shouldShowImage, imageIsPublic: business.imageIsPublic });
+            if (__DEV__) console.log("🔵 MiniCard - Rendering business image", { shouldShowProfileImage, hasProfileImage, imageIsPublic: business.imageIsPublic });
             if (__DEV__) console.log("🔵 MiniCard - businessImage:", businessImage);
             if (__DEV__) console.log("🔵 MiniCard - imageSource:", imageSource);
-            
-            if (!shouldShowImage) {
-              return (
-                <Image
-                  source={getDefaultProfileImageSource()}
-                  style={[styles.profileImage, darkMode && styles.darkProfileImage]}
-                />
-              );
-            }
+
             const defaultImg = getDefaultProfileImageSource();
             const hasValidDefault = defaultImg && (typeof defaultImg === "number" || (typeof defaultImg === "object" && defaultImg?.uri !== ""));
             return (

@@ -27,18 +27,21 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const scrollViewRef = useRef(null);
   const fileInputRef = useRef(null); // For web file input
 
-  // Business image state (identical to EditProfileScreen profile image handling)
-  // Get first image from images array if it exists, or use business_image field
-  const initialBusinessImage = (() => {
+  // Business profile image state (backend: business_profile_img, delete_business_profile_img, business_profile_img_is_public)
+  // Profile image comes from business_profile_img; other images stay in business_images_url
+  const initialProfileImage = (() => {
+    if (business?.business_profile_img && String(business.business_profile_img).trim() !== "") {
+      return business.business_profile_img;
+    }
     if (business?.images && Array.isArray(business.images) && business.images.length > 0) {
       return business.images[0];
     }
     return business?.business_image || business?.business_profile_image || "";
   })();
-  const [originalBusinessImage, setOriginalBusinessImage] = useState(initialBusinessImage);
-  const [businessImage, setBusinessImage] = useState(initialBusinessImage);
-  const [businessImageUri, setBusinessImageUri] = useState(initialBusinessImage);
-  const [deleteBusinessImage, setDeleteBusinessImage] = useState("");
+  const [originalBusinessImage, setOriginalBusinessImage] = useState(initialProfileImage);
+  const [businessImage, setBusinessImage] = useState(initialProfileImage);
+  const [businessImageUri, setBusinessImageUri] = useState(initialProfileImage);
+  const [deleteBusinessProfileImg, setDeleteBusinessProfileImg] = useState(""); // Full S3 URL to remove (backend: delete_business_profile_img)
   const [imageError, setImageError] = useState(false);
   const [webImageFile, setWebImageFile] = useState(null); // Store the actual File object for web uploads
   const [imageUpdateKey, setImageUpdateKey] = useState(0); // Key to force MiniCard re-render when image changes
@@ -123,7 +126,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     phoneIsPublic: business?.business_phone_number_is_public === "1" || business?.phone_is_public === "1" || business?.phoneIsPublic === true,
     taglineIsPublic: business?.business_tag_line_is_public === "1" || business?.tagline_is_public === "1" || business?.taglineIsPublic === true,
     shortBioIsPublic: business?.business_short_bio_is_public === "1" || business?.short_bio_is_public === "1" || business?.shortBioIsPublic === true,
-    imageIsPublic: business?.business_image_is_public === "1" || business?.image_is_public === "1" || business?.imageIsPublic === true || false,
+    imageIsPublic: business?.business_profile_img_is_public === "1" || business?.business_profile_img_is_public === 1 || business?.business_image_is_public === "1" || business?.image_is_public === "1" || business?.imageIsPublic === true || false,
     // MISSING: Section visibility flags (EditProfileScreen has: experienceIsPublic, educationIsPublic, expertiseIsPublic, wishesIsPublic, businessIsPublic)
     // Note: Business profile doesn't have these sections, so these flags are not needed
     // MISSING: Arrays for experience, education, expertise, wishes, businesses (EditProfileScreen has these)
@@ -234,8 +237,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     const reader = new FileReader();
     reader.onloadend = () => {
       const imageUri = reader.result;
-      if (originalBusinessImage && originalBusinessImage !== imageUri) {
-        setDeleteBusinessImage(originalBusinessImage);
+      if (originalBusinessImage && originalBusinessImage !== imageUri && (originalBusinessImage.startsWith("http://") || originalBusinessImage.startsWith("https://"))) {
+        setDeleteBusinessProfileImg(originalBusinessImage);
       }
       setBusinessImageUri(imageUri);
       setBusinessImage(imageUri);
@@ -302,9 +305,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           return;
         }
         console.log("Image selected successfully");
-        if (originalBusinessImage && originalBusinessImage !== result.assets[0].uri) {
-          console.log("Setting deleteBusinessImage to:", originalBusinessImage);
-          setDeleteBusinessImage(originalBusinessImage);
+        if (originalBusinessImage && originalBusinessImage !== result.assets[0].uri && (originalBusinessImage.startsWith("http://") || originalBusinessImage.startsWith("https://"))) {
+          console.log("Setting deleteBusinessProfileImg to:", originalBusinessImage);
+          setDeleteBusinessProfileImg(originalBusinessImage);
         }
         console.log("Setting new business image URI:", result.assets[0].uri);
         setBusinessImageUri(result.assets[0].uri);
@@ -345,6 +348,19 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setBusinessImage("");
   };
 
+  // Remove profile image: backend will delete when we send delete_business_profile_img (full S3 URL)
+  const handleRemoveProfileImage = () => {
+    if (originalBusinessImage && (originalBusinessImage.startsWith("http://") || originalBusinessImage.startsWith("https://"))) {
+      setDeleteBusinessProfileImg(originalBusinessImage);
+    }
+    setBusinessImageUri("");
+    setBusinessImage("");
+    setOriginalBusinessImage("");
+    setImageError(false);
+    setImageUpdateKey((prev) => prev + 1);
+    setIsChanged(true);
+  };
+
   // MISSING: handleDeleteExperience, handleDeleteEducation, handleDeleteExpertise, handleDeleteWish, handleDeleteBusiness functions (EditProfileScreen has these)
   // Note: Business profile doesn't have these sections, so delete handlers are not needed
   // BUSINESS-SPECIFIC: Business user management functions instead
@@ -366,41 +382,17 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setIsChanged(true);
   };
 
-  // Delete existing business user (only for employee/admin/other roles)
-  const deleteExistingBusinessUser = async (businessUser) => {
-    // Check if current user is owner or partner
-    const userUid = await AsyncStorage.getItem("user_uid");
-    const currentUser = existingBusinessUsers.find((user) => user.business_user_id === userUid);
-    const currentUserRole = currentUser?.business_role || formData.businessRole || "";
-
-    // Only allow deletion if current user is owner or partner
-    if (currentUserRole.toLowerCase() !== "owner" && currentUserRole.toLowerCase() !== "partner") {
-      Alert.alert("Permission Denied", "Only owners and partners can remove business users.");
-      return;
-    }
-
-    // Only allow deletion of employee, admin, or other roles
-    const userRole = businessUser.business_role?.toLowerCase() || "";
-    if (userRole === "owner" || userRole === "partner") {
-      Alert.alert("Cannot Delete", "Owners and partners cannot be removed.");
-      return;
-    }
-
-    Alert.alert("Remove Business User", `Are you sure you want to remove ${businessUser.first_name || ""} ${businessUser.last_name || ""} (${businessUser.business_role || ""})?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: () => {
-          // Remove from existing users
-          const updated = existingBusinessUsers.filter((user) => user.business_user_id !== businessUser.business_user_id);
-          setExistingBusinessUsers(updated);
-          // Add to deleted users list
-          setDeletedBusinessUsers((prev) => [...prev, businessUser.business_user_id]);
-          setIsChanged(true);
-        },
-      },
-    ]);
+  // Toggle Hide/Display for a business user (bu_individual_business_is_public: 0 = hide, 1 = display)
+  const toggleBusinessUserIndividualPublic = (businessUser) => {
+    const current = businessUser.bu_individual_business_is_public;
+    const isPublic = current === 1 || current === "1" || current === true;
+    const nextValue = isPublic ? 0 : 1;
+    setExistingBusinessUsers((prev) =>
+      prev.map((u) =>
+        u.business_user_id === businessUser.business_user_id ? { ...u, bu_individual_business_is_public: nextValue } : u
+      )
+    );
+    setIsChanged(true);
   };
 
   // BUSINESS-SPECIFIC: Custom tags management functions (not in EditProfileScreen)
@@ -475,52 +467,49 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_website", formData.website);
       payload.append("custom_tags", JSON.stringify(formData.customTags));
 
-      // Business image handling - backend expects business_img_0 (not business_image)
+      // Business profile image (backend: business_profile_img file, delete_business_profile_img URL, business_profile_img_is_public 0/1)
       if (businessImageUri && !imageError && businessImageUri !== originalBusinessImage) {
         if (Platform.OS === "web" && webImageFile) {
-          // On web, use the actual File object
           imageFileSize = webImageFile.size || 0;
-          console.log("Business image file size (bytes):", imageFileSize);
-          // Backend expects business_img_0 for the file field name
-          payload.append("business_img_0", webImageFile);
+          console.log("Business profile image file size (bytes):", imageFileSize);
+          payload.append("business_profile_img", webImageFile);
         } else {
-          // On mobile, use FileSystem to get file info
           try {
             const fileInfo = await FileSystem.getInfoAsync(businessImageUri);
             imageFileSize = fileInfo.size || 0;
-            console.log("Business image file size (bytes):", imageFileSize);
-
+            console.log("Business profile image file size (bytes):", imageFileSize);
             const uriParts = businessImageUri.split(".");
             const fileType = uriParts[uriParts.length - 1] || "jpg";
-
             const imageFile = {
               uri: businessImageUri,
-              name: `business_img_0.${fileType}`,
+              name: `business_profile_img.${fileType}`,
               type: `image/${fileType}`,
             };
-
-            // Backend expects business_img_0 for the file field name
-            payload.append("business_img_0", imageFile);
+            payload.append("business_profile_img", imageFile);
           } catch (error) {
-            console.error("Error getting file info:", error);
-            // If FileSystem fails, try to use the URI directly (for web fallback)
+            console.error("Error getting file info for business_profile_img:", error);
             if (businessImageUri.startsWith("data:")) {
-              // Convert data URL to blob for web
               const response = await fetch(businessImageUri);
               const blob = await response.blob();
               imageFileSize = blob.size || 0;
-              const file = new File([blob], "business_img_0.jpg", { type: blob.type });
-              // Backend expects business_img_0 for the file field name
-              payload.append("business_img_0", file);
+              const file = new File([blob], "business_profile_img.jpg", { type: blob.type });
+              payload.append("business_profile_img", file);
             }
           }
         }
       }
 
-      // Only add delete_business_img_0 if there's an image to delete and it hasn't errored
-      if (deleteBusinessImage && !imageError) {
-        console.log("Adding delete_business_img_0 to payload:", deleteBusinessImage);
-        payload.append("delete_business_img_0", deleteBusinessImage);
+      if (deleteBusinessProfileImg && !imageError) {
+        console.log("Adding delete_business_profile_img to payload:", deleteBusinessProfileImg);
+        payload.append("delete_business_profile_img", deleteBusinessProfileImg);
+      }
+
+      payload.append("business_profile_img_is_public", formData.imageIsPublic ? "1" : "0");
+
+      // Other business images (gallery) - business_images_url unchanged; profile image is separate
+      if (business?.business_images_url != null && business?.business_images_url !== "") {
+        const existing = typeof business.business_images_url === "string" ? business.business_images_url : JSON.stringify(business.business_images_url);
+        payload.append("business_images_url", existing);
       }
 
       // Append Google images as URLs (if any - these are separate from user-uploaded)
@@ -528,8 +517,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       if (googleImages.length > 0) {
         payload.append("business_google_photos", JSON.stringify(googleImages));
       }
-
-      payload.append("business_image_is_public", formData.imageIsPublic ? "1" : "0");
 
       payload.append("social_links", JSON.stringify(formData.socialLinks));
       payload.append("business_email_id_is_public", formData.emailIsPublic ? "1" : "0");
@@ -589,15 +576,41 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         payload.append("additional_business_role", JSON.stringify(allRoles));
       }
 
+      // bu_individual_business_is_public per business user (0 = hide, 1 = display) for business_user table
+      const businessUsersIndividualPublic = remainingExistingUsers.map((u) => ({
+        business_user_id: u.business_user_id,
+        bu_individual_business_is_public: u.bu_individual_business_is_public === 1 || u.bu_individual_business_is_public === "1" || u.bu_individual_business_is_public === true ? 1 : 0,
+      }));
+      if (businessUsersIndividualPublic.length > 0) {
+        payload.append("business_users_individual_public", JSON.stringify(businessUsersIndividualPublic));
+      }
+
       // MISSING: Deleted items handling (EditProfileScreen appends delete_experiences, delete_educations, etc.)
       // Note: Business profile doesn't have these sections, so deleted items handling is not needed
 
-      // BUSINESS-SPECIFIC: Console logs for debugging (EditProfileScreen has simpler logging)
+      // Standardized console log (same format as EditProfileScreen for easy comparison)
+      const businessImagesUrlValue =
+        business?.business_images_url != null && business?.business_images_url !== ""
+          ? typeof business.business_images_url === "string"
+            ? business.business_images_url
+            : JSON.stringify(business.business_images_url)
+          : "(not sent)";
       console.log("============================================");
-      console.log("📡 BUSINESS INFO API REQUEST (PUT)");
+      console.log("📡 BUSINESS PROFILE – IMAGE PAYLOAD SENT TO BACKEND");
       console.log("============================================");
       console.log("🔗 ENDPOINT:", BusinessProfileAPI);
       console.log("📝 METHOD: PUT");
+      console.log("--------------------------------------------");
+      console.log("Image fields (compare with backend expectations):");
+      console.log("  business_profile_img (file):", businessImageUri && !imageError && businessImageUri !== originalBusinessImage ? "SENT (file)" : "not sent");
+      if (businessImageUri && !imageError && businessImageUri !== originalBusinessImage) {
+        console.log("    -> file size (bytes):", imageFileSize);
+        console.log("    -> (web) file name:", Platform.OS === "web" && webImageFile ? webImageFile.name : "N/A");
+      }
+      console.log("  delete_business_profile_img (URL):", deleteBusinessProfileImg || "(not sent)");
+      console.log("  business_profile_img_is_public:", formData.imageIsPublic ? "1" : "0");
+      console.log("  business_images_url (gallery only):", businessImagesUrlValue);
+      console.log("--------------------------------------------");
       console.log("============================================");
 
       const response = await axios.put(`${BusinessProfileAPI}`, payload, {
@@ -738,9 +751,16 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           </Text>
         </TouchableOpacity>
       </View>
-      <TouchableOpacity onPress={handlePickImage}>
-        <Text style={[styles.uploadLink, darkMode && styles.darkUploadLink]}>Upload Image</Text>
-      </TouchableOpacity>
+      <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
+        <TouchableOpacity onPress={handlePickImage}>
+          <Text style={[styles.uploadLink, darkMode && styles.darkUploadLink]}>Upload Image</Text>
+        </TouchableOpacity>
+        {(businessImageUri || businessImage) ? (
+          <TouchableOpacity onPress={handleRemoveProfileImage}>
+            <Text style={[styles.uploadLink, { color: darkMode ? "#f87171" : "red" }]}>Remove Image</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
       {/* Hidden file input for web */}
       {Platform.OS === "web" &&
         React.createElement("input", {
@@ -1020,6 +1040,15 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         {renderField("Email", formData.email, "email", "", "emailIsPublic")}
         {renderField("Business Category", formData.category, "category")}
         {renderField("Tag Line", formData.tagline, "tagline", "", "taglineIsPublic")}
+
+        {/* Business MiniCard Live Preview - how business appears in searches */}
+        <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
+          <Text style={[styles.label, darkMode && styles.darkLabel]}>Mini Card (how you'll appear in searches):</Text>
+          <View style={[styles.previewCard, darkMode && styles.darkPreviewCard]}>
+            <MiniCard key={`minicard-${imageUpdateKey}`} business={previewBusiness} />
+          </View>
+        </View>
+
         {renderField("Short Bio", formData.shortBio, "shortBio", "", "shortBioIsPublic")}
         {renderBusinessRoleField()}
         {renderField("EIN Number", formData.einNumber, "einNumber", "##-#######", null, "numeric", 10, formatEINNumber)}
@@ -1037,18 +1066,57 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             </TouchableOpacity>
           </View>
           {existingBusinessUsers.map((businessUser, index) => {
+            // Map from business_users endpoint: profile_photo, profile_photo_is_public, user_email, user_email_is_public, phone, phone_is_public, city, state, location_is_public
+            const profileImageUrl =
+              businessUser.profile_photo && String(businessUser.profile_photo).trim() !== ""
+                ? String(businessUser.profile_photo).trim()
+                : businessUser.profile_personal_image && String(businessUser.profile_personal_image).trim() !== ""
+                  ? String(businessUser.profile_personal_image).trim()
+                  : "";
+            const imageIsPublic =
+              businessUser.profile_photo_is_public === 1 ||
+              businessUser.profile_photo_is_public === "1" ||
+              businessUser.profile_personal_image_is_public === 1 ||
+              businessUser.profile_personal_image_is_public === "1" ||
+              businessUser.image_is_public === 1 ||
+              businessUser.image_is_public === "1";
             const userForMiniCard = {
               firstName: businessUser.first_name || "",
               lastName: businessUser.last_name || "",
               email: businessUser.user_email || "",
-              profileImage: businessUser.profile_photo || "",
-              emailIsPublic: true,
-              phoneIsPublic: false,
-              phoneNumber: "",
+              profileImage: profileImageUrl,
+              imageIsPublic: !!imageIsPublic,
+              emailIsPublic:
+                businessUser.user_email_is_public === 1 ||
+                businessUser.user_email_is_public === "1" ||
+                businessUser.profile_personal_email_is_public === 1 ||
+                businessUser.profile_personal_email_is_public === "1" ||
+                businessUser.email_is_public === 1,
+              phoneIsPublic:
+                businessUser.phone_is_public === 1 ||
+                businessUser.phone_is_public === "1" ||
+                businessUser.profile_personal_phone_number_is_public === 1 ||
+                businessUser.profile_personal_phone_number_is_public === "1",
+              phoneNumber: businessUser.phone || businessUser.profile_personal_phone_number || businessUser.phone_number || "",
+              tagLine: businessUser.profile_personal_tag_line || businessUser.tag_line || businessUser.tagline || "",
+              tagLineIsPublic:
+                businessUser.profile_personal_tag_line_is_public === 1 ||
+                businessUser.profile_personal_tag_line_is_public === "1" ||
+                false,
+              city: businessUser.city || businessUser.profile_personal_city || "",
+              state: businessUser.state || businessUser.profile_personal_state || "",
+              locationIsPublic:
+                businessUser.location_is_public === 1 ||
+                businessUser.location_is_public === "1" ||
+                businessUser.profile_personal_location_is_public === 1 ||
+                businessUser.profile_personal_location_is_public === "1" ||
+                false,
             };
 
-            const userRole = businessUser.business_role?.toLowerCase() || "";
-            const canDelete = userRole === "employee" || userRole === "admin" || userRole === "other";
+            const isIndividualPublic =
+              businessUser.bu_individual_business_is_public === 1 ||
+              businessUser.bu_individual_business_is_public === "1" ||
+              businessUser.bu_individual_business_is_public === true;
 
             return (
               <View key={businessUser.business_user_id || index} style={[styles.existingBusinessUserCard, darkMode && styles.darkExistingBusinessUserCard]}>
@@ -1057,11 +1125,21 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                     <MiniCard user={userForMiniCard} />
                     <Text style={[styles.existingBusinessUserRole, darkMode && styles.darkExistingBusinessUserRole]}>Role: {businessUser.business_role || "N/A"}</Text>
                   </View>
-                  {canDelete && (
-                    <TouchableOpacity onPress={() => deleteExistingBusinessUser(businessUser)} style={[styles.deleteButton, darkMode && styles.darkDeleteButton]}>
-                      <Text style={[styles.deleteButtonText, darkMode && styles.darkDeleteButtonText]}>🗑️</Text>
-                    </TouchableOpacity>
-                  )}
+                  <TouchableOpacity
+                    onPress={() => toggleBusinessUserIndividualPublic(businessUser)}
+                    style={[styles.hideDisplayButton, darkMode && styles.darkHideDisplayButton]}
+                  >
+                    <Text
+                      style={[
+                        styles.hideDisplayButtonText,
+                        darkMode && styles.darkHideDisplayButtonText,
+                        isIndividualPublic && (darkMode ? { color: "#4ade80" } : { color: "green" }),
+                        !isIndividualPublic && (darkMode ? { color: "#f87171" } : { color: "red" }),
+                      ]}
+                    >
+                      {isIndividualPublic ? "Display" : "Hide"}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             );
@@ -1109,14 +1187,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
         {/* BUSINESS-SPECIFIC: Custom Tags Section (not in EditProfileScreen) */}
         {isOwner && renderCustomTagsSection()}
-
-        {/* MiniCard Live Preview Section */}
-        <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
-          <Text style={[styles.label, darkMode && styles.darkLabel]}>Mini Card (how you'll appear in searches):</Text>
-          <View style={[styles.previewCard, darkMode && styles.darkPreviewCard]}>
-            <MiniCard key={`minicard-${imageUpdateKey}`} business={previewBusiness} />
-          </View>
-        </View>
 
         {/* MISSING: renderShortBioField() call (EditProfileScreen has this) */}
         {/* Note: Business profile uses regular renderField for shortBio */}
@@ -1483,6 +1553,17 @@ const styles = StyleSheet.create({
   deleteButtonText: {
     fontSize: 20,
   },
+  hideDisplayButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginLeft: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  hideDisplayButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
   addText: { fontSize: 24, fontWeight: "bold", color: "#000" },
   contentContainer: { padding: 20, paddingBottom: 120 },
 
@@ -1568,6 +1649,8 @@ const styles = StyleSheet.create({
   darkDeleteButtonText: {
     // No special styling needed for dark mode
   },
+  darkHideDisplayButton: {},
+  darkHideDisplayButtonText: {},
   darkAddText: {
     color: "#ffffff",
   },

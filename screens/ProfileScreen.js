@@ -266,8 +266,25 @@ const ProfileScreen = ({ route, navigation }) => {
       console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
       console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
 
-      const mappedBusinesses = (apiUser.business_info || []).map((bus, index) => {
-        console.log("RAW bus from API:", JSON.stringify(bus, null, 2));  // ← add this
+      const rawBusinessInfo = Array.isArray(apiUser.business_info)
+        ? apiUser.business_info
+        : typeof apiUser.business_info === "string"
+          ? (() => {
+              try {
+                return JSON.parse(apiUser.business_info);
+              } catch (e) {
+                return [];
+              }
+            })()
+          : [];
+      const mappedBusinesses = (rawBusinessInfo || []).map((bus, index) => {
+        const businessProfileImg =
+          bus.business_profile_img && String(bus.business_profile_img).trim() !== "" ? String(bus.business_profile_img).trim() : null;
+        const imageIsPublic =
+          bus.business_profile_img_is_public === 1 ||
+          bus.business_profile_img_is_public === "1" ||
+          bus.business_image_is_public === 1 ||
+          bus.business_image_is_public === "1";
         return {
           business_name: bus.business_name || "",
           business_city: bus.business_city || "",
@@ -275,16 +292,23 @@ const ProfileScreen = ({ route, navigation }) => {
           business_zip_code: bus.business_zip_code || "",
           business_phone_number: bus.business_phone_number || "",
           business_address_line_1: bus.business_address_line_1 || "",
+          business_tag_line: bus.business_tag_line || bus.tagline || "",
+          business_email_id: bus.business_email_id || bus.business_email || "",
+          business_website: bus.business_website || "",
           phoneIsPublic: bus.business_phone_number_is_public === 1 || bus.business_phone_number_is_public === "1" || bus.business_phone_number_is_public === true,
+          emailIsPublic: bus.business_email_id_is_public === 1 || bus.business_email_id_is_public === "1" || true,
+          taglineIsPublic: bus.business_tag_line_is_public === 1 || bus.business_tag_line_is_public === "1" || true,
           business_uid: bus.business_uid || "",
-          profile_business_uid: bus.business_uid || "",
+          profile_business_uid: bus.business_uid || bus.profile_business_uid || "",
           role: bus.bu_role || "",
           individualIsPublic: bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === true,
-          first_image: null,
+          first_image: businessProfileImg || null,
+          business_profile_img: businessProfileImg,
+          imageIsPublic: !!imageIsPublic,
           index,
         };
       });
-      console.log("mappedBusinesses result:", JSON.stringify(mappedBusinesses, null, 2));  // ← add this
+      console.log("mappedBusinesses result:", JSON.stringify(mappedBusinesses, null, 2));
       setBusinessesData(mappedBusinesses);
       setLoading(false);
     } catch (error) {
@@ -423,13 +447,22 @@ const ProfileScreen = ({ route, navigation }) => {
           const originalBusiness = businesses.find((b) => b.profile_business_uid === bus.profile_business_uid);
           console.log("ProfileScreen - originalBusiness for", rawBusiness.business_name, ":", JSON.stringify(originalBusiness, null, 2));
 
-          // Return business object matching BusinessProfileScreen structure for MiniCard
-          // Sanitize all text fields to prevent "Unexpected text node" errors
-          const firstImage = businessImages && businessImages.length > 0 ? businessImages[0] : null;
+          // Profile image from business_profile_img; fallback to first of business_images_url for MiniCard
+          const businessProfileImg =
+            rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
+          const firstImage = businessProfileImg || (businessImages && businessImages.length > 0 ? businessImages[0] : null);
+          const imageIsPublic =
+            rawBusiness.business_profile_img_is_public === "1" ||
+            rawBusiness.business_profile_img_is_public === 1 ||
+            rawBusiness.business_image_is_public === "1" ||
+            rawBusiness.business_image_is_public === 1 ||
+            rawBusiness.image_is_public === "1" ||
+            rawBusiness.image_is_public === 1;
           console.log("ProfileScreen - Business image data for", rawBusiness.business_name, ":", {
+            businessProfileImg: !!businessProfileImg,
             businessImagesLength: businessImages?.length || 0,
-            firstImage: firstImage,
-            firstImageType: typeof firstImage,
+            firstImage: !!firstImage,
+            imageIsPublic,
           });
           return {
             business_name: sanitizeText(rawBusiness.business_name, ""),
@@ -442,6 +475,8 @@ const ProfileScreen = ({ route, navigation }) => {
             business_email: sanitizeText(rawBusiness.business_email_id, ""),
             business_website: sanitizeText(rawBusiness.business_website, ""),
             first_image: firstImage,
+            business_profile_img: businessProfileImg,
+            imageIsPublic,
             phoneIsPublic:
               rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1 || rawBusiness.phone_is_public === "1" || rawBusiness.phone_is_public === 1,
             emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1 || rawBusiness.email_is_public === "1" || rawBusiness.email_is_public === 1,
@@ -1172,7 +1207,7 @@ const ProfileScreen = ({ route, navigation }) => {
           {/*{(isCurrentUserProfile || (user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0)) && ( */}
           {user.expertiseIsPublic && (
             <View style={styles.fieldContainer}>
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Expertise:</Text>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Offering:</Text>
               {user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0 ? (
                 user.expertise
                   .filter((exp) => exp.isPublic)

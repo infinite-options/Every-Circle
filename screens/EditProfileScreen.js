@@ -531,7 +531,6 @@ const EditProfileScreen = ({ route, navigation }) => {
 
       // Only add delete_profile_image if there's an image to delete and it hasn't errored
       if (deleteProfileImage && !imageError) {
-        console.log("Adding delete_profile_image to payload:", deleteProfileImage);
         payload.append("delete_profile_image", deleteProfileImage);
       }
 
@@ -552,22 +551,26 @@ const EditProfileScreen = ({ route, navigation }) => {
         payload.append("delete_businesses", JSON.stringify(deletedItems.businesses));
       }
 
-      console.log("Deleted items being sent:", deletedItems);
-
-      // Log all FormData entries before sending
-      console.log("FormData being sent to API:");
-      for (let pair of payload.entries()) {
-        console.log(pair[0] + ":", pair[1]);
+      // Standardized console log (same format as EditBusinessProfileScreen for easy comparison)
+      console.log("============================================");
+      console.log("📡 PERSONAL PROFILE – IMAGE PAYLOAD SENT TO BACKEND");
+      console.log("============================================");
+      console.log("🔗 ENDPOINT:", `${ProfileScreenAPI}?profile_uid=${trimmedProfileUID}`);
+      console.log("📝 METHOD: PUT");
+      console.log("--------------------------------------------");
+      console.log("Image fields (compare with backend expectations):");
+      console.log("  profile_image (file):", profileImageUri && !imageError && profileImageUri !== originalProfileImage ? "SENT (file)" : "not sent");
+      if (profileImageUri && !imageError && profileImageUri !== originalProfileImage) {
+        console.log("    -> file size (bytes):", imageFileSize);
+        console.log("    -> (web) file name:", Platform.OS === "web" && webImageFile ? webImageFile.name : "N/A");
       }
+      console.log("  delete_profile_image (URL):", deleteProfileImage || "(not sent)");
+      console.log("  profile_personal_image_is_public:", formData.imageIsPublic ? "1" : "0");
+      console.log("--------------------------------------------");
+      console.log("============================================");
 
-      console.log("Payload being sent to API:", payload);
-      console.log("==========================================");
-      console.log("BUSINESSES PAYLOAD DETAIL:");
-      console.log("formData.businesses:", JSON.stringify(formData.businesses, null, 2));
-      console.log("businessesPayload:", JSON.stringify(businessesPayload, null, 2));
-      console.log("==========================================");
-      console.log("Sending payload to server... PUT");
-      await new Promise((res) => setTimeout(res, 2000)); // Add this line to simulate a 2s delay
+      console.log("Deleted items being sent:", deletedItems);
+      await new Promise((res) => setTimeout(res, 2000)); // Simulate 2s delay
       const response = await axios({
         method: "put",
         url: `${ProfileScreenAPI}?profile_uid=${trimmedProfileUID}`,

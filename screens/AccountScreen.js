@@ -630,6 +630,13 @@ export default function AccountScreen({ navigation }) {
         if (result && result.business) {
           const rawBusiness = result.business;
           
+          const businessProfileImg =
+            rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
+          const imageIsPublic =
+            rawBusiness.business_profile_img_is_public === "1" ||
+            rawBusiness.business_profile_img_is_public === 1 ||
+            rawBusiness.business_image_is_public === "1" ||
+            rawBusiness.business_image_is_public === 1;
           setSelectedBusinessFullData({
             business_name: rawBusiness.business_name,
             business_address_line_1: rawBusiness.business_address_line_1,
@@ -639,10 +646,11 @@ export default function AccountScreen({ navigation }) {
             business_phone_number: rawBusiness.business_phone_number,
             business_website: rawBusiness.business_website,
             business_tag_line: rawBusiness.business_tag_line,
-            first_image: rawBusiness.business_images_url?.[0] || rawBusiness.business_google_photos?.[0],
-            phoneIsPublic: true,
-            taglineIsPublic: true,
-            imageIsPublic: true,
+            first_image: businessProfileImg || rawBusiness.business_images_url?.[0] || rawBusiness.business_google_photos?.[0],
+            business_profile_img: businessProfileImg,
+            imageIsPublic: imageIsPublic,
+            phoneIsPublic: rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1,
+            taglineIsPublic: rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1,
           });
         }
       } catch (error) {

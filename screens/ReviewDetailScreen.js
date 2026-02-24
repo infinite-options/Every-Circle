@@ -456,7 +456,9 @@ export default function ReviewDetailScreen({ route, navigation }) {
                     business_zip_code: sanitizeText(business.business_zip_code),
                     business_phone_number: sanitizeText(business.business_phone_number),
                     business_website: sanitizeText(business.business_website),
-                    first_image: business.images && business.images.length > 0 ? business.images[0] : null,
+                    first_image: business.business_profile_img || (business.images && business.images.length > 0 ? business.images[0] : null),
+                    business_profile_img: business.business_profile_img || null,
+                    imageIsPublic: business.imageIsPublic,
                     phoneIsPublic: business.phoneIsPublic,
                     taglineIsPublic: business.taglineIsPublic,
                   }}
