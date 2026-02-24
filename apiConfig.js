@@ -40,6 +40,7 @@ export const REFERRAL_API_ENDPOINT = `${API_BASE_URL}/api/v1/userprofileinfo/`;
 export const BUSINESS_INFO_ENDPOINT = `${API_BASE_URL}/api/v1/businessinfo`;
 export const BUSINESSES_ENDPOINT = `${API_BASE_URL}/businesses`;
 export const CATEGORY_LIST_ENDPOINT = `${API_BASE_URL}/category_list/all`;
+export const BUSINESS_AVG_RATINGS_ENDPOINT = `${API_BASE_URL}/api/v1/businessavgratings`;
 
 // Search and Network Endpoints
 // export const BUSINESS_RESULTS_ENDPOINT = `${API_BASE_URL}/api/businessresults`;

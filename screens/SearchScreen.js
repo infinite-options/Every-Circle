@@ -6,7 +6,7 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { BUSINESS_RESULTS_ENDPOINT, EXPERTISE_RESULTS_ENDPOINT, WISHES_RESULTS_ENDPOINT, TAG_SEARCH_DISTINCT_ENDPOINT, TAG_CATEGORY_DISTINCT_ENDPOINT, SEARCH_BASE_URL } from "../apiConfig";
+import { BUSINESS_RESULTS_ENDPOINT, EXPERTISE_RESULTS_ENDPOINT, WISHES_RESULTS_ENDPOINT, TAG_SEARCH_DISTINCT_ENDPOINT, TAG_CATEGORY_DISTINCT_ENDPOINT, SEARCH_BASE_URL, BUSINESS_AVG_RATINGS_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
@@ -506,6 +506,29 @@ export default function SearchScreen({ route }) {
           score: b.score || 0,
           itemType: "businesses",
         }));
+
+        // Fetch avg ratings from your backend
+        try {
+          const uids = list.map(b => b.id).join(',');
+          //const ratingsRes = await fetch(`${API_BASE_URL}/api/v1/businessavgratings?uids=${uids}`);
+          const ratingsRes = await fetch(`${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${uids}`);
+          const ratingsJson = await ratingsRes.json();
+
+          console.log("Ratings fetch URL:", `${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${uids}`);
+          console.log("Ratings response:", JSON.stringify(ratingsJson, null, 2));
+
+          if (ratingsJson.result) {
+            list = list.map(b => ({
+              // ...b,
+              // rating: ratingsJson.result[b.id]?.avg_rating ?? b.rating,
+              // ratingCount: ratingsJson.result[b.id]?.rating_count ?? 0,
+                 ...b,
+                  rating: ratingsJson.result[b.id] ? parseFloat(ratingsJson.result[b.id].avg_rating) : null
+            }));
+          }
+        } catch (e) {
+          console.log("Could not fetch avg ratings:", e);
+        }
       }
 
       console.log("✅ Processed search results:", list.length, "items");
@@ -901,7 +924,10 @@ export default function SearchScreen({ route }) {
         <View style={styles.resultActions}>
           <View style={styles.ratingContainer}>
             <Ionicons name='star' size={16} color='#FFCD3C' />
-            <Text style={[styles.ratingText, darkMode && styles.darkRatingText]}>{typeof item.rating === "number" ? item.rating.toFixed(1) : item.rating ? String(item.rating) : "N/A"}</Text>
+            <Text style={[styles.ratingText, darkMode && styles.darkRatingText]}>
+              {typeof item.rating === "number" ? item.rating.toFixed(1) : "N/A"}
+              {item.ratingCount > 0 ? ` (${item.ratingCount})` : ""}
+            </Text>
           </View>
 
           <TouchableOpacity
