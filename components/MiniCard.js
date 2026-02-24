@@ -55,8 +55,10 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
     const state = sanitizeText(business.business_state || "");
     const zipCode = sanitizeText(business.business_zip_code);
     const phone = sanitizeText(business.business_phone_number);
-    const website = sanitizeText(business.business_website);
+    const email = sanitizeText(business.business_email || business.business_email_id || "");
+    const website = sanitizeText(business.business_website || "");
     const phoneIsPublic = business.phoneIsPublic;
+    const emailIsPublic = business.emailIsPublic;
     const taglineIsPublic = business.taglineIsPublic;
     // For business, we'll show location/city/state if they exist (no separate locationIsPublic flag for business yet)
     const locationIsPublic = true; // Default to true for business, can be made configurable later
@@ -148,6 +150,16 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
               if (phoneIsPublic && isSafeForConditional(phone) && phone !== "." && phone.trim() !== "") {
                 if (__DEV__) console.log("🔵 MiniCard - Rendering business phone");
                 return <Text style={[styles.phone, darkMode && styles.darkText]}>{phone}</Text>;
+              }
+              return null;
+            })()}
+
+            {/* BUSINESS EMAIL */}
+            {(() => {
+              if (__DEV__) console.log("🔵 MiniCard - Checking business email:", { email, emailIsPublic, isSafe: isSafeForConditional(email) });
+              if (emailIsPublic && isSafeForConditional(email) && email !== "." && email.trim() !== "") {
+                if (__DEV__) console.log("🔵 MiniCard - Rendering business email");
+                return <Text style={[styles.email, darkMode && styles.darkText]}>{email}</Text>;
               }
               return null;
             })()}
@@ -272,22 +284,22 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
         })()}
 
         <View style={styles.textContainer}>
-          {/* EMAIL */}
-          {(() => {
-            if (__DEV__) console.log("🔵 MiniCard - Checking email:", { email, emailIsPublic, isSafe: isSafeForConditional(email) });
-            if (emailIsPublic && isSafeForConditional(email) && email !== "." && email.trim() !== "") {
-              if (__DEV__) console.log("🔵 MiniCard - Rendering email");
-              return <Text style={[styles.email, darkMode && styles.darkText]}>{email}</Text>;
-            }
-            return null;
-          })()}
-
           {/* PHONE */}
           {(() => {
             if (__DEV__) console.log("🔵 MiniCard - Checking phone:", { phone, phoneIsPublic, isSafe: isSafeForConditional(phone) });
             if (phoneIsPublic && isSafeForConditional(phone) && phone !== "." && phone.trim() !== "") {
               if (__DEV__) console.log("🔵 MiniCard - Rendering phone");
               return <Text style={[styles.phone, darkMode && styles.darkText]}>{phone}</Text>;
+            }
+            return null;
+          })()}
+
+          {/* EMAIL */}
+          {(() => {
+            if (__DEV__) console.log("🔵 MiniCard - Checking email:", { email, emailIsPublic, isSafe: isSafeForConditional(email) });
+            if (emailIsPublic && isSafeForConditional(email) && email !== "." && email.trim() !== "") {
+              if (__DEV__) console.log("🔵 MiniCard - Rendering email");
+              return <Text style={[styles.email, darkMode && styles.darkText]}>{email}</Text>;
             }
             return null;
           })()}
