@@ -6,7 +6,7 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { BUSINESS_RESULTS_ENDPOINT, EXPERTISE_RESULTS_ENDPOINT, WISHES_RESULTS_ENDPOINT, TAG_SEARCH_DISTINCT_ENDPOINT, TAG_CATEGORY_DISTINCT_ENDPOINT, SEARCH_BASE_URL } from "../apiConfig";
+import { BUSINESS_RESULTS_ENDPOINT, EXPERTISE_RESULTS_ENDPOINT, WISHES_RESULTS_ENDPOINT, TAG_SEARCH_DISTINCT_ENDPOINT, TAG_CATEGORY_DISTINCT_ENDPOINT, SEARCH_BASE_URL, BUSINESS_AVG_RATINGS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, PROFILE_WISH_INFO_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
@@ -247,7 +247,7 @@ export default function SearchScreen({ route }) {
   const [networkModalVisible, setNetworkModalVisible] = useState(false);
   const [bountyModalVisible, setBountyModalVisible] = useState(false);
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
 
   // Filter options (same as FilterScreen)
   const distanceOptions = [5, 10, 15, 25, 50, 100];
@@ -419,7 +419,8 @@ export default function SearchScreen({ route }) {
           hasPriceTag: false,
           hasX: false,
           hasDollar: false,
-          hasBounty: b.has_bounty || b.business_bounty || false,
+          //hasBounty: b.has_bounty || b.business_bounty || false,
+          hasBounty: item.profile_wish_bounty ? true : false,
           business_short_bio: item.profile_wish_description || "",
           business_tag_line: item.profile_wish_title || "",
           tags: [],
@@ -431,7 +432,7 @@ export default function SearchScreen({ route }) {
             title: item.profile_wish_title,
             description: item.profile_wish_description,
             bounty: item.profile_wish_bounty,
-            cost: item.profile_wish_cost != null && item.profile_wish_cost !== "" ? item.profile_wish_cost : "0",
+            cost: item.profile_wish_cost,
             wish_uid: item.profile_wish_uid,
           },
           // Store profile data for MiniCard-like display
@@ -448,6 +449,36 @@ export default function SearchScreen({ route }) {
             tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
           },
         }));
+        // try {
+        //   const profileFetches = list.map(async (item) => {
+        //     if (!item.profile_uid) return item;
+        //     try {
+        //       const profileRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${item.profile_uid}`);
+        //       const profileJson = await profileRes.json();
+        //       const p = profileJson.personal_info || {};
+        //       return {
+        //         ...item,
+        //         profileData: {
+        //           firstName: p.profile_personal_first_name || "",
+        //           lastName: p.profile_personal_last_name || "",
+        //           email: p.user_email_id || "",
+        //           phone: p.profile_personal_phone_number || "",
+        //           image: p.profile_personal_image || "",
+        //           tagLine: p.profile_personal_tag_line || "",
+        //           emailIsPublic: p.profile_personal_email_is_public == 1,
+        //           phoneIsPublic: p.profile_personal_phone_number_is_public == 1,
+        //           imageIsPublic: p.profile_personal_image_is_public == 1,
+        //           tagLineIsPublic: p.profile_personal_tag_line_is_public == 1,
+        //         },
+        //       };
+        //     } catch (e) {
+        //       return item;
+        //     }
+        //   });
+        //   list = await Promise.all(profileFetches);
+        // } catch (e) {
+        //   console.log("Could not fetch wish profiles:", e);
+        // }
       } else if (type === "expertise") {
         // For expertise, the response includes profile data directly
         list = resultsArray.map((item, i) => ({
@@ -493,19 +524,48 @@ export default function SearchScreen({ route }) {
           return str === "." ? "" : str;
         };
 
-        list = resultsArray.map((b, i) => ({
-          id: `${b.business_uid || i}`,
-          company: sanitizeText(b.business_name || b.company) || "Unknown Business",
-          rating: typeof b.rating_star === "number" ? b.rating_star : typeof b.score === "number" ? Math.min(5, Math.max(1, Math.round(b.score * 5))) : 4,
-          hasPriceTag: b.has_price_tag || false,
-          hasX: b.has_x || false,
-          hasDollar: b.has_dollar_sign || false,
-          business_short_bio: sanitizeText(b.business_short_bio),
-          business_tag_line: sanitizeText(b.business_tag_line),
-          tags: b.tags || [],
-          score: b.score || 0,
-          itemType: "businesses",
-        }));
+        list = resultsArray.map((b, i) => {
+           console.log("All image fields:", b.business_profile_img, b.business_images_url, b.business_favorite_image, b.business_name);
+           console.log("Business profile img:", b.business_profile_img, b.business_name);
+          return ({
+            id: `${b.business_uid || i}`,
+            company: sanitizeText(b.business_name || b.company) || "Unknown Business",
+            business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null, 
+            rating: typeof b.rating_star === "number" ? b.rating_star : typeof b.score === "number" ? Math.min(5, Math.max(1, Math.round(b.score * 5))) : 4,
+            hasPriceTag: b.has_price_tag || false,
+            hasX: b.has_x || false,
+            hasDollar: b.has_dollar_sign || false,
+            business_short_bio: sanitizeText(b.business_short_bio),
+            business_tag_line: sanitizeText(b.business_tag_line),
+            tags: b.tags || [],
+            score: b.score || 0,
+            itemType: "businesses"
+          });
+        });
+
+        // Fetch avg ratings from your backend
+        try {
+          const uids = list.map(b => b.id).join(',');
+          //const ratingsRes = await fetch(`${API_BASE_URL}/api/v1/businessavgratings?uids=${uids}`);
+          const ratingsRes = await fetch(`${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${uids}`);
+          const ratingsJson = await ratingsRes.json();
+
+          console.log("Ratings fetch URL:", `${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${uids}`);
+          console.log("Ratings response:", JSON.stringify(ratingsJson, null, 2));
+
+          if (ratingsJson.result) {
+            list = list.map(b => ({
+              // ...b,
+              // rating: ratingsJson.result[b.id]?.avg_rating ?? b.rating,
+              // ratingCount: ratingsJson.result[b.id]?.rating_count ?? 0,
+                 ...b,
+                  rating: ratingsJson.result[b.id] ? parseFloat(ratingsJson.result[b.id].avg_rating) : null
+            }));
+            console.log("After ratings merge, first item profile img:", list[0]?.business_profile_img);
+          }
+        } catch (e) {
+          console.log("Could not fetch avg ratings:", e);
+        }
       }
 
       console.log("✅ Processed search results:", list.length, "items");
@@ -591,6 +651,7 @@ export default function SearchScreen({ route }) {
             const list = resultsArray.map((b, i) => ({
               id: `${b.business_uid || i}`,
               company: sanitizeText(b.business_name || b.company) || "Unknown Business",
+              business_profile_img: b.business_profile_img || null,
               // Use score as rating if rating_star not available, convert to 1-5 scale
               rating: typeof b.rating_star === "number" ? b.rating_star : typeof b.score === "number" ? Math.min(5, Math.max(1, Math.round(b.score * 5))) : 4,
               hasPriceTag: b.has_price_tag || false,
@@ -728,7 +789,9 @@ export default function SearchScreen({ route }) {
             />
             <View style={styles.wishProfileInfo}>
               {/* Name is always visible */}
-              <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>{[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Unknown"}</Text>
+              <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>
+                {[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Anonymous User"}
+              </Text>
               {/* Show email if public */}
               {(() => {
                 const email = profile.emailIsPublic && profile.email ? String(profile.email).trim() : "";
@@ -805,7 +868,9 @@ export default function SearchScreen({ route }) {
           />
           <View style={styles.wishProfileInfo}>
             {/* Name is always visible */}
-            <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>{[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Unknown"}</Text>
+            <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>
+              {[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Anonymous User"}
+            </Text>
             {/* Show email if public */}
             {(() => {
               const email = profile.emailIsPublic && profile.email ? String(profile.email).trim() : "";
@@ -889,19 +954,33 @@ export default function SearchScreen({ route }) {
         }}
       >
         <View style={styles.resultContent}>
-          <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
-          {(() => {
-            const tagLine = item.business_tag_line ? String(item.business_tag_line).trim() : "";
-            if (tagLine && tagLine !== "." && tagLine.length > 0) {
-              return <Text style={[styles.businessTagLine, darkMode && styles.darkBusinessTagLine]}>{tagLine}</Text>;
-            }
-            return null;
-          })()}
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Image
+              source={item.business_profile_img ? { uri: encodeURI(item.business_profile_img.trim()) } : require("../assets/profile.png")}
+              style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10 }}
+              onError={(e) => console.log("Image load error:", e.nativeEvent.error, item.business_profile_img)}
+              onLoad={() => console.log("Image loaded successfully:", item.business_profile_img)}
+              defaultSource={require("../assets/profile.png")}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
+              {(() => {
+                const tagLine = item.business_tag_line ? String(item.business_tag_line).trim() : "";
+                if (tagLine && tagLine !== "." && tagLine.length > 0) {
+                  return <Text style={[styles.businessTagLine, darkMode && styles.darkBusinessTagLine]}>{tagLine}</Text>;
+                }
+                return null;
+              })()}
+            </View>
+          </View>
         </View>
         <View style={styles.resultActions}>
           <View style={styles.ratingContainer}>
             <Ionicons name='star' size={16} color='#FFCD3C' />
-            <Text style={[styles.ratingText, darkMode && styles.darkRatingText]}>{typeof item.rating === "number" ? item.rating.toFixed(1) : item.rating ? String(item.rating) : "N/A"}</Text>
+            <Text style={[styles.ratingText, darkMode && styles.darkRatingText]}>
+              {typeof item.rating === "number" ? item.rating.toFixed(1) : "N/A"}
+              {item.ratingCount > 0 ? ` (${item.ratingCount})` : ""}
+            </Text>
           </View>
 
           <TouchableOpacity
@@ -1097,7 +1176,7 @@ export default function SearchScreen({ route }) {
                   {rating !== null ? `> ${rating}` : "Rating"}
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity
+              {/* <TouchableOpacity
                 style={[
                   styles.filterButtonOption,
                   darkMode && styles.darkFilterButtonOption,
@@ -1133,6 +1212,58 @@ export default function SearchScreen({ route }) {
                 >
                   {searchType === "businesses" ? "Businesses" : searchType === "expertise" ? "Expertise" : "Seeking"}
                 </Text>
+              </TouchableOpacity> */}
+              {/* Businesses button */}
+              <TouchableOpacity
+                style={[
+                  styles.filterButtonOption,
+                  darkMode && styles.darkFilterButtonOption,
+                  searchType === "businesses" && styles.searchTypeButtonBusinesses,
+                  darkMode && searchType === "businesses" && styles.darkSearchTypeButtonBusinesses,
+                ]}
+                onPress={() => { setSearchType("businesses"); performSearch(searchQuery, "businesses"); }}
+              >
+                <Text style={[
+                  styles.filterButtonText,
+                  darkMode && styles.darkFilterButtonText,
+                  searchType === "businesses" && styles.searchTypeButtonTextBusinesses,
+                  darkMode && searchType === "businesses" && styles.darkSearchTypeButtonTextBusinesses,
+                ]}>Businesses</Text>
+              </TouchableOpacity>
+              {/* Expertise button */}
+              <TouchableOpacity
+                style={[
+                  styles.filterButtonOption,
+                  darkMode && styles.darkFilterButtonOption,
+                  searchType === "expertise" && styles.searchTypeButtonExpertise,
+                  darkMode && searchType === "expertise" && styles.darkSearchTypeButtonExpertise,
+                ]}
+                onPress={() => { setSearchType("expertise"); performSearch(searchQuery, "expertise"); }}
+              >
+                <Text style={[
+                  styles.filterButtonText,
+                  darkMode && styles.darkFilterButtonText,
+                  searchType === "expertise" && styles.searchTypeButtonTextExpertise,
+                  darkMode && searchType === "expertise" && styles.darkSearchTypeButtonTextExpertise,
+                ]}>Expertise</Text>
+              </TouchableOpacity>
+
+              {/* Wishes button */}
+              <TouchableOpacity
+                style={[
+                  styles.filterButtonOption,
+                  darkMode && styles.darkFilterButtonOption,
+                  searchType === "seeking" && styles.searchTypeButtonSeeking,
+                  darkMode && searchType === "seeking" && styles.darkSearchTypeButtonSeeking,
+                ]}
+                onPress={() => { setSearchType("seeking"); performSearch(searchQuery, "seeking"); }}
+              >
+                <Text style={[
+                  styles.filterButtonText,
+                  darkMode && styles.darkFilterButtonText,
+                  searchType === "seeking" && styles.searchTypeButtonTextSeeking,
+                  darkMode && searchType === "seeking" && styles.darkSearchTypeButtonTextSeeking,
+                ]}>Wishes</Text>
               </TouchableOpacity>
             </View>
           )}
