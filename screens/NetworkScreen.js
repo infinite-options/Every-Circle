@@ -970,6 +970,13 @@ const NetworkScreen = ({ navigation }) => {
   const fetchNetwork = async (overrideProfileUid = null, overrideDegree = null) => {
     console.log("🔘 Fetch Network");
     setActiveView("connections");
+    setViewMode("list");
+    setRelationshipFilter("All");   
+    setDateFilter("All");           
+    setLocationFilter("All");       
+    setEventFilter("All");
+    setLoading(true);  
+    setError(null); 
 
     try {
       // Get UID from AsyncStorage or use override
@@ -1069,6 +1076,9 @@ const NetworkScreen = ({ navigation }) => {
       // Update state
       setNetworkData(formatted);
       setGroupedNetwork(groupByDegree(formatted));
+      console.log("🟢 groupedNetwork keys:", Object.keys(groupByDegree(formatted)));
+      console.log("🟢 formatted length:", formatted.length);
+      console.log("🟢 formatted[0].__mc:", formatted[0]?.__mc);
 
       // Save for asyncStorage
       try {
@@ -1662,23 +1672,8 @@ const NetworkScreen = ({ navigation }) => {
       {/* <AppHeader title='Connect' backgroundColor='#AF52DE' /> */}
       <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
         <AppHeader
-          title='Connect'
+          title='CONNECT'
           {...getHeaderColors("network")}
-          rightButton={
-            <TouchableOpacity
-              style={styles.cameraButton}
-              onPress={(e) => {
-                if (e?.stopPropagation) {
-                  e.stopPropagation();
-                }
-                navigation.navigate("QRScanner", {
-                  onScanComplete: handleQRScanComplete,
-                });
-              }}
-            >
-              <Ionicons name='camera' size={20} color='#fff' />
-            </TouchableOpacity>
-          }
         />
       </TouchableOpacity>
 
@@ -1697,8 +1692,35 @@ const NetworkScreen = ({ navigation }) => {
               if (__DEV__) console.log("🔵 NetworkScreen - QR Code data exists, rendering QR section");
               return (
                 <View style={[styles.qrCodeContainer, darkMode && styles.darkQrCodeContainer]}>
-                  <Text style={[styles.qrCodeTitle, darkMode && styles.darkQrCodeTitle]}>My Contact QR Code</Text>
-                  <Text style={[styles.qrCodeSubtitle, darkMode && styles.darkQrCodeSubtitle]}>Let others scan this to share your public contact information</Text>
+                  
+                  {/* Display MiniCard */}
+                  {(() => {
+                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
+                    if (userProfileData) {
+                      return (
+                        <View style={styles.qrCodeMiniCardContainer}>
+                          <MiniCard user={userProfileData} />
+                        </View>
+                      );
+                    }
+                    return null;
+                  })()}
+
+                  <Text style={[styles.qrCodeTitle, darkMode && styles.darkQrCodeTitle]}>Connect with Me!</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 15 }}>
+                    <Text style={[styles.qrCodeSubtitle, darkMode && styles.darkQrCodeSubtitle, { marginBottom: 0 }]}>SCAN My QR Code</Text>
+                    <TouchableOpacity
+                      style={{ padding: 6 }}
+                      onPress={() => navigation.navigate("QRScanner", {
+                        onScanComplete: handleQRScanComplete,
+                      })}
+                    >
+                      <Ionicons name='camera-outline' size={25} color='#000' />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* QR Code */}
+
                   <View style={[styles.qrCodeWrapper, darkMode && styles.darkQrCodeWrapper]}>
                     <QRCodeComponent value={qrCodeData} size={200} color={darkMode ? "#ffffff" : "#000000"} backgroundColor={darkMode ? "#1a1a1a" : "#ffffff"} />
                   </View>
@@ -1729,115 +1751,7 @@ const NetworkScreen = ({ navigation }) => {
                     />
                   </View>
 
-                  {/* Toggle and Debug blocks: QR Code Contains + Ably Messages Received */}
-                  <View style={[styles.debugToggleRow, darkMode && styles.darkDebugToggleRow]}>
-                    <Text style={[styles.debugToggleLabel, darkMode && styles.darkDebugToggleLabel]}>
-                      {showDebugBlocks ? "Hide" : "Show"} QR / Ably debug
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() => setShowDebugBlocks((prev) => !prev)}
-                      style={[styles.eyeToggleButton, darkMode && styles.darkEyeToggleButton]}
-                      accessibilityLabel={showDebugBlocks ? "Hide debug blocks" : "Show debug blocks"}
-                    >
-                      <Ionicons
-                        name={showDebugBlocks ? "eye-off-outline" : "eye-outline"}
-                        size={24}
-                        color={darkMode ? "#e0e0e0" : "#333"}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                  {showDebugBlocks && (
-                    <>
-                      {/* Display QR Code Contains Block */}
-                      {qrCodeDataObject && (
-                        <View style={[styles.qrCodeContainsContainer, darkMode && styles.darkQrCodeContainsContainer]}>
-                          <Text style={[styles.qrCodeContainsTitle, darkMode && styles.darkQrCodeContainsTitle]}>📋 QR Code Contains:</Text>
-                          <View style={[styles.qrCodeContainsContent, darkMode && styles.darkQrCodeContainsContent]}>
-                            {Object.entries(qrCodeDataObject).map(([key, value]) => (
-                              <View key={key} style={styles.qrCodeContainsRow}>
-                                <Text style={[styles.qrCodeContainsKey, darkMode && styles.darkQrCodeContainsKey]}>{key}:</Text>
-                                <Text style={[styles.qrCodeContainsValue, darkMode && styles.darkQrCodeContainsValue]}>
-                                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                                </Text>
-                              </View>
-                            ))}
-                          </View>
-                        </View>
-                      )}
-
-                      {/* Display Ably Messages Received Block */}
-                      <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
-                        <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📨 Ably Messages Received:</Text>
-                        <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
-                          {ablyMessageReceived ? (
-                            <>
-                              <View style={styles.ablyMessageRow}>
-                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
-                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.channel}</Text>
-                              </View>
-                              <View style={styles.ablyMessageRow}>
-                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
-                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.message}</Text>
-                              </View>
-                              <View style={styles.ablyMessageRow}>
-                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
-                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                                  {new Date(ablyMessageReceived.timestamp).toLocaleString()}
-                                </Text>
-                              </View>
-                            </>
-                          ) : (
-                            <View style={styles.ablyMessageRow}>
-                              <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue, { fontStyle: "italic", color: "#999" }]}>
-                                No messages received yet. Listening for messages...
-                              </Text>
-                            </View>
-                          )}
-                          {qrCodeDataObject?.profile_uid && (
-                            <>
-                              <View style={styles.ablyMessageRow}>
-                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Listening on Channel:</Text>
-                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeDataObject.profile_uid}</Text>
-                              </View>
-                              <View style={styles.ablyMessageRow}>
-                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Connection Status:</Text>
-                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                                  {ablyClient?.connection?.state || "Not connected"}
-                                </Text>
-                              </View>
-                              <View style={styles.ablyMessageRow}>
-                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel Status:</Text>
-                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                                  {ablyChannel?.state || "Not attached"}
-                                </Text>
-                              </View>
-                              <View style={styles.ablyMessageRow}>
-                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
-                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                                  {EXPO_PUBLIC_ABLY_API_KEY 
-                                    ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
-                                    : "Not configured"}
-                                </Text>
-                              </View>
-                            </>
-                          )}
-                        </View>
-                      </View>
-                    </>
-                  )}
-
-                  {/* Display MiniCard showing what information will be transferred */}
-                  {(() => {
-                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
-                    if (userProfileData) {
-                      return (
-                        <View style={styles.qrCodeMiniCardContainer}>
-                          <MiniCard user={userProfileData} />
-                        </View>
-                      );
-                    }
-                    return null;
-                  })()}
+                  
                 </View>
               );
             }
@@ -1845,59 +1759,7 @@ const NetworkScreen = ({ navigation }) => {
             return null;
           })()}
 
-          {(() => {
-            if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage Section");
-            return (
-              <View>
-                <View style={styles.sectionTitleRow}>
-                  <Text style={[styles.sectionTitle, darkMode && styles.darkSectionTitle]}>AsyncStorage Contents:</Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      const newValue = !showAsyncStorage;
-                      console.log("👁️ Toggling AsyncStorage visibility from", showAsyncStorage, "to", newValue);
-                      setShowAsyncStorage(newValue);
-                    }}
-                    style={styles.eyeIconButton}
-                  >
-                    <Ionicons name={showAsyncStorage ? "eye" : "eye-off"} size={20} color={darkMode ? "#ffffff" : "#333"} />
-                  </TouchableOpacity>
-                </View>
-                {(() => {
-                  if (__DEV__) console.log("🔵 NetworkScreen - showAsyncStorage:", showAsyncStorage);
-                  if (showAsyncStorage) {
-                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage data, length:", storageData.length);
-                    return (
-                      <>
-                        {storageData.length === 0 ? (
-                          <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>No data in AsyncStorage.</Text>
-                        ) : (
-                          storageData
-                            .map(([key, value], idx) => {
-                              if (__DEV__) console.log(`🔵 NetworkScreen - Processing AsyncStorage item ${idx}:`, { key, value, keyType: typeof key, valueType: typeof value });
-                              const sanitizedKey = sanitizeText(key, "Unknown");
-                              const sanitizedValue = sanitizeText(value, "N/A");
-                              if (__DEV__) console.log(`🔵 NetworkScreen - After sanitization ${idx}:`, { sanitizedKey, sanitizedValue });
-                              if (!isSafeForConditional(sanitizedKey) && !isSafeForConditional(sanitizedValue)) {
-                                if (__DEV__) console.log(`🔵 NetworkScreen - Skipping item ${idx} (unsafe)`);
-                                return null;
-                              }
-                              return (
-                                <View key={key} style={{ marginBottom: 8 }}>
-                                  {isSafeForConditional(sanitizedKey) && <Text style={[styles.keyText, darkMode && styles.darkKeyText]}>{sanitizedKey}:</Text>}
-                                  {isSafeForConditional(sanitizedValue) && <Text style={[styles.valueText, darkMode && styles.darkValueText]}>{sanitizedValue}</Text>}
-                                </View>
-                              );
-                            })
-                            .filter(Boolean)
-                        )}
-                      </>
-                    );
-                  }
-                  return null;
-                })()}
-              </View>
-            );
-          })()}
+          
 
           {(() => {
             if (__DEV__) console.log("🔵 NetworkScreen - Rendering Network Section");
@@ -1908,237 +1770,9 @@ const NetworkScreen = ({ navigation }) => {
               <View style={{ marginTop: 20 }}>
                 <Text style={[styles.sectionTitle, darkMode && styles.darkSectionTitle]}>My Network{titleSuffix}</Text>
 
-                <View style={styles.networkControlsRow}>
-                  <Text style={[styles.networkControlLabel, darkMode && styles.darkNetworkControlLabel]}>Levels to Display:</Text>
-                  <WebTextInput
-                    style={[styles.networkInput, darkMode && styles.darkNetworkInput]}
-                    value={degree}
-                    onChangeText={setDegree}
-                    placeholder='1'
-                    keyboardType='numeric'
-                    inputMode={Platform.OS === "web" ? "numeric" : undefined}
-                  />
-                  <TouchableOpacity
-                    style={[styles.fetchButton, activeView === "connections" ? styles.fetchButtonActive : styles.fetchButtonInactive]}
-                    onPress={() => {
-                      setActiveView("connections");
-                      fetchNetwork();
-                    }}
-                  >
-                    <Text style={styles.fetchButtonText}>Show Connections</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.fetchButton, activeView === "circles" ? styles.fetchButtonActive : styles.fetchButtonInactive]}
-                    onPress={() => {
-                      setActiveView("circles");
-                      fetchCircle();
-                    }}
-                  >
-                    <Text style={styles.fetchButtonText}>Show Circle</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setViewMode(viewMode === "list" ? "graph" : "list")} style={styles.toggleButton}>
-                    <Text style={styles.toggleButtonText}>{viewMode === "list" ? "View as Graph" : "View as List"}</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {loading && <ActivityIndicator size='large' color='#AF52DE' />}
-                {error && <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>{error}</Text>}
-
-                {/* Filter Buttons - Show for both list and graph views */}
-                {Object.keys(groupedNetwork).length > 0 && (
-                        <View style={styles.filterContainer}>
-                          <TouchableOpacity
-                            style={[
-                              styles.filterButton,
-                              relationshipFilter !== "All" && styles.filterButtonActive,
-                              darkMode && styles.darkFilterButton,
-                              relationshipFilter !== "All" && darkMode && styles.darkFilterButtonActive,
-                            ]}
-                            onPress={() => {
-                              const filters = ["All", "Colleagues", "Friends", "Family"];
-                              const currentIndex = filters.indexOf(relationshipFilter);
-                              const nextIndex = (currentIndex + 1) % filters.length;
-                              setRelationshipFilter(filters[nextIndex]);
-                            }}
-                          >
-                            <Text
-                              style={[
-                                styles.filterButtonText,
-                                relationshipFilter !== "All" && styles.filterButtonTextActive,
-                                darkMode && styles.darkFilterButtonText,
-                                relationshipFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
-                              ]}
-                            >
-                              {relationshipFilter === "All" ? "Relationship" : relationshipFilter}
-                            </Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[
-                              styles.filterButton,
-                              dateFilter !== "All" && styles.filterButtonActive,
-                              darkMode && styles.darkFilterButton,
-                              dateFilter !== "All" && darkMode && styles.darkFilterButtonActive,
-                            ]}
-                            onPress={() => {
-                              const filters = ["All", "This Week", "This Month", "This Year"];
-                              const currentIndex = filters.indexOf(dateFilter);
-                              const nextIndex = (currentIndex + 1) % filters.length;
-                              setDateFilter(filters[nextIndex]);
-                            }}
-                          >
-                            <Text
-                              style={[
-                                styles.filterButtonText,
-                                dateFilter !== "All" && styles.filterButtonTextActive,
-                                darkMode && styles.darkFilterButtonText,
-                                dateFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
-                              ]}
-                            >
-                              {dateFilter === "All" ? "Date" : dateFilter}
-                            </Text>
-                          </TouchableOpacity>
-                          <View style={styles.dropdownContainer}>
-                            <TouchableOpacity
-                              style={[
-                                styles.filterButton,
-                                locationFilter !== "All" && styles.filterButtonActive,
-                                darkMode && styles.darkFilterButton,
-                                locationFilter !== "All" && darkMode && styles.darkFilterButtonActive,
-                                availableCities.length === 0 && styles.filterButtonDisabled,
-                              ]}
-                              onPress={() => {
-                                if (availableCities.length === 0) return;
-                                setShowLocationDropdown(!showLocationDropdown);
-                                setShowEventDropdown(false);
-                              }}
-                              disabled={availableCities.length === 0}
-                            >
-                              <Text
-                                style={[
-                                  styles.filterButtonText,
-                                  locationFilter !== "All" && styles.filterButtonTextActive,
-                                  darkMode && styles.darkFilterButtonText,
-                                  locationFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
-                                  availableCities.length === 0 && styles.filterButtonTextDisabled,
-                                ]}
-                              >
-                                {locationFilter === "All" ? "Location" : locationFilter}
-                              </Text>
-                            </TouchableOpacity>
-                            {showLocationDropdown && availableCities.length > 0 && (
-                              <ScrollView style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]}>
-                                <TouchableOpacity
-                                  style={[
-                                    styles.dropdownItem,
-                                    darkMode && styles.darkDropdownItem,
-                                    locationFilter === "All" && styles.dropdownItemSelected,
-                                    locationFilter === "All" && darkMode && styles.darkDropdownItemSelected,
-                                  ]}
-                                  onPress={() => {
-                                    setLocationFilter("All");
-                                    setShowLocationDropdown(false);
-                                  }}
-                                >
-                                  <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
-                                    All
-                                  </Text>
-                                </TouchableOpacity>
-                                {availableCities.map((city) => (
-                                  <TouchableOpacity
-                                    key={city}
-                                    style={[
-                                      styles.dropdownItem,
-                                      darkMode && styles.darkDropdownItem,
-                                      locationFilter === city && styles.dropdownItemSelected,
-                                      locationFilter === city && darkMode && styles.darkDropdownItemSelected,
-                                    ]}
-                                    onPress={() => {
-                                      setLocationFilter(city);
-                                      setShowLocationDropdown(false);
-                                    }}
-                                  >
-                                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
-                                      {city}
-                                    </Text>
-                                  </TouchableOpacity>
-                                ))}
-                              </ScrollView>
-                            )}
-                          </View>
-                          <View style={styles.dropdownContainer}>
-                            <TouchableOpacity
-                              style={[
-                                styles.filterButton,
-                                eventFilter !== "All" && styles.filterButtonActive,
-                                darkMode && styles.darkFilterButton,
-                                eventFilter !== "All" && darkMode && styles.darkFilterButtonActive,
-                                availableEvents.length === 0 && styles.filterButtonDisabled,
-                              ]}
-                              onPress={() => {
-                                if (availableEvents.length === 0) return;
-                                setShowEventDropdown(!showEventDropdown);
-                                setShowLocationDropdown(false);
-                              }}
-                              disabled={availableEvents.length === 0}
-                            >
-                              <Text
-                                style={[
-                                  styles.filterButtonText,
-                                  eventFilter !== "All" && styles.filterButtonTextActive,
-                                  darkMode && styles.darkFilterButtonText,
-                                  eventFilter !== "All" && darkMode && styles.darkFilterButtonTextActive,
-                                  availableEvents.length === 0 && styles.filterButtonTextDisabled,
-                                ]}
-                              >
-                                {eventFilter === "All" ? "Event" : eventFilter}
-                              </Text>
-                            </TouchableOpacity>
-                            {showEventDropdown && availableEvents.length > 0 && (
-                              <ScrollView style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]}>
-                                <TouchableOpacity
-                                  style={[
-                                    styles.dropdownItem,
-                                    darkMode && styles.darkDropdownItem,
-                                    eventFilter === "All" && styles.dropdownItemSelected,
-                                    eventFilter === "All" && darkMode && styles.darkDropdownItemSelected,
-                                  ]}
-                                  onPress={() => {
-                                    setEventFilter("All");
-                                    setShowEventDropdown(false);
-                                  }}
-                                >
-                                  <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
-                                    All
-                                  </Text>
-                                </TouchableOpacity>
-                                {availableEvents.map((event) => (
-                                  <TouchableOpacity
-                                    key={event}
-                                    style={[
-                                      styles.dropdownItem,
-                                      darkMode && styles.darkDropdownItem,
-                                      eventFilter === event && styles.dropdownItemSelected,
-                                      eventFilter === event && darkMode && styles.darkDropdownItemSelected,
-                                    ]}
-                                    onPress={() => {
-                                      setEventFilter(event);
-                                      setShowEventDropdown(false);
-                                    }}
-                                  >
-                                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>
-                                      {event}
-                                    </Text>
-                                  </TouchableOpacity>
-                                ))}
-                              </ScrollView>
-                            )}
-                          </View>
-                        </View>
-                )}
-
                 {/* Search Input */}
-                      {Object.keys(groupedNetwork).length > 0 && (
-                        <View style={styles.searchContainer}>
+                {Object.keys(groupedNetwork).length > 0 && (
+                        <View style={{ width: "100%", marginBottom: 12, marginTop: 8 }}>
                           <WebTextInput
                             style={[styles.searchInput, darkMode && styles.darkSearchInput]}
                             value={searchQuery}
@@ -2146,15 +1780,126 @@ const NetworkScreen = ({ navigation }) => {
                             placeholder="Search Connections..."
                             placeholderTextColor={darkMode ? "#888" : "#999"}
                           />
-                          {searchQuery.length > 0 && (
-                            <TouchableOpacity
-                              style={styles.clearSearchButton}
-                              onPress={() => setSearchQuery("")}
-                            >
-                            </TouchableOpacity>
-                          )}
                         </View>
-                      )}
+                )}
+
+                {/* Graph/List View Mode Toggle */}
+                <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
+                  <TouchableOpacity
+                    onPress={() => setViewMode("list")}
+                    style={[styles.toggleButton, viewMode === "list" && styles.toggleButtonActive]}
+                  >
+                    <Text style={[styles.toggleButtonText, viewMode === "list" && { fontWeight: "700" }]}>View as List</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setViewMode("graph")}
+                    style={[styles.toggleButton, viewMode === "graph" && styles.toggleButtonActive]}
+                  >
+                    <Text style={[styles.toggleButtonText, viewMode === "graph" && { fontWeight: "700" }]}>View as Graph</Text>
+                  </TouchableOpacity>
+                </View> 
+
+                <View style={{ marginTop: 10 }}>
+                  {/* Row 1: Levels to Display */}
+                  <View style={styles.controlRow}>
+                    <Text style={styles.controlRowLabel}>1.  Levels to Display</Text>
+                    <WebTextInput
+                      style={styles.pullDownButton}
+                      value={degree}
+                      onChangeText={setDegree}
+                      keyboardType="numeric"
+                    />
+                  </View>
+
+                  {/* Row 2: Network */}
+                  <View style={styles.controlRow}>
+                    <Text style={styles.controlRowLabel}>2.  Network</Text>
+                    <TouchableOpacity
+                      style={styles.pullDownButton}
+                      onPress={() => { 
+                        setActiveView("connections"); 
+                        fetchNetwork(null, degree); 
+                      }}
+                    >
+                      <Text style={styles.pullDownButtonText}>
+                        {activeView === "connections" ? "Show Connections" : "Show Connections"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Row 3: Relationship */}
+                  <View style={styles.controlRow}>
+                    <Text style={styles.controlRowLabel}>3.  Relationship</Text>
+                    <TouchableOpacity
+                      style={styles.pullDownButton}
+                      onPress={() => {
+                        const filters = ["All", "Colleagues", "Friends", "Family"];
+                        const next = (filters.indexOf(relationshipFilter) + 1) % filters.length;
+                        setRelationshipFilter(filters[next]);
+                      }}
+                    >
+                      <Text style={styles.pullDownButtonText}>
+                        {relationshipFilter === "All" ? "All" : relationshipFilter}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Row 4: Date(s) */}
+                  <View style={styles.controlRow}>
+                    <Text style={styles.controlRowLabel}>4.  Date(s)</Text>
+                    <TouchableOpacity
+                      style={styles.pullDownButton}
+                      onPress={() => {
+                        const filters = ["All", "This Week", "This Month", "This Year"];
+                        const next = (filters.indexOf(dateFilter) + 1) % filters.length;
+                        setDateFilter(filters[next]);
+                      }}
+                    >
+                      <Text style={styles.pullDownButtonText}>
+                        {dateFilter === "All" ? "All" : dateFilter}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Row 5: Location(s) */}
+                  <View style={styles.controlRow}>
+                    <Text style={styles.controlRowLabel}>5.  Location(s)</Text>
+                    <TouchableOpacity
+                      style={styles.pullDownButton}
+                      onPress={() => {
+                        const options = ["All", ...availableCities];
+                        const currentIndex = options.indexOf(locationFilter);
+                        const next = currentIndex === -1 ? 1 : (currentIndex + 1) % options.length;
+                        setLocationFilter(options[next] || "All");
+                      }}
+                    >
+                      <Text style={styles.pullDownButtonText}>
+                        {locationFilter === "All" ? "All" : locationFilter}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Row 6: Event(s) */}
+                  <View style={styles.controlRow}>
+                    <Text style={styles.controlRowLabel}>6.  Event(s)</Text>
+                    <TouchableOpacity
+                      style={styles.pullDownButton}
+                      onPress={() => {
+                        if (availableEvents.length === 0) return;
+                        const options = ["All", ...availableEvents];
+                        const next = (options.indexOf(eventFilter) + 1) % options.length;
+                        setEventFilter(options[next]);
+                      }}
+                    >
+                      <Text style={styles.pullDownButtonText}>
+                        {eventFilter === "All" ? "All" : eventFilter}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {loading && <ActivityIndicator size='large' color='#AF52DE' />}
+                {error && <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>{error}</Text>}
 
                 {/* Graph View */}
                 {viewMode === "graph" && filteredNetworkData.length > 0 && (
@@ -2381,6 +2126,156 @@ const NetworkScreen = ({ navigation }) => {
               </View>
             );
           })()}
+          {/* Toggle and Debug blocks: QR Code Contains + Ably Messages Received */}
+          <View style={[styles.debugToggleRow, { backgroundColor: "rgba(202, 158, 108, 0.51)" }]}>
+                  <Text style={[styles.debugToggleLabel, darkMode && styles.darkDebugToggleLabel]}>
+                    {showDebugBlocks ? "Hide" : "Show"} QR / ABLY DEBUG
+                  </Text>
+                    <TouchableOpacity
+                      onPress={() => setShowDebugBlocks((prev) => !prev)}
+                      style={[styles.eyeToggleButton, darkMode && styles.darkEyeToggleButton]}
+                      accessibilityLabel={showDebugBlocks ? "Hide debug blocks" : "Show debug blocks"}
+                    >
+                      <Ionicons
+                        name={showDebugBlocks ? "eye-off-outline" : "eye-outline"}
+                        size={24}
+                        color={darkMode ? "#e0e0e0" : "#333"}
+                      />
+                    </TouchableOpacity>
+          </View>
+          {showDebugBlocks && (
+                    <>
+                      {/* Display QR Code Contains Block */}
+                      {qrCodeDataObject && (
+                        <View style={[styles.qrCodeContainsContainer, darkMode && styles.darkQrCodeContainsContainer]}>
+                          <Text style={[styles.qrCodeContainsTitle, darkMode && styles.darkQrCodeContainsTitle]}>📋 QR Code Contains:</Text>
+                          <View style={[styles.qrCodeContainsContent, darkMode && styles.darkQrCodeContainsContent]}>
+                            {Object.entries(qrCodeDataObject).map(([key, value]) => (
+                              <View key={key} style={styles.qrCodeContainsRow}>
+                                <Text style={[styles.qrCodeContainsKey, darkMode && styles.darkQrCodeContainsKey]}>{key}:</Text>
+                                <Text style={[styles.qrCodeContainsValue, darkMode && styles.darkQrCodeContainsValue]}>
+                                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+                        </View>
+                      )}
+
+                      {/* Display Ably Messages Received Block */}
+                      <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
+                        <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📨 Ably Messages Received:</Text>
+                        <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
+                          {ablyMessageReceived ? (
+                            <>
+                              <View style={styles.ablyMessageRow}>
+                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
+                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.channel}</Text>
+                              </View>
+                              <View style={styles.ablyMessageRow}>
+                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
+                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.message}</Text>
+                              </View>
+                              <View style={styles.ablyMessageRow}>
+                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
+                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                                  {new Date(ablyMessageReceived.timestamp).toLocaleString()}
+                                </Text>
+                              </View>
+                            </>
+                          ) : (
+                            <View style={styles.ablyMessageRow}>
+                              <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue, { fontStyle: "italic", color: "#999" }]}>
+                                No messages received yet. Listening for messages...
+                              </Text>
+                            </View>
+                          )}
+                          {qrCodeDataObject?.profile_uid && (
+                            <>
+                              <View style={styles.ablyMessageRow}>
+                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Listening on Channel:</Text>
+                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeDataObject.profile_uid}</Text>
+                              </View>
+                              <View style={styles.ablyMessageRow}>
+                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Connection Status:</Text>
+                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                                  {ablyClient?.connection?.state || "Not connected"}
+                                </Text>
+                              </View>
+                              <View style={styles.ablyMessageRow}>
+                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel Status:</Text>
+                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                                  {ablyChannel?.state || "Not attached"}
+                                </Text>
+                              </View>
+                              <View style={styles.ablyMessageRow}>
+                                <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
+                                <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                                  {EXPO_PUBLIC_ABLY_API_KEY 
+                                    ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
+                                    : "Not configured"}
+                                </Text>
+                              </View>
+                            </>
+                          )}
+                        </View>
+                      </View>
+                    </>
+              )}
+          
+          {(() => {
+            if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage Section");
+            return (
+              <View>
+                <View style={[styles.sectionTitleRow, { backgroundColor: "rgba(202, 158, 108, 0.51)" }]}>
+                  <Text style={styles.asyncStorageTitle}>ASYNC STORAGE</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const newValue = !showAsyncStorage;
+                      console.log("👁️ Toggling AsyncStorage visibility from", showAsyncStorage, "to", newValue);
+                      setShowAsyncStorage(newValue);
+                    }}
+                    style={styles.eyeIconButton}
+                  >
+                    <Ionicons name={showAsyncStorage ? "eye" : "eye-off"} size={20} color={darkMode ? "#ffffff" : "#333"} />
+                  </TouchableOpacity>
+                </View>
+                {(() => {
+                  if (__DEV__) console.log("🔵 NetworkScreen - showAsyncStorage:", showAsyncStorage);
+                  if (showAsyncStorage) {
+                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage data, length:", storageData.length);
+                    return (
+                      <>
+                        {storageData.length === 0 ? (
+                          <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>No data in AsyncStorage.</Text>
+                        ) : (
+                          storageData
+                            .map(([key, value], idx) => {
+                              if (__DEV__) console.log(`🔵 NetworkScreen - Processing AsyncStorage item ${idx}:`, { key, value, keyType: typeof key, valueType: typeof value });
+                              const sanitizedKey = sanitizeText(key, "Unknown");
+                              const sanitizedValue = sanitizeText(value, "N/A");
+                              if (__DEV__) console.log(`🔵 NetworkScreen - After sanitization ${idx}:`, { sanitizedKey, sanitizedValue });
+                              if (!isSafeForConditional(sanitizedKey) && !isSafeForConditional(sanitizedValue)) {
+                                if (__DEV__) console.log(`🔵 NetworkScreen - Skipping item ${idx} (unsafe)`);
+                                return null;
+                              }
+                              return (
+                                <View key={key} style={{ marginBottom: 8 }}>
+                                  {isSafeForConditional(sanitizedKey) && <Text style={[styles.keyText, darkMode && styles.darkKeyText]}>{sanitizedKey}:</Text>}
+                                  {isSafeForConditional(sanitizedValue) && <Text style={[styles.valueText, darkMode && styles.darkValueText]}>{sanitizedValue}</Text>}
+                                </View>
+                              );
+                            })
+                            .filter(Boolean)
+                        )}
+                      </>
+                    );
+                  }
+                  return null;
+                })()}
+              </View>
+            );
+          })()}
         </ScrollView>
 
         <BottomNavBar navigation={navigation} />
@@ -2402,16 +2297,38 @@ const NetworkScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   pageContainer: { flex: 1, backgroundColor: "#fff" },
+  scrollContainer: { flex: 1, backgroundColor: "#fff" },
+  darkScrollContainer: { backgroundColor: "#d4d4d4" },
+  pageContainer: { flex: 1, backgroundColor: "#fff" },
   safeArea: { flex: 1 },
-  scrollContainer: { flex: 1 },
-  darkScrollContainer: { backgroundColor: "#1a1a1a" },
   sectionTitleRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    backgroundColor: "#e0e0e0",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#bbb",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 8,
   },
-  sectionTitle: { fontWeight: "bold", fontSize: 16, color: "#333" },
+  sectionTitle: { 
+    fontWeight: "900", 
+    fontSize: 15, 
+    color: "#111",
+    textTransform: "uppercase",
+    letterSpacing: 0.5, 
+  },
+  asyncStorageTitle: {
+    fontWeight: "300",
+    fontSize: 20,
+    textAlign: "center",
+    flex: 1,
+    borderRadius: 8,
+    padding: 10,
+    height: 40,
+  },
   eyeIconButton: {
     padding: 4,
   },
@@ -2478,28 +2395,23 @@ const styles = StyleSheet.create({
     marginVertical: 12,
   },
   toggleButton: {
-    backgroundColor: "#AF52DE",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+    backgroundColor: "#fff",
   },
-  toggleButtonText: { color: "#fff", fontWeight: "600" },
-  degreeHeader: { fontWeight: "700", fontSize: 15, color: "#6b46c1", marginBottom: 6 },
-  noDataText: { color: "#888" },
-  errorText: { color: "red", marginTop: 8 },
-  darkPageContainer: { backgroundColor: "#1a1a1a" },
-  darkSafeArea: { backgroundColor: "#1a1a1a" },
-  darkHeader: { color: "#fff" },
-  darkSectionTitle: { color: "#ccc" },
-  darkKeyText: { color: "#ccc" },
-  darkValueText: { color: "#aaa" },
-  darkNoDataText: { color: "#888" },
-  darkDegreeHeader: { color: "#a78bfa" },
-  darkErrorText: { color: "#f87171" },
-  loadingText: { color: "#666", marginTop: 10 },
-  darkLoadingText: { color: "#aaa" },
-  helperText: { color: "#888", fontSize: 12, marginTop: 5 },
-  darkHelperText: { color: "#999" },
+  toggleButtonActive: {
+    borderColor: "#333",
+    backgroundColor: "#f0f0f0",
+  },
+  toggleButtonText: {
+    fontSize: 14,
+    color: "#333",
+    fontWeight: "500",
+  },
   qrCodeContainer: {
     backgroundColor: "#fff",
     borderRadius: 10,
@@ -2516,17 +2428,19 @@ const styles = StyleSheet.create({
     backgroundColor: "#2d2d2d",
   },
   qrCodeTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
+    fontSize: 30,
+    fontWeight: "600",
     color: "#333",
     marginBottom: 5,
+    fontStyle: "italic",
   },
   darkQrCodeTitle: {
     color: "#ffffff",
   },
   qrCodeSubtitle: {
-    fontSize: 12,
-    color: "#666",
+    fontSize: 18,
+    fontWeight: "400",
+    color: "#000",
     marginBottom: 15,
     textAlign: "center",
   },
@@ -2538,6 +2452,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 8,
     marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#000",
   },
   darkQrCodeWrapper: {
     backgroundColor: "#1a1a1a",
@@ -2556,7 +2472,12 @@ const styles = StyleSheet.create({
   },
   qrCodeMiniCardContainer: {
     marginTop: 15,
+    marginBottom: 15,
     width: "100%",
+    borderWidth: 1,
+    borderColor: "#000",
+    borderRadius: 10,
+    //overflow: "hidden",
   },
   debugToggleRow: {
     flexDirection: "row",
@@ -2571,11 +2492,26 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   darkDebugToggleRow: {
-    backgroundColor: "#2a2a2a",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+    marginBottom: 4,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: "#e0e0e0",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#bbb",
+    width: "100%",
   },
   debugToggleLabel: {
-    fontSize: 14,
-    color: "#555",
+    fontWeight: "300",
+    fontSize: 20,
+    textAlign: "center",
+    flex: 1,
+    borderRadius: 8,
+    padding: 10,
   },
   darkDebugToggleLabel: {
     color: "#b0b0b0",
@@ -2808,21 +2744,24 @@ const styles = StyleSheet.create({
   },
   searchContainer: {
     flexDirection: "row",
+    marginTop: 10,
     alignItems: "center",
     position: "relative",
     minWidth: 200,
+    width: "100%",
     flex: 1,
   },
   searchInput: {
-    flex: 1,
+    width: "100%",
     borderWidth: 1,
     borderColor: "#ccc",
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    paddingRight: 35,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     backgroundColor: "#fff",
     fontSize: 14,
+    color: "#333",
+    boxSizing: "border-box",
   },
   darkSearchInput: {
     backgroundColor: "#2d2d2d",
@@ -2870,6 +2809,32 @@ const styles = StyleSheet.create({
   },
   darkFormSwitchDescription: {
     color: "#aaa",
+  },
+  controlRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    borderBottomWidth: 0,
+  },
+  controlRowLabel: {
+    fontSize: 15,
+    color: "#333",
+    flex: 1,
+  },
+  pullDownButton: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    minWidth: 140,
+    alignItems: "center",
+    backgroundColor: "#fff",
+  },
+  pullDownButtonText: {
+    fontSize: 14,
+    color: "#333",
   },
 });
 
