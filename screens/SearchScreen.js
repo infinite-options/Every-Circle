@@ -813,9 +813,25 @@ export default function SearchScreen({ route }) {
             <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{String(wish.description).trim()}</Text>
           )}
           {wish.bounty && (
-            <View style={styles.wishBountyContainerRight}>
-              <Text style={styles.bountyEmojiIcon}>💰</Text>
-              <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>Bounty: USD {wish.bounty}</Text>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 5, flex: 1 }}>
+  <View style={{ flex: 1 }}>
+    {wish.cost && (
+      <View style={styles.wishBountyContainer}>
+        <View style={styles.moneyBagIconContainer}>
+          <Text style={styles.moneyBagDollarSymbol}>$</Text>
+        </View>
+        <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>Cost: {wish.cost}</Text>
+      </View>
+    )}
+  </View>
+  <View>
+    {wish.bounty && (
+      <View style={styles.wishBountyContainer}>
+        <Text style={styles.bountyEmojiIcon}>💰</Text>
+        <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>Bounty: USD {wish.bounty}</Text>
+      </View>
+    )}
+  </View>
             </View>
           )}
         </View>
@@ -1176,43 +1192,7 @@ export default function SearchScreen({ route }) {
                   {rating !== null ? `> ${rating}` : "Rating"}
                 </Text>
               </TouchableOpacity>
-              {/* <TouchableOpacity
-                style={[
-                  styles.filterButtonOption,
-                  darkMode && styles.darkFilterButtonOption,
-                  searchType === "businesses" && styles.searchTypeButtonBusinesses,
-                  searchType === "expertise" && styles.searchTypeButtonExpertise,
-                  searchType === "seeking" && styles.searchTypeButtonSeeking,
-                  darkMode && searchType === "businesses" && styles.darkSearchTypeButtonBusinesses,
-                  darkMode && searchType === "expertise" && styles.darkSearchTypeButtonExpertise,
-                  darkMode && searchType === "seeking" && styles.darkSearchTypeButtonSeeking,
-                ]}
-                onPress={() => {
-                  // Cycle through: businesses -> expertise -> seeking -> businesses
-                  if (searchType === "businesses") {
-                    setSearchType("expertise");
-                  } else if (searchType === "expertise") {
-                    setSearchType("seeking");
-                  } else {
-                    setSearchType("businesses");
-                  }
-                }}
-              >
-                <Text
-                  style={[
-                    styles.filterButtonText,
-                    darkMode && styles.darkFilterButtonText,
-                    searchType === "businesses" && styles.searchTypeButtonTextBusinesses,
-                    searchType === "expertise" && styles.searchTypeButtonTextExpertise,
-                    searchType === "seeking" && styles.searchTypeButtonTextSeeking,
-                    darkMode && searchType === "businesses" && styles.darkSearchTypeButtonTextBusinesses,
-                    darkMode && searchType === "expertise" && styles.darkSearchTypeButtonTextExpertise,
-                    darkMode && searchType === "seeking" && styles.darkSearchTypeButtonTextSeeking,
-                  ]}
-                >
-                  {searchType === "businesses" ? "Businesses" : searchType === "expertise" ? "Expertise" : "Seeking"}
-                </Text>
-              </TouchableOpacity> */}
+
               {/* Businesses button */}
               <TouchableOpacity
                 style={[
@@ -1245,7 +1225,7 @@ export default function SearchScreen({ route }) {
                   darkMode && styles.darkFilterButtonText,
                   searchType === "expertise" && styles.searchTypeButtonTextExpertise,
                   darkMode && searchType === "expertise" && styles.darkSearchTypeButtonTextExpertise,
-                ]}>Expertise</Text>
+                ]}>Offering</Text>
               </TouchableOpacity>
 
               {/* Wishes button */}
@@ -1263,7 +1243,7 @@ export default function SearchScreen({ route }) {
                   darkMode && styles.darkFilterButtonText,
                   searchType === "seeking" && styles.searchTypeButtonTextSeeking,
                   darkMode && searchType === "seeking" && styles.darkSearchTypeButtonTextSeeking,
-                ]}>Wishes</Text>
+                ]}>Seeking</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1894,7 +1874,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#AF52DE", // Same as header color
   },
   searchTypeButtonExpertise: {
-    backgroundColor: "#FFCD3C", // Yellow like rating star
+    backgroundColor: "#AF52DE", // Yellow like rating star
   },
   searchTypeButtonSeeking: {
     backgroundColor: "#9C45F7", // Purple like selected options
@@ -1904,7 +1884,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   searchTypeButtonTextExpertise: {
-    color: "#000",
+    color: "#fff",
     fontWeight: "600",
   },
   searchTypeButtonTextSeeking: {
