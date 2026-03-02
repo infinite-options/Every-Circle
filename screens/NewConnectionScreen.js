@@ -683,8 +683,13 @@ const NewConnectionScreen = () => {
       <AppHeader title='New Connection' />
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+
+          <View style={styles.cardContainer}>
+                <MiniCard user={profileData} />
+          </View>
+
           {/* Login Status Display */}
-          <View style={[styles.loginStatusContainer, darkMode && styles.darkLoginStatusContainer]}>
+          {/* <View style={[styles.loginStatusContainer, darkMode && styles.darkLoginStatusContainer]}>
             {checkingLogin ? (
               <Text style={[styles.loginStatusText, darkMode && styles.darkLoginStatusText]}>Checking login status...</Text>
             ) : (
@@ -701,7 +706,7 @@ const NewConnectionScreen = () => {
                 )}
               </>
             )}
-          </View>
+          </View> */}
 
           {loading ? (
             <View style={styles.loadingContainer}>
@@ -715,98 +720,9 @@ const NewConnectionScreen = () => {
             </View>
           ) : profileData ? (
             <>
-              <View style={styles.cardContainer}>
-                <MiniCard user={profileData} />
-              </View>
+              
 
-              {/* Toggle and Debug blocks: QR Code Received + Ably Messages Sent */}
-              <View style={[styles.debugToggleRow, darkMode && styles.darkDebugToggleRow]}>
-                <Text style={[styles.debugToggleLabel, darkMode && styles.darkDebugToggleLabel]}>
-                  {showDebugBlocks ? "Hide" : "Show"} QR / Ably debug
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setShowDebugBlocks((prev) => !prev)}
-                  style={[styles.eyeToggleButton, darkMode && styles.darkEyeToggleButton]}
-                  accessibilityLabel={showDebugBlocks ? "Hide debug blocks" : "Show debug blocks"}
-                >
-                  <Ionicons
-                    name={showDebugBlocks ? "eye-off-outline" : "eye-outline"}
-                    size={24}
-                    color={darkMode ? "#e0e0e0" : "#333"}
-                  />
-                </TouchableOpacity>
-              </View>
-              {showDebugBlocks && (
-                <>
-                  {/* Display QR Code Received Block */}
-                  {qrCodeReceivedData && (
-                    <View style={[styles.qrCodeReceivedContainer, darkMode && styles.darkQrCodeReceivedContainer]}>
-                      <Text style={[styles.qrCodeReceivedTitle, darkMode && styles.darkQrCodeReceivedTitle]}>📥 QR Code Received:</Text>
-                      <View style={[styles.qrCodeReceivedContent, darkMode && styles.darkQrCodeReceivedContent]}>
-                        {Object.entries(qrCodeReceivedData).map(([key, value]) => (
-                          <View key={key} style={styles.qrCodeReceivedRow}>
-                            <Text style={[styles.qrCodeReceivedKey, darkMode && styles.darkQrCodeReceivedKey]}>{key}:</Text>
-                            <Text style={[styles.qrCodeReceivedValue, darkMode && styles.darkQrCodeReceivedValue]}>
-                              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-
-                  {/* Display Ably Messages Sent Block */}
-                  <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
-                    <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📤 Ably Messages Sent:</Text>
-                    <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
-                      {ablyMessageSent ? (
-                        <>
-                          <View style={styles.ablyMessageRow}>
-                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
-                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageSent.channel}</Text>
-                          </View>
-                          <View style={styles.ablyMessageRow}>
-                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
-                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageSent.message}</Text>
-                          </View>
-                          <View style={styles.ablyMessageRow}>
-                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
-                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                              {new Date(ablyMessageSent.timestamp).toLocaleString()}
-                            </Text>
-                          </View>
-                          {ablyMessageSent.error && (
-                            <View style={styles.ablyMessageRow}>
-                              <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Error:</Text>
-                              <Text style={[styles.ablyMessageValue, { color: "#ef4444" }]}>{ablyMessageSent.error}</Text>
-                            </View>
-                          )}
-                        </>
-                      ) : (
-                        <View style={styles.ablyMessageRow}>
-                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue, { fontStyle: "italic", color: "#999" }]}>
-                            No message sent yet. Waiting for QR code scan...
-                          </Text>
-                        </View>
-                      )}
-                      {qrCodeReceivedData?.profile_uid && (
-                        <View style={styles.ablyMessageRow}>
-                          <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Target Channel:</Text>
-                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeReceivedData.profile_uid}</Text>
-                        </View>
-                      )}
-                      <View style={styles.ablyMessageRow}>
-                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
-                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                          {EXPO_PUBLIC_ABLY_API_KEY 
-                            ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
-                            : "Not configured"}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                </>
-              )}
+              
 
               {/* Login/SignUp buttons for non-logged-in users */}
               {(() => {
@@ -967,6 +883,95 @@ const NewConnectionScreen = () => {
               <Text style={[styles.helloText, darkMode && styles.darkHelloText]}>Hello World</Text>
             </View>
           )}
+
+          {/* Toggle and Debug blocks: QR Code Received + Ably Messages Sent */}
+              <View style={[styles.debugToggleRow, { backgroundColor: "rgba(202, 158, 108, 0.51)" }]}>
+                <Text style={[styles.debugToggleLabel, darkMode && styles.darkDebugToggleLabel]}>
+                  {showDebugBlocks ? "Hide" : "Show"} QR / ABLY DEBUG
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowDebugBlocks((prev) => !prev)}
+                  style={[styles.eyeToggleButton, darkMode && styles.darkEyeToggleButton]}
+                  accessibilityLabel={showDebugBlocks ? "Hide debug blocks" : "Show debug blocks"}
+                >
+                  <Ionicons
+                    name={showDebugBlocks ? "eye-off-outline" : "eye-outline"}
+                    size={24}
+                    color={darkMode ? "#e0e0e0" : "#333"}
+                  />
+                </TouchableOpacity>
+              </View>
+              {showDebugBlocks && (
+                <>
+                  {/* Display QR Code Received Block */}
+                  {qrCodeReceivedData && (
+                    <View style={[styles.qrCodeReceivedContainer, darkMode && styles.darkQrCodeReceivedContainer]}>
+                      <Text style={[styles.qrCodeReceivedTitle, darkMode && styles.darkQrCodeReceivedTitle]}>📥 QR Code Received:</Text>
+                      <View style={[styles.qrCodeReceivedContent, darkMode && styles.darkQrCodeReceivedContent]}>
+                        {Object.entries(qrCodeReceivedData).map(([key, value]) => (
+                          <View key={key} style={styles.qrCodeReceivedRow}>
+                            <Text style={[styles.qrCodeReceivedKey, darkMode && styles.darkQrCodeReceivedKey]}>{key}:</Text>
+                            <Text style={[styles.qrCodeReceivedValue, darkMode && styles.darkQrCodeReceivedValue]}>
+                              {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Display Ably Messages Sent Block */}
+                  <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
+                    <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📤 Ably Messages Sent:</Text>
+                    <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
+                      {ablyMessageSent ? (
+                        <>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageSent.channel}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageSent.message}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                              {new Date(ablyMessageSent.timestamp).toLocaleString()}
+                            </Text>
+                          </View>
+                          {ablyMessageSent.error && (
+                            <View style={styles.ablyMessageRow}>
+                              <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Error:</Text>
+                              <Text style={[styles.ablyMessageValue, { color: "#ef4444" }]}>{ablyMessageSent.error}</Text>
+                            </View>
+                          )}
+                        </>
+                      ) : (
+                        <View style={styles.ablyMessageRow}>
+                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue, { fontStyle: "italic", color: "#999" }]}>
+                            No message sent yet. Waiting for QR code scan...
+                          </Text>
+                        </View>
+                      )}
+                      {qrCodeReceivedData?.profile_uid && (
+                        <View style={styles.ablyMessageRow}>
+                          <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Target Channel:</Text>
+                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeReceivedData.profile_uid}</Text>
+                        </View>
+                      )}
+                      <View style={styles.ablyMessageRow}>
+                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
+                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                          {EXPO_PUBLIC_ABLY_API_KEY 
+                            ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
+                            : "Not configured"}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </>
+              )}
         </ScrollView>
         {isLoggedIn && <BottomNavBar navigation={navigation} />}
       </SafeAreaView>
@@ -1031,6 +1036,7 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     marginTop: 20,
+    marginBottom: 15,
   },
   debugToggleRow: {
     flexDirection: "row",
@@ -1048,8 +1054,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#2a2a2a",
   },
   debugToggleLabel: {
-    fontSize: 14,
-    color: "#555",
+    fontWeight: "300",
+    fontSize: 20,
+    textAlign: "center",
+    flex: 1,
+    borderRadius: 8,
+    padding: 10,
   },
   darkDebugToggleLabel: {
     color: "#b0b0b0",
