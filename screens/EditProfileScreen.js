@@ -662,8 +662,8 @@ const EditProfileScreen = ({ route, navigation }) => {
         style={[styles.input, styles.textarea, { height: Math.max(40, shortBioHeight) }, darkMode && styles.darkInput]}
         value={formData.shortBio}
         onChangeText={(text) => handleFieldChange("shortBio", text)}
-        placeholder='Enter short bio'
-        placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+        placeholder="Submit Here"
+        placeholderTextColor={darkMode ? "#aaaaaa" : "#999999"}
         multiline
         textAlignVertical='top'
         onContentSizeChange={(event) => {
@@ -856,13 +856,6 @@ const EditProfileScreen = ({ route, navigation }) => {
               onChange: handleWebImagePick,
             })}
         </View>
-        {renderField("First Name (Public)", formData.firstName, true, "firstName", "firstNameIsPublic")}
-        {renderField("Last Name (Public)", formData.lastName, true, "lastName", "lastNameIsPublic")}
-        {renderField("Phone Number", formData.phoneNumber, formData.phoneIsPublic, "phoneNumber", "phoneIsPublic")}
-        {renderField("Email", formData.email, formData.emailIsPublic, "email", "emailIsPublic")}
-        {renderField("City", formData.city, formData.locationIsPublic, "city", "locationIsPublic")}
-        {renderField("State", formData.state, formData.locationIsPublic, "state", "locationIsPublic")}
-        {renderField("Tag Line", formData.tagLine, formData.tagLineIsPublic, "tagLine", "tagLineIsPublic")}
 
         {/* MiniCard Live Preview Section */}
         <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
@@ -871,6 +864,16 @@ const EditProfileScreen = ({ route, navigation }) => {
             <MiniCard key={`minicard-${imageUpdateKey}`} user={previewUser} />
           </View>
         </View>
+
+        {renderField("First Name (Public)", formData.firstName, true, "firstName", "firstNameIsPublic")}
+        {renderField("Last Name (Public)", formData.lastName, true, "lastName", "lastNameIsPublic")}
+        {renderField("Phone Number", formData.phoneNumber, formData.phoneIsPublic, "phoneNumber", "phoneIsPublic")}
+        {renderField("Email", formData.email, formData.emailIsPublic, "email", "emailIsPublic")}
+        {renderField("City", formData.city, formData.locationIsPublic, "city", "locationIsPublic")}
+        {renderField("State", formData.state, formData.locationIsPublic, "state", "locationIsPublic")}
+        {renderField("Tag Line", formData.tagLine, formData.tagLineIsPublic, "tagLine", "tagLineIsPublic")}
+
+       
 
         {renderShortBioField()}
 
@@ -1133,6 +1136,19 @@ const styles = StyleSheet.create({
   },
   darkModalButtonText: {
     color: "#ffffff",
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 12,
+    borderRadius: 25,
+    backgroundColor: "#f0f0f0",
+    color: "#000",
+  },
+  textarea: {
+    minHeight: 40,
+    maxHeight: 200,
+    borderRadius: 12,
   },
 });
 
