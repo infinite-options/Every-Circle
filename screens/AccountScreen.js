@@ -34,6 +34,7 @@ export default function AccountScreen({ navigation }) {
   const [selectedBusinessFullData, setSelectedBusinessFullData] = useState(null);
   const [expandedTransactionId, setExpandedTransactionId] = useState(null);
   const [transactionServices, setTransactionServices] = useState({});
+  const [personalProfileData, setPersonalProfileData] = useState(null);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -110,6 +111,34 @@ export default function AccountScreen({ navigation }) {
       setTransactionData([]);
     } finally {
       setTransactionLoading(false);
+    }
+  };
+
+  const fetchPersonalProfileData = async () => {
+    try {
+      const profileId = await AsyncStorage.getItem("profile_uid");
+      if (!profileId) return;
+      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+      const result = await response.json();
+      if (result && result.personal_info) {
+        setPersonalProfileData({
+          firstName: result.personal_info.profile_personal_first_name || "",
+          lastName: result.personal_info.profile_personal_last_name || "",
+          email: result.user_email || "",
+          phoneNumber: result.personal_info.profile_personal_phone_number || "",
+          tagLine: result.personal_info.profile_personal_tag_line || "",
+          city: result.personal_info.profile_personal_city || "",
+          state: result.personal_info.profile_personal_state || "",
+          profileImage: result.personal_info.profile_personal_image || "",
+          emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
+          phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
+          tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
+          locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
+          imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching personal profile data:", error);
     }
   };
 
@@ -592,6 +621,7 @@ export default function AccountScreen({ navigation }) {
       refreshBountyData();
       refreshTransactionData();
       refreshExpertiseData();
+      fetchPersonalProfileData();
       
       // Fetch businesses first, then business transactions and bounties
       const loadBusinessData = async () => {
@@ -1145,227 +1175,212 @@ export default function AccountScreen({ navigation }) {
 
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
-      {/* Header with Dropdown */}
-      <View style={{ position: 'relative', overflow: 'visible', zIndex: 1000 }}>
+      {/* Header */}
         <AppHeader 
           title='Account' 
           {...getHeaderColors("account")}
           onTitlePress={() => setShowFeedbackPopup(true)}
-          rightButton={
-            <TouchableOpacity
-              style={styles.dropdownButton}
-              onPress={() => {
-                console.log("Dropdown arrow clicked, toggling from:", showAccountDropdown);
-                setShowAccountDropdown(!showAccountDropdown);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.dropdownArrow}>▼</Text>
-            </TouchableOpacity>
-          }
+          //Drop to the right in Header*
+          // rightButton={
+          //   <TouchableOpacity
+          //     style={styles.dropdownButton}
+          //     onPress={() => {
+          //       console.log("Dropdown arrow clicked, toggling from:", showAccountDropdown);
+          //       setShowAccountDropdown(!showAccountDropdown);
+          //     }}
+          //     activeOpacity={0.7}
+          //   >
+          //     <Text style={styles.dropdownArrow}>▼</Text>
+          //   </TouchableOpacity>
+          // }
         />
         
-        {/* Dropdown positioned outside header to avoid clipping */}
-        {showAccountDropdown && (
-          <View style={styles.dropdownMenu}>
-            {/* Personal Account Option */}
+        
+      
+       {/* Main content */}
+       <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContentContainer} showsVerticalScrollIndicator={true}>
+          {/* MiniCard - shows personal or business depending on selection */}
+            <View style={styles.sectionContainer}>
+              {selectedAccount === 'personal' 
+                ? personalProfileData && <MiniCard user={personalProfileData} />
+                : selectedBusinessFullData && <MiniCard business={selectedBusinessFullData} />
+              }
+            </View>
+          {/* Select Profile Dropdown Row */}
+          <View style={styles.selectProfileRow}>
+            <Text style={styles.selectProfileLabel}>Select Profile</Text>
             <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={() => {
-                console.log("Personal clicked");
-                setAccountType('personal');
-                setSelectedAccount('personal');
-                setShowAccountDropdown(false);
-              }}
-              activeOpacity={0.6}
+              style={styles.selectProfileDropdown}
+              onPress={() => setShowAccountDropdown(!showAccountDropdown)}
+              activeOpacity={0.7}
             >
-              <Text style={[
-                styles.dropdownItemText,
-                selectedAccount === 'personal' && styles.dropdownItemTextActive
-              ]}>
-                Personal
+              <Text style={styles.selectProfileDropdownText}>
+                {selectedAccount === 'personal' 
+                  ? 'Personal' 
+                  : businesses.find(b => (b.business_uid || b.profile_business_uid) === selectedAccount)?.business_name || 'Business'}
               </Text>
             </TouchableOpacity>
-            
-            {/* Business Account Options */}
-            {businesses.length > 0 && (
-              <>
-                <View style={styles.dropdownDivider} />
-                {businesses.map((business, index) => {
-                  const businessId = business.business_uid || business.profile_business_uid;
-                  const businessName = business.business_name || business.profile_business_name || `Business ${index + 1}`;
-                  
-                  return (
-                    <TouchableOpacity
-                      key={businessId || index}
-                      style={styles.dropdownItem}
-                      onPress={() => {
-                        console.log("Business clicked:", businessName);
-                        setAccountType('business');
-                        setSelectedAccount(businessId);
-                        setShowAccountDropdown(false);
-                      }}
-                      activeOpacity={0.6}
-                    >
-                      <Text style={[
-                        styles.dropdownItemText,
-                        selectedAccount === businessId && styles.dropdownItemTextActive
-                      ]}>
-                        {businessName}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </>
+          </View>
+
+          {/* Dropdown Menu */}
+          {showAccountDropdown && (
+            <View style={styles.selectProfileMenu}>
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={() => { setAccountType('personal'); setSelectedAccount('personal'); setShowAccountDropdown(false); }}
+              >
+                <Text style={[styles.dropdownItemText, selectedAccount === 'personal' && styles.dropdownItemTextActive]}>Personal</Text>
+              </TouchableOpacity>
+              {businesses.map((business, index) => {
+                const businessId = business.business_uid || business.profile_business_uid;
+                const businessName = business.business_name || business.profile_business_name || `Business ${index + 1}`;
+                return (
+                  <TouchableOpacity
+                    key={businessId || index}
+                    style={styles.dropdownItem}
+                    onPress={() => { setAccountType('business'); setSelectedAccount(businessId); setShowAccountDropdown(false); }}
+                  >
+                    <Text style={[styles.dropdownItemText, selectedAccount === businessId && styles.dropdownItemTextActive]}>{businessName}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
+          {accountType === 'personal' ? (
+          <>
+          
+          {/* Expertise */}
+          <View style={styles.sectionContainer}>
+            <View style={styles.sectionTitleRow}>
+              <Text style={styles.sectionTitle}>Expertise</Text>
+              <View style={styles.questionCircle}>
+                <Text style={styles.questionMark}>?</Text>
+              </View>
+            </View>
+            {expertiseLoading ? (
+              <Text style={styles.loadingText}>Loading expertise data...</Text>
+            ) : expertiseData.length > 0 ? (
+              <View style={styles.tableContainer}>
+                <View style={styles.transactionHeaderRow}>
+                  <Text style={[styles.transactionHeaderBusiness, { flex: 1.5 }]}>Expertise</Text>
+                  <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Cost</Text>
+                  <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Unit</Text>
+                  <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Qty</Text>
+                  <Text style={[styles.transactionHeaderAmount, { flex: 1, textAlign: 'right'}]}>Bounty</Text>
+                </View>
+                {expertiseData.map((item, idx) => (
+                  <View key={idx} style={styles.tableRow}>
+                    <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>{item.name}</Text>
+                    <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
+                    <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
+                    <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.quantity || 0}</Text>
+                    <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: 'right', marginRight: 15 }]}>${item.bounty}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.noDataText}>No expertise data available.</Text>
             )}
           </View>
-        )}
-      </View>
-      {/* Main content */}
-      <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContentContainer} showsVerticalScrollIndicator={true}>
-        {accountType === 'personal' ? (
-          <>
-        {/* Balance and Budget sections hidden */}
-        {/* Expertise */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionTitleRow}>
-            <Text style={styles.sectionTitle}>Expertise</Text>
-            <View style={styles.questionCircle}>
-              <Text style={styles.questionMark}>?</Text>
-            </View>
-          </View>
-          {expertiseLoading ? (
-            <Text style={styles.loadingText}>Loading expertise data...</Text>
-          ) : expertiseData.length > 0 ? (
-            <View style={styles.tableContainer}>
-              <View style={styles.transactionHeaderRow}>
-                <Text style={[styles.transactionHeaderBusiness, { flex: 1.5 }]}>Expertise</Text>
-                <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Cost</Text>
-                <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Unit</Text>
-                <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Qty</Text>
-                <Text style={[styles.transactionHeaderAmount, { flex: 1, textAlign: 'right'}]}>Bounty</Text>
+
+          {/* Transaction History */}
+          <View style={styles.sectionContainer}>
+            <View style={styles.sectionTitleRow}>
+              <Text style={styles.sectionTitle}>Transaction History</Text>
+              <View style={styles.questionCircle}>
+                <Text style={styles.questionMark}>?</Text>
               </View>
-              {expertiseData.map((item, idx) => (
-                <View key={idx} style={styles.tableRow}>
-                  <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>{item.name}</Text>
-                  <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
-                  <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
-                  <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.quantity || 0}</Text>
-                  <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: 'right', marginRight: 15 }]}>${item.bounty}</Text>
+            </View>
+            {transactionLoading ? (
+              <Text style={styles.loadingText}>Loading transaction data...</Text>
+            ) : transactionData.length > 0 ? (
+              <View style={styles.transactionsContainer}>
+                {/* Table Header */}
+                <View style={styles.transactionHeaderRow}>
+                  <Text style={styles.transactionHeaderDate}>Date</Text>
+                  <Text style={styles.transactionHeaderId}>Transaction ID</Text>
+                  <Text style={styles.transactionHeaderBusiness}>Business</Text>
+                  <Text style={styles.transactionHeaderAmount}>Amount</Text>
                 </View>
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.noDataText}>No expertise data available.</Text>
-          )}
-        </View>
-
-        {/* Transaction History */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionTitleRow}>
-            <Text style={styles.sectionTitle}>Transaction History</Text>
-            <View style={styles.questionCircle}>
-              <Text style={styles.questionMark}>?</Text>
-            </View>
+                {/* Table Rows */}
+                {transactionData.map((transaction, i) => {
+                  return (
+                    <View key={transaction.transaction_uid || i} style={styles.transactionRow}>
+                      <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                      <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text>
+                      <Text style={styles.transactionBusiness}>{transaction.business_name || "N/A"}</Text>
+                      <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <View>
+                <Text style={styles.noDataText}>No transaction data available.</Text>
+                <Text style={styles.noDataText}>Transaction data length: {transactionData.length}</Text>
+                <Text style={styles.noDataText}>Transaction loading: {transactionLoading.toString()}</Text>
+              </View>
+            )}
           </View>
-          {transactionLoading ? (
-            <Text style={styles.loadingText}>Loading transaction data...</Text>
-          ) : transactionData.length > 0 ? (
-            <View style={styles.transactionsContainer}>
-              {/* Table Header */}
-              <View style={styles.transactionHeaderRow}>
-                <Text style={styles.transactionHeaderDate}>Date</Text>
-                <Text style={styles.transactionHeaderId}>Transaction ID</Text>
-                <Text style={styles.transactionHeaderBusiness}>Business</Text>
-                <Text style={styles.transactionHeaderAmount}>Amount</Text>
-              </View>
-              {/* Table Rows */}
-              {transactionData.map((transaction, i) => {
-                return (
-                  <View key={transaction.transaction_uid || i} style={styles.transactionRow}>
-                    <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
-                    <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text>
-                    <Text style={styles.transactionBusiness}>{transaction.business_name || "N/A"}</Text>
-                    <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
-                  </View>
-                );
-              })}
-            </View>
-          ) : (
-            <View>
-              <Text style={styles.noDataText}>No transaction data available.</Text>
-              <Text style={styles.noDataText}>Transaction data length: {transactionData.length}</Text>
-              <Text style={styles.noDataText}>Transaction loading: {transactionLoading.toString()}</Text>
-            </View>
-          )}
-        </View>
 
-        {/* Net Earning */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Net Earning</Text>
-          <NetEarningChart />
-        </View>
+          {/* Net Earning */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Net Earning</Text>
+            <NetEarningChart />
+          </View>
 
-        {/* Bounty Results */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Bounty Results</Text>
-          {bountyLoading ? (
-            <Text style={styles.loadingText}>Loading bounty data...</Text>
-          ) : bountyData?.error ? (
-            <Text style={styles.errorText}>Error: {bountyData.error}</Text>
-          ) : bountyData?.data ? (
-            <View>
-              {/* Totals */}
-              <View style={styles.bountyTotals}>
-                <Text style={styles.bountyTotalText}>Total Transactions: {bountyData.total_bounties}</Text>
-                <Text style={styles.bountyTotalText}>Total Earned: ${bountyData.total_bounty_earned?.toFixed(2)}</Text>
+          {/* Bounty Results */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Bounty Results</Text>
+            {bountyLoading ? (
+              <Text style={styles.loadingText}>Loading bounty data...</Text>
+            ) : bountyData?.error ? (
+              <Text style={styles.errorText}>Error: {bountyData.error}</Text>
+            ) : bountyData?.data ? (
+              <View>
+                {/* Totals */}
+                <View style={styles.bountyTotals}>
+                  <Text style={styles.bountyTotalText}>Total Transactions: {bountyData.total_bounties}</Text>
+                  <Text style={styles.bountyTotalText}>Total Earned: ${bountyData.total_bounty_earned?.toFixed(2)}</Text>
+                </View>
+                {/* Table Header */}
+                <View style={styles.bountyTableHeader}>
+                  <Text style={styles.bountyTableHeaderCell}>ID</Text>
+                  <Text style={styles.bountyTableHeaderCell}>Date</Text>
+                  <Text style={styles.bountyTableHeaderCell}>Purchaser</Text>
+                  <Text style={styles.bountyTableHeaderCell}>Business</Text>
+                  <Text style={styles.bountyTableHeaderCell}>Bounty Earned</Text>
+                </View>
+                {/* Table Rows */}
+                {bountyData.data.map((transaction, index) => {
+                  // Format date to MM/DD
+                  const formatDate = (dateString) => {
+                    if (!dateString) return "N/A";
+                    const date = new Date(dateString);
+                    const month = String(date.getMonth() + 1).padStart(2, "0");
+                    const day = String(date.getDate()).padStart(2, "0");
+                    return `${month}/${day}`;
+                  };
+                  return (
+                    <View key={transaction.transaction_uid || index} style={styles.bountyTableRow}>
+                      <Text style={styles.bountyTableCell}>{transaction.transaction_uid}</Text>
+                      <Text style={styles.bountyTableCell}>{formatDate(transaction.transaction_datetime)}</Text>
+                      <Text style={styles.bountyTableCell}>{transaction.transaction_profile_id || "N/A"}</Text>
+                      <Text style={styles.bountyTableCell}>{transaction.transaction_business_id || "N/A"}</Text>
+                      <Text style={styles.bountyTableCell}>${transaction.bounty_earned?.toFixed(2)}</Text>
+                    </View>
+                  );
+                })}
               </View>
-              {/* Table Header */}
-              <View style={styles.bountyTableHeader}>
-                <Text style={styles.bountyTableHeaderCell}>ID</Text>
-                <Text style={styles.bountyTableHeaderCell}>Date</Text>
-                <Text style={styles.bountyTableHeaderCell}>Purchaser</Text>
-                <Text style={styles.bountyTableHeaderCell}>Business</Text>
-                <Text style={styles.bountyTableHeaderCell}>Bounty Earned</Text>
-              </View>
-              {/* Table Rows */}
-              {bountyData.data.map((transaction, index) => {
-                // Format date to MM/DD
-                const formatDate = (dateString) => {
-                  if (!dateString) return "N/A";
-                  const date = new Date(dateString);
-                  const month = String(date.getMonth() + 1).padStart(2, "0");
-                  const day = String(date.getDate()).padStart(2, "0");
-                  return `${month}/${day}`;
-                };
-                return (
-                  <View key={transaction.transaction_uid || index} style={styles.bountyTableRow}>
-                    <Text style={styles.bountyTableCell}>{transaction.transaction_uid}</Text>
-                    <Text style={styles.bountyTableCell}>{formatDate(transaction.transaction_datetime)}</Text>
-                    <Text style={styles.bountyTableCell}>{transaction.transaction_profile_id || "N/A"}</Text>
-                    <Text style={styles.bountyTableCell}>{transaction.transaction_business_id || "N/A"}</Text>
-                    <Text style={styles.bountyTableCell}>${transaction.bounty_earned?.toFixed(2)}</Text>
-                  </View>
-                );
-              })}
-            </View>
-          ) : (
-            <Text style={styles.noDataText}>No bounty data available.</Text>
-          )}
-        </View>
-      </>
-    ) : (
+            ) : (
+              <Text style={styles.noDataText}>No bounty data available.</Text>
+            )}
+          </View>
+        </>
+      ) : (
       
       <>
-
-        {/* Business MiniCard */}
-        <View style={styles.sectionContainer}>
-          {selectedBusinessFullData && (
-            <View>
-              <MiniCard business={selectedBusinessFullData} />
-            </View>
-          )}
-        </View>
 
         {/* Product Results formerly Business Bounty Results */}
         <View style={styles.sectionContainer}>
@@ -1540,12 +1555,12 @@ export default function AccountScreen({ navigation }) {
         </View>
   
       </>
-    )}
-  </ScrollView>
+      )}
+       </ScrollView>
 
-      <BottomNavBar navigation={navigation} />
-      <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Account' instructions={accountFeedbackInstructions} questions={accountFeedbackQuestions} />
-    </View>
+       <BottomNavBar navigation={navigation} />
+       <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Account' instructions={accountFeedbackInstructions} questions={accountFeedbackQuestions} />
+     </View>
   );
 }
 
@@ -1846,5 +1861,43 @@ const styles = StyleSheet.create({
   },
   darkBusinessCardContainer: {
     backgroundColor: "transparent",
+  },
+  selectProfileRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginBottom: 16,
+  gap: 16,
+  },
+  selectProfileLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#333',
+    minWidth: 90,
+  },
+  selectProfileDropdown: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 25,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: '#f5f5f5',
+    alignItems: 'center',
+  },
+  selectProfileDropdownText: {
+    fontSize: 15,
+    color: '#333',
+  },
+  selectProfileMenu: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
   },
 });
