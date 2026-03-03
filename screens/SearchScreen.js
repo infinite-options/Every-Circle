@@ -247,7 +247,7 @@ export default function SearchScreen({ route }) {
   const [networkModalVisible, setNetworkModalVisible] = useState(false);
   const [bountyModalVisible, setBountyModalVisible] = useState(false);
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
-  const [showFilters, setShowFilters] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
 
   // Filter options (same as FilterScreen)
   const distanceOptions = [5, 10, 15, 25, 50, 100];
@@ -1492,12 +1492,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 15,
     paddingHorizontal: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    borderWidth: 1,
+    borderColor: "#000",
     backgroundColor: "#fff",
     borderRadius: 8,
-    marginVertical: 2,
+    marginVertical: 4,
   },
+
   resultContent: { flex: 1 },
   companyName: { fontSize: 16, fontWeight: "500", color: "#333" },
   businessTagLine: { fontSize: 12, color: "#666", marginTop: 2, fontStyle: "italic" },
@@ -1738,17 +1739,12 @@ const styles = StyleSheet.create({
 
   // Wish item styles
   wishItem: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    marginVertical: 8,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: "#E5E5E5",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+      backgroundColor: "#fff",
+      borderRadius: 10,
+      marginVertical: 8,
+      padding: 15,
+      borderWidth: 1,
+      borderColor: "#000",
   },
   wishProfileContainer: {
     flexDirection: "row",
