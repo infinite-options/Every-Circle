@@ -49,6 +49,8 @@ const ProfileScreen = ({ route, navigation }) => {
   const [showExperience, setShowExperience] = useState(false);
   const [showEducation, setShowEducation] = useState(false);
   const [showBusiness, setShowBusiness] = useState(false);
+  const [showOffering, setShowOffering] = useState(false);
+  const [showSeeking, setShowSeeking] = useState(false);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -1148,7 +1150,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
           {/* Bio section */}
           {user.shortBioIsPublic && (
-            <View style={styles.fieldContainer}>
+            <View style={[styles.fieldContainer, { borderWidth: 1, borderColor: "#000", borderRadius: 8 }]}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Bio:</Text>
               {user.shortBio && user.shortBio.trim() !== "" ? (
                 <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
@@ -1194,21 +1196,20 @@ const ProfileScreen = ({ route, navigation }) => {
           {/* Only show Expertise section if there are public expertise entries, or if viewing own profile */}
           {/*{(isCurrentUserProfile || (user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0)) && ( */}
           {user.expertiseIsPublic && (
-            <View style={styles.borderedFieldContainer}>
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Offering:</Text>
-              {user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0 ? (
-                user.expertise
-                  .filter((exp) => exp.isPublic)
-                  .map((exp, index) => {
+            <View style={styles.fieldContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowOffering(!showOffering)}>
+                <Text style={styles.sectionHeaderText}>OFFERING</Text>
+                <Ionicons name={showOffering ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+              </TouchableOpacity>
+              {showOffering && (
+                user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0 ? (
+                  user.expertise.filter((exp) => exp.isPublic).map((exp, index) => {
                     const expertiseItem = (
-                      <View key={index} style={[styles.inputContainer, darkMode && styles.darkInputContainer, index > 0 && { marginTop: 4 }]}>
-                        {/* Bullet + Item Name */}
+                      <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
                         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
                           <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginRight: 6 }]}>•</Text>
                           {sanitizeText(exp.name) ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{sanitizeText(exp.name)}</Text> : null}
                         </View>
-
-                        {/* Cost + Bounty row */}
                         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 16 }}>
                           {exp.cost ? (
                             <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -1226,67 +1227,27 @@ const ProfileScreen = ({ route, navigation }) => {
                             </Text>
                           ) : null}
                         </View>
-
-                        {/* Description if exists */}
                         {sanitizeText(exp.description) ? (
                           <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 16, color: "#666" }]}>{sanitizeText(exp.description)}</Text>
                         ) : null}
                       </View>
                     );
-
-                    // Make clickable when viewing another user's profile
                     if (routeProfileUID && !isCurrentUserProfile) {
                       return (
-                        <TouchableOpacity
-                          key={index}
-                          activeOpacity={0.7}
-                          onPress={() => {
-                            console.log("🏢 Navigating to ExpertiseDetail from Profile expertise:", exp.name, "Profile ID:", profileUID);
-                            // Prepare expertise data in the format expected by ExpertiseDetailScreen
-                            const expertiseData = {
-                              expertise_uid: exp.profile_expertise_uid,
-                              title: exp.name,
-                              description: exp.description,
-                              cost: exp.cost,
-                              bounty: exp.bounty,
-                            };
-                            // Prepare profile data
-                            const profileData = {
-                              firstName: user.firstName,
-                              lastName: user.lastName,
-                              email: user.email,
-                              phone: user.phoneNumber,
-                              image: user.profileImage,
-                              tagLine: user.tagLine,
-                              city: user.city,
-                              state: user.state,
-                              emailIsPublic: user.emailIsPublic,
-                              phoneIsPublic: user.phoneIsPublic,
-                              imageIsPublic: user.imageIsPublic,
-                              tagLineIsPublic: user.tagLineIsPublic,
-                              locationIsPublic: user.locationIsPublic,
-                            };
-                            navigation.navigate("ExpertiseDetail", {
-                              expertiseData,
-                              profileData,
-                              profile_uid: profileUID,
-                              returnTo: "Profile",
-                              profileState: {
-                                profile_uid: profileUID,
-                                returnTo,
-                                searchState,
-                              },
-                            });
-                          }}
-                        >
+                        <TouchableOpacity key={index} activeOpacity={0.7} onPress={() => {
+                          const expertiseData = { expertise_uid: exp.profile_expertise_uid, title: exp.name, description: exp.description, cost: exp.cost, bounty: exp.bounty };
+                          const profileData = { firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phoneNumber, image: user.profileImage, tagLine: user.tagLine, city: user.city, state: user.state, emailIsPublic: user.emailIsPublic, phoneIsPublic: user.phoneIsPublic, imageIsPublic: user.imageIsPublic, tagLineIsPublic: user.tagLineIsPublic, locationIsPublic: user.locationIsPublic };
+                          navigation.navigate("ExpertiseDetail", { expertiseData, profileData, profile_uid: profileUID, returnTo: "Profile", profileState: { profile_uid: profileUID, returnTo, searchState } });
+                        }}>
                           {expertiseItem}
                         </TouchableOpacity>
                       );
                     }
                     return expertiseItem;
                   })
-              ) : (
-                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: darkMode ? "#999" : "#666" }]}>No expertise added yet</Text>
+                ) : (
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No expertise added yet</Text>
+                )
               )}
             </View>
           )}
@@ -1294,68 +1255,29 @@ const ProfileScreen = ({ route, navigation }) => {
           {/* Only show Seeking section if there are public wishes, or if viewing own profile */}
           {/*{(isCurrentUserProfile || (user.wishes && user.wishes.filter((wish) => wish.isPublic).length > 0)) && ( */}
           {user.wishesIsPublic && (
-            <View style={styles.borderedFieldContainer}>
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Seeking:</Text>
-              {user.wishes && user.wishes.filter((wish) => wish.isPublic).length > 0 ? (
-                user.wishes
-                  .filter((wish) => wish.isPublic)
-                  .map((wish, index) => {
+            <View style={styles.fieldContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowSeeking(!showSeeking)}>
+                <Text style={styles.sectionHeaderText}>SEEKING</Text>
+                <Ionicons name={showSeeking ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+              </TouchableOpacity>
+              {showSeeking && (
+                user.wishes && user.wishes.filter((wish) => wish.isPublic).length > 0 ? (
+                  user.wishes.filter((wish) => wish.isPublic).map((wish, index) => {
                     const wishItem = (
-                      <View key={index} style={[styles.inputContainer, darkMode && styles.darkInputContainer, index > 0 && { marginTop: 4 }]}>
-                        {/* Wish Responses Badge */}
+                      <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
                         {isCurrentUserProfile && wish.wish_responses !== undefined && wish.wish_responses > 0 && (
-                          <TouchableOpacity
-                            style={styles.wishResponseBadge}
-                            onPress={() => {
-                              console.log("Wish responses badge clicked for wish:", wish.profile_wish_uid);
-                              // Prepare wish data for navigation
-                              const wishDataForNavigation = {
-                                wish_uid: wish.profile_wish_uid,
-                                title: wish.helpNeeds,
-                                description: wish.details,
-                                bounty: wish.amount,
-                                cost: wish.cost,
-                              };
-                              // Prepare profile data
-                              const profileDataForNavigation = {
-                                firstName: user.firstName,
-                                lastName: user.lastName,
-                                email: user.email,
-                                phone: user.phoneNumber,
-                                image: user.profileImage,
-                                tagLine: user.tagLine,
-                                city: user.city,
-                                state: user.state,
-                                emailIsPublic: user.emailIsPublic,
-                                phoneIsPublic: user.phoneIsPublic,
-                                imageIsPublic: user.imageIsPublic,
-                                tagLineIsPublic: user.tagLineIsPublic,
-                                locationIsPublic: user.locationIsPublic,
-                              };
-                              navigation.navigate("WishResponses", {
-                                wishData: wishDataForNavigation,
-                                profileData: profileDataForNavigation,
-                                profile_uid: profileUID,
-                                profileState: {
-                                  profile_uid: profileUID,
-                                  returnTo,
-                                  searchState,
-                                },
-                              });
-                            }}
-                            activeOpacity={0.7}
-                          >
+                          <TouchableOpacity style={styles.wishResponseBadge} onPress={() => {
+                            const wishDataForNavigation = { wish_uid: wish.profile_wish_uid, title: wish.helpNeeds, description: wish.details, bounty: wish.amount, cost: wish.cost };
+                            const profileDataForNavigation = { firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phoneNumber, image: user.profileImage, tagLine: user.tagLine, city: user.city, state: user.state, emailIsPublic: user.emailIsPublic, phoneIsPublic: user.phoneIsPublic, imageIsPublic: user.imageIsPublic, tagLineIsPublic: user.tagLineIsPublic, locationIsPublic: user.locationIsPublic };
+                            navigation.navigate("WishResponses", { wishData: wishDataForNavigation, profileData: profileDataForNavigation, profile_uid: profileUID, profileState: { profile_uid: profileUID, returnTo, searchState } });
+                          }} activeOpacity={0.7}>
                             <Text style={styles.wishResponseBadgeText}>{wish.wish_responses || 0}</Text>
                           </TouchableOpacity>
                         )}
-
-                        {/* Bullet + Item Name */}
                         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
                           <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginRight: 6 }]}>•</Text>
                           <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{wish.helpNeeds || ""}</Text>
                         </View>
-
-                        {/* Cost + Bounty row */}
                         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 16 }}>
                           {wish.cost ? (
                             <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -1373,67 +1295,27 @@ const ProfileScreen = ({ route, navigation }) => {
                             </Text>
                           ) : null}
                         </View>
-
-                        {/* Details/description */}
                         {wish.details ? (
                           <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 16, color: "#666" }]}>{wish.details}</Text>
                         ) : null}
                       </View>
                     );
-
-                    // Make clickable when viewing another user's profile
                     if (routeProfileUID && !isCurrentUserProfile) {
                       return (
-                        <TouchableOpacity
-                          key={index}
-                          activeOpacity={0.7}
-                          onPress={() => {
-                            console.log("🏢 Navigating to WishDetail from Profile wish:", wish.helpNeeds, "Profile ID:", profileUID);
-                            // Prepare wish data in the format expected by WishDetailScreen
-                            const wishData = {
-                              wish_uid: wish.profile_wish_uid,
-                              title: wish.helpNeeds,
-                              description: wish.details,
-                              bounty: wish.amount,
-                              cost: wish.cost,
-                            };
-                            // Prepare profile data
-                            const profileData = {
-                              firstName: user.firstName,
-                              lastName: user.lastName,
-                              email: user.email,
-                              phone: user.phoneNumber,
-                              image: user.profileImage,
-                              tagLine: user.tagLine,
-                              city: user.city,
-                              state: user.state,
-                              emailIsPublic: user.emailIsPublic,
-                              phoneIsPublic: user.phoneIsPublic,
-                              imageIsPublic: user.imageIsPublic,
-                              tagLineIsPublic: user.tagLineIsPublic,
-                              locationIsPublic: user.locationIsPublic,
-                            };
-                            navigation.navigate("WishDetail", {
-                              wishData,
-                              profileData,
-                              profile_uid: profileUID,
-                              returnTo: "Profile",
-                              profileState: {
-                                profile_uid: profileUID,
-                                returnTo,
-                                searchState,
-                              },
-                            });
-                          }}
-                        >
+                        <TouchableOpacity key={index} activeOpacity={0.7} onPress={() => {
+                          const wishData = { wish_uid: wish.profile_wish_uid, title: wish.helpNeeds, description: wish.details, bounty: wish.amount, cost: wish.cost };
+                          const profileData = { firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phoneNumber, image: user.profileImage, tagLine: user.tagLine, city: user.city, state: user.state, emailIsPublic: user.emailIsPublic, phoneIsPublic: user.phoneIsPublic, imageIsPublic: user.imageIsPublic, tagLineIsPublic: user.tagLineIsPublic, locationIsPublic: user.locationIsPublic };
+                          navigation.navigate("WishDetail", { wishData, profileData, profile_uid: profileUID, returnTo: "Profile", profileState: { profile_uid: profileUID, returnTo, searchState } });
+                        }}>
                           {wishItem}
                         </TouchableOpacity>
                       );
                     }
                     return wishItem;
                   })
-              ) : (
-                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: darkMode ? "#999" : "#666" }]}>No seeking added yet</Text>
+                ) : (
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No seeking added yet</Text>
+                )
               )}
             </View>
           )}
@@ -1578,15 +1460,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     padding: 10,
   },
-  borderedFieldContainer: {
-    marginTop: 15,
-    marginBottom: 0,
-    borderWidth: 0.2,
-    borderColor: "#000",
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    padding: 10,
-  },
   label: { 
     fontSize: 16, 
     fontWeight: "bold", 
@@ -1674,10 +1547,18 @@ const styles = StyleSheet.create({
   },
   errorText: { fontSize: 18, color: "red", textAlign: "center", marginTop: 20 },
   cardContainer: {
-    padding: 0,
-    alignItems: "flex-start",
-    marginBottom: 0,
-  },
+  padding: 15,
+  backgroundColor: "#fff",
+  borderRadius: 10,
+  borderWidth: 1,
+  borderColor: "#000",
+  marginVertical: 5,
+},
+darkCardContainer: {
+  backgroundColor: "#2d2d2d",
+  borderColor: "#fff",
+  borderWidth: 1,
+},
   profileHeaderContainer: {
     width: "100%",
     alignItems: "center",
@@ -1733,9 +1614,6 @@ const styles = StyleSheet.create({
   },
   darkScrollContainer: {
     backgroundColor: "#1a1a1a",
-  },
-  darkCardContainer: {
-    backgroundColor: "#2d2d2d",
   },
   darkNameText: {
     color: "#ffffff",
@@ -1823,7 +1701,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "rgba(215, 241, 177, 0.81)",
+    backgroundColor: "rgb(153, 186, 230)",
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,
