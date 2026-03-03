@@ -832,7 +832,7 @@ const ProfileScreen = ({ route, navigation }) => {
       )}
       {/* Header */}
       <AppHeader
-        title={isCurrentUserProfile ? "Your Profile" : "Profile"}
+        title={isCurrentUserProfile ? "YOUR PROFILE" : "PROFILE"}
         {...(routeProfileUID && !isCurrentUserProfile ? getHeaderColors("profileView") : getHeaderColors("profile"))}
         onTitlePress={() => setShowFeedbackPopup(true)}
         onBackPress={

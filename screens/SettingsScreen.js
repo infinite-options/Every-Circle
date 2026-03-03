@@ -7,6 +7,7 @@ import { CommonActions } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import FeedbackPopup from "../components/FeedbackPopup";
 import HowItWorksScreen from "./HowItWorksScreen";
+import MiniCard from "../components/MiniCard";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -37,6 +38,7 @@ export default function SettingsScreen() {
   const [displayEmail, setDisplayEmail] = useState(true);
   const [displayPhoneNumber, setDisplayPhoneNumber] = useState(false);
   const [qrModalVisible, setQrModalVisible] = useState(false);
+  const [personalProfileData, setPersonalProfileData] = useState(null);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -237,111 +239,166 @@ export default function SettingsScreen() {
     }
   };
 
+  useEffect(() => {
+  const fetchProfile = async () => {
+    try {
+      const profileId = await AsyncStorage.getItem("profile_uid");
+      if (!profileId) return;
+      const { USER_PROFILE_INFO_ENDPOINT } = require("../apiConfig");
+      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+      const result = await response.json();
+      if (result && result.personal_info) {
+        setPersonalProfileData({
+          firstName: result.personal_info.profile_personal_first_name || "",
+          lastName: result.personal_info.profile_personal_last_name || "",
+          email: result.user_email || "",
+          phoneNumber: result.personal_info.profile_personal_phone_number || "",
+          tagLine: result.personal_info.profile_personal_tag_line || "",
+          city: result.personal_info.profile_personal_city || "",
+          state: result.personal_info.profile_personal_state || "",
+          profileImage: result.personal_info.profile_personal_image || "",
+          emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
+          phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
+          tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
+          locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
+          imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
+        });
+      }
+    } catch (e) {
+      console.error("Error fetching profile for settings:", e);
+    }
+  };
+  fetchProfile();
+}, []);
+
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
-      {/* Header */}
-      {/* <AppHeader title="Settings" backgroundColor="#AF52DE" /> */}
       <TouchableOpacity onPress={() => setShowFeedbackPopup(true)} activeOpacity={0.7}>
-        <AppHeader title='Settings' {...getHeaderColors("settings")} />
+        <AppHeader title='SETTINGS' {...getHeaderColors("settings")} />
       </TouchableOpacity>
 
-      {/* Settings Options */}
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkContainer]}>
         <ScrollView contentContainerStyle={styles.settingsContainer}>
-          {/* Allow Notifications */}
-          <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-            <View style={styles.itemLabel}>
-              <MaterialIcons name='notifications' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-              <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Allow notifications</Text>
+
+          {/* Profile MiniCard at top */}
+          {personalProfileData && (
+            <View style={{ marginBottom: 16 }}>
+              <MiniCard user={personalProfileData} />
             </View>
-            <Switch value={allowNotifications} onValueChange={setAllowNotifications} trackColor={{ false: "#ccc", true: "#AF52DE" }} thumbColor={allowNotifications ? "#fff" : "#f4f3f4"} />
+          )}
+
+          {/* Settings Container */}
+          <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer]}>
+            <View style={styles.settingsGroupHeader}>
+              <Text style={[styles.settingsGroupHeaderText, darkMode && { color: '#fff' }, { fontStyle: 'italic', color: '#000', fontSize: 16 }]}>For all your profiles</Text>
+<Text style={[styles.settingsGroupHeaderText, darkMode && { color: '#fff' }, { fontStyle: 'italic', color: '#000', fontSize: 16 }]}>Selection</Text>
+            </View>
+
+            {/* Allow Cookies */}
+            <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+              <View style={styles.itemLabel}>
+                <MaterialIcons name='cookie' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                  <Text style={{ fontWeight: 'bold', color: darkMode ? "#fff" : "#000" }}>Allow Cookies </Text>
+                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>Yes / No</Text>
+                </Text>
+              </View>
+              <Switch value={allowCookies} onValueChange={setAllowCookies} trackColor={{ false: "#ccc", true: "#000" }} thumbColor={allowCookies ? "#fff" : "#f4f3f4"} />
+            </View>
+
+            {/* Dark Mode */}
+            <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+              <View style={styles.itemLabel}>
+                <MaterialIcons name='brightness-2' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                  <Text style={{ fontWeight: 'bold', color: darkMode ? "#fff" : "#000" }}>Background </Text>
+                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>Dark / Light</Text>
+                </Text>
+              </View>
+              <Switch value={darkMode} onValueChange={toggleDarkMode} trackColor={{ false: "#ccc", true: "#000" }} thumbColor={darkMode ? "#fff" : "#f4f3f4"} />
+            </View>
+
+            {/* Allow Notifications */}
+            <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+              <View style={styles.itemLabel}>
+                <MaterialIcons name='notifications' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                  <Text style={{ fontWeight: 'bold', color: darkMode ? "#fff" : "#000" }}>Allow Notifications </Text>
+                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>Yes / No</Text>
+                </Text>
+              </View>
+              <Switch value={allowNotifications} onValueChange={setAllowNotifications} trackColor={{ false: "#ccc", true: "#000" }} thumbColor={allowNotifications ? "#fff" : "#f4f3f4"} />
+            </View>
           </View>
 
-          {/* Dark Mode */}
-          <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-            <View style={styles.itemLabel}>
-              <MaterialIcons name='brightness-2' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-              <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Dark mode</Text>
-            </View>
-            <Switch value={darkMode} onValueChange={toggleDarkMode} trackColor={{ false: "#ccc", true: "#AF52DE" }} thumbColor={darkMode ? "#fff" : "#f4f3f4"} />
+          <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { marginBottom: 16 }]}>
+            {/* Generate QR Code */}
+            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => setQrModalVisible(true)}>
+              <View style={styles.itemLabel}>
+                <MaterialIcons name='qr-code' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Generate QR Code</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Privacy Policy */}
+            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("PrivacyPolicy")}>
+              <View style={styles.itemLabel}>
+                <MaterialIcons name='privacy-tip' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Privacy Policy</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Terms and Conditions */}
+            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("TermsAndConditions")}>
+              <View style={styles.itemLabel}>
+                <MaterialIcons name='description' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Terms and Conditions</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Add a Business */}
+            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("BusinessSetup")}>
+              <View style={styles.itemLabel}>
+                <MaterialIcons name='business' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Add a Business</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Change Password */}
+            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
+              <View style={styles.itemLabel}>
+                <MaterialIcons name='lock' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* How It Works */}
+            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("HowItWorksScreen")}>
+              <View style={styles.itemLabel}>
+                <MaterialIcons name='help-outline' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How It Works</Text>
+              </View>
+            </TouchableOpacity>
+
           </View>
 
-          {/* Allow Cookies */}
-          <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-            <View style={styles.itemLabel}>
-              <MaterialIcons name='cookie' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-              <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Allow Cookies</Text>
-            </View>
-            <Switch value={allowCookies} onValueChange={setAllowCookies} trackColor={{ false: "#ccc", true: "#AF52DE" }} thumbColor={allowCookies ? "#fff" : "#f4f3f4"} />
-          </View>
-
-          {/* Generate QR Code */}
-          <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => setQrModalVisible(true)}>
-            <View style={styles.itemLabel}>
-              <MaterialIcons name='qr-code' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-              <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Generate QR Code</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Privacy Policy */}
-          <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("PrivacyPolicy")}>
-            <View style={styles.itemLabel}>
-              <MaterialIcons name='privacy-tip' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-              <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Privacy Policy</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Terms and Conditions */}
-          <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("TermsAndConditions")}>
-            <View style={styles.itemLabel}>
-              <MaterialIcons name='description' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-              <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Terms and Conditions</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Edit User Information */}
-          <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("BusinessSetup")}>
-            <View style={styles.itemLabel}>
-              <MaterialIcons name='business' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-              <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Add a Business</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Change Password */}
-          <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
-            <View style={styles.itemLabel}>
-              <MaterialIcons name='lock' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-              <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* How It Works */}
-          <TouchableOpacity 
-            style={[styles.settingItem, darkMode && styles.darkSettingItem]} 
-            onPress={() => navigation.navigate("HowItWorksScreen")}
-          >
-            <View style={styles.itemLabel}>
-              <MaterialIcons name='help-outline' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-              <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How It Works</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Logout Button */}
+          {/* Logout Button OUTSIDE container */}
           <TouchableOpacity style={[styles.logoutButton, darkMode && styles.darkLogoutButton]} onPress={handleLogout}>
             <MaterialIcons name='logout' size={20} style={styles.icon} color={darkMode ? "#fff" : "#AF52DE"} />
             <Text style={[styles.logoutText, darkMode && styles.darkLogoutText]}>Log out</Text>
           </TouchableOpacity>
 
-          {/* Build Timestamp - Last Change Date/Time with Version */}
+          {/* Build Info */}
           <View style={styles.buildInfoContainer}>
             <Text style={[styles.dateTimeText, darkMode && styles.darkDateTimeText]}>
               PM {versionData.pm_version} Version {versionData.major}.{versionData.build} - Last Change: {versionData.last_change}
             </Text>
           </View>
+
         </ScrollView>
       </SafeAreaView>
 
-      {/* QR Code Modal */}
+      {/* Modals unchanged */}
       <Modal visible={qrModalVisible} transparent={true} animationType='fade'>
         <View style={styles.modalOverlay}>
           <View style={styles.qrModalBox}>
@@ -357,7 +414,6 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Bottom Navigation */}
       <Modal visible={termsModalVisible} transparent={true} animationType='fade'>
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
@@ -392,7 +448,7 @@ const styles = StyleSheet.create({
     paddingBottom: 80,
   },
   settingItem: {
-    backgroundColor: "#fff",
+    // backgroundColor: "#fff",
     borderRadius: 8,
     paddingVertical: 15,
     paddingHorizontal: 15,
@@ -485,5 +541,32 @@ const styles = StyleSheet.create({
   },
   darkDateTimeText: {
     color: "#999",
+  },
+  settingsGroupContainer: {
+    borderWidth: 1,
+    borderColor: '#000',
+    borderRadius: 10,
+    backgroundColor: '#F5F5F5',
+    // backgroundColor: "rgba(225, 211, 237, 0.9)",
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  darkSettingsGroupContainer: {
+    backgroundColor: '#2d2d2d',
+    borderColor: '#444',
+  },
+  settingsGroupHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+    backgroundColor: '#f0f0f0',
+  },
+  settingsGroupHeaderText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#555',
   },
 });

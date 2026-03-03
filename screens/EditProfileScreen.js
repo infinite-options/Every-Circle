@@ -808,7 +808,7 @@ const EditProfileScreen = ({ route, navigation }) => {
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}>
       <AppHeader 
-        title='Edit Profile' 
+        title='EDIT PROFILE' 
         {...getHeaderColors("editProfile")} 
         onBackPress={() => {
           console.log("Back button pressed, isChanged:", isChanged);

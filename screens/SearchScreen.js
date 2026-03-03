@@ -1048,7 +1048,7 @@ export default function SearchScreen({ route }) {
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
       <AppHeader
-        title='Search'
+        title='SEARCH'
         {...getHeaderColors("search")}
         darkModeBackgroundColor='#4b2c91'
         onTitlePress={() => setShowFeedbackPopup(true)} // ✅ SAFE

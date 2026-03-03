@@ -1177,7 +1177,7 @@ export default function AccountScreen({ navigation }) {
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
         <AppHeader 
-          title='Account' 
+          title='ACCOUNT' 
           {...getHeaderColors("account")}
           onTitlePress={() => setShowFeedbackPopup(true)}
           //Drop to the right in Header*
@@ -1249,7 +1249,7 @@ export default function AccountScreen({ navigation }) {
 
           {accountType === 'personal' ? (
           <>
-          
+
           {/* Expertise */}
           <View style={styles.sectionContainer}>
             <View style={styles.sectionTitleRow}>
