@@ -242,20 +242,13 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     }}
   />
   <Dropdown
-    style={styles.costUnitDropdown}
+    style={[styles.costUnitDropdown, !parseCost(item.cost).unit && styles.requiredDropdown]}
     data={bountyUnitOptions}
     labelField='label'
     valueField='value'
-    placeholder='Select unit'
+    placeholder='Unit *'
+    placeholderStyle={{ color: '#f44336' }}
     value={parseCost(item.cost).unit || null}
-    // value={(() => {
-    //   const parsed = parseCost(item.cost);
-    //   // Handle empty unit
-    //   if (!parsed.unit) return null;
-    //   // If unit is just "hr", "day", etc., return as-is
-    //   // If it's "2 weeks", return as-is
-    //   return parsed.unit;
-    // })()}
     onChange={(item) => handleCostUnitChange(index, item)}
     containerStyle={styles.dropdownContainer}
     itemTextStyle={styles.dropdownItemText}
@@ -455,5 +448,13 @@ const styles = StyleSheet.create({
     textAlignVertical: "center",
   },
 });
+
+export const validateSeeking = (wishes) => {
+  return wishes.every((w) => {
+    if (!w.helpNeeds) return true; // skip empty entries
+    const unit = w.cost ? w.cost.match(/\/(hr|day|week|2 weeks|month|quarter|year)$|(\btotal\b)/i) : null;
+    return !!unit;
+  });
+};
 
 export default SeekingSection;

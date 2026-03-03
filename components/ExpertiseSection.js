@@ -141,7 +141,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
     <View style={styles.sectionContainer}>
       <View style={styles.headerRow}>
         <View style={styles.labelRow}>
-          <Text style={styles.label}>Expertise</Text>
+          <Text style={styles.label}>Offering</Text>
           <TouchableOpacity onPress={addExpertise}>
             <Text style={styles.addText}>+</Text>
           </TouchableOpacity>
@@ -154,7 +154,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
       {expertise.map((item, index) => (
         <View key={index} style={[styles.card, index > 0 && styles.cardSpacing]}>
           <View style={styles.rowHeader}>
-            <Text style={styles.label}>Expertise #{index + 1}</Text>
+            <Text style={styles.label}>Offering #{index + 1}</Text>
             <TouchableOpacity onPress={() => toggleEntryVisibility(index)}>
               <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold", marginLeft: 10 }}>{item.isPublic ? "Display" : "Hide"}</Text>
             </TouchableOpacity>
@@ -197,12 +197,13 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
     }}
   />
   <Dropdown
-    style={styles.costUnitDropdown}
+    style={[styles.costUnitDropdown, !parseCost(item.cost).unit && styles.requiredDropdown]}
     data={costUnitOptions}
     labelField='label'
     valueField='value'
-    placeholder='Select unit'
-    value={parseCost(item.cost).unit}
+    placeholder='Unit *'
+    placeholderStyle={{ color: '#f44336' }}
+    value={parseCost(item.cost).unit || null}
     onChange={(item) => handleCostUnitChange(index, item)}
     containerStyle={styles.dropdownContainer}
     itemTextStyle={styles.dropdownItemText}
@@ -359,4 +360,11 @@ const styles = StyleSheet.create({
   },
 });
 
+export const validateExpertise = (expertise) => {
+  return expertise.every((e) => {
+    if (!e.name) return true; // skip empty entries
+    const unit = e.cost ? e.cost.match(/\/(hr|day|week|2 weeks|month|quarter|year)$|(\btotal\b)/i) : null;
+    return !!unit;
+  });
+};
 export default ExpertiseSection;

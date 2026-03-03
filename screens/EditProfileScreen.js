@@ -13,8 +13,8 @@ import { getHeaderColors } from "../config/headerColors";
 // PROFILE-SPECIFIC
 import ExperienceSection from "../components/ExperienceSection";
 import EducationSection from "../components/EducationSection";
-import SeekingSection from "../components/SeekingSection";
-import ExpertiseSection from "../components/ExpertiseSection";
+import ExpertiseSection, { validateExpertise } from "../components/ExpertiseSection";
+import SeekingSection, { validateSeeking } from "../components/SeekingSection";
 import BusinessSection from "../components/BusinessSection";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 
@@ -370,6 +370,16 @@ const EditProfileScreen = ({ route, navigation }) => {
   };
 
   const handleSave = async () => {
+    if (!validateExpertise(formData.expertise)) {
+      Alert.alert("Required Field", "Please select a unit for all Offering entries before submitting.");
+      return;
+    }
+
+    if (!validateSeeking(formData.wishes)) {
+      Alert.alert("Required Field", "Please select a unit for all Seeking entries before submitting.");
+      return;
+    }
+
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
       Alert.alert("Error", "First Name and Last Name are required.");
       return;
@@ -887,16 +897,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           isPublic={formData.experienceIsPublic}
           handleDelete={handleDeleteExperience}
         />
-        <EducationSection
-          education={formData.education}
-          setEducation={(e) => {
-            setFormData({ ...formData, education: e });
-            setIsChanged(true);
-          }}
-          toggleVisibility={() => handleToggleVisibility("educationIsPublic")}
-          isPublic={formData.educationIsPublic}
-          handleDelete={handleDeleteEducation}
-        />
+        
         <ExpertiseSection
           expertise={formData.expertise}
           setExpertise={(e) => {
@@ -925,6 +926,17 @@ const EditProfileScreen = ({ route, navigation }) => {
             focusedInputRef.current = inputRef;
             scrollToFocusedInput();
           }}
+        />
+
+        <EducationSection
+          education={formData.education}
+                    setEducation={(e) => {
+                      setFormData({ ...formData, education: e });
+                      setIsChanged(true);
+                    }}
+                    toggleVisibility={() => handleToggleVisibility("educationIsPublic")}
+                    isPublic={formData.educationIsPublic}
+          handleDelete={handleDeleteEducation}
         />
 
         <BusinessSection
