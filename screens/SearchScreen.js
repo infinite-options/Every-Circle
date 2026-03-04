@@ -1091,6 +1091,30 @@ export default function SearchScreen({ route }) {
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         {/* Main Content */}
         <View style={styles.contentContainer}>
+  
+          {/* Search type buttons - ALWAYS VISIBLE ABOVE SEARCH BAR */}
+          <View style={[styles.filterButtonsContainer, { marginBottom: 10 }]}>
+            <TouchableOpacity
+              style={[styles.filterButtonOption, darkMode && styles.darkFilterButtonOption, searchType === "businesses" && styles.searchTypeButtonBusinesses, darkMode && searchType === "businesses" && styles.darkSearchTypeButtonBusinesses]}
+              onPress={() => { setSearchType("businesses"); performSearch(searchQuery, "businesses"); }}
+            >
+              <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText, searchType === "businesses" && styles.searchTypeButtonTextBusinesses, darkMode && searchType === "businesses" && styles.darkSearchTypeButtonTextBusinesses]}>Businesses</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.filterButtonOption, darkMode && styles.darkFilterButtonOption, searchType === "expertise" && styles.searchTypeButtonExpertise, darkMode && searchType === "expertise" && styles.darkSearchTypeButtonExpertise]}
+              onPress={() => { setSearchType("expertise"); performSearch(searchQuery, "expertise"); }}
+            >
+              <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText, searchType === "expertise" && styles.searchTypeButtonTextExpertise, darkMode && searchType === "expertise" && styles.darkSearchTypeButtonTextExpertise]}>Offering</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.filterButtonOption, darkMode && styles.darkFilterButtonOption, searchType === "seeking" && styles.searchTypeButtonSeeking, darkMode && searchType === "seeking" && styles.darkSearchTypeButtonSeeking]}
+              onPress={() => { setSearchType("seeking"); performSearch(searchQuery, "seeking"); }}
+            >
+              <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText, searchType === "seeking" && styles.searchTypeButtonTextSeeking, darkMode && searchType === "seeking" && styles.darkSearchTypeButtonTextSeeking]}>Seeking</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Search bar */}
           <View style={styles.searchContainer}>
             <TextInput
               style={[styles.searchInput, darkMode && styles.darkSearchInput]}
@@ -1109,141 +1133,40 @@ export default function SearchScreen({ route }) {
             </TouchableOpacity>
           </View>
 
-          {/* Filter Buttons */}
+          {/* Distance, Network, Bounty, Rating filters - TOGGLE BELOW SEARCH BAR */}
           {showFilters && (
             <View style={styles.filterButtonsContainer}>
               <TouchableOpacity
-                style={[
-                  styles.filterButtonOption,
-                  darkMode && styles.darkFilterButtonOption,
-                  distance !== null && styles.activeFilterButton,
-                  darkMode && distance !== null && styles.darkActiveFilterButton,
-                ]}
+                style={[styles.filterButtonOption, darkMode && styles.darkFilterButtonOption, distance !== null && styles.activeFilterButton, darkMode && distance !== null && styles.darkActiveFilterButton]}
                 onPress={() => setDistanceModalVisible(true)}
               >
-                <Text
-                  style={[
-                    styles.filterButtonText,
-                    darkMode && styles.darkFilterButtonText,
-                    distance !== null && styles.activeFilterButtonText,
-                    darkMode && distance !== null && styles.darkActiveFilterButtonText,
-                  ]}
-                >
+                <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText, distance !== null && styles.activeFilterButtonText, darkMode && distance !== null && styles.darkActiveFilterButtonText]}>
                   {distance !== null ? `${distance} mi` : "Distance"}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.filterButtonOption,
-                  darkMode && styles.darkFilterButtonOption,
-                  network !== null && styles.activeFilterButton,
-                  darkMode && network !== null && styles.darkActiveFilterButton,
-                ]}
+                style={[styles.filterButtonOption, darkMode && styles.darkFilterButtonOption, network !== null && styles.activeFilterButton, darkMode && network !== null && styles.darkActiveFilterButton]}
                 onPress={() => setNetworkModalVisible(true)}
               >
-                <Text
-                  style={[
-                    styles.filterButtonText,
-                    darkMode && styles.darkFilterButtonText,
-                    network !== null && styles.activeFilterButtonText,
-                    darkMode && network !== null && styles.darkActiveFilterButtonText,
-                  ]}
-                >
+                <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText, network !== null && styles.activeFilterButtonText, darkMode && network !== null && styles.darkActiveFilterButtonText]}>
                   {network !== null ? network : "Network"}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.filterButtonOption,
-                  darkMode && styles.darkFilterButtonOption,
-                  bounty !== null && styles.activeFilterButton,
-                  darkMode && bounty !== null && styles.darkActiveFilterButton,
-                ]}
+                style={[styles.filterButtonOption, darkMode && styles.darkFilterButtonOption, bounty !== null && styles.activeFilterButton, darkMode && bounty !== null && styles.darkActiveFilterButton]}
                 onPress={() => setBountyModalVisible(true)}
               >
-                <Text
-                  style={[
-                    styles.filterButtonText,
-                    darkMode && styles.darkFilterButtonText,
-                    bounty !== null && styles.activeFilterButtonText,
-                    darkMode && bounty !== null && styles.darkActiveFilterButtonText,
-                  ]}
-                >
+                <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText, bounty !== null && styles.activeFilterButtonText, darkMode && bounty !== null && styles.darkActiveFilterButtonText]}>
                   {bounty !== null ? bounty : "Bounty"}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[
-                  styles.filterButtonOption,
-                  darkMode && styles.darkFilterButtonOption,
-                  rating !== null && styles.activeFilterButton,
-                  darkMode && rating !== null && styles.darkActiveFilterButton,
-                ]}
+                style={[styles.filterButtonOption, darkMode && styles.darkFilterButtonOption, rating !== null && styles.activeFilterButton, darkMode && rating !== null && styles.darkActiveFilterButton]}
                 onPress={() => setRatingModalVisible(true)}
               >
-                <Text
-                  style={[
-                    styles.filterButtonText,
-                    darkMode && styles.darkFilterButtonText,
-                    rating !== null && styles.activeFilterButtonText,
-                    darkMode && rating !== null && styles.darkActiveFilterButtonText,
-                  ]}
-                >
+                <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText, rating !== null && styles.activeFilterButtonText, darkMode && rating !== null && styles.darkActiveFilterButtonText]}>
                   {rating !== null ? `> ${rating}` : "Rating"}
                 </Text>
-              </TouchableOpacity>
-
-              {/* Businesses button */}
-              <TouchableOpacity
-                style={[
-                  styles.filterButtonOption,
-                  darkMode && styles.darkFilterButtonOption,
-                  searchType === "businesses" && styles.searchTypeButtonBusinesses,
-                  darkMode && searchType === "businesses" && styles.darkSearchTypeButtonBusinesses,
-                ]}
-                onPress={() => { setSearchType("businesses"); performSearch(searchQuery, "businesses"); }}
-              >
-                <Text style={[
-                  styles.filterButtonText,
-                  darkMode && styles.darkFilterButtonText,
-                  searchType === "businesses" && styles.searchTypeButtonTextBusinesses,
-                  darkMode && searchType === "businesses" && styles.darkSearchTypeButtonTextBusinesses,
-                ]}>Businesses</Text>
-              </TouchableOpacity>
-              {/* Expertise button */}
-              <TouchableOpacity
-                style={[
-                  styles.filterButtonOption,
-                  darkMode && styles.darkFilterButtonOption,
-                  searchType === "expertise" && styles.searchTypeButtonExpertise,
-                  darkMode && searchType === "expertise" && styles.darkSearchTypeButtonExpertise,
-                ]}
-                onPress={() => { setSearchType("expertise"); performSearch(searchQuery, "expertise"); }}
-              >
-                <Text style={[
-                  styles.filterButtonText,
-                  darkMode && styles.darkFilterButtonText,
-                  searchType === "expertise" && styles.searchTypeButtonTextExpertise,
-                  darkMode && searchType === "expertise" && styles.darkSearchTypeButtonTextExpertise,
-                ]}>Offering</Text>
-              </TouchableOpacity>
-
-              {/* Wishes button */}
-              <TouchableOpacity
-                style={[
-                  styles.filterButtonOption,
-                  darkMode && styles.darkFilterButtonOption,
-                  searchType === "seeking" && styles.searchTypeButtonSeeking,
-                  darkMode && searchType === "seeking" && styles.darkSearchTypeButtonSeeking,
-                ]}
-                onPress={() => { setSearchType("seeking"); performSearch(searchQuery, "seeking"); }}
-              >
-                <Text style={[
-                  styles.filterButtonText,
-                  darkMode && styles.darkFilterButtonText,
-                  searchType === "seeking" && styles.searchTypeButtonTextSeeking,
-                  darkMode && searchType === "seeking" && styles.darkSearchTypeButtonTextSeeking,
-                ]}>Seeking</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1566,7 +1489,7 @@ const styles = StyleSheet.create({
     color: "#333",
   },
   activeFilterButton: {
-    backgroundColor: "#AF52DE",
+    backgroundColor: "#4F8A8B",
   },
   activeFilterButtonText: {
     color: "#fff",
@@ -1699,7 +1622,7 @@ const styles = StyleSheet.create({
     color: "#ffffff",
   },
   darkActiveFilterButton: {
-    backgroundColor: "#AF52DE",
+    backgroundColor: "#4F8A8B",
   },
   darkActiveFilterButtonText: {
     color: "#ffffff",
@@ -1867,13 +1790,13 @@ const styles = StyleSheet.create({
 
   // Search type button styles
   searchTypeButtonBusinesses: {
-    backgroundColor: "#AF52DE", // Same as header color
+    backgroundColor: "#4F8A8B", 
   },
   searchTypeButtonExpertise: {
-    backgroundColor: "#AF52DE", // Yellow like rating star
+    backgroundColor: "#4F8A8B", 
   },
   searchTypeButtonSeeking: {
-    backgroundColor: "#9C45F7", // Purple like selected options
+    backgroundColor: "#4F8A8B", 
   },
   searchTypeButtonTextBusinesses: {
     color: "#fff",
