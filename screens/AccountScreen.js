@@ -10,7 +10,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
-import { Picker } from '@react-native-picker/picker';
+// import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
 export default function AccountScreen({ navigation }) {
   const { darkMode } = useDarkMode();
