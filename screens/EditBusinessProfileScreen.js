@@ -1308,9 +1308,28 @@ const styles = StyleSheet.create({
   pageContainer: { flex: 1, backgroundColor: "#fff", minHeight: "100%" },
   container: { flex: 1, padding: 20, minHeight: "100%" },
   header: { fontSize: 24, fontWeight: "bold", marginBottom: 20 },
-  fieldContainer: { marginBottom: 15 },
-  label: { fontSize: 16, fontWeight: "bold", marginBottom: 5, color: "#000" },
-  input: { borderWidth: 1, borderColor: "#ccc", padding: 10, borderRadius: 5, backgroundColor: "#fff" },
+  fieldContainer: { 
+    marginBottom: 15 
+  },
+  label: { 
+    fontSize: 16, 
+    fontWeight: "bold", 
+    marginBottom: 5, 
+    color: "#000" 
+  },
+  input: { 
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 12,
+    borderRadius: 25,
+    backgroundColor: "#f0f0f0",
+    color: "#000", 
+  },
+  textarea: {
+    minHeight: 40,
+    maxHeight: 200,
+    borderRadius: 12,
+  },
   // MISSING: textarea style (EditProfileScreen has this)
   // MISSING: disabledInput style (EditProfileScreen has this)
   saveButton: {
@@ -1585,6 +1604,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#2d2d2d",
     color: "#ffffff",
     borderColor: "#404040",
+    borderRadius: 25,
   },
   darkProfileImage: {
     // tintColor moved to Image prop

@@ -1045,7 +1045,7 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: "#000",
     padding: 10,
     borderRadius: 5,
     backgroundColor: "#f5f5f5",
@@ -1393,7 +1393,8 @@ const styles = StyleSheet.create({
   },
   darkInputContainer: {
     backgroundColor: "#2d2d2d",
-    borderColor: "#404040",
+    borderColor: "#888",
+    borderWidth: 1,
   },
   darkInputText: {
     color: "#ffffff",
