@@ -1162,34 +1162,7 @@ const ProfileScreen = ({ route, navigation }) => {
             </View>
           )}
 
-          {/* Only show Experience section if there are public experiences, or if viewing own profile */}
-          {/*{(isCurrentUserProfile || (user.experience && user.experience.filter((exp) => exp.isPublic).length > 0)) && ( */}
-          {user.experienceIsPublic && (
-            <View style={styles.fieldContainer}>
-              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowExperience(!showExperience)}>
-                <Text style={styles.sectionHeaderText}>EXPERIENCE</Text>
-                <Ionicons name={showExperience ? "chevron-up" : "chevron-down"} size={20} color="#000" />
-              </TouchableOpacity>
-              {showExperience && (
-                user.experience && user.experience.filter((exp) => exp.isPublic).length > 0 ? (
-                  user.experience.filter((exp) => exp.isPublic).map((exp, index) => (
-                    <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
-                      {exp.title ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.title}</Text> : null}
-                      {exp.company ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.company}</Text> : null}
-                      {exp.description ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{ exp.description}</Text> : null}
-                      {(exp.startDate || exp.endDate) ? (
-                        <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666" }]}>
-                          {(exp.startDate || "") + (exp.startDate && exp.endDate ? " - " : "") + (exp.endDate || "")}
-                        </Text>
-                      ) : null}
-                    </View>
-                  ))
-                ) : (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No experience added yet</Text>
-                )
-              )}
-            </View>
-          )}
+          
 
           
 
@@ -1315,6 +1288,35 @@ const ProfileScreen = ({ route, navigation }) => {
                   })
                 ) : (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No seeking added yet</Text>
+                )
+              )}
+            </View>
+          )}
+
+          {/* Only show Experience section if there are public experiences, or if viewing own profile */}
+          {/*{(isCurrentUserProfile || (user.experience && user.experience.filter((exp) => exp.isPublic).length > 0)) && ( */}
+          {user.experienceIsPublic && (
+            <View style={styles.fieldContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowExperience(!showExperience)}>
+                <Text style={styles.sectionHeaderText}>EXPERIENCE</Text>
+                <Ionicons name={showExperience ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+              </TouchableOpacity>
+              {showExperience && (
+                user.experience && user.experience.filter((exp) => exp.isPublic).length > 0 ? (
+                  user.experience.filter((exp) => exp.isPublic).map((exp, index) => (
+                    <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
+                      {exp.title ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.title}</Text> : null}
+                      {exp.company ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.company}</Text> : null}
+                      {exp.description ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{ exp.description}</Text> : null}
+                      {(exp.startDate || exp.endDate) ? (
+                        <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666" }]}>
+                          {(exp.startDate || "") + (exp.startDate && exp.endDate ? " - " : "") + (exp.endDate || "")}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ))
+                ) : (
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No experience added yet</Text>
                 )
               )}
             </View>
@@ -1701,7 +1703,7 @@ darkCardContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "rgb(153, 186, 230)",
+    backgroundColor: "rgb(243, 165, 165)",
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,

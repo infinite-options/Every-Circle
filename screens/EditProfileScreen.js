@@ -887,16 +887,7 @@ const EditProfileScreen = ({ route, navigation }) => {
 
         {renderShortBioField()}
 
-        <ExperienceSection
-          experience={formData.experience}
-          setExperience={(e) => {
-            setFormData({ ...formData, experience: e });
-            setIsChanged(true);
-          }}
-          toggleVisibility={() => handleToggleVisibility("experienceIsPublic")}
-          isPublic={formData.experienceIsPublic}
-          handleDelete={handleDeleteExperience}
-        />
+        
         
         <ExpertiseSection
           expertise={formData.expertise}
@@ -926,6 +917,17 @@ const EditProfileScreen = ({ route, navigation }) => {
             focusedInputRef.current = inputRef;
             scrollToFocusedInput();
           }}
+        />
+
+        <ExperienceSection
+          experience={formData.experience}
+          setExperience={(e) => {
+            setFormData({ ...formData, experience: e });
+            setIsChanged(true);
+          }}
+          toggleVisibility={() => handleToggleVisibility("experienceIsPublic")}
+          isPublic={formData.experienceIsPublic}
+          handleDelete={handleDeleteExperience}
         />
 
         <EducationSection
