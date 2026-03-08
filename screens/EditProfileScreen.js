@@ -36,7 +36,6 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [imageError, setImageError] = useState(false);
   const [webImageFile, setWebImageFile] = useState(null); // Store the actual File object for web uploads
   // const [pendingPicker, setPendingPicker] = useState(null);
-  
 
   const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false);
 

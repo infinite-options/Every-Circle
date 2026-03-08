@@ -41,6 +41,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [showEditors, setShowEditors] = useState(true);
   const [showReviews, setShowReviews] = useState(true);
   const [showServices, setShowServices] = useState(true);
+  const [showTagline, setShowTagline] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const businessFeedbackInstructions = "Instructions for Business Profile";
@@ -899,6 +900,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
           )}
 
           {/* Shopping Cart Button - Only show if there are reviews */}
+  
+
+          {/* Shopping Cart Button - Only show if there are reviews */}
           {/* {!isOwner && allReviews.length > 0 && (
             <View style={styles.fieldContainer}>
               <TouchableOpacity
@@ -955,8 +959,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
           </View>
         </View>
       </Modal>
-
-      
     </View>
   );
 }
@@ -1465,7 +1467,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "rgb(223, 195, 236)",
+    backgroundColor: "rgb(192, 171, 216)",
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,
