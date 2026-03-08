@@ -23,7 +23,8 @@ const DEFAULT_BUSINESS_IMAGE = require("../assets/profile.png");
 const EditBusinessProfileScreen = ({ route, navigation }) => {
   const { darkMode } = useDarkMode();
   const { business, business_users } = route.params || {};
-  const [businessUID, setBusinessUID] = useState(business?.business_uid || "");
+  const businessUIDFromRoute = route.params?.business_uid || business?.business_uid || "";
+  const [businessUID, setBusinessUID] = useState(businessUIDFromRoute);
   const scrollViewRef = useRef(null);
   const fileInputRef = useRef(null); // For web file input
 
@@ -127,6 +128,22 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     taglineIsPublic: business?.business_tag_line_is_public === "1" || business?.tagline_is_public === "1" || business?.taglineIsPublic === true,
     shortBioIsPublic: business?.business_short_bio_is_public === "1" || business?.short_bio_is_public === "1" || business?.shortBioIsPublic === true,
     imageIsPublic: business?.business_profile_img_is_public === "1" || business?.business_profile_img_is_public === 1 || business?.business_image_is_public === "1" || business?.image_is_public === "1" || business?.imageIsPublic === true || false,
+    locationIsPublic: business?.business_location_is_public === "1" || business?.location_is_public === "1" || business?.locationIsPublic === true || false,
+    categoryIsPublic: business?.business_category_is_public === "1" || business?.category_is_public === "1" || business?.categoryIsPublic === true || false,
+    websiteIsPublic: business?.business_website_is_public === "1" || business?.website_is_public === "1" || business?.websiteIsPublic === true || false,
+    einIsPublic: business?.business_ein_is_public === "1" || business?.ein_is_public === "1" || business?.einIsPublic === true || false,
+    socialLinksIsPublic: business?.social_links_is_public === "1" || business?.socialLinksIsPublic === true || false,
+    cityIsPublic: business?.business_city_is_public === "1" || business?.city_is_public === "1" || business?.cityIsPublic === true || false,
+    stateIsPublic: business?.business_state_is_public === "1" || business?.state_is_public === "1" || business?.stateIsPublic === true || false,
+    countryIsPublic: business?.business_country_is_public === "1" || business?.country_is_public === "1" || business?.countryIsPublic === true || false,
+    zipIsPublic: business?.business_zip_is_public === "1" || business?.zip_is_public === "1" || business?.zipIsPublic === true || false,
+    categoryIsPublic: business?.business_category_is_public === "1" || business?.category_is_public === "1" || business?.categoryIsPublic === true || false,
+    websiteIsPublic: business?.business_website_is_public === "1" || business?.website_is_public === "1" || business?.websiteIsPublic === true || false,
+    einIsPublic: business?.business_ein_is_public === "1" || business?.ein_is_public === "1" || business?.einIsPublic === true || false,
+    facebookIsPublic: business?.facebook_is_public === "1" || business?.facebookIsPublic === true || false,
+    instagramIsPublic: business?.instagram_is_public === "1" || business?.instagramIsPublic === true || false,
+    linkedinIsPublic: business?.linkedin_is_public === "1" || business?.linkedinIsPublic === true || false,
+    youtubeIsPublic: business?.youtube_is_public === "1" || business?.youtubeIsPublic === true || false,
     // MISSING: Section visibility flags (EditProfileScreen has: experienceIsPublic, educationIsPublic, expertiseIsPublic, wishesIsPublic, businessIsPublic)
     // Note: Business profile doesn't have these sections, so these flags are not needed
     // MISSING: Arrays for experience, education, expertise, wishes, businesses (EditProfileScreen has these)
@@ -466,6 +483,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_ein_number", formData.einNumber);
       payload.append("business_website", formData.website);
       payload.append("custom_tags", JSON.stringify(formData.customTags));
+      //payload.append("business_category_is_public", formData.categoryIsPublic ? "1" : "0");
+      // payload.append("business_website_is_public", formData.websiteIsPublic ? "1" : "0");
+      // payload.append("facebook_is_public", formData.facebookIsPublic ? "1" : "0");
+      // payload.append("instagram_is_public", formData.instagramIsPublic ? "1" : "0");
+      // payload.append("linkedin_is_public", formData.linkedinIsPublic ? "1" : "0");
+      // payload.append("youtube_is_public", formData.youtubeIsPublic ? "1" : "0");
 
       // Business profile image (backend: business_profile_img file, delete_business_profile_img URL, business_profile_img_is_public 0/1)
       if (businessImageUri && !imageError && businessImageUri !== originalBusinessImage) {
@@ -523,6 +546,15 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_phone_number_is_public", formData.phoneIsPublic ? "1" : "0");
       payload.append("business_tag_line_is_public", formData.taglineIsPublic ? "1" : "0");
       payload.append("business_short_bio_is_public", formData.shortBioIsPublic ? "1" : "0");
+      payload.append("business_email_id_is_public", formData.emailIsPublic ? "1" : "0");
+      payload.append("business_phone_number_is_public", formData.phoneIsPublic ? "1" : "0");
+      payload.append("business_tag_line_is_public", formData.taglineIsPublic ? "1" : "0");
+      payload.append("business_short_bio_is_public", formData.shortBioIsPublic ? "1" : "0");
+      payload.append("business_location_is_public", formData.locationIsPublic ? "1" : "0");
+      payload.append("business_category_is_public", formData.categoryIsPublic ? "1" : "0");
+      payload.append("business_website_is_public", formData.websiteIsPublic ? "1" : "0");
+      payload.append("business_ein_is_public", formData.einIsPublic ? "1" : "0");
+      payload.append("social_links_is_public", formData.socialLinksIsPublic ? "1" : "0");
 
       // BUSINESS-SPECIFIC: Services/products handling (EditProfileScreen handles experience, education, expertise, wishes, businesses arrays)
       const fullServiceSchema = (service, idx) => {
@@ -675,23 +707,32 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   // Note: Business profile uses regular renderField for shortBio, could be enhanced to match EditProfileScreen
 
   // BUSINESS-SPECIFIC: renderSocialField function (EditProfileScreen doesn't have this - social links handled differently)
-  const renderSocialField = (label, platform) => (
-    <View style={styles.fieldContainer}>
+  const renderSocialField = (label, platform, visibilityKey) => (
+  <View style={styles.fieldContainer}>
+    <View style={styles.labelRow}>
       <Text style={[styles.label, darkMode && styles.darkLabel]}>{label}</Text>
-      <TextInput
-        style={[styles.input, darkMode && styles.darkInput]}
-        value={formData.socialLinks[platform]}
-        placeholder={`Enter ${platform} link`}
-        placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-        onChangeText={(text) => {
-          setFormData({
-            ...formData,
-            socialLinks: { ...formData.socialLinks, [platform]: text },
-          });
-          setIsChanged(true);
-        }}
-      />
+      {visibilityKey && (
+        <TouchableOpacity onPress={() => handleToggleVisibility(visibilityKey)}>
+          <Text style={[styles.toggleText, { color: formData[visibilityKey] ? (darkMode ? "#4ade80" : "green") : darkMode ? "#f87171" : "red" }]}>
+            {formData[visibilityKey] ? "Display" : "Hide"}
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
+    <TextInput
+      style={[styles.input, darkMode && styles.darkInput]}
+      value={formData.socialLinks[platform]}
+      placeholder={`Enter ${platform} link`}
+      placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+      onChangeText={(text) => {
+        setFormData({
+          ...formData,
+          socialLinks: { ...formData.socialLinks, [platform]: text },
+        });
+        setIsChanged(true);
+      }}
+    />
+  </View>
   );
 
   // BUSINESS-SPECIFIC: renderCustomTagsSection function (not in EditProfileScreen)
@@ -1030,16 +1071,17 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         {renderBusinessImageSection()}
 
         {renderField("Business Name", formData.name, "name")}
-        {renderField("Location", formData.location, "location")}
+        {renderField("Location", formData.location, "location", "", "locationIsPublic")}
         {renderField("Address Line 2", formData.addressLine2, "addressLine2")}
-        {renderField("City", formData.city, "city")}
-        {renderField("State", formData.state, "state")}
-        {renderField("Country", formData.country, "country")}
-        {renderField("Zip Code", formData.zip, "zip")}
+        {renderField("City", formData.city, "city", "", "locationIsPublic")}
+        {renderField("State", formData.state, "state", "", "locationIsPublic")}
+        {renderField("Country", formData.country, "country", "", "locationIsPublic")}
+        {renderField("Zip Code", formData.zip, "zip", "", "locationIsPublic")}
         {renderField("Phone Number", formData.phone, "phone", "", "phoneIsPublic")}
         {renderField("Email", formData.email, "email", "", "emailIsPublic")}
-        {renderField("Business Category", formData.category, "category")}
+        {renderField("Business Category", formData.category, "category", "", "categoryIsPublic")}
         {renderField("Tag Line", formData.tagline, "tagline", "", "taglineIsPublic")}
+        
 
         {/* Business MiniCard Live Preview - how business appears in searches */}
         <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
@@ -1050,9 +1092,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         </View>
 
         {renderField("Short Bio", formData.shortBio, "shortBio", "", "shortBioIsPublic")}
-        {renderBusinessRoleField()}
-        {renderField("EIN Number", formData.einNumber, "einNumber", "##-#######", null, "numeric", 10, formatEINNumber)}
-        {renderField("Website", formData.website, "website")}
+        {/* {renderBusinessRoleField()} */}
+        {renderField("EIN Number", formData.einNumber, "einNumber", "##-#######", "einIsPublic", "numeric", 10, formatEINNumber)}
+        {renderField("Website", formData.website, "website", "", "websiteIsPublic")}
 
         {/* MISSING: renderField calls for First Name, Last Name (EditProfileScreen has these) */}
         {/* Note: Business profile doesn't have firstName/lastName fields */}
@@ -1196,10 +1238,10 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
         {/* BUSINESS-SPECIFIC: Social Links Section (EditProfileScreen doesn't have this section in edit) */}
         <Text style={[styles.label, darkMode && styles.darkLabel]}>Social Links</Text>
-        {renderSocialField("Facebook", "facebook")}
-        {renderSocialField("Instagram", "instagram")}
-        {renderSocialField("LinkedIn", "linkedin")}
-        {renderSocialField("YouTube", "youtube")}
+        {renderSocialField("Facebook", "facebook", "facebookIsPublic")}
+        {renderSocialField("Instagram", "instagram", "instagramIsPublic")}
+        {renderSocialField("LinkedIn", "linkedin", "linkedinIsPublic")}
+        {renderSocialField("YouTube", "youtube", "youtubeIsPublic")}
 
         {/* BUSINESS-SPECIFIC: Products & Services Section (EditProfileScreen has ExperienceSection, EducationSection, etc.) */}
         <View style={styles.fieldContainer}>
