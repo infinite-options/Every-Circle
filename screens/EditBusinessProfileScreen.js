@@ -127,6 +127,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     taglineIsPublic: business?.business_tag_line_is_public === "1" || business?.tagline_is_public === "1" || business?.taglineIsPublic === true,
     shortBioIsPublic: business?.business_short_bio_is_public === "1" || business?.short_bio_is_public === "1" || business?.shortBioIsPublic === true,
     imageIsPublic: business?.business_profile_img_is_public === "1" || business?.business_profile_img_is_public === 1 || business?.business_image_is_public === "1" || business?.image_is_public === "1" || business?.imageIsPublic === true || false,
+    locationIsPublic: business?.business_location_is_public === "1" || business?.business_location_is_public === 1 || false,
     // MISSING: Section visibility flags (EditProfileScreen has: experienceIsPublic, educationIsPublic, expertiseIsPublic, wishesIsPublic, businessIsPublic)
     // Note: Business profile doesn't have these sections, so these flags are not needed
     // MISSING: Arrays for experience, education, expertise, wishes, businesses (EditProfileScreen has these)
@@ -451,6 +452,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_uid", businessUID);
       // BUSINESS-SPECIFIC: Uses business_* field names instead of profile_personal_*
       payload.append("business_name", formData.name);
+      payload.append("business_location_is_public", formData.locationIsPublic ? "1" : "0");
       payload.append("business_address_line_1", formData.location);
       payload.append("business_address_line_2", formData.addressLine2);
       payload.append("business_city", formData.city);
@@ -518,7 +520,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         payload.append("business_google_photos", JSON.stringify(googleImages));
       }
 
-      payload.append("social_links", JSON.stringify(formData.socialLinks));
+      
       payload.append("business_email_id_is_public", formData.emailIsPublic ? "1" : "0");
       payload.append("business_phone_number_is_public", formData.phoneIsPublic ? "1" : "0");
       payload.append("business_tag_line_is_public", formData.taglineIsPublic ? "1" : "0");
@@ -1030,12 +1032,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         {renderBusinessImageSection()}
 
         {renderField("Business Name", formData.name, "name")}
-        {renderField("Location", formData.location, "location")}
-        {renderField("Address", formData.addressLine2, "addressLine2")}
-        {renderField("City", formData.city, "city")}
-        {renderField("State", formData.state, "state")}
-        {renderField("Country", formData.country, "country")}
-        {renderField("Zip Code", formData.zip, "zip")}
+        {renderField("Location", formData.location, "location", "", "locationIsPublic")}
+        {renderField("Address", formData.addressLine2, "addressLine2", "", "locationIsPublic")}
+        {renderField("City", formData.city, "city", "", "locationIsPublic")}
+        {renderField("State", formData.state, "state", "", "locationIsPublic")}
+        {renderField("Country", formData.country, "country", "", "locationIsPublic")}
+        {renderField("Zip Code", formData.zip, "zip", "", "locationIsPublic")}
         {renderField("Phone Number", formData.phone, "phone", "", "phoneIsPublic")}
         {renderField("Email", formData.email, "email", "", "emailIsPublic")}
         {renderField("Business Category", formData.category, "category")}

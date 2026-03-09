@@ -297,7 +297,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
           rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1 || rawBusiness.tagline_is_public === "1" || rawBusiness.tagline_is_public === 1,
         shortBioIsPublic:
           rawBusiness.business_short_bio_is_public === "1" || rawBusiness.business_short_bio_is_public === 1 || rawBusiness.short_bio_is_public === "1" || rawBusiness.short_bio_is_public === 1,
-        imageIsPublic:
+        locationIsPublic:
+          rawBusiness.business_location_is_public === "1" || rawBusiness.business_location_is_public === 1,
+          imageIsPublic:
           rawBusiness.business_profile_img_is_public === "1" ||
           rawBusiness.business_profile_img_is_public === 1 ||
           rawBusiness.business_image_is_public === "1" ||
@@ -648,7 +650,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                     sanitizeText(business.business_country),
                   ].filter((part) => part && part !== ".");
                   return parts.length > 0 ? parts.join(", ") : "N/A";
-                })(), true)}
+                })(), business.business_location_is_public === "1" || business.business_location_is_public === 1 || business.locationIsPublic === true)}
                 {business.phoneIsPublic && isSafeForConditional(business.business_phone_number) && (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Phone: {sanitizeText(business.business_phone_number)}</Text>
                 )}
