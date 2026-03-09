@@ -157,16 +157,19 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
       // Handle social_links
       let socialLinksData = {};
-      if (rawBusiness.social_links) {
-        if (Array.isArray(rawBusiness.social_links)) {
-          rawBusiness.social_links.forEach((link) => {
-            if (link.business_link_url && link.business_link_url.trim() !== "") {
-              socialLinksData[link.social_link_name] = link.business_link_url;
+      const socialLinksSource = result.social_links || rawBusiness.social_links;
+      if (socialLinksSource) {
+        if (Array.isArray(socialLinksSource)) {
+          socialLinksSource.forEach((link) => {
+            const platformName = link.social_link_name || link.bl_social_link_id;
+            const platformUrl = link.business_link_url || link.bl_url;
+            if (platformName && platformUrl && platformUrl.trim() !== "") {
+              socialLinksData[platformName] = platformUrl;
             }
           });
-        } else if (typeof rawBusiness.social_links === "string") {
+        } else if (typeof socialLinksSource === "string") {
           try {
-            socialLinksData = JSON.parse(rawBusiness.social_links);
+            socialLinksData = JSON.parse(socialLinksSource);
           } catch (e) {
             console.log("Failed to parse social_links as JSON");
             socialLinksData = {};
