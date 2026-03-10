@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
@@ -35,6 +36,15 @@ export default function AccountScreen({ navigation }) {
   const [expandedTransactionId, setExpandedTransactionId] = useState(null);
   const [transactionServices, setTransactionServices] = useState({});
   const [personalProfileData, setPersonalProfileData] = useState(null);
+  
+  // Section collapse states
+  const [showExpertise, setShowExpertise] = useState(true);
+  const [showTransactionHistory, setShowTransactionHistory] = useState(true);
+  const [showNetEarning, setShowNetEarning] = useState(true);
+  const [showBountyResults, setShowBountyResults] = useState(true);
+  const [showProductResults, setShowProductResults] = useState(true);
+  const [showBusinessNetEarning, setShowBusinessNetEarning] = useState(true);
+  const [showBusinessTransactionHistory, setShowBusinessTransactionHistory] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -883,7 +893,8 @@ export default function AccountScreen({ navigation }) {
 
   // Calculate Y positions for cumulative bounty (linear, right axis with different scale)
   const cumulativeYPositions = chartData.cumulativeBounty.map((value) => {
-    const y = paddingTop + linearScale(value, chartData.maxCumulative, plotHeight);
+    const normalized = Math.max(0, Math.min(1, value / chartData.maxCumulative));
+    const y = paddingTop + plotHeight - normalized * plotHeight;
     return isFinite(y) ? y : paddingTop + plotHeight;
   });
 
@@ -897,20 +908,30 @@ export default function AccountScreen({ navigation }) {
   //   leftTickValues.push((chartData.maxDaily / leftTicks) * i);
   // }
 
-  // Generate left Y-axis ticks (increment by $1.50)
+  // Generate left Y-axis ticks (increment by $1.50) with proper upper bound
   const leftTickValues = [];
   const increment = 1.50;
-  const maxTicks = Math.ceil(chartData.maxDaily / increment);
-  for (let i = 0; i <= maxTicks; i++) {
-    leftTickValues.push(increment * i);
+  let currentTick = 0;
+  while (currentTick <= chartData.maxDaily) {
+    leftTickValues.push(currentTick);
+    currentTick += increment;
+  }
+  // Ensure we have the max value as the last tick
+  if (leftTickValues[leftTickValues.length - 1] < chartData.maxDaily) {
+    leftTickValues.push(chartData.maxDaily);
   }
 
-  // Generate right Y-axis ticks (linear)
+  // Generate right Y-axis ticks (linear) with proper upper bound
   const rightTickValues = [];
   const rightIncrement = 1.50;
-  const maxRightTicks = Math.ceil(chartData.maxCumulative / rightIncrement);
-  for (let i = 0; i <= maxRightTicks; i++) {
-    rightTickValues.push(rightIncrement * i);
+  let currentRightTick = 0;
+  while (currentRightTick <= chartData.maxCumulative) {
+    rightTickValues.push(currentRightTick);
+    currentRightTick += rightIncrement;
+  }
+  // Ensure we have the max value as the last tick
+  if (rightTickValues[rightTickValues.length - 1] < chartData.maxCumulative) {
+    rightTickValues.push(chartData.maxCumulative);
   }
 
   // Build path strings for lines
@@ -948,14 +969,14 @@ export default function AccountScreen({ navigation }) {
           return <Line key={`grid-${index}`} x1={paddingLeft} y1={y} x2={paddingLeft + plotWidth} y2={y} stroke='#ddd' strokeWidth='1' />;
         })}
 
-        {/* Left Y-axis (linear) */}
-        <Line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
+        {/* Left Y-axis (linear) - Red to match Daily Bounty line */}
+        <Line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke='#B71C1C' strokeWidth='2' />
         {leftTickValues.map((tick, index) => {
           const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
           return (
             <G key={`left-tick-${index}`}>
-              <Line x1={paddingLeft} y1={y} x2={paddingLeft - 5} y2={y} stroke='#666' strokeWidth='1' />
-              <SvgText x={paddingLeft - 8} y={y + 4} fontSize='10' fill='#666' textAnchor='end'>
+              <Line x1={paddingLeft} y1={y} x2={paddingLeft - 5} y2={y} stroke='#B71C1C' strokeWidth='1' />
+              <SvgText x={paddingLeft - 8} y={y + 4} fontSize='10' fill='#B71C1C' textAnchor='end'>
                 {formatYLabel(tick)}
               </SvgText>
             </G>
@@ -965,7 +986,7 @@ export default function AccountScreen({ navigation }) {
         {/* Right Y-axis (linear) */}
         <Line x1={paddingLeft + plotWidth} y1={paddingTop} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
         {rightTickValues.map((tick, index) => {
-          const y = paddingTop + linearScale(tick, chartData.maxCumulative, plotHeight);
+          const y = paddingTop + plotHeight - (tick / chartData.maxCumulative) * plotHeight;
           return (
             <G key={`right-tick-${index}`}>
               <Line x1={paddingLeft + plotWidth} y1={y} x2={paddingLeft + plotWidth + 5} y2={y} stroke='#666' strokeWidth='1' />
@@ -1252,129 +1273,143 @@ export default function AccountScreen({ navigation }) {
 
           {/* Expertise */}
           <View style={styles.sectionContainer}>
-            <View style={styles.sectionTitleRow}>
-              <Text style={styles.sectionTitle}>Expertise</Text>
-              <View style={styles.questionCircle}>
-                <Text style={styles.questionMark}>?</Text>
-              </View>
-            </View>
-            {expertiseLoading ? (
-              <Text style={styles.loadingText}>Loading expertise data...</Text>
-            ) : expertiseData.length > 0 ? (
-              <View style={styles.tableContainer}>
-                <View style={styles.transactionHeaderRow}>
-                  <Text style={[styles.transactionHeaderBusiness, { flex: 1.5 }]}>Expertise</Text>
-                  <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Cost</Text>
-                  <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Unit</Text>
-                  <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Qty</Text>
-                  <Text style={[styles.transactionHeaderAmount, { flex: 1, textAlign: 'right'}]}>Bounty</Text>
-                </View>
-                {expertiseData.map((item, idx) => (
-                  <View key={idx} style={styles.tableRow}>
-                    <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>{item.name}</Text>
-                    <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
-                    <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
-                    <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.quantity || 0}</Text>
-                    <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: 'right', marginRight: 15 }]}>${item.bounty}</Text>
+            <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowExpertise(!showExpertise)}>
+              <Text style={styles.sectionHeaderText}>EXPERTISE</Text>
+              <Ionicons name={showExpertise ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+            </TouchableOpacity>
+            {showExpertise && (
+              <>
+                {expertiseLoading ? (
+                  <Text style={styles.loadingText}>Loading expertise data...</Text>
+                ) : expertiseData.length > 0 ? (
+                  <View style={styles.tableContainer}>
+                    <View style={styles.transactionHeaderRow}>
+                      <Text style={[styles.transactionHeaderBusiness, { flex: 1.5 }]}>Expertise</Text>
+                      <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Cost</Text>
+                      <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Unit</Text>
+                      <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Qty</Text>
+                      <Text style={[styles.transactionHeaderAmount, { flex: 1, textAlign: 'right'}]}>Bounty</Text>
+                    </View>
+                    {expertiseData.map((item, idx) => (
+                      <View key={idx} style={styles.tableRow}>
+                        <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>{item.name}</Text>
+                        <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
+                        <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
+                        <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.quantity || 0}</Text>
+                        <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: 'right', marginRight: 15 }]}>${item.bounty}</Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.noDataText}>No expertise data available.</Text>
+                ) : (
+                  <Text style={styles.noDataText}>No expertise transactions available.</Text>
+                )}
+              </>
             )}
           </View>
 
           {/* Transaction History */}
           <View style={styles.sectionContainer}>
-            <View style={styles.sectionTitleRow}>
-              <Text style={styles.sectionTitle}>Transaction History</Text>
-              <View style={styles.questionCircle}>
-                <Text style={styles.questionMark}>?</Text>
-              </View>
-            </View>
-            {transactionLoading ? (
-              <Text style={styles.loadingText}>Loading transaction data...</Text>
-            ) : transactionData.length > 0 ? (
-              <View style={styles.transactionsContainer}>
-                {/* Table Header */}
-                <View style={styles.transactionHeaderRow}>
-                  <Text style={styles.transactionHeaderDate}>Date</Text>
-                  <Text style={styles.transactionHeaderId}>Transaction ID</Text>
-                  <Text style={styles.transactionHeaderBusiness}>Business</Text>
-                  <Text style={styles.transactionHeaderAmount}>Amount</Text>
-                </View>
-                {/* Table Rows */}
-                {transactionData.map((transaction, i) => {
-                  return (
-                    <View key={transaction.transaction_uid || i} style={styles.transactionRow}>
-                      <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
-                      <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text>
-                      <Text style={styles.transactionBusiness}>{transaction.business_name || "N/A"}</Text>
-                      <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
+            <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowTransactionHistory(!showTransactionHistory)}>
+              <Text style={styles.sectionHeaderText}>TRANSACTION HISTORY</Text>
+              <Ionicons name={showTransactionHistory ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+            </TouchableOpacity>
+            {showTransactionHistory && (
+              <>
+                {transactionLoading ? (
+                  <Text style={styles.loadingText}>Loading transaction data...</Text>
+                ) : transactionData.length > 0 ? (
+                  <View style={styles.transactionsContainer}>
+                    {/* Table Header */}
+                    <View style={styles.transactionHeaderRow}>
+                      <Text style={styles.transactionHeaderDate}>Date</Text>
+                      <Text style={styles.transactionHeaderId}>Transaction ID</Text>
+                      <Text style={styles.transactionHeaderBusiness}>Business</Text>
+                      <Text style={styles.transactionHeaderAmount}>Amount</Text>
                     </View>
-                  );
-                })}
-              </View>
-            ) : (
-              <View>
-                <Text style={styles.noDataText}>No transaction data available.</Text>
-                <Text style={styles.noDataText}>Transaction data length: {transactionData.length}</Text>
-                <Text style={styles.noDataText}>Transaction loading: {transactionLoading.toString()}</Text>
-              </View>
+                    {/* Table Rows */}
+                    {transactionData.map((transaction, i) => {
+                      return (
+                        <View key={transaction.transaction_uid || i} style={styles.transactionRow}>
+                          <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                          <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text>
+                          <Text style={styles.transactionBusiness}>{transaction.business_name || "N/A"}</Text>
+                          <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <View>
+                    <Text style={styles.noDataText}>No transaction data available.</Text>
+                    <Text style={styles.noDataText}>Transaction data length: {transactionData.length}</Text>
+                    <Text style={styles.noDataText}>Transaction loading: {transactionLoading.toString()}</Text>
+                  </View>
+                )}
+              </>
             )}
           </View>
 
           {/* Net Earning */}
           <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>Net Earning</Text>
-            <NetEarningChart />
+            <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowNetEarning(!showNetEarning)}>
+              <Text style={styles.sectionHeaderText}>NET EARNING</Text>
+              <Ionicons name={showNetEarning ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+            </TouchableOpacity>
+            {showNetEarning && <NetEarningChart />}
           </View>
 
           {/* Bounty Results */}
           <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>Bounty Results</Text>
-            {bountyLoading ? (
-              <Text style={styles.loadingText}>Loading bounty data...</Text>
-            ) : bountyData?.error ? (
-              <Text style={styles.errorText}>Error: {bountyData.error}</Text>
-            ) : bountyData?.data ? (
-              <View>
-                {/* Totals */}
-                <View style={styles.bountyTotals}>
-                  <Text style={styles.bountyTotalText}>Total Transactions: {bountyData.total_bounties}</Text>
-                  <Text style={styles.bountyTotalText}>Total Earned: ${bountyData.total_bounty_earned?.toFixed(2)}</Text>
-                </View>
-                {/* Table Header */}
-                <View style={styles.bountyTableHeader}>
-                  <Text style={styles.bountyTableHeaderCell}>ID</Text>
-                  <Text style={styles.bountyTableHeaderCell}>Date</Text>
-                  <Text style={styles.bountyTableHeaderCell}>Purchaser</Text>
-                  <Text style={styles.bountyTableHeaderCell}>Business</Text>
-                  <Text style={styles.bountyTableHeaderCell}>Bounty Earned</Text>
-                </View>
-                {/* Table Rows */}
-                {bountyData.data.map((transaction, index) => {
-                  // Format date to MM/DD
-                  const formatDate = (dateString) => {
-                    if (!dateString) return "N/A";
-                    const date = new Date(dateString);
-                    const month = String(date.getMonth() + 1).padStart(2, "0");
-                    const day = String(date.getDate()).padStart(2, "0");
-                    return `${month}/${day}`;
-                  };
-                  return (
-                    <View key={transaction.transaction_uid || index} style={styles.bountyTableRow}>
-                      <Text style={styles.bountyTableCell}>{transaction.transaction_uid}</Text>
-                      <Text style={styles.bountyTableCell}>{formatDate(transaction.transaction_datetime)}</Text>
-                      <Text style={styles.bountyTableCell}>{transaction.transaction_profile_id || "N/A"}</Text>
-                      <Text style={styles.bountyTableCell}>{transaction.transaction_business_id || "N/A"}</Text>
-                      <Text style={styles.bountyTableCell}>${transaction.bounty_earned?.toFixed(2)}</Text>
+            <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBountyResults(!showBountyResults)}>
+              <Text style={styles.sectionHeaderText}>BOUNTY RESULTS</Text>
+              <Ionicons name={showBountyResults ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+            </TouchableOpacity>
+            {showBountyResults && (
+              <>
+                {bountyLoading ? (
+                  <Text style={styles.loadingText}>Loading bounty data...</Text>
+                ) : bountyData?.error ? (
+                  <Text style={styles.errorText}>Error: {bountyData.error}</Text>
+                ) : bountyData?.data ? (
+                  <View>
+                    {/* Totals */}
+                    <View style={styles.bountyTotals}>
+                      <Text style={styles.bountyTotalText}>Total Transactions: {bountyData.total_bounties}</Text>
+                      <Text style={styles.bountyTotalText}>Total Earned: ${bountyData.total_bounty_earned?.toFixed(2)}</Text>
                     </View>
-                  );
-                })}
-              </View>
-            ) : (
-              <Text style={styles.noDataText}>No bounty data available.</Text>
+                    {/* Table Header */}
+                    <View style={styles.bountyTableHeader}>
+                      <Text style={styles.bountyTableHeaderCell}>ID</Text>
+                      <Text style={styles.bountyTableHeaderCell}>Date</Text>
+                      <Text style={styles.bountyTableHeaderCell}>Purchaser</Text>
+                      <Text style={styles.bountyTableHeaderCell}>Business</Text>
+                      <Text style={styles.bountyTableHeaderCell}>Bounty Earned</Text>
+                    </View>
+                    {/* Table Rows */}
+                    {bountyData.data.map((transaction, index) => {
+                      // Format date to MM/DD
+                      const formatDate = (dateString) => {
+                        if (!dateString) return "N/A";
+                        const date = new Date(dateString);
+                        const month = String(date.getMonth() + 1).padStart(2, "0");
+                        const day = String(date.getDate()).padStart(2, "0");
+                        return `${month}/${day}`;
+                      };
+                      return (
+                        <View key={transaction.transaction_uid || index} style={styles.bountyTableRow}>
+                          <Text style={styles.bountyTableCell}>{transaction.transaction_uid}</Text>
+                          <Text style={styles.bountyTableCell}>{formatDate(transaction.transaction_datetime)}</Text>
+                          <Text style={styles.bountyTableCell}>{transaction.transaction_profile_id || "N/A"}</Text>
+                          <Text style={styles.bountyTableCell}>{transaction.transaction_business_id || "N/A"}</Text>
+                          <Text style={styles.bountyTableCell}>${transaction.bounty_earned?.toFixed(2)}</Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text style={styles.noDataText}>No bounty data available.</Text>
+                )}
+              </>
             )}
           </View>
         </>
@@ -1384,82 +1419,92 @@ export default function AccountScreen({ navigation }) {
 
         {/* Product Results formerly Business Bounty Results */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Product Results</Text>
-          {businessBountyLoading ? (
-            <Text style={styles.loadingText}>Loading business bounty data...</Text>
-          ) : businessBountyData?.error ? (
-            <Text style={styles.errorText}>Error: {businessBountyData.error}</Text>
-          ) : businessBountyData?.data ? (
-              <View>
-                {/* Table Header */}
-                <View style={styles.businessBountyTableHeader}>
-                  <Text style={styles.businessBountyHeaderCell}>Date</Text>
-                  <Text style={styles.businessBountyHeaderCell}>Product UID</Text>
-                  <Text style={styles.businessBountyHeaderCell}>Product Name</Text>
-                  <Text style={styles.businessBountyHeaderCell}>Cost</Text>
-                  <Text style={styles.businessBountyHeaderCell}>Bounty</Text>
-                  <Text style={styles.businessBountyHeaderCell}>Qty</Text>
-                  <Text style={styles.businessBountyHeaderCell}>Bounty Paid</Text>
-                </View>
-                {/* Table Rows */}
-                {businessBountyData.data.map((transaction, index) => {
-                  const formatDate = (dateString) => {
-                    if (!dateString) return "N/A";
-                    const date = new Date(dateString);
-                    const month = String(date.getMonth() + 1).padStart(2, "0");
-                    const day = String(date.getDate()).padStart(2, "0");
-                    return `${month}/${day}`;
-                  };
-                  return (
-                    <View key={transaction.transaction_uid || index} style={styles.businessBountyTableRow}>
-                      <Text style={styles.businessBountyCell}>
-                        {formatDate(transaction.transaction_datetime)}
-                      </Text>
-                      <Text style={styles.businessBountyCell}>
-                        {transaction.bs_uid || "N/A"}
-                      </Text>
-                      <Text style={styles.businessBountyCell}>
-                        {transaction.bs_service_name || "N/A"}
-                      </Text>
-                      <Text style={styles.businessBountyCell}>
-                        ${parseFloat(transaction.bs_cost || 0).toFixed(2)}
-                      </Text>
-                      <Text style={styles.businessBountyCell}>
-                        ${parseFloat(transaction.bs_bounty || 0).toFixed(2)}
-                      </Text>
-                      <Text style={styles.businessBountyCell}>
-                        {transaction.ti_bs_qty || 0}
-                      </Text>
-                      <Text style={styles.businessBountyCell}>
-                        ${parseFloat(transaction.bounty_paid || 0).toFixed(2)}
-                      </Text>
+          <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowProductResults(!showProductResults)}>
+            <Text style={styles.sectionHeaderText}>PRODUCT RESULTS</Text>
+            <Ionicons name={showProductResults ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+          </TouchableOpacity>
+          {showProductResults && (
+            <>
+              {businessBountyLoading ? (
+                <Text style={styles.loadingText}>Loading business bounty data...</Text>
+              ) : businessBountyData?.error ? (
+                <Text style={styles.errorText}>Error: {businessBountyData.error}</Text>
+              ) : businessBountyData?.data ? (
+                  <View>
+                    {/* Table Header */}
+                    <View style={styles.businessBountyTableHeader}>
+                      <Text style={styles.businessBountyHeaderCell}>Date</Text>
+                      <Text style={styles.businessBountyHeaderCell}>Product UID</Text>
+                      <Text style={styles.businessBountyHeaderCell}>Product Name</Text>
+                      <Text style={styles.businessBountyHeaderCell}>Cost</Text>
+                      <Text style={styles.businessBountyHeaderCell}>Bounty</Text>
+                      <Text style={styles.businessBountyHeaderCell}>Qty</Text>
+                      <Text style={styles.businessBountyHeaderCell}>Bounty Paid</Text>
                     </View>
-                  );
-                })}
-              </View>
-          ) : (
-            <Text style={styles.noDataText}>No business bounty data available.</Text>
+                    {/* Table Rows */}
+                    {businessBountyData.data.map((transaction, index) => {
+                      const formatDate = (dateString) => {
+                        if (!dateString) return "N/A";
+                        const date = new Date(dateString);
+                        const month = String(date.getMonth() + 1).padStart(2, "0");
+                        const day = String(date.getDate()).padStart(2, "0");
+                        return `${month}/${day}`;
+                      };
+                      return (
+                        <View key={transaction.transaction_uid || index} style={styles.businessBountyTableRow}>
+                          <Text style={styles.businessBountyCell}>
+                            {formatDate(transaction.transaction_datetime)}
+                          </Text>
+                          <Text style={styles.businessBountyCell}>
+                            {transaction.bs_uid || "N/A"}
+                          </Text>
+                          <Text style={styles.businessBountyCell}>
+                            {transaction.bs_service_name || "N/A"}
+                          </Text>
+                          <Text style={styles.businessBountyCell}>
+                            ${parseFloat(transaction.bs_cost || 0).toFixed(2)}
+                          </Text>
+                          <Text style={styles.businessBountyCell}>
+                            ${parseFloat(transaction.bs_bounty || 0).toFixed(2)}
+                          </Text>
+                          <Text style={styles.businessBountyCell}>
+                            {transaction.ti_bs_qty || 0}
+                          </Text>
+                          <Text style={styles.businessBountyCell}>
+                            ${parseFloat(transaction.bounty_paid || 0).toFixed(2)}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+              ) : (
+                <Text style={styles.noDataText}>No business bounty data available.</Text>
+              )}
+            </>
           )}
         </View>
 
         {/* Business Net Earning */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Net Earning</Text>
-          <BusinessNetEarningChart />
+          <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBusinessNetEarning(!showBusinessNetEarning)}>
+            <Text style={styles.sectionHeaderText}>NET EARNING</Text>
+            <Ionicons name={showBusinessNetEarning ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+          </TouchableOpacity>
+          {showBusinessNetEarning && <BusinessNetEarningChart />}
         </View>
 
         {/* Business Transaction History */}
         <View style={styles.sectionContainer}>
-          <View style={styles.sectionTitleRow}>
-            <Text style={styles.sectionTitle}>Business Transaction History</Text>
-            <View style={styles.questionCircle}>
-              <Text style={styles.questionMark}>?</Text>
-            </View>
-          </View>
-          {businessTransactionLoading ? (
-            <Text style={styles.loadingText}>Loading business transaction data...</Text>
-          ) : businessTransactionData.length > 0 ? (
-              <View style={styles.transactionsContainer}>
+          <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBusinessTransactionHistory(!showBusinessTransactionHistory)}>
+            <Text style={styles.sectionHeaderText}>BUSINESS TRANSACTION HISTORY</Text>
+            <Ionicons name={showBusinessTransactionHistory ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+          </TouchableOpacity>
+          {showBusinessTransactionHistory && (
+            <>
+              {businessTransactionLoading ? (
+                <Text style={styles.loadingText}>Loading business transaction data...</Text>
+              ) : businessTransactionData.length > 0 ? (
+                  <View style={styles.transactionsContainer}>
                 {/* Table Header */}
                 <View style={styles.businessTransactionHeaderRow}>
                   <Text style={styles.businessTransactionHeaderCell}>Transaction ID</Text>
@@ -1547,10 +1592,12 @@ export default function AccountScreen({ navigation }) {
                   );
                 })}
               </View>
-          ) : (
-            <View>
-              <Text style={styles.noDataText}>No business transaction data available.</Text>
-            </View>
+              ) : (
+                <View>
+                  <Text style={styles.noDataText}>No business transaction data available.</Text>
+                </View>
+              )}
+            </>
           )}
         </View>
   
@@ -1899,5 +1946,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 4,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgba(24, 136, 74, 0.3)", // 30% opacity of #18884A (account header green)
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  sectionHeaderText: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#000",
+    letterSpacing: 1,
   },
 });
