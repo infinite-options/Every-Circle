@@ -1,6 +1,6 @@
 // BusinessProfileScreen.js
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TouchableOpacity, Alert, Modal, Platform } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TouchableOpacity, Alert, Modal, Platform, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
@@ -664,9 +664,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 {isSafeForConditional(business.business_role || business.role || business.bu_role) && (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Business Role: {sanitizeText(business.business_role || business.role || business.bu_role)}</Text>
                 )}
-                {isSafeForConditional(business.ein_number) && (
+                {/* {isSafeForConditional(business.ein_number) && (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>EIN Number: {sanitizeText(business.ein_number)}</Text>
-                )}
+                )} */}
               </View>
             )}
           </View>
@@ -729,10 +729,26 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 </TouchableOpacity>
                 {showSocialLinks && (
                   <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
-                    {isSafeForConditional(business.facebook) && <Text style={[styles.inputText, darkMode && styles.darkInputText]}>📘 Facebook: {sanitizeText(business.facebook)}</Text>}
-                    {isSafeForConditional(business.instagram) && <Text style={[styles.inputText, darkMode && styles.darkInputText]}>📸 Instagram: {sanitizeText(business.instagram)}</Text>}
-                    {isSafeForConditional(business.linkedin) && <Text style={[styles.inputText, darkMode && styles.darkInputText]}>🔗 LinkedIn: {sanitizeText(business.linkedin)}</Text>}
-                    {isSafeForConditional(business.youtube) && <Text style={[styles.inputText, darkMode && styles.darkInputText]}>▶️ YouTube: {sanitizeText(business.youtube)}</Text>}
+                    {isSafeForConditional(business.facebook) && (
+                      <TouchableOpacity onPress={() => Linking.openURL(business.facebook.startsWith("http") ? business.facebook : `https://${business.facebook}`)}>
+                        <Text style={[styles.inputText, styles.linkText]}>📘 Facebook: {sanitizeText(business.facebook)}</Text>
+                      </TouchableOpacity>
+                    )}
+                    {isSafeForConditional(business.instagram) && (
+                      <TouchableOpacity onPress={() => Linking.openURL(business.instagram.startsWith("http") ? business.instagram : `https://${business.instagram}`)}>
+                        <Text style={[styles.inputText, styles.linkText]}>📸 Instagram: {sanitizeText(business.instagram)}</Text>
+                      </TouchableOpacity>
+                    )}
+                    {isSafeForConditional(business.linkedin) && (
+                      <TouchableOpacity onPress={() => Linking.openURL(business.linkedin.startsWith("http") ? business.linkedin : `https://${business.linkedin}`)}>
+                        <Text style={[styles.inputText, styles.linkText]}>🔗 LinkedIn: {sanitizeText(business.linkedin)}</Text>
+                      </TouchableOpacity>
+                    )}
+                    {isSafeForConditional(business.youtube) && (
+                      <TouchableOpacity onPress={() => Linking.openURL(business.youtube.startsWith("http") ? business.youtube : `https://${business.youtube}`)}>
+                        <Text style={[styles.inputText, styles.linkText]}>▶️ YouTube: {sanitizeText(business.youtube)}</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
               </View>
@@ -1482,5 +1498,9 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#000",
     letterSpacing: 1,
+  },
+  linkText: {
+    color: "#1a73e8",
+    textDecorationLine: "underline",
   },
 });
