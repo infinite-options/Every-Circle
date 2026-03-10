@@ -53,7 +53,7 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection })
       <View style={[styles.modalOverlay, darkMode && styles.darkModalOverlay]}>
         <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
           <View style={styles.header}>
-            <Text style={[styles.title, darkMode && styles.darkTitle]}>Scanned Profile</Text>
+            <Text style={[styles.title, darkMode && styles.darkTitle]}>Connect With Me</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name='close' size={24} color={darkMode ? "#fff" : "#333"} />
             </TouchableOpacity>
@@ -342,15 +342,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#333",
     backgroundColor: "#fff",
+    textAlign: "left",
   },
   darkTextInput: {
     borderColor: "#555",
     backgroundColor: "#333",
     color: "#fff",
+    textAlign: "left",
   },
   textArea: {
     minHeight: 80,
     textAlignVertical: "top",
+    
   },
 });
 

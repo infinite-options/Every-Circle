@@ -27,7 +27,7 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
     width: style?.width || "auto",
     height: style?.height || "auto",
     minHeight: style?.minHeight || "auto",
-    textAlign: style?.textAlign || (multiline ? "left" : "center"),
+    textAlign: style?.textAlign || "left",
     // Note: outline, WebkitAppearance, etc. are applied directly to the DOM element via React.createElement
     // They're not React Native style properties, so we apply them as HTML attributes
     boxSizing: "border-box",
