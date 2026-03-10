@@ -34,11 +34,14 @@ export default function SettingsScreen() {
   const { user, profile_uid } = route.params || {};
   const [allowNotifications, setAllowNotifications] = useState(true);
   const { darkMode, toggleDarkMode } = useDarkMode();
-  const [allowCookies, setAllowCookies] = useState(false);
+  const [allowCookies, setAllowCookies] = useState(true);
+  const [termsAccepted, setTermsAccepted] = useState(true);
   const [displayEmail, setDisplayEmail] = useState(true);
   const [displayPhoneNumber, setDisplayPhoneNumber] = useState(false);
   const [qrModalVisible, setQrModalVisible] = useState(false);
   const [personalProfileData, setPersonalProfileData] = useState(null);
+  const [termsWarningVisible, setTermsWarningVisible] = useState(false);
+  const [cookiesWarningVisible, setCookiesWarningVisible] = useState(false);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -55,11 +58,59 @@ export default function SettingsScreen() {
     (async () => {
       const e = await AsyncStorage.getItem("displayEmail");
       const p = await AsyncStorage.getItem("displayPhone");
+      const t = await AsyncStorage.getItem("termsAccepted");
+      const c = await AsyncStorage.getItem("allowCookies");
       if (e !== null) setDisplayEmail(JSON.parse(e));
       if (p !== null) setDisplayPhoneNumber(JSON.parse(p));
+      if (t !== null) setTermsAccepted(JSON.parse(t));
+      if (c !== null) setAllowCookies(JSON.parse(c));
     })();
   }, []);
   const [termsModalVisible, setTermsModalVisible] = useState(false);
+
+  const handleTermsToggle = async (value) => {
+    if (!value) {
+      // User is trying to turn off terms acceptance - show warning
+      setTermsWarningVisible(true);
+    } else {
+      // User is accepting terms
+      setTermsAccepted(true);
+      await AsyncStorage.setItem("termsAccepted", JSON.stringify(true));
+    }
+  };
+
+  const confirmTermsRejection = async () => {
+    setTermsAccepted(false);
+    await AsyncStorage.setItem("termsAccepted", JSON.stringify(false));
+    setTermsWarningVisible(false);
+  };
+
+  const cancelTermsRejection = () => {
+    setTermsWarningVisible(false);
+    // Keep the switch in the "Yes" position
+  };
+
+  const handleCookiesToggle = async (value) => {
+    if (!value) {
+      // User is trying to turn off cookies - show warning
+      setCookiesWarningVisible(true);
+    } else {
+      // User is accepting cookies
+      setAllowCookies(true);
+      await AsyncStorage.setItem("allowCookies", JSON.stringify(true));
+    }
+  };
+
+  const confirmCookiesRejection = async () => {
+    setAllowCookies(false);
+    await AsyncStorage.setItem("allowCookies", JSON.stringify(false));
+    setCookiesWarningVisible(false);
+  };
+
+  const cancelCookiesRejection = () => {
+    setCookiesWarningVisible(false);
+    // Keep the switch in the "Yes" position
+  };
 
   const handleLogout = async () => {
     console.log("SettingsScreen.js - Logout Button pressed ==> handleLogout called");
@@ -181,7 +232,7 @@ export default function SettingsScreen() {
           CommonActions.reset({
             index: 0,
             routes: [{ name: "Home" }],
-          })
+          }),
         );
         console.log("SettingsScreen.js - CommonActions.reset() dispatched successfully");
         console.log("SettingsScreen.js - Logout completed successfully");
@@ -240,36 +291,36 @@ export default function SettingsScreen() {
   };
 
   useEffect(() => {
-  const fetchProfile = async () => {
-    try {
-      const profileId = await AsyncStorage.getItem("profile_uid");
-      if (!profileId) return;
-      const { USER_PROFILE_INFO_ENDPOINT } = require("../apiConfig");
-      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-      const result = await response.json();
-      if (result && result.personal_info) {
-        setPersonalProfileData({
-          firstName: result.personal_info.profile_personal_first_name || "",
-          lastName: result.personal_info.profile_personal_last_name || "",
-          email: result.user_email || "",
-          phoneNumber: result.personal_info.profile_personal_phone_number || "",
-          tagLine: result.personal_info.profile_personal_tag_line || "",
-          city: result.personal_info.profile_personal_city || "",
-          state: result.personal_info.profile_personal_state || "",
-          profileImage: result.personal_info.profile_personal_image || "",
-          emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
-          phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
-          tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
-          locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
-          imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
-        });
+    const fetchProfile = async () => {
+      try {
+        const profileId = await AsyncStorage.getItem("profile_uid");
+        if (!profileId) return;
+        const { USER_PROFILE_INFO_ENDPOINT } = require("../apiConfig");
+        const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+        const result = await response.json();
+        if (result && result.personal_info) {
+          setPersonalProfileData({
+            firstName: result.personal_info.profile_personal_first_name || "",
+            lastName: result.personal_info.profile_personal_last_name || "",
+            email: result.user_email || "",
+            phoneNumber: result.personal_info.profile_personal_phone_number || "",
+            tagLine: result.personal_info.profile_personal_tag_line || "",
+            city: result.personal_info.profile_personal_city || "",
+            state: result.personal_info.profile_personal_state || "",
+            profileImage: result.personal_info.profile_personal_image || "",
+            emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
+            phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
+            tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
+            locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
+            imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
+          });
+        }
+      } catch (e) {
+        console.error("Error fetching profile for settings:", e);
       }
-    } catch (e) {
-      console.error("Error fetching profile for settings:", e);
-    }
-  };
-  fetchProfile();
-}, []);
+    };
+    fetchProfile();
+  }, []);
 
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
@@ -279,7 +330,6 @@ export default function SettingsScreen() {
 
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkContainer]}>
         <ScrollView contentContainerStyle={styles.settingsContainer}>
-
           {/* Profile MiniCard at top */}
           {personalProfileData && (
             <View style={{ marginBottom: 16 }}>
@@ -287,11 +337,11 @@ export default function SettingsScreen() {
             </View>
           )}
 
-          {/* Settings Container */}
+          {/* Settings/Toggles Container */}
           <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer]}>
             <View style={styles.settingsGroupHeader}>
-              <Text style={[styles.settingsGroupHeaderText, darkMode && { color: '#fff' }, { fontStyle: 'italic', color: '#000', fontSize: 16 }]}>For all your profiles</Text>
-<Text style={[styles.settingsGroupHeaderText, darkMode && { color: '#fff' }, { fontStyle: 'italic', color: '#000', fontSize: 16 }]}>Selection</Text>
+              <Text style={[styles.settingsGroupHeaderText, darkMode && { color: "#fff" }, { fontStyle: "italic", color: "#000", fontSize: 16 }]}> </Text>
+              <Text style={[styles.settingsGroupHeaderText, darkMode && { color: "#fff" }, { fontStyle: "italic", color: "#000", fontSize: 16, textAlign: "right" }]}>Selection</Text>
             </View>
 
             {/* Allow Cookies */}
@@ -299,11 +349,23 @@ export default function SettingsScreen() {
               <View style={styles.itemLabel}>
                 <MaterialIcons name='cookie' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
                 <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                  <Text style={{ fontWeight: 'bold', color: darkMode ? "#fff" : "#000" }}>Allow Cookies </Text>
+                  <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#000" }}>Allow Cookies </Text>
                   <Text style={{ color: darkMode ? "#fff" : "#000" }}>Yes / No</Text>
                 </Text>
               </View>
-              <Switch value={allowCookies} onValueChange={setAllowCookies} trackColor={{ false: "#ccc", true: "#000" }} thumbColor={allowCookies ? "#fff" : "#f4f3f4"} />
+              <Switch value={allowCookies} onValueChange={handleCookiesToggle} trackColor={{ false: "#ccc", true: "#000" }} thumbColor={allowCookies ? "#fff" : "#f4f3f4"} />
+            </View>
+
+            {/* Terms and Conditions */}
+            <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+              <TouchableOpacity style={styles.itemLabel} onPress={() => navigation.navigate("TermsAndConditions")} activeOpacity={0.7}>
+                <MaterialIcons name='description' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                  <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#000" }}>Terms and Conditions </Text>
+                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>Disagree / Agreed (Required)</Text>
+                </Text>
+              </TouchableOpacity>
+              <Switch value={termsAccepted} onValueChange={handleTermsToggle} trackColor={{ false: "#ccc", true: "#000" }} thumbColor={termsAccepted ? "#fff" : "#f4f3f4"} />
             </View>
 
             {/* Dark Mode */}
@@ -311,8 +373,8 @@ export default function SettingsScreen() {
               <View style={styles.itemLabel}>
                 <MaterialIcons name='brightness-2' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
                 <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                  <Text style={{ fontWeight: 'bold', color: darkMode ? "#fff" : "#000" }}>Background </Text>
-                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>Dark / Light</Text>
+                  <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#000" }}>Background </Text>
+                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>Light / Dark</Text>
                 </Text>
               </View>
               <Switch value={darkMode} onValueChange={toggleDarkMode} trackColor={{ false: "#ccc", true: "#000" }} thumbColor={darkMode ? "#fff" : "#f4f3f4"} />
@@ -323,21 +385,27 @@ export default function SettingsScreen() {
               <View style={styles.itemLabel}>
                 <MaterialIcons name='notifications' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
                 <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                  <Text style={{ fontWeight: 'bold', color: darkMode ? "#fff" : "#000" }}>Allow Notifications </Text>
-                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>Yes / No</Text>
+                  <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#000" }}>Allow Notifications </Text>
+                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>No / Yes</Text>
                 </Text>
               </View>
               <Switch value={allowNotifications} onValueChange={setAllowNotifications} trackColor={{ false: "#ccc", true: "#000" }} thumbColor={allowNotifications ? "#fff" : "#f4f3f4"} />
             </View>
           </View>
 
+          {/* Information & Links Container */}
           <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { marginBottom: 16 }]}>
-            {/* Generate QR Code */}
-            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => setQrModalVisible(true)}>
+            <View style={styles.settingsGroupHeader}>
+              <Text style={[styles.settingsGroupHeaderText, darkMode && { color: "#fff" }, { fontStyle: "italic", color: "#000", fontSize: 16 }]}>Information</Text>
+            </View>
+
+            {/* Terms and Conditions */}
+            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("TermsAndConditions")}>
               <View style={styles.itemLabel}>
-                <MaterialIcons name='qr-code' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Generate QR Code</Text>
+                <MaterialIcons name='description' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Terms and Conditions</Text>
               </View>
+              <MaterialIcons name='chevron-right' size={24} color={darkMode ? "#fff" : "#666"} />
             </TouchableOpacity>
 
             {/* Privacy Policy */}
@@ -346,22 +414,7 @@ export default function SettingsScreen() {
                 <MaterialIcons name='privacy-tip' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
                 <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Privacy Policy</Text>
               </View>
-            </TouchableOpacity>
-
-            {/* Terms and Conditions */}
-            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("TermsAndConditions")}>
-              <View style={styles.itemLabel}>
-                <MaterialIcons name='description' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Terms and Conditions</Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* Add a Business */}
-            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("BusinessSetup")}>
-              <View style={styles.itemLabel}>
-                <MaterialIcons name='business' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Add a Business</Text>
-              </View>
+              <MaterialIcons name='chevron-right' size={24} color={darkMode ? "#fff" : "#666"} />
             </TouchableOpacity>
 
             {/* Change Password */}
@@ -370,6 +423,7 @@ export default function SettingsScreen() {
                 <MaterialIcons name='lock' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
                 <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
               </View>
+              <MaterialIcons name='chevron-right' size={24} color={darkMode ? "#fff" : "#666"} />
             </TouchableOpacity>
 
             {/* How It Works */}
@@ -378,8 +432,8 @@ export default function SettingsScreen() {
                 <MaterialIcons name='help-outline' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
                 <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How It Works</Text>
               </View>
+              <MaterialIcons name='chevron-right' size={24} color={darkMode ? "#fff" : "#666"} />
             </TouchableOpacity>
-
           </View>
 
           {/* Logout Button OUTSIDE container */}
@@ -394,7 +448,6 @@ export default function SettingsScreen() {
               PM {versionData.pm_version} Version {versionData.major}.{versionData.build} - Last Change: {versionData.last_change}
             </Text>
           </View>
-
         </ScrollView>
       </SafeAreaView>
 
@@ -421,6 +474,44 @@ export default function SettingsScreen() {
             <TouchableOpacity onPress={() => setTermsModalVisible(false)} style={styles.closeModalButton}>
               <Text style={styles.closeButtonText}>Close</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Terms Warning Modal */}
+      <Modal visible={termsWarningVisible} transparent={true} animationType='fade'>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, darkMode && styles.darkModalBox]}>
+            <MaterialIcons name='warning' size={48} color='#FF6B6B' style={{ marginBottom: 15 }} />
+            <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle]}>Terms & Conditions Required</Text>
+            <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>If you do not agree to the Terms and Conditions, you will only have access to Login and Settings screens.</Text>
+            <View style={styles.warningButtonContainer}>
+              <TouchableOpacity onPress={cancelTermsRejection} style={[styles.warningButton, styles.cancelButton]}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmTermsRejection} style={[styles.warningButton, styles.confirmButton]}>
+                <Text style={styles.confirmButtonText}>I Understand</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Cookies Warning Modal */}
+      <Modal visible={cookiesWarningVisible} transparent={true} animationType='fade'>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, darkMode && styles.darkModalBox]}>
+            <MaterialIcons name='warning' size={48} color='#FF6B6B' style={{ marginBottom: 15 }} />
+            <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle]}>Cookies Required</Text>
+            <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>If you do not allow cookies, you will only have access to the Settings screen.</Text>
+            <View style={styles.warningButtonContainer}>
+              <TouchableOpacity onPress={cancelCookiesRejection} style={[styles.warningButton, styles.cancelButton]}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmCookiesRejection} style={[styles.warningButton, styles.confirmButton]}>
+                <Text style={styles.confirmButtonText}>I Understand</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -544,29 +635,80 @@ const styles = StyleSheet.create({
   },
   settingsGroupContainer: {
     borderWidth: 1,
-    borderColor: '#000',
+    borderColor: "#000",
     borderRadius: 10,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: "#F5F5F5",
     // backgroundColor: "rgba(225, 211, 237, 0.9)",
     marginBottom: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   darkSettingsGroupContainer: {
-    backgroundColor: '#2d2d2d',
-    borderColor: '#444',
+    backgroundColor: "#2d2d2d",
+    borderColor: "#444",
   },
   settingsGroupHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
-    backgroundColor: '#f0f0f0',
+    borderBottomColor: "#ddd",
+    backgroundColor: "#f0f0f0",
   },
   settingsGroupHeaderText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#555',
+    fontWeight: "600",
+    color: "#555",
+  },
+  darkModalBox: {
+    backgroundColor: "#333",
+  },
+  warningTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  darkWarningTitle: {
+    color: "#fff",
+  },
+  warningText: {
+    fontSize: 16,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 20,
+    lineHeight: 22,
+  },
+  darkWarningText: {
+    color: "#ccc",
+  },
+  warningButtonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    gap: 10,
+  },
+  warningButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 6,
+    alignItems: "center",
+  },
+  cancelButton: {
+    backgroundColor: "#ccc",
+  },
+  cancelButtonText: {
+    color: "#333",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  confirmButton: {
+    backgroundColor: "#FF6B6B",
+  },
+  confirmButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
   },
 });

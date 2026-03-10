@@ -88,6 +88,8 @@ export default function App() {
   const [initialRoute, setInitialRoute] = useState("Home");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [termsAccepted, setTermsAccepted] = useState(true);
+  const navigationRef = useRef(null);
   // const [showSpinner, setShowSpinner] = useState(false);
   // const [signInInProgress, setSignInInProgress] = useState(false);
   // const [showUserInfo, setShowUserInfo] = useState(false);
@@ -107,6 +109,13 @@ export default function App() {
         console.log("App.js - Checking if user in AsyncStorage...");
         const uid = await AsyncStorage.getItem("user_uid");
         console.log("App.js - User UID:", uid);
+        
+        // Check terms acceptance status
+        const termsStatus = await AsyncStorage.getItem("termsAccepted");
+        const termsAcceptedValue = termsStatus !== null ? JSON.parse(termsStatus) : true;
+        setTermsAccepted(termsAcceptedValue);
+        console.log("App.js - Terms Accepted:", termsAcceptedValue);
+        
         if (uid) setInitialRoute("Profile");
 
         // Configure Google Sign-In (only on native platforms)
@@ -1005,13 +1014,83 @@ export default function App() {
     },
   };
 
+  // Handle navigation state changes to enforce terms acceptance and cookies
+  const onNavigationStateChange = async (state) => {
+    if (!state) return;
+
+    // Get current route name
+    const getCurrentRoute = (navState) => {
+      if (!navState) return null;
+      const route = navState.routes[navState.index];
+      if (route.state) {
+        return getCurrentRoute(route.state);
+      }
+      return route.name;
+    };
+
+    const currentRouteName = getCurrentRoute(state);
+    console.log("App.js - Current route:", currentRouteName);
+
+    // Check terms acceptance and cookies status from AsyncStorage (in case they changed)
+    const termsStatus = await AsyncStorage.getItem("termsAccepted");
+    const termsAcceptedValue = termsStatus !== null ? JSON.parse(termsStatus) : true;
+    setTermsAccepted(termsAcceptedValue);
+
+    const cookiesStatus = await AsyncStorage.getItem("allowCookies");
+    const cookiesAllowedValue = cookiesStatus !== null ? JSON.parse(cookiesStatus) : true;
+
+    // Allowed screens when cookies are not allowed (only Settings)
+    const cookiesAllowedScreens = ["Settings"];
+
+    // Allowed screens when terms are not accepted
+    const termsAllowedScreens = ["Home", "Login", "SignUp", "Settings", "TermsAndConditions"];
+
+    // If cookies not allowed and trying to access any screen except Settings
+    if (!cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
+      console.log("App.js - Cookies not allowed, redirecting to Settings");
+      
+      // Show alert explaining the restriction
+      const message = "Please allow cookies in Settings to access this feature.";
+      if (isWeb) {
+        window.alert(message);
+      } else {
+        Alert.alert("Cookies Required", message);
+      }
+      
+      // Navigate to Settings
+      if (navigationRef.current) {
+        navigationRef.current.navigate("Settings");
+      }
+      return; // Exit early
+    }
+
+    // If terms not accepted and trying to access restricted screen, redirect to Settings
+    if (!termsAcceptedValue && !termsAllowedScreens.includes(currentRouteName)) {
+      console.log("App.js - Terms not accepted, redirecting to Settings");
+      
+      // Show alert explaining the restriction
+      const message = "Please accept the Terms and Conditions in Settings to access this feature.";
+      if (isWeb) {
+        window.alert(message);
+      } else {
+        Alert.alert("Terms Required", message);
+      }
+      
+      // Navigate to Settings
+      if (navigationRef.current) {
+        navigationRef.current.navigate("Settings");
+      }
+    }
+  };
+
   return (
     <TextNodeErrorBoundary>
       <DarkModeProvider>
         <NavigationContainer
+          ref={navigationRef}
           linking={isWeb ? linking : undefined}
           onReady={() => console.log("App.js - NavigationContainer ready")}
-          onStateChange={() => console.log("App.js - Navigation state changed")}
+          onStateChange={onNavigationStateChange}
         >
           <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
             <Stack.Screen name='Home' component={HomeScreen} />
