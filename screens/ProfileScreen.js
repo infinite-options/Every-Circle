@@ -46,11 +46,11 @@ const ProfileScreen = ({ route, navigation }) => {
   const [relationshipType, setRelationshipType] = useState(null);
   const [circleUid, setCircleUid] = useState(null);
   const { darkMode } = useDarkMode();
-  const [showExperience, setShowExperience] = useState(false);
-  const [showEducation, setShowEducation] = useState(false);
-  const [showBusiness, setShowBusiness] = useState(false);
-  const [showOffering, setShowOffering] = useState(false);
-  const [showSeeking, setShowSeeking] = useState(false);
+  const [showExperience, setShowExperience] = useState(true);
+  const [showEducation, setShowEducation] = useState(true);
+  const [showBusiness, setShowBusiness] = useState(true);
+  const [showOffering, setShowOffering] = useState(true);
+  const [showSeeking, setShowSeeking] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
