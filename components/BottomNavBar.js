@@ -6,8 +6,17 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 
 const { width, height } = Dimensions.get("window");
 
-const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContinue }) => {
+const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContinue, onBeforeNavigate }) => {
   const { darkMode } = useDarkMode();
+
+  // Helper function to handle navigation with interceptor
+  const handleNavigate = (destination) => {
+    if (onBeforeNavigate) {
+      const shouldNavigate = onBeforeNavigate(destination);
+      if (!shouldNavigate) return; // Navigation intercepted
+    }
+    navigation.navigate(destination);
+  };
 
   return (
     <SafeAreaView edges={["bottom"]} style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
@@ -20,17 +29,17 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
               <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Back</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Profile")}>
+            <TouchableOpacity style={styles.navButton} onPress={() => handleNavigate("Profile")}>
               <Image source={require("../assets/profile.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
               <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Profile</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Account")}>
+            <TouchableOpacity style={styles.navButton} onPress={() => handleNavigate("Account")}>
               <Image source={require("../assets/pillar.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
               <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Account</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Settings")}>
+            <TouchableOpacity style={styles.navButton} onPress={() => handleNavigate("Settings")}>
               <Image source={require("../assets/setting.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
               <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Settings</Text>
             </TouchableOpacity>
@@ -47,29 +56,29 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
               style={styles.navButton}
               onPress={() => {
                 if (onSharePress) onSharePress();
-                navigation.navigate("Network");
+                handleNavigate("Network");
               }}
             >
               <Image source={require("../assets/connect.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
               {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Connect</Text> */}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Profile")}>
+            <TouchableOpacity style={styles.navButton} onPress={() => handleNavigate("Profile")}>
               <Image source={require("../assets/profile.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
               {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Profile</Text> */}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Account")}>
+            <TouchableOpacity style={styles.navButton} onPress={() => handleNavigate("Account")}>
               <Image source={require("../assets/pillar.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
               {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Account</Text> */}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Settings")}>
+            <TouchableOpacity style={styles.navButton} onPress={() => handleNavigate("Settings")}>
               <Image source={require("../assets/setting.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
               {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Settings</Text> */}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.navButton} onPress={() => navigation.navigate("Search")}>
+            <TouchableOpacity style={styles.navButton} onPress={() => handleNavigate("Search")}>
               <Image source={require("../assets/search.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
               {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Search</Text> */}
             </TouchableOpacity>

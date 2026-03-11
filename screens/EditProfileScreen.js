@@ -1,6 +1,6 @@
 //EditProfileScreen.js
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Modal, ActivityIndicator, Keyboard, UIManager, findNodeHandle, Platform,  BackHandler  } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Modal, ActivityIndicator, Keyboard, UIManager, findNodeHandle, Platform, BackHandler } from "react-native";
 import axios from "axios";
 import MiniCard from "../components/MiniCard";
 import BottomNavBar from "../components/BottomNavBar";
@@ -38,6 +38,7 @@ const EditProfileScreen = ({ route, navigation }) => {
   // const [pendingPicker, setPendingPicker] = useState(null);
 
   const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState(null);
 
   useEffect(() => {
     // This useEffect is only used to log the screen being mounted
@@ -77,7 +78,10 @@ const EditProfileScreen = ({ route, navigation }) => {
       role: biz.role || biz.profile_business_role || "",
       isPublic: biz.isPublic !== undefined ? biz.isPublic : biz.profile_business_is_visible === 1,
       isApproved: biz.isApproved !== undefined ? biz.isApproved : biz.profile_business_approved === "1",
-      individualIsPublic: biz.individualIsPublic !== undefined ? biz.individualIsPublic : (biz.bu_individual_business_is_public === true || biz.bu_individual_business_is_public === 1 || biz.bu_individual_business_is_public === "1"),
+      individualIsPublic:
+        biz.individualIsPublic !== undefined
+          ? biz.individualIsPublic
+          : biz.bu_individual_business_is_public === true || biz.bu_individual_business_is_public === 1 || biz.bu_individual_business_is_public === "1",
       isNew: biz.isNew || false,
     })) || [{ name: "", role: "", isPublic: 0, isApproved: 0, isNew: false }],
     experience: user?.experience?.map((e) => ({
@@ -197,7 +201,7 @@ const EditProfileScreen = ({ route, navigation }) => {
       setProfileImage(imageUri);
       setImageError(false);
       setIsChanged(true);
-      setImageUpdateKey(prev => prev + 1); // Increment key to force MiniCard re-render
+      setImageUpdateKey((prev) => prev + 1); // Increment key to force MiniCard re-render
     };
     reader.readAsDataURL(file);
 
@@ -210,7 +214,7 @@ const EditProfileScreen = ({ route, navigation }) => {
   // Update image picker to set isChanged to true
   const handlePickImage = async () => {
     console.log("handlePickImage called");
-    
+
     // On web, use file input instead of ImagePicker
     if (Platform.OS === "web") {
       if (fileInputRef.current) {
@@ -267,7 +271,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         setProfileImage(result.assets[0].uri);
         setImageError(false); // Reset error state when new image is selected
         setIsChanged(true);
-        setImageUpdateKey(prev => prev + 1); // Increment key to force MiniCard re-render
+        setImageUpdateKey((prev) => prev + 1); // Increment key to force MiniCard re-render
       } else {
         console.log("No image selected or picker was canceled");
       }
@@ -497,7 +501,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           twitter: formData.twitter,
           linkedin: formData.linkedin,
           youtube: formData.youtube,
-        })
+        }),
       );
 
       let imageFileSize = 0;
@@ -672,7 +676,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         style={[styles.input, styles.textarea, { height: Math.max(40, shortBioHeight) }, darkMode && styles.darkInput]}
         value={formData.shortBio}
         onChangeText={(text) => handleFieldChange("shortBio", text)}
-        placeholder="Submit Here"
+        placeholder='Submit Here'
         placeholderTextColor={darkMode ? "#aaaaaa" : "#999999"}
         multiline
         textAlignVertical='top'
@@ -765,7 +769,7 @@ const EditProfileScreen = ({ route, navigation }) => {
               y: Math.max(0, targetScrollY),
               animated: true,
             });
-          }
+          },
         );
       } catch (error) {
         // Fallback: scroll to end
@@ -790,36 +794,32 @@ const EditProfileScreen = ({ route, navigation }) => {
   useEffect(() => {
     const handleBackPress = () => {
       if (isChanged) {
-        Alert.alert(
-          "Unsaved Changes",
-          "You have unsaved changes. Are you sure you want to go back?",
-          [
-            {
-              text: "No",
-              style: "cancel",
-            },
-            {
-              text: "Yes",
-              onPress: () => navigation.goBack(),
-            },
-          ]
-        );
+        Alert.alert("Unsaved Changes", "You have unsaved changes. Are you sure you want to leave this page?", [
+          {
+            text: "No",
+            style: "cancel",
+          },
+          {
+            text: "Yes",
+            onPress: () => navigation.goBack(),
+          },
+        ]);
         return true; // Prevent default back action
       }
       return false; // Allow default back action
     };
 
-    if (Platform.OS === 'android') {
-      BackHandler.addEventListener('hardwareBackPress', handleBackPress);
-      return () => BackHandler.removeEventListener('hardwareBackPress', handleBackPress);
+    if (Platform.OS === "android") {
+      BackHandler.addEventListener("hardwareBackPress", handleBackPress);
+      return () => BackHandler.removeEventListener("hardwareBackPress", handleBackPress);
     }
   }, [isChanged, navigation]);
 
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}>
-      <AppHeader 
-        title='EDIT PROFILE' 
-        {...getHeaderColors("editProfile")} 
+      <AppHeader
+        title='EDIT PROFILE'
+        {...getHeaderColors("editProfile")}
         onBackPress={() => {
           console.log("Back button pressed, isChanged:", isChanged);
           if (isChanged) {
@@ -835,7 +835,6 @@ const EditProfileScreen = ({ route, navigation }) => {
         contentContainerStyle={{ paddingBottom: 100 }}
         keyboardShouldPersistTaps='handled'
         showsVerticalScrollIndicator={true}
-        
       >
         {/* Profile Image Upload Section */}
         <View style={[styles.imageSection, darkMode && styles.darkImageSection]}>
@@ -883,12 +882,8 @@ const EditProfileScreen = ({ route, navigation }) => {
         {renderField("State", formData.state, formData.locationIsPublic, "state", "locationIsPublic")}
         {renderField("Tag Line", formData.tagLine, formData.tagLineIsPublic, "tagLine", "tagLineIsPublic")}
 
-       
-
         {renderShortBioField()}
 
-        
-        
         <ExpertiseSection
           expertise={formData.expertise}
           setExpertise={(e) => {
@@ -932,12 +927,12 @@ const EditProfileScreen = ({ route, navigation }) => {
 
         <EducationSection
           education={formData.education}
-                    setEducation={(e) => {
-                      setFormData({ ...formData, education: e });
-                      setIsChanged(true);
-                    }}
-                    toggleVisibility={() => handleToggleVisibility("educationIsPublic")}
-                    isPublic={formData.educationIsPublic}
+          setEducation={(e) => {
+            setFormData({ ...formData, education: e });
+            setIsChanged(true);
+          }}
+          toggleVisibility={() => handleToggleVisibility("educationIsPublic")}
+          isPublic={formData.educationIsPublic}
           handleDelete={handleDeleteEducation}
         />
 
@@ -963,7 +958,18 @@ const EditProfileScreen = ({ route, navigation }) => {
         </TouchableOpacity>
       </ScrollView>
       <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 10 }}>
-        <BottomNavBar navigation={navigation} />
+        <BottomNavBar
+          navigation={navigation}
+          onBeforeNavigate={(destination) => {
+            console.log("BottomNavBar navigation intercepted, destination:", destination, "isChanged:", isChanged);
+            if (isChanged) {
+              setPendingNavigation(destination);
+              setShowUnsavedChangesModal(true);
+              return false; // Prevent navigation
+            }
+            return true; // Allow navigation
+          }}
+        />
       </View>
       {/* Business Approval Modal */}
       <Modal visible={showBusinessModal} transparent={true} animationType='fade' onRequestClose={() => setShowBusinessModal(false)}>
@@ -991,13 +997,14 @@ const EditProfileScreen = ({ route, navigation }) => {
       <Modal visible={showUnsavedChangesModal} transparent={true} animationType='fade' onRequestClose={() => setShowUnsavedChangesModal(false)}>
         <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", alignItems: "center" }}>
           <View style={[styles.modalContainer, darkMode && styles.darkModalContainer]}>
-            <Text style={[styles.modalText, darkMode && styles.darkModalText]}>
-              You have unsaved changes. Are you sure you want to go back?
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+            <Text style={[styles.modalText, darkMode && styles.darkModalText]}>You have unsaved changes. Are you sure you want to leave this page?</Text>
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
               <TouchableOpacity
-                style={[styles.modalButton, { backgroundColor: '#999' }]}
-                onPress={() => setShowUnsavedChangesModal(false)}
+                style={[styles.modalButton, { backgroundColor: "#999" }]}
+                onPress={() => {
+                  setShowUnsavedChangesModal(false);
+                  setPendingNavigation(null);
+                }}
               >
                 <Text style={[styles.modalButtonText, darkMode && styles.darkModalButtonText]}>No</Text>
               </TouchableOpacity>
@@ -1005,7 +1012,12 @@ const EditProfileScreen = ({ route, navigation }) => {
                 style={[styles.modalButton, darkMode && styles.darkModalButton]}
                 onPress={() => {
                   setShowUnsavedChangesModal(false);
-                  navigation.goBack();
+                  if (pendingNavigation) {
+                    navigation.navigate(pendingNavigation);
+                    setPendingNavigation(null);
+                  } else {
+                    navigation.goBack();
+                  }
                 }}
               >
                 <Text style={[styles.modalButtonText, darkMode && styles.darkModalButtonText]}>Yes</Text>

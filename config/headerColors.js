@@ -16,7 +16,7 @@ export const HEADER_COLORS = {
   profile: "#800000", // Maroon
   // editProfile: "#AF52DE", // Purple
   editProfile: "#929090", // Gray
-  settings: "#AF52DE", // Purple
+  settings: "#4B2E83", // Deep Purple
   network: "#2434C2", // Blue (Connect)
   account: "#18884A", // Green
   search: "#4F8A8B", // Green shade

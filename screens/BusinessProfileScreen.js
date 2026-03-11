@@ -1472,7 +1472,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "rgb(192, 171, 216)",
+    backgroundColor: "rgba(175, 82, 222, 0.5)", // 50% opacity of Business Profile header color #AF52DE
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,

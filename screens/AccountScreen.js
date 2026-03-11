@@ -901,37 +901,18 @@ export default function AccountScreen({ navigation }) {
   // Generate X positions
   const xPositions = chartData.dates.map((_, index) => paddingLeft + index * xStep);
 
-  // Generate left Y-axis ticks (linear)
-  // const leftTicks = 6;
-  // const leftTickValues = [];
-  // for (let i = 0; i <= leftTicks; i++) {
-  //   leftTickValues.push((chartData.maxDaily / leftTicks) * i);
-  // }
-
-  // Generate left Y-axis ticks (increment by $1.50) with proper upper bound
+  // Generate left Y-axis ticks (linear) - Limited to 4 ticks
+  const leftTickCount = 4;
   const leftTickValues = [];
-  const increment = 1.50;
-  let currentTick = 0;
-  while (currentTick <= chartData.maxDaily) {
-    leftTickValues.push(currentTick);
-    currentTick += increment;
-  }
-  // Ensure we have the max value as the last tick
-  if (leftTickValues[leftTickValues.length - 1] < chartData.maxDaily) {
-    leftTickValues.push(chartData.maxDaily);
+  for (let i = 0; i <= leftTickCount; i++) {
+    leftTickValues.push((chartData.maxDaily / leftTickCount) * i);
   }
 
-  // Generate right Y-axis ticks (linear) with proper upper bound
+  // Generate right Y-axis ticks (linear) - Limited to 4 ticks
+  const rightTickCount = 4;
   const rightTickValues = [];
-  const rightIncrement = 1.50;
-  let currentRightTick = 0;
-  while (currentRightTick <= chartData.maxCumulative) {
-    rightTickValues.push(currentRightTick);
-    currentRightTick += rightIncrement;
-  }
-  // Ensure we have the max value as the last tick
-  if (rightTickValues[rightTickValues.length - 1] < chartData.maxCumulative) {
-    rightTickValues.push(chartData.maxCumulative);
+  for (let i = 0; i <= rightTickCount; i++) {
+    rightTickValues.push((chartData.maxCumulative / rightTickCount) * i);
   }
 
   // Build path strings for lines
@@ -1074,13 +1055,19 @@ export default function AccountScreen({ navigation }) {
 
   const xPositions = chartData.dates.map((_, index) => paddingLeft + index * xStep);
 
-  const leftTicks = 6;
+  // Generate left Y-axis ticks - Limited to 4 ticks
+  const leftTickCount = 4;
   const leftTickValues = [];
-  for (let i = 0; i <= leftTicks; i++) {
-    leftTickValues.push((chartData.maxDaily / leftTicks) * i);
+  for (let i = 0; i <= leftTickCount; i++) {
+    leftTickValues.push((chartData.maxDaily / leftTickCount) * i);
   }
 
-  const rightTickValues = generateLinearTicks(chartData.maxCumulative, 6);
+  // Generate right Y-axis ticks - Limited to 4 ticks
+  const rightTickCount = 4;
+  const rightTickValues = [];
+  for (let i = 0; i <= rightTickCount; i++) {
+    rightTickValues.push((chartData.maxCumulative / rightTickCount) * i);
+  }
 
   const buildPath = (positions) => {
     return positions

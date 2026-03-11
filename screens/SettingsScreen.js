@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, Switch, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal } from "react-native";
-import { MaterialIcons } from "@expo/vector-icons";
+import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useRoute } from "@react-navigation/native";
 import { CommonActions } from "@react-navigation/native";
@@ -28,6 +28,52 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { getHeaderColors } from "../config/headerColors";
 import versionData from "../version.json";
 
+// Color constants for Settings screen
+const COLORS = {
+  // Primary colors
+  primary: "#4B2E83", // Settings header purple
+  primaryTransparent: "rgba(75, 46, 131, 0.5)", // 50% opacity purple for switch track
+  
+  // Light mode colors
+  lightBackground: "#fff",
+  lightText: "#000",
+  lightSecondaryText: "#333",
+  lightTertiaryText: "#555",
+  lightQuaternaryText: "#666",
+  lightIconColor: "#666",
+  lightBorderColor: "#000",
+  lightBorderColorLight: "#ddd",
+  lightGroupBackground: "#F5F5F5",
+  lightGroupHeaderBackground: "#f0f0f0",
+  lightModalBackground: "#fff",
+  lightQrBackground: "#f8f8f8",
+  
+  // Dark mode colors
+  darkBackground: "#1a1a1a",
+  darkItemBackground: "#333",
+  darkText: "#fff",
+  darkSecondaryText: "#ccc",
+  darkTertiaryText: "#999",
+  darkGroupBackground: "#2d2d2d",
+  darkBorderColor: "#444",
+  darkModalBackground: "#333",
+  
+  // Switch colors
+  switchTrackInactive: "#ccc",
+  switchThumbInactive: "#f4f3f4",
+  switchThumbActive: "#4B2E83", // Explicit active thumb color
+  switchTrackActive: "rgba(75, 46, 131, 0.5)", // Explicit active track color
+  
+  // Warning/Alert colors
+  warningRed: "#FF6B6B",
+  
+  // Modal overlay
+  modalOverlay: "rgba(0,0,0,0.4)",
+  
+  // Cancel button
+  cancelButtonBackground: "#ccc",
+};
+
 export default function SettingsScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -42,6 +88,8 @@ export default function SettingsScreen() {
   const [personalProfileData, setPersonalProfileData] = useState(null);
   const [termsWarningVisible, setTermsWarningVisible] = useState(false);
   const [cookiesWarningVisible, setCookiesWarningVisible] = useState(false);
+  const [showInformation, setShowInformation] = useState(true);
+  const [showSettings, setShowSettings] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -337,108 +385,147 @@ export default function SettingsScreen() {
             </View>
           )}
 
-          {/* Settings/Toggles Container */}
-          <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer]}>
-            <View style={styles.settingsGroupHeader}>
-              <Text style={[styles.settingsGroupHeaderText, darkMode && { color: "#fff" }, { fontStyle: "italic", color: "#000", fontSize: 16 }]}> </Text>
-              <Text style={[styles.settingsGroupHeaderText, darkMode && { color: "#fff" }, { fontStyle: "italic", color: "#000", fontSize: 16, textAlign: "right" }]}>Selection</Text>
-            </View>
+          {/* SETTINGS Section Header - Outside Box */}
+          <TouchableOpacity style={styles.settingsSectionHeader} onPress={() => setShowSettings(!showSettings)}>
+            <Text style={styles.settingsSectionHeaderText}>SETTINGS</Text>
+            <Ionicons name={showSettings ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? COLORS.darkText : COLORS.lightText} />
+          </TouchableOpacity>
 
-            {/* Allow Cookies */}
+          {/* Settings/Toggles Container */}
+          {showSettings && (
+            <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer]}>
+              {/* Allow Cookies */}
             <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
               <View style={styles.itemLabel}>
-                <MaterialIcons name='cookie' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <MaterialIcons name='cookie' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
                 <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                  <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#000" }}>Allow Cookies </Text>
-                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>Yes / No</Text>
+                  <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Cookies </Text>
+                  <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>Yes / No</Text>
                 </Text>
               </View>
-              <Switch value={allowCookies} onValueChange={handleCookiesToggle} trackColor={{ false: "#ccc", true: "#000" }} thumbColor={allowCookies ? "#fff" : "#f4f3f4"} />
+              <Switch 
+                value={allowCookies} 
+                onValueChange={handleCookiesToggle} 
+                trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }} 
+                thumbColor={allowCookies ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
+                ios_backgroundColor={COLORS.switchTrackInactive}
+                activeThumbColor={COLORS.switchThumbActive}
+                activeTrackColor={COLORS.switchTrackActive}
+              />
             </View>
 
             {/* Terms and Conditions */}
             <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
               <TouchableOpacity style={styles.itemLabel} onPress={() => navigation.navigate("TermsAndConditions")} activeOpacity={0.7}>
-                <MaterialIcons name='description' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <MaterialIcons name='description' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
                 <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                  <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#000" }}>Terms and Conditions </Text>
-                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>Disagree / Agreed (Required)</Text>
+                  <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Terms and Conditions </Text>
+                  <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>Disagree / Agreed (Required)</Text>
                 </Text>
               </TouchableOpacity>
-              <Switch value={termsAccepted} onValueChange={handleTermsToggle} trackColor={{ false: "#ccc", true: "#000" }} thumbColor={termsAccepted ? "#fff" : "#f4f3f4"} />
+              <Switch 
+                value={termsAccepted} 
+                onValueChange={handleTermsToggle} 
+                trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }} 
+                thumbColor={termsAccepted ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
+                ios_backgroundColor={COLORS.switchTrackInactive}
+                activeThumbColor={COLORS.switchThumbActive}
+                activeTrackColor={COLORS.switchTrackActive}
+              />
             </View>
 
             {/* Dark Mode */}
             <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
               <View style={styles.itemLabel}>
-                <MaterialIcons name='brightness-2' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <MaterialIcons name='brightness-2' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
                 <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                  <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#000" }}>Background </Text>
-                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>Light / Dark</Text>
+                  <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Background </Text>
+                  <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>Light / Dark</Text>
                 </Text>
               </View>
-              <Switch value={darkMode} onValueChange={toggleDarkMode} trackColor={{ false: "#ccc", true: "#000" }} thumbColor={darkMode ? "#fff" : "#f4f3f4"} />
+              <Switch 
+                value={darkMode} 
+                onValueChange={toggleDarkMode} 
+                trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }} 
+                thumbColor={darkMode ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
+                ios_backgroundColor={COLORS.switchTrackInactive}
+                activeThumbColor={COLORS.switchThumbActive}
+                activeTrackColor={COLORS.switchTrackActive}
+              />
             </View>
 
             {/* Allow Notifications */}
             <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
               <View style={styles.itemLabel}>
-                <MaterialIcons name='notifications' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
+                <MaterialIcons name='notifications' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
                 <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                  <Text style={{ fontWeight: "bold", color: darkMode ? "#fff" : "#000" }}>Allow Notifications </Text>
-                  <Text style={{ color: darkMode ? "#fff" : "#000" }}>No / Yes</Text>
+                  <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Notifications </Text>
+                  <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>No / Yes</Text>
                 </Text>
               </View>
-              <Switch value={allowNotifications} onValueChange={setAllowNotifications} trackColor={{ false: "#ccc", true: "#000" }} thumbColor={allowNotifications ? "#fff" : "#f4f3f4"} />
+              <Switch 
+                value={allowNotifications} 
+                onValueChange={setAllowNotifications} 
+                trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }} 
+                thumbColor={allowNotifications ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
+                ios_backgroundColor={COLORS.switchTrackInactive}
+                activeThumbColor={COLORS.switchThumbActive}
+                activeTrackColor={COLORS.switchTrackActive}
+              />
             </View>
           </View>
+          )}
+
+          {/* INFORMATION Section Header - Outside Box */}
+          <TouchableOpacity style={styles.informationSectionHeader} onPress={() => setShowInformation(!showInformation)}>
+            <Text style={styles.informationSectionHeaderText}>INFORMATION</Text>
+            <Ionicons name={showInformation ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? COLORS.darkText : COLORS.lightText} />
+          </TouchableOpacity>
 
           {/* Information & Links Container */}
-          <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { marginBottom: 16 }]}>
-            <View style={styles.settingsGroupHeader}>
-              <Text style={[styles.settingsGroupHeaderText, darkMode && { color: "#fff" }, { fontStyle: "italic", color: "#000", fontSize: 16 }]}>Information</Text>
+          {showInformation && (
+            <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { marginBottom: 16 }]}>
+              {/* Terms and Conditions */}
+                <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("TermsAndConditions")}>
+                  <View style={styles.itemLabel}>
+                    <MaterialIcons name='description' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Terms and Conditions</Text>
+                  </View>
+                  <MaterialIcons name='chevron-right' size={24} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                </TouchableOpacity>
+
+                {/* Privacy Policy */}
+                <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("PrivacyPolicy")}>
+                  <View style={styles.itemLabel}>
+                    <MaterialIcons name='privacy-tip' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Privacy Policy</Text>
+                  </View>
+                  <MaterialIcons name='chevron-right' size={24} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                </TouchableOpacity>
+
+                {/* Change Password */}
+                <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
+                  <View style={styles.itemLabel}>
+                    <MaterialIcons name='lock' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
+                  </View>
+                  <MaterialIcons name='chevron-right' size={24} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                </TouchableOpacity>
+
+                {/* How It Works */}
+                <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("HowItWorksScreen")}>
+                  <View style={styles.itemLabel}>
+                    <MaterialIcons name='help-outline' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How It Works</Text>
+                  </View>
+                <MaterialIcons name='chevron-right' size={24} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+              </TouchableOpacity>
             </View>
-
-            {/* Terms and Conditions */}
-            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("TermsAndConditions")}>
-              <View style={styles.itemLabel}>
-                <MaterialIcons name='description' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Terms and Conditions</Text>
-              </View>
-              <MaterialIcons name='chevron-right' size={24} color={darkMode ? "#fff" : "#666"} />
-            </TouchableOpacity>
-
-            {/* Privacy Policy */}
-            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("PrivacyPolicy")}>
-              <View style={styles.itemLabel}>
-                <MaterialIcons name='privacy-tip' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Privacy Policy</Text>
-              </View>
-              <MaterialIcons name='chevron-right' size={24} color={darkMode ? "#fff" : "#666"} />
-            </TouchableOpacity>
-
-            {/* Change Password */}
-            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
-              <View style={styles.itemLabel}>
-                <MaterialIcons name='lock' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
-              </View>
-              <MaterialIcons name='chevron-right' size={24} color={darkMode ? "#fff" : "#666"} />
-            </TouchableOpacity>
-
-            {/* How It Works */}
-            <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("HowItWorksScreen")}>
-              <View style={styles.itemLabel}>
-                <MaterialIcons name='help-outline' size={20} style={styles.icon} color={darkMode ? "#fff" : "#666"} />
-                <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How It Works</Text>
-              </View>
-              <MaterialIcons name='chevron-right' size={24} color={darkMode ? "#fff" : "#666"} />
-            </TouchableOpacity>
-          </View>
+          )}
 
           {/* Logout Button OUTSIDE container */}
           <TouchableOpacity style={[styles.logoutButton, darkMode && styles.darkLogoutButton]} onPress={handleLogout}>
-            <MaterialIcons name='logout' size={20} style={styles.icon} color={darkMode ? "#fff" : "#AF52DE"} />
+            <MaterialIcons name='logout' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.primary} />
             <Text style={[styles.logoutText, darkMode && styles.darkLogoutText]}>Log out</Text>
           </TouchableOpacity>
 
@@ -448,6 +535,11 @@ export default function SettingsScreen() {
               PM {versionData.pm_version} Version {versionData.major}.{versionData.build} - Last Change: {versionData.last_change}
             </Text>
           </View>
+
+          {/* Bottom Logout Button - Styled like Submit button */}
+          <TouchableOpacity style={[styles.bottomLogoutButton, darkMode && styles.darkBottomLogoutButton]} onPress={handleLogout}>
+            <Text style={[styles.bottomLogoutText, darkMode && styles.darkBottomLogoutText]}>Log out</Text>
+          </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
 
@@ -458,7 +550,12 @@ export default function SettingsScreen() {
             <Text style={styles.qrModalTitle}>QR Code</Text>
             <Text style={styles.qrModalSubtitle}>Scan to visit Infinite Options</Text>
             <View style={styles.qrCodeContainer}>
-              <QRCode value='https://infiniteoptions.com/' size={200} color='#000' backgroundColor='#fff' />
+              <QRCode 
+                value='https://infiniteoptions.com/' 
+                size={200} 
+                color={COLORS.lightText} 
+                backgroundColor={COLORS.lightBackground} 
+              />
             </View>
             <TouchableOpacity onPress={() => setQrModalVisible(false)} style={styles.closeModalButton}>
               <Text style={styles.closeButtonText}>Close</Text>
@@ -482,7 +579,7 @@ export default function SettingsScreen() {
       <Modal visible={termsWarningVisible} transparent={true} animationType='fade'>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, darkMode && styles.darkModalBox]}>
-            <MaterialIcons name='warning' size={48} color='#FF6B6B' style={{ marginBottom: 15 }} />
+            <MaterialIcons name='warning' size={48} color={COLORS.warningRed} style={{ marginBottom: 15 }} />
             <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle]}>Terms & Conditions Required</Text>
             <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>If you do not agree to the Terms and Conditions, you will only have access to Login and Settings screens.</Text>
             <View style={styles.warningButtonContainer}>
@@ -501,7 +598,7 @@ export default function SettingsScreen() {
       <Modal visible={cookiesWarningVisible} transparent={true} animationType='fade'>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, darkMode && styles.darkModalBox]}>
-            <MaterialIcons name='warning' size={48} color='#FF6B6B' style={{ marginBottom: 15 }} />
+            <MaterialIcons name='warning' size={48} color={COLORS.warningRed} style={{ marginBottom: 15 }} />
             <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle]}>Cookies Required</Text>
             <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>If you do not allow cookies, you will only have access to the Settings screen.</Text>
             <View style={styles.warningButtonContainer}>
@@ -526,20 +623,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     width: "100%",
-    backgroundColor: "#fff",
+    backgroundColor: COLORS.lightBackground,
   },
   safeArea: {
     flex: 1,
   },
   darkContainer: {
-    backgroundColor: "#1a1a1a",
+    backgroundColor: COLORS.darkBackground,
   },
   settingsContainer: {
     padding: 15,
     paddingBottom: 80,
   },
   settingItem: {
-    // backgroundColor: "#fff",
     borderRadius: 8,
     paddingVertical: 15,
     paddingHorizontal: 15,
@@ -549,7 +645,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   darkSettingItem: {
-    backgroundColor: "#333",
+    backgroundColor: COLORS.darkItemBackground,
   },
   itemLabel: {
     flexDirection: "row",
@@ -560,18 +656,40 @@ const styles = StyleSheet.create({
   },
   itemText: {
     fontSize: 16,
-    color: "#333",
+    color: COLORS.lightSecondaryText,
   },
   darkItemText: {
-    color: "#fff",
+    color: COLORS.darkText,
   },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", alignItems: "center" },
-  modalBox: { backgroundColor: "#fff", padding: 20, borderRadius: 10, alignItems: "center" },
-  modalText: { fontSize: 18, fontWeight: "bold" },
-  closeModalButton: { marginTop: 15, backgroundColor: "#AF52DE", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 6 },
-  closeButtonText: { color: "#fff", fontWeight: "bold" },
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: COLORS.modalOverlay, 
+    justifyContent: "center", 
+    alignItems: "center" 
+  },
+  modalBox: { 
+    backgroundColor: COLORS.lightModalBackground, 
+    padding: 20, 
+    borderRadius: 10, 
+    alignItems: "center" 
+  },
+  modalText: { 
+    fontSize: 18, 
+    fontWeight: "bold" 
+  },
+  closeModalButton: { 
+    marginTop: 15, 
+    backgroundColor: COLORS.primary, 
+    paddingVertical: 8, 
+    paddingHorizontal: 16, 
+    borderRadius: 6 
+  },
+  closeButtonText: { 
+    color: COLORS.darkText, 
+    fontWeight: "bold" 
+  },
   logoutButton: {
-    backgroundColor: "#fff",
+    backgroundColor: COLORS.lightBackground,
     borderRadius: 8,
     paddingVertical: 15,
     paddingHorizontal: 15,
@@ -580,22 +698,45 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#AF52DE",
+    borderColor: COLORS.primary,
   },
   darkLogoutButton: {
-    backgroundColor: "#333",
-    borderColor: "#AF52DE",
+    backgroundColor: COLORS.darkItemBackground,
+    borderColor: COLORS.primary,
   },
   logoutText: {
     fontSize: 16,
-    color: "#AF52DE",
+    color: COLORS.primary,
     marginLeft: 10,
   },
   darkLogoutText: {
-    color: "#AF52DE",
+    color: COLORS.primary,
+  },
+  bottomLogoutButton: {
+    backgroundColor: "#4B2E83",
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    minWidth: 100,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    marginVertical: 20,
+    marginBottom: 30,
+  },
+  darkBottomLogoutButton: {
+    backgroundColor: "#4B2E83",
+  },
+  bottomLogoutText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  darkBottomLogoutText: {
+    color: "#fff",
   },
   qrModalBox: {
-    backgroundColor: "#fff",
+    backgroundColor: COLORS.lightModalBackground,
     padding: 30,
     borderRadius: 15,
     alignItems: "center",
@@ -605,18 +746,18 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "bold",
     marginBottom: 8,
-    color: "#333",
+    color: COLORS.lightSecondaryText,
   },
   qrModalSubtitle: {
     fontSize: 16,
     marginBottom: 25,
-    color: "#666",
+    color: COLORS.lightQuaternaryText,
     textAlign: "center",
   },
   qrCodeContainer: {
     marginBottom: 25,
     padding: 15,
-    backgroundColor: "#f8f8f8",
+    backgroundColor: COLORS.lightQrBackground,
     borderRadius: 10,
   },
   buildInfoContainer: {
@@ -627,24 +768,23 @@ const styles = StyleSheet.create({
   },
   dateTimeText: {
     fontSize: 12,
-    color: "#666",
+    color: COLORS.lightQuaternaryText,
     textAlign: "center",
   },
   darkDateTimeText: {
-    color: "#999",
+    color: COLORS.darkTertiaryText,
   },
   settingsGroupContainer: {
     borderWidth: 1,
-    borderColor: "#000",
+    borderColor: COLORS.lightBorderColor,
     borderRadius: 10,
-    backgroundColor: "#F5F5F5",
-    // backgroundColor: "rgba(225, 211, 237, 0.9)",
+    backgroundColor: COLORS.lightGroupBackground,
     marginBottom: 16,
     overflow: "hidden",
   },
   darkSettingsGroupContainer: {
-    backgroundColor: "#2d2d2d",
-    borderColor: "#444",
+    backgroundColor: COLORS.darkGroupBackground,
+    borderColor: COLORS.darkBorderColor,
   },
   settingsGroupHeader: {
     flexDirection: "row",
@@ -652,36 +792,36 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderBottomWidth: 1,
-    borderBottomColor: "#ddd",
-    backgroundColor: "#f0f0f0",
+    borderBottomColor: COLORS.lightBorderColorLight,
+    backgroundColor: COLORS.lightGroupHeaderBackground,
   },
   settingsGroupHeaderText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#555",
+    color: COLORS.lightTertiaryText,
   },
   darkModalBox: {
-    backgroundColor: "#333",
+    backgroundColor: COLORS.darkModalBackground,
   },
   warningTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: "#333",
+    color: COLORS.lightSecondaryText,
     marginBottom: 10,
     textAlign: "center",
   },
   darkWarningTitle: {
-    color: "#fff",
+    color: COLORS.darkText,
   },
   warningText: {
     fontSize: 16,
-    color: "#666",
+    color: COLORS.lightQuaternaryText,
     textAlign: "center",
     marginBottom: 20,
     lineHeight: 22,
   },
   darkWarningText: {
-    color: "#ccc",
+    color: COLORS.darkSecondaryText,
   },
   warningButtonContainer: {
     flexDirection: "row",
@@ -696,19 +836,50 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   cancelButton: {
-    backgroundColor: "#ccc",
+    backgroundColor: COLORS.cancelButtonBackground,
   },
   cancelButtonText: {
-    color: "#333",
+    color: COLORS.lightSecondaryText,
     fontWeight: "bold",
     fontSize: 16,
   },
   confirmButton: {
-    backgroundColor: "#FF6B6B",
+    backgroundColor: COLORS.warningRed,
   },
   confirmButtonText: {
-    color: "#fff",
+    color: COLORS.darkText,
     fontWeight: "bold",
     fontSize: 16,
+  },
+  settingsSectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgba(75, 46, 131, 0.5)", // 50% opacity of Settings header color #4B2E83
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  settingsSectionHeaderText: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#000",
+    letterSpacing: 1,
+  },
+  informationSectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgba(75, 46, 131, 0.5)", // 50% opacity of Settings header color #4B2E83
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  informationSectionHeaderText: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#000",
+    letterSpacing: 1,
   },
 });
