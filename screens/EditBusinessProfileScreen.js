@@ -468,6 +468,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_ein_number", formData.einNumber);
       payload.append("business_website", formData.website);
       payload.append("custom_tags", JSON.stringify(formData.customTags));
+      payload.append("social_links", JSON.stringify(formData.socialLinks));
 
       // Business profile image (backend: business_profile_img file, delete_business_profile_img URL, business_profile_img_is_public 0/1)
       if (businessImageUri && !imageError && businessImageUri !== originalBusinessImage) {
@@ -686,10 +687,10 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         placeholder={`Enter ${platform} link`}
         placeholderTextColor={darkMode ? "#cccccc" : "#666"}
         onChangeText={(text) => {
-          setFormData({
-            ...formData,
-            socialLinks: { ...formData.socialLinks, [platform]: text },
-          });
+          setFormData((prev) => ({
+            ...prev,
+            socialLinks: { ...prev.socialLinks, [platform]: text },
+          }));
           setIsChanged(true);
         }}
       />
