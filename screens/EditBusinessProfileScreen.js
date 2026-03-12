@@ -16,7 +16,6 @@ import { Dropdown } from "react-native-element-dropdown";
 import ProductCard from "../components/ProductCard";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 
-
 const BusinessProfileAPI = BUSINESS_INFO_ENDPOINT;
 const DEFAULT_BUSINESS_IMAGE = require("../assets/profile.png");
 
@@ -54,8 +53,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [formData, setFormData] = useState({
     // BUSINESS-SPECIFIC: Different field names - uses business_* instead of profile_personal_*
     name: business?.business_name || "",
-    location: business?.business_address_line_1 || "",
-    addressLine2: business?.business_address_line_2 || "",
+    location: business?.business_location || "",
+    addressLine2: business?.business_address_line_1 || "",
     city: business?.business_city || "",
     state: business?.business_state || "",
     country: business?.business_country || "",
@@ -126,7 +125,13 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     phoneIsPublic: business?.business_phone_number_is_public === "1" || business?.phone_is_public === "1" || business?.phoneIsPublic === true,
     taglineIsPublic: business?.business_tag_line_is_public === "1" || business?.tagline_is_public === "1" || business?.taglineIsPublic === true,
     shortBioIsPublic: business?.business_short_bio_is_public === "1" || business?.short_bio_is_public === "1" || business?.shortBioIsPublic === true,
-    imageIsPublic: business?.business_profile_img_is_public === "1" || business?.business_profile_img_is_public === 1 || business?.business_image_is_public === "1" || business?.image_is_public === "1" || business?.imageIsPublic === true || false,
+    imageIsPublic:
+      business?.business_profile_img_is_public === "1" ||
+      business?.business_profile_img_is_public === 1 ||
+      business?.business_image_is_public === "1" ||
+      business?.image_is_public === "1" ||
+      business?.imageIsPublic === true ||
+      false,
     locationIsPublic: business?.business_location_is_public === "1" || business?.business_location_is_public === 1 || false,
     // MISSING: Section visibility flags (EditProfileScreen has: experienceIsPublic, educationIsPublic, expertiseIsPublic, wishesIsPublic, businessIsPublic)
     // Note: Business profile doesn't have these sections, so these flags are not needed
@@ -245,7 +250,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       setBusinessImage(imageUri);
       setImageError(false);
       setIsChanged(true);
-      setImageUpdateKey(prev => prev + 1); // Increment key to force MiniCard re-render
+      setImageUpdateKey((prev) => prev + 1); // Increment key to force MiniCard re-render
     };
     reader.readAsDataURL(file);
 
@@ -258,7 +263,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   // Image picker handler (identical to EditProfileScreen)
   const handlePickImage = async () => {
     console.log("handlePickImage called");
-    
+
     // On web, use file input instead of ImagePicker
     if (Platform.OS === "web") {
       if (fileInputRef.current) {
@@ -315,7 +320,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         setBusinessImage(result.assets[0].uri);
         setImageError(false); // Reset error state when new image is selected
         setIsChanged(true);
-        setImageUpdateKey(prev => prev + 1); // Increment key to force MiniCard re-render
+        setImageUpdateKey((prev) => prev + 1); // Increment key to force MiniCard re-render
       } else {
         console.log("No image selected or picker was canceled");
       }
@@ -388,11 +393,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     const current = businessUser.bu_individual_business_is_public;
     const isPublic = current === 1 || current === "1" || current === true;
     const nextValue = isPublic ? 0 : 1;
-    setExistingBusinessUsers((prev) =>
-      prev.map((u) =>
-        u.business_user_id === businessUser.business_user_id ? { ...u, bu_individual_business_is_public: nextValue } : u
-      )
-    );
+    setExistingBusinessUsers((prev) => prev.map((u) => (u.business_user_id === businessUser.business_user_id ? { ...u, bu_individual_business_is_public: nextValue } : u)));
     setIsChanged(true);
   };
 
@@ -453,8 +454,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       // BUSINESS-SPECIFIC: Uses business_* field names instead of profile_personal_*
       payload.append("business_name", formData.name);
       payload.append("business_location_is_public", formData.locationIsPublic ? "1" : "0");
-      payload.append("business_address_line_1", formData.location);
-      payload.append("business_address_line_2", formData.addressLine2);
+      payload.append("business_location", formData.location);
+      payload.append("business_address_line_1", formData.addressLine2);
       payload.append("business_city", formData.city);
       payload.append("business_state", formData.state);
       payload.append("business_country", formData.country);
@@ -520,7 +521,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         payload.append("business_google_photos", JSON.stringify(googleImages));
       }
 
-      
       payload.append("business_email_id_is_public", formData.emailIsPublic ? "1" : "0");
       payload.append("business_phone_number_is_public", formData.phoneIsPublic ? "1" : "0");
       payload.append("business_tag_line_is_public", formData.taglineIsPublic ? "1" : "0");
@@ -586,6 +586,16 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       if (businessUsersIndividualPublic.length > 0) {
         payload.append("business_users_individual_public", JSON.stringify(businessUsersIndividualPublic));
       }
+
+      // BUSINESS-SPECIFIC: Social links handling
+      const socialLinksPayload = {
+        facebook: formData.socialLinks?.facebook || "",
+        instagram: formData.socialLinks?.instagram || "",
+        linkedin: formData.socialLinks?.linkedin || "",
+        youtube: formData.socialLinks?.youtube || "",
+      };
+      console.log("EditBusinessProfileScreen - Social links payload:", JSON.stringify(socialLinksPayload, null, 2));
+      payload.append("social_links", JSON.stringify(socialLinksPayload));
 
       // MISSING: Deleted items handling (EditProfileScreen appends delete_experiences, delete_educations, etc.)
       // Note: Business profile doesn't have these sections, so deleted items handling is not needed
@@ -676,6 +686,31 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   // MISSING: renderShortBioField function (EditProfileScreen has this with dynamic height)
   // Note: Business profile uses regular renderField for shortBio, could be enhanced to match EditProfileScreen
 
+  // BUSINESS-SPECIFIC: renderEINField function - displays "Always Hidden" instead of toggle
+  const renderEINField = () => (
+    <View style={styles.fieldContainer}>
+      {/* Row: Label and "Always Hidden" text */}
+      <View style={styles.labelRow}>
+        <Text style={[styles.label, darkMode && styles.darkLabel]}>EIN Number</Text>
+        <Text style={[styles.toggleText, { color: darkMode ? "#999999" : "#666666", fontStyle: "italic" }]}>
+          Always Hidden
+        </Text>
+      </View>
+      <TextInput
+        style={[styles.input, darkMode && styles.darkInput]}
+        value={formData.einNumber}
+        placeholder="##-#######"
+        placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+        keyboardType="numeric"
+        maxLength={10}
+        onChangeText={(text) => {
+          const formattedText = formatEINNumber(text);
+          handleFieldChange("einNumber", formattedText);
+        }}
+      />
+    </View>
+  );
+
   // BUSINESS-SPECIFIC: renderSocialField function (EditProfileScreen doesn't have this - social links handled differently)
   const renderSocialField = (label, platform) => (
     <View style={styles.fieldContainer}>
@@ -757,7 +792,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         <TouchableOpacity onPress={handlePickImage}>
           <Text style={[styles.uploadLink, darkMode && styles.darkUploadLink]}>Upload Image</Text>
         </TouchableOpacity>
-        {(businessImageUri || businessImage) ? (
+        {businessImageUri || businessImage ? (
           <TouchableOpacity onPress={handleRemoveProfileImage}>
             <Text style={[styles.uploadLink, { color: darkMode ? "#f87171" : "red" }]}>Remove Image</Text>
           </TouchableOpacity>
@@ -811,7 +846,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const previewBusiness = {
     business_name: formData.name,
     tagline: formData.tagline,
-    business_address_line_1: formData.location,
+    business_location: formData.location,
+    business_address_line_1: formData.addressLine2,
     business_city: formData.city,
     business_state: formData.state,
     business_short_bio: formData.shortBio,
@@ -821,6 +857,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     phoneIsPublic: formData.phoneIsPublic,
     emailIsPublic: formData.emailIsPublic,
     taglineIsPublic: formData.taglineIsPublic,
+    shortBioIsPublic: formData.shortBioIsPublic,
+    locationIsPublic: formData.locationIsPublic,
     imageIsPublic: formData.imageIsPublic,
     // Include the business image - MiniCard checks first_image field
     first_image: businessImageUri || "",
@@ -998,7 +1036,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
               y: Math.max(0, targetScrollY),
               animated: true,
             });
-          }
+          },
         );
       } catch (error) {
         scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -1053,7 +1091,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
         {renderField("Short Bio", formData.shortBio, "shortBio", "", "shortBioIsPublic")}
         {renderBusinessRoleField()}
-        {renderField("EIN Number", formData.einNumber, "einNumber", "##-#######", null, "numeric", 10, formatEINNumber)}
+        {renderEINField()}
         {renderField("Website", formData.website, "website")}
 
         {/* MISSING: renderField calls for First Name, Last Name (EditProfileScreen has these) */}
@@ -1101,10 +1139,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 businessUser.profile_personal_phone_number_is_public === "1",
               phoneNumber: businessUser.phone || businessUser.profile_personal_phone_number || businessUser.phone_number || "",
               tagLine: businessUser.profile_personal_tag_line || businessUser.tag_line || businessUser.tagline || "",
-              tagLineIsPublic:
-                businessUser.profile_personal_tag_line_is_public === 1 ||
-                businessUser.profile_personal_tag_line_is_public === "1" ||
-                false,
+              tagLineIsPublic: businessUser.profile_personal_tag_line_is_public === 1 || businessUser.profile_personal_tag_line_is_public === "1" || false,
               city: businessUser.city || businessUser.profile_personal_city || "",
               state: businessUser.state || businessUser.profile_personal_state || "",
               locationIsPublic:
@@ -1116,9 +1151,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             };
 
             const isIndividualPublic =
-              businessUser.bu_individual_business_is_public === 1 ||
-              businessUser.bu_individual_business_is_public === "1" ||
-              businessUser.bu_individual_business_is_public === true;
+              businessUser.bu_individual_business_is_public === 1 || businessUser.bu_individual_business_is_public === "1" || businessUser.bu_individual_business_is_public === true;
 
             return (
               <View key={businessUser.business_user_id || index} style={[styles.existingBusinessUserCard, darkMode && styles.darkExistingBusinessUserCard]}>
@@ -1127,10 +1160,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                     <MiniCard user={userForMiniCard} />
                     <Text style={[styles.existingBusinessUserRole, darkMode && styles.darkExistingBusinessUserRole]}>Role: {businessUser.business_role || "N/A"}</Text>
                   </View>
-                  <TouchableOpacity
-                    onPress={() => toggleBusinessUserIndividualPublic(businessUser)}
-                    style={[styles.hideDisplayButton, darkMode && styles.darkHideDisplayButton]}
-                  >
+                  <TouchableOpacity onPress={() => toggleBusinessUserIndividualPublic(businessUser)} style={[styles.hideDisplayButton, darkMode && styles.darkHideDisplayButton]}>
                     <Text
                       style={[
                         styles.hideDisplayButtonText,
@@ -1294,7 +1324,11 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           onPress={handleSave}
           disabled={!isValid || !isChanged || isLoading}
         >
-          {isLoading ? <ActivityIndicator size='small' color={darkMode ? "#ffffff" : "#fff"} /> : <Text style={[styles.saveButtonText, (!isValid || !isChanged) && styles.saveButtonTextDisabled, darkMode && styles.darkSaveText]}>Submit</Text>}
+          {isLoading ? (
+            <ActivityIndicator size='small' color={darkMode ? "#ffffff" : "#fff"} />
+          ) : (
+            <Text style={[styles.saveButtonText, (!isValid || !isChanged) && styles.saveButtonTextDisabled, darkMode && styles.darkSaveText]}>Submit</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
       <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 10 }}>
@@ -1310,22 +1344,22 @@ const styles = StyleSheet.create({
   pageContainer: { flex: 1, backgroundColor: "#fff", minHeight: "100%" },
   container: { flex: 1, padding: 20, minHeight: "100%" },
   header: { fontSize: 24, fontWeight: "bold", marginBottom: 20 },
-  fieldContainer: { 
-    marginBottom: 15 
+  fieldContainer: {
+    marginBottom: 15,
   },
-  label: { 
-    fontSize: 16, 
-    fontWeight: "bold", 
-    marginBottom: 5, 
-    color: "#000" 
+  label: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 5,
+    color: "#000",
   },
-  input: { 
+  input: {
     borderWidth: 1,
     borderColor: "#ccc",
     padding: 12,
     borderRadius: 25,
     backgroundColor: "#f0f0f0",
-    color: "#000", 
+    color: "#000",
   },
   textarea: {
     minHeight: 40,

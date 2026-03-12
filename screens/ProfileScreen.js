@@ -931,7 +931,7 @@ const ProfileScreen = ({ route, navigation }) => {
                 onStartShouldSetResponder={() => true}
                 onResponderTerminationRequest={() => false}
               >
-                <Ionicons name='chevron-down' size={28} color='#fff' />
+                <Ionicons name='add' size={28} color='#fff' />
               </Pressable>
               {showRelationshipDropdown && (
                 <View style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]} {...(isWeb && { "data-dropdown-menu": true })}>

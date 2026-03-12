@@ -23,7 +23,7 @@ export default function AccountScreen({ navigation }) {
   const [transactionLoading, setTransactionLoading] = useState(true);
   const [expertiseData, setExpertiseData] = useState([]);
   const [expertiseLoading, setExpertiseLoading] = useState(true);
-  const [accountType, setAccountType] = useState('personal'); // 'personal' or 'business'
+  const [accountType, setAccountType] = useState("personal"); // 'personal' or 'business'
   const [businessTransactionData, setBusinessTransactionData] = useState([]);
   const [businessTransactionLoading, setBusinessTransactionLoading] = useState(true);
   const [businessUID, setBusinessUID] = useState(null);
@@ -31,12 +31,12 @@ export default function AccountScreen({ navigation }) {
   const [businessBountyLoading, setBusinessBountyLoading] = useState(true);
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const [businesses, setBusinesses] = useState([]);
-  const [selectedAccount, setSelectedAccount] = useState('personal'); // 'personal' or business UID
+  const [selectedAccount, setSelectedAccount] = useState("personal"); // 'personal' or business UID
   const [selectedBusinessFullData, setSelectedBusinessFullData] = useState(null);
   const [expandedTransactionId, setExpandedTransactionId] = useState(null);
   const [transactionServices, setTransactionServices] = useState({});
   const [personalProfileData, setPersonalProfileData] = useState(null);
-  
+
   // Section collapse states
   const [showExpertise, setShowExpertise] = useState(true);
   const [showTransactionHistory, setShowTransactionHistory] = useState(true);
@@ -185,8 +185,7 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
- 
-  // Expertise data 
+  // Expertise data
   const refreshExpertiseData = async () => {
     try {
       setExpertiseLoading(true);
@@ -194,7 +193,7 @@ export default function AccountScreen({ navigation }) {
       if (profileId) {
         // First, fetch profile expertise data
         const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-        
+
         if (!profileResponse.ok) {
           throw new Error(`HTTP error! status: ${profileResponse.status}`);
         }
@@ -203,17 +202,12 @@ export default function AccountScreen({ navigation }) {
         console.log("Expertise API response:", profileResult);
 
         // Parse expertise_info
-        const expertiseList = profileResult.expertise_info
-          ? (typeof profileResult.expertise_info === "string" 
-              ? JSON.parse(profileResult.expertise_info) 
-              : profileResult.expertise_info
-            )
-          : [];
+        const expertiseList = profileResult.expertise_info ? (typeof profileResult.expertise_info === "string" ? JSON.parse(profileResult.expertise_info) : profileResult.expertise_info) : [];
 
         // Fetch transactions where I am the SELLER
         const sellerTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${profileId}`;
         let sellerTransactions = [];
-        
+
         try {
           console.log("Fetching seller transactions from:", sellerTransactionsUrl);
           const transactionsResponse = await fetch(sellerTransactionsUrl, {
@@ -226,7 +220,7 @@ export default function AccountScreen({ navigation }) {
           if (transactionsResponse.ok) {
             const transactionsResult = await transactionsResponse.json();
             console.log("Seller transactions result:", transactionsResult);
-            
+
             if (transactionsResult && transactionsResult.code === 200 && Array.isArray(transactionsResult.data)) {
               sellerTransactions = transactionsResult.data;
             }
@@ -242,7 +236,7 @@ export default function AccountScreen({ navigation }) {
         const expertise = expertiseList.map((exp) => {
           const expertiseUid = exp.profile_expertise_uid;
           const costString = exp.profile_expertise_cost || "";
-          
+
           // Parse cost to separate amount and unit
           let cost = "";
           let unit = "";
@@ -263,7 +257,7 @@ export default function AccountScreen({ navigation }) {
 
           sellerTransactions.forEach((transaction) => {
             console.log(`Seller transaction item ti_bs_id: ${transaction.ti_bs_id}, ti_bs_qty: ${transaction.ti_bs_qty}`);
-            
+
             if (transaction.ti_bs_id === expertiseUid) {
               console.log(`✓ MATCH found for ${exp.profile_expertise_title}!`);
               const qty = parseInt(transaction.ti_bs_qty) || 0;
@@ -273,7 +267,7 @@ export default function AccountScreen({ navigation }) {
           });
 
           console.log(`Final quantity for ${exp.profile_expertise_title}: ${totalQty}`);
-          
+
           return {
             name: exp.profile_expertise_title || "",
             cost: cost,
@@ -283,7 +277,7 @@ export default function AccountScreen({ navigation }) {
             isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
           };
         });
-        
+
         setExpertiseData(expertise);
       }
     } catch (error) {
@@ -313,12 +307,7 @@ export default function AccountScreen({ navigation }) {
       console.log("User businesses:", result.business_info);
 
       // Parse business_info to get business UIDs
-      const businessList = result.business_info
-        ? (typeof result.business_info === "string" 
-            ? JSON.parse(result.business_info) 
-            : result.business_info
-          )
-        : [];
+      const businessList = result.business_info ? (typeof result.business_info === "string" ? JSON.parse(result.business_info) : result.business_info) : [];
 
       // Store all businesses in state
       setBusinesses(businessList);
@@ -331,7 +320,7 @@ export default function AccountScreen({ navigation }) {
         setBusinessUID(businessId);
         return businessId;
       }
-      
+
       console.log("No businesses found for user");
       return null;
     } catch (error) {
@@ -359,8 +348,8 @@ export default function AccountScreen({ navigation }) {
 
   //     // Parse business_info to get business UIDs
   //     const businessList = result.business_info
-  //       ? (typeof result.business_info === "string" 
-  //           ? JSON.parse(result.business_info) 
+  //       ? (typeof result.business_info === "string"
+  //           ? JSON.parse(result.business_info)
   //           : result.business_info
   //         )
   //       : [];
@@ -377,7 +366,7 @@ export default function AccountScreen({ navigation }) {
   //       setBusinessUID(businessId);
   //       return businessId;
   //     }
-      
+
   //     console.log("No businesses found for user");
   //     return null;
   //   } catch (error) {
@@ -387,47 +376,44 @@ export default function AccountScreen({ navigation }) {
   // };
 
   const fetchTransactionServices = async (transactionUid) => {
-  try {
-    // Check if we already have this data cached
-    if (transactionServices[transactionUid]) {
-      return transactionServices[transactionUid];
-    }
+    try {
+      // Check if we already have this data cached
+      if (transactionServices[transactionUid]) {
+        return transactionServices[transactionUid];
+      }
 
-    const response = await fetch(
-      `${API_BASE_URL}/api/v1/business_services/transaction/${transactionUid}`,
-      {
+      const response = await fetch(`${API_BASE_URL}/api/v1/business_services/transaction/${transactionUid}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
         },
-      }
-    );
+      });
 
-    if (response.ok) {
-      const result = await response.json();
-      if (result && result.code === 200 && Array.isArray(result.data)) {
-        // Cache the data
-        setTransactionServices(prev => ({
-          ...prev,
-          [transactionUid]: result.data
-        }));
-        return result.data;
+      if (response.ok) {
+        const result = await response.json();
+        if (result && result.code === 200 && Array.isArray(result.data)) {
+          // Cache the data
+          setTransactionServices((prev) => ({
+            ...prev,
+            [transactionUid]: result.data,
+          }));
+          return result.data;
+        }
       }
+      return [];
+    } catch (error) {
+      console.error("Error fetching transaction services:", error);
+      return [];
     }
-    return [];
-  } catch (error) {
-    console.error("Error fetching transaction services:", error);
-    return [];
-  }
-};
+  };
 
   const refreshBusinessTransactionData = async () => {
     try {
       console.log("=== STARTING BUSINESS TRANSACTION DATA LOAD ===");
       setBusinessTransactionLoading(true);
-      
+
       // If personal account is selected, don't load business data
-      if (selectedAccount === 'personal') {
+      if (selectedAccount === "personal") {
         setBusinessTransactionData([]);
         setBusinessTransactionLoading(false);
         return;
@@ -435,7 +421,7 @@ export default function AccountScreen({ navigation }) {
 
       // Get the selected business UID
       const targetBusinessUID = selectedAccount;
-      
+
       if (!targetBusinessUID) {
         console.log("No business UID available");
         setBusinessTransactionData([]);
@@ -444,7 +430,7 @@ export default function AccountScreen({ navigation }) {
       }
 
       console.log(`Fetching transactions for business: ${targetBusinessUID}`);
-      
+
       // First, fetch the business bounty data which has bs_bounty and ti_bs_qty
       let bountyDataByTransaction = {};
       try {
@@ -452,15 +438,15 @@ export default function AccountScreen({ navigation }) {
         if (bountyResponse.ok) {
           const bountyResult = await bountyResponse.json();
           console.log("Business bounty result:", bountyResult);
-          
+
           if (bountyResult && bountyResult.data && Array.isArray(bountyResult.data)) {
             // Group by transaction_uid and sum bounty_paid
-            bountyResult.data.forEach(item => {
+            bountyResult.data.forEach((item) => {
               const txnId = item.transaction_uid;
               if (!bountyDataByTransaction[txnId]) {
                 bountyDataByTransaction[txnId] = {
                   total_bounty: 0,
-                  items: []
+                  items: [],
                 };
               }
               // bounty_paid is already calculated as bs_bounty * ti_bs_qty in the API
@@ -498,28 +484,22 @@ export default function AccountScreen({ navigation }) {
       }
 
       const result = await response.json();
-      
+
       if (result && result.code === 200 && Array.isArray(result.data)) {
         // Filter to only business service transactions (250-)
-        const businessTransactions = result.data.filter(
-          item => item.ti_bs_id && item.ti_bs_id.startsWith('250-')
-        );
-        
+        const businessTransactions = result.data.filter((item) => item.ti_bs_id && item.ti_bs_id.startsWith("250-"));
+
         // Add business name
-        const selectedBusiness = businesses.find(
-          b => (b.business_uid || b.profile_business_uid) === targetBusinessUID
-        );
-        businessTransactions.forEach(txn => {
-          txn.business_name = selectedBusiness?.business_name || 
-                            selectedBusiness?.profile_business_name || 
-                            "Unknown Business";
+        const selectedBusiness = businesses.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+        businessTransactions.forEach((txn) => {
+          txn.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || "Unknown Business";
         });
 
         // Group by transaction_uid
         const transactionMap = {};
-        businessTransactions.forEach(item => {
+        businessTransactions.forEach((item) => {
           const txnId = item.transaction_uid;
-          
+
           if (!transactionMap[txnId]) {
             const total = parseFloat(item.transaction_total || 0);
             const taxes = parseFloat(item.transaction_taxes || 0);
@@ -552,7 +532,6 @@ export default function AccountScreen({ navigation }) {
         console.log("Sample transaction with bounty:", filteredTransactions[0]);
         setBusinessTransactionData(filteredTransactions);
       }
-      
     } catch (error) {
       console.error("Error loading business transaction data:", error);
       setBusinessTransactionData([]);
@@ -561,14 +540,14 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
- // Business Bounty data 
+  // Business Bounty data
   const refreshBusinessBountyData = async () => {
     try {
       setBusinessBountyLoading(true);
-      
+
       // If specific business is selected, only load that business's data
-      const targetBusinessUID = selectedAccount !== 'personal' ? selectedAccount : businessUID;
-      
+      const targetBusinessUID = selectedAccount !== "personal" ? selectedAccount : businessUID;
+
       if (!targetBusinessUID) {
         console.log("No business UID available");
         setBusinessBountyData(null);
@@ -577,7 +556,7 @@ export default function AccountScreen({ navigation }) {
       }
 
       console.log(`Fetching bounty results for business: ${targetBusinessUID}`);
-      
+
       try {
         const response = await fetch(`${BUSINESS_BOUNTY_RESULTS_ENDPOINT}/${targetBusinessUID}`);
 
@@ -589,19 +568,15 @@ export default function AccountScreen({ navigation }) {
         }
 
         const result = await response.json();
-        
+
         if (result && result.data && Array.isArray(result.data)) {
           // Add business name to each bounty record
-          const selectedBusiness = businesses.find(
-            b => (b.business_uid || b.profile_business_uid) === targetBusinessUID
-          );
-          
-          result.data.forEach(bounty => {
-            bounty.business_name = selectedBusiness?.business_name || 
-                                  selectedBusiness?.profile_business_name || 
-                                  "Unknown Business";
+          const selectedBusiness = businesses.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+
+          result.data.forEach((bounty) => {
+            bounty.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || "Unknown Business";
           });
-          
+
           // Sort by date (most recent first)
           result.data.sort((a, b) => {
             const dateA = new Date(a.transaction_datetime);
@@ -616,7 +591,6 @@ export default function AccountScreen({ navigation }) {
         console.error(`Error fetching bounties for business:`, error);
         setBusinessBountyData({ error: error.message });
       }
-      
     } catch (error) {
       console.error("Error loading business bounty data:", error);
       setBusinessBountyData({ error: error.message });
@@ -632,20 +606,20 @@ export default function AccountScreen({ navigation }) {
       refreshTransactionData();
       refreshExpertiseData();
       fetchPersonalProfileData();
-      
+
       // Fetch businesses first, then business transactions and bounties
       const loadBusinessData = async () => {
         await fetchUserBusinesses();
         await refreshBusinessTransactionData();
-        await refreshBusinessBountyData();  // ← ADD THIS LINE
+        await refreshBusinessBountyData(); // ← ADD THIS LINE
       };
       loadBusinessData();
-    }, [])
+    }, []),
   );
 
   // Load business data when switching to business account
   useEffect(() => {
-    if (selectedAccount !== 'personal') {
+    if (selectedAccount !== "personal") {
       console.log("Switched to business account, loading business data for:", selectedAccount);
       const loadBusinessData = async () => {
         await refreshBusinessTransactionData();
@@ -654,24 +628,23 @@ export default function AccountScreen({ navigation }) {
       loadBusinessData();
     }
   }, [selectedAccount, businesses]); // Add 'businesses' as dependency
-    
+
   // Add this with your other useEffects
   useEffect(() => {
     const fetchSelectedBusinessFullData = async () => {
-      if (selectedAccount === 'personal' || !selectedAccount) {
+      if (selectedAccount === "personal" || !selectedAccount) {
         setSelectedBusinessFullData(null);
         return;
       }
-      
+
       try {
         const response = await fetch(`${BUSINESS_INFO_ENDPOINT}/${selectedAccount}`);
         const result = await response.json();
-        
+
         if (result && result.business) {
           const rawBusiness = result.business;
-          
-          const businessProfileImg =
-            rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
+
+          const businessProfileImg = rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
           const imageIsPublic =
             rawBusiness.business_profile_img_is_public === "1" ||
             rawBusiness.business_profile_img_is_public === 1 ||
@@ -679,18 +652,23 @@ export default function AccountScreen({ navigation }) {
             rawBusiness.business_image_is_public === 1;
           setSelectedBusinessFullData({
             business_name: rawBusiness.business_name,
+            business_location: rawBusiness.business_location,
             business_address_line_1: rawBusiness.business_address_line_1,
             business_city: rawBusiness.business_city,
             business_state: rawBusiness.business_state,
             business_zip_code: rawBusiness.business_zip_code,
             business_phone_number: rawBusiness.business_phone_number,
+            business_email_id: rawBusiness.business_email_id,
             business_website: rawBusiness.business_website,
             business_tag_line: rawBusiness.business_tag_line,
+            tagline: rawBusiness.business_tag_line,
             first_image: businessProfileImg || rawBusiness.business_images_url?.[0] || rawBusiness.business_google_photos?.[0],
             business_profile_img: businessProfileImg,
             imageIsPublic: imageIsPublic,
             phoneIsPublic: rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1,
+            emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1,
             taglineIsPublic: rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1,
+            locationIsPublic: rawBusiness.business_location_is_public === "1" || rawBusiness.business_location_is_public === 1,
           });
         }
       } catch (error) {
@@ -698,11 +676,9 @@ export default function AccountScreen({ navigation }) {
         setSelectedBusinessFullData(null);
       }
     };
-    
+
     fetchSelectedBusinessFullData();
   }, [selectedAccount]);
-
-  
 
   // Format date to dd/mm format
   const formatTransactionDate = (dateString) => {
@@ -777,7 +753,7 @@ export default function AccountScreen({ navigation }) {
     };
   };
 
-  // Process business transaction data for  business Net Earnings chart 
+  // Process business transaction data for  business Net Earnings chart
   const processBusinessTransactionDataForChart = () => {
     if (!businessTransactionData || !Array.isArray(businessTransactionData) || businessTransactionData.length === 0) {
       return {
@@ -862,314 +838,300 @@ export default function AccountScreen({ navigation }) {
   };
 
   const NetEarningChart = () => {
-  const chartData = processBountyDataForChart();
-  const screenWidth = Dimensions.get("window").width - 40;
-  const chartWidth = screenWidth;
-  const chartHeight = 200; // Increased from 180 to make room for x-axis label
-  const paddingLeft = 50;
-  const paddingRight = 50;
-  const paddingTop = 20;
-  const paddingBottom = 50; // Increased from 30 to make room for x-axis label
-  const plotWidth = chartWidth - paddingLeft - paddingRight;
-  const plotHeight = chartHeight - paddingTop - paddingBottom;
+    const chartData = processBountyDataForChart();
+    const screenWidth = Dimensions.get("window").width - 40;
+    const chartWidth = screenWidth;
+    const chartHeight = 200; // Increased from 180 to make room for x-axis label
+    const paddingLeft = 50;
+    const paddingRight = 50;
+    const paddingTop = 20;
+    const paddingBottom = 50; // Increased from 30 to make room for x-axis label
+    const plotWidth = chartWidth - paddingLeft - paddingRight;
+    const plotHeight = chartHeight - paddingTop - paddingBottom;
 
-  if (chartData.dates.length === 0) {
+    if (chartData.dates.length === 0) {
+      return (
+        <View style={{ width: chartWidth, height: chartHeight, justifyContent: "center", alignItems: "center" }}>
+          <Text style={{ color: "#888" }}>No data available</Text>
+        </View>
+      );
+    }
+
+    const dataPoints = chartData.dates.length;
+    const xStep = plotWidth / Math.max(dataPoints - 1, 1);
+
+    // Calculate Y positions for daily bounty (linear, left axis)
+    const dailyYPositions = chartData.dailyBounty.map((value) => {
+      const normalized = Math.max(0, Math.min(1, value / chartData.maxDaily));
+      const y = paddingTop + plotHeight - normalized * plotHeight;
+      return isFinite(y) ? y : paddingTop + plotHeight;
+    });
+
+    // Calculate Y positions for cumulative bounty (linear, right axis with different scale)
+    const cumulativeYPositions = chartData.cumulativeBounty.map((value) => {
+      const normalized = Math.max(0, Math.min(1, value / chartData.maxCumulative));
+      const y = paddingTop + plotHeight - normalized * plotHeight;
+      return isFinite(y) ? y : paddingTop + plotHeight;
+    });
+
+    // Generate X positions
+    const xPositions = chartData.dates.map((_, index) => paddingLeft + index * xStep);
+
+    // Generate left Y-axis ticks (linear) - Limited to 4 ticks
+    const leftTickCount = 4;
+    const leftTickValues = [];
+    for (let i = 0; i <= leftTickCount; i++) {
+      leftTickValues.push((chartData.maxDaily / leftTickCount) * i);
+    }
+
+    // Generate right Y-axis ticks (linear) - Limited to 4 ticks
+    const rightTickCount = 4;
+    const rightTickValues = [];
+    for (let i = 0; i <= rightTickCount; i++) {
+      rightTickValues.push((chartData.maxCumulative / rightTickCount) * i);
+    }
+
+    // Build path strings for lines
+    const buildPath = (positions) => {
+      return positions
+        .map((y, index) => {
+          const x = xPositions[index];
+          const safeX = isFinite(x) ? x : 0;
+          const safeY = isFinite(y) ? y : paddingTop + plotHeight;
+          return index === 0 ? `M ${safeX} ${safeY}` : `L ${safeX} ${safeY}`;
+        })
+        .join(" ");
+    };
+
+    const dailyPath = buildPath(dailyYPositions);
+    const cumulativePath = buildPath(cumulativeYPositions);
+
     return (
-      <View style={{ width: chartWidth, height: chartHeight, justifyContent: "center", alignItems: "center" }}>
-        <Text style={{ color: "#888" }}>No data available</Text>
+      <View style={{ width: chartWidth, height: chartHeight, marginVertical: 8 }}>
+        {/* Legend */}
+        <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 20 }}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <View style={{ width: 12, height: 3, backgroundColor: "#B71C1C", marginRight: 6 }} />
+            <Text style={{ fontSize: 12, color: "#666" }}>Daily Bounty</Text>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <View style={{ width: 12, height: 3, backgroundColor: "#000", marginRight: 6 }} />
+            <Text style={{ fontSize: 12, color: "#666" }}>Cumulative Bounty</Text>
+          </View>
+        </View>
+        <Svg width={chartWidth} height={chartHeight}>
+          {/* Grid lines (horizontal) */}
+          {leftTickValues.map((tick, index) => {
+            const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
+            return <Line key={`grid-${index}`} x1={paddingLeft} y1={y} x2={paddingLeft + plotWidth} y2={y} stroke='#ddd' strokeWidth='1' />;
+          })}
+
+          {/* Left Y-axis (linear) - Red to match Daily Bounty line */}
+          <Line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke='#B71C1C' strokeWidth='2' />
+          {leftTickValues.map((tick, index) => {
+            const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
+            return (
+              <G key={`left-tick-${index}`}>
+                <Line x1={paddingLeft} y1={y} x2={paddingLeft - 5} y2={y} stroke='#B71C1C' strokeWidth='1' />
+                <SvgText x={paddingLeft - 8} y={y + 4} fontSize='10' fill='#B71C1C' textAnchor='end'>
+                  {formatYLabel(tick)}
+                </SvgText>
+              </G>
+            );
+          })}
+
+          {/* Right Y-axis (linear) */}
+          <Line x1={paddingLeft + plotWidth} y1={paddingTop} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
+          {rightTickValues.map((tick, index) => {
+            const y = paddingTop + plotHeight - (tick / chartData.maxCumulative) * plotHeight;
+            return (
+              <G key={`right-tick-${index}`}>
+                <Line x1={paddingLeft + plotWidth} y1={y} x2={paddingLeft + plotWidth + 5} y2={y} stroke='#666' strokeWidth='1' />
+                <SvgText x={paddingLeft + plotWidth + 8} y={y + 4} fontSize='10' fill='#666' textAnchor='start'>
+                  {formatYLabel(tick)}
+                </SvgText>
+              </G>
+            );
+          })}
+
+          {/* X-axis */}
+          <Line x1={paddingLeft} y1={paddingTop + plotHeight} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
+
+          {/* X-axis labels (dates) */}
+          {chartData.dates.map((date, index) => {
+            const x = xPositions[index];
+            return (
+              <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
+                {formatDateLabel(date)}
+              </SvgText>
+            );
+          })}
+
+          {/* X-axis title label */}
+          <SvgText x={paddingLeft + plotWidth / 2} y={paddingTop + plotHeight + 35} fontSize='12' fill='#333' fontWeight='600' textAnchor='middle'>
+            Date
+          </SvgText>
+
+          {/* Daily bounty line (red, left axis) */}
+          <Path d={dailyPath} stroke='#B71C1C' strokeWidth='3' fill='none' />
+          {dailyYPositions.map((y, index) => (
+            <Circle key={`daily-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='#B71C1C' />
+          ))}
+
+          {/* Cumulative bounty line (black, right axis) */}
+          <Path d={cumulativePath} stroke='black' strokeWidth='3' fill='none' />
+          {cumulativeYPositions.map((y, index) => (
+            <Circle key={`cumulative-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='black' />
+          ))}
+        </Svg>
       </View>
     );
-  }
-
-  const dataPoints = chartData.dates.length;
-  const xStep = plotWidth / Math.max(dataPoints - 1, 1);
-
-  // Calculate Y positions for daily bounty (linear, left axis)
-  const dailyYPositions = chartData.dailyBounty.map((value) => {
-    const normalized = Math.max(0, Math.min(1, value / chartData.maxDaily));
-    const y = paddingTop + plotHeight - normalized * plotHeight;
-    return isFinite(y) ? y : paddingTop + plotHeight;
-  });
-
-  // Calculate Y positions for cumulative bounty (linear, right axis with different scale)
-  const cumulativeYPositions = chartData.cumulativeBounty.map((value) => {
-    const normalized = Math.max(0, Math.min(1, value / chartData.maxCumulative));
-    const y = paddingTop + plotHeight - normalized * plotHeight;
-    return isFinite(y) ? y : paddingTop + plotHeight;
-  });
-
-  // Generate X positions
-  const xPositions = chartData.dates.map((_, index) => paddingLeft + index * xStep);
-
-  // Generate left Y-axis ticks (linear) - Limited to 4 ticks
-  const leftTickCount = 4;
-  const leftTickValues = [];
-  for (let i = 0; i <= leftTickCount; i++) {
-    leftTickValues.push((chartData.maxDaily / leftTickCount) * i);
-  }
-
-  // Generate right Y-axis ticks (linear) - Limited to 4 ticks
-  const rightTickCount = 4;
-  const rightTickValues = [];
-  for (let i = 0; i <= rightTickCount; i++) {
-    rightTickValues.push((chartData.maxCumulative / rightTickCount) * i);
-  }
-
-  // Build path strings for lines
-  const buildPath = (positions) => {
-    return positions
-      .map((y, index) => {
-        const x = xPositions[index];
-        const safeX = isFinite(x) ? x : 0;
-        const safeY = isFinite(y) ? y : paddingTop + plotHeight;
-        return index === 0 ? `M ${safeX} ${safeY}` : `L ${safeX} ${safeY}`;
-      })
-      .join(" ");
-  };
-
-  const dailyPath = buildPath(dailyYPositions);
-  const cumulativePath = buildPath(cumulativeYPositions);
-
-  return (
-    <View style={{ width: chartWidth, height: chartHeight, marginVertical: 8 }}>
-      {/* Legend */}
-      <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 20 }}>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <View style={{ width: 12, height: 3, backgroundColor: "#B71C1C", marginRight: 6 }} />
-          <Text style={{ fontSize: 12, color: "#666" }}>Daily Bounty</Text>
-        </View>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <View style={{ width: 12, height: 3, backgroundColor: "#000", marginRight: 6 }} />
-          <Text style={{ fontSize: 12, color: "#666" }}>Cumulative Bounty</Text>
-        </View>
-      </View>
-      <Svg width={chartWidth} height={chartHeight}>
-        {/* Grid lines (horizontal) */}
-        {leftTickValues.map((tick, index) => {
-          const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
-          return <Line key={`grid-${index}`} x1={paddingLeft} y1={y} x2={paddingLeft + plotWidth} y2={y} stroke='#ddd' strokeWidth='1' />;
-        })}
-
-        {/* Left Y-axis (linear) - Red to match Daily Bounty line */}
-        <Line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke='#B71C1C' strokeWidth='2' />
-        {leftTickValues.map((tick, index) => {
-          const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
-          return (
-            <G key={`left-tick-${index}`}>
-              <Line x1={paddingLeft} y1={y} x2={paddingLeft - 5} y2={y} stroke='#B71C1C' strokeWidth='1' />
-              <SvgText x={paddingLeft - 8} y={y + 4} fontSize='10' fill='#B71C1C' textAnchor='end'>
-                {formatYLabel(tick)}
-              </SvgText>
-            </G>
-          );
-        })}
-
-        {/* Right Y-axis (linear) */}
-        <Line x1={paddingLeft + plotWidth} y1={paddingTop} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
-        {rightTickValues.map((tick, index) => {
-          const y = paddingTop + plotHeight - (tick / chartData.maxCumulative) * plotHeight;
-          return (
-            <G key={`right-tick-${index}`}>
-              <Line x1={paddingLeft + plotWidth} y1={y} x2={paddingLeft + plotWidth + 5} y2={y} stroke='#666' strokeWidth='1' />
-              <SvgText x={paddingLeft + plotWidth + 8} y={y + 4} fontSize='10' fill='#666' textAnchor='start'>
-                {formatYLabel(tick)}
-              </SvgText>
-            </G>
-          );
-        })}
-
-        {/* X-axis */}
-        <Line x1={paddingLeft} y1={paddingTop + plotHeight} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
-
-        {/* X-axis labels (dates) */}
-        {chartData.dates.map((date, index) => {
-          const x = xPositions[index];
-          return (
-            <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
-              {formatDateLabel(date)}
-            </SvgText>
-          );
-        })}
-
-        {/* X-axis title label */}
-        <SvgText 
-          x={paddingLeft + plotWidth / 2} 
-          y={paddingTop + plotHeight + 35} 
-          fontSize='12' 
-          fill='#333' 
-          fontWeight='600'
-          textAnchor='middle'
-        >
-          Date
-        </SvgText>
-
-        {/* Daily bounty line (red, left axis) */}
-        <Path d={dailyPath} stroke='#B71C1C' strokeWidth='3' fill='none' />
-        {dailyYPositions.map((y, index) => (
-          <Circle key={`daily-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='#B71C1C' />
-        ))}
-
-        {/* Cumulative bounty line (black, right axis) */}
-        <Path d={cumulativePath} stroke='black' strokeWidth='3' fill='none' />
-        {cumulativeYPositions.map((y, index) => (
-          <Circle key={`cumulative-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='black' />
-        ))}
-      </Svg>
-    </View>
-  );
   };
 
   const BusinessNetEarningChart = () => {
-  const chartData = processBusinessTransactionDataForChart();
-  const screenWidth = Dimensions.get("window").width - 40;
-  const chartWidth = screenWidth;
-  const chartHeight = 200; // Increased from 180
-  const paddingLeft = 50;
-  const paddingRight = 50;
-  const paddingTop = 20;
-  const paddingBottom = 50; // Increased from 30
-  const plotWidth = chartWidth - paddingLeft - paddingRight;
-  const plotHeight = chartHeight - paddingTop - paddingBottom;
+    const chartData = processBusinessTransactionDataForChart();
+    const screenWidth = Dimensions.get("window").width - 40;
+    const chartWidth = screenWidth;
+    const chartHeight = 200; // Increased from 180
+    const paddingLeft = 50;
+    const paddingRight = 50;
+    const paddingTop = 20;
+    const paddingBottom = 50; // Increased from 30
+    const plotWidth = chartWidth - paddingLeft - paddingRight;
+    const plotHeight = chartHeight - paddingTop - paddingBottom;
 
-  if (chartData.dates.length === 0) {
+    if (chartData.dates.length === 0) {
+      return (
+        <View style={{ width: chartWidth, height: chartHeight, justifyContent: "center", alignItems: "center" }}>
+          <Text style={{ color: "#888" }}>No data available</Text>
+        </View>
+      );
+    }
+
+    const dataPoints = chartData.dates.length;
+    const xStep = plotWidth / Math.max(dataPoints - 1, 1);
+
+    const dailyYPositions = chartData.dailyEarnings.map((value) => {
+      const normalized = Math.max(0, Math.min(1, value / chartData.maxDaily));
+      const y = paddingTop + plotHeight - normalized * plotHeight;
+      return isFinite(y) ? y : paddingTop + plotHeight;
+    });
+
+    const cumulativeYPositions = chartData.cumulativeEarnings.map((value) => {
+      const y = paddingTop + linearScale(value, chartData.maxCumulative, plotHeight);
+      return isFinite(y) ? y : paddingTop + plotHeight;
+    });
+
+    const xPositions = chartData.dates.map((_, index) => paddingLeft + index * xStep);
+
+    // Generate left Y-axis ticks - Limited to 4 ticks
+    const leftTickCount = 4;
+    const leftTickValues = [];
+    for (let i = 0; i <= leftTickCount; i++) {
+      leftTickValues.push((chartData.maxDaily / leftTickCount) * i);
+    }
+
+    // Generate right Y-axis ticks - Limited to 4 ticks
+    const rightTickCount = 4;
+    const rightTickValues = [];
+    for (let i = 0; i <= rightTickCount; i++) {
+      rightTickValues.push((chartData.maxCumulative / rightTickCount) * i);
+    }
+
+    const buildPath = (positions) => {
+      return positions
+        .map((y, index) => {
+          const x = xPositions[index];
+          const safeX = isFinite(x) ? x : 0;
+          const safeY = isFinite(y) ? y : paddingTop + plotHeight;
+          return index === 0 ? `M ${safeX} ${safeY}` : `L ${safeX} ${safeY}`;
+        })
+        .join(" ");
+    };
+
+    const dailyPath = buildPath(dailyYPositions);
+    const cumulativePath = buildPath(cumulativeYPositions);
+
     return (
-      <View style={{ width: chartWidth, height: chartHeight, justifyContent: "center", alignItems: "center" }}>
-        <Text style={{ color: "#888" }}>No data available</Text>
+      <View style={{ width: chartWidth, height: chartHeight, marginVertical: 8 }}>
+        {/* Legend */}
+        <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 20 }}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <View style={{ width: 12, height: 3, backgroundColor: "#B71C1C", marginRight: 6 }} />
+            <Text style={{ fontSize: 12, color: "#666" }}>Daily Net Earnings</Text>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <View style={{ width: 12, height: 3, backgroundColor: "#000", marginRight: 6 }} />
+            <Text style={{ fontSize: 12, color: "#666" }}>Cumulative Net Earnings</Text>
+          </View>
+        </View>
+        <Svg width={chartWidth} height={chartHeight}>
+          {/* Grid lines */}
+          {leftTickValues.map((tick, index) => {
+            const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
+            return <Line key={`grid-${index}`} x1={paddingLeft} y1={y} x2={paddingLeft + plotWidth} y2={y} stroke='#ddd' strokeWidth='1' />;
+          })}
+
+          {/* Left Y-axis */}
+          <Line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
+          {leftTickValues.map((tick, index) => {
+            const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
+            return (
+              <G key={`left-tick-${index}`}>
+                <Line x1={paddingLeft} y1={y} x2={paddingLeft - 5} y2={y} stroke='#666' strokeWidth='1' />
+                <SvgText x={paddingLeft - 8} y={y + 4} fontSize='10' fill='#666' textAnchor='end'>
+                  {formatYLabel(tick)}
+                </SvgText>
+              </G>
+            );
+          })}
+
+          {/* Right Y-axis */}
+          <Line x1={paddingLeft + plotWidth} y1={paddingTop} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
+          {rightTickValues.map((tick, index) => {
+            const y = paddingTop + linearScale(tick, chartData.maxCumulative, plotHeight);
+            return (
+              <G key={`right-tick-${index}`}>
+                <Line x1={paddingLeft + plotWidth} y1={y} x2={paddingLeft + plotWidth + 5} y2={y} stroke='#666' strokeWidth='1' />
+                <SvgText x={paddingLeft + plotWidth + 8} y={y + 4} fontSize='10' fill='#666' textAnchor='start'>
+                  {formatYLabel(tick)}
+                </SvgText>
+              </G>
+            );
+          })}
+
+          {/* X-axis */}
+          <Line x1={paddingLeft} y1={paddingTop + plotHeight} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
+
+          {/* X-axis labels */}
+          {chartData.dates.map((date, index) => {
+            const x = xPositions[index];
+            return (
+              <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
+                {formatDateLabel(date)}
+              </SvgText>
+            );
+          })}
+
+          {/* X-axis title label */}
+          <SvgText x={paddingLeft + plotWidth / 2} y={paddingTop + plotHeight + 35} fontSize='12' fill='#333' fontWeight='600' textAnchor='middle'>
+            Date
+          </SvgText>
+
+          {/* Daily earnings line */}
+          <Path d={dailyPath} stroke='#B71C1C' strokeWidth='3' fill='none' />
+          {dailyYPositions.map((y, index) => (
+            <Circle key={`daily-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='#B71C1C' />
+          ))}
+
+          {/* Cumulative earnings line */}
+          <Path d={cumulativePath} stroke='black' strokeWidth='3' fill='none' />
+          {cumulativeYPositions.map((y, index) => (
+            <Circle key={`cumulative-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='black' />
+          ))}
+        </Svg>
       </View>
     );
-  }
-
-  const dataPoints = chartData.dates.length;
-  const xStep = plotWidth / Math.max(dataPoints - 1, 1);
-
-  const dailyYPositions = chartData.dailyEarnings.map((value) => {
-    const normalized = Math.max(0, Math.min(1, value / chartData.maxDaily));
-    const y = paddingTop + plotHeight - normalized * plotHeight;
-    return isFinite(y) ? y : paddingTop + plotHeight;
-  });
-
-  const cumulativeYPositions = chartData.cumulativeEarnings.map((value) => {
-    const y = paddingTop + linearScale(value, chartData.maxCumulative, plotHeight);
-    return isFinite(y) ? y : paddingTop + plotHeight;
-  });
-
-  const xPositions = chartData.dates.map((_, index) => paddingLeft + index * xStep);
-
-  // Generate left Y-axis ticks - Limited to 4 ticks
-  const leftTickCount = 4;
-  const leftTickValues = [];
-  for (let i = 0; i <= leftTickCount; i++) {
-    leftTickValues.push((chartData.maxDaily / leftTickCount) * i);
-  }
-
-  // Generate right Y-axis ticks - Limited to 4 ticks
-  const rightTickCount = 4;
-  const rightTickValues = [];
-  for (let i = 0; i <= rightTickCount; i++) {
-    rightTickValues.push((chartData.maxCumulative / rightTickCount) * i);
-  }
-
-  const buildPath = (positions) => {
-    return positions
-      .map((y, index) => {
-        const x = xPositions[index];
-        const safeX = isFinite(x) ? x : 0;
-        const safeY = isFinite(y) ? y : paddingTop + plotHeight;
-        return index === 0 ? `M ${safeX} ${safeY}` : `L ${safeX} ${safeY}`;
-      })
-      .join(" ");
-  };
-
-  const dailyPath = buildPath(dailyYPositions);
-  const cumulativePath = buildPath(cumulativeYPositions);
-
-  return (
-    <View style={{ width: chartWidth, height: chartHeight, marginVertical: 8 }}>
-      {/* Legend */}
-      <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 8, gap: 20 }}>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <View style={{ width: 12, height: 3, backgroundColor: "#B71C1C", marginRight: 6 }} />
-          <Text style={{ fontSize: 12, color: "#666" }}>Daily Net Earnings</Text>
-        </View>
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <View style={{ width: 12, height: 3, backgroundColor: "#000", marginRight: 6 }} />
-          <Text style={{ fontSize: 12, color: "#666" }}>Cumulative Net Earnings</Text>
-        </View>
-      </View>
-      <Svg width={chartWidth} height={chartHeight}>
-        {/* Grid lines */}
-        {leftTickValues.map((tick, index) => {
-          const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
-          return <Line key={`grid-${index}`} x1={paddingLeft} y1={y} x2={paddingLeft + plotWidth} y2={y} stroke='#ddd' strokeWidth='1' />;
-        })}
-
-        {/* Left Y-axis */}
-        <Line x1={paddingLeft} y1={paddingTop} x2={paddingLeft} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
-        {leftTickValues.map((tick, index) => {
-          const y = paddingTop + plotHeight - (tick / chartData.maxDaily) * plotHeight;
-          return (
-            <G key={`left-tick-${index}`}>
-              <Line x1={paddingLeft} y1={y} x2={paddingLeft - 5} y2={y} stroke='#666' strokeWidth='1' />
-              <SvgText x={paddingLeft - 8} y={y + 4} fontSize='10' fill='#666' textAnchor='end'>
-                {formatYLabel(tick)}
-              </SvgText>
-            </G>
-          );
-        })}
-
-        {/* Right Y-axis */}
-        <Line x1={paddingLeft + plotWidth} y1={paddingTop} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
-        {rightTickValues.map((tick, index) => {
-          const y = paddingTop + linearScale(tick, chartData.maxCumulative, plotHeight);
-          return (
-            <G key={`right-tick-${index}`}>
-              <Line x1={paddingLeft + plotWidth} y1={y} x2={paddingLeft + plotWidth + 5} y2={y} stroke='#666' strokeWidth='1' />
-              <SvgText x={paddingLeft + plotWidth + 8} y={y + 4} fontSize='10' fill='#666' textAnchor='start'>
-                {formatYLabel(tick)}
-              </SvgText>
-            </G>
-          );
-        })}
-
-        {/* X-axis */}
-        <Line x1={paddingLeft} y1={paddingTop + plotHeight} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
-
-        {/* X-axis labels */}
-        {chartData.dates.map((date, index) => {
-          const x = xPositions[index];
-          return (
-            <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
-              {formatDateLabel(date)}
-            </SvgText>
-          );
-        })}
-
-        {/* X-axis title label */}
-        <SvgText 
-          x={paddingLeft + plotWidth / 2} 
-          y={paddingTop + plotHeight + 35} 
-          fontSize='12' 
-          fill='#333' 
-          fontWeight='600'
-          textAnchor='middle'
-        >
-          Date
-        </SvgText>
-
-        {/* Daily earnings line */}
-        <Path d={dailyPath} stroke='#B71C1C' strokeWidth='3' fill='none' />
-        {dailyYPositions.map((y, index) => (
-          <Circle key={`daily-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='#B71C1C' />
-        ))}
-
-        {/* Cumulative earnings line */}
-        <Path d={cumulativePath} stroke='black' strokeWidth='3' fill='none' />
-        {cumulativeYPositions.map((y, index) => (
-          <Circle key={`cumulative-dot-${index}`} cx={xPositions[index]} cy={y} r='4' fill='black' />
-        ))}
-      </Svg>
-    </View>
-  );
   };
 
   if (isLoading) {
@@ -1184,417 +1146,382 @@ export default function AccountScreen({ navigation }) {
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
-        <AppHeader 
-          title='ACCOUNT' 
-          {...getHeaderColors("account")}
-          onTitlePress={() => setShowFeedbackPopup(true)}
-          //Drop to the right in Header*
-          // rightButton={
-          //   <TouchableOpacity
-          //     style={styles.dropdownButton}
-          //     onPress={() => {
-          //       console.log("Dropdown arrow clicked, toggling from:", showAccountDropdown);
-          //       setShowAccountDropdown(!showAccountDropdown);
-          //     }}
-          //     activeOpacity={0.7}
-          //   >
-          //     <Text style={styles.dropdownArrow}>▼</Text>
-          //   </TouchableOpacity>
-          // }
-        />
-        
-        
-      
-       {/* Main content */}
-       <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContentContainer} showsVerticalScrollIndicator={true}>
-          {/* MiniCard - shows personal or business depending on selection */}
-            <View style={styles.sectionContainer}>
-              {selectedAccount === 'personal' 
-                ? personalProfileData && <MiniCard user={personalProfileData} />
-                : selectedBusinessFullData && <MiniCard business={selectedBusinessFullData} />
-              }
-            </View>
-          {/* Select Profile Dropdown Row */}
-          <View style={styles.selectProfileRow}>
-            <Text style={styles.selectProfileLabel}>Select Profile</Text>
+      <AppHeader
+        title='ACCOUNT'
+        {...getHeaderColors("account")}
+        onTitlePress={() => setShowFeedbackPopup(true)}
+        //Drop to the right in Header*
+        // rightButton={
+        //   <TouchableOpacity
+        //     style={styles.dropdownButton}
+        //     onPress={() => {
+        //       console.log("Dropdown arrow clicked, toggling from:", showAccountDropdown);
+        //       setShowAccountDropdown(!showAccountDropdown);
+        //     }}
+        //     activeOpacity={0.7}
+        //   >
+        //     <Text style={styles.dropdownArrow}>▼</Text>
+        //   </TouchableOpacity>
+        // }
+      />
+
+      {/* Main content */}
+      <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContentContainer} showsVerticalScrollIndicator={true}>
+        {/* MiniCard - shows personal or business depending on selection */}
+        <View style={styles.sectionContainer}>
+          {selectedAccount === "personal" ? personalProfileData && <MiniCard user={personalProfileData} /> : selectedBusinessFullData && <MiniCard business={selectedBusinessFullData} />}
+        </View>
+        {/* Select Profile Dropdown Row */}
+        <View style={styles.selectProfileRow}>
+          <Text style={styles.selectProfileLabel}>Select Profile</Text>
+          <TouchableOpacity style={styles.selectProfileDropdown} onPress={() => setShowAccountDropdown(!showAccountDropdown)} activeOpacity={0.7}>
+            <Text style={styles.selectProfileDropdownText}>
+              {selectedAccount === "personal" ? "Personal" : businesses.find((b) => (b.business_uid || b.profile_business_uid) === selectedAccount)?.business_name || "Business"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Dropdown Menu */}
+        {showAccountDropdown && (
+          <View style={styles.selectProfileMenu}>
             <TouchableOpacity
-              style={styles.selectProfileDropdown}
-              onPress={() => setShowAccountDropdown(!showAccountDropdown)}
-              activeOpacity={0.7}
+              style={styles.dropdownItem}
+              onPress={() => {
+                setAccountType("personal");
+                setSelectedAccount("personal");
+                setShowAccountDropdown(false);
+              }}
             >
-              <Text style={styles.selectProfileDropdownText}>
-                {selectedAccount === 'personal' 
-                  ? 'Personal' 
-                  : businesses.find(b => (b.business_uid || b.profile_business_uid) === selectedAccount)?.business_name || 'Business'}
-              </Text>
+              <Text style={[styles.dropdownItemText, selectedAccount === "personal" && styles.dropdownItemTextActive]}>Personal</Text>
             </TouchableOpacity>
+            {businesses.map((business, index) => {
+              const businessId = business.business_uid || business.profile_business_uid;
+              const businessName = business.business_name || business.profile_business_name || `Business ${index + 1}`;
+              return (
+                <TouchableOpacity
+                  key={businessId || index}
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    setAccountType("business");
+                    setSelectedAccount(businessId);
+                    setShowAccountDropdown(false);
+                  }}
+                >
+                  <Text style={[styles.dropdownItemText, selectedAccount === businessId && styles.dropdownItemTextActive]}>{businessName}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
+        )}
 
-          {/* Dropdown Menu */}
-          {showAccountDropdown && (
-            <View style={styles.selectProfileMenu}>
-              <TouchableOpacity
-                style={styles.dropdownItem}
-                onPress={() => { setAccountType('personal'); setSelectedAccount('personal'); setShowAccountDropdown(false); }}
-              >
-                <Text style={[styles.dropdownItemText, selectedAccount === 'personal' && styles.dropdownItemTextActive]}>Personal</Text>
-              </TouchableOpacity>
-              {businesses.map((business, index) => {
-                const businessId = business.business_uid || business.profile_business_uid;
-                const businessName = business.business_name || business.profile_business_name || `Business ${index + 1}`;
-                return (
-                  <TouchableOpacity
-                    key={businessId || index}
-                    style={styles.dropdownItem}
-                    onPress={() => { setAccountType('business'); setSelectedAccount(businessId); setShowAccountDropdown(false); }}
-                  >
-                    <Text style={[styles.dropdownItemText, selectedAccount === businessId && styles.dropdownItemTextActive]}>{businessName}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-
-          {accountType === 'personal' ? (
+        {accountType === "personal" ? (
           <>
-
-          {/* Expertise */}
-          <View style={styles.sectionContainer}>
-            <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowExpertise(!showExpertise)}>
-              <Text style={styles.sectionHeaderText}>EXPERTISE</Text>
-              <Ionicons name={showExpertise ? "chevron-up" : "chevron-down"} size={20} color="#000" />
-            </TouchableOpacity>
-            {showExpertise && (
-              <>
-                {expertiseLoading ? (
-                  <Text style={styles.loadingText}>Loading expertise data...</Text>
-                ) : expertiseData.length > 0 ? (
-                  <View style={styles.tableContainer}>
-                    <View style={styles.transactionHeaderRow}>
-                      <Text style={[styles.transactionHeaderBusiness, { flex: 1.5 }]}>Expertise</Text>
-                      <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Cost</Text>
-                      <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Unit</Text>
-                      <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Qty</Text>
-                      <Text style={[styles.transactionHeaderAmount, { flex: 1, textAlign: 'right'}]}>Bounty</Text>
-                    </View>
-                    {expertiseData.map((item, idx) => (
-                      <View key={idx} style={styles.tableRow}>
-                        <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>{item.name}</Text>
-                        <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
-                        <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
-                        <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.quantity || 0}</Text>
-                        <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: 'right', marginRight: 15 }]}>${item.bounty}</Text>
+            {/* Expertise */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowExpertise(!showExpertise)}>
+                <Text style={styles.sectionHeaderText}>EXPERTISE</Text>
+                <Ionicons name={showExpertise ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showExpertise && (
+                <>
+                  {expertiseLoading ? (
+                    <Text style={styles.loadingText}>Loading expertise data...</Text>
+                  ) : expertiseData.length > 0 ? (
+                    <View style={styles.tableContainer}>
+                      <View style={styles.transactionHeaderRow}>
+                        <Text style={[styles.transactionHeaderBusiness, { flex: 1.5 }]}>Expertise</Text>
+                        <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Cost</Text>
+                        <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Unit</Text>
+                        <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Qty</Text>
+                        <Text style={[styles.transactionHeaderAmount, { flex: 1, textAlign: "right" }]}>Bounty</Text>
                       </View>
-                    ))}
-                  </View>
-                ) : (
-                  <Text style={styles.noDataText}>No expertise transactions available.</Text>
-                )}
-              </>
-            )}
-          </View>
-
-          {/* Transaction History */}
-          <View style={styles.sectionContainer}>
-            <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowTransactionHistory(!showTransactionHistory)}>
-              <Text style={styles.sectionHeaderText}>TRANSACTION HISTORY</Text>
-              <Ionicons name={showTransactionHistory ? "chevron-up" : "chevron-down"} size={20} color="#000" />
-            </TouchableOpacity>
-            {showTransactionHistory && (
-              <>
-                {transactionLoading ? (
-                  <Text style={styles.loadingText}>Loading transaction data...</Text>
-                ) : transactionData.length > 0 ? (
-                  <View style={styles.transactionsContainer}>
-                    {/* Table Header */}
-                    <View style={styles.transactionHeaderRow}>
-                      <Text style={styles.transactionHeaderDate}>Date</Text>
-                      <Text style={styles.transactionHeaderId}>Transaction ID</Text>
-                      <Text style={styles.transactionHeaderBusiness}>Business</Text>
-                      <Text style={styles.transactionHeaderAmount}>Amount</Text>
-                    </View>
-                    {/* Table Rows */}
-                    {transactionData.map((transaction, i) => {
-                      return (
-                        <View key={transaction.transaction_uid || i} style={styles.transactionRow}>
-                          <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
-                          <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text>
-                          <Text style={styles.transactionBusiness}>{transaction.business_name || "N/A"}</Text>
-                          <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
+                      {expertiseData.map((item, idx) => (
+                        <View key={idx} style={styles.tableRow}>
+                          <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>{item.name}</Text>
+                          <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
+                          <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
+                          <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.quantity || 0}</Text>
+                          <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: "right", marginRight: 15 }]}>${item.bounty}</Text>
                         </View>
-                      );
-                    })}
-                  </View>
-                ) : (
-                  <View>
-                    <Text style={styles.noDataText}>No transaction data available.</Text>
-                    <Text style={styles.noDataText}>Transaction data length: {transactionData.length}</Text>
-                    <Text style={styles.noDataText}>Transaction loading: {transactionLoading.toString()}</Text>
-                  </View>
-                )}
-              </>
-            )}
-          </View>
-
-          {/* Net Earning */}
-          <View style={styles.sectionContainer}>
-            <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowNetEarning(!showNetEarning)}>
-              <Text style={styles.sectionHeaderText}>NET EARNING</Text>
-              <Ionicons name={showNetEarning ? "chevron-up" : "chevron-down"} size={20} color="#000" />
-            </TouchableOpacity>
-            {showNetEarning && <NetEarningChart />}
-          </View>
-
-          {/* Bounty Results */}
-          <View style={styles.sectionContainer}>
-            <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBountyResults(!showBountyResults)}>
-              <Text style={styles.sectionHeaderText}>BOUNTY RESULTS</Text>
-              <Ionicons name={showBountyResults ? "chevron-up" : "chevron-down"} size={20} color="#000" />
-            </TouchableOpacity>
-            {showBountyResults && (
-              <>
-                {bountyLoading ? (
-                  <Text style={styles.loadingText}>Loading bounty data...</Text>
-                ) : bountyData?.error ? (
-                  <Text style={styles.errorText}>Error: {bountyData.error}</Text>
-                ) : bountyData?.data ? (
-                  <View>
-                    {/* Totals */}
-                    <View style={styles.bountyTotals}>
-                      <Text style={styles.bountyTotalText}>Total Transactions: {bountyData.total_bounties}</Text>
-                      <Text style={styles.bountyTotalText}>Total Earned: ${bountyData.total_bounty_earned?.toFixed(2)}</Text>
+                      ))}
                     </View>
-                    {/* Table Header */}
-                    <View style={styles.bountyTableHeader}>
-                      <Text style={styles.bountyTableHeaderCell}>ID</Text>
-                      <Text style={styles.bountyTableHeaderCell}>Date</Text>
-                      <Text style={styles.bountyTableHeaderCell}>Purchaser</Text>
-                      <Text style={styles.bountyTableHeaderCell}>Business</Text>
-                      <Text style={styles.bountyTableHeaderCell}>Bounty Earned</Text>
-                    </View>
-                    {/* Table Rows */}
-                    {bountyData.data.map((transaction, index) => {
-                      // Format date to MM/DD
-                      const formatDate = (dateString) => {
-                        if (!dateString) return "N/A";
-                        const date = new Date(dateString);
-                        const month = String(date.getMonth() + 1).padStart(2, "0");
-                        const day = String(date.getDate()).padStart(2, "0");
-                        return `${month}/${day}`;
-                      };
-                      return (
-                        <View key={transaction.transaction_uid || index} style={styles.bountyTableRow}>
-                          <Text style={styles.bountyTableCell}>{transaction.transaction_uid}</Text>
-                          <Text style={styles.bountyTableCell}>{formatDate(transaction.transaction_datetime)}</Text>
-                          <Text style={styles.bountyTableCell}>{transaction.transaction_profile_id || "N/A"}</Text>
-                          <Text style={styles.bountyTableCell}>{transaction.transaction_business_id || "N/A"}</Text>
-                          <Text style={styles.bountyTableCell}>${transaction.bounty_earned?.toFixed(2)}</Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                ) : (
-                  <Text style={styles.noDataText}>No bounty data available.</Text>
-                )}
-              </>
-            )}
-          </View>
-        </>
-      ) : (
-      
-      <>
-
-        {/* Product Results formerly Business Bounty Results */}
-        <View style={styles.sectionContainer}>
-          <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowProductResults(!showProductResults)}>
-            <Text style={styles.sectionHeaderText}>PRODUCT RESULTS</Text>
-            <Ionicons name={showProductResults ? "chevron-up" : "chevron-down"} size={20} color="#000" />
-          </TouchableOpacity>
-          {showProductResults && (
-            <>
-              {businessBountyLoading ? (
-                <Text style={styles.loadingText}>Loading business bounty data...</Text>
-              ) : businessBountyData?.error ? (
-                <Text style={styles.errorText}>Error: {businessBountyData.error}</Text>
-              ) : businessBountyData?.data ? (
-                  <View>
-                    {/* Table Header */}
-                    <View style={styles.businessBountyTableHeader}>
-                      <Text style={styles.businessBountyHeaderCell}>Date</Text>
-                      <Text style={styles.businessBountyHeaderCell}>Product UID</Text>
-                      <Text style={styles.businessBountyHeaderCell}>Product Name</Text>
-                      <Text style={styles.businessBountyHeaderCell}>Cost</Text>
-                      <Text style={styles.businessBountyHeaderCell}>Bounty</Text>
-                      <Text style={styles.businessBountyHeaderCell}>Qty</Text>
-                      <Text style={styles.businessBountyHeaderCell}>Bounty Paid</Text>
-                    </View>
-                    {/* Table Rows */}
-                    {businessBountyData.data.map((transaction, index) => {
-                      const formatDate = (dateString) => {
-                        if (!dateString) return "N/A";
-                        const date = new Date(dateString);
-                        const month = String(date.getMonth() + 1).padStart(2, "0");
-                        const day = String(date.getDate()).padStart(2, "0");
-                        return `${month}/${day}`;
-                      };
-                      return (
-                        <View key={transaction.transaction_uid || index} style={styles.businessBountyTableRow}>
-                          <Text style={styles.businessBountyCell}>
-                            {formatDate(transaction.transaction_datetime)}
-                          </Text>
-                          <Text style={styles.businessBountyCell}>
-                            {transaction.bs_uid || "N/A"}
-                          </Text>
-                          <Text style={styles.businessBountyCell}>
-                            {transaction.bs_service_name || "N/A"}
-                          </Text>
-                          <Text style={styles.businessBountyCell}>
-                            ${parseFloat(transaction.bs_cost || 0).toFixed(2)}
-                          </Text>
-                          <Text style={styles.businessBountyCell}>
-                            ${parseFloat(transaction.bs_bounty || 0).toFixed(2)}
-                          </Text>
-                          <Text style={styles.businessBountyCell}>
-                            {transaction.ti_bs_qty || 0}
-                          </Text>
-                          <Text style={styles.businessBountyCell}>
-                            ${parseFloat(transaction.bounty_paid || 0).toFixed(2)}
-                          </Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-              ) : (
-                <Text style={styles.noDataText}>No business bounty data available.</Text>
+                  ) : (
+                    <Text style={styles.noDataText}>No expertise transactions available.</Text>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </View>
+            </View>
 
-        {/* Business Net Earning */}
-        <View style={styles.sectionContainer}>
-          <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBusinessNetEarning(!showBusinessNetEarning)}>
-            <Text style={styles.sectionHeaderText}>NET EARNING</Text>
-            <Ionicons name={showBusinessNetEarning ? "chevron-up" : "chevron-down"} size={20} color="#000" />
-          </TouchableOpacity>
-          {showBusinessNetEarning && <BusinessNetEarningChart />}
-        </View>
+            {/* Transaction History */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowTransactionHistory(!showTransactionHistory)}>
+                <Text style={styles.sectionHeaderText}>TRANSACTION HISTORY</Text>
+                <Ionicons name={showTransactionHistory ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showTransactionHistory && (
+                <>
+                  {transactionLoading ? (
+                    <Text style={styles.loadingText}>Loading transaction data...</Text>
+                  ) : transactionData.length > 0 ? (
+                    <View style={styles.transactionsContainer}>
+                      {/* Table Header */}
+                      <View style={styles.transactionHeaderRow}>
+                        <Text style={styles.transactionHeaderDate}>Date</Text>
+                        <Text style={styles.transactionHeaderId}>Transaction ID</Text>
+                        <Text style={styles.transactionHeaderBusiness}>Business</Text>
+                        <Text style={styles.transactionHeaderAmount}>Amount</Text>
+                      </View>
+                      {/* Table Rows */}
+                      {transactionData.map((transaction, i) => {
+                        return (
+                          <View key={transaction.transaction_uid || i} style={styles.transactionRow}>
+                            <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                            <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text>
+                            <Text style={styles.transactionBusiness}>{transaction.business_name || "N/A"}</Text>
+                            <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <View>
+                      <Text style={styles.noDataText}>No transaction data available.</Text>
+                      <Text style={styles.noDataText}>Transaction data length: {transactionData.length}</Text>
+                      <Text style={styles.noDataText}>Transaction loading: {transactionLoading.toString()}</Text>
+                    </View>
+                  )}
+                </>
+              )}
+            </View>
 
-        {/* Business Transaction History */}
-        <View style={styles.sectionContainer}>
-          <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBusinessTransactionHistory(!showBusinessTransactionHistory)}>
-            <Text style={styles.sectionHeaderText}>BUSINESS TRANSACTION HISTORY</Text>
-            <Ionicons name={showBusinessTransactionHistory ? "chevron-up" : "chevron-down"} size={20} color="#000" />
-          </TouchableOpacity>
-          {showBusinessTransactionHistory && (
-            <>
-              {businessTransactionLoading ? (
-                <Text style={styles.loadingText}>Loading business transaction data...</Text>
-              ) : businessTransactionData.length > 0 ? (
-                  <View style={styles.transactionsContainer}>
-                {/* Table Header */}
-                <View style={styles.businessTransactionHeaderRow}>
-                  <Text style={styles.businessTransactionHeaderCell}>Transaction ID</Text>
-                  <Text style={styles.businessTransactionHeaderCell}>Date</Text>
-                  <Text style={styles.businessTransactionHeaderCell}>Buyer</Text>
-                  <Text style={styles.businessTransactionHeaderCell}>Total</Text>
-                  <Text style={styles.businessTransactionHeaderCell}>Bounty</Text>
-                  <Text style={styles.businessTransactionHeaderCell}>Tax</Text>
-                  <Text style={styles.businessTransactionHeaderCell}>Net Earning</Text>
-                </View>
-                {/* Table Rows */}
-                {businessTransactionData.map((transaction, i) => {
-                  const isExpanded = expandedTransactionId === transaction.transaction_uid;
-                  
-                  // Get services for this transaction from businessBountyData
-                  const transactionServices = businessBountyData?.data?.filter(
-                    item => item.transaction_uid === transaction.transaction_uid
-                  ) || [];
-                  
-                  return (
-                    <View key={transaction.transaction_uid || i}>
-                      {/* Main Transaction Row */}
-                      <TouchableOpacity
-                        style={styles.businessTransactionRow}
-                        onPress={() => {
-                          setExpandedTransactionId(isExpanded ? null : transaction.transaction_uid);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.businessTransactionCell}>
-                          {transaction.transaction_uid || "N/A"} {isExpanded ? "▲" : "▼"}
-                        </Text>
-                        <Text style={styles.businessTransactionCell}>
-                          {formatTransactionDate(transaction.transaction_datetime)}
-                        </Text>
-                        <Text style={styles.businessTransactionCell}>
-                          {transaction.transaction_profile_id?.substring(0, 10) || "N/A"}
-                        </Text>
-                        <Text style={styles.businessTransactionCell}>
-                          ${transaction.transaction_total.toFixed(2)}
-                        </Text>
-                        <Text style={styles.businessTransactionCell}>
-                          ${transaction.bounty_paid.toFixed(2)}
-                        </Text>
-                        <Text style={styles.businessTransactionCell}>
-                          ${transaction.transaction_taxes.toFixed(2)}
-                        </Text>
-                        <Text style={styles.businessTransactionCell}>
-                          ${transaction.net_earning.toFixed(2)}
-                        </Text>
-                      </TouchableOpacity>
+            {/* Net Earning */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowNetEarning(!showNetEarning)}>
+                <Text style={styles.sectionHeaderText}>NET EARNINGS</Text>
+                <Ionicons name={showNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showNetEarning && <NetEarningChart />}
+            </View>
 
-                      {/* Expanded Services Details */}
-                      {isExpanded && (
-                        <View style={styles.expandedServicesContainer}>
-                          {transactionServices.length > 0 ? (
-                            <>
-                              {/* Services Header */}
-                              <View style={styles.servicesHeaderRow}>
-                                <Text style={styles.servicesHeaderCell}>Product UID</Text>
-                                <Text style={styles.servicesHeaderCell}>Product Name</Text>
-                                <Text style={styles.servicesHeaderCell}>Cost</Text>
-                                <Text style={styles.servicesHeaderCell}>Bounty</Text>
-                                <Text style={styles.servicesHeaderCell}>Qty</Text>
-                                <Text style={styles.servicesHeaderCell}>Bounty Paid</Text>
+            {/* Bounty Results */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBountyResults(!showBountyResults)}>
+                <Text style={styles.sectionHeaderText}>BOUNTY RESULTS</Text>
+                <Ionicons name={showBountyResults ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showBountyResults && (
+                <>
+                  {bountyLoading ? (
+                    <Text style={styles.loadingText}>Loading bounty data...</Text>
+                  ) : bountyData?.error ? (
+                    <Text style={styles.errorText}>Error: {bountyData.error}</Text>
+                  ) : bountyData?.data ? (
+                    <View>
+                      {/* Totals */}
+                      <View style={styles.bountyTotals}>
+                        <Text style={styles.bountyTotalText}>Total Transactions: {bountyData.total_bounties}</Text>
+                        <Text style={styles.bountyTotalText}>Total Earned: ${bountyData.total_bounty_earned?.toFixed(2)}</Text>
+                      </View>
+                      {/* Table Header */}
+                      <View style={styles.bountyTableHeader}>
+                        <Text style={styles.bountyTableHeaderCell}>ID</Text>
+                        <Text style={styles.bountyTableHeaderCell}>Date</Text>
+                        <Text style={styles.bountyTableHeaderCell}>Purchaser</Text>
+                        <Text style={styles.bountyTableHeaderCell}>Business</Text>
+                        <Text style={styles.bountyTableHeaderCell}>Bounty Earned</Text>
+                      </View>
+                      {/* Table Rows */}
+                      {bountyData.data.map((transaction, index) => {
+                        // Format date to MM/DD
+                        const formatDate = (dateString) => {
+                          if (!dateString) return "N/A";
+                          const date = new Date(dateString);
+                          const month = String(date.getMonth() + 1).padStart(2, "0");
+                          const day = String(date.getDate()).padStart(2, "0");
+                          return `${month}/${day}`;
+                        };
+                        return (
+                          <View key={transaction.transaction_uid || index} style={styles.bountyTableRow}>
+                            <Text style={styles.bountyTableCell}>{transaction.transaction_uid}</Text>
+                            <Text style={styles.bountyTableCell}>{formatDate(transaction.transaction_datetime)}</Text>
+                            <Text style={styles.bountyTableCell}>{transaction.transaction_profile_id || "N/A"}</Text>
+                            <Text style={styles.bountyTableCell}>{transaction.transaction_business_id || "N/A"}</Text>
+                            <Text style={styles.bountyTableCell}>${transaction.bounty_earned?.toFixed(2)}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <Text style={styles.noDataText}>No bounty data available.</Text>
+                  )}
+                </>
+              )}
+            </View>
+          </>
+        ) : (
+          <>
+            {/* Product Results formerly Business Bounty Results */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowProductResults(!showProductResults)}>
+                <Text style={styles.sectionHeaderText}>PRODUCT RESULTS</Text>
+                <Ionicons name={showProductResults ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showProductResults && (
+                <>
+                  {businessBountyLoading ? (
+                    <Text style={styles.loadingText}>Loading business bounty data...</Text>
+                  ) : businessBountyData?.error ? (
+                    <Text style={styles.errorText}>Error: {businessBountyData.error}</Text>
+                  ) : businessBountyData?.data ? (
+                    <View>
+                      {/* Table Header */}
+                      <View style={styles.businessBountyTableHeader}>
+                        <Text style={styles.businessBountyHeaderCell}>Date</Text>
+                        <Text style={styles.businessBountyHeaderCell}>Product UID</Text>
+                        <Text style={styles.businessBountyHeaderCell}>Product Name</Text>
+                        <Text style={styles.businessBountyHeaderCell}>Cost</Text>
+                        <Text style={styles.businessBountyHeaderCell}>Bounty</Text>
+                        <Text style={styles.businessBountyHeaderCell}>Qty</Text>
+                        <Text style={styles.businessBountyHeaderCell}>Bounty Paid</Text>
+                      </View>
+                      {/* Table Rows */}
+                      {businessBountyData.data.map((transaction, index) => {
+                        const formatDate = (dateString) => {
+                          if (!dateString) return "N/A";
+                          const date = new Date(dateString);
+                          const month = String(date.getMonth() + 1).padStart(2, "0");
+                          const day = String(date.getDate()).padStart(2, "0");
+                          return `${month}/${day}`;
+                        };
+                        return (
+                          <View key={transaction.transaction_uid || index} style={styles.businessBountyTableRow}>
+                            <Text style={styles.businessBountyCell}>{formatDate(transaction.transaction_datetime)}</Text>
+                            <Text style={styles.businessBountyCell}>{transaction.bs_uid || "N/A"}</Text>
+                            <Text style={styles.businessBountyCell}>{transaction.bs_service_name || "N/A"}</Text>
+                            <Text style={styles.businessBountyCell}>${parseFloat(transaction.bs_cost || 0).toFixed(2)}</Text>
+                            <Text style={styles.businessBountyCell}>${parseFloat(transaction.bs_bounty || 0).toFixed(2)}</Text>
+                            <Text style={styles.businessBountyCell}>{transaction.ti_bs_qty || 0}</Text>
+                            <Text style={styles.businessBountyCell}>${parseFloat(transaction.bounty_paid || 0).toFixed(2)}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  ) : (
+                    <Text style={styles.noDataText}>No business bounty data available.</Text>
+                  )}
+                </>
+              )}
+            </View>
+
+            {/* Business Net Earning */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBusinessNetEarning(!showBusinessNetEarning)}>
+                <Text style={styles.sectionHeaderText}>S</Text>
+                <Ionicons name={showBusinessNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showBusinessNetEarning && <BusinessNetEarningChart />}
+            </View>
+
+            {/* Business Transaction History */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBusinessTransactionHistory(!showBusinessTransactionHistory)}>
+                <Text style={styles.sectionHeaderText}>BUSINESS TRANSACTION HISTORY</Text>
+                <Ionicons name={showBusinessTransactionHistory ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showBusinessTransactionHistory && (
+                <>
+                  {businessTransactionLoading ? (
+                    <Text style={styles.loadingText}>Loading business transaction data...</Text>
+                  ) : businessTransactionData.length > 0 ? (
+                    <View style={styles.transactionsContainer}>
+                      {/* Table Header */}
+                      <View style={styles.businessTransactionHeaderRow}>
+                        <Text style={styles.businessTransactionHeaderCell}>Transaction ID</Text>
+                        <Text style={styles.businessTransactionHeaderCell}>Date</Text>
+                        <Text style={styles.businessTransactionHeaderCell}>Buyer</Text>
+                        <Text style={styles.businessTransactionHeaderCell}>Total</Text>
+                        <Text style={styles.businessTransactionHeaderCell}>Bounty</Text>
+                        <Text style={styles.businessTransactionHeaderCell}>Tax</Text>
+                        <Text style={styles.businessTransactionHeaderCell}>Net Earning</Text>
+                      </View>
+                      {/* Table Rows */}
+                      {businessTransactionData.map((transaction, i) => {
+                        const isExpanded = expandedTransactionId === transaction.transaction_uid;
+
+                        // Get services for this transaction from businessBountyData
+                        const transactionServices = businessBountyData?.data?.filter((item) => item.transaction_uid === transaction.transaction_uid) || [];
+
+                        return (
+                          <View key={transaction.transaction_uid || i}>
+                            {/* Main Transaction Row */}
+                            <TouchableOpacity
+                              style={styles.businessTransactionRow}
+                              onPress={() => {
+                                setExpandedTransactionId(isExpanded ? null : transaction.transaction_uid);
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.businessTransactionCell}>
+                                {transaction.transaction_uid || "N/A"} {isExpanded ? "▲" : "▼"}
+                              </Text>
+                              <Text style={styles.businessTransactionCell}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                              <Text style={styles.businessTransactionCell}>{transaction.transaction_profile_id?.substring(0, 10) || "N/A"}</Text>
+                              <Text style={styles.businessTransactionCell}>${transaction.transaction_total.toFixed(2)}</Text>
+                              <Text style={styles.businessTransactionCell}>${transaction.bounty_paid.toFixed(2)}</Text>
+                              <Text style={styles.businessTransactionCell}>${transaction.transaction_taxes.toFixed(2)}</Text>
+                              <Text style={styles.businessTransactionCell}>${transaction.net_earning.toFixed(2)}</Text>
+                            </TouchableOpacity>
+
+                            {/* Expanded Services Details */}
+                            {isExpanded && (
+                              <View style={styles.expandedServicesContainer}>
+                                {transactionServices.length > 0 ? (
+                                  <>
+                                    {/* Services Header */}
+                                    <View style={styles.servicesHeaderRow}>
+                                      <Text style={styles.servicesHeaderCell}>Product UID</Text>
+                                      <Text style={styles.servicesHeaderCell}>Product Name</Text>
+                                      <Text style={styles.servicesHeaderCell}>Cost</Text>
+                                      <Text style={styles.servicesHeaderCell}>Bounty</Text>
+                                      <Text style={styles.servicesHeaderCell}>Qty</Text>
+                                      <Text style={styles.servicesHeaderCell}>Bounty Paid</Text>
+                                    </View>
+                                    {/* Services Rows */}
+                                    {transactionServices.map((service, idx) => (
+                                      <View key={idx} style={styles.servicesRow}>
+                                        <Text style={styles.servicesCell}>{service.bs_uid || "N/A"}</Text>
+                                        <Text style={styles.servicesCell}>{service.bs_service_name || "N/A"}</Text>
+                                        <Text style={styles.servicesCell}>${parseFloat(service.bs_cost || 0).toFixed(2)}</Text>
+                                        <Text style={styles.servicesCell}>${parseFloat(service.bs_bounty || 0).toFixed(2)}</Text>
+                                        <Text style={styles.servicesCell}>{service.ti_bs_qty || 0}</Text>
+                                        <Text style={styles.servicesCell}>${parseFloat(service.bounty_paid || 0).toFixed(2)}</Text>
+                                      </View>
+                                    ))}
+                                  </>
+                                ) : (
+                                  <Text style={styles.noServicesText}>No services data available</Text>
+                                )}
                               </View>
-                              {/* Services Rows */}
-                              {transactionServices.map((service, idx) => (
-                                <View key={idx} style={styles.servicesRow}>
-                                  <Text style={styles.servicesCell}>{service.bs_uid || "N/A"}</Text>
-                                  <Text style={styles.servicesCell}>{service.bs_service_name || "N/A"}</Text>
-                                  <Text style={styles.servicesCell}>${parseFloat(service.bs_cost || 0).toFixed(2)}</Text>
-                                  <Text style={styles.servicesCell}>${parseFloat(service.bs_bounty || 0).toFixed(2)}</Text>
-                                  <Text style={styles.servicesCell}>{service.ti_bs_qty || 0}</Text>
-                                  <Text style={styles.servicesCell}>${parseFloat(service.bounty_paid || 0).toFixed(2)}</Text>
-                                </View>
-                              ))}
-                            </>
-                          ) : (
-                            <Text style={styles.noServicesText}>No services data available</Text>
-                          )}
-                        </View>
-                      )}
+                            )}
+                          </View>
+                        );
+                      })}
                     </View>
-                  );
-                })}
-              </View>
-              ) : (
-                <View>
-                  <Text style={styles.noDataText}>No business transaction data available.</Text>
-                </View>
+                  ) : (
+                    <View>
+                      <Text style={styles.noDataText}>No business transaction data available.</Text>
+                    </View>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </View>
-  
-      </>
-      )}
-       </ScrollView>
+            </View>
+          </>
+        )}
+      </ScrollView>
 
-       <BottomNavBar navigation={navigation} />
-       <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Account' instructions={accountFeedbackInstructions} questions={accountFeedbackQuestions} />
-     </View>
+      <BottomNavBar navigation={navigation} />
+      <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Account' instructions={accountFeedbackInstructions} questions={accountFeedbackQuestions} />
+    </View>
   );
 }
 
@@ -1656,18 +1583,18 @@ const styles = StyleSheet.create({
   centeredContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
 
   bountyTotals: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingVertical: 8,
     paddingHorizontal: 4,
     marginBottom: 8,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: "#f5f5f5",
     borderRadius: 4,
   },
   bountyTotalText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
   },
   bountyTableHeader: {
     flexDirection: "row",
@@ -1683,7 +1610,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "bold",
     paddingHorizontal: 2,
-    textAlign: 'center',
+    textAlign: "center",
   },
   bountyTableRow: {
     flexDirection: "row",
@@ -1697,7 +1624,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#333",
     paddingHorizontal: 2,
-    textAlign: 'center',
+    textAlign: "center",
   },
   loadingText: {
     color: "#888",
@@ -1712,29 +1639,29 @@ const styles = StyleSheet.create({
   dropdownButton: {
     paddingVertical: 6,
     paddingHorizontal: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   dropdownArrow: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   dropdownMenu: {
-    position: 'absolute',
+    position: "absolute",
     top: 42,
     right: 0,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 8,
     paddingVertical: 4,
     minWidth: 140,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 5,
-    zIndex: 10000,  
-    pointerEvents: 'auto',  
+    zIndex: 10000,
+    pointerEvents: "auto",
   },
   dropdownItem: {
     paddingVertical: 10,
@@ -1742,29 +1669,29 @@ const styles = StyleSheet.create({
   },
   dropdownItemText: {
     fontSize: 15,
-    color: '#333',
+    color: "#333",
   },
   dropdownItemTextActive: {
-    color: '#18884A',
-    fontWeight: '600',
+    color: "#18884A",
+    fontWeight: "600",
   },
   dropdownDivider: {
     height: 1,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: "#e0e0e0",
     marginHorizontal: 8,
   },
-  transactionHeaderQty: { 
-    width: 50, 
-    fontSize: 13, 
-    color: "#fff", 
-    fontWeight: "bold", 
-    textAlign: "center" 
+  transactionHeaderQty: {
+    width: 50,
+    fontSize: 13,
+    color: "#fff",
+    fontWeight: "bold",
+    textAlign: "center",
   },
-  transactionQty: { 
-    width: 50, 
-    fontSize: 11, 
-    color: "#333", 
-    textAlign: "center" 
+  transactionQty: {
+    width: 50,
+    fontSize: 11,
+    color: "#333",
+    textAlign: "center",
   },
   businessBountyTableHeader: {
     flexDirection: "row",
@@ -1774,7 +1701,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 2,
     minWidth: 700, //ensures table stretches
-    width: '100%',
+    width: "100%",
     flex: 1,
   },
   businessBountyHeaderCell: {
@@ -1784,7 +1711,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "bold",
     paddingHorizontal: 2,
-    textAlign: 'center',
+    textAlign: "center",
   },
   businessBountyTableRow: {
     flexDirection: "row",
@@ -1792,7 +1719,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
-    width: '100%',
+    width: "100%",
     flex: 1,
   },
   businessBountyCell: {
@@ -1800,7 +1727,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#333",
     paddingHorizontal: 2,
-    textAlign: 'center',
+    textAlign: "center",
   },
   businessTransactionHeaderRow: {
     flexDirection: "row",
@@ -1809,18 +1736,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 8,
     marginBottom: 2,
-    minWidth: 770, 
-    width: '100%',
+    minWidth: 770,
+    width: "100%",
     flex: 1,
   },
   businessTransactionHeaderCell: {
-    //width: 110, 
+    //width: 110,
     flex: 1,
     fontSize: 12,
     color: "#fff",
     fontWeight: "bold",
     paddingHorizontal: 4,
-    textAlign: 'center',
+    textAlign: "center",
   },
   businessTransactionRow: {
     flexDirection: "row",
@@ -1828,7 +1755,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
-    width: '100%',
+    width: "100%",
     flex: 1,
   },
   businessTransactionCell: {
@@ -1837,7 +1764,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#333",
     paddingHorizontal: 4,
-    textAlign: 'center',
+    textAlign: "center",
   },
   servicesHeaderRow: {
     flexDirection: "row",
@@ -1846,7 +1773,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 4,
     marginBottom: 2,
-    width: '100%',
+    width: "100%",
     flex: 1,
   },
   servicesHeaderCell: {
@@ -1856,7 +1783,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "bold",
     paddingHorizontal: 4,
-    textAlign: 'center',
+    textAlign: "center",
   },
   servicesRow: {
     flexDirection: "row",
@@ -1864,7 +1791,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: "#ddd",
-    width: '100%',
+    width: "100%",
     flex: 1,
   },
   servicesCell: {
@@ -1873,19 +1800,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#333",
     paddingHorizontal: 4,
-    textAlign: 'center',
+    textAlign: "center",
   },
   expandedServicesContainer: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: "#f5f5f5",
     paddingVertical: 8,
     paddingHorizontal: 4,
     marginBottom: 4,
   },
-  
+
   noServicesText: {
     fontSize: 12,
     color: "#888",
-    textAlign: 'center',
+    textAlign: "center",
     paddingVertical: 10,
   },
   businessCardContainer: {
@@ -1897,38 +1824,38 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   selectProfileRow: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  marginBottom: 16,
-  gap: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+    gap: 16,
   },
   selectProfileLabel: {
     fontSize: 15,
-    fontWeight: '500',
-    color: '#333',
+    fontWeight: "500",
+    color: "#333",
     minWidth: 90,
   },
   selectProfileDropdown: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: "#ccc",
     borderRadius: 25,
     paddingVertical: 10,
     paddingHorizontal: 20,
-    backgroundColor: '#f5f5f5',
-    alignItems: 'center',
+    backgroundColor: "#f5f5f5",
+    alignItems: "center",
   },
   selectProfileDropdownText: {
     fontSize: 15,
-    color: '#333',
+    color: "#333",
   },
   selectProfileMenu: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: "#ddd",
     marginBottom: 16,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 4,

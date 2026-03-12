@@ -277,6 +277,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
         business_user_id: rawBusiness.business_user_id || "",
         business_email_id: rawBusiness.business_email_id || "",
         business_phone_number: rawBusiness.business_phone_number || "",
+        business_location: rawBusiness.business_location || "",
+        business_address_line_1: rawBusiness.business_address_line_1 || "",
         tagline: rawBusiness.business_tag_line || rawBusiness.tagline || "",
         business_short_bio: rawBusiness.business_short_bio || rawBusiness.short_bio || "",
         business_role: rawBusiness.business_role || rawBusiness.role || rawBusiness.bu_role || "",
@@ -578,10 +580,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
           </View>
 
           {/* MiniCard - uses business_profile_img; image only shown when set and Display */}
-          <MiniCard
-            business={{
+          {(() => {
+            const miniCardData = {
               business_name: sanitizeText(business.business_name),
               tagline: sanitizeText(business.tagline),
+              business_location: sanitizeText(business.business_location || ""),
               business_address_line_1: sanitizeText(business.business_address_line_1),
               business_city: sanitizeText(business.business_city),
               business_state: sanitizeText(business.business_state),
@@ -595,8 +598,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
               phoneIsPublic: business.phoneIsPublic,
               emailIsPublic: business.emailIsPublic,
               taglineIsPublic: business.taglineIsPublic,
-            }}
-          />
+              locationIsPublic: business.locationIsPublic,
+            };
+            return <MiniCard business={miniCardData} />;
+          })()}
 
           {/* About Section */}
           {business.shortBioIsPublic && isSafeForConditional(business.business_short_bio) && (
@@ -642,8 +647,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
               <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
                 {renderField("Location", (() => {
                   const parts = [
+                    sanitizeText(business.business_location),
                     sanitizeText(business.business_address_line_1),
-                    sanitizeText(business.business_address_line_2),
                     sanitizeText(business.business_city),
                     sanitizeText(business.business_state),
                     sanitizeText(business.business_zip_code),
