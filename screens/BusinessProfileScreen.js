@@ -611,13 +611,16 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 <Ionicons name={showAbout ? "chevron-up" : "chevron-down"} size={20} color="#000" />
               </TouchableOpacity>
               {showAbout && (
-                business.business_short_bio && business.business_short_bio.trim() !== "" ? (
-                  <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
+                <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
+                  {business.business_short_bio && business.business_short_bio.trim() !== "" ? (
                     <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(business.business_short_bio)}</Text>
-                  </View>
-                ) : (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: darkMode ? "#999" : "#666" }]}>No description added yet</Text>
-                )
+                  ) : (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: darkMode ? "#999" : "#666" }]}>No description added yet</Text>
+                  )}
+                  {isSafeForConditional(business.business_category) && (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginTop: 8 }]}>Business Category: {sanitizeText(business.business_category)}</Text>
+                  )}
+                </View>
               )}
             </View>
           )}
@@ -662,7 +665,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 {business.emailIsPublic && isSafeForConditional(business.business_email_id) && (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Email: {sanitizeText(business.business_email_id)}</Text>
                 )}
-                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Business Category: {sanitizeText(business.business_category, "N/A")}</Text>
                 {isSafeForConditional(business.business_website) && (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Website: 🌐 {sanitizeText(business.business_website)}</Text>
                 )}
