@@ -1,9 +1,83 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
 
+// DateTimePicker only works on native (not web)
+let DateTimePicker = null;
+if (Platform.OS !== "web") {
+  try {
+    DateTimePicker = require("@react-native-community/datetimepicker").default;
+  } catch (e) {
+    console.warn("DateTimePicker not available:", e.message);
+  }
+}
+
+// Standard format for profile_wish_start and profile_wish_end
+const DATETIME_FORMAT_PLACEHOLDER = "2025-03-12 14:30";
+
+// Convert our format "YYYY-MM-DD HH:mm" to HTML5 datetime-local format "YYYY-MM-DDTHH:mm"
+const toDateTimeLocalValue = (value) => {
+  if (!value || typeof value !== "string" || value.trim() === "") return "";
+  return value.trim().replace(" ", "T").substring(0, 16); // Ensure we have at most YYYY-MM-DDTHH:mm
+};
+
+// Convert HTML5 datetime-local format to our format
+const fromDateTimeLocalValue = (value) => {
+  if (!value || typeof value !== "string" || value.trim() === "") return "";
+  return value.trim().replace("T", " ").substring(0, 16);
+};
+
+const formatDateForDisplay = (date) => {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return "";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+const formatTimeForDisplay = (date) => {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return "";
+  const h = String(date.getHours()).padStart(2, "0");
+  const min = String(date.getMinutes()).padStart(2, "0");
+  return `${h}:${min}`;
+};
+
+const parseDateTime = (value) => {
+  if (!value || typeof value !== "string" || value.trim() === "") return { date: null, time: null };
+  const trimmed = value.trim();
+  // Try "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" (ISO)
+  const spaceMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})/);
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{1,2}):(\d{2})/);
+  const match = spaceMatch || isoMatch;
+  if (match) {
+    const [, y, m, d, h, min] = match;
+    const date = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+    const time = new Date(2000, 0, 1, parseInt(h, 10), parseInt(min, 10));
+    return { date, time };
+  }
+  // Try date only "YYYY-MM-DD"
+  const dateOnlyMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (dateOnlyMatch) {
+    const [, y, m, d] = dateOnlyMatch;
+    const date = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+    return { date, time: new Date(2000, 0, 1, 9, 0) }; // default 09:00
+  }
+  return { date: null, time: null };
+};
+
+const combineDateTime = (date, time) => {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return "";
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const h = time && time instanceof Date && !isNaN(time.getTime()) ? String(time.getHours()).padStart(2, "0") : "00";
+  const min = time && time instanceof Date && !isNaN(time.getTime()) ? String(time.getMinutes()).padStart(2, "0") : "00";
+  return `${y}-${m}-${d} ${h}:${min}`;
+};
+
 const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus }) => {
   const bountyInputRefs = useRef({});
+  const [activePicker, setActivePicker] = useState(null); // { index, field: 'start'|'end', mode: 'date'|'time' }
   // Bounty unit options for dropdown
   const bountyUnitOptions = [
     { label: "total", value: "total" },
@@ -17,7 +91,16 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
   ];
 
   const addWish = () => {
-    const newEntry = { helpNeeds: "", details: "", amount: "", isPublic: true };
+    const newEntry = {
+      helpNeeds: "",
+      details: "",
+      amount: "",
+      cost: "",
+      profile_wish_start: "",
+      profile_wish_end: "",
+      profile_wish_location: "",
+      isPublic: true,
+    };
     setWishes([...wishes, newEntry]);
   };
 
@@ -185,6 +268,44 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     setWishes(updated);
   };
 
+  const handleDateTimeChange = (index, field, mode, selectedDate) => {
+    if (!selectedDate) {
+      setActivePicker(null);
+      return;
+    }
+    const updated = [...wishes];
+    const currentValue = updated[index][field === "start" ? "profile_wish_start" : "profile_wish_end"] || "";
+    const { date: currentDate, time: currentTime } = parseDateTime(currentValue);
+    const defaultDate = new Date();
+    const defaultTime = new Date(2000, 0, 1, 9, 0);
+
+    if (mode === "date") {
+      const newTime = currentTime || defaultTime;
+      const combined = combineDateTime(selectedDate, newTime);
+      updated[index][field === "start" ? "profile_wish_start" : "profile_wish_end"] = combined;
+      setWishes(updated);
+      setActivePicker({ index, field, mode: "time" }); // Open time picker next
+    } else {
+      const newDate = currentDate || defaultDate;
+      const combined = combineDateTime(newDate, selectedDate);
+      updated[index][field === "start" ? "profile_wish_start" : "profile_wish_end"] = combined;
+      setWishes(updated);
+      setActivePicker(null);
+    }
+  };
+
+  const getPickerValue = (index, field) => {
+    const value = wishes[index]?.[field === "start" ? "profile_wish_start" : "profile_wish_end"] || "";
+    const { date, time } = parseDateTime(value);
+    const defaultDate = new Date();
+    const defaultTime = new Date(2000, 0, 1, 9, 0);
+    if (activePicker?.mode === "date") return date || defaultDate;
+    // For time picker, return a Date with today's date + the time (DateTimePicker uses time part)
+    const d = date || defaultDate;
+    const t = time || defaultTime;
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), t.getHours(), t.getMinutes());
+  };
+
   return (
     <View style={styles.sectionContainer}>
       <View style={styles.headerRow}>
@@ -218,6 +339,135 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
             textAlignVertical='top'
             scrollEnabled={false}
           />
+
+          {/* Start Date/Time, End Date/Time, Location */}
+          <View style={styles.dateTimeSection}>
+            <View style={styles.dateTimeRow}>
+              <Text style={styles.dateTimeLabel}>Start Date and Time</Text>
+              {DateTimePicker ? (
+                <>
+                  <TouchableOpacity
+                    style={styles.dateTimeButton}
+                    onPress={() => setActivePicker({ index, field: "start", mode: "date" })}
+                  >
+                    <Text style={styles.dateTimeButtonText}>
+                      {(() => {
+                        const { date } = parseDateTime(item.profile_wish_start || "");
+                        return date ? formatDateForDisplay(date) : "Date";
+                      })()}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.dateTimeButton}
+                    onPress={() => {
+                      const { date, time } = parseDateTime(item.profile_wish_start || "");
+                      if (!date) setActivePicker({ index, field: "start", mode: "date" });
+                      else setActivePicker({ index, field: "start", mode: "time" });
+                    }}
+                  >
+                    <Text style={styles.dateTimeButtonText}>
+                      {(() => {
+                        const { time } = parseDateTime(item.profile_wish_start || "");
+                        return time ? formatTimeForDisplay(time) : "Time";
+                      })()}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : Platform.OS === "web" ? (
+                <View style={styles.webDateTimeInputWrapper}>
+                  <input
+                    type="datetime-local"
+                    style={styles.webDateTimeInput}
+                    value={toDateTimeLocalValue(item.profile_wish_start || "")}
+                    onChange={(e) => handleInputChange(index, "profile_wish_start", fromDateTimeLocalValue(e.target.value))}
+                  />
+                </View>
+              ) : (
+                <TextInput
+                  style={styles.dateTimeTextInput}
+                  placeholder={DATETIME_FORMAT_PLACEHOLDER}
+                  value={item.profile_wish_start || ""}
+                  onChangeText={(text) => handleInputChange(index, "profile_wish_start", text)}
+                />
+              )}
+            </View>
+            <View style={styles.dateTimeRow}>
+              <Text style={styles.dateTimeLabel}>End Date and Time</Text>
+              {DateTimePicker ? (
+                <>
+                  <TouchableOpacity
+                    style={styles.dateTimeButton}
+                    onPress={() => setActivePicker({ index, field: "end", mode: "date" })}
+                  >
+                    <Text style={styles.dateTimeButtonText}>
+                      {(() => {
+                        const { date } = parseDateTime(item.profile_wish_end || "");
+                        return date ? formatDateForDisplay(date) : "Date";
+                      })()}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.dateTimeButton}
+                    onPress={() => {
+                      const { date, time } = parseDateTime(item.profile_wish_end || "");
+                      if (!date) setActivePicker({ index, field: "end", mode: "date" });
+                      else setActivePicker({ index, field: "end", mode: "time" });
+                    }}
+                  >
+                    <Text style={styles.dateTimeButtonText}>
+                      {(() => {
+                        const { time } = parseDateTime(item.profile_wish_end || "");
+                        return time ? formatTimeForDisplay(time) : "Time";
+                      })()}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : Platform.OS === "web" ? (
+                <View style={styles.webDateTimeInputWrapper}>
+                  <input
+                    type="datetime-local"
+                    style={styles.webDateTimeInput}
+                    value={toDateTimeLocalValue(item.profile_wish_end || "")}
+                    onChange={(e) => handleInputChange(index, "profile_wish_end", fromDateTimeLocalValue(e.target.value))}
+                  />
+                </View>
+              ) : (
+                <TextInput
+                  style={styles.dateTimeTextInput}
+                  placeholder={DATETIME_FORMAT_PLACEHOLDER}
+                  value={item.profile_wish_end || ""}
+                  onChangeText={(text) => handleInputChange(index, "profile_wish_end", text)}
+                />
+              )}
+            </View>
+            <View style={styles.dateTimeRow}>
+              <Text style={styles.dateTimeLabel}>Location</Text>
+              <TextInput
+                style={styles.locationInput}
+                placeholder='Location'
+                value={item.profile_wish_location || ""}
+                onChangeText={(text) => handleInputChange(index, "profile_wish_location", text)}
+              />
+            </View>
+          </View>
+
+          {/* DateTimePicker - only render when this wish's picker is active */}
+          {DateTimePicker &&
+            activePicker &&
+            activePicker.index === index && (
+              <DateTimePicker
+                value={getPickerValue(activePicker.index, activePicker.field)}
+                mode={activePicker.mode}
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={(_, selectedDate) => {
+                  if (selectedDate) {
+                    handleDateTimeChange(activePicker.index, activePicker.field, activePicker.mode, selectedDate);
+                  } else {
+                    setActivePicker(null);
+                  }
+                }}
+              />
+            )}
 
           {/*Cost Row*/}
           <View style={styles.amountRow}>
@@ -329,6 +579,72 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     minHeight: 40,
     maxHeight: 120,
+  },
+  dateTimeSection: {
+    marginBottom: 10,
+  },
+  dateTimeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+    gap: 8,
+  },
+  dateTimeLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    width: 140,
+    minWidth: 140,
+  },
+  dateTimeButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    minHeight: 40,
+    justifyContent: "center",
+  },
+  dateTimeButtonText: {
+    fontSize: 14,
+    color: "#333",
+  },
+  dateTimeTextInput: {
+    flex: 2,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    minHeight: 40,
+    fontSize: 14,
+  },
+  webDateTimeInputWrapper: {
+    flex: 2,
+    minWidth: 0,
+  },
+  webDateTimeInput: {
+    width: "100%",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    minHeight: 40,
+    fontSize: 14,
+    fontFamily: "inherit",
+    boxSizing: "border-box",
+  },
+  locationInput: {
+    flex: 2,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    minHeight: 40,
+    fontSize: 14,
   },
   amountRow: {
     flexDirection: "row",

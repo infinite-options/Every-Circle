@@ -253,6 +253,9 @@ const ProfileScreen = ({ route, navigation }) => {
             details: wish.profile_wish_description || "",
             amount: wish.profile_wish_bounty || "",
             cost: wish.profile_wish_cost != null && wish.profile_wish_cost !== "" ? wish.profile_wish_cost : "0",
+            profile_wish_start: wish.profile_wish_start || "",
+            profile_wish_end: wish.profile_wish_end || "",
+            profile_wish_location: wish.profile_wish_location || "",
             isPublic: wish.profile_wish_is_public === 1 || wish.isPublic === true,
             wish_responses: wish.wish_responses || 0,
           }))
@@ -1170,10 +1173,9 @@ const ProfileScreen = ({ route, navigation }) => {
                       const expertiseItem = (
                         <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
                           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginRight: 6 }]}>•</Text>
                             {sanitizeText(exp.name) ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{sanitizeText(exp.name)}</Text> : null}
                           </View>
-                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 16 }}>
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0 }}>
                             {exp.cost ? (
                               <View style={{ flexDirection: "row", alignItems: "center" }}>
                                 <View style={styles.moneyBagIconContainer}>
@@ -1191,7 +1193,7 @@ const ProfileScreen = ({ route, navigation }) => {
                             ) : null}
                           </View>
                           {sanitizeText(exp.description) ? (
-                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 16, color: "#666" }]}>{sanitizeText(exp.description)}</Text>
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{sanitizeText(exp.description)}</Text>
                           ) : null}
                         </View>
                       );
@@ -1257,7 +1259,16 @@ const ProfileScreen = ({ route, navigation }) => {
                             <TouchableOpacity
                               style={styles.wishResponseBadge}
                               onPress={() => {
-                                const wishDataForNavigation = { wish_uid: wish.profile_wish_uid, title: wish.helpNeeds, description: wish.details, bounty: wish.amount, cost: wish.cost };
+                                const wishDataForNavigation = {
+                                  wish_uid: wish.profile_wish_uid,
+                                  title: wish.helpNeeds,
+                                  description: wish.details,
+                                  bounty: wish.amount,
+                                  cost: wish.cost,
+                                  profile_wish_start: wish.profile_wish_start,
+                                  profile_wish_end: wish.profile_wish_end,
+                                  profile_wish_location: wish.profile_wish_location,
+                                };
                                 const profileDataForNavigation = {
                                   firstName: user.firstName,
                                   lastName: user.lastName,
@@ -1286,10 +1297,9 @@ const ProfileScreen = ({ route, navigation }) => {
                             </TouchableOpacity>
                           )}
                           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginRight: 6 }]}>•</Text>
                             <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{wish.helpNeeds || ""}</Text>
                           </View>
-                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 16 }}>
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0 }}>
                             {wish.cost ? (
                               <View style={{ flexDirection: "row", alignItems: "center" }}>
                                 <View style={styles.moneyBagIconContainer}>
@@ -1306,7 +1316,18 @@ const ProfileScreen = ({ route, navigation }) => {
                               </Text>
                             ) : null}
                           </View>
-                          {wish.details ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 16, color: "#666" }]}>{wish.details}</Text> : null}
+                          {wish.details ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{wish.details}</Text> : null}
+                          {wish.profile_wish_start || wish.profile_wish_end || wish.profile_wish_location ? (
+                            <View style={{ marginLeft: 0, marginTop: 6 }}>
+                              {wish.profile_wish_start ? (
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666", marginBottom: 2 }]}>Start: {wish.profile_wish_start}</Text>
+                              ) : null}
+                              {wish.profile_wish_end ? (
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666", marginBottom: 2 }]}>End: {wish.profile_wish_end}</Text>
+                              ) : null}
+                              {wish.profile_wish_location ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666" }]}>Location: {wish.profile_wish_location}</Text> : null}
+                            </View>
+                          ) : null}
                         </View>
                       );
                       if (routeProfileUID && !isCurrentUserProfile) {
@@ -1315,7 +1336,16 @@ const ProfileScreen = ({ route, navigation }) => {
                             key={index}
                             activeOpacity={0.7}
                             onPress={() => {
-                              const wishData = { wish_uid: wish.profile_wish_uid, title: wish.helpNeeds, description: wish.details, bounty: wish.amount, cost: wish.cost };
+                              const wishData = {
+                                wish_uid: wish.profile_wish_uid,
+                                title: wish.helpNeeds,
+                                description: wish.details,
+                                bounty: wish.amount,
+                                cost: wish.cost,
+                                profile_wish_start: wish.profile_wish_start,
+                                profile_wish_end: wish.profile_wish_end,
+                                profile_wish_location: wish.profile_wish_location,
+                              };
                               const profileData = {
                                 firstName: user.firstName,
                                 lastName: user.lastName,
@@ -1417,7 +1447,7 @@ const ProfileScreen = ({ route, navigation }) => {
           {user.businessIsPublic && (
             <View style={styles.fieldContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBusiness(!showBusiness)}>
-                <Text style={styles.sectionHeaderText}>BUSINESSES / ORGANIZATION</Text>
+                <Text style={styles.sectionHeaderText}>BUSINESSES / ORGANIZATIONS</Text>
                 <Ionicons name={showBusiness ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showBusiness &&

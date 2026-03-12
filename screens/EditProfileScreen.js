@@ -115,8 +115,11 @@ const EditProfileScreen = ({ route, navigation }) => {
       details: e.details || e.profile_wish_description || "",
       amount: e.amount || e.profile_wish_bounty || "",
       cost: e.cost || e.profile_wish_cost || "",
+      profile_wish_start: e.profile_wish_start || "",
+      profile_wish_end: e.profile_wish_end || "",
+      profile_wish_location: e.profile_wish_location || "",
       isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_wish_is_public === 1,
-    })) || [{ helpNeeds: "", details: "", amount: "", cost: "", isPublic: true }],
+    })) || [{ helpNeeds: "", details: "", amount: "", cost: "", profile_wish_start: "", profile_wish_end: "", profile_wish_location: "", isPublic: true }],
     facebook: user?.facebook || "",
     twitter: user?.twitter || "",
     linkedin: user?.linkedin || "",
@@ -458,7 +461,6 @@ const EditProfileScreen = ({ route, navigation }) => {
       payload.append("experience_info", JSON.stringify(experiencePayload));
       payload.append("education_info", JSON.stringify(formData.education || []));
       payload.append("expertise_info", JSON.stringify(formData.expertise || []));
-      payload.append("wishes_info", JSON.stringify(formData.wishes || []));
       //payload.append("business_info", JSON.stringify(formData.businesses || []));
 
       // Add businesses to payload (for each business, add the correct fields)
