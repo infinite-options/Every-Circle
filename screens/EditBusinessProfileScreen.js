@@ -14,7 +14,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // BUSINESS-SPECIFIC
 import { Dropdown } from "react-native-element-dropdown";
 import ProductCard from "../components/ProductCard";
-import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 
 const BusinessProfileAPI = BUSINESS_INFO_ENDPOINT;
 const DEFAULT_BUSINESS_IMAGE = require("../assets/profile.png");
@@ -45,10 +45,80 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [webImageFile, setWebImageFile] = useState(null); // Store the actual File object for web uploads
   const [imageUpdateKey, setImageUpdateKey] = useState(0); // Key to force MiniCard re-render when image changes
 
+  // BUSINESS-SPECIFIC: Category selection (3-level hierarchy like BusinessStep2) - must be before useEffects that use them
+  const [allCategories, setAllCategories] = useState([]);
+  const [mainCategories, setMainCategories] = useState([]);
+  const [subCategories, setSubCategories] = useState([]);
+  const [subSubCategories, setSubSubCategories] = useState([]);
+  const [selectedMain, setSelectedMain] = useState(null);
+  const [selectedSub, setSelectedSub] = useState(null);
+  const [selectedSubSub, setSelectedSubSub] = useState(null);
+  const hasInitializedSub = useRef(false);
+  const hasInitializedSubSub = useRef(false);
+
   useEffect(() => {
     // This useEffect is only used to log the screen being mounted
     console.log("EditBusinessProfileScreen - Screen Mounted");
   }, []);
+
+  // Fetch categories and initialize from business_category_id
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const res = await fetch(CATEGORY_LIST_ENDPOINT);
+        const json = await res.json();
+        const categories = json.result || [];
+        setAllCategories(categories);
+        setMainCategories(categories.filter((c) => c.category_parent_id === null));
+
+        // Initialize from existing business_category_id (comma-separated: main, sub, sub-sub)
+        const categoryIdStr = business?.business_category_id || "";
+        if (categoryIdStr.trim()) {
+          const ids = categoryIdStr.split(",").map((id) => id.trim()).filter(Boolean);
+          if (ids.length > 0) setSelectedMain(ids[0]);
+          if (ids.length > 1) setSelectedSub(ids[1]);
+          if (ids.length > 2) setSelectedSubSub(ids[2]);
+        }
+      } catch (e) {
+        console.error("EditBusinessProfileScreen - Fetch category error:", e);
+      }
+    };
+    fetchCategories();
+  }, [business?.business_category_id]);
+
+  useEffect(() => {
+    const updated = allCategories.filter((c) => c.category_parent_id === selectedMain);
+    setSubCategories(updated);
+    setSelectedSub((prev) => (prev && updated.some((c) => c.category_uid === prev) ? prev : null));
+    setSelectedSubSub(null);
+    setSubSubCategories([]);
+  }, [selectedMain, allCategories]);
+
+  useEffect(() => {
+    if (!selectedSub) {
+      setSubSubCategories([]);
+      return;
+    }
+    const updated = allCategories.filter((c) => c.category_parent_id === selectedSub);
+    setSubSubCategories(updated);
+    setSelectedSubSub((prev) => (prev && updated.some((c) => c.category_uid === prev) ? prev : null));
+  }, [selectedSub, allCategories]);
+
+  // Initialize sub/sub-sub from business_category_id (run once when categories first load)
+  useEffect(() => {
+    const ids = business?.business_category_id?.split(",").map((id) => id.trim()).filter(Boolean) || [];
+    if (!hasInitializedSub.current && ids.length > 1 && subCategories.length > 0 && subCategories.some((c) => c.category_uid === ids[1])) {
+      setSelectedSub(ids[1]);
+      hasInitializedSub.current = true;
+    }
+  }, [subCategories, business?.business_category_id]);
+  useEffect(() => {
+    const ids = business?.business_category_id?.split(",").map((id) => id.trim()).filter(Boolean) || [];
+    if (!hasInitializedSubSub.current && ids.length > 2 && subSubCategories.length > 0 && subSubCategories.some((c) => c.category_uid === ids[2])) {
+      setSelectedSubSub(ids[2]);
+      hasInitializedSubSub.current = true;
+    }
+  }, [subSubCategories, business?.business_category_id]);
 
   const [formData, setFormData] = useState({
     // BUSINESS-SPECIFIC: Different field names - uses business_* instead of profile_personal_*
@@ -462,7 +532,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_zip_code", formData.zip);
       payload.append("business_phone_number", formData.phone);
       payload.append("business_email_id", formData.email);
-      payload.append("business_category_id", formData.category);
+      const categoryIds = [selectedMain, selectedSub, selectedSubSub].filter(Boolean);
+      payload.append("business_category_id", categoryIds.join(","));
       payload.append("business_short_bio", formData.shortBio);
       payload.append("business_tag_line", formData.tagline);
       payload.append("business_role", currentBusinessRole || "");
@@ -810,6 +881,90 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     </View>
   );
 
+  // BUSINESS-SPECIFIC: renderCategoryField - 3-level dropdown like BusinessStep2
+  const renderCategoryField = () => (
+    <View style={styles.fieldContainer}>
+      <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Category</Text>
+      <Text style={[styles.sublabel, darkMode && styles.darkSublabel]}>Main Category *</Text>
+      <Dropdown
+        style={[styles.input, darkMode && styles.darkInput]}
+        data={mainCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
+        labelField="label"
+        valueField="value"
+        placeholder="Select Main Category"
+        placeholderTextColor={darkMode ? "#999" : "#666"}
+        value={selectedMain}
+        onChange={(item) => {
+          setSelectedMain(item.value);
+          setIsChanged(true);
+        }}
+        containerStyle={[{ borderRadius: 10, zIndex: 3000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
+        itemTextStyle={{ color: darkMode ? "#fff" : "#000", fontSize: 16 }}
+        selectedTextStyle={{ color: darkMode ? "#fff" : "#000", fontSize: 16 }}
+        activeColor={darkMode ? "#404040" : "#f0f0f0"}
+        maxHeight={250}
+        renderItem={(item) => (
+          <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
+            <Text style={{ color: darkMode ? "#fff" : "#000", fontSize: 16 }}>{item.label}</Text>
+          </View>
+        )}
+        flatListProps={{ nestedScrollEnabled: true, ItemSeparatorComponent: () => <View style={{ height: 2 }} /> }}
+      />
+      <Text style={[styles.sublabel, darkMode && styles.darkSublabel, { marginTop: 8 }]}>Sub Category (Optional)</Text>
+      <Dropdown
+        style={[styles.input, darkMode && styles.darkInput]}
+        data={subCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
+        labelField="label"
+        valueField="value"
+        placeholder={subCategories.length > 0 ? "Select Sub Category" : "Select Main Category first"}
+        placeholderTextColor={darkMode ? "#999" : "#666"}
+        value={selectedSub}
+        onChange={(item) => {
+          setSelectedSub(item.value);
+          setIsChanged(true);
+        }}
+        disabled={subCategories.length === 0}
+        containerStyle={[{ borderRadius: 10, zIndex: 2000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
+        itemTextStyle={{ color: darkMode ? "#fff" : "#000", fontSize: 16 }}
+        selectedTextStyle={{ color: darkMode ? "#fff" : "#000", fontSize: 16 }}
+        activeColor={darkMode ? "#404040" : "#f0f0f0"}
+        maxHeight={250}
+        renderItem={(item) => (
+          <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
+            <Text style={{ color: darkMode ? "#fff" : "#000", fontSize: 16 }}>{item.label}</Text>
+          </View>
+        )}
+        flatListProps={{ nestedScrollEnabled: true, ItemSeparatorComponent: () => <View style={{ height: 2 }} /> }}
+      />
+      <Text style={[styles.sublabel, darkMode && styles.darkSublabel, { marginTop: 8 }]}>Sub-Sub Category (Optional)</Text>
+      <Dropdown
+        style={[styles.input, darkMode && styles.darkInput]}
+        data={subSubCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
+        labelField="label"
+        valueField="value"
+        placeholder={subSubCategories.length > 0 ? "Select Sub-Sub Category" : "Select Sub Category first"}
+        placeholderTextColor={darkMode ? "#999" : "#666"}
+        value={selectedSubSub}
+        onChange={(item) => {
+          setSelectedSubSub(item.value);
+          setIsChanged(true);
+        }}
+        disabled={subSubCategories.length === 0}
+        containerStyle={[{ borderRadius: 10, zIndex: 1000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
+        itemTextStyle={{ color: darkMode ? "#fff" : "#000", fontSize: 16 }}
+        selectedTextStyle={{ color: darkMode ? "#fff" : "#000", fontSize: 16 }}
+        activeColor={darkMode ? "#404040" : "#f0f0f0"}
+        maxHeight={250}
+        renderItem={(item) => (
+          <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
+            <Text style={{ color: darkMode ? "#fff" : "#000", fontSize: 16 }}>{item.label}</Text>
+          </View>
+        )}
+        flatListProps={{ nestedScrollEnabled: true, ItemSeparatorComponent: () => <View style={{ height: 2 }} /> }}
+      />
+    </View>
+  );
+
   // BUSINESS-SPECIFIC: renderBusinessRoleField function (not in EditProfileScreen)
   const renderBusinessRoleField = () => (
     <View style={styles.fieldContainer}>
@@ -1078,7 +1233,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         {renderField("Zip Code", formData.zip, "zip", "", "locationIsPublic")}
         {renderField("Phone Number", formData.phone, "phone", "", "phoneIsPublic")}
         {renderField("Email", formData.email, "email", "", "emailIsPublic")}
-        {renderField("Business Category", formData.category, "category")}
+        {renderCategoryField()}
         {renderField("Tag Line", formData.tagline, "tagline", "", "taglineIsPublic")}
 
         {/* Business MiniCard Live Preview - how business appears in searches */}

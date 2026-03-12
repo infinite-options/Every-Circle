@@ -291,6 +291,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         images: businessImages,
         customTags: customTags,
         business_category: categoryName || rawBusiness.business_category || null,
+        business_category_id: rawBusiness.business_category_id || null,
         ratings: result.ratings,
         emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1 || rawBusiness.email_is_public === "1" || rawBusiness.email_is_public === 1,
         phoneIsPublic:
