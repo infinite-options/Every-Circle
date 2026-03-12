@@ -38,6 +38,200 @@ if (Platform.OS !== "web") {
   }
 }
 
+// ─── FilterPopup component ────────────────────────────────────────────────────
+const FilterPopup = ({
+  visible,
+  onClose,
+  dateFilter,
+  setDateFilter,
+  locationFilter,
+  setLocationFilter,
+  eventFilter,
+  setEventFilter,
+  relationshipFilter,
+  setRelationshipFilter,
+  availableCities,
+  availableEvents,
+  darkMode,
+}) => {
+  if (!visible) return null;
+
+  const dateOptions = ["All", "This Week", "This Month", "This Year"];
+  const locationOptions = ["All", ...availableCities];
+  const eventOptions = ["All", ...availableEvents];
+  const relationshipOptions = ["All", "Colleagues", "Friends", "Family"];
+
+  const accent = "#535db7";
+  const bg = darkMode ? "#1e1e2e" : "#ffffff";
+  const colBg = darkMode ? "#2a2a3c" : "#f7f8ff";
+  const borderColor = darkMode ? "#3a3a5c" : "#e0e4f7";
+  const labelColor = darkMode ? "#a0a8d0" : "#5060a0";
+  const textColor = darkMode ? "#e8eaf6" : "#1a1a2e";
+
+  const ColumnHeader = ({ title, icon }) => (
+    <View style={{
+      paddingBottom: 10,
+      borderBottomWidth: 2,
+      borderBottomColor: accent,
+      marginBottom: 8,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    }}>
+      <Text style={{ fontSize: 16 }}>{icon}</Text>
+      <Text style={{
+        fontSize: 12,
+        fontWeight: "700",
+        color: labelColor,
+        textTransform: "uppercase",
+        letterSpacing: 1.2,
+      }}>{title}</Text>
+    </View>
+  );
+
+  const FilterItem = ({ label, isActive, onPress }) => (
+    <TouchableOpacity
+      onPress={onPress}
+      style={{
+        paddingVertical: 9,
+        paddingHorizontal: 10,
+        borderRadius: 8,
+        marginBottom: 4,
+        backgroundColor: isActive ? accent : "transparent",
+      }}
+      activeOpacity={0.7}
+    >
+      <Text style={{
+        fontSize: 13,
+        color: isActive ? "#ffffff" : textColor,
+        fontWeight: isActive ? "700" : "400",
+      }} numberOfLines={2}>{label}</Text>
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={{
+      position: "absolute",
+      top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: "rgba(0,0,0,0.55)",
+      justifyContent: "center",
+      alignItems: "center",
+      zIndex: 99999,
+    }}>
+      <View style={{
+        backgroundColor: bg,
+        borderRadius: 20,
+        width: "92%",
+        maxWidth: 500,
+        maxHeight: "80%",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.25,
+        shadowRadius: 20,
+        elevation: 20,
+        overflow: "hidden",
+      }}>
+        {/* Header */}
+        <View style={{
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+          paddingHorizontal: 20,
+          paddingVertical: 16,
+          borderBottomWidth: 1,
+          borderBottomColor: borderColor,
+          backgroundColor: darkMode ? "#252538" : "#f0f2ff",
+        }}>
+          <Text style={{ fontSize: 17, fontWeight: "800", color: textColor, letterSpacing: 0.3 }}>
+            Filter Connections
+          </Text>
+          <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
+            <Ionicons name="close-circle" size={26} color={darkMode ? "#7880c0" : "#8890c8"} />
+          </TouchableOpacity>
+        </View>
+
+        {/* 4-column body */}
+        <View style={{ flexDirection: "row", flex: 1 }}>
+
+          {/* Relationship Column */}
+          <View style={{ flex: 1, padding: 14, backgroundColor: colBg, borderRightWidth: 1, borderRightColor: borderColor }}>
+            <ColumnHeader title="Relation" icon="🤝" />
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {relationshipOptions.map((opt) => (
+                <FilterItem key={opt} label={opt} isActive={relationshipFilter === opt}
+                  onPress={() => { setRelationshipFilter(opt); onClose(); }} />
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Date Column */}
+          <View style={{ flex: 1, padding: 14, backgroundColor: colBg, borderRightWidth: 1, borderRightColor: borderColor }}>
+            <ColumnHeader title="Date" icon="📅" />
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {dateOptions.map((opt) => (
+                <FilterItem key={opt} label={opt} isActive={dateFilter === opt}
+                  onPress={() => { setDateFilter(opt); onClose(); }} />
+              ))}
+            </ScrollView>
+          </View>
+
+          {/* Event Column */}
+          <View style={{ flex: 1, padding: 14, backgroundColor: colBg, borderRightWidth: 1, borderRightColor: borderColor }}>
+            <ColumnHeader title="Event" icon="🎪" />
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {eventOptions.length > 1 ? eventOptions.map((opt) => (
+                <FilterItem key={opt} label={opt} isActive={eventFilter === opt}
+                  onPress={() => { setEventFilter(opt); onClose(); }} />
+              )) : (
+                <Text style={{ fontSize: 12, color: labelColor, fontStyle: "italic", marginTop: 4 }}>No events yet</Text>
+              )}
+            </ScrollView>
+          </View>
+
+          {/* Location Column */}
+          <View style={{ flex: 1, padding: 14, backgroundColor: colBg }}>
+            <ColumnHeader title="Location" icon="📍" />
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {locationOptions.length > 1 ? locationOptions.map((opt) => (
+                <FilterItem key={opt} label={opt} isActive={locationFilter === opt}
+                  onPress={() => { setLocationFilter(opt); onClose(); }} />
+              )) : (
+                <Text style={{ fontSize: 12, color: labelColor, fontStyle: "italic", marginTop: 4 }}>No locations yet</Text>
+              )}
+            </ScrollView>
+          </View>
+
+        </View>
+
+        {/* Footer */}
+        <View style={{
+          padding: 14,
+          borderTopWidth: 1,
+          borderTopColor: borderColor,
+          backgroundColor: darkMode ? "#252538" : "#f0f2ff",
+          flexDirection: "row",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}>
+          <TouchableOpacity
+            onPress={() => { 
+              setDateFilter("All"); 
+              setLocationFilter("All"); 
+              setEventFilter("All"); 
+              setRelationshipFilter("All");
+              onClose(); 
+            }}
+            style={{ paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: accent }}
+          >
+            <Text style={{ color: accent, fontWeight: "600", fontSize: 13 }}>Reset All</Text>
+          </TouchableOpacity>
+          <Text style={{ fontSize: 12, color: labelColor }}>Tap a value to apply</Text>
+        </View>
+      </View>
+    </View>
+  );
+};
+
 const NetworkScreen = ({ navigation }) => {
   const { darkMode } = useDarkMode();
   const [storageData, setStorageData] = useState([]);
@@ -75,6 +269,8 @@ const NetworkScreen = ({ navigation }) => {
   const [scannedProfileData, setScannedProfileData] = useState(null);
   const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
   const [showViewMyNetwork, setShowViewMyNetwork] = useState(false);
+  const [showFilterPopup, setShowFilterPopup] = useState(false);
+  
 
   const networkFeedbackInstructions = "Instructions for Connect";
 
@@ -1834,13 +2030,11 @@ const NetworkScreen = ({ navigation }) => {
                         <Text style={styles.controlRowLabel}>3. Relationship</Text>
                         <TouchableOpacity
                           style={[styles.pullDownButton, relationshipFilter !== "All" && styles.pullDownButtonActive]}
-                          onPress={() => {
-                            const filters = ["All", "Colleagues", "Friends", "Family"];
-                            const next = (filters.indexOf(relationshipFilter) + 1) % filters.length;
-                            setRelationshipFilter(filters[next]);
-                          }}
+                          onPress={() => setShowFilterPopup(true)}
                         >
-                          <Text style={[styles.pullDownButtonText, relationshipFilter !== "All" && styles.pullDownButtonTextActive]}>{relationshipFilter === "All" ? "All" : relationshipFilter}</Text>
+                          <Text style={[styles.pullDownButtonText, relationshipFilter !== "All" && styles.pullDownButtonTextActive]}>
+                            {relationshipFilter === "All" ? "All" : relationshipFilter}
+                          </Text>
                         </TouchableOpacity>
                       </View>
 
@@ -1849,13 +2043,11 @@ const NetworkScreen = ({ navigation }) => {
                         <Text style={styles.controlRowLabel}>4. Date(s)</Text>
                         <TouchableOpacity
                           style={[styles.pullDownButton, dateFilter !== "All" && styles.pullDownButtonActive]}
-                          onPress={() => {
-                            const filters = ["All", "This Week", "This Month", "This Year"];
-                            const next = (filters.indexOf(dateFilter) + 1) % filters.length;
-                            setDateFilter(filters[next]);
-                          }}
+                          onPress={() => setShowFilterPopup(true)}
                         >
-                          <Text style={[styles.pullDownButtonText, dateFilter !== "All" && styles.pullDownButtonTextActive]}>{dateFilter === "All" ? "All" : dateFilter}</Text>
+                          <Text style={[styles.pullDownButtonText, dateFilter !== "All" && styles.pullDownButtonTextActive]}>
+                            {dateFilter === "All" ? "All" : dateFilter}
+                          </Text>
                         </TouchableOpacity>
                       </View>
 
@@ -1864,14 +2056,11 @@ const NetworkScreen = ({ navigation }) => {
                         <Text style={styles.controlRowLabel}>5. Location(s)</Text>
                         <TouchableOpacity
                           style={[styles.pullDownButton, locationFilter !== "All" && styles.pullDownButtonActive]}
-                          onPress={() => {
-                            const options = ["All", ...availableCities];
-                            const currentIndex = options.indexOf(locationFilter);
-                            const next = currentIndex === -1 ? 1 : (currentIndex + 1) % options.length;
-                            setLocationFilter(options[next] || "All");
-                          }}
+                          onPress={() => setShowFilterPopup(true)}
                         >
-                          <Text style={[styles.pullDownButtonText, locationFilter !== "All" && styles.pullDownButtonTextActive]}>{locationFilter === "All" ? "All" : locationFilter}</Text>
+                          <Text style={[styles.pullDownButtonText, locationFilter !== "All" && styles.pullDownButtonTextActive]}>
+                            {locationFilter === "All" ? "All" : locationFilter}
+                          </Text>
                         </TouchableOpacity>
                       </View>
 
@@ -1880,16 +2069,15 @@ const NetworkScreen = ({ navigation }) => {
                         <Text style={styles.controlRowLabel}>6. Event(s)</Text>
                         <TouchableOpacity
                           style={[styles.pullDownButton, eventFilter !== "All" && styles.pullDownButtonActive]}
-                          onPress={() => {
-                            if (availableEvents.length === 0) return;
-                            const options = ["All", ...availableEvents];
-                            const next = (options.indexOf(eventFilter) + 1) % options.length;
-                            setEventFilter(options[next]);
-                          }}
+                          onPress={() => setShowFilterPopup(true)}
                         >
-                          <Text style={[styles.pullDownButtonText, eventFilter !== "All" && styles.pullDownButtonTextActive]}>{eventFilter === "All" ? "All" : eventFilter}</Text>
+                          <Text style={[styles.pullDownButtonText, eventFilter !== "All" && styles.pullDownButtonTextActive]}>
+                            {eventFilter === "All" ? "All" : eventFilter}
+                          </Text>
                         </TouchableOpacity>
                       </View>
+
+                      
                     </View>
 
                     {loading && <ActivityIndicator size='large' color='#AF52DE' />}
@@ -2266,6 +2454,23 @@ const NetworkScreen = ({ navigation }) => {
         }}
         onAddConnection={(relationship) => handleAddScannedConnection(relationship)}
       />
+
+      <FilterPopup
+        visible={showFilterPopup}
+        onClose={() => setShowFilterPopup(false)}
+        dateFilter={dateFilter}
+        setDateFilter={setDateFilter}
+        locationFilter={locationFilter}
+        setLocationFilter={setLocationFilter}
+        eventFilter={eventFilter}
+        setEventFilter={setEventFilter}
+        relationshipFilter={relationshipFilter}
+        setRelationshipFilter={setRelationshipFilter}
+        availableCities={availableCities}
+        availableEvents={availableEvents}
+        darkMode={darkMode}
+      />
+
     </View>
   );
 };
