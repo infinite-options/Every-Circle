@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
+import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -240,12 +241,27 @@ const WishDetailScreenContent = ({ route, navigation }) => {
             </View>
           )}
 
-          {/* Bounty (wishes have no cost, only bounty) */}
-          {wishData?.bounty && (
+          {/* Cost and Bounty */}
+          {(wishData?.cost || wishData?.profile_wish_cost || wishData?.bounty) && (
             <View style={styles.pricingContainer}>
-              <View style={styles.pricingRow}>
-                <Text style={styles.bountyEmojiIcon}>💰</Text>
-                <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>Bounty: USD {wishData.bounty}</Text>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flex: 1 }}>
+                {(wishData?.cost || wishData?.profile_wish_cost) && (
+                  <View style={styles.wishBountyContainer}>
+                    <View style={styles.moneyBagIconContainer}>
+                      <Text style={styles.moneyBagDollarSymbol}>$</Text>
+                    </View>
+                    <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>
+                      Cost: {(wishData?.profile_wish_cost_currency ? `${wishData.profile_wish_cost_currency} ` : "")}
+                      {wishData?.cost || wishData?.profile_wish_cost}
+                    </Text>
+                  </View>
+                )}
+                {wishData?.bounty && (
+                  <View style={styles.pricingRow}>
+                    <Text style={styles.bountyEmojiIcon}>💰</Text>
+                    <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>Bounty: USD {wishData.bounty}</Text>
+                  </View>
+                )}
               </View>
             </View>
           )}
@@ -273,6 +289,8 @@ const WishDetailScreenContent = ({ route, navigation }) => {
           <Text style={styles.acceptButtonText}>{loading ? "Submitting..." : "Submit"}</Text>
         </TouchableOpacity>
       </View>
+
+      <BottomNavBar navigation={navigation} />
     </SafeAreaView>
   );
 };
@@ -292,7 +310,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
-    paddingBottom: 100,
+    paddingBottom: 150, // Extra padding to ensure content is visible above BottomNavBar
   },
   card: {
     backgroundColor: "#fff",
@@ -325,13 +343,31 @@ const styles = StyleSheet.create({
   },
   pricingContainer: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
     alignItems: "center",
     marginTop: 10,
   },
   pricingRow: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  wishBountyContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  moneyBagIconContainer: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#FFCD3C",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 6,
+  },
+  moneyBagDollarSymbol: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#ffffff",
   },
   bountyEmojiIcon: {
     fontSize: 20,
@@ -362,6 +398,7 @@ const styles = StyleSheet.create({
   acceptContainer: {
     padding: 20,
     paddingBottom: 30,
+    marginBottom: 80, // Space for BottomNavBar so Submit button stays visible above it
     backgroundColor: "#F5F5F5",
     borderTopWidth: 1,
     borderTopColor: "#eee",

@@ -130,7 +130,7 @@ const ProfileScreen = ({ route, navigation }) => {
         Alert.alert("Error", "Failed to load profile data. Please log in again.");
       }
       loadProfile();
-    }, [routeProfileUID]) // modified on 11/08 - dependency added
+    }, [routeProfileUID]), // modified on 11/08 - dependency added
   );
 
   async function fetchUserData(profileUID) {
@@ -283,13 +283,8 @@ const ProfileScreen = ({ route, navigation }) => {
             })()
           : [];
       const mappedBusinesses = (rawBusinessInfo || []).map((bus, index) => {
-        const businessProfileImg =
-          bus.business_profile_img && String(bus.business_profile_img).trim() !== "" ? String(bus.business_profile_img).trim() : null;
-        const imageIsPublic =
-          bus.business_profile_img_is_public === 1 ||
-          bus.business_profile_img_is_public === "1" ||
-          bus.business_image_is_public === 1 ||
-          bus.business_image_is_public === "1";
+        const businessProfileImg = bus.business_profile_img && String(bus.business_profile_img).trim() !== "" ? String(bus.business_profile_img).trim() : null;
+        const imageIsPublic = bus.business_profile_img_is_public === 1 || bus.business_profile_img_is_public === "1" || bus.business_image_is_public === 1 || bus.business_image_is_public === "1";
         return {
           business_name: bus.business_name || "",
           business_city: bus.business_city || "",
@@ -453,8 +448,7 @@ const ProfileScreen = ({ route, navigation }) => {
           console.log("ProfileScreen - originalBusiness for", rawBusiness.business_name, ":", JSON.stringify(originalBusiness, null, 2));
 
           // Profile image from business_profile_img; fallback to first of business_images_url for MiniCard
-          const businessProfileImg =
-            rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
+          const businessProfileImg = rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
           const firstImage = businessProfileImg || (businessImages && businessImages.length > 0 ? businessImages[0] : null);
           const imageIsPublic =
             rawBusiness.business_profile_img_is_public === "1" ||
@@ -1131,9 +1125,7 @@ const ProfileScreen = ({ route, navigation }) => {
           <View style={{ alignItems: "center", marginBottom: 12 }}>
             <Image
               source={
-                user.profileImage && (isCurrentUserProfile || user.imageIsPublic) && String(user.profileImage).trim() !== ""
-                  ? { uri: String(user.profileImage) }
-                  : require("../assets/profile.png")
+                user.profileImage && (isCurrentUserProfile || user.imageIsPublic) && String(user.profileImage).trim() !== "" ? { uri: String(user.profileImage) } : require("../assets/profile.png")
               }
               style={{ width: 200, height: 200, borderRadius: 50, backgroundColor: "#eee" }}
               defaultSource={require("../assets/profile.png")}
@@ -1162,66 +1154,87 @@ const ProfileScreen = ({ route, navigation }) => {
             </View>
           )}
 
-          
-
-          
-
           {/* Only show Expertise section if there are public expertise entries, or if viewing own profile */}
           {/*{(isCurrentUserProfile || (user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0)) && ( */}
           {user.expertiseIsPublic && (
             <View style={styles.fieldContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowOffering(!showOffering)}>
                 <Text style={styles.sectionHeaderText}>OFFERING</Text>
-                <Ionicons name={showOffering ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+                <Ionicons name={showOffering ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
-              {showOffering && (
-                user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0 ? (
-                  user.expertise.filter((exp) => exp.isPublic).map((exp, index) => {
-                    const expertiseItem = (
-                      <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
-                        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-                          <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginRight: 6 }]}>•</Text>
-                          {sanitizeText(exp.name) ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{sanitizeText(exp.name)}</Text> : null}
-                        </View>
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 16 }}>
-                          {exp.cost ? (
-                            <View style={{ flexDirection: "row", alignItems: "center" }}>
-                              <View style={styles.moneyBagIconContainer}>
-                                <Text style={styles.moneyBagDollarSymbol}>$</Text>
+              {showOffering &&
+                (user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0 ? (
+                  user.expertise
+                    .filter((exp) => exp.isPublic)
+                    .map((exp, index) => {
+                      const expertiseItem = (
+                        <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
+                          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginRight: 6 }]}>•</Text>
+                            {sanitizeText(exp.name) ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{sanitizeText(exp.name)}</Text> : null}
+                          </View>
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 16 }}>
+                            {exp.cost ? (
+                              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                                <View style={styles.moneyBagIconContainer}>
+                                  <Text style={styles.moneyBagDollarSymbol}>$</Text>
+                                </View>
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
+                                  {exp.cost.toLowerCase() !== "free" ? `Cost: $${exp.cost.replace(/^\$/, "")}` : `Cost: ${exp.cost}`}
+                                </Text>
                               </View>
-                              <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
-                                {exp.cost.toLowerCase() !== "free" ? `Cost: $${exp.cost.replace(/^\$/, '')}` : `Cost: ${exp.cost}`}
+                            ) : null}
+                            {exp.bounty ? (
+                              <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
+                                {exp.bounty.toLowerCase() !== "free" ? `💰 $${exp.bounty.replace(/^\$/, "")}` : `💰 ${exp.bounty}`}
                               </Text>
-                            </View>
-                          ) : null}
-                          {exp.bounty ? (
-                            <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
-                              {exp.bounty.toLowerCase() !== "free" ? `💰 $${exp.bounty.replace(/^\$/, '')}` : `💰 ${exp.bounty}`}
-                            </Text>
+                            ) : null}
+                          </View>
+                          {sanitizeText(exp.description) ? (
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 16, color: "#666" }]}>{sanitizeText(exp.description)}</Text>
                           ) : null}
                         </View>
-                        {sanitizeText(exp.description) ? (
-                          <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 16, color: "#666" }]}>{sanitizeText(exp.description)}</Text>
-                        ) : null}
-                      </View>
-                    );
-                    if (routeProfileUID && !isCurrentUserProfile) {
-                      return (
-                        <TouchableOpacity key={index} activeOpacity={0.7} onPress={() => {
-                          const expertiseData = { expertise_uid: exp.profile_expertise_uid, title: exp.name, description: exp.description, cost: exp.cost, bounty: exp.bounty };
-                          const profileData = { firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phoneNumber, image: user.profileImage, tagLine: user.tagLine, city: user.city, state: user.state, emailIsPublic: user.emailIsPublic, phoneIsPublic: user.phoneIsPublic, imageIsPublic: user.imageIsPublic, tagLineIsPublic: user.tagLineIsPublic, locationIsPublic: user.locationIsPublic };
-                          navigation.navigate("ExpertiseDetail", { expertiseData, profileData, profile_uid: profileUID, returnTo: "Profile", profileState: { profile_uid: profileUID, returnTo, searchState } });
-                        }}>
-                          {expertiseItem}
-                        </TouchableOpacity>
                       );
-                    }
-                    return expertiseItem;
-                  })
+                      if (routeProfileUID && !isCurrentUserProfile) {
+                        return (
+                          <TouchableOpacity
+                            key={index}
+                            activeOpacity={0.7}
+                            onPress={() => {
+                              const expertiseData = { expertise_uid: exp.profile_expertise_uid, title: exp.name, description: exp.description, cost: exp.cost, bounty: exp.bounty };
+                              const profileData = {
+                                firstName: user.firstName,
+                                lastName: user.lastName,
+                                email: user.email,
+                                phone: user.phoneNumber,
+                                image: user.profileImage,
+                                tagLine: user.tagLine,
+                                city: user.city,
+                                state: user.state,
+                                emailIsPublic: user.emailIsPublic,
+                                phoneIsPublic: user.phoneIsPublic,
+                                imageIsPublic: user.imageIsPublic,
+                                tagLineIsPublic: user.tagLineIsPublic,
+                                locationIsPublic: user.locationIsPublic,
+                              };
+                              navigation.navigate("ExpertiseDetail", {
+                                expertiseData,
+                                profileData,
+                                profile_uid: profileUID,
+                                returnTo: "Profile",
+                                profileState: { profile_uid: profileUID, returnTo, searchState },
+                              });
+                            }}
+                          >
+                            {expertiseItem}
+                          </TouchableOpacity>
+                        );
+                      }
+                      return expertiseItem;
+                    })
                 ) : (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No expertise added yet</Text>
-                )
-              )}
+                ))}
             </View>
           )}
 
@@ -1231,65 +1244,111 @@ const ProfileScreen = ({ route, navigation }) => {
             <View style={styles.fieldContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowSeeking(!showSeeking)}>
                 <Text style={styles.sectionHeaderText}>SEEKING</Text>
-                <Ionicons name={showSeeking ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+                <Ionicons name={showSeeking ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
-              {showSeeking && (
-                user.wishes && user.wishes.filter((wish) => wish.isPublic).length > 0 ? (
-                  user.wishes.filter((wish) => wish.isPublic).map((wish, index) => {
-                    const wishItem = (
-                      <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
-                        {isCurrentUserProfile && wish.wish_responses !== undefined && wish.wish_responses > 0 && (
-                          <TouchableOpacity style={styles.wishResponseBadge} onPress={() => {
-                            const wishDataForNavigation = { wish_uid: wish.profile_wish_uid, title: wish.helpNeeds, description: wish.details, bounty: wish.amount, cost: wish.cost };
-                            const profileDataForNavigation = { firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phoneNumber, image: user.profileImage, tagLine: user.tagLine, city: user.city, state: user.state, emailIsPublic: user.emailIsPublic, phoneIsPublic: user.phoneIsPublic, imageIsPublic: user.imageIsPublic, tagLineIsPublic: user.tagLineIsPublic, locationIsPublic: user.locationIsPublic };
-                            navigation.navigate("WishResponses", { wishData: wishDataForNavigation, profileData: profileDataForNavigation, profile_uid: profileUID, profileState: { profile_uid: profileUID, returnTo, searchState } });
-                          }} activeOpacity={0.7}>
-                            <Text style={styles.wishResponseBadgeText}>{wish.wish_responses || 0}</Text>
-                          </TouchableOpacity>
-                        )}
-                        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-                          <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginRight: 6 }]}>•</Text>
-                          <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{wish.helpNeeds || ""}</Text>
-                        </View>
-                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 16 }}>
-                          {wish.cost ? (
-                            <View style={{ flexDirection: "row", alignItems: "center" }}>
-                              <View style={styles.moneyBagIconContainer}>
-                                <Text style={styles.moneyBagDollarSymbol}>$</Text>
+              {showSeeking &&
+                (user.wishes && user.wishes.filter((wish) => wish.isPublic).length > 0 ? (
+                  user.wishes
+                    .filter((wish) => wish.isPublic)
+                    .map((wish, index) => {
+                      const wishItem = (
+                        <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
+                          {isCurrentUserProfile && wish.wish_responses !== undefined && wish.wish_responses > 0 && (
+                            <TouchableOpacity
+                              style={styles.wishResponseBadge}
+                              onPress={() => {
+                                const wishDataForNavigation = { wish_uid: wish.profile_wish_uid, title: wish.helpNeeds, description: wish.details, bounty: wish.amount, cost: wish.cost };
+                                const profileDataForNavigation = {
+                                  firstName: user.firstName,
+                                  lastName: user.lastName,
+                                  email: user.email,
+                                  phone: user.phoneNumber,
+                                  image: user.profileImage,
+                                  tagLine: user.tagLine,
+                                  city: user.city,
+                                  state: user.state,
+                                  emailIsPublic: user.emailIsPublic,
+                                  phoneIsPublic: user.phoneIsPublic,
+                                  imageIsPublic: user.imageIsPublic,
+                                  tagLineIsPublic: user.tagLineIsPublic,
+                                  locationIsPublic: user.locationIsPublic,
+                                };
+                                navigation.navigate("WishResponses", {
+                                  wishData: wishDataForNavigation,
+                                  profileData: profileDataForNavigation,
+                                  profile_uid: profileUID,
+                                  profileState: { profile_uid: profileUID, returnTo, searchState },
+                                });
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.wishResponseBadgeText}>{wish.wish_responses || 0}</Text>
+                            </TouchableOpacity>
+                          )}
+                          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginRight: 6 }]}>•</Text>
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{wish.helpNeeds || ""}</Text>
+                          </View>
+                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 16 }}>
+                            {wish.cost ? (
+                              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                                <View style={styles.moneyBagIconContainer}>
+                                  <Text style={styles.moneyBagDollarSymbol}>$</Text>
+                                </View>
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
+                                  {wish.cost.toLowerCase() !== "free" ? `Cost: $${wish.cost.replace(/^\$/, "")}` : `Cost: ${wish.cost}`}
+                                </Text>
                               </View>
-                              <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
-                                {wish.cost.toLowerCase() !== "free" ? `Cost: $${wish.cost.replace(/^\$/, '')}` : `Cost: ${wish.cost}`}
+                            ) : null}
+                            {wish.amount ? (
+                              <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
+                                {wish.amount.toLowerCase() !== "free" ? `💰 $${wish.amount.replace(/^\$/, "")}` : `💰 ${wish.amount}`}
                               </Text>
-                            </View>
-                          ) : null}
-                          {wish.amount ? (
-                            <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
-                              {wish.amount.toLowerCase() !== "free" ? `💰 $${wish.amount.replace(/^\$/, '')}` : `💰 ${wish.amount}`}
-                            </Text>
-                          ) : null}
+                            ) : null}
+                          </View>
+                          {wish.details ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 16, color: "#666" }]}>{wish.details}</Text> : null}
                         </View>
-                        {wish.details ? (
-                          <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 16, color: "#666" }]}>{wish.details}</Text>
-                        ) : null}
-                      </View>
-                    );
-                    if (routeProfileUID && !isCurrentUserProfile) {
-                      return (
-                        <TouchableOpacity key={index} activeOpacity={0.7} onPress={() => {
-                          const wishData = { wish_uid: wish.profile_wish_uid, title: wish.helpNeeds, description: wish.details, bounty: wish.amount, cost: wish.cost };
-                          const profileData = { firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phoneNumber, image: user.profileImage, tagLine: user.tagLine, city: user.city, state: user.state, emailIsPublic: user.emailIsPublic, phoneIsPublic: user.phoneIsPublic, imageIsPublic: user.imageIsPublic, tagLineIsPublic: user.tagLineIsPublic, locationIsPublic: user.locationIsPublic };
-                          navigation.navigate("WishDetail", { wishData, profileData, profile_uid: profileUID, returnTo: "Profile", profileState: { profile_uid: profileUID, returnTo, searchState } });
-                        }}>
-                          {wishItem}
-                        </TouchableOpacity>
                       );
-                    }
-                    return wishItem;
-                  })
+                      if (routeProfileUID && !isCurrentUserProfile) {
+                        return (
+                          <TouchableOpacity
+                            key={index}
+                            activeOpacity={0.7}
+                            onPress={() => {
+                              const wishData = { wish_uid: wish.profile_wish_uid, title: wish.helpNeeds, description: wish.details, bounty: wish.amount, cost: wish.cost };
+                              const profileData = {
+                                firstName: user.firstName,
+                                lastName: user.lastName,
+                                email: user.email,
+                                phone: user.phoneNumber,
+                                image: user.profileImage,
+                                tagLine: user.tagLine,
+                                city: user.city,
+                                state: user.state,
+                                emailIsPublic: user.emailIsPublic,
+                                phoneIsPublic: user.phoneIsPublic,
+                                imageIsPublic: user.imageIsPublic,
+                                tagLineIsPublic: user.tagLineIsPublic,
+                                locationIsPublic: user.locationIsPublic,
+                              };
+                              navigation.navigate("WishDetail", {
+                                wishData,
+                                profileData,
+                                profile_uid: profileUID,
+                                returnTo: "Profile",
+                                profileState: { profile_uid: profileUID, returnTo, searchState },
+                              });
+                            }}
+                          >
+                            {wishItem}
+                          </TouchableOpacity>
+                        );
+                      }
+                      return wishItem;
+                    })
                 ) : (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No seeking added yet</Text>
-                )
-              )}
+                ))}
             </View>
           )}
 
@@ -1299,26 +1358,27 @@ const ProfileScreen = ({ route, navigation }) => {
             <View style={styles.fieldContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowExperience(!showExperience)}>
                 <Text style={styles.sectionHeaderText}>EXPERIENCE</Text>
-                <Ionicons name={showExperience ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+                <Ionicons name={showExperience ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
-              {showExperience && (
-                user.experience && user.experience.filter((exp) => exp.isPublic).length > 0 ? (
-                  user.experience.filter((exp) => exp.isPublic).map((exp, index) => (
-                    <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
-                      {exp.title ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.title}</Text> : null}
-                      {exp.company ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.company}</Text> : null}
-                      {exp.description ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{ exp.description}</Text> : null}
-                      {(exp.startDate || exp.endDate) ? (
-                        <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666" }]}>
-                          {(exp.startDate || "") + (exp.startDate && exp.endDate ? " - " : "") + (exp.endDate || "")}
-                        </Text>
-                      ) : null}
-                    </View>
-                  ))
+              {showExperience &&
+                (user.experience && user.experience.filter((exp) => exp.isPublic).length > 0 ? (
+                  user.experience
+                    .filter((exp) => exp.isPublic)
+                    .map((exp, index) => (
+                      <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
+                        {exp.title ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.title}</Text> : null}
+                        {exp.company ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.company}</Text> : null}
+                        {exp.description ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{exp.description}</Text> : null}
+                        {exp.startDate || exp.endDate ? (
+                          <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666" }]}>
+                            {(exp.startDate || "") + (exp.startDate && exp.endDate ? " - " : "") + (exp.endDate || "")}
+                          </Text>
+                        ) : null}
+                      </View>
+                    ))
                 ) : (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No experience added yet</Text>
-                )
-              )}
+                ))}
             </View>
           )}
 
@@ -1328,25 +1388,26 @@ const ProfileScreen = ({ route, navigation }) => {
             <View style={styles.fieldContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowEducation(!showEducation)}>
                 <Text style={styles.sectionHeaderText}>EDUCATION</Text>
-                <Ionicons name={showEducation ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+                <Ionicons name={showEducation ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
-              {showEducation && (
-                user.education && user.education.filter((edu) => edu.isPublic).length > 0 ? (
-                  user.education.filter((edu) => edu.isPublic).map((edu, index) => (
-                    <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
-                      {edu.degree ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{edu.degree}</Text> : null}
-                      {edu.school ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{edu.school}</Text> : null}
-                      {(edu.startDate || edu.endDate) ? (
-                        <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666" }]}>
-                          {(edu.startDate || "") + (edu.startDate && edu.endDate ? "  to  " : "") + (edu.endDate || "")}
-                        </Text>
-                      ) : null}
-                    </View>
-                  ))
+              {showEducation &&
+                (user.education && user.education.filter((edu) => edu.isPublic).length > 0 ? (
+                  user.education
+                    .filter((edu) => edu.isPublic)
+                    .map((edu, index) => (
+                      <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
+                        {edu.degree ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{edu.degree}</Text> : null}
+                        {edu.school ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{edu.school}</Text> : null}
+                        {edu.startDate || edu.endDate ? (
+                          <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666" }]}>
+                            {(edu.startDate || "") + (edu.startDate && edu.endDate ? "  to  " : "") + (edu.endDate || "")}
+                          </Text>
+                        ) : null}
+                      </View>
+                    ))
                 ) : (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No education added yet</Text>
-                )
-              )}
+                ))}
             </View>
           )}
 
@@ -1357,10 +1418,10 @@ const ProfileScreen = ({ route, navigation }) => {
             <View style={styles.fieldContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBusiness(!showBusiness)}>
                 <Text style={styles.sectionHeaderText}>BUSINESSES / ORGANIZATION</Text>
-                <Ionicons name={showBusiness ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+                <Ionicons name={showBusiness ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
-              {showBusiness && (
-                publicBusinesses.length > 0 ? (
+              {showBusiness &&
+                (publicBusinesses.length > 0 ? (
                   publicBusinesses.map((business, index) => (
                     <TouchableOpacity
                       key={business.profile_business_uid || index}
@@ -1372,7 +1433,9 @@ const ProfileScreen = ({ route, navigation }) => {
                       style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}
                     >
                       <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold", fontSize: 16 }]}>{sanitizeText(business.business_name)}</Text>
-                      {business.business_tag_line ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>{sanitizeText(business.business_tag_line)}</Text> : null}
+                      {business.business_tag_line ? (
+                        <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>{sanitizeText(business.business_tag_line)}</Text>
+                      ) : null}
                       <View style={{ flexDirection: "row", marginTop: 8, alignItems: "center" }}>
                         {business.first_image ? (
                           <Image source={{ uri: business.first_image }} style={{ width: 50, height: 50, borderRadius: 6, marginRight: 12 }} />
@@ -1382,7 +1445,7 @@ const ProfileScreen = ({ route, navigation }) => {
                         <View>
                           {business.business_address_line_1 ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(business.business_address_line_1)}</Text> : null}
                           {business.role ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(business.role)}</Text> : null}
-                          {(business.business_city || business.business_state) ? (
+                          {business.business_city || business.business_state ? (
                             <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
                               {[business.business_city, business.business_state, business.business_zip_code].filter(Boolean).join(", ")}
                             </Text>
@@ -1393,8 +1456,7 @@ const ProfileScreen = ({ route, navigation }) => {
                   ))
                 ) : (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No businesses added yet</Text>
-                )
-              )}
+                ))}
             </View>
           )}
 
@@ -1410,27 +1472,17 @@ const ProfileScreen = ({ route, navigation }) => {
                   activeOpacity={0.7}
                 >
                   <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>
-                      {review.business_name || review.rating_business_id}
-                    </Text>
-                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#999", fontSize: 12 }]}>
-                      {review.rating_receipt_date}
-                    </Text>
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{review.business_name || review.rating_business_id}</Text>
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#999", fontSize: 12 }]}>{review.rating_receipt_date}</Text>
                   </View>
-                  {review.business_phone_number ? (
-                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.business_phone_number}</Text>
-                  ) : null}
-                  {(review.business_city || review.business_state) ? (
-                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
-                      {[review.business_city, review.business_state].filter(Boolean).join(", ")}
-                    </Text>
+                  {review.business_phone_number ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.business_phone_number}</Text> : null}
+                  {review.business_city || review.business_state ? (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{[review.business_city, review.business_state].filter(Boolean).join(", ")}</Text>
                   ) : null}
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
                     {"⭐".repeat(review.rating_star)} {review.rating_star}/5
                   </Text>
-                  {review.rating_description ? (
-                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.rating_description}</Text>
-                  ) : null}
+                  {review.rating_description ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.rating_description}</Text> : null}
                 </TouchableOpacity>
               ))}
             </View>
@@ -1456,16 +1508,18 @@ const styles = StyleSheet.create({
   },
   safeArea: { flex: 1, backgroundColor: "#fff" },
   scrollContainer: { flex: 1 },
-  fieldContainer: { 
-    marginTop: 15, 
+  fieldContainer: {
+    marginTop: 15,
     marginBottom: 0,
     backgroundColor: "#fff",
-    padding: 10,
+    // padding: 10,
   },
-  label: { 
-    fontSize: 16, 
-    fontWeight: "bold", 
-    marginBottom: 5 
+  label: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 5,
+    paddingLeft: 10,
+    paddingTop: 10,
   },
   inputContainer: {
     // borderWidth: 1,
@@ -1549,18 +1603,18 @@ const styles = StyleSheet.create({
   },
   errorText: { fontSize: 18, color: "red", textAlign: "center", marginTop: 20 },
   cardContainer: {
-  padding: 15,
-  backgroundColor: "#fff",
-  borderRadius: 10,
-  borderWidth: 1,
-  borderColor: "#000",
-  marginVertical: 5,
-},
-darkCardContainer: {
-  backgroundColor: "#2d2d2d",
-  borderColor: "#fff",
-  borderWidth: 1,
-},
+    padding: 15,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#000",
+    marginVertical: 5,
+  },
+  darkCardContainer: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#fff",
+    borderWidth: 1,
+  },
   profileHeaderContainer: {
     width: "100%",
     alignItems: "center",
@@ -1637,7 +1691,7 @@ darkCardContainer: {
   },
   darkInputContainer: {
     // backgroundColor: "#2d2d2d",
-    borderColor: "#fff"
+    borderColor: "#fff",
   },
   darkInputText: {
     color: "#ffffff",
