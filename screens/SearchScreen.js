@@ -413,7 +413,11 @@ export default function SearchScreen({ route }) {
       let list;
       if (type === "seeking") {
         // For seeking/wishes, the response includes profile data directly
-        list = resultsArray
+        // Filter out non-public wishes (profile_wish_is_public === 0)
+        const publicSeekingResults = resultsArray.filter(
+          (item) => item.profile_wish_is_public !== 0 && item.profile_wish_is_public !== "0"
+        );
+        list = publicSeekingResults
           .map((item, i) => ({
             id: `${item.profile_wish_uid || i}`,
             company: item.profile_wish_title || "Untitled Wish",
@@ -485,7 +489,11 @@ export default function SearchScreen({ route }) {
         // }
       } else if (type === "expertise") {
         // For expertise, the response includes profile data directly
-        list = resultsArray.map((item, i) => ({
+        // Filter out non-public expertise (profile_expertise_is_public === 0)
+        const publicExpertiseResults = resultsArray.filter(
+          (item) => item.profile_expertise_is_public !== 0 && item.profile_expertise_is_public !== "0"
+        );
+        list = publicExpertiseResults.map((item, i) => ({
           id: `${item.profile_expertise_uid || i}`,
           company: item.profile_expertise_title || "Untitled Expertise",
           rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
