@@ -31,6 +31,18 @@ const formatPhoneNumberForDisplay = (phoneNumber) => {
   return phoneNumber;
 };
 
+// Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "mm-dd-yyyy hh:mm"
+const formatDateTimeForDisplay = (value) => {
+  if (!value || typeof value !== "string" || value.trim() === "") return "";
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[\sT](\d{1,2}):(\d{2})/);
+  if (match) {
+    const [, y, m, d, h, min] = match;
+    return `${m}/${d}/${y} ${String(parseInt(h, 10)).padStart(2, "0")}:${min}`;
+  }
+  return value;
+};
+
 const ProfileScreen = ({ route, navigation }) => {
   // modified on 11/08 - for network profile navigation
   // Allows opening a specific user's profile when navigating from the Network screen
@@ -256,6 +268,7 @@ const ProfileScreen = ({ route, navigation }) => {
             profile_wish_start: wish.profile_wish_start || "",
             profile_wish_end: wish.profile_wish_end || "",
             profile_wish_location: wish.profile_wish_location || "",
+            profile_wish_mode: wish.profile_wish_mode || "",
             isPublic: wish.profile_wish_is_public === 1 || wish.isPublic === true,
             wish_responses: wish.wish_responses || 0,
           }))
@@ -1255,49 +1268,49 @@ const ProfileScreen = ({ route, navigation }) => {
                     .map((wish, index) => {
                       const wishItem = (
                         <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
-                          {isCurrentUserProfile && wish.wish_responses !== undefined && wish.wish_responses > 0 && (
-                            <TouchableOpacity
-                              style={styles.wishResponseBadge}
-                              onPress={() => {
-                                const wishDataForNavigation = {
-                                  wish_uid: wish.profile_wish_uid,
-                                  title: wish.helpNeeds,
-                                  description: wish.details,
-                                  bounty: wish.amount,
-                                  cost: wish.cost,
-                                  profile_wish_start: wish.profile_wish_start,
-                                  profile_wish_end: wish.profile_wish_end,
-                                  profile_wish_location: wish.profile_wish_location,
-                                };
-                                const profileDataForNavigation = {
-                                  firstName: user.firstName,
-                                  lastName: user.lastName,
-                                  email: user.email,
-                                  phone: user.phoneNumber,
-                                  image: user.profileImage,
-                                  tagLine: user.tagLine,
-                                  city: user.city,
-                                  state: user.state,
-                                  emailIsPublic: user.emailIsPublic,
-                                  phoneIsPublic: user.phoneIsPublic,
-                                  imageIsPublic: user.imageIsPublic,
-                                  tagLineIsPublic: user.tagLineIsPublic,
-                                  locationIsPublic: user.locationIsPublic,
-                                };
-                                navigation.navigate("WishResponses", {
-                                  wishData: wishDataForNavigation,
-                                  profileData: profileDataForNavigation,
-                                  profile_uid: profileUID,
-                                  profileState: { profile_uid: profileUID, returnTo, searchState },
-                                });
-                              }}
-                              activeOpacity={0.7}
-                            >
-                              <Text style={styles.wishResponseBadgeText}>{wish.wish_responses || 0}</Text>
-                            </TouchableOpacity>
-                          )}
-                          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{wish.helpNeeds || ""}</Text>
+                          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500", flex: 1 }]}>{wish.helpNeeds || ""}</Text>
+                            {isCurrentUserProfile && wish.wish_responses !== undefined && wish.wish_responses > 0 && (
+                              <TouchableOpacity
+                                onPress={() => {
+                                  const wishDataForNavigation = {
+                                    wish_uid: wish.profile_wish_uid,
+                                    title: wish.helpNeeds,
+                                    description: wish.details,
+                                    bounty: wish.amount,
+                                    cost: wish.cost,
+                                    profile_wish_start: wish.profile_wish_start,
+                                    profile_wish_end: wish.profile_wish_end,
+                                    profile_wish_location: wish.profile_wish_location,
+                                    profile_wish_mode: wish.profile_wish_mode,
+                                  };
+                                  const profileDataForNavigation = {
+                                    firstName: user.firstName,
+                                    lastName: user.lastName,
+                                    email: user.email,
+                                    phone: user.phoneNumber,
+                                    image: user.profileImage,
+                                    tagLine: user.tagLine,
+                                    city: user.city,
+                                    state: user.state,
+                                    emailIsPublic: user.emailIsPublic,
+                                    phoneIsPublic: user.phoneIsPublic,
+                                    imageIsPublic: user.imageIsPublic,
+                                    tagLineIsPublic: user.tagLineIsPublic,
+                                    locationIsPublic: user.locationIsPublic,
+                                  };
+                                  navigation.navigate("WishResponses", {
+                                    wishData: wishDataForNavigation,
+                                    profileData: profileDataForNavigation,
+                                    profile_uid: profileUID,
+                                    profileState: { profile_uid: profileUID, returnTo, searchState },
+                                  });
+                                }}
+                                activeOpacity={0.7}
+                              >
+                                <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Responses: {wish.wish_responses || 0}</Text>
+                              </TouchableOpacity>
+                            )}
                           </View>
                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0 }}>
                             {wish.cost ? (
@@ -1317,15 +1330,41 @@ const ProfileScreen = ({ route, navigation }) => {
                             ) : null}
                           </View>
                           {wish.details ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{wish.details}</Text> : null}
-                          {wish.profile_wish_start || wish.profile_wish_end || wish.profile_wish_location ? (
-                            <View style={{ marginLeft: 0, marginTop: 6 }}>
-                              {wish.profile_wish_start ? (
-                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666", marginBottom: 2 }]}>Start: {wish.profile_wish_start}</Text>
+                          {wish.profile_wish_start || wish.profile_wish_end || wish.profile_wish_location || wish.profile_wish_mode ? (
+                            <View style={[styles.seekingMetaRow, { marginTop: 6 }]}>
+                              {wish.profile_wish_start || wish.profile_wish_end ? (
+                                <View style={styles.seekingMetaLine}>
+                                  <Ionicons name='calendar-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
+                                  <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
+                                    {wish.profile_wish_start ? formatDateTimeForDisplay(wish.profile_wish_start) : "—"}
+                                    {wish.profile_wish_start && wish.profile_wish_end ? " → " : ""}
+                                    {wish.profile_wish_end ? formatDateTimeForDisplay(wish.profile_wish_end) : ""}
+                                  </Text>
+                                </View>
                               ) : null}
-                              {wish.profile_wish_end ? (
-                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666", marginBottom: 2 }]}>End: {wish.profile_wish_end}</Text>
+                              {wish.profile_wish_location || wish.profile_wish_mode ? (
+                                <View style={[styles.seekingMetaLine, styles.seekingMetaLineSpaceBetween, (wish.profile_wish_start || wish.profile_wish_end) && { marginTop: 4 }]}>
+                                  {wish.profile_wish_location ? (
+                                    <View style={styles.seekingMetaLine}>
+                                      <Ionicons name='location-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
+                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{wish.profile_wish_location}</Text>
+                                    </View>
+                                  ) : (
+                                    <View style={styles.seekingMetaSpacer} />
+                                  )}
+                                  {wish.profile_wish_mode ? (
+                                    <View style={styles.seekingMetaLine}>
+                                      <Ionicons
+                                        name={wish.profile_wish_mode.toLowerCase() === "virtual" ? "videocam-outline" : "people-outline"}
+                                        size={14}
+                                        color={darkMode ? "#999" : "#666"}
+                                        style={{ marginRight: 6 }}
+                                      />
+                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{wish.profile_wish_mode}</Text>
+                                    </View>
+                                  ) : null}
+                                </View>
                               ) : null}
-                              {wish.profile_wish_location ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666" }]}>Location: {wish.profile_wish_location}</Text> : null}
                             </View>
                           ) : null}
                         </View>
@@ -1345,6 +1384,7 @@ const ProfileScreen = ({ route, navigation }) => {
                                 profile_wish_start: wish.profile_wish_start,
                                 profile_wish_end: wish.profile_wish_end,
                                 profile_wish_location: wish.profile_wish_location,
+                                profile_wish_mode: wish.profile_wish_mode,
                               };
                               const profileData = {
                                 firstName: user.firstName,
@@ -1453,36 +1493,30 @@ const ProfileScreen = ({ route, navigation }) => {
               {showBusiness &&
                 (publicBusinesses.length > 0 ? (
                   publicBusinesses.map((business, index) => (
-                    <TouchableOpacity
-                      key={business.profile_business_uid || index}
-                      onPress={() => {
-                        if (business.profile_business_uid) {
-                          navigation.navigate("BusinessProfile", { business_uid: business.profile_business_uid });
-                        }
-                      }}
-                      style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}
-                    >
-                      <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold", fontSize: 16 }]}>{sanitizeText(business.business_name)}</Text>
-                      {business.business_tag_line ? (
-                        <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>{sanitizeText(business.business_tag_line)}</Text>
-                      ) : null}
-                      <View style={{ flexDirection: "row", marginTop: 8, alignItems: "center" }}>
-                        {business.first_image ? (
-                          <Image source={{ uri: business.first_image }} style={{ width: 50, height: 50, borderRadius: 6, marginRight: 12 }} />
-                        ) : (
-                          <Image source={require("../assets/profile.png")} style={{ width: 50, height: 50, borderRadius: 6, marginRight: 12 }} />
-                        )}
-                        <View>
-                          {business.business_address_line_1 ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(business.business_address_line_1)}</Text> : null}
-                          {business.role ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(business.role)}</Text> : null}
-                          {business.business_city || business.business_state ? (
-                            <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
-                              {[business.business_city, business.business_state, business.business_zip_code].filter(Boolean).join(", ")}
-                            </Text>
-                          ) : null}
+                    <View key={business.profile_business_uid || business.business_uid || index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const uid = business.business_uid || business.profile_business_uid;
+                          if (uid) {
+                            navigation.navigate("BusinessProfile", { business_uid: uid });
+                          }
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <MiniCard
+                          business={{
+                            ...business,
+                            tagline: business.tagline || business.business_tag_line || "",
+                            taglineIsPublic: business.taglineIsPublic !== false,
+                          }}
+                        />
+                      </TouchableOpacity>
+                      {business.role ? (
+                        <View style={styles.roleContainer}>
+                          <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {sanitizeText(business.role)}</Text>
                         </View>
-                      </View>
-                    </TouchableOpacity>
+                      ) : null}
+                    </View>
                   ))
                 ) : (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No businesses added yet</Text>
@@ -1766,22 +1800,34 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#ffffff",
   },
-  wishResponseBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#AF52DE",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 10,
-  },
-  wishResponseBadgeText: {
-    color: "#ffffff",
+  wishResponseLinkText: {
+    color: "#800000",
     fontSize: 14,
-    fontWeight: "bold",
+    fontWeight: "600",
+  },
+  darkWishResponseLinkText: {
+    color: "#c77dff",
+  },
+  seekingMetaLineSpaceBetween: {
+    justifyContent: "space-between",
+  },
+  seekingMetaSpacer: {
+    flex: 1,
+  },
+  seekingMetaRow: {
+    marginLeft: 0,
+  },
+  seekingMetaLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  seekingMetaText: {
+    color: "#666",
+    fontSize: 13,
+  },
+  darkSeekingMetaText: {
+    color: "#999",
   },
   sectionHeader: {
     flexDirection: "row",

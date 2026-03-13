@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
 
 // DateTimePicker only works on native (not web)
@@ -11,9 +11,6 @@ if (Platform.OS !== "web") {
     console.warn("DateTimePicker not available:", e.message);
   }
 }
-
-// Standard format for profile_wish_start and profile_wish_end
-const DATETIME_FORMAT_PLACEHOLDER = "2025-03-12 14:30";
 
 // Convert our format "YYYY-MM-DD HH:mm" to HTML5 datetime-local format "YYYY-MM-DDTHH:mm"
 const toDateTimeLocalValue = (value) => {
@@ -32,7 +29,7 @@ const formatDateForDisplay = (date) => {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return `${m}-${d}-${y}`;
 };
 
 const formatTimeForDisplay = (date) => {
@@ -40,6 +37,36 @@ const formatTimeForDisplay = (date) => {
   const h = String(date.getHours()).padStart(2, "0");
   const min = String(date.getMinutes()).padStart(2, "0");
   return `${h}:${min}`;
+};
+
+// Display stored "YYYY-MM-DD HH:mm" as "mm-dd-yyyy hh:mm"
+const formatDateTimeForDisplay = (value) => {
+  if (!value || typeof value !== "string" || value.trim() === "") return "";
+  const { date, time } = parseDateTime(value);
+  if (!date || !time) return value;
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const y = date.getFullYear();
+  const h = String(time.getHours()).padStart(2, "0");
+  const min = String(time.getMinutes()).padStart(2, "0");
+  return `${m}-${d}-${y} ${h}:${min}`;
+};
+
+// Validation: start date must be today or after (if today, time must not be in the past)
+const isStartDateValid = (date) => {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return false;
+  const now = new Date();
+  return date.getTime() >= now.getTime();
+};
+
+// Validation: end date must be after start date
+const isEndDateValid = (endDateTime, startValue) => {
+  if (!endDateTime || !(endDateTime instanceof Date) || isNaN(endDateTime.getTime())) return false;
+  if (!startValue || typeof startValue !== "string" || startValue.trim() === "") return true; // No start set, allow any end
+  const { date: startDate, time: startTime } = parseDateTime(startValue);
+  if (!startDate || !startTime) return true;
+  const startDateTime = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), startTime.getHours(), startTime.getMinutes());
+  return endDateTime.getTime() > startDateTime.getTime();
 };
 
 const parseDateTime = (value) => {
@@ -99,6 +126,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       profile_wish_start: "",
       profile_wish_end: "",
       profile_wish_location: "",
+      profile_wish_mode: "",
       isPublic: true,
     };
     setWishes([...wishes, newEntry]);
@@ -112,6 +140,32 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     const updated = [...wishes];
     updated[index][field] = value;
     setWishes(updated);
+  };
+
+  const handleDateTimeInputChange = (index, field, value) => {
+    if (!value || value.trim() === "") {
+      handleInputChange(index, field === "start" ? "profile_wish_start" : "profile_wish_end", value);
+      return;
+    }
+    const { date, time } = parseDateTime(value);
+    if (!date || !time) {
+      handleInputChange(index, field === "start" ? "profile_wish_start" : "profile_wish_end", value);
+      return;
+    }
+    const combinedDateTime = new Date(date.getFullYear(), date.getMonth(), date.getDate(), time.getHours(), time.getMinutes());
+    const startValue = wishes[index]?.profile_wish_start || "";
+    if (field === "start") {
+      if (!isStartDateValid(combinedDateTime)) {
+        Alert.alert("Invalid Date", "Start date must be today or a future date/time.");
+        return;
+      }
+    } else {
+      if (!isEndDateValid(combinedDateTime, startValue)) {
+        Alert.alert("Invalid Date", "End date must be after the start date.");
+        return;
+      }
+    }
+    handleInputChange(index, field === "start" ? "profile_wish_start" : "profile_wish_end", value);
   };
 
   // Parse bounty into amount and unit
@@ -275,11 +329,25 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     }
     const updated = [...wishes];
     const currentValue = updated[index][field === "start" ? "profile_wish_start" : "profile_wish_end"] || "";
+    const startValue = updated[index].profile_wish_start || "";
     const { date: currentDate, time: currentTime } = parseDateTime(currentValue);
     const defaultDate = new Date();
     const defaultTime = new Date(2000, 0, 1, 9, 0);
 
     if (mode === "date") {
+      if (field === "start") {
+        if (!isStartDateValid(selectedDate)) {
+          Alert.alert("Invalid Date", "Start date must be today or a future date.");
+          setActivePicker(null);
+          return;
+        }
+      } else {
+        if (!isEndDateValid(selectedDate, startValue)) {
+          Alert.alert("Invalid Date", "End date must be after the start date.");
+          setActivePicker(null);
+          return;
+        }
+      }
       const newTime = currentTime || defaultTime;
       const combined = combineDateTime(selectedDate, newTime);
       updated[index][field === "start" ? "profile_wish_start" : "profile_wish_end"] = combined;
@@ -287,6 +355,20 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       setActivePicker({ index, field, mode: "time" }); // Open time picker next
     } else {
       const newDate = currentDate || defaultDate;
+      const combinedDateTime = new Date(newDate.getFullYear(), newDate.getMonth(), newDate.getDate(), selectedDate.getHours(), selectedDate.getMinutes());
+      if (field === "start") {
+        if (!isStartDateValid(combinedDateTime)) {
+          Alert.alert("Invalid Date", "Start date and time must be today or a future date/time.");
+          setActivePicker(null);
+          return;
+        }
+      } else {
+        if (!isEndDateValid(combinedDateTime, startValue)) {
+          Alert.alert("Invalid Date", "End date and time must be after the start date and time.");
+          setActivePicker(null);
+          return;
+        }
+      }
       const combined = combineDateTime(newDate, selectedDate);
       updated[index][field === "start" ? "profile_wish_start" : "profile_wish_end"] = combined;
       setWishes(updated);
@@ -379,14 +461,14 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
                     type="datetime-local"
                     style={styles.webDateTimeInput}
                     value={toDateTimeLocalValue(item.profile_wish_start || "")}
-                    onChange={(e) => handleInputChange(index, "profile_wish_start", fromDateTimeLocalValue(e.target.value))}
+                    onChange={(e) => handleDateTimeInputChange(index, "start", fromDateTimeLocalValue(e.target.value))}
                   />
                 </View>
               ) : (
                 <TextInput
                   style={styles.dateTimeTextInput}
-                  placeholder={DATETIME_FORMAT_PLACEHOLDER}
-                  value={item.profile_wish_start || ""}
+                  placeholder="mm-dd-yyyy hh:mm"
+                  value={item.profile_wish_start ? formatDateTimeForDisplay(item.profile_wish_start) : ""}
                   onChangeText={(text) => handleInputChange(index, "profile_wish_start", text)}
                 />
               )}
@@ -428,14 +510,14 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
                     type="datetime-local"
                     style={styles.webDateTimeInput}
                     value={toDateTimeLocalValue(item.profile_wish_end || "")}
-                    onChange={(e) => handleInputChange(index, "profile_wish_end", fromDateTimeLocalValue(e.target.value))}
+                    onChange={(e) => handleDateTimeInputChange(index, "end", fromDateTimeLocalValue(e.target.value))}
                   />
                 </View>
               ) : (
                 <TextInput
                   style={styles.dateTimeTextInput}
-                  placeholder={DATETIME_FORMAT_PLACEHOLDER}
-                  value={item.profile_wish_end || ""}
+                  placeholder="mm-dd-yyyy hh:mm"
+                  value={item.profile_wish_end ? formatDateTimeForDisplay(item.profile_wish_end) : ""}
                   onChangeText={(text) => handleInputChange(index, "profile_wish_end", text)}
                 />
               )}
@@ -448,6 +530,27 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
                 value={item.profile_wish_location || ""}
                 onChangeText={(text) => handleInputChange(index, "profile_wish_location", text)}
               />
+            </View>
+            <View style={styles.dateTimeRow}>
+              <Text style={styles.dateTimeLabel}>Mode</Text>
+              <View style={styles.modeCheckboxRow}>
+                <TouchableOpacity
+                  style={[styles.modeCheckbox, (item.profile_wish_mode || "").toLowerCase() === "virtual" && styles.modeCheckboxSelected]}
+                  onPress={() => handleInputChange(index, "profile_wish_mode", item.profile_wish_mode === "Virtual" ? "" : "Virtual")}
+                >
+                  <Text style={[styles.modeCheckboxText, (item.profile_wish_mode || "").toLowerCase() === "virtual" && styles.modeCheckboxTextSelected]}>
+                    Virtual
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modeCheckbox, (item.profile_wish_mode || "").toLowerCase() === "in-person" && styles.modeCheckboxSelected]}
+                  onPress={() => handleInputChange(index, "profile_wish_mode", item.profile_wish_mode === "In-Person" ? "" : "In-Person")}
+                >
+                  <Text style={[styles.modeCheckboxText, (item.profile_wish_mode || "").toLowerCase() === "in-person" && styles.modeCheckboxTextSelected]}>
+                    In-Person
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -645,6 +748,33 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     minHeight: 40,
     fontSize: 14,
+  },
+  modeCheckboxRow: {
+    flex: 2,
+    flexDirection: "row",
+    gap: 12,
+  },
+  modeCheckbox: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 10,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modeCheckboxSelected: {
+    borderColor: "#007AFF",
+    backgroundColor: "#E8F4FD",
+  },
+  modeCheckboxText: {
+    fontSize: 14,
+    color: "#666",
+  },
+  modeCheckboxTextSelected: {
+    color: "#007AFF",
+    fontWeight: "600",
   },
   amountRow: {
     flexDirection: "row",
