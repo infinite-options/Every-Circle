@@ -128,6 +128,8 @@ module.exports = ({ config: expoConfig }) => ({
       googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "AIzaSyAPoq8L-jM4diZmj80ayQj6_8Gd8z5XwJY",
 
       appleServicesId: process.env.EXPO_PUBLIC_APPLE_SERVICES_ID || "com.infiniteoptions.everycircle.signin",
+
+      ablyApiKey: process.env.EXPO_PUBLIC_ABLY_API_KEY,
     },
   },
 });

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "postinstall": "patch-package",
     "prestart": "node increment-build.js",
     "start": "expo start --dev-client",
     "android": "node increment-build.js && expo run:android",
@@ -68,6 +69,7 @@
     "@expo/prebuild-config": "^8.0.0",
     "@react-native-community/cli": "latest",
     "metro": "^0.81.5",
+    "patch-package": "^8.0.1",
     "react-native-dotenv": "^3.4.11"
   },
   "private": true

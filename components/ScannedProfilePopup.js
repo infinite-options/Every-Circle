@@ -185,18 +185,8 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 400,
     maxHeight: "85%",
-    ...Platform.select({
-      web: {
-        boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
-      },
-      default: {
-        elevation: 5,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-      },
-    }),
+    boxShadow: "0px 2px 4px 0px rgba(0,0,0,0.25)",
+    ...(Platform.OS !== "web" && { elevation: 5 }),
   },
   scrollView: {
     maxHeight: 400,

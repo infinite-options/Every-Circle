@@ -352,17 +352,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 10,
     padding: 20,
-    ...(Platform.OS === "web"
-      ? {
-          boxShadow: "0px 2px 3px 0px rgba(0, 0, 0, 0.1)",
-        }
-      : {
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 3,
-          elevation: 3,
-        }),
+    boxShadow: "0px 2px 3px 0px rgba(0, 0, 0, 0.1)",
+    ...(Platform.OS !== "web" && { elevation: 3 }),
   },
   subtitle: {
     fontSize: 16,

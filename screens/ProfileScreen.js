@@ -1620,17 +1620,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 8,
     paddingVertical: 6,
-    // shadow
-    ...(Platform.OS === "web"
-      ? {
-          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.2)",
-        }
-      : {
-          shadowColor: "#000",
-          shadowOpacity: 0.2,
-          shadowRadius: 4,
-          elevation: 5,
-        }),
+    boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.2)",
+    ...(Platform.OS !== "web" && { elevation: 5 }),
     zIndex: 10002, // REQUIRED FOR WEB - must be above all content
     pointerEvents: "auto", // REQUIRED FOR WEB
     overflow: "visible", // Ensure all items are visible

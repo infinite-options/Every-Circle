@@ -2,7 +2,7 @@
 // NOTE: This page is no longer in the business setup flow as of Jan 21, 2026.
 // It can be deleted in the future once confirmed it's no longer needed.
 import React, { useEffect } from "react";
-import { View, Text, TextInput, StyleSheet, Dimensions, ScrollView } from "react-native";
+import { View, Text, TextInput, StyleSheet, Dimensions, ScrollView, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
@@ -140,11 +140,8 @@ const styles = StyleSheet.create({
     width: "90%",
     maxWidth: 420,
     alignSelf: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
+    boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.08)",
+    ...(Platform.OS !== "web" && { elevation: 4 }),
   },
 
   // Dark mode styles

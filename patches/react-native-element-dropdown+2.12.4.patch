@@ -1,0 +1,142 @@
+diff --git a/node_modules/react-native-element-dropdown/lib/commonjs/components/Dropdown/styles.js b/node_modules/react-native-element-dropdown/lib/commonjs/components/Dropdown/styles.js
+index 2e154fd..2e8f28f 100644
+--- a/node_modules/react-native-element-dropdown/lib/commonjs/components/Dropdown/styles.js
++++ b/node_modules/react-native-element-dropdown/lib/commonjs/components/Dropdown/styles.js
+@@ -14,14 +14,8 @@ const styles = _reactNative.StyleSheet.create({
+     borderWidth: 0.5,
+     borderColor: '#EEEEEE',
+     backgroundColor: 'white',
+-    shadowColor: '#000',
+-    shadowOffset: {
+-      width: 0,
+-      height: 1
+-    },
+-    shadowOpacity: 0.2,
+-    shadowRadius: 1.41,
+-    elevation: 2
++    boxShadow: '0px 1px 1.41px 0px rgba(0, 0, 0, 0.2)',
++    ...(_reactNative.Platform.OS !== 'web' && { elevation: 2 })
+   },
+   flex1: {
+     flex: 1
+diff --git a/node_modules/react-native-element-dropdown/lib/commonjs/components/MultiSelect/styles.js b/node_modules/react-native-element-dropdown/lib/commonjs/components/MultiSelect/styles.js
+index a3cd3ea..ccf4cea 100644
+--- a/node_modules/react-native-element-dropdown/lib/commonjs/components/MultiSelect/styles.js
++++ b/node_modules/react-native-element-dropdown/lib/commonjs/components/MultiSelect/styles.js
+@@ -14,14 +14,8 @@ const styles = _reactNative.StyleSheet.create({
+     backgroundColor: 'white',
+     borderWidth: 0.5,
+     borderColor: '#EEEEEE',
+-    shadowColor: '#000',
+-    shadowOffset: {
+-      width: 0,
+-      height: 1
+-    },
+-    shadowOpacity: 0.2,
+-    shadowRadius: 1.41,
+-    elevation: 2
++    boxShadow: '0px 1px 1.41px 0px rgba(0, 0, 0, 0.2)',
++    ...(_reactNative.Platform.OS !== 'web' && { elevation: 2 })
+   },
+   flex1: {
+     flex: 1
+diff --git a/node_modules/react-native-element-dropdown/lib/module/components/Dropdown/styles.js b/node_modules/react-native-element-dropdown/lib/module/components/Dropdown/styles.js
+index a6808bd..66b65e1 100644
+--- a/node_modules/react-native-element-dropdown/lib/module/components/Dropdown/styles.js
++++ b/node_modules/react-native-element-dropdown/lib/module/components/Dropdown/styles.js
+@@ -1,4 +1,4 @@
+-import { I18nManager, StyleSheet } from 'react-native';
++import { I18nManager, StyleSheet, Platform } from 'react-native';
+ export const styles = StyleSheet.create({
+   mainWrap: {
+     justifyContent: 'center'
+@@ -8,14 +8,8 @@ export const styles = StyleSheet.create({
+     borderWidth: 0.5,
+     borderColor: '#EEEEEE',
+     backgroundColor: 'white',
+-    shadowColor: '#000',
+-    shadowOffset: {
+-      width: 0,
+-      height: 1
+-    },
+-    shadowOpacity: 0.2,
+-    shadowRadius: 1.41,
+-    elevation: 2
++    boxShadow: '0px 1px 1.41px 0px rgba(0, 0, 0, 0.2)',
++    ...(Platform.OS !== 'web' && { elevation: 2 }),
+   },
+   flex1: {
+     flex: 1
+diff --git a/node_modules/react-native-element-dropdown/lib/module/components/MultiSelect/styles.js b/node_modules/react-native-element-dropdown/lib/module/components/MultiSelect/styles.js
+index cc48376..4b20b9f 100644
+--- a/node_modules/react-native-element-dropdown/lib/module/components/MultiSelect/styles.js
++++ b/node_modules/react-native-element-dropdown/lib/module/components/MultiSelect/styles.js
+@@ -8,13 +8,7 @@ export const styles = StyleSheet.create({
+     backgroundColor: 'white',
+     borderWidth: 0.5,
+     borderColor: '#EEEEEE',
+-    shadowColor: '#000',
+-    shadowOffset: {
+-      width: 0,
+-      height: 1
+-    },
+-    shadowOpacity: 0.2,
+-    shadowRadius: 1.41,
++    boxShadow: '0px 1px 1.41px 0px rgba(0, 0, 0, 0.2)',
+     elevation: 2
+   },
+   flex1: {
+diff --git a/node_modules/react-native-element-dropdown/src/components/Dropdown/styles.ts b/node_modules/react-native-element-dropdown/src/components/Dropdown/styles.ts
+index 2c83bdd..c733d2d 100644
+--- a/node_modules/react-native-element-dropdown/src/components/Dropdown/styles.ts
++++ b/node_modules/react-native-element-dropdown/src/components/Dropdown/styles.ts
+@@ -1,4 +1,4 @@
+-import { I18nManager, StyleSheet } from 'react-native';
++import { I18nManager, Platform, StyleSheet } from 'react-native';
+ 
+ export const styles = StyleSheet.create({
+   mainWrap: {
+@@ -9,14 +9,8 @@ export const styles = StyleSheet.create({
+     borderWidth: 0.5,
+     borderColor: '#EEEEEE',
+     backgroundColor: 'white',
+-    shadowColor: '#000',
+-    shadowOffset: {
+-      width: 0,
+-      height: 1,
+-    },
+-    shadowOpacity: 0.2,
+-    shadowRadius: 1.41,
+-    elevation: 2,
++    boxShadow: '0px 1px 1.41px 0px rgba(0, 0, 0, 0.2)',
++    ...(Platform.OS !== 'web' && { elevation: 2 }),
+   },
+   flex1: {
+     flex: 1,
+diff --git a/node_modules/react-native-element-dropdown/src/components/MultiSelect/styles.ts b/node_modules/react-native-element-dropdown/src/components/MultiSelect/styles.ts
+index 07b1608..0aa0604 100644
+--- a/node_modules/react-native-element-dropdown/src/components/MultiSelect/styles.ts
++++ b/node_modules/react-native-element-dropdown/src/components/MultiSelect/styles.ts
+@@ -1,4 +1,4 @@
+-import { I18nManager, StyleSheet } from 'react-native';
++import { I18nManager, Platform, StyleSheet } from 'react-native';
+ 
+ export const styles = StyleSheet.create({
+   mainWrap: {
+@@ -9,14 +9,8 @@ export const styles = StyleSheet.create({
+     backgroundColor: 'white',
+     borderWidth: 0.5,
+     borderColor: '#EEEEEE',
+-    shadowColor: '#000',
+-    shadowOffset: {
+-      width: 0,
+-      height: 1,
+-    },
+-    shadowOpacity: 0.2,
+-    shadowRadius: 1.41,
+-    elevation: 2,
++    boxShadow: '0px 1px 1.41px 0px rgba(0, 0, 0, 0.2)',
++    ...(Platform.OS !== 'web' && { elevation: 2 }),
+   },
+   flex1: {
+     flex: 1,

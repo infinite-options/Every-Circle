@@ -204,17 +204,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     borderRadius: 8,
-    ...(Platform.OS === "web"
-      ? {
-          boxShadow: "0px 1px 2px 0px rgba(0, 0, 0, 0.2)",
-        }
-      : {
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.2,
-          shadowRadius: 2,
-          elevation: 2,
-        }),
+    boxShadow: "0px 1px 2px 0px rgba(0, 0, 0, 0.2)",
+    ...(Platform.OS !== "web" && { elevation: 2 }),
   },
   appleButtonContent: {
     flexDirection: "row",

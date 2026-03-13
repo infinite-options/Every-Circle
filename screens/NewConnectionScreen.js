@@ -13,6 +13,7 @@ import WebTextInput from "../components/WebTextInput";
 import * as Location from "expo-location";
 import { Dropdown } from "react-native-element-dropdown";
 import { Ionicons } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
 
 const NewConnectionScreen = () => {
@@ -165,7 +166,12 @@ const NewConnectionScreen = () => {
         return;
       }
 
-      const ablyApiKey = EXPO_PUBLIC_ABLY_API_KEY || "";
+      // Try multiple sources: app.config extra (loads .env at start), process.env (Expo web), @env (react-native-dotenv)
+      const ablyApiKey =
+        Constants.expoConfig?.extra?.ablyApiKey ||
+        process.env.EXPO_PUBLIC_ABLY_API_KEY ||
+        EXPO_PUBLIC_ABLY_API_KEY ||
+        "";
       console.log("🔵 NewConnectionScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
       console.log("🔵 NewConnectionScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
       if (!ablyApiKey) {

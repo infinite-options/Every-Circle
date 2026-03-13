@@ -1271,17 +1271,8 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 10,
     borderRadius: 10,
-    ...(Platform.OS === "web"
-      ? {
-          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.05)",
-        }
-      : {
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.05,
-          shadowRadius: 4,
-          elevation: 2,
-        }),
+    boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.05)",
+    ...(Platform.OS !== "web" && { elevation: 2 }),
   },
   reviewCardHeader: {
     flexDirection: "row",
@@ -1459,8 +1450,7 @@ const styles = StyleSheet.create({
   },
   darkReviewCard: {
     backgroundColor: "#2d2d2d",
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
+    boxShadow: "0px 1px 4px rgba(0, 0, 0, 0.2)",
   },
   darkReviewProfileAvatar: {
     backgroundColor: "#404040",

@@ -214,11 +214,8 @@ const styles = StyleSheet.create({
     borderColor: "#AF52DE",
     borderRadius: 16,
     backgroundColor: "transparent",
-    shadowColor: "#AF52DE",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-    elevation: 5, // For Android
+    boxShadow: "0px 0px 10px rgba(175, 82, 222, 0.8)",
+    ...(Platform.OS !== "web" && { elevation: 5 }),
   },
   
 });

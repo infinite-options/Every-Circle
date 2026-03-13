@@ -15,6 +15,7 @@ import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors, getHeaderColor } from "../config/headerColors";
+import Constants from "expo-constants";
 import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
@@ -141,10 +142,7 @@ const FilterPopup = ({
           width: "92%",
           maxWidth: 500,
           maxHeight: "80%",
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 8 },
-          shadowOpacity: 0.25,
-          shadowRadius: 20,
+          boxShadow: "0px 8px 20px 0px rgba(0,0,0,0.25)",
           elevation: 20,
           overflow: "hidden",
         }}
@@ -757,7 +755,12 @@ const NetworkScreen = ({ navigation }) => {
         return;
       }
 
-      const ablyApiKey = EXPO_PUBLIC_ABLY_API_KEY || "";
+      // Try multiple sources: app.config extra (loads .env at start), process.env (Expo web), @env (react-native-dotenv)
+      const ablyApiKey =
+        Constants.expoConfig?.extra?.ablyApiKey ||
+        process.env.EXPO_PUBLIC_ABLY_API_KEY ||
+        EXPO_PUBLIC_ABLY_API_KEY ||
+        "";
       console.log("🔵 NetworkScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
       console.log("🔵 NetworkScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
       if (!ablyApiKey) {
@@ -2706,10 +2709,7 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: "center",
     marginBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    boxShadow: "0px 2px 4px 0px rgba(0,0,0,0.1)",
     elevation: 3,
   },
   darkQrCodeContainer: {
@@ -3001,10 +3001,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     minWidth: 150,
     maxHeight: 200,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    boxShadow: "0px 2px 4px 0px rgba(0,0,0,0.1)",
     elevation: 10,
     zIndex: 10000,
   },
@@ -3043,20 +3040,6 @@ const styles = StyleSheet.create({
     width: "100%",
     flex: 1,
   },
-  searchInput: {
-    width: "100%",
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: "#fff",
-    fontSize: 14,
-    color: "#333",
-    boxSizing: "border-box",
-    boxShadow: "none",
-    outlineStyle: "none",
-  },
   searchInputWrapper: {
     width: "100%",
     borderWidth: 1,
@@ -3077,11 +3060,6 @@ const styles = StyleSheet.create({
     color: "#333",
     backgroundColor: "transparent",
     minWidth: 0,
-  },
-  darkSearchInput: {
-    backgroundColor: "#2d2d2d",
-    borderColor: "#404040",
-    color: "#fff",
   },
   darkSearchInputWrapper: {
     backgroundColor: "#2d2d2d",

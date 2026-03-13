@@ -41,7 +41,7 @@ import PaymentFailure from "../components/PaymentFailure";
 
 // Use the publishable key from environment variables
 const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
-console.log("STRIPE_PUBLISHABLE_KEY:", STRIPE_PUBLISHABLE_KEY);
+// console.log("STRIPE_PUBLISHABLE_KEY:", STRIPE_PUBLISHABLE_KEY);
 
 const ShoppingCartScreen = ({ route, navigation }) => {
   const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id } = route.params;
@@ -230,7 +230,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         `cart_${businessUid}`,
         JSON.stringify({
           items: groupedItems,
-        })
+        }),
       );
 
       console.log(`Updated quantity for ${newCartItems[index].bs_service_name} to ${newQuantity}`);
@@ -903,11 +903,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 15,
     marginBottom: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    boxShadow: "0px 2px 4px rgba(0, 0, 0, 0.1)",
+    ...(Platform.OS !== "web" && { elevation: 2 }),
   },
   itemName: {
     fontSize: 18,

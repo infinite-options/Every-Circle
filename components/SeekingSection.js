@@ -818,11 +818,6 @@ const styles = StyleSheet.create({
     ...(Platform.OS === "web"
       ? {
           boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.1)",
-          // Override deprecated shadow props from library
-          shadowColor: undefined,
-          shadowOffset: undefined,
-          shadowOpacity: undefined,
-          shadowRadius: undefined,
         }
       : {}),
   },
