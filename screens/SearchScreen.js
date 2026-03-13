@@ -10,6 +10,7 @@ import { BUSINESS_RESULTS_ENDPOINT, EXPERTISE_RESULTS_ENDPOINT, WISHES_RESULTS_E
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
+import { isWishEnded } from "../utils/wishUtils";
 
 export default function SearchScreen({ route }) {
   const navigation = useNavigation();
@@ -412,29 +413,31 @@ export default function SearchScreen({ route }) {
       let list;
       if (type === "seeking") {
         // For seeking/wishes, the response includes profile data directly
-        list = resultsArray.map((item, i) => ({
-          id: `${item.profile_wish_uid || i}`,
-          company: item.profile_wish_title || "Untitled Wish",
-          rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
-          hasPriceTag: false,
-          hasX: false,
-          hasDollar: false,
-          //hasBounty: b.has_bounty || b.business_bounty || false,
-          hasBounty: item.profile_wish_bounty ? true : false,
-          business_short_bio: item.profile_wish_description || "",
-          business_tag_line: item.profile_wish_title || "",
-          tags: [],
-          score: item.score || 0,
-          itemType: "seeking",
-          profile_uid: item.profile_wish_profile_personal_id,
-          // Store wish data
-          wishData: {
-            title: item.profile_wish_title,
-            description: item.profile_wish_description,
-            bounty: item.profile_wish_bounty,
-            cost: item.profile_wish_cost,
-            wish_uid: item.profile_wish_uid,
-          },
+        list = resultsArray
+          .map((item, i) => ({
+            id: `${item.profile_wish_uid || i}`,
+            company: item.profile_wish_title || "Untitled Wish",
+            rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
+            hasPriceTag: false,
+            hasX: false,
+            hasDollar: false,
+            //hasBounty: b.has_bounty || b.business_bounty || false,
+            hasBounty: item.profile_wish_bounty ? true : false,
+            business_short_bio: item.profile_wish_description || "",
+            business_tag_line: item.profile_wish_title || "",
+            tags: [],
+            score: item.score || 0,
+            itemType: "seeking",
+            profile_uid: item.profile_wish_profile_personal_id,
+            profile_wish_end: item.profile_wish_end || "",
+            // Store wish data
+            wishData: {
+              title: item.profile_wish_title,
+              description: item.profile_wish_description,
+              bounty: item.profile_wish_bounty,
+              cost: item.profile_wish_cost,
+              wish_uid: item.profile_wish_uid,
+            },
           // Store profile data for MiniCard-like display
           profileData: {
             firstName: item.profile_personal_first_name || "",
@@ -448,7 +451,8 @@ export default function SearchScreen({ route }) {
             imageIsPublic: item.profile_personal_image_is_public == 1,
             tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
           },
-        }));
+        }))
+          .filter((item) => !isWishEnded(item));
         // try {
         //   const profileFetches = list.map(async (item) => {
         //     if (!item.profile_uid) return item;

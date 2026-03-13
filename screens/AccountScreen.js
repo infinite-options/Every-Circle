@@ -1268,7 +1268,9 @@ export default function AccountScreen({ navigation }) {
                       <View style={styles.transactionHeaderRow}>
                         <Text style={styles.transactionHeaderDate}>Date</Text>
                         <Text style={styles.transactionHeaderId}>Transaction ID</Text>
-                        <Text style={styles.transactionHeaderBusiness}>Business</Text>
+                        <Text style={styles.transactionHeaderPurchaseType}>Type</Text>
+                        <Text style={styles.transactionHeaderBusiness}>Seller</Text>
+                        <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text>
                         <Text style={styles.transactionHeaderAmount}>Amount</Text>
                       </View>
                       {/* Table Rows */}
@@ -1277,7 +1279,9 @@ export default function AccountScreen({ navigation }) {
                           <View key={transaction.transaction_uid || i} style={styles.transactionRow}>
                             <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
                             <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text>
+                            <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "N/A"}</Text>
                             <Text style={styles.transactionBusiness}>{transaction.business_name || "N/A"}</Text>
+                            <Text style={styles.transactionPurchasedItem}>{transaction.purchased_item || "N/A"}</Text>
                             <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
                           </View>
                         );
@@ -1573,12 +1577,16 @@ const styles = StyleSheet.create({
   transactionRow: { flexDirection: "row", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#eee" },
   transactionDate: { width: 60, fontSize: 11, color: "#333" },
   transactionId: { width: 95, fontSize: 11, color: "#333" },
+  transactionPurchaseType: { width: 90, fontSize: 11, color: "#333", paddingHorizontal: 2 },
   transactionBusiness: { flex: 1, fontSize: 11, color: "#333", paddingHorizontal: 4 },
+  transactionPurchasedItem: { flex: 1, fontSize: 11, color: "#333", paddingHorizontal: 4 },
   transactionAmount: { width: 70, fontSize: 11, color: "#333", textAlign: "right" },
   // Header styles
   transactionHeaderDate: { width: 50, fontSize: 13, color: "#fff", fontWeight: "bold" },
   transactionHeaderId: { width: 100, fontSize: 13, color: "#fff", fontWeight: "bold" },
+  transactionHeaderPurchaseType: { width: 90, fontSize: 13, color: "#fff", fontWeight: "bold", paddingHorizontal: 2 },
   transactionHeaderBusiness: { flex: 1, fontSize: 13, color: "#fff", fontWeight: "bold", paddingHorizontal: 4 },
+  transactionHeaderPurchasedItem: { flex: 1, fontSize: 13, color: "#fff", fontWeight: "bold", paddingHorizontal: 4 },
   transactionHeaderAmount: { width: 70, fontSize: 13, color: "#fff", fontWeight: "bold", textAlign: "right" },
   centeredContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
 

@@ -4,6 +4,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
+import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import AppHeader from "../components/AppHeader";
 
@@ -688,6 +689,8 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
           />
         </>
       )}
+
+      <BottomNavBar navigation={navigation} />
     </SafeAreaView>
   );
 };
@@ -708,7 +711,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
-    paddingBottom: 100,
+    paddingBottom: 120, // Extra padding to ensure content is visible above BottomNavBar
   },
   card: {
     backgroundColor: "#fff",
