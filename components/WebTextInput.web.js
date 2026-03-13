@@ -1,8 +1,51 @@
 // WebTextInput.web.js - Web-only version (no React Native dependencies)
 import React from "react";
 
+// Inject global CSS to remove native input styling when borderless (used for inputs that sit inside styled wrappers)
+function ensureBorderlessStyles() {
+  const BORDERLESS_STYLE_ID = "webtextinput-borderless-style";
+  if (typeof document !== "undefined" && document.head && !document.getElementById(BORDERLESS_STYLE_ID)) {
+    const style = document.createElement("style");
+    style.id = BORDERLESS_STYLE_ID;
+    style.textContent = `
+      input.webtextinput-borderless, textarea.webtextinput-borderless,
+      input[data-borderless="true"], textarea[data-borderless="true"] {
+        border: none !important;
+        border-width: 0 !important;
+        box-shadow: none !important;
+        -webkit-box-shadow: none !important;
+        outline: none !important;
+        background: transparent !important;
+        -webkit-appearance: none !important;
+        -moz-appearance: none !important;
+        appearance: none !important;
+      }
+      input.webtextinput-borderless:focus, textarea.webtextinput-borderless:focus,
+      input.webtextinput-borderless:active, textarea.webtextinput-borderless:active,
+      input[data-borderless="true"]:focus, input[data-borderless="true"]:active {
+        border: none !important;
+        box-shadow: none !important;
+        outline: none !important;
+      }
+      input.webtextinput-borderless[type=number]::-webkit-outer-spin-button,
+      input.webtextinput-borderless[type=number]::-webkit-inner-spin-button {
+        -webkit-appearance: none !important;
+        margin: 0 !important;
+      }
+      input.webtextinput-borderless[type=number] {
+        -moz-appearance: textfield !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
+
 // Web-compatible TextInput that uses native HTML input on web
-const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, inputMode, multiline, numberOfLines, textAlignVertical, placeholderTextColor, ...props }) => {
+const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, inputMode, multiline, numberOfLines, textAlignVertical, placeholderTextColor, borderless, ...props }) => {
+  // Ensure borderless CSS is injected before first borderless input renders
+  if (borderless && typeof document !== "undefined") {
+    ensureBorderlessStyles();
+  }
   // Filter out React Native-specific props that shouldn't be passed to DOM elements
   const {
     // Remove React Native-specific props
@@ -35,7 +78,11 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
   };
 
   // Map keyboardType to input type
+  // When borderless, use "text" + inputMode="numeric" to avoid number input's stubborn browser styling (inset shadow, etc.)
   const getInputType = () => {
+    if (borderless && (keyboardType === "numeric" || keyboardType === "number-pad" || keyboardType === "decimal-pad")) {
+      return "text";
+    }
     if (keyboardType === "numeric" || keyboardType === "number-pad" || keyboardType === "decimal-pad") {
       return "number";
     }
@@ -90,21 +137,43 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
   }
 
   // Use React.createElement to avoid JSX issues with native HTML elements
+  // When borderless, input sits inside a styled wrapper - CSS with !important overrides native styling
+  const inputStyle = borderless
+    ? {
+        ...webStyle,
+        border: "none",
+        boxShadow: "none",
+        outline: "none",
+        background: "transparent",
+        width: "100%",
+        paddingVertical: style?.paddingVertical ?? 0,
+        paddingHorizontal: style?.paddingHorizontal ?? 0,
+        fontSize: style?.fontSize ?? 14,
+        color: style?.color ?? "#333",
+        lineHeight: style?.lineHeight ?? 18,
+        height: style?.height ?? 18,
+        minHeight: style?.minHeight ?? 18,
+        ...(placeholderTextColor && { "--placeholder-color": placeholderTextColor }),
+      }
+    : {
+        ...webStyle,
+        outline: "none",
+        boxShadow: "none",
+        WebkitAppearance: "none",
+        MozAppearance: "none",
+        appearance: "none",
+        ...(placeholderTextColor && { "--placeholder-color": placeholderTextColor }),
+      };
+
   const inputElement = React.createElement("input", {
     type: getInputType(),
     value: value || "",
     onChange: (e) => onChangeText && onChangeText(e.target.value),
     placeholder: placeholder,
     inputMode: inputMode || (keyboardType === "numeric" ? "numeric" : undefined),
-    style: {
-      ...webStyle,
-      outline: "none",
-      WebkitAppearance: "none",
-      MozAppearance: "textfield",
-      ...(placeholderTextColor && {
-        "--placeholder-color": placeholderTextColor,
-      }),
-    },
+    className: borderless ? "webtextinput-borderless" : undefined,
+    "data-borderless": borderless ? "true" : undefined,
+    style: inputStyle,
     ...domProps,
   });
 

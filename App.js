@@ -1,4 +1,8 @@
 import "./polyfills";
+// Inject borderless input CSS early on web (removes native input shadow/border for Levels to Display, etc.)
+if (typeof document !== "undefined" && document.head) {
+  require("./utils/injectBorderlessInputStyles");
+}
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { LogBox, Platform } from "react-native";
 
@@ -109,13 +113,13 @@ export default function App() {
         console.log("App.js - Checking if user in AsyncStorage...");
         const uid = await AsyncStorage.getItem("user_uid");
         console.log("App.js - User UID:", uid);
-        
+
         // Check terms acceptance status
         const termsStatus = await AsyncStorage.getItem("termsAccepted");
         const termsAcceptedValue = termsStatus !== null ? JSON.parse(termsStatus) : true;
         setTermsAccepted(termsAcceptedValue);
         console.log("App.js - Terms Accepted:", termsAcceptedValue);
-        
+
         if (uid) setInitialRoute("Profile");
 
         // Configure Google Sign-In (only on native platforms)
@@ -1048,7 +1052,7 @@ export default function App() {
     // If cookies not allowed and trying to access any screen except Settings
     if (!cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
       console.log("App.js - Cookies not allowed, redirecting to Settings");
-      
+
       // Show alert explaining the restriction
       const message = "Please allow cookies in Settings to access this feature.";
       if (isWeb) {
@@ -1056,7 +1060,7 @@ export default function App() {
       } else {
         Alert.alert("Cookies Required", message);
       }
-      
+
       // Navigate to Settings
       if (navigationRef.current) {
         navigationRef.current.navigate("Settings");
@@ -1067,7 +1071,7 @@ export default function App() {
     // If terms not accepted and trying to access restricted screen, redirect to Settings
     if (!termsAcceptedValue && !termsAllowedScreens.includes(currentRouteName)) {
       console.log("App.js - Terms not accepted, redirecting to Settings");
-      
+
       // Show alert explaining the restriction
       const message = "Please accept the Terms and Conditions in Settings to access this feature.";
       if (isWeb) {
@@ -1075,7 +1079,7 @@ export default function App() {
       } else {
         Alert.alert("Terms Required", message);
       }
-      
+
       // Navigate to Settings
       if (navigationRef.current) {
         navigationRef.current.navigate("Settings");
@@ -1086,12 +1090,7 @@ export default function App() {
   return (
     <TextNodeErrorBoundary>
       <DarkModeProvider>
-        <NavigationContainer
-          ref={navigationRef}
-          linking={isWeb ? linking : undefined}
-          onReady={() => console.log("App.js - NavigationContainer ready")}
-          onStateChange={onNavigationStateChange}
-        >
+        <NavigationContainer ref={navigationRef} linking={isWeb ? linking : undefined} onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={onNavigationStateChange}>
           <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
             <Stack.Screen name='Home' component={HomeScreen} />
             <Stack.Screen
@@ -1131,10 +1130,7 @@ export default function App() {
             <Stack.Screen name='ExpertiseDetail' component={ExpertiseDetailScreen} options={{ headerShown: false }} />
             <Stack.Screen name='WishDetail' component={WishDetailScreen} options={{ headerShown: false }} />
             <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
-            <Stack.Screen
-              name='Connect'
-              component={ConnectScreenWrapper}
-            />
+            <Stack.Screen name='Connect' component={ConnectScreenWrapper} />
             <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
             <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
           </Stack.Navigator>

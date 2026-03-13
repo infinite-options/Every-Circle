@@ -455,6 +455,21 @@ const NetworkScreen = ({ navigation }) => {
     saveSettings();
   }, [showAsyncStorage, degree, viewMode, dateFilter, locationFilter, eventFilter, settingsLoaded]);
 
+  // Auto-refresh connections when Levels to Display (degree) changes - no need to click Show Connections
+  // Only applies when viewing Connections (not Circles)
+  useEffect(() => {
+    if (!settingsLoaded || !showViewMyNetwork || activeView !== "connections") return;
+    const deg = String(degree || "").trim();
+    if (!deg || Number(deg) < 1) return;
+
+    const timer = setTimeout(() => {
+      setActiveView("connections");
+      fetchNetwork(null, deg);
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [degree, settingsLoaded, showViewMyNetwork, activeView]);
+
   // Extract unique events from network data
   useEffect(() => {
     if (networkData && networkData.length > 0) {
@@ -2030,16 +2045,19 @@ const NetworkScreen = ({ navigation }) => {
 
                 {showViewMyNetwork && (
                   <>
-                    {/* Search Input */}
+                    {/* Search Input - wrapped with borderless strategy to match Levels/Relationship boxes */}
                     {Object.keys(groupedNetwork).length > 0 && (
                       <View style={{ width: "100%", marginBottom: 12, marginTop: 8 }}>
-                        <WebTextInput
-                          style={[styles.searchInput, darkMode && styles.darkSearchInput]}
-                          value={searchQuery}
-                          onChangeText={setSearchQuery}
-                          placeholder='Search Connections...'
-                          placeholderTextColor={darkMode ? "#888" : "#999"}
-                        />
+                        <View style={[styles.searchInputWrapper, darkMode && styles.darkSearchInputWrapper]}>
+                          <WebTextInput
+                            style={[styles.searchInputInner, darkMode && { color: "#fff" }]}
+                            value={searchQuery}
+                            onChangeText={setSearchQuery}
+                            placeholder='Search Connections...'
+                            placeholderTextColor={darkMode ? "#888" : "#999"}
+                            borderless
+                          />
+                        </View>
                       </View>
                     )}
 
@@ -2054,25 +2072,41 @@ const NetworkScreen = ({ navigation }) => {
                     </View>
 
                     <View style={{ marginTop: 10 }}>
-                      {/* Row 1: Levels to Display */}
+                      {/* Row 1: Network - Toggle between Connections (multi-degree) and Circles (direct) */}
                       <View style={styles.controlRow}>
-                        <Text style={styles.controlRowLabel}>1. Levels to Display</Text>
-                        <WebTextInput style={styles.pullDownButton} value={degree} onChangeText={setDegree} keyboardType='numeric' />
-                      </View>
-
-                      {/* Row 2: Network */}
-                      <View style={styles.controlRow}>
-                        <Text style={styles.controlRowLabel}>2. Network</Text>
+                        <Text style={styles.controlRowLabel}>1. Network</Text>
                         <TouchableOpacity
-                          style={styles.pullDownButton}
+                          style={[styles.pullDownButton, styles.pullDownButtonActive]}
                           onPress={() => {
-                            setActiveView("connections");
-                            fetchNetwork(null, degree);
+                            if (activeView === "connections") {
+                              fetchCircle();
+                            } else {
+                              setActiveView("connections");
+                              fetchNetwork(null, degree);
+                            }
                           }}
                         >
-                          <Text style={styles.pullDownButtonText}>{activeView === "connections" ? "Show Connections" : "Show Connections"}</Text>
+                          <Text style={[styles.pullDownButtonText, styles.pullDownButtonTextActive]}>
+                            {activeView === "connections" ? "Connections" : "Circles"}
+                          </Text>
                         </TouchableOpacity>
                       </View>
+
+                      {/* Row 2: Levels to Display - only for Connections view (Circles are all 1st-level) */}
+                      {activeView === "connections" && (
+                        <View style={styles.controlRow}>
+                          <Text style={styles.controlRowLabel}>2. Levels to Display</Text>
+                          <View style={[styles.pullDownButton, { overflow: "hidden", height: 30 }]}>
+                            <WebTextInput
+                              style={styles.pullDownButtonInputInner}
+                              value={degree}
+                              onChangeText={setDegree}
+                              keyboardType='numeric'
+                              borderless
+                            />
+                          </View>
+                        </View>
+                      )}
 
                       {/* Row 3: Relationship */}
                       <View style={styles.controlRow}>
@@ -2289,7 +2323,7 @@ const NetworkScreen = ({ navigation }) => {
                                     return (
                                       <View key={deg} style={{ marginBottom: 20 }}>
                                         {(() => {
-                                          const label = degreeLabel(Number(deg));
+                                          const label = activeView === "circles" ? "Circles" : degreeLabel(Number(deg));
                                           if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} label:`, label);
                                           return <Text style={[styles.degreeHeader, darkMode && styles.darkDegreeHeader]}>{label}</Text>;
                                         })()}
@@ -2329,7 +2363,7 @@ const NetworkScreen = ({ navigation }) => {
                     {(() => {
                       if (__DEV__) console.log("🔵 NetworkScreen - Rendering 'No connections' message");
                       if (!loading && !error && Object.keys(groupedNetwork).length === 0) {
-                        return <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>No network connections found.</Text>;
+                        return <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>{activeView === "circles" ? "No circles found." : "No network connections found."}</Text>;
                       }
                       return null;
                     })()}
@@ -3013,18 +3047,45 @@ const styles = StyleSheet.create({
     width: "100%",
     borderWidth: 1,
     borderColor: "#ccc",
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingVertical: 8,
     paddingHorizontal: 16,
     backgroundColor: "#fff",
     fontSize: 14,
     color: "#333",
     boxSizing: "border-box",
+    boxShadow: "none",
+    outlineStyle: "none",
+  },
+  searchInputWrapper: {
+    width: "100%",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: "#fff",
+    overflow: "hidden",
+  },
+  searchInputInner: {
+    borderWidth: 0,
+    width: "100%",
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    fontSize: 14,
+    lineHeight: 18,
+    color: "#333",
+    backgroundColor: "transparent",
+    minWidth: 0,
   },
   darkSearchInput: {
     backgroundColor: "#2d2d2d",
     borderColor: "#404040",
     color: "#fff",
+  },
+  darkSearchInputWrapper: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
   },
   clearSearchButton: {
     position: "absolute",
@@ -3093,6 +3154,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#fff",
+  },
+  pullDownButtonCompact: {
+    paddingVertical: 4,
+    paddingHorizontal: 16,
+  },
+  pullDownButtonInputInner: {
+    borderWidth: 0,
+    width: "100%",
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    fontSize: 14,
+    height: 18,
+    lineHeight: 18,
+    color: "#333",
+    backgroundColor: "transparent",
+    minWidth: 0,
   },
   pullDownButtonActive: {
     borderColor: "#2434C2",
