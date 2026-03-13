@@ -10,6 +10,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText } from "../utils/textSanitizer";
+import { isWishEnded } from "../utils/wishUtils";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
 
@@ -1262,9 +1263,9 @@ const ProfileScreen = ({ route, navigation }) => {
                 <Ionicons name={showSeeking ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showSeeking &&
-                (user.wishes && user.wishes.filter((wish) => wish.isPublic).length > 0 ? (
+                (user.wishes && user.wishes.filter((wish) => wish.isPublic && !isWishEnded(wish)).length > 0 ? (
                   user.wishes
-                    .filter((wish) => wish.isPublic)
+                    .filter((wish) => wish.isPublic && !isWishEnded(wish))
                     .map((wish, index) => {
                       const wishItem = (
                         <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
