@@ -944,65 +944,57 @@ const ProfileScreen = ({ route, navigation }) => {
               >
                 <Ionicons name='add' size={28} color='#fff' />
               </Pressable>
-              {showRelationshipDropdown && (
-                <View style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]} {...(isWeb && { "data-dropdown-menu": true })}>
-                  <Pressable
-                    style={styles.dropdownItem}
-                    onPress={(e) => {
-                      console.log("ProfileScreen - Friend button pressed");
-                      // Stop event propagation to prevent click-outside handler from firing
-                      if (Platform.OS === "web" && e?.nativeEvent) {
-                        e.nativeEvent.stopPropagation?.();
-                      }
-                      handleRelationshipSelect("friend");
-                    }}
-                  >
-                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Friend</Text>
-                  </Pressable>
-                  <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                  <Pressable
-                    style={styles.dropdownItem}
-                    onPress={(e) => {
-                      console.log("ProfileScreen - Colleague button pressed");
-                      // Stop event propagation to prevent click-outside handler from firing
-                      if (Platform.OS === "web" && e?.nativeEvent) {
-                        e.nativeEvent.stopPropagation?.();
-                      }
-                      handleRelationshipSelect("colleague");
-                    }}
-                  >
-                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Colleague</Text>
-                  </Pressable>
-                  <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                  <Pressable
-                    style={styles.dropdownItem}
-                    onPress={(e) => {
-                      console.log("ProfileScreen - Family button pressed");
-                      // Stop event propagation to prevent click-outside handler from firing
-                      if (Platform.OS === "web" && e?.nativeEvent) {
-                        e.nativeEvent.stopPropagation?.();
-                      }
-                      handleRelationshipSelect("family");
-                    }}
-                  >
-                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>Family</Text>
-                  </Pressable>
-                  <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                  <Pressable
-                    style={styles.dropdownItem}
-                    onPress={(e) => {
-                      console.log("ProfileScreen - None button pressed");
-                      // Stop event propagation to prevent click-outside handler from firing
-                      if (Platform.OS === "web" && e?.nativeEvent) {
-                        e.nativeEvent.stopPropagation?.();
-                      }
-                      handleRelationshipSelect(null);
-                    }}
-                  >
-                    <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText]}>None</Text>
-                  </Pressable>
-                </View>
-              )}
+              {showRelationshipDropdown && (() => {
+                const headerColors = getHeaderColors("profileView");
+                const highlightColor = darkMode ? headerColors.darkModeBackgroundColor : headerColors.backgroundColor;
+                const isHighlighted = (rel) => {
+                  if (rel === null) return relationshipType == null || relationshipType === "null" || !relationshipType;
+                  return relationshipType === rel;
+                };
+                return (
+                  <View style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]} {...(isWeb && { "data-dropdown-menu": true })}>
+                    <Pressable
+                      style={styles.dropdownItem}
+                      onPress={(e) => {
+                        if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
+                        handleRelationshipSelect("friend");
+                      }}
+                    >
+                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("friend") && { color: highlightColor, fontWeight: "bold" }]}>Friend</Text>
+                    </Pressable>
+                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                    <Pressable
+                      style={styles.dropdownItem}
+                      onPress={(e) => {
+                        if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
+                        handleRelationshipSelect("colleague");
+                      }}
+                    >
+                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("colleague") && { color: highlightColor, fontWeight: "bold" }]}>Colleague</Text>
+                    </Pressable>
+                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                    <Pressable
+                      style={styles.dropdownItem}
+                      onPress={(e) => {
+                        if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
+                        handleRelationshipSelect("family");
+                      }}
+                    >
+                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("family") && { color: highlightColor, fontWeight: "bold" }]}>Family</Text>
+                    </Pressable>
+                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                    <Pressable
+                      style={styles.dropdownItem}
+                      onPress={(e) => {
+                        if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
+                        handleRelationshipSelect(null);
+                      }}
+                    >
+                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted(null) && { color: highlightColor, fontWeight: "bold" }]}>Select None</Text>
+                    </Pressable>
+                  </View>
+                );
+              })()}
             </View>
           ) : null
         }

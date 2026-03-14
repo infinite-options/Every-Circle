@@ -769,11 +769,7 @@ const NetworkScreen = ({ navigation }) => {
       }
 
       // Try multiple sources: app.config extra (loads .env at start), process.env (Expo web), @env (react-native-dotenv)
-      const ablyApiKey =
-        Constants.expoConfig?.extra?.ablyApiKey ||
-        process.env.EXPO_PUBLIC_ABLY_API_KEY ||
-        EXPO_PUBLIC_ABLY_API_KEY ||
-        "";
+      const ablyApiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
       console.log("🔵 NetworkScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
       console.log("🔵 NetworkScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
       if (!ablyApiKey) {
@@ -2016,7 +2012,7 @@ const NetworkScreen = ({ navigation }) => {
                     <View style={[styles.formSwitchContainer, darkMode && styles.darkFormSwitchContainer]}>
                       <View style={styles.formSwitchTextContainer}>
                         {/* <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>Automatically add user scanning my QR Code to my Circles of Influence</Text> */}
-                        <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>Add user to my Circles</Text>
+                        <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>Exchange Contact Info</Text>
                       </View>
                       <Switch
                         value={formSwitchEnabled}
@@ -2128,9 +2124,7 @@ const NetworkScreen = ({ navigation }) => {
                             }
                           }}
                         >
-                          <Text style={[styles.pullDownButtonText, styles.pullDownButtonTextActive]}>
-                            {activeView === "connections" ? "Connections" : "Circles"}
-                          </Text>
+                          <Text style={[styles.pullDownButtonText, styles.pullDownButtonTextActive]}>{activeView === "connections" ? "Connections" : "Circles"}</Text>
                         </TouchableOpacity>
                       </View>
 
@@ -2139,13 +2133,7 @@ const NetworkScreen = ({ navigation }) => {
                         <View style={styles.controlRow}>
                           <Text style={styles.controlRowLabel}>2. Levels to Display</Text>
                           <View style={[styles.pullDownButton, { overflow: "hidden", height: 30 }]}>
-                            <WebTextInput
-                              style={styles.pullDownButtonInputInner}
-                              value={degree}
-                              onChangeText={setDegree}
-                              keyboardType='numeric'
-                              borderless
-                            />
+                            <WebTextInput style={styles.pullDownButtonInputInner} value={degree} onChangeText={setDegree} keyboardType='numeric' borderless />
                           </View>
                         </View>
                       )}
