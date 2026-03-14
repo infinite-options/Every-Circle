@@ -13,11 +13,7 @@ export default function TermsAndConditionsScreen() {
   return (
     <SafeAreaView style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
-      <AppHeader
-        title="Terms & Conditions"
-        backgroundColor="#AF52DE"
-        onBackPress={() => navigation.goBack()}
-      />
+      <AppHeader title='TERMS & CONDITIONS' backgroundColor='#AF52DE' onBackPress={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[styles.title, darkMode && styles.darkTitle]}>Terms &amp; Conditions</Text>
         <Text style={[styles.body, darkMode && styles.darkBody]}>

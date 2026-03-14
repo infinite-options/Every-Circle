@@ -220,8 +220,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       }
 
       // Profile image URL (backend business_profile_img) - separate from gallery; used for header and MiniCard
-      const businessProfileImgUrl =
-        rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
+      const businessProfileImgUrl = rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
 
       // Filter out problematic URLs
       businessImages = businessImages.filter((uri) => {
@@ -300,9 +299,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
           rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1 || rawBusiness.tagline_is_public === "1" || rawBusiness.tagline_is_public === 1,
         shortBioIsPublic:
           rawBusiness.business_short_bio_is_public === "1" || rawBusiness.business_short_bio_is_public === 1 || rawBusiness.short_bio_is_public === "1" || rawBusiness.short_bio_is_public === 1,
-        locationIsPublic:
-          rawBusiness.business_location_is_public === "1" || rawBusiness.business_location_is_public === 1,
-          imageIsPublic:
+        locationIsPublic: rawBusiness.business_location_is_public === "1" || rawBusiness.business_location_is_public === 1,
+        imageIsPublic:
           rawBusiness.business_profile_img_is_public === "1" ||
           rawBusiness.business_profile_img_is_public === 1 ||
           rawBusiness.business_image_is_public === "1" ||
@@ -310,8 +308,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           rawBusiness.image_is_public === "1" ||
           rawBusiness.image_is_public === 1,
         business_profile_img: businessProfileImgUrl,
-        business_profile_img_is_public:
-          rawBusiness.business_profile_img_is_public === "1" || rawBusiness.business_profile_img_is_public === 1,
+        business_profile_img_is_public: rawBusiness.business_profile_img_is_public === "1" || rawBusiness.business_profile_img_is_public === 1,
         business_services: (() => {
           if (rawBusiness.business_services) {
             if (typeof rawBusiness.business_services === "string") {
@@ -363,7 +360,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           (bu) =>
             (userUid && (bu.user_uid === userUid || bu.bu_user_id === userUid || bu.business_user_id === userUid)) ||
             (profileUid &&
-              (bu.profile_uid === profileUid || bu.profile_personal_uid === profileUid || String(bu.profile_uid || bu.profile_personal_uid || "").trim() === String(profileUid || "").trim()))
+              (bu.profile_uid === profileUid || bu.profile_personal_uid === profileUid || String(bu.profile_uid || bu.profile_personal_uid || "").trim() === String(profileUid || "").trim())),
         );
         if (matchInBusinessUsers) {
           setIsOwner(true);
@@ -376,9 +373,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
           const userData = await response.json();
           if (userData && userData.business_info) {
             const businessInfo = typeof userData.business_info === "string" ? JSON.parse(userData.business_info) : userData.business_info;
-            const isInProfileBusinesses = Array.isArray(businessInfo) && businessInfo.some(
-              (biz) => (biz.business_uid || biz.profile_business_uid || biz.profile_business_business_id) === business_uid
-            );
+            const isInProfileBusinesses =
+              Array.isArray(businessInfo) && businessInfo.some((biz) => (biz.business_uid || biz.profile_business_uid || biz.profile_business_business_id) === business_uid);
             setIsOwner(isInProfileBusinesses);
             return;
           }
@@ -400,7 +396,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
     React.useCallback(() => {
       console.log("BusinessProfileScreen - useFocusEffect triggered, reloading business data");
       fetchBusinessInfo();
-    }, [business_uid])
+    }, [business_uid]),
   );
 
   const handleProductPress = (service) => {
@@ -440,7 +436,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         `cart_${business_uid}`,
         JSON.stringify({
           items: newCartItems,
-        })
+        }),
       );
 
       setQuantityModalVisible(false);
@@ -458,7 +454,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         `cart_${business_uid}`,
         JSON.stringify({
           items: newCartItems,
-        })
+        }),
       );
     } catch (error) {
       console.error("Error removing item from cart:", error);
@@ -517,7 +513,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]} key={Platform.OS === "web" ? `viewport-${viewportWidth}` : undefined}>
       <AppHeader
-        title='Business Profile'
+        title='BUSINESS PROFILE'
         {...getHeaderColors("businessProfile")}
         onBackPress={() => navigation.goBack()}
         onTitlePress={() => setShowFeedbackPopup(true)}
@@ -574,9 +570,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
               <Text style={[styles.nameText, darkMode && styles.darkNameText]}>{sanitizeText(business.business_name)}</Text>
               <Text style={[styles.profileId, darkMode && styles.darkProfileId]}>Business ID: {business_uid}</Text>
               {/* Hide/Display status always shown on Business Profile */}
-              <Text style={[styles.profileId, darkMode && styles.darkProfileId, { marginTop: 4, fontSize: 12 }]}>
-                Profile image: {business.imageIsPublic ? "Display" : "Hide"}
-              </Text>
+              <Text style={[styles.profileId, darkMode && styles.darkProfileId, { marginTop: 4, fontSize: 12 }]}>Profile image: {business.imageIsPublic ? "Display" : "Hide"}</Text>
             </View>
           </View>
 
@@ -609,7 +603,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
             <View style={styles.fieldContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowAbout(!showAbout)}>
                 <Text style={styles.sectionHeaderText}>ABOUT</Text>
-                <Ionicons name={showAbout ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+                <Ionicons name={showAbout ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showAbout && (
                 <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
@@ -631,7 +625,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
             <View style={styles.fieldContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowTagline(!showTagline)}>
                 <Text style={styles.sectionHeaderText}>TAGLINE</Text>
-                <Ionicons name={showTagline ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+                <Ionicons name={showTagline ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showTagline && business.tagline && business.tagline.trim() !== "" && (
                 <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
@@ -645,30 +639,32 @@ export default function BusinessProfileScreen({ route, navigation }) {
           <View style={styles.fieldContainer}>
             <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowContact(!showContact)}>
               <Text style={styles.sectionHeaderText}>CONTACT INFORMATION</Text>
-              <Ionicons name={showContact ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+              <Ionicons name={showContact ? "chevron-up" : "chevron-down"} size={20} color='#000' />
             </TouchableOpacity>
             {showContact && (
               <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
-                {renderField("Location", (() => {
-                  const parts = [
-                    sanitizeText(business.business_location),
-                    sanitizeText(business.business_address_line_1),
-                    sanitizeText(business.business_city),
-                    sanitizeText(business.business_state),
-                    sanitizeText(business.business_zip_code),
-                    sanitizeText(business.business_country),
-                  ].filter((part) => part && part !== ".");
-                  return parts.length > 0 ? parts.join(", ") : "N/A";
-                })(), business.business_location_is_public === "1" || business.business_location_is_public === 1 || business.locationIsPublic === true)}
+                {renderField(
+                  "Location",
+                  (() => {
+                    const parts = [
+                      sanitizeText(business.business_location),
+                      sanitizeText(business.business_address_line_1),
+                      sanitizeText(business.business_city),
+                      sanitizeText(business.business_state),
+                      sanitizeText(business.business_zip_code),
+                      sanitizeText(business.business_country),
+                    ].filter((part) => part && part !== ".");
+                    return parts.length > 0 ? parts.join(", ") : "N/A";
+                  })(),
+                  business.business_location_is_public === "1" || business.business_location_is_public === 1 || business.locationIsPublic === true,
+                )}
                 {business.phoneIsPublic && isSafeForConditional(business.business_phone_number) && (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Phone: {sanitizeText(business.business_phone_number)}</Text>
                 )}
                 {business.emailIsPublic && isSafeForConditional(business.business_email_id) && (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Email: {sanitizeText(business.business_email_id)}</Text>
                 )}
-                {isSafeForConditional(business.business_website) && (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Website: 🌐 {sanitizeText(business.business_website)}</Text>
-                )}
+                {isSafeForConditional(business.business_website) && <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Website: 🌐 {sanitizeText(business.business_website)}</Text>}
                 {isSafeForConditional(business.business_role || business.role || business.bu_role) && (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Business Role: {sanitizeText(business.business_role || business.role || business.bu_role)}</Text>
                 )}
@@ -694,12 +690,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
             <View style={styles.fieldContainer}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Rating & Pricing:</Text>
               <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
-                {isSafeForConditional(business.google_rating) && (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Google Rating: ⭐ {sanitizeText(business.google_rating)}</Text>
-                )}
-                {business.price_level && (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Price Level: {"$".repeat(parseInt(business.price_level) || 1)}</Text>
-                )}
+                {isSafeForConditional(business.google_rating) && <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Google Rating: ⭐ {sanitizeText(business.google_rating)}</Text>}
+                {business.price_level && <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Price Level: {"$".repeat(parseInt(business.price_level) || 1)}</Text>}
               </View>
             </View>
           )}
@@ -733,7 +725,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
               <View style={styles.fieldContainer}>
                 <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowSocialLinks(!showSocialLinks)}>
                   <Text style={styles.sectionHeaderText}>SOCIAL LINKS</Text>
-                  <Ionicons name={showSocialLinks ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+                  <Ionicons name={showSocialLinks ? "chevron-up" : "chevron-down"} size={20} color='#000' />
                 </TouchableOpacity>
                 {showSocialLinks && (
                   <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
@@ -766,49 +758,67 @@ export default function BusinessProfileScreen({ route, navigation }) {
           {/* Business Editors/Owners Section */}
           {(() => {
             const visibleBusinessUsers = businessUsers.filter(
-              (u) => u.bu_individual_business_is_public === 1 || u.bu_individual_business_is_public === "1" || u.bu_individual_business_is_public === true
+              (u) => u.bu_individual_business_is_public === 1 || u.bu_individual_business_is_public === "1" || u.bu_individual_business_is_public === true,
             );
             if (!isOwner || visibleBusinessUsers.length === 0) return null;
             return (
               <View style={styles.fieldContainer}>
                 <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowEditors(!showEditors)}>
                   <Text style={styles.sectionHeaderText}>BUSINESS EDITORS & OWNERS</Text>
-                  <Ionicons name={showEditors ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+                  <Ionicons name={showEditors ? "chevron-up" : "chevron-down"} size={20} color='#000' />
                 </TouchableOpacity>
-                {showEditors && visibleBusinessUsers.map((businessUser, index) => {
-                  const role = sanitizeText(businessUser.business_role, "N/A");
-                  const profileImageUrl =
-                    businessUser.profile_photo && String(businessUser.profile_photo).trim() !== ""
-                      ? String(businessUser.profile_photo).trim()
-                      : businessUser.profile_personal_image && String(businessUser.profile_personal_image).trim() !== ""
-                        ? String(businessUser.profile_personal_image).trim()
-                        : "";
-                  const imageIsPublic =
-                    businessUser.profile_photo_is_public === 1 || businessUser.profile_photo_is_public === "1" ||
-                    businessUser.profile_personal_image_is_public === 1 || businessUser.profile_personal_image_is_public === "1" ||
-                    businessUser.image_is_public === 1 || businessUser.image_is_public === "1";
-                  const userForMiniCard = {
-                    firstName: businessUser.first_name || "",
-                    lastName: businessUser.last_name || "",
-                    email: businessUser.user_email || "",
-                    profileImage: profileImageUrl,
-                    imageIsPublic: !!imageIsPublic,
-                    emailIsPublic: businessUser.user_email_is_public === 1 || businessUser.user_email_is_public === "1" || businessUser.profile_personal_email_is_public === 1 || businessUser.profile_personal_email_is_public === "1" || businessUser.email_is_public === 1,
-                    phoneIsPublic: businessUser.phone_is_public === 1 || businessUser.phone_is_public === "1" || businessUser.profile_personal_phone_number_is_public === 1 || businessUser.profile_personal_phone_number_is_public === "1",
-                    phoneNumber: businessUser.phone || businessUser.profile_personal_phone_number || businessUser.phone_number || "",
-                    tagLine: businessUser.profile_personal_tag_line || businessUser.tag_line || businessUser.tagline || "",
-                    tagLineIsPublic: businessUser.profile_personal_tag_line_is_public === 1 || businessUser.profile_personal_tag_line_is_public === "1" || false,
-                    city: businessUser.city || businessUser.profile_personal_city || "",
-                    state: businessUser.state || businessUser.profile_personal_state || "",
-                    locationIsPublic: businessUser.location_is_public === 1 || businessUser.location_is_public === "1" || businessUser.profile_personal_location_is_public === 1 || businessUser.profile_personal_location_is_public === "1" || false,
-                  };
-                  return (
-                    <View key={businessUser.business_user_id || index} style={[styles.businessUserCard, darkMode && styles.darkBusinessUserCard]}>
-                      <MiniCard user={userForMiniCard} />
-                      <Text style={[styles.businessUserRole, darkMode && styles.darkBusinessUserRole]}>Role: {role && role !== "." && role.trim() !== "" ? role : "N/A"}</Text>
-                    </View>
-                  );
-                })}
+                {showEditors &&
+                  visibleBusinessUsers.map((businessUser, index) => {
+                    const role = sanitizeText(businessUser.business_role, "N/A");
+                    const profileImageUrl =
+                      businessUser.profile_photo && String(businessUser.profile_photo).trim() !== ""
+                        ? String(businessUser.profile_photo).trim()
+                        : businessUser.profile_personal_image && String(businessUser.profile_personal_image).trim() !== ""
+                          ? String(businessUser.profile_personal_image).trim()
+                          : "";
+                    const imageIsPublic =
+                      businessUser.profile_photo_is_public === 1 ||
+                      businessUser.profile_photo_is_public === "1" ||
+                      businessUser.profile_personal_image_is_public === 1 ||
+                      businessUser.profile_personal_image_is_public === "1" ||
+                      businessUser.image_is_public === 1 ||
+                      businessUser.image_is_public === "1";
+                    const userForMiniCard = {
+                      firstName: businessUser.first_name || "",
+                      lastName: businessUser.last_name || "",
+                      email: businessUser.user_email || "",
+                      profileImage: profileImageUrl,
+                      imageIsPublic: !!imageIsPublic,
+                      emailIsPublic:
+                        businessUser.user_email_is_public === 1 ||
+                        businessUser.user_email_is_public === "1" ||
+                        businessUser.profile_personal_email_is_public === 1 ||
+                        businessUser.profile_personal_email_is_public === "1" ||
+                        businessUser.email_is_public === 1,
+                      phoneIsPublic:
+                        businessUser.phone_is_public === 1 ||
+                        businessUser.phone_is_public === "1" ||
+                        businessUser.profile_personal_phone_number_is_public === 1 ||
+                        businessUser.profile_personal_phone_number_is_public === "1",
+                      phoneNumber: businessUser.phone || businessUser.profile_personal_phone_number || businessUser.phone_number || "",
+                      tagLine: businessUser.profile_personal_tag_line || businessUser.tag_line || businessUser.tagline || "",
+                      tagLineIsPublic: businessUser.profile_personal_tag_line_is_public === 1 || businessUser.profile_personal_tag_line_is_public === "1" || false,
+                      city: businessUser.city || businessUser.profile_personal_city || "",
+                      state: businessUser.state || businessUser.profile_personal_state || "",
+                      locationIsPublic:
+                        businessUser.location_is_public === 1 ||
+                        businessUser.location_is_public === "1" ||
+                        businessUser.profile_personal_location_is_public === 1 ||
+                        businessUser.profile_personal_location_is_public === "1" ||
+                        false,
+                    };
+                    return (
+                      <View key={businessUser.business_user_id || index} style={[styles.businessUserCard, darkMode && styles.darkBusinessUserCard]}>
+                        <MiniCard user={userForMiniCard} />
+                        <Text style={[styles.businessUserRole, darkMode && styles.darkBusinessUserRole]}>Role: {role && role !== "." && role.trim() !== "" ? role : "N/A"}</Text>
+                      </View>
+                    );
+                  })}
               </View>
             );
           })()}
@@ -860,50 +870,53 @@ export default function BusinessProfileScreen({ route, navigation }) {
             <View style={styles.fieldContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowReviews(!showReviews)}>
                 <Text style={styles.sectionHeaderText}>REVIEWS ({allReviews.length})</Text>
-                <Ionicons name={showReviews ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+                <Ionicons name={showReviews ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
-              {showReviews && allReviews.map((review, index) => (
-                <TouchableOpacity
-                  key={review.rating_uid || index}
-                  style={[styles.reviewCard, darkMode && styles.darkReviewCard, index > 0 && { marginTop: 10 }]}
-                  onPress={() => navigation.navigate("ReviewDetail", { business_uid, business_name: business.business_name, reviewer_profile_id: review.rating_profile_id, business_data: business })}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.reviewCardHeader}>
-                    <View style={styles.reviewProfileInfo}>
-                      {review.profile_personal_image ? (
-                        <Image source={{ uri: review.profile_personal_image }} style={[styles.reviewProfileAvatar, darkMode && styles.darkReviewProfileAvatar]} defaultSource={require("../assets/profile.png")} />
-                      ) : (
-                        <View style={[styles.reviewProfileAvatar, darkMode && styles.darkReviewProfileAvatar]}>
-                          <Text style={[styles.reviewProfileInitial, darkMode && styles.darkReviewProfileInitial]}>
-                            {(review.profile_personal_first_name?.charAt(0) || "U").toUpperCase()}
+              {showReviews &&
+                allReviews.map((review, index) => (
+                  <TouchableOpacity
+                    key={review.rating_uid || index}
+                    style={[styles.reviewCard, darkMode && styles.darkReviewCard, index > 0 && { marginTop: 10 }]}
+                    onPress={() => navigation.navigate("ReviewDetail", { business_uid, business_name: business.business_name, reviewer_profile_id: review.rating_profile_id, business_data: business })}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.reviewCardHeader}>
+                      <View style={styles.reviewProfileInfo}>
+                        {review.profile_personal_image ? (
+                          <Image
+                            source={{ uri: review.profile_personal_image }}
+                            style={[styles.reviewProfileAvatar, darkMode && styles.darkReviewProfileAvatar]}
+                            defaultSource={require("../assets/profile.png")}
+                          />
+                        ) : (
+                          <View style={[styles.reviewProfileAvatar, darkMode && styles.darkReviewProfileAvatar]}>
+                            <Text style={[styles.reviewProfileInitial, darkMode && styles.darkReviewProfileInitial]}>{(review.profile_personal_first_name?.charAt(0) || "U").toUpperCase()}</Text>
+                          </View>
+                        )}
+                        <View style={styles.reviewProfileDetails}>
+                          <Text style={[styles.reviewProfileName, darkMode && styles.darkReviewProfileName]}>
+                            {[review.profile_personal_first_name, review.profile_personal_last_name].filter(Boolean).join(" ") || `User ${review.rating_profile_id}`}
                           </Text>
+                          <Text style={[styles.reviewDate, darkMode && styles.darkReviewDate]}>{review.rating_receipt_date}</Text>
                         </View>
-                      )}
-                      <View style={styles.reviewProfileDetails}>
-                        <Text style={[styles.reviewProfileName, darkMode && styles.darkReviewProfileName]}>
-                          {[review.profile_personal_first_name, review.profile_personal_last_name].filter(Boolean).join(" ") || `User ${review.rating_profile_id}`}
-                        </Text>
-                        <Text style={[styles.reviewDate, darkMode && styles.darkReviewDate]}>{review.rating_receipt_date}</Text>
+                      </View>
+                      <View style={styles.reviewRatingContainer}>
+                        {renderStars(review.rating_star)}
+                        <Text style={[styles.reviewRatingText, darkMode && styles.darkReviewRatingText]}>{review.rating_star}/5</Text>
                       </View>
                     </View>
-                    <View style={styles.reviewRatingContainer}>
-                      {renderStars(review.rating_star)}
-                      <Text style={[styles.reviewRatingText, darkMode && styles.darkReviewRatingText]}>{review.rating_star}/5</Text>
+                    {review.rating_description && (
+                      <View style={styles.reviewContent}>
+                        <Text style={[styles.reviewDescription, darkMode && styles.darkReviewDescription]}>{review.rating_description}</Text>
+                      </View>
+                    )}
+                    <View style={styles.reviewFooter}>
+                      <View style={styles.reviewMetadata}>
+                        <Text style={[styles.reviewMetadataText, darkMode && styles.darkReviewMetadataText]}>Transaction ID: {review.rating_uid}</Text>
+                      </View>
                     </View>
-                  </View>
-                  {review.rating_description && (
-                    <View style={styles.reviewContent}>
-                      <Text style={[styles.reviewDescription, darkMode && styles.darkReviewDescription]}>{review.rating_description}</Text>
-                    </View>
-                  )}
-                  <View style={styles.reviewFooter}>
-                    <View style={styles.reviewMetadata}>
-                      <Text style={[styles.reviewMetadataText, darkMode && styles.darkReviewMetadataText]}>Transaction ID: {review.rating_uid}</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
+                  </TouchableOpacity>
+                ))}
             </View>
           )}
 
@@ -919,17 +932,14 @@ export default function BusinessProfileScreen({ route, navigation }) {
                       <Text style={[styles.cartCount, darkMode && styles.darkCartCount]}>{cartItems.length}</Text>
                     </TouchableOpacity>
                   )}
-                  <Ionicons name={showServices ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+                  <Ionicons name={showServices ? "chevron-up" : "chevron-down"} size={20} color='#000' />
                 </View>
               </TouchableOpacity>
-              {showServices && business.business_services.map((service, idx) => (
-                <ProductCard key={idx} service={service} showEditButton={isOwner} onPress={() => handleProductPress(service)} />
-              ))}
+              {showServices && business.business_services.map((service, idx) => <ProductCard key={idx} service={service} showEditButton={isOwner} onPress={() => handleProductPress(service)} />)}
             </View>
           )}
 
           {/* Shopping Cart Button - Only show if there are reviews */}
-  
 
           {/* Shopping Cart Button - Only show if there are reviews */}
           {/* {!isOwner && allReviews.length > 0 && (
@@ -954,7 +964,13 @@ export default function BusinessProfileScreen({ route, navigation }) {
         <BottomNavBar navigation={navigation} />
       </SafeAreaView>
 
-      <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Business Profile' instructions={businessFeedbackInstructions} questions={businessFeedbackQuestions} />
+      <FeedbackPopup
+        visible={showFeedbackPopup}
+        onClose={() => setShowFeedbackPopup(false)}
+        pageName='Business Profile'
+        instructions={businessFeedbackInstructions}
+        questions={businessFeedbackQuestions}
+      />
 
       <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
         <View style={styles.modalOverlay}>

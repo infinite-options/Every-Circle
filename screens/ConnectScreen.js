@@ -171,7 +171,7 @@ const ConnectScreen = () => {
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       <AppHeader
-        title='Connect'
+        title='CONNECT'
         rightButton={
           <TouchableOpacity style={styles.cameraButton} onPress={() => navigation.navigate("Search")}>
             <Ionicons name='camera' size={20} color='#fff' />

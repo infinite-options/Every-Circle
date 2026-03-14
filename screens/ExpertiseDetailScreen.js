@@ -45,7 +45,7 @@ const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
 const ExpertiseDetailScreenContent = ({ route, navigation }) => {
   const { expertiseData, profileData, profile_uid, searchState, returnTo, profileState } = route.params;
   const { darkMode } = useDarkMode();
-  
+
   // Only use Stripe hook if available (not on web)
   let initPaymentSheet, presentPaymentSheet;
   if (useStripe && !isWeb) {
@@ -557,12 +557,7 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header with Back Button */}
-      <AppHeader
-        title="Expertise"
-        backgroundColor="#FF9500"
-        darkModeBackgroundColor="#CC7700"
-        onBackPress={handleBack}
-      />
+      <AppHeader title='EXPERTISE' backgroundColor='#FF9500' darkModeBackgroundColor='#CC7700' onBackPress={handleBack} />
 
       <SafeAreaView style={styles.safeArea}>
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -684,12 +679,12 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
 
 export default function ExpertiseDetailScreen({ route, navigation }) {
   const content = <ExpertiseDetailScreenContent route={route} navigation={navigation} />;
-  
+
   // Only wrap with StripeProvider on native platforms
   if (StripeProvider && !isWeb && STRIPE_PUBLISHABLE_KEY) {
     return <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>{content}</StripeProvider>;
   }
-  
+
   return content;
 }
 

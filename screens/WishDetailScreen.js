@@ -191,12 +191,7 @@ const WishDetailScreenContent = ({ route, navigation }) => {
   return (
     <SafeAreaView style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header with Back Button */}
-      <AppHeader
-        title="Seeking"
-        backgroundColor="#FF9500"
-        darkModeBackgroundColor="#CC7700"
-        onBackPress={handleBack}
-      />
+      <AppHeader title='SEEKING' backgroundColor='#FF9500' darkModeBackgroundColor='#CC7700' onBackPress={handleBack} />
 
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {/* User MiniCard - Clickable */}
@@ -251,7 +246,7 @@ const WishDetailScreenContent = ({ route, navigation }) => {
                       <Text style={styles.moneyBagDollarSymbol}>$</Text>
                     </View>
                     <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>
-                      Cost: {(wishData?.profile_wish_cost_currency ? `${wishData.profile_wish_cost_currency} ` : "")}
+                      Cost: {wishData?.profile_wish_cost_currency ? `${wishData.profile_wish_cost_currency} ` : ""}
                       {wishData?.cost || wishData?.profile_wish_cost}
                     </Text>
                   </View>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Platform, Dimensions } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Platform, Image, ScrollView } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getUserEmail } from "../utils/emailStorage";
 import axios from "axios";
@@ -8,19 +8,11 @@ import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 import BottomNavBar from "../components/BottomNavBar";
 
-const { width, height } = Dimensions.get("window");
 const isWeb = Platform.OS === "web";
 
 const userProfileAPI = REFERRAL_API_ENDPOINT;
 
-// Calculate position for buttons around a circle
-const calculateCirclePosition = (index, totalButtons, radius) => {
-  // Start from top (-90 degrees) and distribute evenly
-  const angle = (index * 2 * Math.PI) / totalButtons - Math.PI / 2;
-  const x = Math.cos(angle) * radius;
-  const y = Math.sin(angle) * radius;
-  return { x, y };
-};
+const ICON_SIZE = 40;
 
 const AccountTypeScreen = ({ navigation, route }) => {
   const [email, setEmail] = useState(route.params?.email || "");
@@ -107,67 +99,28 @@ const AccountTypeScreen = ({ navigation, route }) => {
     }
   };
 
+  const listItems = [
+    { label: "Complete Your Profile", icon: require("../assets/profile.png"), textColor: "#800000", onPress: handleSelectAccount },
+    { label: "How it works", icon: require("../assets/tour_icon.png"), textColor: "#2196F3", onPress: () => navigation.navigate("HowItWorksScreen") },
+    { label: "Add a Business", icon: require("../assets/profile.png"), textColor: "#FFA500", onPress: () => navigation.navigate("BusinessSetup") },
+    { label: "Add an Organization", icon: require("../assets/profile.png"), textColor: "#4CAF50", onPress: () => navigation.navigate("BusinessSetup") },
+    { label: "Start a Search", icon: require("../assets/search.png"), textColor: "#9C27B0", onPress: () => navigation.navigate("Search") },
+  ];
+
   return (
     <View style={styles.accountContainer}>
-      <AppHeader title='Your Profile' {...getHeaderColors("signUp")} />
-      {/* <AppHeader title='Choose Your Account' backgroundColor='#007AFF' /> */}
+      <AppHeader title='NEXT STEPS' {...getHeaderColors("signUp")} />
       <Text style={styles.title}>What would you like to do next?</Text>
-      <View style={styles.circlesContainer}>
-        {(() => {
-          const buttons = [
-            { label: "Complete Your Profile", style: styles.personal, onPress: handleSelectAccount, index: 0 },
-            { label: "Add a Business", style: styles.business, onPress: () => navigation.navigate("BusinessSetup"), index: 1 },
-            { label: "Add an Organization", style: styles.organization, onPress: () => navigation.navigate("BusinessSetup"), index: 2 },
-            { label: "Start a Search", style: styles.search, onPress: () => navigation.navigate("BusinessSetup"), index: 3 },
-            { label: "Take a Tour", style: styles.tour, onPress: () => navigation.navigate("HowItWorksScreen"), index: 4 },
-          ];
-
-          // Calculate responsive radius based on available space
-          const headerHeight = isWeb ? 80 : 100;
-          const titleHeight = 60;
-          const titleMarginTop = 100;
-          const spacingFromTitle = 117;
-          const bottomNavHeight = isWeb ? 60 : 100;
-          const availableHeight = height - headerHeight - titleMarginTop - titleHeight - spacingFromTitle - bottomNavHeight;
-          const availableWidth = width - (isWeb ? 80 : 40);
-
-          // Use the smaller dimension to ensure circle fits
-          const maxRadius = Math.min(availableWidth, availableHeight) * 0.4;
-          const radius = Math.max(isWeb ? Math.min(maxRadius, 250) : Math.min(maxRadius, 180), isWeb ? 200 : 140);
-
-          // Button size - responsive but consistent
-          const buttonSize = isWeb ? Math.min(180, width * 0.15) : Math.min(120, width * 0.25);
-          const circleSize = radius * 2;
-
-          return (
-            <View style={[styles.largeCircle, { width: circleSize, height: circleSize, borderRadius: radius }]}>
-              {buttons.map((button) => {
-                const position = calculateCirclePosition(button.index, buttons.length, radius);
-                return (
-                  <TouchableOpacity
-                    key={button.index}
-                    style={[
-                      styles.accountButton,
-                      button.style,
-                      {
-                        position: "absolute",
-                        left: radius + position.x - buttonSize / 2,
-                        top: radius + position.y - buttonSize / 2,
-                        width: buttonSize,
-                        height: buttonSize,
-                        borderRadius: buttonSize / 2,
-                      },
-                    ]}
-                    onPress={button.onPress}
-                  >
-                    <Text style={[styles.accountText, { fontSize: isWeb ? Math.max(14, buttonSize * 0.1) : Math.max(12, buttonSize * 0.11) }]}>{button.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          );
-        })()}
-      </View>
+      <ScrollView style={styles.listScroll} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.listWrapper}>
+          {listItems.map((item, index) => (
+            <TouchableOpacity key={index} style={styles.listItem} onPress={item.onPress} activeOpacity={0.7}>
+              <Image source={item.icon} style={styles.listItemIcon} resizeMode='contain' />
+              <Text style={[styles.listItemText, { color: item.textColor }]}>{item.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
       <BottomNavBar navigation={navigation} />
     </View>
   );
@@ -181,50 +134,40 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: "bold",
-    marginTop: 100,
-    marginBottom: 117,
+    marginTop: 60,
+    marginBottom: 24,
+    marginHorizontal: 20,
     textAlign: "center",
   },
-  circlesContainer: {
+  listScroll: {
     flex: 1,
-    justifyContent: "center",
+  },
+  listContent: {
+    flexGrow: 1,
     alignItems: "center",
-    paddingBottom: isWeb ? 60 : 100,
+    paddingBottom: isWeb ? 80 : 100,
   },
-  largeCircle: {
-    position: "relative",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#ddd",
-    borderStyle: "dashed",
-  },
-  accountButton: {
-    justifyContent: "center",
-    alignItems: "center",
-    position: "absolute",
-  },
-  personal: {
-    backgroundColor: "#800000",
-  },
-  business: {
-    backgroundColor: "#FFA500",
-  },
-  organization: {
-    backgroundColor: "#4CAF50",
-  },
-  search: {
-    backgroundColor: "#9C27B0",
-  },
-  tour: {
-    backgroundColor: "#2196F3",
-  },
-  accountText: {
-    color: "#000",
-    fontSize: isWeb ? 28 : 22,
-    fontWeight: "bold",
-    textAlign: "center",
+  listWrapper: {
     width: "100%",
+    maxWidth: 320,
+    alignSelf: "center",
+  },
+  listItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  listItemIcon: {
+    width: ICON_SIZE,
+    height: ICON_SIZE,
+    marginRight: 16,
+  },
+  listItemText: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "600",
   },
 });
 export default AccountTypeScreen;

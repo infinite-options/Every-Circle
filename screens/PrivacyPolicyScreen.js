@@ -12,11 +12,7 @@ export default function PrivacyPolicyScreen() {
   return (
     <SafeAreaView style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
-      <AppHeader
-        title="Privacy Policy"
-        backgroundColor="#AF52DE"
-        onBackPress={() => navigation.goBack()}
-      />
+      <AppHeader title='PRIVACY POLICY' backgroundColor='#AF52DE' onBackPress={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={[styles.title, darkMode && styles.darkTitle]}>Every Circle Privacy Policy</Text>
         <Text style={[styles.body, darkMode && styles.darkBody]}>

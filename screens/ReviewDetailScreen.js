@@ -166,9 +166,12 @@ export default function ReviewDetailScreen({ route, navigation }) {
         images: businessImages,
         customTags: customTags,
         emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1 || rawBusiness.email_is_public === "1" || rawBusiness.email_is_public === 1,
-        phoneIsPublic: rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1 || rawBusiness.phone_is_public === "1" || rawBusiness.phone_is_public === 1,
-        taglineIsPublic: rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1 || rawBusiness.tagline_is_public === "1" || rawBusiness.tagline_is_public === 1,
-        shortBioIsPublic: rawBusiness.business_short_bio_is_public === "1" || rawBusiness.business_short_bio_is_public === 1 || rawBusiness.short_bio_is_public === "1" || rawBusiness.short_bio_is_public === 1,
+        phoneIsPublic:
+          rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1 || rawBusiness.phone_is_public === "1" || rawBusiness.phone_is_public === 1,
+        taglineIsPublic:
+          rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1 || rawBusiness.tagline_is_public === "1" || rawBusiness.tagline_is_public === 1,
+        shortBioIsPublic:
+          rawBusiness.business_short_bio_is_public === "1" || rawBusiness.business_short_bio_is_public === 1 || rawBusiness.short_bio_is_public === "1" || rawBusiness.short_bio_is_public === 1,
         business_services: (() => {
           if (rawBusiness.business_services) {
             if (typeof rawBusiness.business_services === "string") {
@@ -296,7 +299,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
         `cart_${business_uid}`,
         JSON.stringify({
           items: newCartItems,
-        })
+        }),
       );
 
       setQuantityModalVisible(false);
@@ -316,7 +319,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
         `cart_${business_uid}`,
         JSON.stringify({
           items: newCartItems,
-        })
+        }),
       );
     } catch (error) {
       console.error("Error removing item from cart:", error);
@@ -362,7 +365,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header with Back Button */}
       <AppHeader
-        title='Review Details'
+        title='REVIEW DETAILS'
         backgroundColor='#FF9500'
         darkModeBackgroundColor='#CC7700'
         onBackPress={() => {

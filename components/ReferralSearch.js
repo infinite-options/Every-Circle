@@ -105,7 +105,7 @@ const ReferralSearch = ({ visible, onSelect, onNewUser, onClose, embedded = fals
 
       {/* New User Button */}
       <TouchableOpacity style={styles.newUserButton} onPress={onNewUser}>
-        <Text style={styles.newUserButtonText}>I'm a New User</Text>
+        <Text style={styles.newUserButtonText}>I was not referred</Text>
       </TouchableOpacity>
     </>
   ) : (
@@ -155,7 +155,7 @@ const ReferralSearch = ({ visible, onSelect, onNewUser, onClose, embedded = fals
 
           {/* New User Button */}
           <TouchableOpacity style={styles.newUserButton} onPress={onNewUser}>
-            <Text style={styles.newUserButtonText}>I'm a New User</Text>
+            <Text style={styles.newUserButtonText}>I was not referred</Text>
           </TouchableOpacity>
         </View>
       </View>

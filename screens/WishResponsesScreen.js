@@ -46,7 +46,7 @@ const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
 const WishResponsesScreenContent = ({ route, navigation }) => {
   const { wishData, profileData, profile_uid, profileState } = route.params;
   const { darkMode } = useDarkMode();
-  
+
   // Only use Stripe hook if available (not on web)
   let initPaymentSheet, presentPaymentSheet;
   if (useStripe && !isWeb) {
@@ -552,11 +552,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
   return (
     <SafeAreaView style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header with Back Button */}
-      <AppHeader
-        title="Seeking Responses"
-        backgroundColor="#AF52DE"
-        onBackPress={handleBack}
-      />
+      <AppHeader title='SEEKING RESPONSES' backgroundColor='#AF52DE' onBackPress={handleBack} />
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -889,11 +885,11 @@ const styles = StyleSheet.create({
 
 export default function WishResponsesScreen({ route, navigation }) {
   const content = <WishResponsesScreenContent route={route} navigation={navigation} />;
-  
+
   // Only wrap with StripeProvider on native platforms
   if (StripeProvider && !isWeb && STRIPE_PUBLISHABLE_KEY) {
     return <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>{content}</StripeProvider>;
   }
-  
+
   return content;
 }
