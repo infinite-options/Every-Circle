@@ -72,8 +72,8 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
 
     const latFn = details.geometry?.location?.lat;
     const lngFn = details.geometry?.location?.lng;
-    const latitude = typeof latFn === "function" ? latFn() : latFn ?? "";
-    const longitude = typeof lngFn === "function" ? lngFn() : lngFn ?? "";
+    const latitude = typeof latFn === "function" ? latFn() : (latFn ?? "");
+    const longitude = typeof lngFn === "function" ? lngFn() : (lngFn ?? "");
 
     const photoReferences = details.photos?.map((photo) => photo.photo_reference) || [];
     const photoUrls = photoReferences.map((ref) => `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${ref}&key=${config.googleMapsApiKey}`);

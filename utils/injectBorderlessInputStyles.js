@@ -1,6 +1,19 @@
-// Inject borderless input styles at app startup (web only)
+// Inject borderless input styles and min-width at app startup (web only)
 // Ensures styles are in the document before any WebTextInput with borderless renders
 if (typeof document !== "undefined" && document.head) {
+  // Min width 360px for web and responsive mode
+  const MIN_WIDTH_STYLE_ID = "app-min-width-style";
+  if (!document.getElementById(MIN_WIDTH_STYLE_ID)) {
+    const minWidthStyle = document.createElement("style");
+    minWidthStyle.id = MIN_WIDTH_STYLE_ID;
+    minWidthStyle.textContent = `
+      html, body, #root {
+        min-width: 360px !important;
+      }
+    `;
+    document.head.appendChild(minWidthStyle);
+  }
+
   const BORDERLESS_STYLE_ID = "webtextinput-borderless-style";
   if (!document.getElementById(BORDERLESS_STYLE_ID)) {
     const style = document.createElement("style");

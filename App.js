@@ -1090,6 +1090,7 @@ export default function App() {
   return (
     <TextNodeErrorBoundary>
       <DarkModeProvider>
+        <View style={styles.appRoot}>
         <NavigationContainer ref={navigationRef} linking={isWeb ? linking : undefined} onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={onNavigationStateChange}>
           <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
             <Stack.Screen name='Home' component={HomeScreen} />
@@ -1135,12 +1136,18 @@ export default function App() {
             <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
           </Stack.Navigator>
         </NavigationContainer>
+        </View>
       </DarkModeProvider>
     </TextNodeErrorBoundary>
   );
 }
 
 const styles = StyleSheet.create({
+  appRoot: {
+    flex: 1,
+    minWidth: 360,
+    alignSelf: "stretch",
+  },
   container: {
     flex: 1,
     backgroundColor: "#fff",

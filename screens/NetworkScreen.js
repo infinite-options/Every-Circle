@@ -318,6 +318,7 @@ const NetworkScreen = ({ navigation }) => {
   const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
   const [showViewMyNetwork, setShowViewMyNetwork] = useState(false);
   const [showFilterPopup, setShowFilterPopup] = useState(false);
+  const [expandedDegrees, setExpandedDegrees] = useState({}); // { [deg]: boolean } - undefined/true = expanded
 
   const networkFeedbackInstructions = "Instructions for Connect";
 
@@ -328,12 +329,13 @@ const NetworkScreen = ({ navigation }) => {
   const loadNetworkSettings = async () => {
     try {
       console.log("📥 Loading Network screen settings from AsyncStorage...");
-      const [showAsyncStorageValue, degreeValue, viewModeValue, networkDataValue, groupedNetworkValue, dateFilterValue, locationFilterValue, eventFilterValue] = await Promise.all([
+      const [showAsyncStorageValue, degreeValue, viewModeValue, networkDataValue, groupedNetworkValue, activeViewValue, dateFilterValue, locationFilterValue, eventFilterValue] = await Promise.all([
         AsyncStorage.getItem("network_showAsyncStorage"),
         AsyncStorage.getItem("network_degree"),
         AsyncStorage.getItem("network_viewMode"),
         AsyncStorage.getItem("network_data"),
         AsyncStorage.getItem("network_grouped"),
+        AsyncStorage.getItem("network_activeView"),
         AsyncStorage.getItem("network_dateFilter"),
         AsyncStorage.getItem("network_locationFilter"),
         AsyncStorage.getItem("network_eventFilter"),
@@ -411,6 +413,13 @@ const NetworkScreen = ({ navigation }) => {
         }
       } else {
         console.log("📥 No persisted grouped network data");
+      }
+
+      if (activeViewValue === "connections" || activeViewValue === "circles") {
+        console.log("📥 Loading activeView:", activeViewValue);
+        setActiveView(activeViewValue);
+      } else {
+        console.log("📥 No persisted activeView, using default: connections");
       }
 
       // Mark settings as loaded so we can start saving changes
@@ -598,12 +607,16 @@ const NetworkScreen = ({ navigation }) => {
         }
         const currentDegree = (await AsyncStorage.getItem("network_degree")) || "2";
         const hasNetworkData = await AsyncStorage.getItem("network_data");
+        const currentActiveView = (await AsyncStorage.getItem("network_activeView")) || "connections";
 
         // Only refetch if we have network data already (user has fetched before)
-        if (currentProfileUid && currentDegree && hasNetworkData) {
-          console.log("🔄 Refetching network data to get updated relationships...");
-          // Use AsyncStorage values directly to avoid state timing issues
-          fetchNetwork(currentProfileUid, currentDegree);
+        if (currentProfileUid && hasNetworkData) {
+          console.log("🔄 Refetching network data to get updated relationships (activeView:", currentActiveView, ")...");
+          if (currentActiveView === "circles") {
+            fetchCircle();
+          } else {
+            if (currentDegree) fetchNetwork(currentProfileUid, currentDegree);
+          }
         }
       };
       refetchNetworkData();
@@ -1234,8 +1247,11 @@ const NetworkScreen = ({ navigation }) => {
   const fetchNetwork = async (overrideProfileUid = null, overrideDegree = null) => {
     console.log("🔘 Fetch Network");
     setActiveView("connections");
-    setViewMode("list");
+    // Keep current viewMode (list or graph) so user stays on View as Graph if they switched Network
     setRelationshipFilter("All");
+    setDateFilter("All");
+    setLocationFilter("All");
+    setEventFilter("All");
     setDateFilter("All");
     setLocationFilter("All");
     setEventFilter("All");
@@ -1348,6 +1364,7 @@ const NetworkScreen = ({ navigation }) => {
       try {
         await AsyncStorage.setItem("network_data", JSON.stringify(formatted)); //saving raw formatted data
         await AsyncStorage.setItem("network_grouped", JSON.stringify(groupByDegree(formatted))); //saving grouped data
+        await AsyncStorage.setItem("network_activeView", "connections");
       } catch (e) {
         console.error("❌ Error saving network data:", e);
       }
@@ -1485,6 +1502,15 @@ const NetworkScreen = ({ navigation }) => {
         setNetworkData(formatted);
         setGroupedNetwork({ 1: formatted }); // Group all circles as degree 1
         setError(null);
+
+        // Save circles data and activeView for persistence (so View as Graph shows correct data on reload)
+        try {
+          await AsyncStorage.setItem("network_data", JSON.stringify(formatted));
+          await AsyncStorage.setItem("network_grouped", JSON.stringify({ 1: formatted }));
+          await AsyncStorage.setItem("network_activeView", "circles");
+        } catch (e) {
+          console.error("❌ Error saving circles data:", e);
+        }
       } else {
         // No circles found or empty response
         setNetworkData([]);
@@ -2041,7 +2067,20 @@ const NetworkScreen = ({ navigation }) => {
             return (
               <View style={{ marginTop: 20 }}>
                 {/* View My Network Dropdown Header */}
-                <TouchableOpacity style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader]} onPress={() => setShowViewMyNetwork(!showViewMyNetwork)} activeOpacity={0.7}>
+                <TouchableOpacity
+                  style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader]}
+                  onPress={() => {
+                    const willExpand = !showViewMyNetwork;
+                    setShowViewMyNetwork(willExpand);
+                    if (willExpand) {
+                      setDegree("3");
+                      setViewMode("list");
+                      setActiveView("connections");
+                      fetchNetwork(null, "3");
+                    }
+                  }}
+                  activeOpacity={0.7}
+                >
                   <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>View My Network</Text>
                   <Ionicons name={showViewMyNetwork ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
                 </TouchableOpacity>
@@ -2323,36 +2362,45 @@ const NetworkScreen = ({ navigation }) => {
                                     }
 
                                     if (__DEV__) console.log(`🔵 NetworkScreen - Rendering degree ${deg} with ${list.length} items`);
+                                    const label = activeView === "circles" ? "Circles" : degreeLabel(Number(deg));
+                                    const isExpanded = expandedDegrees[deg] !== false;
                                     return (
-                                      <View key={deg} style={{ marginBottom: 20 }}>
-                                        {(() => {
-                                          const label = activeView === "circles" ? "Circles" : degreeLabel(Number(deg));
-                                          if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} label:`, label);
-                                          return <Text style={[styles.degreeHeader, darkMode && styles.darkDegreeHeader]}>{label}</Text>;
-                                        })()}
+                                      <View key={deg} style={{ marginBottom: 12 }}>
+                                        <TouchableOpacity
+                                          style={[styles.degreeLevelHeader, darkMode && styles.darkDegreeLevelHeader]}
+                                          onPress={() => setExpandedDegrees((prev) => ({ ...prev, [deg]: !(prev[deg] !== false) }))}
+                                          activeOpacity={0.7}
+                                        >
+                                          <Text style={[styles.degreeLevelHeaderText, darkMode && styles.darkDegreeLevelHeaderText]}>{label}</Text>
+                                          <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+                                        </TouchableOpacity>
 
-                                        {list.map((node, index) => {
-                                          if (__DEV__) console.log(`🔵 NetworkScreen - Rendering node ${deg}-${index}, __mc:`, node.__mc);
-                                          if (!node.__mc) {
-                                            if (__DEV__) console.log(`🔵 NetworkScreen - Node ${deg}-${index} has no __mc, skipping`);
-                                            return null;
-                                          }
-                                          if (__DEV__) console.log(`🔵 NetworkScreen - Rendering MiniCard for node ${deg}-${index}`);
-                                          return (
-                                            <TouchableOpacity
-                                              key={`${deg}-${index}`}
-                                              onPress={() =>
-                                                navigation.navigate("Profile", {
-                                                  profile_uid: node.network_profile_personal_uid,
-                                                  returnTo: "Network",
-                                                })
+                                        {isExpanded && (
+                                          <View style={{ marginTop: 8 }}>
+                                            {list.map((node, index) => {
+                                              if (__DEV__) console.log(`🔵 NetworkScreen - Rendering node ${deg}-${index}, __mc:`, node.__mc);
+                                              if (!node.__mc) {
+                                                if (__DEV__) console.log(`🔵 NetworkScreen - Node ${deg}-${index} has no __mc, skipping`);
+                                                return null;
                                               }
-                                              style={{ marginVertical: 6 }}
-                                            >
-                                              <MiniCard user={node.__mc} showRelationship={true} />
-                                            </TouchableOpacity>
-                                          );
-                                        })}
+                                              if (__DEV__) console.log(`🔵 NetworkScreen - Rendering MiniCard for node ${deg}-${index}`);
+                                              return (
+                                                <TouchableOpacity
+                                                  key={`${deg}-${index}`}
+                                                  onPress={() =>
+                                                    navigation.navigate("Profile", {
+                                                      profile_uid: node.network_profile_personal_uid,
+                                                      returnTo: "Network",
+                                                    })
+                                                  }
+                                                  style={{ marginVertical: 6 }}
+                                                >
+                                                  <MiniCard user={node.__mc} showRelationship={true} />
+                                                </TouchableOpacity>
+                                              );
+                                            })}
+                                          </View>
+                                        )}
                                       </View>
                                     );
                                   });
@@ -2564,6 +2612,28 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   darkViewMyNetworkHeaderText: {
+    color: "#e0e0e0",
+  },
+  degreeLevelHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgba(36, 52, 194, 0.5)", // 50% of Connect header (#2434C2)
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  darkDegreeLevelHeader: {
+    backgroundColor: "rgba(28, 40, 153, 0.5)", // 50% of Connect dark mode (#1C2899)
+  },
+  degreeLevelHeaderText: {
+    fontSize: 15,
+    fontWeight: "bold",
+    color: "#333",
+    letterSpacing: 0.5,
+  },
+  darkDegreeLevelHeaderText: {
     color: "#e0e0e0",
   },
   debugDropdownHeader: {

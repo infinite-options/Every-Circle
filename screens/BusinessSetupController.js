@@ -1,6 +1,6 @@
 // BusinessSetupController.js
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, Alert } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, Alert, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import BusinessStep0 from "./BusinessStep0";
@@ -214,6 +214,7 @@ export default function BusinessSetupController({ navigation, route }) {
       const payloadData = {
         user_uid: userUid,
         business_name: formData.businessName,
+        business_location: formData.location || formData.addressLine1 || "",
         business_phone_number: formData.phoneNumber,
         business_ein_number: formData.einNumber,
         business_address_line_1: formData.addressLine1,
@@ -252,6 +253,7 @@ export default function BusinessSetupController({ navigation, route }) {
       const data = new FormData();
       data.append("user_uid", userUid);
       data.append("business_name", formData.businessName);
+      data.append("business_location", formData.location || formData.addressLine1 || "");
       data.append("business_phone_number", formData.phoneNumber);
       data.append("business_ein_number", formData.einNumber);
       data.append("business_address_line_1", formData.addressLine1);
@@ -297,28 +299,63 @@ export default function BusinessSetupController({ navigation, route }) {
       // Add business_services array as JSON string
       data.append("business_services", JSON.stringify(formData.business_services || []));
 
-      // Append user-uploaded images as files
+      // Append user-uploaded images as files (supports file://, content://, blob:, data: URIs)
       if (formData.images && formData.images.length > 0) {
         const userImageFilenames = [];
-        formData.images.forEach((imageUri, index) => {
-          if (imageUri && (imageUri.startsWith("file://") || imageUri.startsWith("content://"))) {
+        const isWeb = Platform.OS === "web";
+        const isBlobOrDataUri = (uri) => uri && (uri.startsWith("blob:") || uri.startsWith("data:"));
+
+        for (let index = 0; index < formData.images.length; index++) {
+          const imageUri = formData.images[index];
+          if (!imageUri || typeof imageUri !== "string") continue;
+
+          let fileType = "jpg";
+          if (imageUri.startsWith("data:")) {
+            const match = imageUri.match(/data:image\/(\w+)/);
+            fileType = match ? (match[1] === "jpeg" ? "jpg" : match[1]) : "jpg";
+          } else {
             const uriParts = imageUri.split(".");
-            const fileType = uriParts[uriParts.length - 1] || "jpg";
-            const fileName = `business_image_${index}.${fileType}`;
-            userImageFilenames.push(fileName);
-            // Backend expects business_img_0, business_img_1, etc. in request.files
-            data.append(`business_img_${index}`, {
-              uri: imageUri,
-              type: `image/${fileType}`,
-              name: fileName,
-            });
+            fileType = uriParts.length > 1 ? uriParts[uriParts.length - 1].split(/[?#]/)[0] : "jpg";
           }
-        });
-        // Send the filenames as business_images_url
+          const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase()) ? `image/${fileType === "jpg" ? "jpeg" : fileType}` : "image/jpeg";
+          const fileName = `business_image_${index}.${fileType}`;
+
+          let fileToAppend = null;
+
+          if (isWeb && isBlobOrDataUri(imageUri)) {
+            try {
+              const response = await fetch(imageUri);
+              const blob = await response.blob();
+              fileToAppend = new File([blob], fileName, { type: mimeType });
+            } catch (err) {
+              console.error("Failed to fetch image for upload:", err);
+              continue;
+            }
+          } else {
+            fileToAppend = {
+              uri: imageUri,
+              type: mimeType,
+              name: fileName,
+            };
+          }
+
+          userImageFilenames.push(fileName);
+          data.append(`business_img_${index}`, fileToAppend);
+          if (index === 0) {
+            const profileFileName = `business_profile_img.${fileType}`;
+            const profileFile = fileToAppend instanceof File
+              ? new File([fileToAppend], profileFileName, { type: mimeType })
+              : { uri: imageUri, type: mimeType, name: profileFileName };
+            data.append("business_profile_img", profileFile);
+          }
+        }
+
         if (userImageFilenames.length > 0) {
           data.append("business_images_url", JSON.stringify(userImageFilenames));
         }
       }
+
+      data.append("business_profile_img_is_public", formData.business_images_is_public);
 
       // ============================================
       // CONSOLE LOGS FOR DEBUGGING / POSTMAN TESTING
@@ -337,7 +374,7 @@ export default function BusinessSetupController({ navigation, route }) {
       for (let pair of data.entries()) {
         const [key, value] = pair;
         // Skip file objects to avoid logging large binary data
-        if (typeof value === "object" && value?.uri) {
+        if (typeof value === "object" && (value?.uri || value instanceof File)) {
           formDataEntries.push([key, `[FILE] ${value.name || "image"}`]);
         } else {
           formDataEntries.push([key, value]);
