@@ -14,7 +14,13 @@ const WishDetailScreenContent = ({ route, navigation }) => {
   const { wishData, profileData, profile_uid, searchState, returnTo, profileState } = route.params;
   const { darkMode } = useDarkMode();
   const [loading, setLoading] = useState(false);
+  const [helpType, setHelpType] = useState(null); // "help" | "refer"
   const [howICanHelp, setHowICanHelp] = useState("");
+  const [referralFirstName, setReferralFirstName] = useState("");
+  const [referralLastName, setReferralLastName] = useState("");
+  const [referralEmail, setReferralEmail] = useState("");
+  const [referralPhone, setReferralPhone] = useState("");
+  const [referralNote, setReferralNote] = useState("");
 
   // Create user object for MiniCard
   const userForMiniCard = {
@@ -94,6 +100,23 @@ const WishDetailScreenContent = ({ route, navigation }) => {
   const handleAccept = async () => {
     console.log("Submit clicked for wish:", wishData?.wish_uid);
 
+    if (!helpType) {
+      Alert.alert("Please select an option", "Choose either 'I am referring someone else' or 'I can help' before submitting.");
+      return;
+    }
+
+    if (helpType === "help" && !howICanHelp.trim()) {
+      Alert.alert("Please add a note", "Explain why you are perfect for this gig before submitting.");
+      return;
+    }
+
+    if (helpType === "refer") {
+      if (!referralFirstName.trim() || !referralLastName.trim() || !referralEmail.trim()) {
+        Alert.alert("Please complete the referral", "First Name, Last Name, and Email Address are required.");
+        return;
+      }
+    }
+
     try {
       setLoading(true);
 
@@ -117,8 +140,16 @@ const WishDetailScreenContent = ({ route, navigation }) => {
       const requestBody = {
         profile_wish_id: profile_wish_id,
         responder_id: responder_id,
-        responder_note: howICanHelp || "I can do this for you!",
+        responder_note: helpType === "help" ? (howICanHelp || "I can do this for you!") : referralNote || "",
+        help_type: helpType,
       };
+
+      if (helpType === "refer") {
+        requestBody.referral_first_name = referralFirstName.trim();
+        requestBody.referral_last_name = referralLastName.trim();
+        requestBody.referral_email = referralEmail.trim();
+        requestBody.referral_phone = referralPhone.trim();
+      }
 
       console.log("============================================");
       console.log("ENDPOINT: PROFILE_WISH_INFO");
@@ -262,25 +293,97 @@ const WishDetailScreenContent = ({ route, navigation }) => {
           )}
         </View>
 
-        {/* How I Can Help Section */}
+        {/* Help Type Selection */}
         <View style={[styles.card, darkMode && styles.darkCard]}>
           <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>How I Can Help</Text>
-          <TextInput
-            style={[styles.textInput, darkMode && styles.darkTextInput]}
-            placeholder='Explain why you are perfect for this gig...'
-            placeholderTextColor={darkMode ? "#888" : "#999"}
-            multiline
-            numberOfLines={6}
-            value={howICanHelp}
-            onChangeText={setHowICanHelp}
-            textAlignVertical='top'
-          />
+          <View style={styles.helpTypeOptions}>
+            <TouchableOpacity
+              style={[styles.helpTypeOption, darkMode && styles.darkHelpTypeOption, helpType === "refer" && styles.helpTypeOptionSelected, darkMode && helpType === "refer" && styles.darkHelpTypeOptionSelected]}
+              onPress={() => setHelpType("refer")}
+            >
+              <Text style={[styles.helpTypeOptionText, darkMode && styles.darkHelpTypeOptionText, helpType === "refer" && styles.helpTypeOptionTextSelected, darkMode && helpType === "refer" && styles.darkHelpTypeOptionTextSelected]}>I am referring someone else</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.helpTypeOption, darkMode && styles.darkHelpTypeOption, helpType === "help" && styles.helpTypeOptionSelected, darkMode && helpType === "help" && styles.darkHelpTypeOptionSelected]}
+              onPress={() => setHelpType("help")}
+            >
+              <Text style={[styles.helpTypeOptionText, darkMode && styles.darkHelpTypeOptionText, helpType === "help" && styles.helpTypeOptionTextSelected, darkMode && helpType === "help" && styles.darkHelpTypeOptionTextSelected]}>I can help</Text>
+            </TouchableOpacity>
+          </View>
+
+          {helpType === "help" && (
+            <>
+              <TextInput
+                style={[styles.textInput, darkMode && styles.darkTextInput]}
+                placeholder='Explain why you are perfect for this gig...'
+                placeholderTextColor={darkMode ? "#888" : "#999"}
+                multiline
+                numberOfLines={6}
+                value={howICanHelp}
+                onChangeText={setHowICanHelp}
+                textAlignVertical='top'
+              />
+            </>
+          )}
+
+          {helpType === "refer" && (
+            <>
+              <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle, { marginTop: 20 }]}>Let me refer someone who can help</Text>
+              <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>First Name</Text>
+              <TextInput
+                style={[styles.textInput, styles.singleLineInput, darkMode && styles.darkTextInput]}
+                placeholder='First Name'
+                placeholderTextColor={darkMode ? "#888" : "#999"}
+                value={referralFirstName}
+                onChangeText={setReferralFirstName}
+              />
+              <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Last Name</Text>
+              <TextInput
+                style={[styles.textInput, styles.singleLineInput, darkMode && styles.darkTextInput]}
+                placeholder='Last Name'
+                placeholderTextColor={darkMode ? "#888" : "#999"}
+                value={referralLastName}
+                onChangeText={setReferralLastName}
+              />
+              <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Email Address</Text>
+              <TextInput
+                style={[styles.textInput, styles.singleLineInput, darkMode && styles.darkTextInput]}
+                placeholder='Email Address'
+                placeholderTextColor={darkMode ? "#888" : "#999"}
+                keyboardType='email-address'
+                autoCapitalize='none'
+                value={referralEmail}
+                onChangeText={setReferralEmail}
+              />
+              <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Phone Number</Text>
+              <TextInput
+                style={[styles.textInput, styles.singleLineInput, darkMode && styles.darkTextInput]}
+                placeholder='Phone Number'
+                placeholderTextColor={darkMode ? "#888" : "#999"}
+                keyboardType='phone-pad'
+                value={referralPhone}
+                onChangeText={setReferralPhone}
+              />
+              <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Note</Text>
+              <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>This is why I think they would be perfect</Text>
+              <TextInput
+                style={[styles.textInput, darkMode && styles.darkTextInput]}
+                placeholder='This is why I think they would be perfect...'
+                placeholderTextColor={darkMode ? "#888" : "#999"}
+                multiline
+                numberOfLines={4}
+                value={referralNote}
+                onChangeText={setReferralNote}
+                textAlignVertical='top'
+              />
+            </>
+          )}
         </View>
       </ScrollView>
 
       {/* Submit Button */}
       <View style={[styles.acceptContainer, darkMode && styles.darkAcceptContainer]}>
-        <TouchableOpacity style={[styles.acceptButton, darkMode && styles.darkAcceptButton, loading && styles.disabledButton]} onPress={handleAccept} disabled={loading}>
+        <TouchableOpacity style={[styles.acceptButton, darkMode && styles.darkAcceptButton, (loading || !helpType) && styles.disabledButton]} onPress={handleAccept} disabled={loading || !helpType}>
           <Text style={styles.acceptButtonText}>{loading ? "Submitting..." : "Submit"}</Text>
         </TouchableOpacity>
       </View>
@@ -456,9 +559,71 @@ const styles = StyleSheet.create({
     borderColor: "#E5E5E5",
     textAlignVertical: "top",
   },
+  singleLineInput: {
+    minHeight: 44,
+    marginBottom: 12,
+  },
+  helpTypeOptions: {
+    marginBottom: 4,
+  },
+  helpTypeOption: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: "#E5E5E5",
+    backgroundColor: "#FAFAFA",
+    marginBottom: 12,
+  },
+  helpTypeOptionSelected: {
+    borderColor: "#00C7BE",
+    backgroundColor: "#E8F9F8",
+  },
+  helpTypeOptionText: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#333",
+  },
+  helpTypeOptionTextSelected: {
+    color: "#00A69C",
+    fontWeight: "600",
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 6,
+    marginTop: 4,
+  },
+  helperText: {
+    fontSize: 12,
+    color: "#888",
+    marginBottom: 6,
+    fontStyle: "italic",
+  },
   darkTextInput: {
     backgroundColor: "#1a1a1a",
     color: "#fff",
     borderColor: "#404040",
+  },
+  darkHelpTypeOption: {
+    borderColor: "#404040",
+    backgroundColor: "#1a1a1a",
+  },
+  darkHelpTypeOptionSelected: {
+    borderColor: "#00A69C",
+    backgroundColor: "#0d2d2b",
+  },
+  darkHelpTypeOptionText: {
+    color: "#e0e0e0",
+  },
+  darkHelpTypeOptionTextSelected: {
+    color: "#00C7BE",
+  },
+  darkInputLabel: {
+    color: "#e0e0e0",
+  },
+  darkHelperText: {
+    color: "#888",
   },
 });

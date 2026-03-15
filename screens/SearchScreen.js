@@ -1183,6 +1183,16 @@ export default function SearchScreen({ route }) {
             </View>
           )}
 
+          {/* Statement when Offering is selected */}
+          {searchType === "expertise" && (
+            <Text style={[styles.offeringStatement, darkMode && styles.darkOfferingStatement]}>Discover what others have to offer:</Text>
+          )}
+
+          {/* Statement when Seeking is selected */}
+          {searchType === "seeking" && (
+            <Text style={[styles.seekingStatement, darkMode && styles.darkSeekingStatement]}>Discover what people need:</Text>
+          )}
+
           {/* Only show table header for businesses, not for expertise or seeking */}
           {searchType === "businesses" && (
             <View style={[styles.tableHeader, darkMode && styles.darkTableHeader]}>
@@ -1798,6 +1808,25 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginTop: 5,
+  },
+
+  offeringStatement: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 12,
+  },
+  darkOfferingStatement: {
+    color: "#e0e0e0",
+  },
+  seekingStatement: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 12,
+  },
+  darkSeekingStatement: {
+    color: "#e0e0e0",
   },
 
   // Search type button styles
