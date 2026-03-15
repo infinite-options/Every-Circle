@@ -1130,15 +1130,18 @@ const ProfileScreen = ({ route, navigation }) => {
             })()}
           </View> */}
 
-          {/* Large profile pic at top */}
+          {/* Large profile pic at top - circular, no gray background */}
           <View style={{ alignItems: "center", marginBottom: 12 }}>
-            <Image
-              source={
-                user.profileImage && (isCurrentUserProfile || user.imageIsPublic) && String(user.profileImage).trim() !== "" ? { uri: String(user.profileImage) } : require("../assets/profile.png")
-              }
-              style={{ width: 200, height: 200, borderRadius: 50, backgroundColor: "#eee" }}
-              defaultSource={require("../assets/profile.png")}
-            />
+            <View style={{ width: 200, height: 200, borderRadius: 100, overflow: "hidden" }}>
+              <Image
+                source={
+                  user.profileImage && (isCurrentUserProfile || user.imageIsPublic) && String(user.profileImage).trim() !== "" ? { uri: String(user.profileImage) } : require("../assets/profile.png")
+                }
+                style={{ width: 200, height: 200 }}
+                resizeMode="cover"
+                defaultSource={require("../assets/profile.png")}
+              />
+            </View>
           </View>
 
           <MiniCard
