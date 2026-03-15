@@ -839,7 +839,6 @@ const EditProfileScreen = ({ route, navigation }) => {
         keyboardShouldPersistTaps='handled'
         showsVerticalScrollIndicator={true}
       >
-        {/* Profile Image Upload Section */}
         <View style={[styles.imageSection, darkMode && styles.darkImageSection]}>
           <Text style={[styles.label, darkMode && styles.darkLabel]}>Profile Image</Text>
           <Image
@@ -877,6 +876,10 @@ const EditProfileScreen = ({ route, navigation }) => {
           </View>
         </View>
 
+        {/* PROFILE Section */}
+        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>PROFILE</Text>
+        </View>
         {renderField("First Name (Public)", formData.firstName, true, "firstName", "firstNameIsPublic")}
         {renderField("Last Name (Public)", formData.lastName, true, "lastName", "lastNameIsPublic")}
         {renderField("Phone Number", formData.phoneNumber, formData.phoneIsPublic, "phoneNumber", "phoneIsPublic")}
@@ -885,8 +888,16 @@ const EditProfileScreen = ({ route, navigation }) => {
         {renderField("State", formData.state, formData.locationIsPublic, "state", "locationIsPublic")}
         {renderField("Tag Line", formData.tagLine, formData.tagLineIsPublic, "tagLine", "tagLineIsPublic")}
 
+        {/* BIO Section */}
+        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>BIO</Text>
+        </View>
         {renderShortBioField()}
 
+        {/* OFFERING Section */}
+        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>OFFERING</Text>
+        </View>
         <ExpertiseSection
           expertise={formData.expertise}
           setExpertise={(e) => {
@@ -902,6 +913,10 @@ const EditProfileScreen = ({ route, navigation }) => {
           }}
         />
 
+        {/* SEEKING Section */}
+        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>SEEKING</Text>
+        </View>
         <SeekingSection
           wishes={formData.wishes}
           setWishes={(e) => {
@@ -917,6 +932,10 @@ const EditProfileScreen = ({ route, navigation }) => {
           }}
         />
 
+        {/* EXPERIENCE Section */}
+        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>EXPERIENCE</Text>
+        </View>
         <ExperienceSection
           experience={formData.experience}
           setExperience={(e) => {
@@ -928,6 +947,10 @@ const EditProfileScreen = ({ route, navigation }) => {
           handleDelete={handleDeleteExperience}
         />
 
+        {/* EDUCATION Section */}
+        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>EDUCATION</Text>
+        </View>
         <EducationSection
           education={formData.education}
           setEducation={(e) => {
@@ -939,6 +962,10 @@ const EditProfileScreen = ({ route, navigation }) => {
           handleDelete={handleDeleteEducation}
         />
 
+        {/* BUSINESSES / ORGANIZATIONS Section */}
+        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>BUSINESSES / ORGANIZATIONS</Text>
+        </View>
         <BusinessSection
           businesses={formData.businesses}
           setBusinesses={(e) => {
@@ -1120,6 +1147,28 @@ const styles = StyleSheet.create({
   },
   darkPreviewSection: {
     backgroundColor: "#1a1a1a",
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgb(243, 165, 165)",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  sectionHeaderText: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#000",
+    letterSpacing: 1,
+  },
+  darkSectionHeader: {
+    backgroundColor: "rgb(180, 100, 100)",
+  },
+  darkSectionHeaderText: {
+    color: "#ffffff",
   },
   darkDisabledButton: {
     backgroundColor: "#404040",
