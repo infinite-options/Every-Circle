@@ -647,17 +647,14 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
       // BUSINESS-SPECIFIC: Business users handling (EditProfileScreen doesn't have this)
       const remainingExistingUsers = existingBusinessUsers.filter((user) => !deletedBusinessUsers.includes(user.business_user_id));
-      const existingEmails = remainingExistingUsers.map((user) => user.user_email || "").filter((email) => email);
-      const existingRoles = remainingExistingUsers.map((user) => user.business_role || "").filter((role) => role);
       const validNewUsers = additionalBusinessUsers.filter((user) => user.email.trim() && user.role);
       const newEmails = validNewUsers.map((user) => user.email.trim());
       const newRoles = validNewUsers.map((user) => user.role);
-      const allEmails = [...existingEmails, ...newEmails];
-      const allRoles = [...existingRoles, ...newRoles];
 
-      if (allEmails.length > 0 && allRoles.length > 0) {
-        payload.append("additional_business_user", JSON.stringify(allEmails));
-        payload.append("additional_business_role", JSON.stringify(allRoles));
+      // Only send NEW users in additional_business_user - existing users are already in the DB
+      if (newEmails.length > 0 && newRoles.length > 0) {
+        payload.append("additional_business_user", JSON.stringify(newEmails));
+        payload.append("additional_business_role", JSON.stringify(newRoles));
       }
 
       // bu_individual_business_is_public per business user (0 = hide, 1 = display) for business_user table
@@ -1230,20 +1227,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         keyboardShouldPersistTaps='handled'
         showsVerticalScrollIndicator={true}
       >
-        {/* Business Image Upload Section (identical to EditProfileScreen profile image section) */}
+        {/* Business Image Upload Section */}
         {renderBusinessImageSection()}
-
-        {renderField("Business Name", formData.name, "name")}
-        {renderField("Location", formData.location, "location", "", "locationIsPublic")}
-        {renderField("Address", formData.addressLine2, "addressLine2", "", "locationIsPublic")}
-        {renderField("City", formData.city, "city", "", "locationIsPublic")}
-        {renderField("State", formData.state, "state", "", "locationIsPublic")}
-        {renderField("Country", formData.country, "country", "", "locationIsPublic")}
-        {renderField("Zip Code", formData.zip, "zip", "", "locationIsPublic")}
-        {renderField("Phone Number", formData.phone, "phone", "", "phoneIsPublic")}
-        {renderField("Email", formData.email, "email", "", "emailIsPublic")}
-        {renderCategoryField()}
-        {renderField("Tag Line", formData.tagline, "tagline", "", "taglineIsPublic")}
 
         {/* Business MiniCard Live Preview - how business appears in searches */}
         <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
@@ -1253,18 +1238,55 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           </View>
         </View>
 
+        {/* ABOUT Section */}
+        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>ABOUT</Text>
+        </View>
         {renderField("Short Bio", formData.shortBio, "shortBio", "", "shortBioIsPublic")}
+        {renderCategoryField()}
+
+        {/* TAGLINE Section */}
+        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>TAGLINE</Text>
+        </View>
+        {renderField("Tag Line", formData.tagline, "tagline", "", "taglineIsPublic")}
+
+        {/* CONTACT INFORMATION Section */}
+        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>CONTACT INFORMATION</Text>
+        </View>
+        {renderField("Business Name", formData.name, "name")}
+        {renderField("Location", formData.location, "location", "", "locationIsPublic")}
+        {renderField("Address", formData.addressLine2, "addressLine2", "", "locationIsPublic")}
+        {renderField("City", formData.city, "city", "", "locationIsPublic")}
+        {renderField("State", formData.state, "state", "", "locationIsPublic")}
+        {renderField("Country", formData.country, "country", "", "locationIsPublic")}
+        {renderField("Zip Code", formData.zip, "zip", "", "locationIsPublic")}
+        {renderField("Phone Number", formData.phone, "phone", "", "phoneIsPublic")}
+        {renderField("Email", formData.email, "email", "", "emailIsPublic")}
+        {renderField("Website", formData.website, "website")}
         {renderBusinessRoleField()}
         {renderEINField()}
-        {renderField("Website", formData.website, "website")}
 
-        {/* MISSING: renderField calls for First Name, Last Name (EditProfileScreen has these) */}
-        {/* Note: Business profile doesn't have firstName/lastName fields */}
+        {/* Custom Tags (owner only - Business Profile shows as "Tags:" label) */}
+        {isOwner && renderCustomTagsSection()}
 
-        {/* BUSINESS-SPECIFIC: Business Editors & Owners Section (not in EditProfileScreen) */}
+        {/* SOCIAL LINKS Section */}
+        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>SOCIAL LINKS</Text>
+        </View>
+        {renderSocialField("Facebook", "facebook")}
+        {renderSocialField("Instagram", "instagram")}
+        {renderSocialField("LinkedIn", "linkedin")}
+        {renderSocialField("YouTube", "youtube")}
+
+        {/* BUSINESS EDITORS & OWNERS Section */}
+        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>BUSINESS EDITORS & OWNERS</Text>
+        </View>
         <View style={[styles.fieldContainer, darkMode && styles.darkFieldContainer]}>
-          <View style={styles.labelRow}>
-            <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Editors & Owners</Text>
+          <View style={[styles.labelRow, { marginBottom: 8 }]}>
+            <View />
             <TouchableOpacity onPress={addBusinessEditor}>
               <Text style={[styles.addText, darkMode && styles.darkAddText]}>+</Text>
             </TouchableOpacity>
@@ -1381,26 +1403,13 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           ))}
         </View>
 
-        {/* BUSINESS-SPECIFIC: Custom Tags Section (not in EditProfileScreen) */}
-        {isOwner && renderCustomTagsSection()}
-
-        {/* MISSING: renderShortBioField() call (EditProfileScreen has this) */}
-        {/* Note: Business profile uses regular renderField for shortBio */}
-
-        {/* MISSING: ExperienceSection, EducationSection, ExpertiseSection, SeekingSection, BusinessSection components (EditProfileScreen has these) */}
-        {/* Note: Business profile doesn't have these sections, uses Products & Services instead */}
-
-        {/* BUSINESS-SPECIFIC: Social Links Section (EditProfileScreen doesn't have this section in edit) */}
-        <Text style={[styles.label, darkMode && styles.darkLabel]}>Social Links</Text>
-        {renderSocialField("Facebook", "facebook")}
-        {renderSocialField("Instagram", "instagram")}
-        {renderSocialField("LinkedIn", "linkedin")}
-        {renderSocialField("YouTube", "youtube")}
-
-        {/* BUSINESS-SPECIFIC: Products & Services Section (EditProfileScreen has ExperienceSection, EducationSection, etc.) */}
+        {/* PRODUCTS & SERVICES Section */}
+        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>PRODUCTS & SERVICES</Text>
+        </View>
         <View style={styles.fieldContainer}>
-          <View style={styles.labelRow}>
-            <Text style={[styles.label, darkMode && styles.darkLabel]}>Products & Services</Text>
+          <View style={[styles.labelRow, { marginBottom: 8 }]}>
+            <View />
             {!showServiceForm && (
               <TouchableOpacity
                 onPress={() => {
@@ -1570,6 +1579,28 @@ const styles = StyleSheet.create({
   uploadLink: { color: "#007AFF", textDecorationLine: "underline", marginBottom: 10 },
   previewSection: { marginBottom: 20 },
   previewCard: { padding: 10, borderWidth: 1, borderColor: "#ccc", borderRadius: 5 },
+  sectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgba(175, 82, 222, 0.5)",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  sectionHeaderText: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#000",
+    letterSpacing: 1,
+  },
+  darkSectionHeader: {
+    backgroundColor: "rgba(140, 60, 180, 0.6)",
+  },
+  darkSectionHeaderText: {
+    color: "#ffffff",
+  },
   // BUSINESS-SPECIFIC: Additional styles for business-specific features
   tagInputContainer: { flexDirection: "row", alignItems: "center" },
   addTagButton: {
@@ -1773,15 +1804,16 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
   hideDisplayButton: {
+    width: 72,
     paddingVertical: 8,
-    paddingHorizontal: 12,
     marginLeft: 10,
     justifyContent: "center",
-    alignItems: "center",
+    alignItems: "flex-end",
   },
   hideDisplayButtonText: {
     fontSize: 14,
     fontWeight: "600",
+    textAlign: "right",
   },
   addText: { fontSize: 24, fontWeight: "bold", color: "#000" },
   contentContainer: { padding: 20, paddingBottom: 120 },
