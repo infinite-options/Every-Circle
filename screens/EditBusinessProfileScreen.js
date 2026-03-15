@@ -1430,21 +1430,21 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             <View style={[styles.serviceFormContainer, darkMode && styles.darkServiceFormContainer]}>
               <Text style={[styles.formTitle, darkMode && styles.darkFormTitle]}>{editingServiceIndex !== null ? "Edit Product/Service" : "Add New Product/Service"}</Text>
               <TextInput
-                style={[styles.input, darkMode && styles.darkInput]}
+                style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
                 value={serviceForm.bs_service_name}
                 onChangeText={(t) => handleServiceChange("bs_service_name", t)}
                 placeholder='Product or Service Name'
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
               />
               <TextInput
-                style={[styles.input, darkMode && styles.darkInput]}
+                style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
                 value={serviceForm.bs_service_desc}
                 onChangeText={(t) => handleServiceChange("bs_service_desc", t)}
                 placeholder='Description'
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
               />
               <TextInput
-                style={[styles.input, darkMode && styles.darkInput]}
+                style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
                 value={serviceForm.bs_cost}
                 onChangeText={(t) => handleServiceChange("bs_cost", t)}
                 placeholder='Cost (e.g. 25.00)'
@@ -1452,14 +1452,14 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
               />
               <TextInput
-                style={styles.input}
+                style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
                 value={serviceForm.bs_cost_currency}
                 onChangeText={(t) => handleServiceChange("bs_cost_currency", t)}
                 placeholder='Currency (e.g. USD)'
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
               />
               <TextInput
-                style={[styles.input, darkMode && styles.darkInput]}
+                style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
                 value={serviceForm.bs_bounty}
                 onChangeText={(t) => handleServiceChange("bs_bounty", t)}
                 placeholder='Bounty (e.g. 10.00)'
@@ -1467,14 +1467,14 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
               />
               <TextInput
-                style={styles.input}
+                style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
                 value={serviceForm.bs_bounty_currency}
                 onChangeText={(t) => handleServiceChange("bs_bounty_currency", t)}
                 placeholder='Bounty Currency (e.g. USD)'
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
               />
               <TextInput
-                style={[styles.input, darkMode && styles.darkInput]}
+                style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
                 value={serviceForm.bs_tags}
                 onChangeText={(t) => handleServiceChange("bs_tags", t)}
                 placeholder='Tags (comma separated, e.g. Suit, Men)'
@@ -1729,6 +1729,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 12,
     marginTop: 10,
+  },
+  serviceFormInput: {
+    marginBottom: 12,
   },
   businessEditorCard: {
     backgroundColor: "#f9f9f9",
