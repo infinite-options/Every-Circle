@@ -56,6 +56,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const hasInitializedSub = useRef(false);
   const hasInitializedSubSub = useRef(false);
 
+  
+
   useEffect(() => {
     // This useEffect is only used to log the screen being mounted
     console.log("EditBusinessProfileScreen - Screen Mounted");
@@ -74,10 +76,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         // Initialize from existing business_category_id (comma-separated: main, sub, sub-sub)
         const categoryIdStr = business?.business_category_id || "";
         if (categoryIdStr.trim()) {
-          const ids = categoryIdStr
-            .split(",")
-            .map((id) => id.trim())
-            .filter(Boolean);
+          const ids = categoryIdStr.split(",").map((id) => id.trim()).filter(Boolean);
           if (ids.length > 0) setSelectedMain(ids[0]);
           if (ids.length > 1) setSelectedSub(ids[1]);
           if (ids.length > 2) setSelectedSubSub(ids[2]);
@@ -109,22 +108,14 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   // Initialize sub/sub-sub from business_category_id (run once when categories first load)
   useEffect(() => {
-    const ids =
-      business?.business_category_id
-        ?.split(",")
-        .map((id) => id.trim())
-        .filter(Boolean) || [];
+    const ids = business?.business_category_id?.split(",").map((id) => id.trim()).filter(Boolean) || [];
     if (!hasInitializedSub.current && ids.length > 1 && subCategories.length > 0 && subCategories.some((c) => c.category_uid === ids[1])) {
       setSelectedSub(ids[1]);
       hasInitializedSub.current = true;
     }
   }, [subCategories, business?.business_category_id]);
   useEffect(() => {
-    const ids =
-      business?.business_category_id
-        ?.split(",")
-        .map((id) => id.trim())
-        .filter(Boolean) || [];
+    const ids = business?.business_category_id?.split(",").map((id) => id.trim()).filter(Boolean) || [];
     if (!hasInitializedSubSub.current && ids.length > 2 && subSubCategories.length > 0 && subSubCategories.some((c) => c.category_uid === ids[2])) {
       setSelectedSubSub(ids[2]);
       hasInitializedSubSub.current = true;
@@ -246,7 +237,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [existingBusinessUsers, setExistingBusinessUsers] = useState(Array.isArray(business_users) ? business_users : []);
   const [deletedBusinessUsers, setDeletedBusinessUsers] = useState([]);
   const [isOwner, setIsOwner] = useState(false);
-  const [isChanged, setIsChanged] = useState(false);
+  const [isChanged, setIsChanged] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
 
   // BUSINESS-SPECIFIC: businessRoles constant (not in EditProfileScreen)
@@ -480,12 +471,20 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   // BUSINESS-SPECIFIC: Custom tags management functions (not in EditProfileScreen)
   const addCustomTag = () => {
-    if (customTagInput.trim() && !(formData.customTags || []).includes(customTagInput.trim())) {
-      const updatedTags = [...(formData.customTags || []), customTagInput.trim()];
-      setFormData({ ...formData, customTags: updatedTags });
-      setCustomTagInput("");
-      setIsChanged(true);
-    }
+    const tags = customTagInput.split(",").map(t => t.trim()).filter(Boolean);
+    if (tags.length === 0) return;
+    
+    setFormData(prev => {
+      const existing = prev.customTags || [];
+      const newTags = tags.filter(t => !existing.includes(t));
+      if (newTags.length === 0) return prev;
+      return {
+        ...prev,
+        customTags: [...existing, ...newTags]
+      };
+    });
+    setCustomTagInput("");
+    setIsChanged(true);
   };
 
   const removeCustomTag = (tagToRemove) => {
@@ -551,6 +550,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_ein_number", formData.einNumber);
       payload.append("business_website", formData.website);
       payload.append("custom_tags", JSON.stringify(formData.customTags));
+      
 
       // Business profile image (backend: business_profile_img file, delete_business_profile_img URL, business_profile_img_is_public 0/1)
       if (businessImageUri && !imageError && businessImageUri !== originalBusinessImage) {
@@ -647,14 +647,17 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
       // BUSINESS-SPECIFIC: Business users handling (EditProfileScreen doesn't have this)
       const remainingExistingUsers = existingBusinessUsers.filter((user) => !deletedBusinessUsers.includes(user.business_user_id));
+      const existingEmails = remainingExistingUsers.map((user) => user.user_email || "").filter((email) => email);
+      const existingRoles = remainingExistingUsers.map((user) => user.business_role || "").filter((role) => role);
       const validNewUsers = additionalBusinessUsers.filter((user) => user.email.trim() && user.role);
       const newEmails = validNewUsers.map((user) => user.email.trim());
       const newRoles = validNewUsers.map((user) => user.role);
+      const allEmails = [...existingEmails, ...newEmails];
+      const allRoles = [...existingRoles, ...newRoles];
 
-      // Only send NEW users in additional_business_user - existing users are already in the DB
-      if (newEmails.length > 0 && newRoles.length > 0) {
-        payload.append("additional_business_user", JSON.stringify(newEmails));
-        payload.append("additional_business_role", JSON.stringify(newRoles));
+      if (allEmails.length > 0 && allRoles.length > 0) {
+        payload.append("additional_business_user", JSON.stringify(allEmails));
+        payload.append("additional_business_role", JSON.stringify(allRoles));
       }
 
       // bu_individual_business_is_public per business user (0 = hide, 1 = display) for business_user table
@@ -703,7 +706,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       console.log("  business_images_url (gallery only):", businessImagesUrlValue);
       console.log("--------------------------------------------");
       console.log("============================================");
-
+      console.log("Custom tags being sent:", JSON.stringify(formData.customTags));
       const response = await axios.put(`${BusinessProfileAPI}`, payload, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -771,14 +774,16 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       {/* Row: Label and "Always Hidden" text */}
       <View style={styles.labelRow}>
         <Text style={[styles.label, darkMode && styles.darkLabel]}>EIN Number</Text>
-        <Text style={[styles.toggleText, { color: darkMode ? "#999999" : "#666666", fontStyle: "italic" }]}>Always Hidden</Text>
+        <Text style={[styles.toggleText, { color: darkMode ? "#999999" : "#666666", fontStyle: "italic" }]}>
+          Always Hidden
+        </Text>
       </View>
       <TextInput
         style={[styles.input, darkMode && styles.darkInput]}
         value={formData.einNumber}
-        placeholder='##-#######'
+        placeholder="##-#######"
         placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
-        keyboardType='numeric'
+        keyboardType="numeric"
         maxLength={10}
         onChangeText={(text) => {
           const formattedText = formatEINNumber(text);
@@ -895,9 +900,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       <Dropdown
         style={[styles.input, darkMode && styles.darkInput]}
         data={mainCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-        labelField='label'
-        valueField='value'
-        placeholder='Select Main Category'
+        labelField="label"
+        valueField="value"
+        placeholder="Select Main Category"
         placeholderTextColor={darkMode ? "#999" : "#666"}
         value={selectedMain}
         onChange={(item) => {
@@ -920,8 +925,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       <Dropdown
         style={[styles.input, darkMode && styles.darkInput]}
         data={subCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-        labelField='label'
-        valueField='value'
+        labelField="label"
+        valueField="value"
         placeholder={subCategories.length > 0 ? "Select Sub Category" : "Select Main Category first"}
         placeholderTextColor={darkMode ? "#999" : "#666"}
         value={selectedSub}
@@ -946,8 +951,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       <Dropdown
         style={[styles.input, darkMode && styles.darkInput]}
         data={subSubCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-        labelField='label'
-        valueField='value'
+        labelField="label"
+        valueField="value"
         placeholder={subSubCategories.length > 0 ? "Select Sub-Sub Category" : "Select Sub Category first"}
         placeholderTextColor={darkMode ? "#999" : "#666"}
         value={selectedSubSub}
@@ -1120,47 +1125,35 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   // BUSINESS-SPECIFIC: Ownership check useEffect (EditProfileScreen doesn't have this)
   // Check if current user is owner/editor of the business
+
   useEffect(() => {
     const checkBusinessOwnership = async () => {
       try {
-        if (business && business.business_user_id) {
-          const currentUserUid = await AsyncStorage.getItem("user_uid");
-          if (business.business_user_id === currentUserUid) {
-            setIsOwner(true);
-            return;
-          }
-        }
-
         const userUid = await AsyncStorage.getItem("user_uid");
-        const profileUID = await AsyncStorage.getItem("profile_uid");
-        if (!userUid && !profileUID) {
+        if (!userUid) {
           setIsOwner(false);
           return;
         }
 
-        let uidToUse = profileUID || userUid;
-        const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${uidToUse}`);
-        const userData = await response.json();
-
-        if (userData && userData.business_info) {
-          const businessInfo = typeof userData.business_info === "string" ? JSON.parse(userData.business_info) : userData.business_info;
-          const isBusinessOwner = businessInfo.some((biz) => {
-            return biz.business_uid === businessUID || biz.profile_business_business_id === businessUID;
-          });
-          setIsOwner(isBusinessOwner);
-        } else {
-          setIsOwner(false);
+        // Check if current user is in the business_users list
+        if (Array.isArray(business_users) && business_users.length > 0) {
+          const isInBusinessUsers = business_users.some(
+            (u) => u.business_user_id === userUid
+          );
+          setIsOwner(isInBusinessUsers);
+          return;
         }
+
+        // Fallback: if business_users is empty but we're on edit screen, assume owner
+        setIsOwner(true);
       } catch (error) {
         console.error("EditBusinessProfileScreen - Error checking business ownership:", error);
-        setIsOwner(false);
+        setIsOwner(true); // Default to true since they navigated to edit screen
       }
     };
 
-    if (business && businessUID) {
-      checkBusinessOwnership();
-    }
-  }, [business, businessUID]);
+    checkBusinessOwnership();
+  }, [business_users]);
 
   // Track the currently focused input
   const focusedInputRef = useRef(null);
@@ -1227,34 +1220,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         keyboardShouldPersistTaps='handled'
         showsVerticalScrollIndicator={true}
       >
-        {/* Business Image Upload Section */}
+        {/* Business Image Upload Section (identical to EditProfileScreen profile image section) */}
         {renderBusinessImageSection()}
 
-        {/* Business MiniCard Live Preview - how business appears in searches */}
-        <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
-          <Text style={[styles.label, darkMode && styles.darkLabel]}>Mini Card (how you'll appear in searches):</Text>
-          <View style={[styles.previewCard, darkMode && styles.darkPreviewCard]}>
-            <MiniCard key={`minicard-${imageUpdateKey}`} business={previewBusiness} />
-          </View>
-        </View>
-
-        {/* ABOUT Section */}
-        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
-          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>ABOUT</Text>
-        </View>
-        {renderField("Short Bio", formData.shortBio, "shortBio", "", "shortBioIsPublic")}
-        {renderCategoryField()}
-
-        {/* TAGLINE Section */}
-        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
-          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>TAGLINE</Text>
-        </View>
-        {renderField("Tag Line", formData.tagline, "tagline", "", "taglineIsPublic")}
-
-        {/* CONTACT INFORMATION Section */}
-        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
-          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>CONTACT INFORMATION</Text>
-        </View>
         {renderField("Business Name", formData.name, "name")}
         {renderField("Location", formData.location, "location", "", "locationIsPublic")}
         {renderField("Address", formData.addressLine2, "addressLine2", "", "locationIsPublic")}
@@ -1264,29 +1232,29 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         {renderField("Zip Code", formData.zip, "zip", "", "locationIsPublic")}
         {renderField("Phone Number", formData.phone, "phone", "", "phoneIsPublic")}
         {renderField("Email", formData.email, "email", "", "emailIsPublic")}
-        {renderField("Website", formData.website, "website")}
+        {renderCategoryField()}
+        {renderField("Tag Line", formData.tagline, "tagline", "", "taglineIsPublic")}
+
+        {/* Business MiniCard Live Preview - how business appears in searches */}
+        <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
+          <Text style={[styles.label, darkMode && styles.darkLabel]}>Mini Card (how you'll appear in searches):</Text>
+          <View style={[styles.previewCard, darkMode && styles.darkPreviewCard]}>
+            <MiniCard key={`minicard-${imageUpdateKey}`} business={previewBusiness} />
+          </View>
+        </View>
+
+        {renderField("Short Bio", formData.shortBio, "shortBio", "", "shortBioIsPublic")}
         {renderBusinessRoleField()}
         {renderEINField()}
+        {renderField("Website", formData.website, "website")}
 
-        {/* Custom Tags (owner only - Business Profile shows as "Tags:" label) */}
-        {isOwner && renderCustomTagsSection()}
+        {/* MISSING: renderField calls for First Name, Last Name (EditProfileScreen has these) */}
+        {/* Note: Business profile doesn't have firstName/lastName fields */}
 
-        {/* SOCIAL LINKS Section */}
-        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
-          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>SOCIAL LINKS</Text>
-        </View>
-        {renderSocialField("Facebook", "facebook")}
-        {renderSocialField("Instagram", "instagram")}
-        {renderSocialField("LinkedIn", "linkedin")}
-        {renderSocialField("YouTube", "youtube")}
-
-        {/* BUSINESS EDITORS & OWNERS Section */}
-        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
-          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>BUSINESS EDITORS & OWNERS</Text>
-        </View>
+        {/* BUSINESS-SPECIFIC: Business Editors & Owners Section (not in EditProfileScreen) */}
         <View style={[styles.fieldContainer, darkMode && styles.darkFieldContainer]}>
-          <View style={[styles.labelRow, { marginBottom: 8 }]}>
-            <View />
+          <View style={styles.labelRow}>
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Editors & Owners</Text>
             <TouchableOpacity onPress={addBusinessEditor}>
               <Text style={[styles.addText, darkMode && styles.darkAddText]}>+</Text>
             </TouchableOpacity>
@@ -1403,13 +1371,27 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           ))}
         </View>
 
-        {/* PRODUCTS & SERVICES Section */}
-        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
-          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>PRODUCTS & SERVICES</Text>
-        </View>
+        {/* BUSINESS-SPECIFIC: Custom Tags Section (not in EditProfileScreen) */}
+        {/* {isOwner && renderCustomTagsSection()} */}
+        {renderCustomTagsSection()}
+
+        {/* MISSING: renderShortBioField() call (EditProfileScreen has this) */}
+        {/* Note: Business profile uses regular renderField for shortBio */}
+
+        {/* MISSING: ExperienceSection, EducationSection, ExpertiseSection, SeekingSection, BusinessSection components (EditProfileScreen has these) */}
+        {/* Note: Business profile doesn't have these sections, uses Products & Services instead */}
+
+        {/* BUSINESS-SPECIFIC: Social Links Section (EditProfileScreen doesn't have this section in edit) */}
+        <Text style={[styles.label, darkMode && styles.darkLabel]}>Social Links</Text>
+        {renderSocialField("Facebook", "facebook")}
+        {renderSocialField("Instagram", "instagram")}
+        {renderSocialField("LinkedIn", "linkedin")}
+        {renderSocialField("YouTube", "youtube")}
+
+        {/* BUSINESS-SPECIFIC: Products & Services Section (EditProfileScreen has ExperienceSection, EducationSection, etc.) */}
         <View style={styles.fieldContainer}>
-          <View style={[styles.labelRow, { marginBottom: 8 }]}>
-            <View />
+          <View style={styles.labelRow}>
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Products & Services</Text>
             {!showServiceForm && (
               <TouchableOpacity
                 onPress={() => {
@@ -1579,28 +1561,6 @@ const styles = StyleSheet.create({
   uploadLink: { color: "#007AFF", textDecorationLine: "underline", marginBottom: 10 },
   previewSection: { marginBottom: 20 },
   previewCard: { padding: 10, borderWidth: 1, borderColor: "#ccc", borderRadius: 5 },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "rgba(175, 82, 222, 0.5)",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-    marginTop: 16,
-  },
-  sectionHeaderText: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#000",
-    letterSpacing: 1,
-  },
-  darkSectionHeader: {
-    backgroundColor: "rgba(140, 60, 180, 0.6)",
-  },
-  darkSectionHeaderText: {
-    color: "#ffffff",
-  },
   // BUSINESS-SPECIFIC: Additional styles for business-specific features
   tagInputContainer: { flexDirection: "row", alignItems: "center" },
   addTagButton: {
@@ -1804,16 +1764,15 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
   hideDisplayButton: {
-    width: 72,
     paddingVertical: 8,
+    paddingHorizontal: 12,
     marginLeft: 10,
     justifyContent: "center",
-    alignItems: "flex-end",
+    alignItems: "center",
   },
   hideDisplayButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    textAlign: "right",
   },
   addText: { fontSize: 24, fontWeight: "bold", color: "#000" },
   contentContainer: { padding: 20, paddingBottom: 120 },
