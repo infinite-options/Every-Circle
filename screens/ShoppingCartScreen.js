@@ -166,27 +166,21 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
   const handleRemoveItem = async (index) => {
     try {
-      // Get the business_uid from the item being removed
       const itemToRemove = cartItems[index];
-      const itemBusinessUid = itemToRemove.business_uid;
 
-      // Get current cart items from AsyncStorage for this specific business
-      const storedCartData = await AsyncStorage.getItem(`cart_${itemBusinessUid}`);
-      let cartData = storedCartData ? JSON.parse(storedCartData) : { items: [] };
+      if (itemToRemove.itemType === "expertise") {
+        // Remove expertise item using its cart_key
+        await AsyncStorage.removeItem(itemToRemove.cart_key || `cart_expertise_${itemToRemove.expertise_uid}`);
+      } else {
+        const itemBusinessUid = itemToRemove.business_uid;
+        const storedCartData = await AsyncStorage.getItem(`cart_${itemBusinessUid}`);
+        let cartData = storedCartData ? JSON.parse(storedCartData) : { items: [] };
+        cartData.items = cartData.items.filter((item) => item.bs_uid !== itemToRemove.bs_uid);
+        await AsyncStorage.setItem(`cart_${itemBusinessUid}`, JSON.stringify(cartData));
+        if (onRemoveItem) onRemoveItem(index);
+      }
 
-      // Find and remove the specific item by bs_uid
-      cartData.items = cartData.items.filter((item) => item.bs_uid !== itemToRemove.bs_uid);
-
-      // Save updated cart
-      await AsyncStorage.setItem(`cart_${itemBusinessUid}`, JSON.stringify(cartData));
-
-      // Update local state immediately
       setCartItems((prevItems) => prevItems.filter((_, i) => i !== index));
-
-      // Call the parent's onRemoveItem to update the UI in BusinessProfileScreen
-      onRemoveItem(index);
-
-      console.log(`Removed item ${itemToRemove.bs_service_name} from business ${itemBusinessUid}`);
     } catch (error) {
       console.error("Error removing item from cart:", error);
       Alert.alert("Error", "Failed to remove item from cart");
@@ -197,43 +191,25 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     try {
       const newCartItems = [...cartItems];
       const currentQuantity = newCartItems[index].quantity || 1;
-      const newQuantity = Math.max(1, currentQuantity + change); // Ensure quantity is at least 1
+      const newQuantity = Math.max(1, currentQuantity + change);
 
-      // Update the item's quantity and total price
-      newCartItems[index] = {
-        ...newCartItems[index],
-        quantity: newQuantity,
-        totalPrice: (parseFloat(newCartItems[index].bs_cost) * newQuantity).toFixed(2),
-      };
-
-      // Update local state
-      setCartItems(newCartItems);
-
-      // Update AsyncStorage for the specific business
-      const businessUid = newCartItems[index].business_uid;
-      const businessItems = newCartItems.filter((item) => item.business_uid === businessUid);
-
-      // Group items by bs_uid and combine quantities
-      const groupedItems = businessItems.reduce((acc, item) => {
-        const existingItem = acc.find((i) => i.bs_uid === item.bs_uid);
-        if (existingItem) {
-          existingItem.quantity = (existingItem.quantity || 1) + (item.quantity || 1);
-          existingItem.totalPrice = (parseFloat(existingItem.bs_cost) * existingItem.quantity).toFixed(2);
-        } else {
-          acc.push({ ...item });
-        }
-        return acc;
-      }, []);
-
-      // Save the grouped items to AsyncStorage
-      await AsyncStorage.setItem(
-        `cart_${businessUid}`,
-        JSON.stringify({
-          items: groupedItems,
-        }),
-      );
-
-      console.log(`Updated quantity for ${newCartItems[index].bs_service_name} to ${newQuantity}`);
+      if (newCartItems[index].itemType === "expertise") {
+        newCartItems[index] = { ...newCartItems[index], quantity: newQuantity };
+        setCartItems(newCartItems);
+        // Update AsyncStorage for expertise item
+        const cartKey = newCartItems[index].cart_key || `cart_expertise_${newCartItems[index].expertise_uid}`;
+        await AsyncStorage.setItem(cartKey, JSON.stringify(newCartItems[index]));
+      } else {
+        newCartItems[index] = {
+          ...newCartItems[index],
+          quantity: newQuantity,
+          totalPrice: (parseFloat(newCartItems[index].bs_cost) * newQuantity).toFixed(2),
+        };
+        setCartItems(newCartItems);
+        const businessUid = newCartItems[index].business_uid;
+        const businessItems = newCartItems.filter((item) => item.business_uid === businessUid);
+        await AsyncStorage.setItem(`cart_${businessUid}`, JSON.stringify({ items: businessItems }));
+      }
     } catch (error) {
       console.error("Error updating quantity:", error);
       Alert.alert("Error", "Failed to update quantity");
@@ -241,27 +217,16 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   };
 
   const calculateTotal = () => {
-    // Group items by bs_uid and combine quantities before calculating total
-    const groupedItems = cartItems.reduce((acc, item) => {
-      const existingItem = acc.find((i) => i.bs_uid === item.bs_uid);
-      if (existingItem) {
-        existingItem.quantity = (existingItem.quantity || 1) + (item.quantity || 1);
-      } else {
-        acc.push({ ...item });
+    return cartItems.reduce((total, item) => {
+      if (item.itemType === "expertise") {
+        const cost = parseFloat(item.cost) || 0;
+        const quantity = item.quantity || 1;
+        return total + cost * quantity;
       }
-      return acc;
-    }, []);
-
-    const total = groupedItems.reduce((total, item) => {
       const cost = parseFloat(item.bs_cost) || 0;
       const quantity = item.quantity || 1;
-      const itemTotal = cost * quantity;
-      console.log(`Item ${item.bs_service_name}: ${cost.toFixed(2)} × ${quantity} = ${itemTotal.toFixed(2)}`);
-      return total + itemTotal;
+      return total + cost * quantity;
     }, 0);
-
-    console.log("Calculated total:", total.toFixed(2));
-    return total;
   };
 
   const createPaymentIntent = async () => {
@@ -690,48 +655,63 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                     <Ionicons name='close-circle' size={24} color='#FF3B30' />
                   </TouchableOpacity>
                   <View style={styles.cartItemContent}>
-                    <Text style={styles.itemName}>{item.bs_service_name}</Text>
-                    <Text style={styles.itemDescription}>{item.bs_service_desc}</Text>
+                    {/* Handle both expertise items and business service items */}
+                    <Text style={styles.itemName}>
+                      {item.itemType === "expertise" ? item.title : item.bs_service_name}
+                    </Text>
+                    <Text style={styles.itemDescription}>
+                      {item.itemType === "expertise" ? item.description : item.bs_service_desc}
+                    </Text>
 
                     <View style={styles.priceContainer}>
                       <View style={styles.priceRow}>
                         <Text style={styles.priceLabel}>Price:</Text>
                         <Text style={styles.priceValue}>
-                          {item.bs_cost_currency || "USD"} {parseFloat(item.bs_cost).toFixed(2)}
+                          {item.itemType === "expertise"
+                            ? `USD ${parseFloat(item.cost) || 0}`
+                            : `${item.bs_cost_currency || "USD"} ${parseFloat(item.bs_cost).toFixed(2)}`}
                         </Text>
                       </View>
 
                       <View style={styles.priceRow}>
                         <Text style={styles.priceLabel}>Bounty:</Text>
                         <Text style={styles.priceValue}>
-                          {item.bs_bounty_currency || "USD"} {(parseFloat(item.bs_bounty) || 0).toFixed(2)}
+                          {item.itemType === "expertise"
+                            ? `USD ${parseFloat(item.bounty) || 0}`
+                            : `${item.bs_bounty_currency || "USD"} ${(parseFloat(item.bs_bounty) || 0).toFixed(2)}`}
                         </Text>
                       </View>
 
-                      <View style={styles.quantityContainer}>
-                        <Text style={styles.priceLabel}>Quantity:</Text>
-                        <View style={styles.quantityControls}>
-                          <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, -1)}>
-                            <Ionicons name='remove' size={20} color='#9C45F7' />
-                          </TouchableOpacity>
-                          <Text style={styles.quantityText}>{item.quantity || 1}</Text>
-                          <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, 1)}>
-                            <Ionicons name='add' size={20} color='#9C45F7' />
-                          </TouchableOpacity>
+                      {(
+                        <View style={styles.quantityContainer}>
+                          <Text style={styles.priceLabel}>Quantity:</Text>
+                          <View style={styles.quantityControls}>
+                            <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, -1)}>
+                              <Ionicons name='remove' size={20} color='#9C45F7' />
+                            </TouchableOpacity>
+                            <Text style={styles.quantityText}>{item.quantity || 1}</Text>
+                            <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, 1)}>
+                              <Ionicons name='add' size={20} color='#9C45F7' />
+                            </TouchableOpacity>
+                          </View>
                         </View>
-                      </View>
+                      )}
 
                       <View style={styles.totalRow}>
                         <Text style={styles.totalLabel}>Total Price:</Text>
-                        <Text style={styles.totalValue}>
-                          {item.bs_cost_currency || "USD"} {(parseFloat(item.totalPrice) || parseFloat(item.bs_cost) * (item.quantity || 1)).toFixed(2)}
+                       <Text style={styles.totalValue}>
+                          {item.itemType === "expertise"
+                            ? `USD ${(parseFloat(item.cost) * (item.quantity || 1)).toFixed(2)}`
+                            : `${item.bs_cost_currency || "USD"} ${(parseFloat(item.totalPrice) || parseFloat(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
                         </Text>
                       </View>
 
                       <View style={styles.totalRow}>
                         <Text style={styles.totalLabel}>Total Bounty:</Text>
                         <Text style={styles.totalValue}>
-                          {item.bs_bounty_currency || "USD"} {(parseFloat(item.bs_bounty) || 0).toFixed(2)}
+                          {item.itemType === "expertise"
+                            ? `USD ${(parseFloat(item.cost) * (item.quantity || 1)).toFixed(2)}`
+                            : `${item.bs_cost_currency || "USD"} ${(parseFloat(item.totalPrice) || parseFloat(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
                         </Text>
                       </View>
                     </View>

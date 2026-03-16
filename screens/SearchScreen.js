@@ -72,39 +72,39 @@ export default function SearchScreen({ route }) {
   useEffect(() => {
     const loadCartItems = async () => {
       try {
-        console.log("SearchScreen.js - Loading cart items...");
-        // Get all keys from AsyncStorage
         const keys = await AsyncStorage.getAllKeys();
-        // Filter keys that start with 'cart_'
         const cartKeys = keys.filter((key) => key.startsWith("cart_"));
-        console.log("Found cart keys:", cartKeys);
-
+        
         let totalItems = 0;
         let allCartItems = [];
 
-        // Load items from each cart
         for (const key of cartKeys) {
           const cartData = await AsyncStorage.getItem(key);
           if (cartData) {
-            const { items } = JSON.parse(cartData);
-            totalItems += items.length;
-            // Add business_uid to each item
-            const businessUid = key.replace("cart_", "");
-            const itemsWithBusiness = items.map((item) => ({
-              ...item,
-              business_uid: businessUid,
-            }));
-            allCartItems = [...allCartItems, ...itemsWithBusiness];
+            const parsed = JSON.parse(cartData);
+            
+            if (key.startsWith("cart_expertise_")) {
+              // Expertise items stored as single objects
+              totalItems += 1;
+              allCartItems.push({ ...parsed, cart_key: key });
+            } else {
+              // Business items stored as { items: [] }
+              const { items } = parsed;
+              totalItems += items.length;
+              const businessUid = key.replace("cart_", "");
+              const itemsWithBusiness = items.map((item) => ({
+                ...item,
+                business_uid: businessUid,
+              }));
+              allCartItems = [...allCartItems, ...itemsWithBusiness];
+            }
           }
         }
 
-        console.log("Cart count updated:", totalItems);
-        console.log("Total cart items:", allCartItems.length);
         setCartCount(totalItems);
         setCartItems(allCartItems);
       } catch (error) {
         console.error("Error loading cart items:", error);
-        // Reset cart state on error
         setCartCount(0);
         setCartItems([]);
       }
@@ -581,7 +581,7 @@ export default function SearchScreen({ route }) {
                 business_short_bio: sanitizeText(b.business_short_bio),
                 business_tag_line: sanitizeText(b.business_tag_line),
                 tags: b.tags || [],  // ← now includes tags
-                score: 0,
+                score: 0, 
                 itemType: "businesses",
               }));
             list = [...list, ...tagList];
