@@ -6,7 +6,7 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { BUSINESS_RESULTS_ENDPOINT, EXPERTISE_RESULTS_ENDPOINT, WISHES_RESULTS_ENDPOINT, TAG_SEARCH_DISTINCT_ENDPOINT, TAG_CATEGORY_DISTINCT_ENDPOINT, SEARCH_BASE_URL, BUSINESS_AVG_RATINGS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, PROFILE_WISH_INFO_ENDPOINT } from "../apiConfig";
+import { BUSINESS_RESULTS_ENDPOINT, EXPERTISE_RESULTS_ENDPOINT, WISHES_RESULTS_ENDPOINT, TAG_SEARCH_DISTINCT_ENDPOINT, TAG_CATEGORY_DISTINCT_ENDPOINT, SEARCH_BASE_URL, BUSINESS_AVG_RATINGS_ENDPOINT, BUSINESS_TAG_SEARCH_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, PROFILE_WISH_INFO_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
@@ -554,6 +554,44 @@ export default function SearchScreen({ route }) {
             itemType: "businesses"
           });
         });
+
+        // Run tag search in parallel with main search
+        try {
+          const tagRes = await fetch(`${BUSINESS_TAG_SEARCH_ENDPOINT}?q=${encodeURIComponent(q)}`);
+          const tagJson = await tagRes.json();
+          const tagResults = tagJson.result || [];
+
+          if (tagResults.length > 0) {
+            const existingIds = new Set(list.map(b => b.id));
+            const sanitizeText = (text) => {
+              if (!text) return "";
+              const str = String(text).trim();
+              return str === "." ? "" : str;
+            };
+            const tagList = tagResults
+              .filter(b => !existingIds.has(b.business_uid))
+              .map((b) => ({
+                id: b.business_uid,
+                company: sanitizeText(b.business_name) || "Unknown Business",
+                business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
+                rating: null,
+                hasPriceTag: false,
+                hasX: false,
+                hasDollar: false,
+                business_short_bio: sanitizeText(b.business_short_bio),
+                business_tag_line: sanitizeText(b.business_tag_line),
+                tags: b.tags || [],  // ← now includes tags
+                score: 0,
+                itemType: "businesses",
+              }));
+            list = [...list, ...tagList];
+            console.log("✅ Tag search added", tagList.length, "additional results");
+          }
+        } catch (e) {
+          console.log("Could not fetch tag search results:", e);
+        }
+
+
 
         // Fetch avg ratings from your backend
         try {
