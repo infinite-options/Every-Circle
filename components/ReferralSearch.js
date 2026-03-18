@@ -4,7 +4,18 @@ import { View, Text, TextInput, TouchableOpacity, Modal, FlatList, Image, Activi
 import { Ionicons } from "@expo/vector-icons";
 import { SEARCH_REFERRAL_ENDPOINT } from "../apiConfig";
 
-const ReferralSearch = ({ visible, onSelect, onNewUser, onClose, embedded = false }) => {
+const ReferralSearch = ({
+  visible,
+  onSelect,
+  onNewUser,
+  onClose,
+  embedded = false,
+  onSelectUser,
+  showNewUserButton = true,
+  instructionText = "Search for the person who referred you",
+  hideEmptyState = false,
+  searchButtonColor,
+}) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -44,7 +55,11 @@ const ReferralSearch = ({ visible, onSelect, onNewUser, onClose, embedded = fals
   };
 
   const handleSelectUser = (user) => {
-    onSelect(user.profile_personal_uid, user.profile_personal_user_id);
+    if (onSelectUser) {
+      onSelectUser(user);
+    } else if (onSelect) {
+      onSelect(user.profile_personal_uid, user.profile_personal_user_id);
+    }
     // Reset modal state
     setSearchQuery("");
     setSearchResults([]);
@@ -75,13 +90,13 @@ const ReferralSearch = ({ visible, onSelect, onNewUser, onClose, embedded = fals
       <View style={styles.searchContainer}>
         <Ionicons name='search' size={20} color='#666' style={styles.searchIcon} />
         <TextInput style={styles.searchInput} placeholder='Search by name or city' value={searchQuery} onChangeText={setSearchQuery} onSubmitEditing={handleSearch} autoCapitalize='words' />
-        <TouchableOpacity onPress={handleSearch} style={styles.searchButton}>
+        <TouchableOpacity onPress={handleSearch} style={[styles.searchButton, searchButtonColor && { backgroundColor: searchButtonColor }]}>
           <Text style={styles.searchButtonText}>Search</Text>
         </TouchableOpacity>
       </View>
 
       {/* Results */}
-      <View style={[styles.resultsContainer, { minHeight: 150 }]}>
+      <View style={[styles.resultsContainer, { minHeight: hideEmptyState && !hasSearched && searchResults.length === 0 ? 0 : 150 }]}>
         {isSearching ? (
           <View style={styles.centerContainer}>
             <ActivityIndicator size='large' color='#007AFF' />
@@ -95,18 +110,20 @@ const ReferralSearch = ({ visible, onSelect, onNewUser, onClose, embedded = fals
           </View>
         ) : searchResults.length > 0 ? (
           <FlatList data={searchResults} renderItem={renderUserItem} keyExtractor={(item) => item.profile_personal_uid} style={styles.resultsList} />
-        ) : (
+        ) : hideEmptyState ? null : (
           <View style={styles.centerContainer}>
             <Ionicons name='people' size={48} color='#ccc' />
-            <Text style={styles.instructionText}>Search for the person who referred you</Text>
+            <Text style={styles.instructionText}>{instructionText}</Text>
           </View>
         )}
       </View>
 
-      {/* New User Button */}
-      <TouchableOpacity style={styles.newUserButton} onPress={onNewUser}>
-        <Text style={styles.newUserButtonText}>I was not referred</Text>
-      </TouchableOpacity>
+      {/* New User Button - optional */}
+      {showNewUserButton && onNewUser && (
+        <TouchableOpacity style={styles.newUserButton} onPress={onNewUser}>
+          <Text style={styles.newUserButtonText}>I was not referred</Text>
+        </TouchableOpacity>
+      )}
     </>
   ) : (
     // Original standalone modal version
@@ -125,7 +142,7 @@ const ReferralSearch = ({ visible, onSelect, onNewUser, onClose, embedded = fals
           <View style={styles.searchContainer}>
             <Ionicons name='search' size={20} color='#666' style={styles.searchIcon} />
             <TextInput style={styles.searchInput} placeholder='Search by name or city' value={searchQuery} onChangeText={setSearchQuery} onSubmitEditing={handleSearch} autoCapitalize='words' />
-            <TouchableOpacity onPress={handleSearch} style={styles.searchButton}>
+            <TouchableOpacity onPress={handleSearch} style={[styles.searchButton, searchButtonColor && { backgroundColor: searchButtonColor }]}>
               <Text style={styles.searchButtonText}>Search</Text>
             </TouchableOpacity>
           </View>
@@ -145,18 +162,20 @@ const ReferralSearch = ({ visible, onSelect, onNewUser, onClose, embedded = fals
               </View>
             ) : searchResults.length > 0 ? (
               <FlatList data={searchResults} renderItem={renderUserItem} keyExtractor={(item) => item.profile_personal_uid} style={styles.resultsList} />
-            ) : (
+            ) : hideEmptyState ? null : (
               <View style={styles.centerContainer}>
                 <Ionicons name='people' size={48} color='#ccc' />
-                <Text style={styles.instructionText}>Search for the person who referred you</Text>
+                <Text style={styles.instructionText}>{instructionText}</Text>
               </View>
             )}
           </View>
 
-          {/* New User Button */}
-          <TouchableOpacity style={styles.newUserButton} onPress={onNewUser}>
-            <Text style={styles.newUserButtonText}>I was not referred</Text>
-          </TouchableOpacity>
+          {/* New User Button - optional */}
+          {showNewUserButton && onNewUser && (
+            <TouchableOpacity style={styles.newUserButton} onPress={onNewUser}>
+              <Text style={styles.newUserButtonText}>I was not referred</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </Modal>

@@ -56,6 +56,7 @@ export const DARK_MODE_COLORS = {
   "#929090": "#6B6B6B", // Gray -> Darker Gray
   "#2434C2": "#1C2899", // Blue (Connect) -> Darker Blue
   "#18884A": "#126B38", // Green -> Darker Green
+  "#4F8A8B": "#3D6B6C", // Search (teal) -> Darker teal
 };
 
 /**

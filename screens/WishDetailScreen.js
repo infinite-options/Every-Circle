@@ -4,9 +4,11 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
+import ReferralSearch from "../components/ReferralSearch";
 import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import AppHeader from "../components/AppHeader";
+import { getHeaderColors, getHeaderColor, getDarkModeHeaderColor } from "../config/headerColors";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { TRANSACTIONS_ENDPOINT, PROFILE_WISH_INFO_ENDPOINT } from "../apiConfig";
 
@@ -21,6 +23,7 @@ const WishDetailScreenContent = ({ route, navigation }) => {
   const [referralEmail, setReferralEmail] = useState("");
   const [referralPhone, setReferralPhone] = useState("");
   const [referralNote, setReferralNote] = useState("");
+  const [referredProfileUid, setReferredProfileUid] = useState(null); // Seller - the person being referred (can help)
 
   // Create user object for MiniCard
   const userForMiniCard = {
@@ -140,7 +143,7 @@ const WishDetailScreenContent = ({ route, navigation }) => {
       const requestBody = {
         profile_wish_id: profile_wish_id,
         responder_id: responder_id,
-        responder_note: helpType === "help" ? (howICanHelp || "I can do this for you!") : referralNote || "",
+        responder_note: helpType === "help" ? howICanHelp || "I can do this for you!" : referralNote || "",
         help_type: helpType,
       };
 
@@ -149,7 +152,21 @@ const WishDetailScreenContent = ({ route, navigation }) => {
         requestBody.referral_last_name = referralLastName.trim();
         requestBody.referral_email = referralEmail.trim();
         requestBody.referral_phone = referralPhone.trim();
+        if (referredProfileUid) {
+          requestBody.referral_profile_uid = referredProfileUid;
+        }
       }
+
+      // Console log role mapping on every Submit
+      const buyerProfileUid = profile_uid; // Seeker - the wish owner
+      const referrerProfileUid = responder_id; // Logged in user
+      const referredPersonUid = helpType === "refer" ? referredProfileUid : null; // Person searched for (refer flow only)
+      console.log("============================================");
+      console.log("WISH SUBMIT - ROLE MAPPING:");
+      console.log("  Buyer (seeker's profile UID):", buyerProfileUid);
+      console.log("  Referrer (logged in user's profile UID):", referrerProfileUid);
+      console.log("  Referred person (searched for UID):", referredPersonUid);
+      console.log("============================================");
 
       console.log("============================================");
       console.log("ENDPOINT: PROFILE_WISH_INFO");
@@ -222,7 +239,7 @@ const WishDetailScreenContent = ({ route, navigation }) => {
   return (
     <SafeAreaView style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header with Back Button */}
-      <AppHeader title='SEEKING' backgroundColor='#FF9500' darkModeBackgroundColor='#CC7700' onBackPress={handleBack} />
+      <AppHeader title='SEEKING' {...getHeaderColors("search")} onBackPress={handleBack} />
 
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {/* User MiniCard - Clickable */}
@@ -298,16 +315,44 @@ const WishDetailScreenContent = ({ route, navigation }) => {
           <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>How I Can Help</Text>
           <View style={styles.helpTypeOptions}>
             <TouchableOpacity
-              style={[styles.helpTypeOption, darkMode && styles.darkHelpTypeOption, helpType === "refer" && styles.helpTypeOptionSelected, darkMode && helpType === "refer" && styles.darkHelpTypeOptionSelected]}
+              style={[
+                styles.helpTypeOption,
+                darkMode && styles.darkHelpTypeOption,
+                helpType === "refer" && styles.helpTypeOptionSelected,
+                darkMode && helpType === "refer" && styles.darkHelpTypeOptionSelected,
+              ]}
               onPress={() => setHelpType("refer")}
             >
-              <Text style={[styles.helpTypeOptionText, darkMode && styles.darkHelpTypeOptionText, helpType === "refer" && styles.helpTypeOptionTextSelected, darkMode && helpType === "refer" && styles.darkHelpTypeOptionTextSelected]}>I am referring someone else</Text>
+              <Text
+                style={[
+                  styles.helpTypeOptionText,
+                  darkMode && styles.darkHelpTypeOptionText,
+                  helpType === "refer" && styles.helpTypeOptionTextSelected,
+                  darkMode && helpType === "refer" && styles.darkHelpTypeOptionTextSelected,
+                ]}
+              >
+                I am referring someone else
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.helpTypeOption, darkMode && styles.darkHelpTypeOption, helpType === "help" && styles.helpTypeOptionSelected, darkMode && helpType === "help" && styles.darkHelpTypeOptionSelected]}
+              style={[
+                styles.helpTypeOption,
+                darkMode && styles.darkHelpTypeOption,
+                helpType === "help" && styles.helpTypeOptionSelected,
+                darkMode && helpType === "help" && styles.darkHelpTypeOptionSelected,
+              ]}
               onPress={() => setHelpType("help")}
             >
-              <Text style={[styles.helpTypeOptionText, darkMode && styles.darkHelpTypeOptionText, helpType === "help" && styles.helpTypeOptionTextSelected, darkMode && helpType === "help" && styles.darkHelpTypeOptionTextSelected]}>I can help</Text>
+              <Text
+                style={[
+                  styles.helpTypeOptionText,
+                  darkMode && styles.darkHelpTypeOptionText,
+                  helpType === "help" && styles.helpTypeOptionTextSelected,
+                  darkMode && helpType === "help" && styles.darkHelpTypeOptionTextSelected,
+                ]}
+              >
+                I can help
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -328,14 +373,45 @@ const WishDetailScreenContent = ({ route, navigation }) => {
 
           {helpType === "refer" && (
             <>
-              <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle, { marginTop: 20 }]}>Let me refer someone who can help</Text>
+              <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Let me refer someone who can help</Text>
+              <Text style={[styles.searchSectionHeader, darkMode && styles.darkSearchSectionHeader]}>Search</Text>
+              <ReferralSearch
+                visible={true}
+                embedded={true}
+                onSelectUser={(user) => {
+                  setReferralFirstName(user.profile_personal_first_name || "");
+                  setReferralLastName(user.profile_personal_last_name || "");
+                  // Backend returns profile_email_id, profile_personal_email, etc.; populate from whatever is available
+                  const email =
+                    user.profile_email_id ||
+                    user.profile_personal_email ||
+                    user.user_email ||
+                    user.email ||
+                    "";
+                  const phone =
+                    user.profile_personal_phone_number ||
+                    user.phone ||
+                    user.phone_number ||
+                    "";
+                  setReferralEmail(email);
+                  setReferralPhone(phone);
+                  setReferredProfileUid(user.profile_personal_uid || user.profile_uid || null);
+                }}
+                showNewUserButton={false}
+                hideEmptyState={true}
+                searchButtonColor={darkMode ? "#3D6B6C" : "#4F8A8B"}
+              />
+              <Text style={[styles.searchSectionHeader, darkMode && styles.darkSearchSectionHeader]}>Or enter details manually</Text>
               <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>First Name</Text>
               <TextInput
                 style={[styles.textInput, styles.singleLineInput, darkMode && styles.darkTextInput]}
                 placeholder='First Name'
                 placeholderTextColor={darkMode ? "#888" : "#999"}
                 value={referralFirstName}
-                onChangeText={setReferralFirstName}
+                onChangeText={(t) => {
+                  setReferralFirstName(t);
+                  setReferredProfileUid(null); // Clear when manually edited
+                }}
               />
               <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Last Name</Text>
               <TextInput
@@ -343,7 +419,10 @@ const WishDetailScreenContent = ({ route, navigation }) => {
                 placeholder='Last Name'
                 placeholderTextColor={darkMode ? "#888" : "#999"}
                 value={referralLastName}
-                onChangeText={setReferralLastName}
+                onChangeText={(t) => {
+                  setReferralLastName(t);
+                  setReferredProfileUid(null);
+                }}
               />
               <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Email Address</Text>
               <TextInput
@@ -353,7 +432,10 @@ const WishDetailScreenContent = ({ route, navigation }) => {
                 keyboardType='email-address'
                 autoCapitalize='none'
                 value={referralEmail}
-                onChangeText={setReferralEmail}
+                onChangeText={(t) => {
+                  setReferralEmail(t);
+                  setReferredProfileUid(null);
+                }}
               />
               <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Phone Number</Text>
               <TextInput
@@ -362,7 +444,10 @@ const WishDetailScreenContent = ({ route, navigation }) => {
                 placeholderTextColor={darkMode ? "#888" : "#999"}
                 keyboardType='phone-pad'
                 value={referralPhone}
-                onChangeText={setReferralPhone}
+                onChangeText={(t) => {
+                  setReferralPhone(t);
+                  setReferredProfileUid(null);
+                }}
               />
               <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Note</Text>
               <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>This is why I think they would be perfect</Text>
@@ -499,7 +584,7 @@ const styles = StyleSheet.create({
     borderTopColor: "#eee",
   },
   acceptButton: {
-    backgroundColor: "#00C7BE",
+    backgroundColor: "#4F8A8B",
     borderRadius: 30,
     paddingVertical: 15,
     paddingHorizontal: 40,
@@ -543,7 +628,7 @@ const styles = StyleSheet.create({
     borderTopColor: "#404040",
   },
   darkAcceptButton: {
-    backgroundColor: "#00A69C",
+    backgroundColor: "#3D6B6C",
   },
   disabledButton: {
     opacity: 0.6,
@@ -576,8 +661,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   helpTypeOptionSelected: {
-    borderColor: "#00C7BE",
-    backgroundColor: "#E8F9F8",
+    borderColor: getHeaderColor("search"),
+    backgroundColor: "rgba(79, 138, 139, 0.15)",
   },
   helpTypeOptionText: {
     fontSize: 16,
@@ -585,7 +670,7 @@ const styles = StyleSheet.create({
     color: "#333",
   },
   helpTypeOptionTextSelected: {
-    color: "#00A69C",
+    color: getHeaderColor("search"),
     fontWeight: "600",
   },
   inputLabel: {
@@ -601,6 +686,17 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     fontStyle: "italic",
   },
+  searchSectionHeader: {
+    fontSize: 14,
+    fontWeight: "bold",
+    color: "#000",
+    letterSpacing: 1,
+    backgroundColor: "rgba(79, 138, 139, 0.5)",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    marginTop: 12,
+  },
   darkTextInput: {
     backgroundColor: "#1a1a1a",
     color: "#fff",
@@ -611,19 +707,23 @@ const styles = StyleSheet.create({
     backgroundColor: "#1a1a1a",
   },
   darkHelpTypeOptionSelected: {
-    borderColor: "#00A69C",
-    backgroundColor: "#0d2d2b",
+    borderColor: getDarkModeHeaderColor("search"),
+    backgroundColor: "rgba(61, 107, 108, 0.35)",
   },
   darkHelpTypeOptionText: {
     color: "#e0e0e0",
   },
   darkHelpTypeOptionTextSelected: {
-    color: "#00C7BE",
+    color: getDarkModeHeaderColor("search"),
   },
   darkInputLabel: {
     color: "#e0e0e0",
   },
   darkHelperText: {
     color: "#888",
+  },
+  darkSearchSectionHeader: {
+    backgroundColor: "rgba(61, 107, 108, 0.6)",
+    color: "#ffffff",
   },
 });
