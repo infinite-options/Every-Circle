@@ -47,6 +47,33 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
   const { darkMode } = useDarkMode();
   const [quantityModalVisible, setQuantityModalVisible] = useState(false);
   const [quantity, setQuantity] = useState(1);
+  const [cartCount, setCartCount] = useState(0);
+
+  useEffect(() => {
+    const loadCartCount = async () => {
+      try {
+        const keys = await AsyncStorage.getAllKeys();
+        const cartKeys = keys.filter((key) => key.startsWith("cart_"));
+        let total = 0;
+        for (const key of cartKeys) {
+          const cartData = await AsyncStorage.getItem(key);
+          if (cartData) {
+            const parsed = JSON.parse(cartData);
+            if (key.startsWith("cart_expertise_")) {
+              total += parsed.quantity || 1;
+            } else {
+              const { items } = parsed;
+              if (items) total += items.length;
+            }
+          }
+        }
+        setCartCount(total);
+      } catch (e) {
+        console.error("Error loading cart count:", e);
+      }
+    };
+    loadCartCount();
+  }, []);
 
   // Only use Stripe hook if available (not on web)
   let initPaymentSheet, presentPaymentSheet;
@@ -564,6 +591,7 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
       };
       await AsyncStorage.setItem(cartKey, JSON.stringify(cartItem));
       setQuantityModalVisible(false);
+      setCartCount(prev => prev + quantity);
       Alert.alert("Added to Cart", `${expertiseData?.title} (x${quantity}) has been added to your cart.`, [
         {
           text: "Continue Browsing",
@@ -602,8 +630,71 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
 
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
-      {/* Header with Back Button */}
-      <AppHeader title='EXPERTISE' backgroundColor='#FF9500' darkModeBackgroundColor='#CC7700' onBackPress={handleBack} />
+      {/* Header with Back Button and shopping cart */}
+      <AppHeader
+        title='EXPERTISE'
+        backgroundColor='#FF9500'
+        darkModeBackgroundColor='#CC7700'
+        onBackPress={handleBack}
+        rightButton={
+          <TouchableOpacity
+            style={{ padding: 8, justifyContent: "center", alignItems: "center" }}
+            onPress={async () => {
+              try {
+                const keys = await AsyncStorage.getAllKeys();
+                const cartKeys = keys.filter((key) => key.startsWith("cart_"));
+                
+                let allCartItems = [];
+                for (const key of cartKeys) {
+                  const cartData = await AsyncStorage.getItem(key);
+                  if (cartData) {
+                    const parsed = JSON.parse(cartData);
+                    if (key.startsWith("cart_expertise_")) {
+                      allCartItems.push({ ...parsed, cart_key: key });
+                    } else {
+                      const { items } = parsed;
+                      if (items && items.length > 0) {
+                        const businessUid = key.replace("cart_", "");
+                        const itemsWithBusiness = items.map((item) => ({
+                          ...item,
+                          business_uid: businessUid,
+                        }));
+                        allCartItems = [...allCartItems, ...itemsWithBusiness];
+                      }
+                    }
+                  }
+                }
+
+                navigation.navigate("ShoppingCart", {
+                  cartItems: allCartItems,
+                  businessName: "All Items",
+                  business_uid: "all",
+                });
+              } catch (error) {
+                console.error("Error loading cart items:", error);
+              }
+            }}
+          >
+            <Ionicons name='cart-outline' size={24} color='#fff' />
+              {cartCount > 0 && (
+                <View style={{
+                  position: "absolute",
+                  top: -5,
+                  right: -5,
+                  backgroundColor: "#FF3B30",
+                  borderRadius: 10,
+                  minWidth: 20,
+                  height: 20,
+                  justifyContent: "center",
+                  alignItems: "center",
+                  paddingHorizontal: 4,
+                }}>
+                  <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>{cartCount}</Text>
+                </View>
+              )}
+          </TouchableOpacity>
+        }
+      />
 
       <SafeAreaView style={styles.safeArea}>
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
