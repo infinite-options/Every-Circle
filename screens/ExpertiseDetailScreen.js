@@ -1,6 +1,6 @@
 // ExpertiseDetailScreen.js
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Platform, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
@@ -68,6 +68,9 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
   const [showPaymentFailure, setShowPaymentFailure] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
   const [customerUid, setCustomerUid] = useState(null);
+
+  const [quantityModalVisible, setQuantityModalVisible] = useState(false);
+  const [quantity, setQuantity] = useState(1);
 
   // Initialize Stripe on mount
   useEffect(() => {
@@ -425,115 +428,157 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
     }
   };
 
-  const handleBuyNow = async () => {
-    console.log("Buy Now clicked for expertise:", expertiseData?.expertise_uid);
+  // const handleBuyNow = async () => {
+  //   console.log("Buy Now clicked for expertise:", expertiseData?.expertise_uid);
 
-    if (!stripeInitialized) {
-      Alert.alert("Error", "Payment system is not ready. Please try again.");
-      return;
-    }
+  //   if (!stripeInitialized) {
+  //     Alert.alert("Error", "Payment system is not ready. Please try again.");
+  //     return;
+  //   }
 
-    if (!expertiseData?.cost) {
-      Alert.alert("Error", "Cost information is not available for this expertise.");
-      return;
-    }
+  //   if (!expertiseData?.cost) {
+  //     Alert.alert("Error", "Cost information is not available for this expertise.");
+  //     return;
+  //   }
 
-    // Parse cost amount (handle formats like "25/hr", "USD 15", "$15", etc.)
-    const costString = expertiseData?.cost || "0";
-    const match = costString.match(/[\d.]+/);
-    const amount = match ? parseFloat(match[0]) : 0;
+  //   // Parse cost amount (handle formats like "25/hr", "USD 15", "$15", etc.)
+  //   const costString = expertiseData?.cost || "0";
+  //   const match = costString.match(/[\d.]+/);
+  //   const amount = match ? parseFloat(match[0]) : 0;
 
-    if (amount <= 0) {
-      Alert.alert("Error", "Invalid cost amount");
-      return;
-    }
+  //   if (amount <= 0) {
+  //     Alert.alert("Error", "Invalid cost amount");
+  //     return;
+  //   }
 
-    // Web Stripe flow
-    if (isWeb) {
-      try {
-        setLoading(true);
-        // Show fees dialog first
-        setShowFeesDialog(true);
-        // Store amount for later use
-        setCurrentClientSecret(amount.toString()); // Reuse this state to store amount temporarily
-      } catch (error) {
-        console.error("Error starting web checkout:", error);
-        Alert.alert("Error", "An error occurred. Please try again.");
-        setLoading(false);
-      }
-      return;
-    }
+  //   // Web Stripe flow
+  //   if (isWeb) {
+  //     try {
+  //       setLoading(true);
+  //       // Show fees dialog first
+  //       setShowFeesDialog(true);
+  //       // Store amount for later use
+  //       setCurrentClientSecret(amount.toString()); // Reuse this state to store amount temporarily
+  //     } catch (error) {
+  //       console.error("Error starting web checkout:", error);
+  //       Alert.alert("Error", "An error occurred. Please try again.");
+  //       setLoading(false);
+  //     }
+  //     return;
+  //   }
 
-    // Native Stripe flow
+  //   // Native Stripe flow
+  //   try {
+  //     setLoading(true);
+
+  //     const initResult = await initializePayment(amount);
+  //     if (!initResult.success || !initResult.clientSecret) {
+  //       console.error("Payment initialization failed or client secret not returned");
+  //       return;
+  //     }
+
+  //     // Store the client secret locally to avoid state timing issues
+  //     const clientSecret = initResult.clientSecret;
+  //     console.log("Stored client secret for transaction:", clientSecret);
+
+  //     console.log("Presenting payment sheet...");
+  //     const result = await presentPaymentSheet();
+
+  //     if (result.error) {
+  //       console.error("Payment error:", result.error);
+  //       Alert.alert("Error", "Payment failed. Please try again.");
+  //       setLoading(false);
+  //       return;
+  //     }
+
+  //     console.log("Payment successful!");
+
+  //     // Record the transaction
+  //     const buyerUid = await AsyncStorage.getItem("profile_uid");
+  //     if (!buyerUid) {
+  //       throw new Error("User ID not found");
+  //     }
+
+  //     // Extract payment intent ID from client secret
+  //     if (!clientSecret) {
+  //       console.error("clientSecret is null or undefined");
+  //       throw new Error("Payment intent not found. Please try again.");
+  //     }
+
+  //     // Extract payment intent ID (the part before _secret_)
+  //     const paymentIntentId = clientSecret.split("_secret_")[0];
+  //     console.log("Extracted payment intent ID:", paymentIntentId);
+  //     console.log("Full client secret:", clientSecret);
+
+  //     if (!paymentIntentId || paymentIntentId.trim() === "") {
+  //       console.error("Failed to extract payment intent ID from:", clientSecret);
+  //       throw new Error("Invalid payment intent. Please try again.");
+  //     }
+
+  //     // Use the same amount that was used for payment
+  //     await recordTransaction(buyerUid, paymentIntentId, amount);
+
+  //     // Navigate back to Profile if that's where we came from
+  //     if (returnTo === "Profile" && profileState) {
+  //       console.log("🔙 Returning to Profile after payment with preserved state");
+  //       navigation.navigate("Profile", profileState);
+  //     } else if (searchState) {
+  //       // Navigate back to Search page with preserved state
+  //       console.log("🔙 Returning to Search after payment with preserved state");
+  //       navigation.navigate("Search", {
+  //         restoreState: true,
+  //         searchState: searchState,
+  //       });
+  //     } else {
+  //       navigation.navigate("Search");
+  //     }
+  //   } catch (error) {
+  //     console.error("Error processing payment:", error);
+  //     Alert.alert("Error", "An error occurred during payment. Please try again.");
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
+  const handleAddToCart = async () => {
+    setQuantity(1);
+    setQuantityModalVisible(true);
+  };
+
+  const handleQuantityConfirm = async () => {
     try {
-      setLoading(true);
-
-      const initResult = await initializePayment(amount);
-      if (!initResult.success || !initResult.clientSecret) {
-        console.error("Payment initialization failed or client secret not returned");
-        return;
-      }
-
-      // Store the client secret locally to avoid state timing issues
-      const clientSecret = initResult.clientSecret;
-      console.log("Stored client secret for transaction:", clientSecret);
-
-      console.log("Presenting payment sheet...");
-      const result = await presentPaymentSheet();
-
-      if (result.error) {
-        console.error("Payment error:", result.error);
-        Alert.alert("Error", "Payment failed. Please try again.");
-        setLoading(false);
-        return;
-      }
-
-      console.log("Payment successful!");
-
-      // Record the transaction
-      const buyerUid = await AsyncStorage.getItem("profile_uid");
-      if (!buyerUid) {
-        throw new Error("User ID not found");
-      }
-
-      // Extract payment intent ID from client secret
-      if (!clientSecret) {
-        console.error("clientSecret is null or undefined");
-        throw new Error("Payment intent not found. Please try again.");
-      }
-
-      // Extract payment intent ID (the part before _secret_)
-      const paymentIntentId = clientSecret.split("_secret_")[0];
-      console.log("Extracted payment intent ID:", paymentIntentId);
-      console.log("Full client secret:", clientSecret);
-
-      if (!paymentIntentId || paymentIntentId.trim() === "") {
-        console.error("Failed to extract payment intent ID from:", clientSecret);
-        throw new Error("Invalid payment intent. Please try again.");
-      }
-
-      // Use the same amount that was used for payment
-      await recordTransaction(buyerUid, paymentIntentId, amount);
-
-      // Navigate back to Profile if that's where we came from
-      if (returnTo === "Profile" && profileState) {
-        console.log("🔙 Returning to Profile after payment with preserved state");
-        navigation.navigate("Profile", profileState);
-      } else if (searchState) {
-        // Navigate back to Search page with preserved state
-        console.log("🔙 Returning to Search after payment with preserved state");
-        navigation.navigate("Search", {
-          restoreState: true,
-          searchState: searchState,
-        });
-      } else {
-        navigation.navigate("Search");
-      }
+      const cartKey = `cart_expertise_${expertiseData?.expertise_uid}`;
+      const cartItem = {
+        expertise_uid: expertiseData?.expertise_uid,
+        title: expertiseData?.title,
+        description: expertiseData?.description,
+        cost: expertiseData?.cost,
+        bounty: expertiseData?.bounty,
+        profile_uid: profile_uid,
+        profileData: profileData,
+        itemType: "expertise",
+        quantity: quantity,
+        cart_key: cartKey,
+        addedAt: new Date().toISOString(),
+      };
+      await AsyncStorage.setItem(cartKey, JSON.stringify(cartItem));
+      setQuantityModalVisible(false);
+      Alert.alert("Added to Cart", `${expertiseData?.title} (x${quantity}) has been added to your cart.`, [
+        {
+          text: "Continue Browsing",
+          onPress: () => {
+            if (searchState) {
+              navigation.navigate("Search", { restoreState: true, searchState });
+            } else {
+              navigation.goBack();
+            }
+          },
+        },
+        { text: "View Cart", onPress: () => navigation.navigate("ShoppingCart", { cartItems: [cartItem], businessName: "Expertise", business_uid: profile_uid }) },
+      ]);
     } catch (error) {
-      console.error("Error processing payment:", error);
-      Alert.alert("Error", "An error occurred during payment. Please try again.");
-    } finally {
-      setLoading(false);
+      console.error("Error adding to cart:", error);
+      Alert.alert("Error", "Failed to add to cart. Please try again.");
     }
   };
 
@@ -625,8 +670,11 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
 
         {/* Buy Now Button */}
         <View style={[styles.buyNowContainer, darkMode && styles.darkBuyNowContainer]}>
-          <TouchableOpacity style={[styles.buyNowButton, darkMode && styles.darkBuyNowButton, loading && styles.disabledButton]} onPress={handleBuyNow} disabled={loading}>
-            <Text style={styles.buyNowButtonText}>{loading ? "Processing..." : "Buy Now"}</Text>
+          <TouchableOpacity
+            style={[styles.buyNowButton, darkMode && styles.darkBuyNowButton]}
+            onPress={handleAddToCart}
+          >
+            <Text style={styles.buyNowButtonText}>Add to Cart</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -673,6 +721,46 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
           />
         </>
       )}
+      <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" }}>
+          <View style={{ backgroundColor: "white", borderRadius: 20, padding: 20, width: "80%", alignItems: "center" }}>
+            <Text style={{ fontSize: 20, fontWeight: "bold", marginBottom: 10, color: "#333" }}>Select Quantity</Text>
+            <Text style={{ fontSize: 16, color: "#666", marginBottom: 20, textAlign: "center" }}>{expertiseData?.title}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 20 }}>
+              <TouchableOpacity
+                style={{ backgroundColor: "#F5F5F5", padding: 10, borderRadius: 10, width: 44, height: 44, justifyContent: "center", alignItems: "center" }}
+                onPress={() => setQuantity(prev => Math.max(1, prev - 1))}
+              >
+                <Ionicons name='remove' size={24} color='#9C45F7' />
+              </TouchableOpacity>
+              <Text style={{ fontSize: 20, fontWeight: "bold", marginHorizontal: 20, color: "#333" }}>{quantity}</Text>
+              <TouchableOpacity
+                style={{ backgroundColor: "#F5F5F5", padding: 10, borderRadius: 10, width: 44, height: 44, justifyContent: "center", alignItems: "center" }}
+                onPress={() => setQuantity(prev => prev + 1)}
+              >
+                <Ionicons name='add' size={24} color='#9C45F7' />
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 18, fontWeight: "bold", color: "#9C45F7", marginBottom: 20 }}>
+              Total: ${expertiseData?.cost ? (parseFloat(expertiseData.cost) * quantity).toFixed(2) : "0.00"}
+            </Text>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
+              <TouchableOpacity
+                style={{ flex: 1, padding: 15, borderRadius: 10, marginHorizontal: 5, backgroundColor: "#F5F5F5" }}
+                onPress={() => setQuantityModalVisible(false)}
+              >
+                <Text style={{ color: "#666", textAlign: "center", fontWeight: "bold" }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, padding: 15, borderRadius: 10, marginHorizontal: 5, backgroundColor: "#9C45F7" }}
+                onPress={handleQuantityConfirm}
+              >
+                <Text style={{ color: "white", textAlign: "center", fontWeight: "bold" }}>Add to Cart</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
