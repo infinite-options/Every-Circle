@@ -93,9 +93,20 @@ const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPubl
         </View>
 
         {/* Public Toggle */}
-        <TouchableOpacity onPress={toggleVisibility}>
-          <Text style={[styles.toggleText, { color: isPublic ? "#4CAF50" : "#f44336" }]}>{isPublic ? "Display" : "Hide"}</Text>
-        </TouchableOpacity>
+        <View style={styles.toggleContainer}>
+          <TouchableOpacity
+            onPress={() => !isPublic && toggleVisibility()}
+            style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}
+          >
+            <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>Visible</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => isPublic && toggleVisibility()}
+            style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}
+          >
+            <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>Hide</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Experience List */}
@@ -104,15 +115,20 @@ const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPubl
           <View style={styles.expHeaderRow}>
             <Text style={styles.label}>Experience #{index + 1}</Text>
             {/* Individual public/private toggle */}
-            <TouchableOpacity
-              onPress={() => {
-                const updated = [...experience];
-                updated[index].isPublic = !updated[index].isPublic;
-                setExperience(updated);
-              }}
-            >
-              <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold", marginLeft: 10 }}>{item.isPublic ? "Display" : "Hide"}</Text>
-            </TouchableOpacity>
+            <View style={styles.toggleContainer}>
+              <TouchableOpacity
+                onPress={() => { if (!item.isPublic) { const u = [...experience]; u[index].isPublic = true; setExperience(u); } }}
+                style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}
+              >
+                <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>Visible</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => { if (item.isPublic) { const u = [...experience]; u[index].isPublic = false; setExperience(u); } }}
+                style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}
+              >
+                <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>Hide</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <TextInput style={styles.input} placeholder='Company' value={item.company} onChangeText={(text) => handleInputChange(index, "company", text)} />
@@ -216,6 +232,12 @@ const styles = StyleSheet.create({
   cardSpacing: {
     marginTop: 16,
   },
+  toggleContainer: { flexDirection: "row", gap: 4 },
+  togglePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, backgroundColor: "transparent" },
+  togglePillActiveGreen: { backgroundColor: "#48b64c" },
+  togglePillActiveRed: { backgroundColor: "#e88080" },
+  togglePillText: { fontSize: 13, color: "#4e4e4e", fontWeight: "500" },
+  togglePillTextActive: { color: "#fff", fontWeight: "bold" },
 });
 
 export default ExperienceSection;

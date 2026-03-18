@@ -649,9 +649,20 @@ const EditProfileScreen = ({ route, navigation }) => {
       {/* Row: Label and Toggle */}
       <View style={styles.labelRow}>
         <Text style={[styles.label, darkMode && styles.darkLabel]}>{label}</Text>
-        <TouchableOpacity onPress={() => handleToggleVisibility(visibilityFieldName)}>
-          <Text style={[styles.toggleText, { color: isPublic ? (darkMode ? "#4ade80" : "green") : darkMode ? "#f87171" : "red" }]}>{isPublic ? "Display" : "Hide"}</Text>
-        </TouchableOpacity>
+        <View style={styles.toggleContainer}>
+          <TouchableOpacity
+            onPress={() => !isPublic && handleToggleVisibility(visibilityFieldName)}
+            style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}
+          >
+            <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>Visible</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => isPublic && handleToggleVisibility(visibilityFieldName)}
+            style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}
+          >
+            <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>Hide</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       <TextInput
         style={[styles.input, !editable && (darkMode ? styles.darkDisabledInput : styles.disabledInput), darkMode && editable && styles.darkInput]}
@@ -669,11 +680,20 @@ const EditProfileScreen = ({ route, navigation }) => {
       {/* Row: Label and Toggle */}
       <View style={styles.labelRow}>
         <Text style={[styles.label, darkMode && styles.darkLabel]}>Short Bio (max 500 characters)</Text>
-        <TouchableOpacity onPress={() => handleToggleVisibility("shortBioIsPublic")}>
-          <Text style={[styles.toggleText, { color: formData.shortBioIsPublic ? (darkMode ? "#4ade80" : "green") : darkMode ? "#f87171" : "red" }]}>
-            {formData.shortBioIsPublic ? "Display" : "Hide"}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.toggleContainer}>
+          <TouchableOpacity
+            onPress={() => !formData.shortBioIsPublic && handleToggleVisibility("shortBioIsPublic")}
+            style={[styles.togglePill, formData.shortBioIsPublic && styles.togglePillActiveGreen]}
+          >
+            <Text style={[styles.togglePillText, formData.shortBioIsPublic && styles.togglePillTextActive]}>Visible</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => formData.shortBioIsPublic && handleToggleVisibility("shortBioIsPublic")}
+            style={[styles.togglePill, !formData.shortBioIsPublic && styles.togglePillActiveRed]}
+          >
+            <Text style={[styles.togglePillText, !formData.shortBioIsPublic && styles.togglePillTextActive]}>Hide</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       <TextInput
         style={[styles.input, styles.textarea, { height: Math.max(40, shortBioHeight) }, darkMode && styles.darkInput]}
@@ -848,11 +868,20 @@ const EditProfileScreen = ({ route, navigation }) => {
             onError={handleImageError}
           />
           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
-            <TouchableOpacity onPress={toggleProfileImageVisibility}>
-              <Text style={[styles.toggleText, { fontWeight: "bold", color: formData.imageIsPublic ? (darkMode ? "#4ade80" : "green") : darkMode ? "#f87171" : "red" }]}>
-                {formData.imageIsPublic ? "Display" : "Hide"}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.toggleContainer}>
+              <TouchableOpacity
+                onPress={() => !formData.imageIsPublic && toggleProfileImageVisibility()}
+                style={[styles.togglePill, formData.imageIsPublic && styles.togglePillActiveGreen]}
+              >
+                <Text style={[styles.togglePillText, formData.imageIsPublic && styles.togglePillTextActive]}>Visible</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => formData.imageIsPublic && toggleProfileImageVisibility()}
+                style={[styles.togglePill, !formData.imageIsPublic && styles.togglePillActiveRed]}
+              >
+                <Text style={[styles.togglePillText, !formData.imageIsPublic && styles.togglePillTextActive]}>Hide</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <TouchableOpacity onPress={handlePickImage}>
             <Text style={[styles.uploadLink, darkMode && styles.darkUploadLink]}>Upload Image</Text>
@@ -898,6 +927,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
           <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>OFFERING</Text>
         </View>
+        
         <ExpertiseSection
           expertise={formData.expertise}
           setExpertise={(e) => {
@@ -1227,6 +1257,31 @@ const styles = StyleSheet.create({
     minHeight: 40,
     maxHeight: 200,
     borderRadius: 12,
+  },
+  toggleContainer: {
+    flexDirection: "row",
+    gap: 4,
+  },
+  togglePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 20,
+    backgroundColor: "transparent",
+  },
+  togglePillActiveGreen: {
+    backgroundColor: "#4CAF50",
+  },
+  togglePillActiveRed: {
+    backgroundColor: "#ef9a9a",
+  },
+  togglePillText: {
+    fontSize: 13,
+    color: "#4e4e4e",
+    fontWeight: "500",
+  },
+  togglePillTextActive: {
+    color: "#fff",
+    fontWeight: "bold",
   },
 });
 
