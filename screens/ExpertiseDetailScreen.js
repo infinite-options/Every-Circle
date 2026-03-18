@@ -45,6 +45,42 @@ const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
 const ExpertiseDetailScreenContent = ({ route, navigation }) => {
   const { expertiseData, profileData, profile_uid, searchState, returnTo, profileState } = route.params;
   const { darkMode } = useDarkMode();
+  const [cartCount, setCartCount] = useState(0);
+  const [allCartItems, setAllCartItems] = useState([]);
+
+  useEffect(() => {
+    const loadCartCount = async () => {
+      try {
+        const keys = await AsyncStorage.getAllKeys();
+        const cartKeys = keys.filter((key) => key.startsWith("cart_"));
+        let totalItems = 0;
+        let items = [];
+
+        for (const key of cartKeys) {
+          const cartData = await AsyncStorage.getItem(key);
+          if (cartData) {
+            const parsed = JSON.parse(cartData);
+            if (key.startsWith("cart_expertise_")) {
+              totalItems += 1;
+              items.push({ ...parsed, cart_key: key });
+            } else {
+              const cartItems = parsed.items || [];
+              totalItems += cartItems.length;
+              const businessUid = key.replace("cart_", "");
+              items = [...items, ...cartItems.map(item => ({ ...item, business_uid: businessUid }))];
+            }
+          }
+        }
+        setCartCount(totalItems);
+        setAllCartItems(items);
+      } catch (error) {
+        console.error("Error loading cart count:", error);
+      }
+    };
+
+    loadCartCount();
+  }, []);
+
 
   // Only use Stripe hook if available (not on web)
   let initPaymentSheet, presentPaymentSheet;
@@ -562,6 +598,8 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
         addedAt: new Date().toISOString(),
       };
       await AsyncStorage.setItem(cartKey, JSON.stringify(cartItem));
+      setCartCount(prev => prev + 1);
+      setAllCartItems(prev => [...prev, cartItem]);
       setQuantityModalVisible(false);
       Alert.alert("Added to Cart", `${expertiseData?.title} (x${quantity}) has been added to your cart.`, [
         {
@@ -601,8 +639,41 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
 
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
-      {/* Header with Back Button */}
-      <AppHeader title='EXPERTISE' backgroundColor='#FF9500' darkModeBackgroundColor='#CC7700' onBackPress={handleBack} />
+      {/* Header with Back Button + shopping cart */}
+      <AppHeader 
+        title='EXPERTISE' 
+        backgroundColor='#FF9500' 
+        darkModeBackgroundColor='#CC7700' 
+        onBackPress={handleBack}
+        rightButton={
+          <TouchableOpacity
+            style={{ padding: 8, justifyContent: "center", alignItems: "center", minWidth: 40, minHeight: 40 }}
+            onPress={() => navigation.navigate("ShoppingCart", {
+              cartItems: allCartItems,
+              businessName: "Cart",
+              business_uid: "all",
+            })}
+          >
+            <Ionicons name='cart-outline' size={24} color='#fff' />
+            {cartCount > 0 && (
+              <View style={{
+                position: "absolute",
+                top: -5,
+                right: -5,
+                backgroundColor: "#FF3B30",
+                borderRadius: 10,
+                minWidth: 20,
+                height: 20,
+                justifyContent: "center",
+                alignItems: "center",
+                paddingHorizontal: 4,
+              }}>
+                <Text style={{ color: "#fff", fontSize: 12, fontWeight: "bold" }}>{cartCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        }
+      />
 
       <SafeAreaView style={styles.safeArea}>
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
