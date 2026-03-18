@@ -24,6 +24,19 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
 import { isWishEnded } from "../utils/wishUtils";
 
+// Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
+const formatDateTimeForDisplay = (value) => {
+  if (!value || typeof value !== "string" || value.trim() === "") return "";
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[\sT]?(\d{1,2})?:?(\d{2})?/);
+  if (match) {
+    const [, y, m, d, h, min] = match;
+    const timePart = h !== undefined && min !== undefined ? ` ${String(parseInt(h, 10)).padStart(2, "0")}:${min}` : "";
+    return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}${timePart}`;
+  }
+  return value;
+};
+
 export default function SearchScreen({ route }) {
   const navigation = useNavigation();
   const { darkMode } = useDarkMode();
@@ -456,6 +469,8 @@ export default function SearchScreen({ route }) {
               bounty: item.profile_wish_bounty,
               cost: item.profile_wish_cost,
               wish_uid: item.profile_wish_uid,
+              profile_wish_start: item.profile_wish_start || "",
+              profile_wish_end: item.profile_wish_end || "",
             },
             // Store profile data for MiniCard-like display
             profileData: {
@@ -868,6 +883,13 @@ export default function SearchScreen({ route }) {
         {/* Wish Information */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
           <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
+          {(wish.profile_wish_start || wish.profile_wish_end) && (
+            <Text style={[styles.wishDateTime, darkMode && styles.darkWishDateTime]}>
+              {wish.profile_wish_start ? formatDateTimeForDisplay(wish.profile_wish_start) : "—"}
+              {wish.profile_wish_start && wish.profile_wish_end ? " → " : ""}
+              {wish.profile_wish_end ? formatDateTimeForDisplay(wish.profile_wish_end) : ""}
+            </Text>
+          )}
           {wish.description && String(wish.description).trim() && String(wish.description).trim() !== "." && (
             <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{String(wish.description).trim()}</Text>
           )}
@@ -879,7 +901,9 @@ export default function SearchScreen({ route }) {
                     <View style={styles.moneyBagIconContainer}>
                       <Text style={styles.moneyBagDollarSymbol}>$</Text>
                     </View>
-                    <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>Cost: {wish.cost}</Text>
+                    <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>
+                      {String(wish.cost).toLowerCase() !== "free" ? `Cost: $${String(wish.cost).replace(/^\$/, "")}` : `Cost: ${wish.cost}`}
+                    </Text>
                   </View>
                 )}
               </View>
@@ -887,7 +911,9 @@ export default function SearchScreen({ route }) {
                 {wish.bounty && (
                   <View style={styles.wishBountyContainer}>
                     <Text style={styles.bountyEmojiIcon}>💰</Text>
-                    <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>Bounty: USD {wish.bounty}</Text>
+                    <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>
+                      {String(wish.bounty).toLowerCase() !== "free" ? `Bounty: $${String(wish.bounty).replace(/^\$/, "")}` : `Bounty: ${wish.bounty}`}
+                    </Text>
                   </View>
                 )}
               </View>
@@ -969,13 +995,17 @@ export default function SearchScreen({ route }) {
                 <View style={styles.moneyBagIconContainer}>
                   <Text style={styles.moneyBagDollarSymbol}>$</Text>
                 </View>
-                <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>Cost: {expertise.cost}</Text>
+                <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>
+                  {String(expertise.cost).toLowerCase() !== "free" ? `Cost: $${String(expertise.cost).replace(/^\$/, "")}` : `Cost: ${expertise.cost}`}
+                </Text>
               </View>
             )}
             {expertise.bounty && (
               <View style={styles.wishBountyContainerRight}>
                 <Text style={styles.bountyEmojiIcon}>💰</Text>
-                <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>Bounty: USD {expertise.bounty}</Text>
+                <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>
+                  {String(expertise.bounty).toLowerCase() !== "free" ? `Bounty: $${String(expertise.bounty).replace(/^\$/, "")}` : `Bounty: ${expertise.bounty}`}
+                </Text>
               </View>
             )}
           </View>
@@ -1865,6 +1895,11 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     color: "#333",
+    marginBottom: 4,
+  },
+  wishDateTime: {
+    fontSize: 13,
+    color: "#666",
     marginBottom: 8,
   },
   wishDescription: {
@@ -1929,6 +1964,9 @@ const styles = StyleSheet.create({
   },
   darkWishTitle: {
     color: "#ffffff",
+  },
+  darkWishDateTime: {
+    color: "#cccccc",
   },
   darkWishDescription: {
     color: "#cccccc",

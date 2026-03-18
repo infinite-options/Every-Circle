@@ -43,6 +43,19 @@ import PaymentFailure from "../components/PaymentFailure";
 
 const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
 
+// Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
+const formatDateTimeForDisplay = (value) => {
+  if (!value || typeof value !== "string" || value.trim() === "") return "";
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[\sT]?(\d{1,2})?:?(\d{2})?/);
+  if (match) {
+    const [, y, m, d, h, min] = match;
+    const timePart = h !== undefined && min !== undefined ? ` ${String(parseInt(h, 10)).padStart(2, "0")}:${min}` : "";
+    return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}${timePart}`;
+  }
+  return value;
+};
+
 const WishResponsesScreenContent = ({ route, navigation }) => {
   const { wishData, profileData, profile_uid, profileState } = route.params;
   const { darkMode } = useDarkMode();
@@ -571,12 +584,60 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
                 <Text style={[styles.detailsText, darkMode && styles.darkDetailsText]}>{wishData.details}</Text>
               </View>
             )}
-            {wishData?.bounty && (
-              <View style={styles.pricingContainer}>
-                <View style={styles.pricingRow}>
-                  <Text style={styles.bountyEmojiIcon}>💰</Text>
-                  <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>Bounty: USD {wishData.bounty}</Text>
-                </View>
+            {(wishData?.profile_wish_start || wishData?.profile_wish_end || wishData?.profile_wish_location || wishData?.profile_wish_mode || wishData?.cost || wishData?.bounty) && (
+              <View style={[styles.wishMetaContainer, darkMode && styles.darkWishMetaContainer]}>
+                {(wishData?.profile_wish_start || wishData?.profile_wish_end) && (
+                  <View style={styles.wishMetaRow}>
+                    <Ionicons name='calendar-outline' size={14} color={darkMode ? "#999" : "#666"} style={styles.wishMetaIcon} />
+                    <Text style={[styles.wishMetaText, darkMode && styles.darkWishMetaText]}>
+                      {wishData.profile_wish_start ? formatDateTimeForDisplay(wishData.profile_wish_start) : "—"}
+                      {wishData.profile_wish_start && wishData.profile_wish_end ? " → " : ""}
+                      {wishData.profile_wish_end ? formatDateTimeForDisplay(wishData.profile_wish_end) : ""}
+                    </Text>
+                  </View>
+                )}
+                {(wishData?.profile_wish_location || wishData?.profile_wish_mode) && (
+                  <View style={[styles.wishMetaRow, (wishData?.profile_wish_start || wishData?.profile_wish_end) && styles.wishMetaRowSpaced]}>
+                    {wishData?.profile_wish_location && (
+                      <View style={styles.wishMetaRow}>
+                        <Ionicons name='location-outline' size={14} color={darkMode ? "#999" : "#666"} style={styles.wishMetaIcon} />
+                        <Text style={[styles.wishMetaText, darkMode && styles.darkWishMetaText]}>{wishData.profile_wish_location}</Text>
+                      </View>
+                    )}
+                    {wishData?.profile_wish_mode && (
+                      <View style={[styles.wishMetaRow, wishData?.profile_wish_location && { marginLeft: 12 }]}>
+                        <Ionicons
+                          name={wishData.profile_wish_mode.toLowerCase() === "virtual" ? "videocam-outline" : "people-outline"}
+                          size={14}
+                          color={darkMode ? "#999" : "#666"}
+                          style={styles.wishMetaIcon}
+                        />
+                        <Text style={[styles.wishMetaText, darkMode && styles.darkWishMetaText]}>{wishData.profile_wish_mode}</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+                {(wishData?.cost || wishData?.bounty) && (
+                  <View style={[styles.pricingContainer, (wishData?.profile_wish_start || wishData?.profile_wish_end || wishData?.profile_wish_location || wishData?.profile_wish_mode) && styles.wishMetaRowSpaced]}>
+                    {wishData?.cost ? (
+                      <View style={styles.pricingRow}>
+                        <View style={styles.moneyBagIconContainer}>
+                          <Text style={styles.moneyBagDollarSymbol}>$</Text>
+                        </View>
+                        <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>
+                          {String(wishData.cost).toLowerCase() !== "free" ? `Cost: $${String(wishData.cost).replace(/^\$/, "")}` : `Cost: ${wishData.cost}`}
+                        </Text>
+                      </View>
+                    ) : (
+                      <View />
+                    )}
+                    {wishData?.bounty ? (
+                      <Text style={[styles.pricingLabel, styles.pricingBountyRight, darkMode && styles.darkPricingLabel]}>
+                        {String(wishData.bounty).toLowerCase() !== "free" ? `💰 $${String(wishData.bounty).replace(/^\$/, "")}` : `💰 ${wishData.bounty}`}
+                      </Text>
+                    ) : null}
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -586,10 +647,11 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
             <>
               <Text style={[styles.responsesTitle, darkMode && styles.darkResponsesTitle]}>Responses ({responses.length})</Text>
               {responses.map((response, index) => {
-                const responderUser = {
+                // Mini card: always show the person who can fulfill (API returns profile_personal_* for that person)
+                const miniCardUser = {
                   firstName: response.profile_personal_first_name || "",
                   lastName: response.profile_personal_last_name || "",
-                  email: "",
+                  email: response.profile_personal_email || "",
                   phoneNumber: response.profile_personal_phone_number || "",
                   profileImage: response.profile_personal_image || "",
                   tagLine: response.profile_personal_tag_line || "",
@@ -599,8 +661,38 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
                   imageIsPublic: response.profile_personal_image_is_public === 1,
                 };
 
+                const responderName = [response.responder_first_name, response.responder_last_name].filter(Boolean).join(" ").trim();
+                const responderProfileUid = response.wr_responder_id;
+
                 return (
                   <View key={response.wish_response_uid || index} style={[styles.responseCard, darkMode && styles.darkResponseCard]}>
+                    <View style={[styles.responseNoteContainer, darkMode && styles.darkResponseNoteContainer]}>
+                      <View style={styles.responseLabelRow}>
+                        {responderName && responderProfileUid ? (
+                          <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={() => {
+                              navigation.navigate("Profile", {
+                                profile_uid: responderProfileUid,
+                                returnTo: "WishResponses",
+                                wishResponsesState: {
+                                  wishData,
+                                  profileData,
+                                  profile_uid,
+                                  profileState,
+                                },
+                              });
+                            }}
+                          >
+                            <Text style={[styles.responseNoteLabel, styles.responderNameLink, darkMode && styles.darkResponseNoteLabel]}>{responderName}</Text>
+                          </TouchableOpacity>
+                        ) : responderName ? (
+                          <Text style={[styles.responseNoteLabel, darkMode && styles.darkResponseNoteLabel]}>{responderName}</Text>
+                        ) : null}
+                        <Text style={[styles.responseNoteLabel, darkMode && styles.darkResponseNoteLabel]}>{responderName ? " Response:" : "Response:"}</Text>
+                      </View>
+                      <Text style={[styles.responseNote, darkMode && styles.darkResponseNote]}>{response.wr_responder_note || "No note provided"}</Text>
+                    </View>
                     <TouchableOpacity
                       activeOpacity={0.7}
                       onPress={() => {
@@ -620,13 +712,9 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
                       }}
                     >
                       <View style={[styles.miniCardContainer, darkMode && styles.darkMiniCardContainer]}>
-                        <MiniCard user={responderUser} />
+                        <MiniCard user={miniCardUser} />
                       </View>
                     </TouchableOpacity>
-                    <View style={[styles.responseNoteContainer, darkMode && styles.darkResponseNoteContainer]}>
-                      <Text style={[styles.responseNoteLabel, darkMode && styles.darkResponseNoteLabel]}>Response:</Text>
-                      <Text style={[styles.responseNote, darkMode && styles.darkResponseNote]}>{response.wr_responder_note || "No note provided"}</Text>
-                    </View>
                     <TouchableOpacity
                       style={[styles.acceptButton, darkMode && styles.darkAcceptButton, accepting === response.wish_response_uid && styles.disabledButton]}
                       onPress={() => handleAccept(response)}
@@ -770,15 +858,59 @@ const styles = StyleSheet.create({
   darkDetailsText: {
     color: "#cccccc",
   },
+  wishMetaContainer: {
+    marginTop: 15,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+  },
+  wishMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  wishMetaRowSpaced: {
+    marginTop: 8,
+  },
+  wishMetaIcon: {
+    marginRight: 6,
+  },
+  wishMetaText: {
+    fontSize: 14,
+    color: "#666",
+  },
+  darkWishMetaText: {
+    color: "#cccccc",
+  },
+  darkWishMetaContainer: {
+    borderTopColor: "#404040",
+  },
   pricingContainer: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
     alignItems: "center",
     marginTop: 10,
+  },
+  pricingBountyRight: {
+    textAlign: "right",
+    minWidth: 60,
   },
   pricingRow: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  moneyBagIconContainer: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#FFCD3C",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 6,
+  },
+  moneyBagDollarSymbol: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#ffffff",
   },
   bountyEmojiIcon: {
     fontSize: 20,
@@ -821,18 +953,25 @@ const styles = StyleSheet.create({
   },
   responseNoteContainer: {
     marginBottom: 15,
-    paddingTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
   },
   darkResponseNoteContainer: {
-    borderTopColor: "#404040",
+    borderBottomColor: "#404040",
+  },
+  responseLabelRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginBottom: 8,
   },
   responseNoteLabel: {
     fontSize: 14,
     fontWeight: "bold",
-    marginBottom: 8,
     color: "#333",
+  },
+  responderNameLink: {
+    textDecorationLine: "underline",
   },
   darkResponseNoteLabel: {
     color: "#fff",
