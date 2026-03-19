@@ -38,8 +38,8 @@ if (isWeb) {
 
 // Web Stripe components
 import StripePayment from "../components/StripePaymentWeb";
-import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
+import AcceptDetailsModal from "../components/AcceptDetailsModal";
 
 const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
 
@@ -80,7 +80,8 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
   // Web Stripe state
   const [stripePromise, setStripePromise] = useState(null);
   const [showStripePayment, setShowStripePayment] = useState(false);
-  const [showFeesDialog, setShowFeesDialog] = useState(false);
+  const [showAcceptDetailsModal, setShowAcceptDetailsModal] = useState(false);
+  const [acceptModalResponse, setAcceptModalResponse] = useState(null);
   const [showPaymentFailure, setShowPaymentFailure] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
   const [customerUid, setCustomerUid] = useState(null);
@@ -181,21 +182,6 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
     }
   };
 
-  // Handle fees dialog continue (web)
-  const handleFeesDialogContinue = async () => {
-    try {
-      setShowFeesDialog(false);
-      setLoading(true);
-      await loadStripePublicKey("ECTEST");
-      setShowStripePayment(true);
-    } catch (error) {
-      console.error("WishResponsesScreen - Error starting web Stripe modal:", error);
-      Alert.alert("Error", "Failed to initialize payment. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Web Stripe payment submission handler
   const handleWebPaymentSubmit = async (paymentIntent, paymentMethod) => {
     try {
@@ -206,12 +192,12 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
       if (!buyerUid) throw new Error("User ID not found");
       if (!pendingAccept) throw new Error("No pending acceptance found");
 
-      const { responderProfileUid, wishResponseUid, subtotal } = pendingAccept;
+      const { responderProfileUid, wishResponseUid, subtotal, escrow, bountyAmount, quantity, costAmount, costValue } = pendingAccept;
 
       const processingFee = subtotal * 0.03;
       const totalAmount = subtotal + processingFee;
 
-      await recordTransaction(buyerUid, paymentIntent, subtotal, responderProfileUid, wishResponseUid, processingFee, totalAmount);
+      await recordTransaction(buyerUid, paymentIntent, subtotal, responderProfileUid, wishResponseUid, processingFee, totalAmount, escrow, bountyAmount, quantity, costAmount, costValue);
 
       Alert.alert("Success", "Response accepted and payment processed successfully!");
       await fetchWishResponses();
@@ -311,7 +297,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
     }
   };
 
-  const recordTransaction = async (buyerUid, paymentIntent, amount, responderProfileUid, wishResponseUid, processingFee = 0, totalAmountPaid = null) => {
+  const recordTransaction = async (buyerUid, paymentIntent, amount, responderProfileUid, wishResponseUid, processingFee = 0, totalAmountPaid = null, transactionInEscrow = false, bountyAmount = null, quantity = 1, costAmount = 0, costValue = 0) => {
     try {
       console.log("WishResponsesScreen - Recording transaction...");
       console.log("WishResponsesScreen - Buyer UID:", buyerUid);
@@ -333,7 +319,9 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         stripe_payment_intent: paymentIntent,
         total_amount_paid: totalPaid,
         total_costs: subtotal,
-        total_taxes: fee,
+        total_taxes: Math.round(fee * 100) / 100,
+        // Ensure tinyint: 1 or 0 only (backend expects tinyint)
+        transaction_in_escrow: transactionInEscrow === true || transactionInEscrow === 1 ? 1 : 0,
         items: [
           {
             // Keep both for backward compatibility + explicit ti_bs_id for API mapping
@@ -342,9 +330,11 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
             bs_uid: wishResponseUid,
             // Backend mapping expects profile_wish_bounty -> ti_bs_cost
             ti_bs_cost: subtotal,
-            // Keep legacy field too (some endpoints/screens may still read this)
-            bounty: subtotal,
-            quantity: 1,
+            // Bounty is the wish bounty amount (e.g. 110), not the subtotal
+            bounty: bountyAmount != null ? parseFloat(bountyAmount) : subtotal,
+            quantity: Number(quantity) || 1,
+            cost: costAmount != null ? parseFloat(costAmount) : 0,
+            item_cost: costValue != null ? parseFloat(costValue) : 0,
             recommender_profile_id: responderProfileUid, // Use responder's profile UID
           },
         ],
@@ -423,56 +413,67 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
     }
   };
 
-  const handleAccept = async (response) => {
+  const handleAccept = (response) => {
     console.log("WishResponsesScreen - Accept clicked for response:", response.wish_response_uid);
-    console.log("WishResponsesScreen - Response data:", JSON.stringify(response, null, 2));
 
     if (!stripeInitialized) {
       Alert.alert("Error", "Payment system is not ready. Please try again.");
       return;
     }
 
-    if (!wishData?.bounty) {
-      Alert.alert("Error", "Bounty information is not available for this wish.");
+    const bountyMatch = String(wishData?.bounty || "0").match(/[\d.]+/);
+    const bountyAmount = bountyMatch ? parseFloat(bountyMatch[0]) : 0;
+    const costStr = wishData?.cost || "";
+    const costMatch = String(costStr).replace(/^\$/, "").match(/^([\d.]+)/);
+    const costValue = costMatch ? parseFloat(costMatch[1]) : 0;
+
+    if (bountyAmount <= 0 && costValue <= 0) {
+      Alert.alert("Error", "Cost or bounty must be greater than 0 to accept.");
       return;
     }
 
+    setAccepting(response.wish_response_uid);
+    setAcceptModalResponse(response);
+    setShowAcceptDetailsModal(true);
+  };
+
+  const handleAcceptDetailsContinue = async (details) => {
+    const response = acceptModalResponse;
+    if (!response) return;
+
+    const { subtotal, totalWithFee } = details;
+    const wishResponseUid = response.wish_response_uid;
+    const responderProfileUid = response.profile_personal_uid;
+
+    if (!wishResponseUid || !responderProfileUid) {
+      Alert.alert("Error", "Invalid response data.");
+      setAccepting(null);
+      setAcceptModalResponse(null);
+      setShowAcceptDetailsModal(false);
+      return;
+    }
+
+    setPendingAccept({
+      responderProfileUid,
+      wishResponseUid,
+      subtotal,
+      totalWithFee,
+      escrow: details.escrow,
+      bountyAmount: details.bountyAmount,
+      quantity: details.quantity,
+      costAmount: details.costAmount,
+      costValue: details.costValue,
+    });
+
     try {
-      setAccepting(response.wish_response_uid);
-
-      // Parse bounty amount (handle formats like "5", "USD 5", "$5", etc.)
-      const bountyString = wishData?.bounty || "0";
-      // Extract the first number
-      const match = bountyString.match(/[\d.]+/);
-      const amount = match ? parseFloat(match[0]) : 0;
-
-      console.log("WishResponsesScreen - Parsed bounty amount:", amount);
-      console.log("WishResponsesScreen - Original bounty string:", bountyString);
-
-      if (amount <= 0) {
-        Alert.alert("Error", "Invalid bounty amount");
-        setAccepting(null);
-        return;
-      }
-
-      // Web flow: open Stripe modal (same pattern as ShoppingCart)
       if (isWeb) {
-        const wishResponseUid = response.wish_response_uid;
-        const responderProfileUid = response.profile_personal_uid;
-
-        console.log("WishResponsesScreen - Wish Response UID (ti_bs_id):", wishResponseUid);
-        console.log("WishResponsesScreen - Responder Profile UID (user_profile_id):", responderProfileUid);
-
-        if (!wishResponseUid) throw new Error("Wish Response ID not found");
-        if (!responderProfileUid) throw new Error("Responder profile ID not found");
-
-        setPendingAccept({ responderProfileUid, wishResponseUid, subtotal: amount });
-        setShowFeesDialog(true);
+        await loadStripePublicKey("ECTEST");
+        setShowStripePayment(true);
         setLoading(false);
         return;
       }
 
-      const initResult = await initializePayment(amount);
+      const initResult = await initializePayment(totalWithFee);
       if (!initResult.success || !initResult.clientSecret) {
         console.error("WishResponsesScreen - Payment initialization failed or client secret not returned");
         setAccepting(null);
@@ -534,8 +535,9 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         throw new Error("Responder profile ID not found");
       }
 
-      // Use the same amount that was used for payment
-      await recordTransaction(buyerUid, paymentIntentId, amount, responderProfileUid, wishResponseUid);
+      // Use subtotal for transaction record (totalWithFee includes 3% processing fee)
+      const processingFee = subtotal * 0.03;
+      await recordTransaction(buyerUid, paymentIntentId, subtotal, responderProfileUid, wishResponseUid, processingFee, totalWithFee, details.escrow, details.bountyAmount, details.quantity, details.costAmount, details.costValue);
 
       Alert.alert("Success", "Response accepted and payment processed successfully!");
 
@@ -545,9 +547,18 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
       console.error("WishResponsesScreen - Error processing payment:", error);
       Alert.alert("Error", error.message || "An error occurred during payment. Please try again.");
     } finally {
-      // For web, we clear accepting after modal completion (success/failure/cancel)
-      if (!isWeb) setAccepting(null);
+      if (!isWeb) {
+        setAccepting(null);
+        setAcceptModalResponse(null);
+        setShowAcceptDetailsModal(false);
+      }
     }
+  };
+
+  const handleAcceptDetailsCancel = () => {
+    setAccepting(null);
+    setAcceptModalResponse(null);
+    setShowAcceptDetailsModal(false);
   };
 
   const handleBack = () => {
@@ -734,28 +745,33 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         </ScrollView>
       )}
 
+      {/* Accept Details Modal (Escrow, Quantity, Total) */}
+      <AcceptDetailsModal
+        show={showAcceptDetailsModal}
+        setShow={setShowAcceptDetailsModal}
+        wishData={wishData}
+        response={acceptModalResponse}
+        onContinue={handleAcceptDetailsContinue}
+        onCancel={handleAcceptDetailsCancel}
+      />
+
       {/* Web Stripe Components */}
       {isWeb && (
         <>
-          <StripeFeesDialog
-            show={showFeesDialog}
-            setShow={setShowFeesDialog}
-            onContinue={handleFeesDialogContinue}
-            onCancel={() => {
-              setShowFeesDialog(false);
-              setPendingAccept(null);
-              setAccepting(null);
-              setLoading(false);
-            }}
-          />
-
           {stripePromise && customerUid && pendingAccept && (
             <StripePayment
               message='ECTEST'
-              amount={pendingAccept.subtotal * 1.03} // Add 3% fee
+              amount={pendingAccept.totalWithFee ?? pendingAccept.subtotal * 1.03}
               paidBy={customerUid}
               show={showStripePayment}
-              setShow={setShowStripePayment}
+              setShow={(v) => {
+                setShowStripePayment(v);
+                if (!v) {
+                  setPendingAccept(null);
+                  setAccepting(null);
+                  setAcceptModalResponse(null);
+                }
+              }}
               submit={handleWebPaymentSubmit}
               stripePromise={stripePromise}
             />

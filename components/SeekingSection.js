@@ -600,7 +600,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     labelField='label'
     valueField='value'
     placeholder='Unit *'
-    placeholderStyle={{ color: '#f44336' }}
+    placeholderStyle={{ color: '#f44336', fontSize: 14 }}
     value={parseCost(item.cost).unit || null}
     onChange={(item) => handleCostUnitChange(index, item)}
     containerStyle={styles.dropdownContainer}
@@ -736,7 +736,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     minHeight: 40,
     fontSize: 14,
-    fontFamily: "inherit",
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
     boxSizing: "border-box",
   },
   locationInput: {
