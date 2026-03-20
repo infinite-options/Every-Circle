@@ -146,18 +146,34 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
             <Text style={styles.addText}>+</Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={toggleVisibility}>
-          <Text style={[styles.toggleText, { color: isPublic ? "#4CAF50" : "#f44336" }]}>{isPublic ? "Display" : "Hide"}</Text>
-        </TouchableOpacity>
+        <View style={styles.toggleContainer}>
+                  <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
+                    <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
+                      <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
+                  </TouchableOpacity>
+                </View>
       </View>
 
       {expertise.map((item, index) => (
         <View key={index} style={[styles.card, index > 0 && styles.cardSpacing]}>
           <View style={styles.rowHeader}>
             <Text style={styles.label}>Offering #{index + 1}</Text>
-            <TouchableOpacity onPress={() => toggleEntryVisibility(index)}>
-              <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold", marginLeft: 10 }}>{item.isPublic ? "Display" : "Hide"}</Text>
-            </TouchableOpacity>
+            <View style={styles.toggleContainer}>
+                          <TouchableOpacity
+                            onPress={() => toggleEntryVisibility(index)}
+                            style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}
+                          >
+                            <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => toggleEntryVisibility(index)}
+                            style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}
+                          >
+                            <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
+                          </TouchableOpacity>
+                        </View>
           </View>
 
           <TextInput style={styles.input} placeholder='Expertise Name' value={item.name} onChangeText={(text) => handleInputChange(index, "name", text)} />
@@ -358,6 +374,12 @@ const styles = StyleSheet.create({
   cardSpacing: {
     marginTop: 16,
   },
+  toggleContainer: { flexDirection: "row", gap: 4 },
+  togglePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, backgroundColor: "transparent" },
+  togglePillActiveGreen: { backgroundColor: "#4CAF50" },
+  togglePillActiveRed: { backgroundColor: "#ef9a9a" },
+  togglePillText: { fontSize: 13, color: "#4e4e4e", fontWeight: "500" },
+  togglePillTextActive: { color: "#fff", fontWeight: "bold" },
 });
 
 export const validateExpertise = (expertise) => {

@@ -115,7 +115,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
       });
       setBusinessesData(updatedBusinessesData);
     }
-  }, [businesses]); // Run whenever businesses prop changes
+ }, [businesses]);  // Run whenever businesses prop changes
 
   const fetchBusinessesData = async (businesses) => {
     try {
@@ -233,9 +233,14 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
             <Text style={[styles.addText, darkMode && styles.darkAddText]}>+</Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={toggleVisibility}>
-          <Text style={[styles.toggleText, { color: isPublic ? (darkMode ? "#4ade80" : "#4CAF50") : darkMode ? "#f87171" : "#f44336" }]}>{isPublic ? "Display" : "Hide"}</Text>
-        </TouchableOpacity>
+        <View style={styles.toggleContainer}>
+          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
+            <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
+            <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {loadingBusinesses ? (
@@ -249,11 +254,14 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
               {/* Header with toggle */}
               <View style={styles.rowHeader}>
                 <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{idx + 1}</Text>
-                <TouchableOpacity onPress={() => toggleIndividualVisibility(originalIndex)}>
-                  <Text style={{ color: business.individualIsPublic ? (darkMode ? "#4ade80" : "#4CAF50") : (darkMode ? "#f87171" : "#f44336"), fontWeight: "bold" }}>
-                    {business.individualIsPublic ? "Display" : "Hide"}
-                  </Text>
-                </TouchableOpacity>
+               <View style={styles.toggleContainer}>
+                  <TouchableOpacity onPress={() => toggleEntryVisibility(originalIndex)} style={[styles.togglePill, originalBusiness?.isPublic && styles.togglePillActiveGreen]}>
+                    <Text style={[styles.togglePillText, originalBusiness?.isPublic && styles.togglePillTextActive]}>{originalBusiness?.isPublic ? "Visible" : "Show"}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => toggleEntryVisibility(originalIndex)} style={[styles.togglePill, !originalBusiness?.isPublic && styles.togglePillActiveRed]}>
+                    <Text style={[styles.togglePillText, !originalBusiness?.isPublic && styles.togglePillTextActive]}>{!originalBusiness?.isPublic ? "Hidden" : "Hide"}</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
               
               {/* Business card */}
@@ -287,9 +295,14 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
               <View key={index} style={[styles.card, darkMode && styles.darkCard]}>
                 <View style={styles.rowHeader}>
                   <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{actualIndex + 1}</Text>
-                  <TouchableOpacity onPress={() => toggleEntryVisibility(actualIndex)}>
-                    <Text style={{ color: item.isPublic ? "#4CAF50" : "#f44336", fontWeight: "bold", marginLeft: 10 }}>{item.isPublic ? "Display" : "Hide"}</Text>
-                  </TouchableOpacity>
+                  <View style={styles.toggleContainer}>
+                    <TouchableOpacity onPress={() => toggleEntryVisibility(actualIndex)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
+                      <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => toggleEntryVisibility(actualIndex)} style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}>
+                      <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
@@ -486,6 +499,12 @@ const styles = StyleSheet.create({
   darkEmptyText: {
     color: "#999",
   },
+  toggleContainer: { flexDirection: "row", gap: 4 },
+  togglePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, backgroundColor: "transparent" },
+  togglePillActiveGreen: { backgroundColor: "#4CAF50" },
+  togglePillActiveRed: { backgroundColor: "#ef9a9a" },
+  togglePillText: { fontSize: 13, color: "#4e4e4e", fontWeight: "500" },
+  togglePillTextActive: { color: "#fff", fontWeight: "bold" },
 });
 
 export default BusinessSection;
