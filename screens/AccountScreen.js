@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity, Platform, Modal, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
@@ -47,6 +47,9 @@ export default function AccountScreen({ navigation }) {
   const [showBusinessTransactionHistory, setShowBusinessTransactionHistory] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
+  const [showReceiveItemModal, setShowReceiveItemModal] = useState(false);
+  const [pendingTransactionForConfirm, setPendingTransactionForConfirm] = useState(null);
+  const [updatingEscrow, setUpdatingEscrow] = useState(false);
 
   const accountFeedbackInstructions = "Instructions for Account";
 
@@ -121,6 +124,32 @@ export default function AccountScreen({ navigation }) {
       setTransactionData([]);
     } finally {
       setTransactionLoading(false);
+    }
+  };
+
+  const updateTransactionEscrow = async (transactionUid) => {
+    try {
+      setUpdatingEscrow(true);
+      const url = `${API_BASE_URL}/api/v1/transactions`;
+      const response = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transaction_uid: transactionUid,
+          transaction_in_escrow: 0,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to update: ${response.status}`);
+      }
+      setShowReceiveItemModal(false);
+      setPendingTransactionForConfirm(null);
+      await refreshTransactionData();
+    } catch (error) {
+      console.error("Error updating transaction escrow:", error);
+      Alert.alert("Error", "Failed to update payment status. Please try again.");
+    } finally {
+      setUpdatingEscrow(false);
     }
   };
 
@@ -1271,10 +1300,14 @@ export default function AccountScreen({ navigation }) {
                         <Text style={styles.transactionHeaderPurchaseType}>Type</Text>
                         <Text style={styles.transactionHeaderBusiness}>Seller</Text>
                         <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text>
+                        <Text style={styles.transactionHeaderPaid}>Paid</Text>
                         <Text style={styles.transactionHeaderAmount}>Amount</Text>
                       </View>
                       {/* Table Rows */}
                       {transactionData.map((transaction, i) => {
+                        const isSeeking = (transaction.purchase_type || "").toLowerCase() === "seeking";
+                        const isPending = transaction.transaction_in_escrow === 1;
+                        const showPendingLink = isSeeking && isPending;
                         return (
                           <View key={transaction.transaction_uid || i} style={styles.transactionRow}>
                             <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
@@ -1282,6 +1315,21 @@ export default function AccountScreen({ navigation }) {
                             <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "N/A"}</Text>
                             <Text style={styles.transactionBusiness}>{transaction.business_name || "N/A"}</Text>
                             <Text style={styles.transactionPurchasedItem}>{transaction.purchased_item || "N/A"}</Text>
+                            <View style={styles.transactionPaidCell}>
+                              {showPendingLink ? (
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    setPendingTransactionForConfirm(transaction);
+                                    setShowReceiveItemModal(true);
+                                  }}
+                                  activeOpacity={0.7}
+                                >
+                                  <Text style={styles.pendingLink}>Pending</Text>
+                                </TouchableOpacity>
+                              ) : (
+                                <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Paid"}</Text>
+                              )}
+                            </View>
                             <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
                           </View>
                         );
@@ -1332,10 +1380,11 @@ export default function AccountScreen({ navigation }) {
                         <Text style={styles.bountyTableHeaderCell}>Date</Text>
                         <Text style={styles.bountyTableHeaderCell}>Purchaser</Text>
                         <Text style={styles.bountyTableHeaderCell}>Business</Text>
+                        <Text style={styles.bountyTableHeaderCell}>Paid</Text>
                         <Text style={styles.bountyTableHeaderCell}>Bounty Earned</Text>
                       </View>
-                      {/* Table Rows */}
-                      {bountyData.data.map((transaction, index) => {
+                      {/* Table Rows - new API: ti_transaction_id, transaction_datetime, purchaser_name, display_name, in_escrow, bounty_earned */}
+                      {bountyData.data.map((item, index) => {
                         // Format date to MM/DD
                         const formatDate = (dateString) => {
                           if (!dateString) return "N/A";
@@ -1345,12 +1394,13 @@ export default function AccountScreen({ navigation }) {
                           return `${month}/${day}`;
                         };
                         return (
-                          <View key={transaction.transaction_uid || index} style={styles.bountyTableRow}>
-                            <Text style={styles.bountyTableCell}>{transaction.transaction_uid}</Text>
-                            <Text style={styles.bountyTableCell}>{formatDate(transaction.transaction_datetime)}</Text>
-                            <Text style={styles.bountyTableCell}>{transaction.transaction_profile_id || "N/A"}</Text>
-                            <Text style={styles.bountyTableCell}>{transaction.transaction_business_id || "N/A"}</Text>
-                            <Text style={styles.bountyTableCell}>${transaction.bounty_earned?.toFixed(2)}</Text>
+                          <View key={item.tb_uid || item.ti_transaction_id || index} style={styles.bountyTableRow}>
+                            <Text style={styles.bountyTableCell}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text>
+                            <Text style={styles.bountyTableCell}>{formatDate(item.transaction_datetime)}</Text>
+                            <Text style={styles.bountyTableCell}>{item.purchaser_name || item.transaction_profile_id || "N/A"}</Text>
+                            <Text style={styles.bountyTableCell}>{item.display_name || item.transaction_business_id || "N/A"}</Text>
+                            <Text style={styles.bountyTableCell}>{item.in_escrow === 1 ? "Pending" : "Paid"}</Text>
+                            <Text style={styles.bountyTableCell}>${(item.bounty_earned ?? 0).toFixed(2)}</Text>
                           </View>
                         );
                       })}
@@ -1524,6 +1574,46 @@ export default function AccountScreen({ navigation }) {
       </ScrollView>
 
       <BottomNavBar navigation={navigation} />
+
+      {/* Receive Item Confirmation Modal - for Seeking + Pending transactions */}
+      <Modal animationType='fade' transparent={true} visible={showReceiveItemModal} onRequestClose={() => setShowReceiveItemModal(false)}>
+        <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
+          <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent]}>
+            <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle]}>Delivery Verification</Text>
+            <Text style={[styles.receiveItemModalTitle, darkMode && styles.darkTitle]}>
+              Did you receive the quantity {pendingTransactionForConfirm?.ti_bs_qty ?? 1} of {pendingTransactionForConfirm?.purchased_item || "item"}?
+            </Text>
+            <View style={styles.receiveItemModalButtons}>
+              <TouchableOpacity
+                style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
+                onPress={() => {
+                  setShowReceiveItemModal(false);
+                  setPendingTransactionForConfirm(null);
+                }}
+                disabled={updatingEscrow}
+              >
+                <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>No</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.receiveItemModalButton, styles.receiveItemYesButton]}
+                onPress={() => {
+                  if (pendingTransactionForConfirm?.transaction_uid) {
+                    updateTransactionEscrow(pendingTransactionForConfirm.transaction_uid);
+                  }
+                }}
+                disabled={updatingEscrow}
+              >
+                {updatingEscrow ? (
+                  <ActivityIndicator size='small' color='#fff' />
+                ) : (
+                  <Text style={styles.receiveItemModalButtonText}>Yes</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Account' instructions={accountFeedbackInstructions} questions={accountFeedbackQuestions} />
     </View>
   );
@@ -1581,6 +1671,10 @@ const styles = StyleSheet.create({
   transactionBusiness: { flex: 1, fontSize: 11, color: "#333", paddingHorizontal: 4 },
   transactionPurchasedItem: { flex: 1, fontSize: 11, color: "#333", paddingHorizontal: 4 },
   transactionAmount: { width: 70, fontSize: 11, color: "#333", textAlign: "right" },
+  transactionPaid: { width: 60, fontSize: 11, color: "#333", textAlign: "center" },
+  transactionPaidCell: { width: 60, justifyContent: "center", alignItems: "center" },
+  transactionPaidText: { fontSize: 11, color: "#333" },
+  pendingLink: { fontSize: 11, color: "#007AFF", textDecorationLine: "underline" },
   // Header styles
   transactionHeaderDate: { width: 50, fontSize: 13, color: "#fff", fontWeight: "bold" },
   transactionHeaderId: { width: 100, fontSize: 13, color: "#fff", fontWeight: "bold" },
@@ -1588,6 +1682,7 @@ const styles = StyleSheet.create({
   transactionHeaderBusiness: { flex: 1, fontSize: 13, color: "#fff", fontWeight: "bold", paddingHorizontal: 4 },
   transactionHeaderPurchasedItem: { flex: 1, fontSize: 13, color: "#fff", fontWeight: "bold", paddingHorizontal: 4 },
   transactionHeaderAmount: { width: 70, fontSize: 13, color: "#fff", fontWeight: "bold", textAlign: "right" },
+  transactionHeaderPaid: { width: 60, fontSize: 13, color: "#fff", fontWeight: "bold", textAlign: "center" },
   centeredContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
 
   bountyTotals: {
@@ -1877,5 +1972,88 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#000",
     letterSpacing: 1,
+  },
+  // Receive Item Modal
+  receiveItemModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    ...(Platform.OS === "web" && {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 9998,
+    }),
+  },
+  darkModalOverlay: {
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+  },
+  receiveItemModalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 24,
+    width: "90%",
+    maxWidth: 400,
+    ...(Platform.OS === "web" && {
+      position: "relative",
+      zIndex: 9999,
+    }),
+  },
+  darkModalContent: {
+    backgroundColor: "#2d2d2d",
+  },
+  receiveItemModalHeader: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  receiveItemModalTitle: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#333",
+    marginBottom: 24,
+    textAlign: "center",
+  },
+  darkTitle: {
+    color: "#fff",
+  },
+  receiveItemModalButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  receiveItemModalButton: {
+    flex: 1,
+    padding: 15,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  receiveItemNoButton: {
+    backgroundColor: "#F5F5F5",
+    borderWidth: 2,
+    borderColor: "#9C45F7",
+  },
+  darkCancelButton: {
+    backgroundColor: "#404040",
+    borderColor: "#7B35C7",
+  },
+  receiveItemYesButton: {
+    backgroundColor: "#9C45F7",
+  },
+  receiveItemModalButtonText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#fff",
+  },
+  receiveItemNoButtonText: {
+    color: "#9C45F7",
+  },
+  darkCancelButtonText: {
+    color: "#7B35C7",
   },
 });
