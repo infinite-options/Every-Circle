@@ -59,6 +59,7 @@ export const SEARCH_REFERRAL_ENDPOINT = `${API_BASE_URL}/api/search_referral`;
 
 // Transaction and Rating Endpoints
 export const TRANSACTIONS_ENDPOINT = `${API_BASE_URL}/api/v1/transactions`;
+export const TRANSACTION_RECEIPT_ENDPOINT = `${API_BASE_URL}/api/transactionreceipt`;
 export const RATINGS_ENDPOINT = `${API_BASE_URL}/ratings`;
 
 // Profile Wish Info Endpoint

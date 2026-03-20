@@ -100,13 +100,16 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
         firstName: profileData.profile_personal_first_name || profileData.firstName || "",
         lastName: profileData.profile_personal_last_name || profileData.lastName || "",
         email: profileData.profile_personal_email || profileData.email || "",
-        phoneNumber: profileData.profile_personal_phone_number || profileData.phoneNumber || "",
-        profileImage: profileData.profile_personal_image || profileData.profileImage || "",
+        phoneNumber: profileData.profile_personal_phone_number || profileData.phoneNumber || profileData.phone || "",
+        profileImage: profileData.profile_personal_image || profileData.profileImage || profileData.image || "",
         tagLine: profileData.profile_personal_tag_line || profileData.tagLine || "",
-        emailIsPublic: profileData.profile_personal_email_is_public === 1,
-        phoneIsPublic: profileData.profile_personal_phone_number_is_public === 1,
-        tagLineIsPublic: profileData.profile_personal_tag_line_is_public === 1,
-        imageIsPublic: profileData.profile_personal_image_is_public === 1,
+        city: profileData.profile_personal_city || profileData.city || "",
+        state: profileData.profile_personal_state || profileData.state || "",
+        emailIsPublic: profileData.profile_personal_email_is_public === 1 || profileData.emailIsPublic === true,
+        phoneIsPublic: profileData.profile_personal_phone_number_is_public === 1 || profileData.phoneIsPublic === true,
+        tagLineIsPublic: profileData.profile_personal_tag_line_is_public === 1 || profileData.tagLineIsPublic === true,
+        imageIsPublic: profileData.profile_personal_image_is_public === 1 || profileData.imageIsPublic === true,
+        locationIsPublic: profileData.profile_personal_location_is_public === 1 || profileData.locationIsPublic === true,
       }
     : null;
 

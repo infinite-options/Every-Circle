@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
-import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_BOUNTY_RESULTS_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
+import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_BOUNTY_RESULTS_ENDPOINT, BUSINESS_INFO_ENDPOINT, TRANSACTION_RECEIPT_ENDPOINT } from "../apiConfig";
 import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
 import { useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
@@ -50,6 +50,9 @@ export default function AccountScreen({ navigation }) {
   const [showReceiveItemModal, setShowReceiveItemModal] = useState(false);
   const [pendingTransactionForConfirm, setPendingTransactionForConfirm] = useState(null);
   const [updatingEscrow, setUpdatingEscrow] = useState(false);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptData, setReceiptData] = useState([]);
+  const [receiptLoading, setReceiptLoading] = useState(false);
 
   const accountFeedbackInstructions = "Instructions for Account";
 
@@ -124,6 +127,43 @@ export default function AccountScreen({ navigation }) {
       setTransactionData([]);
     } finally {
       setTransactionLoading(false);
+    }
+  };
+
+  const fetchReceipt = async (transaction) => {
+    const profileId = transaction.transaction_profile_id || (await AsyncStorage.getItem("profile_uid"));
+    const transactionUid = transaction.transaction_uid;
+    if (!profileId || !transactionUid) {
+      Alert.alert("Error", "Cannot load receipt: missing transaction data.");
+      return;
+    }
+    try {
+      setReceiptLoading(true);
+      setReceiptData([]);
+      setShowReceiptModal(true);
+      const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${profileId}/${transactionUid}`;
+      const response = await fetch(url, { method: "GET", headers: { "Content-Type": "application/json" } });
+      if (!response.ok) {
+        throw new Error(`Failed to load receipt: ${response.status}`);
+      }
+      const result = await response.json();
+      let items = [];
+      if (Array.isArray(result)) {
+        items = result;
+      } else if (Array.isArray(result?.data)) {
+        items = result.data;
+      } else if (result?.data && typeof result.data === "object" && !Array.isArray(result.data)) {
+        items = [result.data];
+      } else if (result?.data) {
+        items = [result.data];
+      }
+      setReceiptData(items);
+    } catch (error) {
+      console.error("Error fetching receipt:", error);
+      Alert.alert("Error", error.message || "Failed to load receipt.");
+      setShowReceiptModal(false);
+    } finally {
+      setReceiptLoading(false);
     }
   };
 
@@ -1315,7 +1355,11 @@ export default function AccountScreen({ navigation }) {
                             <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text>
                             <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "N/A"}</Text>
                             <Text style={styles.transactionBusiness}>{transaction.business_name || "N/A"}</Text>
-                            <Text style={styles.transactionPurchasedItem}>{transaction.purchased_item || "N/A"}</Text>
+                            <View style={styles.transactionPurchasedItemCell}>
+                              <TouchableOpacity onPress={() => fetchReceipt(transaction)} activeOpacity={0.7}>
+                                <Text style={styles.receiptLink}>{transaction.purchased_item || "N/A"}</Text>
+                              </TouchableOpacity>
+                            </View>
                             <View style={styles.transactionPaidCell}>
                               {showPendingLink ? (
                                 <TouchableOpacity
@@ -1471,7 +1515,7 @@ export default function AccountScreen({ navigation }) {
             {/* Business Net Earning */}
             <View style={styles.sectionContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBusinessNetEarning(!showBusinessNetEarning)}>
-                <Text style={styles.sectionHeaderText}>S</Text>
+                <Text style={styles.sectionHeaderText}>NET EARNINGS</Text>
                 <Ionicons name={showBusinessNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showBusinessNetEarning && <BusinessNetEarningChart />}
@@ -1576,6 +1620,43 @@ export default function AccountScreen({ navigation }) {
 
       <BottomNavBar navigation={navigation} />
 
+      {/* Receipt Modal */}
+      <Modal animationType='fade' transparent={true} visible={showReceiptModal} onRequestClose={() => setShowReceiptModal(false)}>
+        <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
+          <View style={[styles.receiptModalContent, darkMode && styles.darkModalContent]}>
+            <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle]}>Transaction Receipt</Text>
+            {receiptLoading ? (
+              <ActivityIndicator size='large' color='#18884A' style={{ marginVertical: 24 }} />
+            ) : receiptData.length > 0 ? (
+              <ScrollView style={styles.receiptScrollView} horizontal>
+                <View>
+                  <View style={styles.receiptTableHeader}>
+                    <Text style={styles.receiptHeaderCell}>Item ID</Text>
+                    <Text style={styles.receiptHeaderCell}>Qty</Text>
+                    <Text style={styles.receiptHeaderCell}>Cost</Text>
+                  </View>
+                  {receiptData.map((item, index) => (
+                    <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
+                      <Text style={styles.receiptTableCell}>{item.ti_bs_id || "N/A"}</Text>
+                      <Text style={styles.receiptTableCell}>{item.ti_bs_qty ?? "N/A"}</Text>
+                      <Text style={styles.receiptTableCell}>${parseFloat(item.ti_bs_cost || 0).toFixed(2)}</Text>
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+            ) : (
+              <Text style={[styles.noDataText, { marginVertical: 24 }]}>No receipt data available.</Text>
+            )}
+            <TouchableOpacity
+              style={[styles.receiptCloseButton, darkMode && styles.darkCancelButton]}
+              onPress={() => setShowReceiptModal(false)}
+            >
+              <Text style={[styles.receiptCloseButtonText, darkMode && styles.darkCancelButtonText]}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Receive Item Confirmation Modal - for Seeking/Business + Pending transactions */}
       <Modal animationType='fade' transparent={true} visible={showReceiveItemModal} onRequestClose={() => setShowReceiveItemModal(false)}>
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
@@ -1604,11 +1685,7 @@ export default function AccountScreen({ navigation }) {
                 }}
                 disabled={updatingEscrow}
               >
-                {updatingEscrow ? (
-                  <ActivityIndicator size='small' color='#fff' />
-                ) : (
-                  <Text style={styles.receiveItemModalButtonText}>Yes</Text>
-                )}
+                {updatingEscrow ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.receiveItemModalButtonText}>Yes</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -2056,5 +2133,74 @@ const styles = StyleSheet.create({
   },
   darkCancelButtonText: {
     color: "#7B35C7",
+  },
+  transactionPurchasedItemCell: {
+    flex: 1,
+    paddingHorizontal: 4,
+    justifyContent: "center",
+  },
+  receiptLink: {
+    fontSize: 11,
+    color: "#007AFF",
+    textDecorationLine: "underline",
+    paddingVertical: 2,
+  },
+  receiptModalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 24,
+    width: "90%",
+    maxWidth: 500,
+    maxHeight: "80%",
+    ...(Platform.OS === "web" && {
+      position: "relative",
+      zIndex: 9999,
+    }),
+  },
+  receiptScrollView: {
+    maxHeight: 300,
+    marginVertical: 16,
+  },
+  receiptTableHeader: {
+    flexDirection: "row",
+    backgroundColor: "#18884A",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 2,
+  },
+  receiptHeaderCell: {
+    width: 120,
+    fontSize: 13,
+    color: "#fff",
+    fontWeight: "bold",
+    paddingHorizontal: 8,
+  },
+  receiptTableRow: {
+    flexDirection: "row",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  receiptTableCell: {
+    width: 120,
+    fontSize: 12,
+    color: "#333",
+    paddingHorizontal: 8,
+  },
+  receiptCloseButton: {
+    backgroundColor: "#F5F5F5",
+    borderWidth: 2,
+    borderColor: "#18884A",
+    padding: 15,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 16,
+  },
+  receiptCloseButtonText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#18884A",
   },
 });
