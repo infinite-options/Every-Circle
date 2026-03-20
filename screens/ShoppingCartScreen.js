@@ -39,6 +39,7 @@ if (isWeb) {
 import StripePayment from "../components/StripePaymentWeb";
 import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
+import { parsePrice } from "../utils/priceUtils";
 
 // Use the publishable key from environment variables
 const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
@@ -70,6 +71,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const [showPaymentFailure, setShowPaymentFailure] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
   const [customerUid, setCustomerUid] = useState(null);
+  const [escrow, setEscrow] = useState(true);
 
   useEffect(() => {
     console.log("ShoppingCartScreen mounted");
@@ -202,7 +204,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         newCartItems[index] = {
           ...newCartItems[index],
           quantity: newQuantity,
-          totalPrice: (parseFloat(newCartItems[index].bs_cost) * newQuantity).toFixed(2),
+          totalPrice: (parsePrice(newCartItems[index].bs_cost) * newQuantity).toFixed(2),
         };
         setCartItems(newCartItems);
         const businessUid = newCartItems[index].business_uid;
@@ -218,11 +220,11 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const calculateTotal = () => {
     return cartItems.reduce((total, item) => {
       if (item.itemType === "expertise") {
-        const cost = parseFloat(item.cost) || 0;
+        const cost = parsePrice(item.cost);
         const quantity = item.quantity || 1;
         return total + cost * quantity;
       }
-      const cost = parseFloat(item.bs_cost) || 0;
+      const cost = parsePrice(item.bs_cost);
       const quantity = item.quantity || 1;
       return total + cost * quantity;
     }, 0);
@@ -357,7 +359,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
   };
 
-  const prepareTransactionData = (buyerUid, paymentIntent, totalAmount, processingFee = 0) => {
+  const prepareTransactionData = (buyerUid, paymentIntent, totalAmount, processingFee = 0, escrowValue = true) => {
     // Use the referral profile ID from route params, or fallback to a default
     // If the recommender is "Charity", use a default referral ID
     const recommenderProfileId = recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231"; // Default referral ID for charity purchases
@@ -374,11 +376,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
 
     const subtotal = parseFloat(calculateTotal());
-    // For expertise items, use escrow from first expertise item; for business-only carts, default to 0
-    const firstExpertiseItem = cartItems.find((item) => item.itemType === "expertise");
-    const transactionInEscrow = firstExpertiseItem
-      ? (firstExpertiseItem.escrow === true || firstExpertiseItem.escrow === 1 ? 1 : 0)
-      : 0;
+    const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
 
     const transactionData = {
       profile_id: buyerUid,
@@ -390,15 +388,16 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       transaction_in_escrow: transactionInEscrow,
       items: cartItems.map((item) => ({
         bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
-        bounty: item.itemType === "expertise" 
-          ? parseFloat(item.bounty) || 0 
-          : parseFloat(item.bs_bounty) || 0,
+        bounty: item.itemType === "expertise"
+          ? parsePrice(item.bounty)
+          : parsePrice(item.bs_bounty),
         quantity: parseInt(item.quantity) || 1,
         recommender_profile_id: recommenderProfileId,
       })),
     };
 
     console.log("Prepared Transaction Data:", JSON.stringify(transactionData, null, 2));
+    console.log("transaction_in_escrow (sending to backend):", transactionInEscrow);
     console.log("Subtotal:", subtotal);
     console.log("Processing Fee (tax):", processingFee);
     console.log("Total Amount Paid:", totalAmount);
@@ -408,7 +407,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     return transactionData;
   };
 
-  const recordTransactions = async (buyerUid, paymentIntent, totalAmount = null, processingFee = null) => {
+  const recordTransactions = async (buyerUid, paymentIntent, totalAmount = null, processingFee = null, escrowValue = true) => {
     try {
       console.log("Recording transactions for items:", cartItems);
 
@@ -429,7 +428,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       console.log("Transaction amounts - Subtotal:", subtotal, "Fee:", fee, "Total:", total);
 
       // Prepare the transaction data
-      const transactionData = prepareTransactionData(buyerProfileId, paymentIntent || "PAYMENT_INTENT_ID", total, fee);
+      const transactionData = prepareTransactionData(buyerProfileId, paymentIntent || "PAYMENT_INTENT_ID", total, fee, escrowValue);
 
       console.log("============================================");
       console.log("ENDPOINT: RECORD_TRANSACTIONS");
@@ -507,7 +506,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       console.log("Web payment amounts - Subtotal:", subtotal, "Processing Fee (3%):", processingFee, "Total:", totalAmount);
 
       // Record the transactions with fee included
-      await recordTransactions(buyerUid, paymentIntent, totalAmount, processingFee);
+      await recordTransactions(buyerUid, paymentIntent, totalAmount, processingFee, escrow);
 
       // Clear ALL cart data from AsyncStorage
       try {
@@ -609,7 +608,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       }
 
       // Record the transactions
-      await recordTransactions(buyerUid, paymentIntent);
+      await recordTransactions(buyerUid, paymentIntent, null, null, escrow);
 
       // Clear ALL cart data from AsyncStorage
       try {
@@ -675,16 +674,8 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                         <Text style={styles.priceLabel}>Price:</Text>
                         <Text style={styles.priceValue}>
                           {item.itemType === "expertise"
-                            ? `$${(parseFloat(item.cost) || 0).toFixed(2)}`
-                            : `${(item.bs_cost_currency === "USD" || !item.bs_cost_currency) ? "$" : item.bs_cost_currency + " "}${parseFloat(item.bs_cost).toFixed(2)}`}
-                        </Text>
-                      </View>
-                      <View style={styles.priceRow}>
-                        <Text style={styles.priceLabel}>Bounty:</Text>
-                        <Text style={styles.priceValue}>
-                          {item.itemType === "expertise"
-                            ? `$${(parseFloat(item.bounty) || 0).toFixed(2)}`
-                            : `${(item.bs_bounty_currency === "USD" || !item.bs_bounty_currency) ? "$" : item.bs_bounty_currency + " "}${(parseFloat(item.bs_bounty) || 0).toFixed(2)}`}
+                            ? `$${parsePrice(item.cost).toFixed(2)}`
+                            : `${(item.bs_cost_currency === "USD" || !item.bs_cost_currency) ? "$" : item.bs_cost_currency + " "}${parsePrice(item.bs_cost).toFixed(2)}`}
                         </Text>
                       </View>
                       <View style={styles.quantityContainer}>
@@ -703,24 +694,48 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                         <Text style={styles.totalLabel}>Total Price:</Text>
                         <Text style={styles.totalValue}>
                           {item.itemType === "expertise"
-                            ? `$${((parseFloat(item.cost) || 0) * (item.quantity || 1)).toFixed(2)}`
-                            : `${(item.bs_cost_currency === "USD" || !item.bs_cost_currency) ? "$" : item.bs_cost_currency + " "}${(parseFloat(item.totalPrice) || parseFloat(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
+                            ? `$${(parsePrice(item.cost) * (item.quantity || 1)).toFixed(2)}`
+                            : `${(item.bs_cost_currency === "USD" || !item.bs_cost_currency) ? "$" : item.bs_cost_currency + " "}${(parsePrice(item.totalPrice) || parsePrice(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
                         </Text>
                       </View>
-                      <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>Total Bounty:</Text>
-                        <Text style={styles.totalValue}>
-                          {item.itemType === "expertise"
-                            ? `$${((parseFloat(item.bounty) || 0) * (item.quantity || 1)).toFixed(2)}`
-                            : `${(item.bs_bounty_currency === "USD" || !item.bs_bounty_currency) ? "$" : item.bs_bounty_currency + " "}${(parseFloat(item.bs_bounty) || 0).toFixed(2)}`}
-                        </Text>
-                      </View>
+                      {(item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty)) > 0 && (
+                        <View style={[styles.totalRow, styles.bountyNoteRow]}>
+                          <Text style={styles.bountyNoteLabel}>Bounty (paid by Seller)</Text>
+                          <Text style={styles.bountyNoteValue}>
+                            $
+                            {item.itemType === "expertise"
+                              ? (parsePrice(item.bounty) * (item.quantity || 1)).toFixed(2)
+                              : (parsePrice(item.bs_bounty) * (item.quantity || 1)).toFixed(2)}
+                          </Text>
+                        </View>
+                      )}
                     </View>
                   </View>
                 </View>
               ))}
               <View style={styles.totalContainer}>
-                <Text style={styles.totalText}>Grand Total: ${calculateTotal().toFixed(2)}</Text>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Subtotal:</Text>
+                  <Text style={styles.totalValue}>${calculateTotal().toFixed(2)}</Text>
+                </View>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Credit card processing fee (3%):</Text>
+                  <Text style={styles.totalValue}>${(calculateTotal() * 0.03).toFixed(2)}</Text>
+                </View>
+                <View style={[styles.totalRow, styles.grandTotalRow]}>
+                  <Text style={styles.grandTotalLabel}>Total:</Text>
+                  <Text style={styles.grandTotalValue}>${(calculateTotal() * 1.03).toFixed(2)}</Text>
+                </View>
+              </View>
+
+              <View style={styles.escrowSection}>
+                <TouchableOpacity style={styles.escrowRow} onPress={() => setEscrow(!escrow)} activeOpacity={0.7}>
+                  <View style={[styles.checkbox, escrow && styles.checkboxChecked]}>
+                    {escrow && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.escrowLabel}>Escrow</Text>
+                  <Ionicons name='information-circle-outline' size={18} color='#666' style={styles.infoIcon} />
+                </TouchableOpacity>
               </View>
             </>
           )}
@@ -758,6 +773,8 @@ const ShoppingCartScreen = ({ route, navigation }) => {
               setShowFeesDialog(false);
               setLoading(false);
             }}
+            subtotal={cartItems.length > 0 ? calculateTotal() : null}
+            totalWithFee={cartItems.length > 0 ? calculateTotal() * 1.03 : null}
           />
           {stripePromise && customerUid && (
             <StripePayment
@@ -869,12 +886,59 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 10,
     marginTop: 10,
-    alignItems: "flex-end",
+    alignItems: "stretch",
   },
-  totalText: {
+  grandTotalRow: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 2,
+    borderTopColor: "#9C45F7",
+  },
+  grandTotalLabel: {
     fontSize: 18,
     fontWeight: "bold",
     color: "#333",
+  },
+  grandTotalValue: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#9C45F7",
+  },
+  escrowSection: {
+    backgroundColor: "#fff",
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 10,
+  },
+  escrowRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: "#9C45F7",
+    borderRadius: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  checkboxChecked: {
+    backgroundColor: "#9C45F7",
+  },
+  checkmark: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  escrowLabel: {
+    fontSize: 16,
+    color: "#333",
+    flex: 1,
+  },
+  infoIcon: {
+    marginLeft: 6,
   },
   disabledButton: {
     opacity: 0.7,
@@ -934,6 +998,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
     color: "#9C45F7",
+  },
+  bountyNoteRow: {
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#E0E0E0",
+  },
+  bountyNoteLabel: {
+    fontSize: 13,
+    color: "#888",
+    fontStyle: "italic",
+  },
+  bountyNoteValue: {
+    fontSize: 13,
+    color: "#888",
+    fontStyle: "italic",
   },
   quantityContainer: {
     flexDirection: "row",

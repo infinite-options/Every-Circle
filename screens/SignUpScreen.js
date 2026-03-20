@@ -83,7 +83,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
 
       setIsValid(isEmailValid && isPasswordValid && doPasswordsMatch);
     },
-    [isGoogleSignUp]
+    [isGoogleSignUp],
   );
 
   // Validate inputs whenever email, password, confirmPassword, or isGoogleSignUp changes
@@ -469,11 +469,11 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
 
   return (
     <View style={styles.pageContainer}>
-      <AppHeader title='Sign Up' {...getHeaderColors("signUp")} onBackPress={() => navigation.goBack()} />
+      <AppHeader title='SIGN UP' {...getHeaderColors("signUp")} onBackPress={() => navigation.goBack()} />
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.contentContainer}>
           <View style={styles.header}>
-            <Text style={styles.title}>Welcome to Every Circle!</Text>
+            <Text style={styles.title}>Welcome to everyCircle!</Text>
             <Text style={styles.subtitle}>{isGoogleSignUp ? "Complete your sign up" : "Please create your account to continue."}</Text>
           </View>
 

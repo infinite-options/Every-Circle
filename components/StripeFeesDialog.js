@@ -3,15 +3,37 @@ import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
-const StripeFeesDialog = ({ show, setShow, onContinue, onCancel }) => {
+const StripeFeesDialog = ({ show, setShow, onContinue, onCancel, subtotal, totalWithFee }) => {
   const { darkMode } = useDarkMode();
+  const hasBreakdown = subtotal != null && totalWithFee != null;
+  const fee = hasBreakdown ? (totalWithFee - subtotal).toFixed(2) : null;
 
   return (
     <Modal animationType='fade' transparent={true} visible={show} onRequestClose={onCancel}>
       <View style={[styles.modalOverlay, darkMode && styles.darkModalOverlay]}>
         <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
           <Text style={[styles.title, darkMode && styles.darkTitle]}>Payment Processing Fees</Text>
-          <Text style={[styles.message, darkMode && styles.darkMessage]}>An additional 3% will be charged as credit card processing fees</Text>
+          {hasBreakdown ? (
+            <>
+              <View style={[styles.breakdownSection, darkMode && styles.darkBreakdownSection]}>
+                <View style={styles.breakdownRow}>
+                  <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Subtotal:</Text>
+                  <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${Number(subtotal).toFixed(2)}</Text>
+                </View>
+                <View style={styles.breakdownRow}>
+                  <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Credit card fee (3%):</Text>
+                  <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${fee}</Text>
+                </View>
+                <View style={[styles.breakdownRow, styles.totalRow, darkMode && styles.darkTotalRow]}>
+                  <Text style={[styles.breakdownLabel, styles.totalLabel, darkMode && styles.darkBreakdownLabel]}>Total:</Text>
+                  <Text style={[styles.breakdownValue, styles.totalValue, darkMode && styles.darkBreakdownValue]}>${Number(totalWithFee).toFixed(2)}</Text>
+                </View>
+              </View>
+              <Text style={[styles.message, darkMode && styles.darkMessage]}>This matches the total shown on the previous page. Click Continue to proceed with payment.</Text>
+            </>
+          ) : (
+            <Text style={[styles.message, darkMode && styles.darkMessage]}>An additional 3% will be charged as credit card processing fees</Text>
+          )}
 
           <View style={styles.buttonContainer}>
             <TouchableOpacity style={[styles.button, styles.cancelButton, darkMode && styles.darkCancelButton]} onPress={onCancel}>
@@ -77,6 +99,53 @@ const styles = StyleSheet.create({
   },
   darkMessage: {
     color: "#ccc",
+  },
+  breakdownSection: {
+    backgroundColor: "#F8F8F8",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  darkBreakdownSection: {
+    backgroundColor: "#1a1a1a",
+  },
+  breakdownRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  breakdownLabel: {
+    fontSize: 14,
+    color: "#666",
+  },
+  darkBreakdownLabel: {
+    color: "#ccc",
+  },
+  breakdownValue: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+  },
+  darkBreakdownValue: {
+    color: "#fff",
+  },
+  totalRow: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#E0E0E0",
+  },
+  darkTotalRow: {
+    borderTopColor: "#444",
+  },
+  totalLabel: {
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  totalValue: {
+    fontWeight: "bold",
+    fontSize: 16,
+    color: "#9C45F7",
   },
   buttonContainer: {
     flexDirection: "row",

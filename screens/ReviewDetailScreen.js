@@ -11,6 +11,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
+import { parsePrice } from "../utils/priceUtils";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -268,7 +269,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
       const serviceWithQuantity = {
         ...selectedService,
         quantity: quantity,
-        totalPrice: (parseFloat(selectedService.bs_cost) * quantity).toFixed(2),
+        totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
       };
 
       // Check if the item already exists in the cart
@@ -283,7 +284,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
         newCartItems[existingItemIndex] = {
           ...existingItem,
           quantity: newQuantity,
-          totalPrice: (parseFloat(existingItem.bs_cost) * newQuantity).toFixed(2),
+          totalPrice: (parsePrice(existingItem.bs_cost) * newQuantity).toFixed(2),
         };
         console.log(`Updated quantity for existing item ${selectedService.bs_service_name} to ${newQuantity}`);
       } else {
@@ -744,7 +745,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.totalPrice}>Total: ${selectedService ? (parseFloat(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
+              <Text style={styles.totalPrice}>Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
 
               <View style={styles.modalButtons}>
                 <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setQuantityModalVisible(false)}>

@@ -34,7 +34,7 @@ export default function HowItWorksScreen({ navigation, route }) {
           <Ionicons name='chevron-back' size={18} color='#fff' />
         </TouchableOpacity>
 
-        <Text style={styles.topHeaderTitle}>How it Works</Text>
+        <Text style={styles.topHeaderTitle}>HOW IT WORKS</Text>
 
         {/* spacer */}
         <View style={{ width: 38 }} />
@@ -64,15 +64,15 @@ export default function HowItWorksScreen({ navigation, route }) {
 
           <View style={styles.gbBodyContainer}>
             <Bullet>
-              <Text style={styles.gbItalic}>Imagine being able to curate a select group of friends and colleagues you know and trust</Text>
+              <Text style={styles.gbItalic}>Curate a select group of friends and colleagues you know and trust</Text>
             </Bullet>
             <Bullet>
-              <Text style={styles.gbItalic}>Imagine being able to rely on what your friends recommend, what they need and what they want</Text>
+              <Text style={styles.gbItalic}>Rely on your network's connections and expertise</Text>
             </Bullet>
             <Bullet>
-              <Text style={styles.gbItalic}>Imagine being able to help them and rely on their expertise</Text>
+              <Text style={styles.gbItalic}>Help your friends and get rewarded for your recommendations</Text>
             </Bullet>
-            <Text style={[styles.gbBold, styles.gbBoldText]}>{"\n"}Make Money every time you help someone or make a recommendation they can use</Text>
+            <Text style={[styles.gbBold, styles.gbBoldText]}>{"\n"}Make Money every time you make a purchase or make a recommendation they can use</Text>
           </View>
 
           <Text style={styles.gbTitle}>{"\n"}For a Business</Text>
@@ -81,15 +81,15 @@ export default function HowItWorksScreen({ navigation, route }) {
 
           <View style={styles.gbBodyContainer}>
             <Bullet>
-              <Text style={styles.gbItalic}>Target your ad spend toward people who are looking to buy your products and services</Text>
+              <Text style={styles.gbItalic}>Target your ad spend on people who are looking to buy your products and services</Text>
             </Bullet>
             <Bullet>
-              <Text style={styles.gbItalic}>Reward people for recommending your business</Text>
+              <Text style={styles.gbItalic}>Track your marketing effectiveness</Text>
             </Bullet>
             <Bullet>
               <Text style={styles.gbItalic}>Encourage people to try your products and services</Text>
             </Bullet>
-            <Text style={[styles.gbBold, styles.gbBoldText]}>{"\n"}Track your marketing effectiveness</Text>
+            <Text style={[styles.gbBold, styles.gbBoldText]}>{"\n"}Reward people for recommending your business</Text>
           </View>
 
           {/* <Text style={styles.gbMaroonHeading}>Save Time, Money, ...</Text>

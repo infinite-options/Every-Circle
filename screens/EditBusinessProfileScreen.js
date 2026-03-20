@@ -56,8 +56,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const hasInitializedSub = useRef(false);
   const hasInitializedSubSub = useRef(false);
 
-  
-
   useEffect(() => {
     // This useEffect is only used to log the screen being mounted
     console.log("EditBusinessProfileScreen - Screen Mounted");
@@ -76,7 +74,10 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         // Initialize from existing business_category_id (comma-separated: main, sub, sub-sub)
         const categoryIdStr = business?.business_category_id || "";
         if (categoryIdStr.trim()) {
-          const ids = categoryIdStr.split(",").map((id) => id.trim()).filter(Boolean);
+          const ids = categoryIdStr
+            .split(",")
+            .map((id) => id.trim())
+            .filter(Boolean);
           if (ids.length > 0) setSelectedMain(ids[0]);
           if (ids.length > 1) setSelectedSub(ids[1]);
           if (ids.length > 2) setSelectedSubSub(ids[2]);
@@ -108,14 +109,22 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   // Initialize sub/sub-sub from business_category_id (run once when categories first load)
   useEffect(() => {
-    const ids = business?.business_category_id?.split(",").map((id) => id.trim()).filter(Boolean) || [];
+    const ids =
+      business?.business_category_id
+        ?.split(",")
+        .map((id) => id.trim())
+        .filter(Boolean) || [];
     if (!hasInitializedSub.current && ids.length > 1 && subCategories.length > 0 && subCategories.some((c) => c.category_uid === ids[1])) {
       setSelectedSub(ids[1]);
       hasInitializedSub.current = true;
     }
   }, [subCategories, business?.business_category_id]);
   useEffect(() => {
-    const ids = business?.business_category_id?.split(",").map((id) => id.trim()).filter(Boolean) || [];
+    const ids =
+      business?.business_category_id
+        ?.split(",")
+        .map((id) => id.trim())
+        .filter(Boolean) || [];
     if (!hasInitializedSubSub.current && ids.length > 2 && subSubCategories.length > 0 && subSubCategories.some((c) => c.category_uid === ids[2])) {
       setSelectedSubSub(ids[2]);
       hasInitializedSubSub.current = true;
@@ -471,16 +480,19 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   // BUSINESS-SPECIFIC: Custom tags management functions (not in EditProfileScreen)
   const addCustomTag = () => {
-    const tags = customTagInput.split(",").map(t => t.trim()).filter(Boolean);
+    const tags = customTagInput
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
     if (tags.length === 0) return;
-    
-    setFormData(prev => {
+
+    setFormData((prev) => {
       const existing = prev.customTags || [];
-      const newTags = tags.filter(t => !existing.includes(t));
+      const newTags = tags.filter((t) => !existing.includes(t));
       if (newTags.length === 0) return prev;
       return {
         ...prev,
-        customTags: [...existing, ...newTags]
+        customTags: [...existing, ...newTags],
       };
     });
     setCustomTagInput("");
@@ -550,7 +562,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_ein_number", formData.einNumber);
       payload.append("business_website", formData.website);
       payload.append("custom_tags", JSON.stringify(formData.customTags));
-      
 
       // Business profile image (backend: business_profile_img file, delete_business_profile_img URL, business_profile_img_is_public 0/1)
       if (businessImageUri && !imageError && businessImageUri !== originalBusinessImage) {
@@ -774,16 +785,14 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       {/* Row: Label and "Always Hidden" text */}
       <View style={styles.labelRow}>
         <Text style={[styles.label, darkMode && styles.darkLabel]}>EIN Number</Text>
-        <Text style={[styles.toggleText, { color: darkMode ? "#999999" : "#666666", fontStyle: "italic" }]}>
-          Always Hidden
-        </Text>
+        <Text style={[styles.toggleText, { color: darkMode ? "#999999" : "#666666", fontStyle: "italic" }]}>Always Hidden</Text>
       </View>
       <TextInput
         style={[styles.input, darkMode && styles.darkInput]}
         value={formData.einNumber}
-        placeholder="##-#######"
+        placeholder='##-#######'
         placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
-        keyboardType="numeric"
+        keyboardType='numeric'
         maxLength={10}
         onChangeText={(text) => {
           const formattedText = formatEINNumber(text);
@@ -900,9 +909,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       <Dropdown
         style={[styles.input, darkMode && styles.darkInput]}
         data={mainCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-        labelField="label"
-        valueField="value"
-        placeholder="Select Main Category"
+        labelField='label'
+        valueField='value'
+        placeholder='Select Main Category'
         placeholderTextColor={darkMode ? "#999" : "#666"}
         value={selectedMain}
         onChange={(item) => {
@@ -925,8 +934,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       <Dropdown
         style={[styles.input, darkMode && styles.darkInput]}
         data={subCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-        labelField="label"
-        valueField="value"
+        labelField='label'
+        valueField='value'
         placeholder={subCategories.length > 0 ? "Select Sub Category" : "Select Main Category first"}
         placeholderTextColor={darkMode ? "#999" : "#666"}
         value={selectedSub}
@@ -951,8 +960,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       <Dropdown
         style={[styles.input, darkMode && styles.darkInput]}
         data={subSubCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-        labelField="label"
-        valueField="value"
+        labelField='label'
+        valueField='value'
         placeholder={subSubCategories.length > 0 ? "Select Sub-Sub Category" : "Select Sub Category first"}
         placeholderTextColor={darkMode ? "#999" : "#666"}
         value={selectedSubSub}
@@ -1137,9 +1146,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
         // Check if current user is in the business_users list
         if (Array.isArray(business_users) && business_users.length > 0) {
-          const isInBusinessUsers = business_users.some(
-            (u) => u.business_user_id === userUid
-          );
+          const isInBusinessUsers = business_users.some((u) => u.business_user_id === userUid);
           setIsOwner(isInBusinessUsers);
           return;
         }

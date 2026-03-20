@@ -81,14 +81,14 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
 
   const validateInputs = (email, password) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{3,}$/;
-    const isEmailValid = email.trim() !== '' && emailRegex.test(email);
+    const isEmailValid = email.trim() !== "" && emailRegex.test(email);
     const isPasswordValid = password.length >= 6;
     setIsValid(isEmailValid && isPasswordValid);
   };
 
   const handleEmailChange = (text) => {
     setEmail(text);
-    setEmailError(""); 
+    setEmailError("");
     validateInputs(text, password);
   };
 
@@ -289,179 +289,183 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
 
   return (
     <View style={styles.pageContainer}>
-      <AppHeader title='Login' {...getHeaderColors("login")} onBackPress={() => navigation.goBack()} />
+      <AppHeader title='LOGIN' {...getHeaderColors("login")} onBackPress={() => navigation.goBack()} />
       <SafeAreaView style={styles.safeArea}>
         <ScrollView contentContainerStyle={styles.contentContainer}>
-        <View style={styles.header}>
-        <Text style={styles.title}>Welcome to everyCircle!</Text>
-        <Text style={styles.subtitle}>Please choose a login option to continue.</Text>
-      </View>
-
-      <View style={styles.inputContainer}>
-        <View style={styles.fieldContainer}>
-          <Text style={styles.label}>Email</Text>
-          <TextInput style={styles.input} placeholder='Email' value={email} onChangeText={handleEmailChange} keyboardType='email-address' autoCapitalize='none' />
-          {!!emailError && <Text style={styles.emailErrorText}>{emailError}</Text>}
-        </View>
-        <View style={styles.fieldContainer}>
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passwordInputContainer}>
-            <TextInput style={styles.input} placeholder='Password' value={password} onChangeText={handlePasswordChange} secureTextEntry={!isPasswordVisible} autoCapitalize='none' />
-            <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
-              <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
-            </TouchableOpacity>
+          <View style={styles.header}>
+            <Text style={styles.title}>Welcome to everyCircle!</Text>
+            <Text style={styles.subtitle}>Please choose a login option to continue.</Text>
           </View>
-        </View>
-        {!!passwordError && <Text style={styles.passwordErrorText}>{passwordError}</Text>}
-        <TouchableOpacity
-          onPress={() => {
-            setForgotPasswordEmail(email); // Auto-populate with email from login form
-            setShowForgotPasswordModal(true);
-          }}
-          style={styles.forgotPasswordLink}
-        >
-          <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-        </TouchableOpacity>
-      </View>
 
-      <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]} onPress={handleContinue} disabled={showSpinner}>
-        {showSpinner ? <ActivityIndicator color='#fff' /> : <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : styles.continueButtonTextDisabled]}>Continue</Text>}
-      </TouchableOpacity>
-
-      <View style={styles.dividerContainer}>
-        <View style={styles.divider} />
-        <Text style={styles.dividerText}>OR</Text>
-        <View style={styles.divider} />
-      </View>
-
-      <View style={styles.socialContainer}>
-        {GoogleSigninButton && !isWeb ? (
-          <GoogleSigninButton
-            style={styles.googleButton}
-            size={GoogleSigninButton.Size.Wide}
-            color={GoogleSigninButton.Color.Dark}
-            onPress={async () => {
-              if (!signingIn) {
-                setSigningIn(true);
-                try {
-                  await onGoogleSignIn();
-                } finally {
-                  setSigningIn(false);
-                }
-              }
-            }}
-            disabled={signingIn}
-          />
-        ) : (
-          <TouchableOpacity
-            style={styles.googleButton}
-            onPress={async () => {
-              if (!signingIn) {
-                setSigningIn(true);
-                try {
-                  await onGoogleSignIn();
-                } finally {
-                  setSigningIn(false);
-                }
-              }
-            }}
-            disabled={signingIn}
-          >
-            <Text style={styles.googleButtonText}>Sign in with Google</Text>
-          </TouchableOpacity>
-        )}
-        <AppleSignIn
-          onSignIn={async (...args) => {
-            if (!signingIn) {
-              setSigningIn(true);
-              try {
-                await onAppleSignIn(...args);
-              } finally {
-                setSigningIn(false);
-              }
-            }
-          }}
-          onError={onError}
-          disabled={signingIn}
-        />
-      </View>
-
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          Don't have an account?{" "}
-          <Text style={styles.signUpText} onPress={() => navigation.navigate("SignUp")}>
-            Sign Up
-          </Text>
-        </Text>
-      </View>
-
-      {/* API Keys Info - For debugging */}
-      {__DEV__ && (
-        <View style={styles.apiKeysContainer}>
-          <Text style={styles.apiKeysTitle}>API Keys (First 4 Digits):</Text>
-          <Text style={styles.apiKeysText}>iOS: {getFirstFourDigits(config.googleClientIds.ios)}</Text>
-          <Text style={styles.apiKeysText}>Android: {getFirstFourDigits(config.googleClientIds.android)}</Text>
-          <Text style={styles.apiKeysText}>Web: {getFirstFourDigits(config.googleClientIds.web)}</Text>
-          <Text style={styles.apiKeysText}>URL Scheme: {config.googleURLScheme ? config.googleURLScheme.split("-").pop().slice(0, 4) : "Not set"}</Text>
-          <Text style={styles.apiKeysText}>Maps API: {getLastTwoDigits(config.googleMapsApiKey)}</Text>
-          <Text style={styles.apiKeysText}>Environment: {__DEV__ ? "Development" : "Production"}</Text>
-          <Text style={styles.apiKeysText}>iOS Build: {Constants.expoConfig?.ios?.buildNumber || "Not set"}</Text>
-        </View>
-      )}
-
-      {/* Forgot Password Modal */}
-      <Modal visible={showForgotPasswordModal} transparent animationType='fade'>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Forgot Password</Text>
-            <Text style={styles.modalSubtitle}>Enter your email address and we'll send you a temporary password.</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder='Email'
-              value={forgotPasswordEmail}
-              onChangeText={setForgotPasswordEmail}
-              keyboardType='email-address'
-              autoCapitalize='none'
-              editable={!showForgotPasswordSpinner}
-            />
-            <View style={styles.modalButtonContainer}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel]}
-                onPress={() => {
-                  setShowForgotPasswordModal(false);
-                  setForgotPasswordEmail("");
-                }}
-                disabled={showForgotPasswordSpinner}
-              >
-                <Text style={styles.modalButtonCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalButton, styles.modalButtonSubmit]} onPress={onReset} disabled={showForgotPasswordSpinner}>
-                {showForgotPasswordSpinner ? <ActivityIndicator color='#fff' /> : <Text style={styles.modalButtonSubmitText}>Send</Text>}
-              </TouchableOpacity>
+          <View style={styles.inputContainer}>
+            <View style={styles.fieldContainer}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput style={styles.input} placeholder='Email' value={email} onChangeText={handleEmailChange} keyboardType='email-address' autoCapitalize='none' />
+              {!!emailError && <Text style={styles.emailErrorText}>{emailError}</Text>}
             </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Success Modal */}
-      <Modal visible={showPassModal} transparent animationType='fade'>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Password Reset</Text>
-            <Text style={styles.modalSubtitle}>A temporary password has been sent to your email.</Text>
+            <View style={styles.fieldContainer}>
+              <Text style={styles.label}>Password</Text>
+              <View style={styles.passwordInputContainer}>
+                <TextInput style={styles.input} placeholder='Password' value={password} onChangeText={handlePasswordChange} secureTextEntry={!isPasswordVisible} autoCapitalize='none' />
+                <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
+                  <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
+                </TouchableOpacity>
+              </View>
+            </View>
+            {!!passwordError && <Text style={styles.passwordErrorText}>{passwordError}</Text>}
             <TouchableOpacity
-              style={[styles.modalButton, styles.modalButtonSubmit]}
               onPress={() => {
-                setShowPassModal(false);
-                setShowForgotPasswordModal(false);
-                setForgotPasswordEmail("");
+                setForgotPasswordEmail(email); // Auto-populate with email from login form
+                setShowForgotPasswordModal(true);
               }}
+              style={styles.forgotPasswordLink}
             >
-              <Text style={styles.modalButtonSubmitText}>OK</Text>
+              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
+
+          <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]} onPress={handleContinue} disabled={showSpinner}>
+            {showSpinner ? (
+              <ActivityIndicator color='#fff' />
+            ) : (
+              <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : styles.continueButtonTextDisabled]}>Continue</Text>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.dividerContainer}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.divider} />
+          </View>
+
+          <View style={styles.socialContainer}>
+            {GoogleSigninButton && !isWeb ? (
+              <GoogleSigninButton
+                style={styles.googleButton}
+                size={GoogleSigninButton.Size.Wide}
+                color={GoogleSigninButton.Color.Dark}
+                onPress={async () => {
+                  if (!signingIn) {
+                    setSigningIn(true);
+                    try {
+                      await onGoogleSignIn();
+                    } finally {
+                      setSigningIn(false);
+                    }
+                  }
+                }}
+                disabled={signingIn}
+              />
+            ) : (
+              <TouchableOpacity
+                style={styles.googleButton}
+                onPress={async () => {
+                  if (!signingIn) {
+                    setSigningIn(true);
+                    try {
+                      await onGoogleSignIn();
+                    } finally {
+                      setSigningIn(false);
+                    }
+                  }
+                }}
+                disabled={signingIn}
+              >
+                <Text style={styles.googleButtonText}>Sign in with Google</Text>
+              </TouchableOpacity>
+            )}
+            <AppleSignIn
+              onSignIn={async (...args) => {
+                if (!signingIn) {
+                  setSigningIn(true);
+                  try {
+                    await onAppleSignIn(...args);
+                  } finally {
+                    setSigningIn(false);
+                  }
+                }
+              }}
+              onError={onError}
+              disabled={signingIn}
+            />
+          </View>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              Don't have an account?{" "}
+              <Text style={styles.signUpText} onPress={() => navigation.navigate("SignUp")}>
+                Sign Up
+              </Text>
+            </Text>
+          </View>
+
+          {/* API Keys Info - For debugging */}
+          {__DEV__ && (
+            <View style={styles.apiKeysContainer}>
+              <Text style={styles.apiKeysTitle}>API Keys (First 4 Digits):</Text>
+              <Text style={styles.apiKeysText}>iOS: {getFirstFourDigits(config.googleClientIds.ios)}</Text>
+              <Text style={styles.apiKeysText}>Android: {getFirstFourDigits(config.googleClientIds.android)}</Text>
+              <Text style={styles.apiKeysText}>Web: {getFirstFourDigits(config.googleClientIds.web)}</Text>
+              <Text style={styles.apiKeysText}>URL Scheme: {config.googleURLScheme ? config.googleURLScheme.split("-").pop().slice(0, 4) : "Not set"}</Text>
+              <Text style={styles.apiKeysText}>Maps API: {getLastTwoDigits(config.googleMapsApiKey)}</Text>
+              <Text style={styles.apiKeysText}>Environment: {__DEV__ ? "Development" : "Production"}</Text>
+              <Text style={styles.apiKeysText}>iOS Build: {Constants.expoConfig?.ios?.buildNumber || "Not set"}</Text>
+            </View>
+          )}
+
+          {/* Forgot Password Modal */}
+          <Modal visible={showForgotPasswordModal} transparent animationType='fade'>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Forgot Password</Text>
+                <Text style={styles.modalSubtitle}>Enter your email address and we'll send you a temporary password.</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder='Email'
+                  value={forgotPasswordEmail}
+                  onChangeText={setForgotPasswordEmail}
+                  keyboardType='email-address'
+                  autoCapitalize='none'
+                  editable={!showForgotPasswordSpinner}
+                />
+                <View style={styles.modalButtonContainer}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.modalButtonCancel]}
+                    onPress={() => {
+                      setShowForgotPasswordModal(false);
+                      setForgotPasswordEmail("");
+                    }}
+                    disabled={showForgotPasswordSpinner}
+                  >
+                    <Text style={styles.modalButtonCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.modalButton, styles.modalButtonSubmit]} onPress={onReset} disabled={showForgotPasswordSpinner}>
+                    {showForgotPasswordSpinner ? <ActivityIndicator color='#fff' /> : <Text style={styles.modalButtonSubmitText}>Send</Text>}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+
+          {/* Success Modal */}
+          <Modal visible={showPassModal} transparent animationType='fade'>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Password Reset</Text>
+                <Text style={styles.modalSubtitle}>A temporary password has been sent to your email.</Text>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonSubmit]}
+                  onPress={() => {
+                    setShowPassModal(false);
+                    setShowForgotPasswordModal(false);
+                    setForgotPasswordEmail("");
+                  }}
+                >
+                  <Text style={styles.modalButtonSubmitText}>OK</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -573,7 +577,7 @@ const styles = StyleSheet.create({
     marginTop: -10,
     marginBottom: 8,
   },
-    emailErrorText: {
+  emailErrorText: {
     color: "red",
     fontSize: 14,
     marginTop: 4,

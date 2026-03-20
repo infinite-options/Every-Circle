@@ -1306,8 +1306,9 @@ export default function AccountScreen({ navigation }) {
                       {/* Table Rows */}
                       {transactionData.map((transaction, i) => {
                         const isSeeking = (transaction.purchase_type || "").toLowerCase() === "seeking";
+                        const isBusiness = (transaction.purchase_type || "").toLowerCase() === "business";
                         const isPending = transaction.transaction_in_escrow === 1;
-                        const showPendingLink = isSeeking && isPending;
+                        const showPendingLink = (isSeeking || isBusiness) && isPending;
                         return (
                           <View key={transaction.transaction_uid || i} style={styles.transactionRow}>
                             <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
@@ -1575,7 +1576,7 @@ export default function AccountScreen({ navigation }) {
 
       <BottomNavBar navigation={navigation} />
 
-      {/* Receive Item Confirmation Modal - for Seeking + Pending transactions */}
+      {/* Receive Item Confirmation Modal - for Seeking/Business + Pending transactions */}
       <Modal animationType='fade' transparent={true} visible={showReceiveItemModal} onRequestClose={() => setShowReceiveItemModal(false)}>
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent]}>
