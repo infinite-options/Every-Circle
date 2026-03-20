@@ -1033,7 +1033,19 @@ export default function SearchScreen({ route }) {
         onPress={() => {
           console.log("🏢 Navigating to profile for:", item.company, "ID:", item.id, "Type:", item.itemType);
           if (item.itemType === "businesses") {
-            navigation.navigate("BusinessProfile", { business_uid: item.id });
+            navigation.navigate("BusinessProfile", {
+              business_uid: item.id,
+              returnTo: "Search",
+              searchState: {
+                searchQuery,
+                searchType,
+                results,
+                distance,
+                network,
+                bounty,
+                rating,
+              },
+            });
           } else if (item.itemType === "expertise" || item.itemType === "seeking") {
             // Navigate to user profile if we have profile_uid
             if (item.profile_uid) {

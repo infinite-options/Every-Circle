@@ -20,7 +20,7 @@ const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 
 export default function BusinessProfileScreen({ route, navigation }) {
   const { darkMode } = useDarkMode();
-  const { business_uid } = route.params;
+  const { business_uid, returnTo, searchState } = route.params || {};
   const [business, setBusiness] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isOwner, setIsOwner] = useState(false);
@@ -515,7 +515,13 @@ export default function BusinessProfileScreen({ route, navigation }) {
       <AppHeader
         title='BUSINESS PROFILE'
         {...getHeaderColors("businessProfile")}
-        onBackPress={() => navigation.goBack()}
+        onBackPress={() => {
+          if (returnTo === "Search" && searchState) {
+            navigation.navigate("Search", { restoreState: true, searchState });
+          } else {
+            navigation.goBack();
+          }
+        }}
         onTitlePress={() => setShowFeedbackPopup(true)}
         rightButton={
           isOwner ? (

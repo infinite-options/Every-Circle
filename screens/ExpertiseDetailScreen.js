@@ -1,10 +1,11 @@
 // ExpertiseDetailScreen.js
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Platform, Modal } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
 import AppHeader from "../components/AppHeader";
+import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
 // Only import Stripe on native platforms (not web)
@@ -39,6 +40,7 @@ if (isWeb) {
 import StripePayment from "../components/StripePaymentWeb";
 import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
+import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
 
 const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
 
@@ -105,8 +107,7 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
   const [paymentError, setPaymentError] = useState(null);
   const [customerUid, setCustomerUid] = useState(null);
 
-  const [quantityModalVisible, setQuantityModalVisible] = useState(false);
-  const [quantity, setQuantity] = useState(1);
+  const [addToCartModalVisible, setAddToCartModalVisible] = useState(false);
 
   // Initialize Stripe on mount
   useEffect(() => {
@@ -309,6 +310,7 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
         total_amount_paid: totalAmount,
         total_costs: amount,
         total_taxes: processingFee,
+        transaction_in_escrow: 1, // Default to escrow for expertise purchases
         items: [
           {
             expertise_uid: expertiseData?.expertise_uid,
@@ -376,6 +378,7 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
         total_amount_paid: parseFloat(amount),
         total_costs: parseFloat(amount),
         total_taxes: 0,
+        transaction_in_escrow: 1, // Default to escrow for expertise purchases
         items: [
           {
             expertise_uid: expertiseData?.expertise_uid,
@@ -576,13 +579,13 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
   //   }
   // };
 
-  const handleAddToCart = async () => {
-    setQuantity(1);
-    setQuantityModalVisible(true);
+  const handleAddToCart = () => {
+    setAddToCartModalVisible(true);
   };
 
-  const handleQuantityConfirm = async () => {
+  const handleAddToCartConfirm = async (modalData) => {
     try {
+      const { quantity: qty, escrow, subtotal, totalWithFee } = modalData;
       const cartKey = `cart_expertise_${expertiseData?.expertise_uid}`;
       const cartItem = {
         expertise_uid: expertiseData?.expertise_uid,
@@ -593,15 +596,17 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
         profile_uid: profile_uid,
         profileData: profileData,
         itemType: "expertise",
-        quantity: quantity,
+        quantity: qty,
+        escrow,
+        subtotal,
+        totalWithFee,
         cart_key: cartKey,
         addedAt: new Date().toISOString(),
       };
       await AsyncStorage.setItem(cartKey, JSON.stringify(cartItem));
       setCartCount(prev => prev + 1);
       setAllCartItems(prev => [...prev, cartItem]);
-      setQuantityModalVisible(false);
-      Alert.alert("Added to Cart", `${expertiseData?.title} (x${quantity}) has been added to your cart.`, [
+      Alert.alert("Added to Cart", `${expertiseData?.title} (x${qty}) has been added to your cart.`, [
         {
           text: "Continue Browsing",
           onPress: () => {
@@ -726,13 +731,13 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
                   <View style={styles.moneyBagIconContainer}>
                     <Text style={styles.moneyBagDollarSymbol}>$</Text>
                   </View>
-                  <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>Cost: {expertiseData.cost}</Text>
+                  <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>Cost: ${String(expertiseData.cost || "").replace(/^\$/, "")}</Text>
                 </View>
               )}
               {expertiseData?.bounty && (
                 <View style={styles.pricingRow}>
                   <Text style={styles.bountyEmojiIcon}>💰</Text>
-                  <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>Bounty: USD {expertiseData.bounty}</Text>
+                  <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>Bounty: ${(parseFloat(expertiseData.bounty) || 0).toFixed(2)}</Text>
                 </View>
               )}
             </View>
@@ -749,6 +754,8 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
       </SafeAreaView>
+
+      <BottomNavBar navigation={navigation} />
 
       {/* Web Stripe Components */}
       {isWeb && (
@@ -792,46 +799,14 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
           />
         </>
       )}
-      <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" }}>
-          <View style={{ backgroundColor: "white", borderRadius: 20, padding: 20, width: "80%", alignItems: "center" }}>
-            <Text style={{ fontSize: 20, fontWeight: "bold", marginBottom: 10, color: "#333" }}>Select Quantity</Text>
-            <Text style={{ fontSize: 16, color: "#666", marginBottom: 20, textAlign: "center" }}>{expertiseData?.title}</Text>
-            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 20 }}>
-              <TouchableOpacity
-                style={{ backgroundColor: "#F5F5F5", padding: 10, borderRadius: 10, width: 44, height: 44, justifyContent: "center", alignItems: "center" }}
-                onPress={() => setQuantity(prev => Math.max(1, prev - 1))}
-              >
-                <Ionicons name='remove' size={24} color='#9C45F7' />
-              </TouchableOpacity>
-              <Text style={{ fontSize: 20, fontWeight: "bold", marginHorizontal: 20, color: "#333" }}>{quantity}</Text>
-              <TouchableOpacity
-                style={{ backgroundColor: "#F5F5F5", padding: 10, borderRadius: 10, width: 44, height: 44, justifyContent: "center", alignItems: "center" }}
-                onPress={() => setQuantity(prev => prev + 1)}
-              >
-                <Ionicons name='add' size={24} color='#9C45F7' />
-              </TouchableOpacity>
-            </View>
-            <Text style={{ fontSize: 18, fontWeight: "bold", color: "#9C45F7", marginBottom: 20 }}>
-              Total: ${expertiseData?.cost ? (parseFloat(expertiseData.cost) * quantity).toFixed(2) : "0.00"}
-            </Text>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", width: "100%" }}>
-              <TouchableOpacity
-                style={{ flex: 1, padding: 15, borderRadius: 10, marginHorizontal: 5, backgroundColor: "#F5F5F5" }}
-                onPress={() => setQuantityModalVisible(false)}
-              >
-                <Text style={{ color: "#666", textAlign: "center", fontWeight: "bold" }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={{ flex: 1, padding: 15, borderRadius: 10, marginHorizontal: 5, backgroundColor: "#9C45F7" }}
-                onPress={handleQuantityConfirm}
-              >
-                <Text style={{ color: "white", textAlign: "center", fontWeight: "bold" }}>Add to Cart</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <AddToCartDetailsModal
+        show={addToCartModalVisible}
+        setShow={setAddToCartModalVisible}
+        expertiseData={expertiseData}
+        profileData={userForMiniCard}
+        onAddToCart={handleAddToCartConfirm}
+        onCancel={() => setAddToCartModalVisible(false)}
+      />
     </View>
   );
 };
@@ -861,7 +836,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
-    paddingBottom: 100,
+    paddingBottom: 120,
   },
   card: {
     backgroundColor: "#fff",
@@ -942,9 +917,8 @@ const styles = StyleSheet.create({
   buyNowContainer: {
     padding: 20,
     paddingBottom: 30,
+    marginBottom: 80,
     backgroundColor: "#F5F5F5",
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
   },
   buyNowButton: {
     backgroundColor: "#00C7BE",
@@ -988,7 +962,6 @@ const styles = StyleSheet.create({
   },
   darkBuyNowContainer: {
     backgroundColor: "#1a1a1a",
-    borderTopColor: "#404040",
   },
   darkBuyNowButton: {
     backgroundColor: "#00A69C",

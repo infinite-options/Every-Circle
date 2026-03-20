@@ -374,6 +374,12 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
 
     const subtotal = parseFloat(calculateTotal());
+    // For expertise items, use escrow from first expertise item; for business-only carts, default to 0
+    const firstExpertiseItem = cartItems.find((item) => item.itemType === "expertise");
+    const transactionInEscrow = firstExpertiseItem
+      ? (firstExpertiseItem.escrow === true || firstExpertiseItem.escrow === 1 ? 1 : 0)
+      : 0;
+
     const transactionData = {
       profile_id: buyerUid,
       business_id: transactionBusinessId,
@@ -381,6 +387,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       total_amount_paid: parseFloat(totalAmount),
       total_costs: subtotal,
       total_taxes: parseFloat(processingFee), // 3% processing fee for credit card payments
+      transaction_in_escrow: transactionInEscrow,
       items: cartItems.map((item) => ({
         bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
         bounty: item.itemType === "expertise" 
@@ -668,16 +675,16 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                         <Text style={styles.priceLabel}>Price:</Text>
                         <Text style={styles.priceValue}>
                           {item.itemType === "expertise"
-                            ? `USD ${parseFloat(item.cost) || 0}`
-                            : `${item.bs_cost_currency || "USD"} ${parseFloat(item.bs_cost).toFixed(2)}`}
+                            ? `$${(parseFloat(item.cost) || 0).toFixed(2)}`
+                            : `${(item.bs_cost_currency === "USD" || !item.bs_cost_currency) ? "$" : item.bs_cost_currency + " "}${parseFloat(item.bs_cost).toFixed(2)}`}
                         </Text>
                       </View>
                       <View style={styles.priceRow}>
                         <Text style={styles.priceLabel}>Bounty:</Text>
                         <Text style={styles.priceValue}>
                           {item.itemType === "expertise"
-                            ? `USD ${parseFloat(item.bounty) || 0}`
-                            : `${item.bs_bounty_currency || "USD"} ${(parseFloat(item.bs_bounty) || 0).toFixed(2)}`}
+                            ? `$${(parseFloat(item.bounty) || 0).toFixed(2)}`
+                            : `${(item.bs_bounty_currency === "USD" || !item.bs_bounty_currency) ? "$" : item.bs_bounty_currency + " "}${(parseFloat(item.bs_bounty) || 0).toFixed(2)}`}
                         </Text>
                       </View>
                       <View style={styles.quantityContainer}>
@@ -696,16 +703,16 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                         <Text style={styles.totalLabel}>Total Price:</Text>
                         <Text style={styles.totalValue}>
                           {item.itemType === "expertise"
-                            ? `USD ${(parseFloat(item.cost) * (item.quantity || 1)).toFixed(2)}`
-                            : `${item.bs_cost_currency || "USD"} ${(parseFloat(item.totalPrice) || parseFloat(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
+                            ? `$${((parseFloat(item.cost) || 0) * (item.quantity || 1)).toFixed(2)}`
+                            : `${(item.bs_cost_currency === "USD" || !item.bs_cost_currency) ? "$" : item.bs_cost_currency + " "}${(parseFloat(item.totalPrice) || parseFloat(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
                         </Text>
                       </View>
                       <View style={styles.totalRow}>
                         <Text style={styles.totalLabel}>Total Bounty:</Text>
                         <Text style={styles.totalValue}>
                           {item.itemType === "expertise"
-                            ? `USD ${(parseFloat(item.bounty) * (item.quantity || 1)).toFixed(2)}`
-                            : `${item.bs_bounty_currency || "USD"} ${(parseFloat(item.bs_bounty) || 0).toFixed(2)}`}
+                            ? `$${((parseFloat(item.bounty) || 0) * (item.quantity || 1)).toFixed(2)}`
+                            : `${(item.bs_bounty_currency === "USD" || !item.bs_bounty_currency) ? "$" : item.bs_bounty_currency + " "}${(parseFloat(item.bs_bounty) || 0).toFixed(2)}`}
                         </Text>
                       </View>
                     </View>
