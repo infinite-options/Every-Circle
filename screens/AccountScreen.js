@@ -1309,13 +1309,17 @@ export default function AccountScreen({ navigation }) {
                         const isBusiness = (transaction.purchase_type || "").toLowerCase() === "business";
                         const isPending = transaction.transaction_in_escrow === 1;
                         const showPendingLink = (isSeeking || isBusiness) && isPending;
+
                         return (
-                          <View key={transaction.transaction_uid || i} style={styles.transactionRow}>
-                            <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                          <View key={transaction.ti_uid || i} style={styles.transactionRow}>
+                            <Text style={styles.transactionDate}>
+                              {formatTransactionDate(transaction.transaction_datetime)}
+                            </Text>
                             <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text>
                             <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "N/A"}</Text>
                             <Text style={styles.transactionBusiness}>{transaction.business_name || "N/A"}</Text>
                             <Text style={styles.transactionPurchasedItem}>{transaction.purchased_item || "N/A"}</Text>
+                            <Text style={styles.transactionQty}>{transaction.ti_bs_qty || 1}</Text>
                             <View style={styles.transactionPaidCell}>
                               {showPendingLink ? (
                                 <TouchableOpacity
@@ -1331,7 +1335,9 @@ export default function AccountScreen({ navigation }) {
                                 <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Paid"}</Text>
                               )}
                             </View>
-                            <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
+                            <Text style={styles.transactionAmount}>
+                              ${parseFloat(transaction.ti_bs_cost || 0).toFixed(2)}
+                            </Text>
                           </View>
                         );
                       })}
@@ -1490,14 +1496,15 @@ export default function AccountScreen({ navigation }) {
                   ) : businessTransactionData.length > 0 ? (
                     <View style={styles.transactionsContainer}>
                       {/* Table Header */}
-                      <View style={styles.businessTransactionHeaderRow}>
-                        <Text style={styles.businessTransactionHeaderCell}>Transaction ID</Text>
-                        <Text style={styles.businessTransactionHeaderCell}>Date</Text>
-                        <Text style={styles.businessTransactionHeaderCell}>Buyer</Text>
-                        <Text style={styles.businessTransactionHeaderCell}>Total</Text>
-                        <Text style={styles.businessTransactionHeaderCell}>Bounty</Text>
-                        <Text style={styles.businessTransactionHeaderCell}>Tax</Text>
-                        <Text style={styles.businessTransactionHeaderCell}>Net Earning</Text>
+                      <View style={styles.transactionHeaderRow}>
+                        <Text style={styles.transactionHeaderDate}>Date</Text>
+                        <Text style={styles.transactionHeaderId}>Transaction ID</Text>
+                        <Text style={styles.transactionHeaderPurchaseType}>Type</Text>
+                        <Text style={styles.transactionHeaderBusiness}>Seller</Text>
+                        <Text style={styles.transactionHeaderPurchasedItem}>Item</Text>
+                        <Text style={styles.transactionHeaderQty}>Qty</Text>
+                        <Text style={styles.transactionHeaderPaid}>Paid</Text>
+                        <Text style={styles.transactionHeaderAmount}>Amount</Text>
                       </View>
                       {/* Table Rows */}
                       {businessTransactionData.map((transaction, i) => {
