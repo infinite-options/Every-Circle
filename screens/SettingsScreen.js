@@ -400,7 +400,7 @@ export default function SettingsScreen() {
                 <MaterialIcons name='cookie' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
                 <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
                   <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Cookies </Text>
-                  <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>Yes / No</Text>
+                  <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>No / Yes</Text>
                 </Text>
               </View>
               <Switch 

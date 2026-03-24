@@ -9,7 +9,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
+import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT, RATINGS_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { parsePrice } from "../utils/priceUtils";
@@ -330,6 +330,27 @@ export default function BusinessProfileScreen({ route, navigation }) {
       };
 
       setBusiness(businessWithRatings);
+
+      // Fetch is_verified flags from Ratings endpoint
+      try {
+        const ratingsRes = await fetch(`${RATINGS_ENDPOINT}/${business_uid}`);
+        const ratingsData = await ratingsRes.json();
+        if (ratingsData?.result) {
+          const verifiedMap = {};
+          ratingsData.result.forEach(r => {
+            verifiedMap[r.rating_uid] = r.is_verified;
+          });
+          setBusiness(prev => ({
+            ...prev,
+            ratings: (prev.ratings || []).map(r => ({
+              ...r,
+              is_verified: verifiedMap[r.rating_uid] || false
+            }))
+          }));
+        }
+      } catch (e) {
+        console.log('Could not fetch verified ratings:', e);
+      }
 
       if (result.business_users && Array.isArray(result.business_users)) {
         setBusinessUsers(result.business_users);
@@ -919,7 +940,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
                     )}
                     <View style={styles.reviewFooter}>
                       <View style={styles.reviewMetadata}>
-                        <Text style={[styles.reviewMetadataText, darkMode && styles.darkReviewMetadataText]}>Transaction ID: {review.rating_uid}</Text>
+                        {review.is_verified && (
+                          <Text style={[styles.reviewMetadataText, styles.verifiedText]}>Verified Review</Text>
+                        )}
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -1523,5 +1546,10 @@ const styles = StyleSheet.create({
   linkText: {
     color: "#1a73e8",
     textDecorationLine: "underline",
+  },
+  verifiedText: {
+    color: '#2e7d32',
+    fontWeight: '600',
+    fontSize: 11,
   },
 });
