@@ -6,7 +6,9 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
 import WebTextInput from "./WebTextInput";
 
-const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection }) => {
+const REL_TYPES = ["friend", "colleague", "family"];
+
+const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, initialData = null, actionLabel = "Add to Network", title = "Connect With Me" }) => {
   const { darkMode } = useDarkMode();
   const [selectedRelationship, setSelectedRelationship] = useState("friend");
   const [event, setEvent] = useState("");
@@ -15,9 +17,24 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection })
   const [state, setState] = useState("");
   const [introducedBy, setIntroducedBy] = useState("");
 
-  // Reset form when popup closes
+  // QR flow: no initialData → default friend. Profile / edit flow: pass initialData; unknown/null → none selected.
+  const normalizedRelationship = (() => {
+    if (!initialData) return "friend";
+    const r = initialData.relationship;
+    if (r && REL_TYPES.includes(r)) return r;
+    return null;
+  })();
+
+  // Initialize/reset form values when popup visibility changes
   useEffect(() => {
-    if (!visible) {
+    if (visible) {
+      setSelectedRelationship(normalizedRelationship);
+      setEvent(initialData?.event || "");
+      setNote(initialData?.note || "");
+      setCity(initialData?.city || "");
+      setState(initialData?.state || "");
+      setIntroducedBy(initialData?.introducedBy || "");
+    } else {
       setSelectedRelationship("friend");
       setEvent("");
       setNote("");
@@ -25,7 +42,7 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection })
       setState("");
       setIntroducedBy("");
     }
-  }, [visible]);
+  }, [visible, normalizedRelationship]);
 
   if (!profileData) return null;
 
@@ -53,7 +70,7 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection })
       <View style={[styles.modalOverlay, darkMode && styles.darkModalOverlay]}>
         <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
           <View style={styles.header}>
-            <Text style={[styles.title, darkMode && styles.darkTitle]}>Connect With Me</Text>
+            <Text style={[styles.title, darkMode && styles.darkTitle]}>{title}</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name='close' size={24} color={darkMode ? "#fff" : "#333"} />
             </TouchableOpacity>
@@ -76,7 +93,7 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection })
                       darkMode && styles.darkRelationshipButton,
                       selectedRelationship === rel.value && darkMode && styles.darkRelationshipButtonActive,
                     ]}
-                    onPress={() => setSelectedRelationship(rel.value)}
+                    onPress={() => setSelectedRelationship((prev) => (prev === rel.value ? null : rel.value))}
                   >
                     <Text
                       style={[
@@ -155,7 +172,7 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection })
 
           <View style={styles.buttonContainer}>
             <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
-              <Text style={styles.addButtonText}>Add to Network</Text>
+              <Text style={styles.addButtonText}>{actionLabel}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.viewButton} onPress={onClose}>
               <Text style={[styles.viewButtonText, darkMode && styles.darkViewButtonText]}>Close</Text>
