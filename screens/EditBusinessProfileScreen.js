@@ -754,11 +754,24 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       <View style={styles.labelRow}>
         <Text style={[styles.label, darkMode && styles.darkLabel]}>{label}</Text>
         {visibilityKey && (
-          <TouchableOpacity onPress={() => handleToggleVisibility(visibilityKey)}>
-            <Text style={[styles.toggleText, { color: formData[visibilityKey] ? (darkMode ? "#4ade80" : "green") : darkMode ? "#f87171" : "red" }]}>
-              {formData[visibilityKey] ? "Display" : "Hide"}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.toggleContainer}>
+            <TouchableOpacity
+              onPress={() => handleToggleVisibility(visibilityKey)}
+              style={[styles.togglePill, formData[visibilityKey] && styles.togglePillActiveGreen]}
+            >
+              <Text style={[styles.togglePillText, formData[visibilityKey] && styles.togglePillTextActive]}>
+                {formData[visibilityKey] ? "Visible" : "Show"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => handleToggleVisibility(visibilityKey)}
+              style={[styles.togglePill, !formData[visibilityKey] && styles.togglePillActiveRed]}
+            >
+              <Text style={[styles.togglePillText, !formData[visibilityKey] && styles.togglePillTextActive]}>
+                {!formData[visibilityKey] ? "Hidden" : "Hide"}
+              </Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
       <TextInput
@@ -873,11 +886,24 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         onError={handleImageError}
       />
       <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
-        <TouchableOpacity onPress={toggleBusinessImageVisibility}>
-          <Text style={[styles.toggleText, { fontWeight: "bold", color: formData.imageIsPublic ? (darkMode ? "#4ade80" : "green") : darkMode ? "#f87171" : "red" }]}>
-            {formData.imageIsPublic ? "Display" : "Hide"}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.toggleContainer}>
+            <TouchableOpacity
+              onPress={toggleBusinessImageVisibility}
+              style={[styles.togglePill, formData.imageIsPublic && styles.togglePillActiveGreen]}
+            >
+              <Text style={[styles.togglePillText, formData.imageIsPublic && styles.togglePillTextActive]}>
+                {formData.imageIsPublic ? "Visible" : "Show"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={toggleBusinessImageVisibility}
+              style={[styles.togglePill, !formData.imageIsPublic && styles.togglePillActiveRed]}
+            >
+              <Text style={[styles.togglePillText, !formData.imageIsPublic && styles.togglePillTextActive]}>
+                {!formData.imageIsPublic ? "Hidden" : "Hide"}
+              </Text>
+            </TouchableOpacity>
+          </View>
       </View>
       <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
         <TouchableOpacity onPress={handlePickImage}>
@@ -1321,18 +1347,24 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                     <MiniCard user={userForMiniCard} />
                     <Text style={[styles.existingBusinessUserRole, darkMode && styles.darkExistingBusinessUserRole]}>Role: {businessUser.business_role || "N/A"}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => toggleBusinessUserIndividualPublic(businessUser)} style={[styles.hideDisplayButton, darkMode && styles.darkHideDisplayButton]}>
-                    <Text
-                      style={[
-                        styles.hideDisplayButtonText,
-                        darkMode && styles.darkHideDisplayButtonText,
-                        isIndividualPublic && (darkMode ? { color: "#4ade80" } : { color: "green" }),
-                        !isIndividualPublic && (darkMode ? { color: "#f87171" } : { color: "red" }),
-                      ]}
+                  <View style={styles.toggleContainer}>
+                    <TouchableOpacity
+                      onPress={toggleBusinessImageVisibility}
+                      style={[styles.togglePill, formData.imageIsPublic && styles.togglePillActiveGreen]}
                     >
-                      {isIndividualPublic ? "Display" : "Hide"}
-                    </Text>
-                  </TouchableOpacity>
+                      <Text style={[styles.togglePillText, formData.imageIsPublic && styles.togglePillTextActive]}>
+                        {formData.imageIsPublic ? "Visible" : "Show"}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={toggleBusinessImageVisibility}
+                      style={[styles.togglePill, !formData.imageIsPublic && styles.togglePillActiveRed]}
+                    >
+                      <Text style={[styles.togglePillText, !formData.imageIsPublic && styles.togglePillTextActive]}>
+                        {!formData.imageIsPublic ? "Hidden" : "Hide"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             );
@@ -1935,6 +1967,12 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#ffffff",
   },
+  toggleContainer: { flexDirection: "row", gap: 4 },
+  togglePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, backgroundColor: "transparent" },
+  togglePillActiveGreen: { backgroundColor: "#4CAF50" },
+  togglePillActiveRed: { backgroundColor: "#ef9a9a" },
+  togglePillText: { fontSize: 13, color: "#4e4e4e", fontWeight: "500" },
+  togglePillTextActive: { color: "#fff", fontWeight: "bold" },
   // MISSING: modalContainer, modalText, modalButton, modalButtonText, darkModalContainer, darkModalText, darkModalButton, darkModalButtonText styles (EditProfileScreen has these)
   // Note: Business profile doesn't have business approval modal
 });

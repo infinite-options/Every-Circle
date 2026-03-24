@@ -675,6 +675,8 @@ const EditProfileScreen = ({ route, navigation }) => {
         editable={editable}
         placeholder={`Enter ${label.toLowerCase()}`}
         placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+        maxLength={fieldName === "phoneNumber" ? 10 : undefined}
+        keyboardType={fieldName === "phoneNumber" ? "phone-pad" : "default"}
       />
     </View>
   );
