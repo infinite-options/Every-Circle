@@ -138,18 +138,21 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
     getCustomerUid();
   }, []);
 
-  // Create user object for MiniCard
+  // Create user object for MiniCard - include all fields so MiniCard can show all public info
   const userForMiniCard = {
     firstName: profileData?.firstName || "",
     lastName: profileData?.lastName || "",
     email: profileData?.email || "",
-    phoneNumber: profileData?.phone || "",
-    profileImage: profileData?.image || "",
+    phoneNumber: profileData?.phoneNumber || profileData?.phone || "",
+    profileImage: profileData?.profileImage || profileData?.image || "",
     tagLine: profileData?.tagLine || "",
+    city: profileData?.city || "",
+    state: profileData?.state || "",
     emailIsPublic: profileData?.emailIsPublic || false,
     phoneIsPublic: profileData?.phoneIsPublic || false,
     tagLineIsPublic: profileData?.tagLineIsPublic || false,
     imageIsPublic: profileData?.imageIsPublic || false,
+    locationIsPublic: profileData?.locationIsPublic || false,
   };
 
   const createPaymentIntent = async (amount) => {

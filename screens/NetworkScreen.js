@@ -970,7 +970,7 @@ const NetworkScreen = ({ navigation }) => {
       const circleDate = `${year}-${month}-${day}`;
 
       // Handle both old format (just relationship string) and new format (object)
-      const relationship = typeof connectionData === "string" ? connectionData : connectionData.relationship;
+      const relationship = typeof connectionData === "string" ? connectionData : connectionData?.relationship ?? null;
       const event = typeof connectionData === "object" ? connectionData.event || "" : "";
       const note = typeof connectionData === "object" ? connectionData.note || "" : "";
       const city = typeof connectionData === "object" ? connectionData.city || "" : "";
@@ -980,7 +980,7 @@ const NetworkScreen = ({ navigation }) => {
       const requestBody = {
         circle_profile_id: loggedInProfileUID,
         circle_related_person_id: scannedProfileData.profile_uid,
-        circle_relationship: relationship,
+        circle_relationship: relationship ?? null,
         circle_date: circleDate,
         ...(event && { circle_event: event }),
         ...(note && { circle_note: note }),

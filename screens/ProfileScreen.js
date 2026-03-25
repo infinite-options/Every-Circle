@@ -12,6 +12,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText } from "../utils/textSanitizer";
 import { isWishEnded } from "../utils/wishUtils";
 import FeedbackPopup from "../components/FeedbackPopup";
+import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors } from "../config/headerColors";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -55,6 +56,7 @@ const ProfileScreen = ({ route, navigation }) => {
   const [businessesData, setBusinessesData] = useState([]);
   const [isCurrentUserProfile, setIsCurrentUserProfile] = useState(false);
   const [showRelationshipDropdown, setShowRelationshipDropdown] = useState(false);
+  const [showConnectPopup, setShowConnectPopup] = useState(false);
   const [existingRelationship, setExistingRelationship] = useState(null);
   const [relationshipType, setRelationshipType] = useState(null);
   const [circleUid, setCircleUid] = useState(null);
@@ -788,6 +790,81 @@ const ProfileScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleConnectPopupSave = async (connectionData) => {
+    try {
+      setShowConnectPopup(false);
+
+      const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
+      if (!loggedInProfileUID) {
+        Alert.alert("Error", "User profile not found. Please try again.");
+        return;
+      }
+
+      const viewedProfileUID = routeProfileUID || profileUID;
+      if (!viewedProfileUID) {
+        Alert.alert("Error", "Profile information not found.");
+        return;
+      }
+
+      const selectedRelationship = connectionData?.relationship !== undefined ? connectionData.relationship : null;
+      const payload = {
+        circle_relationship: selectedRelationship,
+        circle_event: connectionData?.event?.trim() || null,
+        circle_note: connectionData?.note?.trim() || null,
+        circle_city: connectionData?.city?.trim() || null,
+        circle_state: connectionData?.state?.trim() || null,
+        circle_introduced_by: connectionData?.introducedBy?.trim() || null,
+      };
+
+      if (circleUid) {
+        const response = await fetch(`${CIRCLES_ENDPOINT}/${circleUid}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.message || "Failed to update connection");
+        }
+      } else {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, "0");
+        const day = String(now.getDate()).padStart(2, "0");
+        const circleDate = `${year}-${month}-${day}`;
+
+        const requestBody = {
+          circle_profile_id: loggedInProfileUID,
+          circle_related_person_id: viewedProfileUID,
+          circle_date: circleDate,
+          ...payload,
+        };
+
+        const response = await fetch(CIRCLES_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.message || "Failed to save connection");
+        }
+        if (result?.data?.circle_uid) {
+          setCircleUid(result.data.circle_uid);
+        } else if (result?.circle_uid) {
+          setCircleUid(result.circle_uid);
+        }
+      }
+
+      setRelationshipType(selectedRelationship);
+      await fetchRelationship(loggedInProfileUID, viewedProfileUID);
+      Alert.alert("Success", "Connection details saved.");
+    } catch (error) {
+      console.error("ProfileScreen - Error saving connection from popup:", error);
+      Alert.alert("Error", error.message || "Failed to save connection details. Please try again.");
+    }
+  };
+
   if (loading) {
     return (
       <View style={[styles.pageContainer, darkMode && styles.darkPageContainer, { flex: 1, justifyContent: "center", alignItems: "center" }]}>
@@ -931,7 +1008,8 @@ const ProfileScreen = ({ route, navigation }) => {
                   if (Platform.OS === "web" && e?.nativeEvent) {
                     e.nativeEvent.stopPropagation?.();
                   }
-                  setShowRelationshipDropdown(!showRelationshipDropdown);
+                  setShowRelationshipDropdown(false);
+                  setShowConnectPopup(true);
                 }}
                 onPressIn={(e) => {
                   // Also stop propagation on press in to prevent parent from capturing
@@ -1551,6 +1629,22 @@ const ProfileScreen = ({ route, navigation }) => {
 
         <BottomNavBar navigation={navigation} />
       </SafeAreaView>
+      <ScannedProfilePopup
+        visible={showConnectPopup}
+        profileData={user}
+        title='Connection Details'
+        initialData={{
+          relationship: relationshipType,
+          event: existingRelationship?.circle_event || "",
+          note: existingRelationship?.circle_note || "",
+          city: existingRelationship?.circle_city || "",
+          state: existingRelationship?.circle_state || "",
+          introducedBy: existingRelationship?.circle_introduced_by || "",
+        }}
+        actionLabel='Save Connection'
+        onClose={() => setShowConnectPopup(false)}
+        onAddConnection={handleConnectPopupSave}
+      />
       <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Profile' instructions={profileFeedbackInstructions} questions={profileFeedbackQuestions} />
     </View>
   );
