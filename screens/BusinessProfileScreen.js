@@ -1,6 +1,6 @@
 // BusinessProfileScreen.js
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TouchableOpacity, Alert, Modal, Platform, Linking } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TouchableOpacity, Alert, Modal, Platform, Linking, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
@@ -47,6 +47,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const businessFeedbackInstructions = "Instructions for Business Profile";
   const businessFeedbackQuestions = ["Business Profile - Question 1?", "Business Profile - Question 2?", "Business Profile - Question 3?"];
+
+  const [replyingTo, setReplyingTo] = useState(null);   // rating_uid currently being replied to
+  const [replyText, setReplyText] = useState("");
+  const [submittingReply, setSubmittingReply] = useState(false);
 
   // Handle viewport resize on web (for DevTools opening/closing)
   useEffect(() => {
@@ -422,11 +426,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
   );
 
   const handleProductPress = (service) => {
-    if (!isOwner) {
-      setSelectedService(service);
-      setQuantity(1);
-      setQuantityModalVisible(true);
-    }
+    setSelectedService(service);
+    setQuantity(1);
+    setQuantityModalVisible(true);
   };
 
   const handleQuantityConfirm = async () => {
@@ -481,6 +483,44 @@ export default function BusinessProfileScreen({ route, navigation }) {
     } catch (error) {
       console.error("Error removing item from cart:", error);
       Alert.alert("Error", "Failed to remove item from cart");
+    }
+  };
+
+  const handleSubmitReply = async (rating_uid) => {
+    if (!replyText.trim()) return;
+    setSubmittingReply(true);
+    try {
+      const formData = new FormData();
+      formData.append("rating_uid", rating_uid);
+      formData.append("ratings_response", replyText.trim());
+      formData.append("responding_profile_uid", currentUserProfileId); // <-- add this
+
+      const response = await fetch(RATINGS_ENDPOINT, {
+        method: "PUT",
+        body: formData,
+      });
+
+      if (response.ok) {
+        setBusiness((prev) => ({
+          ...prev,
+          ratings: (prev.ratings || []).map((r) =>
+            r.rating_uid === rating_uid ? { ...r, ratings_response: replyText.trim() } : r
+          ),
+        }));
+        setAllReviews((prev) =>
+          prev.map((r) =>
+            r.rating_uid === rating_uid ? { ...r, ratings_response: replyText.trim() } : r
+          )
+        );
+        setReplyingTo(null);
+        setReplyText("");
+      } else {
+        Alert.alert("Error", "Failed to save reply. Please try again.");
+      }
+    } catch (e) {
+      Alert.alert("Error", "Network error. Please check your connection.");
+    } finally {
+      setSubmittingReply(false);
     }
   };
 
@@ -898,54 +938,184 @@ export default function BusinessProfileScreen({ route, navigation }) {
             <View style={styles.fieldContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowReviews(!showReviews)}>
                 <Text style={styles.sectionHeaderText}>REVIEWS ({allReviews.length})</Text>
-                <Ionicons name={showReviews ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+                <Ionicons name={showReviews ? "chevron-up" : "chevron-down"} size={20} color="#000" />
               </TouchableOpacity>
+
               {showReviews &&
                 allReviews.map((review, index) => (
-                  <TouchableOpacity
-                    key={review.rating_uid || index}
-                    style={[styles.reviewCard, darkMode && styles.darkReviewCard, index > 0 && { marginTop: 10 }]}
-                    onPress={() => navigation.navigate("ReviewDetail", { business_uid, business_name: business.business_name, reviewer_profile_id: review.rating_profile_id, business_data: business })}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.reviewCardHeader}>
-                      <View style={styles.reviewProfileInfo}>
-                        {review.profile_personal_image ? (
-                          <Image
-                            source={{ uri: review.profile_personal_image }}
-                            style={[styles.reviewProfileAvatar, darkMode && styles.darkReviewProfileAvatar]}
-                            defaultSource={require("../assets/profile.png")}
-                          />
-                        ) : (
-                          <View style={[styles.reviewProfileAvatar, darkMode && styles.darkReviewProfileAvatar]}>
-                            <Text style={[styles.reviewProfileInitial, darkMode && styles.darkReviewProfileInitial]}>{(review.profile_personal_first_name?.charAt(0) || "U").toUpperCase()}</Text>
+                  <View key={review.rating_uid || index}>
+                    {/* Review Card — tappable to go to ReviewDetail */}
+                    <TouchableOpacity
+                      style={[styles.reviewCard, darkMode && styles.darkReviewCard, index > 0 && { marginTop: 10 }]}
+                      onPress={() =>
+                        navigation.navigate("ReviewDetail", {
+                          business_uid,
+                          business_name: business.business_name,
+                          reviewer_profile_id: review.rating_profile_id,
+                          business_data: business,
+                        })
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.reviewCardHeader}>
+                        <View style={styles.reviewProfileInfo}>
+                          {review.profile_personal_image ? (
+                            <Image
+                              source={{ uri: review.profile_personal_image }}
+                              style={[styles.reviewProfileAvatar, darkMode && styles.darkReviewProfileAvatar]}
+                              defaultSource={require("../assets/profile.png")}
+                            />
+                          ) : (
+                            <View style={[styles.reviewProfileAvatar, darkMode && styles.darkReviewProfileAvatar]}>
+                              <Text style={[styles.reviewProfileInitial, darkMode && styles.darkReviewProfileInitial]}>
+                                {(review.profile_personal_first_name?.charAt(0) || "U").toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
+                          <View style={styles.reviewProfileDetails}>
+                            <Text style={[styles.reviewProfileName, darkMode && styles.darkReviewProfileName]}>
+                              {[review.profile_personal_first_name, review.profile_personal_last_name]
+                                .filter(Boolean)
+                                .join(" ") || `User ${review.rating_profile_id}`}
+                            </Text>
+                            <Text style={[styles.reviewDate, darkMode && styles.darkReviewDate]}>
+                              {review.rating_receipt_date}
+                            </Text>
                           </View>
-                        )}
-                        <View style={styles.reviewProfileDetails}>
-                          <Text style={[styles.reviewProfileName, darkMode && styles.darkReviewProfileName]}>
-                            {[review.profile_personal_first_name, review.profile_personal_last_name].filter(Boolean).join(" ") || `User ${review.rating_profile_id}`}
+                        </View>
+                        <View style={styles.reviewRatingContainer}>
+                          {renderStars(review.rating_star)}
+                          <Text style={[styles.reviewRatingText, darkMode && styles.darkReviewRatingText]}>
+                            {review.rating_star}/5
                           </Text>
-                          <Text style={[styles.reviewDate, darkMode && styles.darkReviewDate]}>{review.rating_receipt_date}</Text>
                         </View>
                       </View>
-                      <View style={styles.reviewRatingContainer}>
-                        {renderStars(review.rating_star)}
-                        <Text style={[styles.reviewRatingText, darkMode && styles.darkReviewRatingText]}>{review.rating_star}/5</Text>
+
+                      {review.rating_description && (
+                        <View style={styles.reviewContent}>
+                          <Text style={[styles.reviewDescription, darkMode && styles.darkReviewDescription]}>
+                            {review.rating_description}
+                          </Text>
+                        </View>
+                      )}
+
+                      <View style={styles.reviewFooter}>
+                        <View style={styles.reviewMetadata}>
+                          {review.is_verified ? (
+                            <Text style={[styles.reviewMetadataText, styles.verifiedText]}>Verified Purchase</Text>
+                          ) : (
+                            <Text style={[styles.reviewMetadataText, styles.unverifiedText]}>Purchase Not Verified</Text>
+                          )}
+                        </View>
                       </View>
-                    </View>
-                    {review.rating_description && (
-                      <View style={styles.reviewContent}>
-                        <Text style={[styles.reviewDescription, darkMode && styles.darkReviewDescription]}>{review.rating_description}</Text>
-                      </View>
-                    )}
-                    <View style={styles.reviewFooter}>
-                      <View style={styles.reviewMetadata}>
-                        {review.is_verified && (
-                          <Text style={[styles.reviewMetadataText, styles.verifiedText]}>Verified Review</Text>
+                    </TouchableOpacity>
+
+                    {/* Owner Response — expanded section below the review card */}
+                    {review.ratings_response ? (
+                      // Existing response: always visible to everyone; owner can edit
+                      <View style={[styles.ownerResponseSection, darkMode && styles.darkOwnerResponseSection]}>
+                        <View style={styles.ownerResponseHeader}>
+                          <Ionicons name="chatbubble-ellipses" size={14} color="#9C45F7" />
+                          <Text style={styles.ownerResponseLabel}>Owner's Response</Text>
+                        </View>
+                        <Text style={[styles.ownerResponseText, darkMode && styles.darkOwnerResponseText]}>
+                          {review.ratings_response}
+                        </Text>
+                        {isOwner && replyingTo !== review.rating_uid && (
+                          <TouchableOpacity
+                            style={styles.editReplyLink}
+                            onPress={() => {
+                              setReplyingTo(review.rating_uid);
+                              setReplyText(review.ratings_response);
+                            }}
+                          >
+                            <Ionicons name="pencil" size={12} color="#9C45F7" />
+                            <Text style={styles.editReplyLinkText}>Edit Response</Text>
+                          </TouchableOpacity>
+                        )}
+                        {isOwner && replyingTo === review.rating_uid && (
+                          <View style={styles.replyInputSection}>
+                            <TextInput
+                              style={[styles.replyInput, darkMode && styles.darkReplyInput]}
+                              value={replyText}
+                              onChangeText={setReplyText}
+                              placeholder="Edit your response..."
+                              placeholderTextColor={darkMode ? "#888" : "#aaa"}
+                              multiline
+                              maxLength={1000}
+                            />
+                            <View style={styles.replyActions}>
+                              <TouchableOpacity
+                                style={styles.replyCancelButton}
+                                onPress={() => { setReplyingTo(null); setReplyText(""); }}
+                              >
+                                <Text style={styles.replyCancelText}>Cancel</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.replySubmitButton, submittingReply && { opacity: 0.6 }]}
+                                onPress={() => handleSubmitReply(review.rating_uid)}
+                                disabled={submittingReply}
+                              >
+                                <Text style={styles.replySubmitText}>
+                                  {submittingReply ? "Saving..." : "Save Changes"}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
                         )}
                       </View>
-                    </View>
-                  </TouchableOpacity>
+                    ) : (
+                      // No response yet — owner sees "Reply" button; non-owners see nothing
+                      isOwner && (
+                        replyingTo === review.rating_uid ? (
+                          <View style={[styles.ownerResponseSection, darkMode && styles.darkOwnerResponseSection]}>
+                            <View style={styles.ownerResponseHeader}>
+                              <Ionicons name="chatbubble-ellipses-outline" size={14} color="#9C45F7" />
+                              <Text style={styles.ownerResponseLabel}>Write a Response</Text>
+                            </View>
+                            <TextInput
+                              style={[styles.replyInput, darkMode && styles.darkReplyInput]}
+                              value={replyText}
+                              onChangeText={setReplyText}
+                              placeholder="Write your response to this review..."
+                              placeholderTextColor={darkMode ? "#888" : "#aaa"}
+                              multiline
+                              maxLength={1000}
+                              autoFocus
+                            />
+                            <View style={styles.replyActions}>
+                              <TouchableOpacity
+                                style={styles.replyCancelButton}
+                                onPress={() => { setReplyingTo(null); setReplyText(""); }}
+                              >
+                                <Text style={styles.replyCancelText}>Cancel</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.replySubmitButton, submittingReply && { opacity: 0.6 }]}
+                                onPress={() => handleSubmitReply(review.rating_uid)}
+                                disabled={submittingReply}
+                              >
+                                <Text style={styles.replySubmitText}>
+                                  {submittingReply ? "Posting..." : "Post Reply"}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        ) : (
+                          <TouchableOpacity
+                            style={[styles.replyTriggerButton, darkMode && styles.darkReplyTriggerButton]}
+                            onPress={() => {
+                              setReplyingTo(review.rating_uid);
+                              setReplyText("");
+                            }}
+                          >
+                            <Ionicons name="chatbubble-outline" size={14} color="#9C45F7" />
+                            <Text style={styles.replyTriggerText}>Reply to this review</Text>
+                          </TouchableOpacity>
+                        )
+                      )
+                    )}
+                  </View>
                 ))}
             </View>
           )}
@@ -969,7 +1139,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* Shopping Cart Button - Only show if there are reviews */}
 
           {/* Shopping Cart Button - Only show if there are reviews */}
           {/* {!isOwner && allReviews.length > 0 && (
@@ -1551,5 +1720,128 @@ const styles = StyleSheet.create({
     color: '#2e7d32',
     fontWeight: '600',
     fontSize: 11,
+  },
+  unverifiedText: {
+    color: '#b71c1c',
+    fontWeight: '600',
+    fontSize: 11,
+  },
+  // Owner response section
+  ownerResponseSection: {
+    backgroundColor: "#f5eeff",
+    borderLeftWidth: 3,
+    borderLeftColor: "#9C45F7",
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    padding: 12,
+    marginBottom: 4,
+  },
+  darkOwnerResponseSection: {
+    backgroundColor: "#2a1f3d",
+    borderLeftColor: "#b97af7",
+  },
+  ownerResponseHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 6,
+  },
+  ownerResponseLabel: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#9C45F7",
+    letterSpacing: 0.5,
+  },
+  ownerResponseText: {
+    fontSize: 14,
+    color: "#333",
+    lineHeight: 20,
+  },
+  darkOwnerResponseText: {
+    color: "#ddd",
+  },
+  editReplyLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 8,
+    alignSelf: "flex-start",
+  },
+  editReplyLinkText: {
+    fontSize: 12,
+    color: "#9C45F7",
+    textDecorationLine: "underline",
+  },
+  replyTriggerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: "#f5eeff",
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    marginBottom: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: "#d8b4fe",
+  },
+  darkReplyTriggerButton: {
+    backgroundColor: "#2a1f3d",
+    borderLeftColor: "#7c3aed",
+  },
+  replyTriggerText: {
+    fontSize: 13,
+    color: "#9C45F7",
+    fontWeight: "600",
+  },
+  replyInputSection: {
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#e0d0ff",
+    paddingTop: 10,
+  },
+  replyInput: {
+    borderWidth: 1,
+    borderColor: "#c4b5fd",
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 14,
+    color: "#333",
+    minHeight: 90,
+    textAlignVertical: "top",
+    backgroundColor: "#fff",
+  },
+  darkReplyInput: {
+    borderColor: "#6d28d9",
+    color: "#fff",
+    backgroundColor: "#1e1433",
+  },
+  replyActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 8,
+    gap: 10,
+  },
+  replyCancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#e5e7eb",
+  },
+  replyCancelText: {
+    color: "#555",
+    fontWeight: "600",
+    fontSize: 13,
+  },
+  replySubmitButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#9C45F7",
+  },
+  replySubmitText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 13,
   },
 });

@@ -75,6 +75,12 @@ export default function SearchScreen({ route }) {
   // Search type state: 'businesses', 'expertise', 'seeking'
   const [searchType, setSearchType] = useState("businesses");
 
+  const [currentProfileUid, setCurrentProfileUid] = useState(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem("profile_uid").then(uid => setCurrentProfileUid(uid));
+  }, []);
+
   // Restore search state when returning from Profile
   useFocusEffect(
     React.useCallback(() => {
@@ -803,13 +809,17 @@ export default function SearchScreen({ route }) {
     // Render wish item with MiniCard-like profile display
     const profile = item.profileData || {};
     const wish = item.wishData || {};
+    
+    const isOwnWish = currentProfileUid && item.profile_uid === currentProfileUid;
 
     return (
       <TouchableOpacity
         key={`${item.id}-${idx}`}
-        activeOpacity={0.7}
-        style={[styles.wishItem, darkMode && styles.darkWishItem]}
+        activeOpacity={isOwnWish ? 1 : 0.7}
+        //style={[styles.wishItem, darkMode && styles.darkWishItem]}
+        style={[styles.wishItem, darkMode && styles.darkWishItem, isOwnWish && { opacity: 0.6 }]}
         onPress={() => {
+          if (isOwnWish) return;
           console.log("🏢 Navigating to WishDetail from wish card:", wish.title, "Profile ID:", item.profile_uid);
           if (item.profile_uid && wish) {
             navigation.navigate("WishDetail", {
@@ -923,6 +933,11 @@ export default function SearchScreen({ route }) {
             </View>
           )}
         </View>
+        {isOwnWish && (
+          <Text style={{ fontSize: 20, color: '#6e1010', fontStyle: 'italic', marginTop: 4 }}>
+            You cannot respond to your own request.
+          </Text>
+        )}
       </TouchableOpacity>
     );
   };
@@ -932,12 +947,16 @@ export default function SearchScreen({ route }) {
     const profile = item.profileData || {};
     const expertise = item.expertiseData || {};
 
+    const isOwnExpertise = currentProfileUid && item.profile_uid === currentProfileUid;
+
     return (
       <TouchableOpacity
-        key={`${item.id}-${idx}`}
-        activeOpacity={0.7}
-        style={[styles.wishItem, darkMode && styles.darkWishItem]}
-        onPress={() => {
+       key={`${item.id}-${idx}`}
+       activeOpacity={isOwnExpertise ? 1 : 0.7}
+       // style={[styles.wishItem, darkMode && styles.darkWishItem]}
+       style={[styles.wishItem, darkMode && styles.darkWishItem, isOwnExpertise && { opacity: 0.6 }]}
+       onPress={() => {
+       if (isOwnExpertise) return;
           console.log("🏢 Navigating to ExpertiseDetail from expertise card:", expertise.title, "Profile ID:", item.profile_uid);
           if (item.profile_uid && expertise) {
             navigation.navigate("ExpertiseDetail", {
@@ -1013,6 +1032,11 @@ export default function SearchScreen({ route }) {
             )}
           </View>
         </View>
+        {isOwnExpertise && (
+          <Text style={{ fontSize: 20, color: '#6e1010', fontStyle: 'italic', marginTop: 4 }}>
+            You cannot purchase your own expertise.
+          </Text>
+        )}
       </TouchableOpacity>
     );
   };
