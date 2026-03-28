@@ -977,6 +977,24 @@ const NetworkScreen = ({ navigation }) => {
       const state = typeof connectionData === "object" ? connectionData.state || "" : "";
       const introducedBy = typeof connectionData === "object" ? connectionData.introducedBy || "" : "";
 
+      // Calculate circle_num_nodes
+      let circleNumNodes = null;
+      try {
+        const pathResponse = await fetch(
+          `${API_BASE_URL}/api/connections_path/${loggedInProfileUID}/${scannedProfileData.profile_uid}`
+        );
+        if (pathResponse.ok) {
+          const pathData = await pathResponse.json();
+          const combinedPath = pathData.combined_path || "";
+          if (combinedPath) {
+            const nodes = combinedPath.split(",").filter((n) => n.trim());
+            circleNumNodes = Math.max(0, nodes.length - 2);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch connections_path:", err);
+      }
+
       const requestBody = {
         circle_profile_id: loggedInProfileUID,
         circle_related_person_id: scannedProfileData.profile_uid,
@@ -987,6 +1005,7 @@ const NetworkScreen = ({ navigation }) => {
         ...(city && { circle_city: city }),
         ...(state && { circle_state: state }),
         ...(introducedBy && { circle_introduced_by: introducedBy }),
+        ...(circleNumNodes !== null && { circle_num_nodes: circleNumNodes }),
       };
 
       const response = await fetch(CIRCLES_ENDPOINT, {
