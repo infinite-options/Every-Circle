@@ -844,7 +844,7 @@ const ProfileScreen = ({ route, navigation }) => {
             const combinedPath = pathData.combined_path || "";
             if (combinedPath) {
               const nodes = combinedPath.split(",").filter((n) => n.trim());
-              circleNumNodes = Math.max(0, nodes.length - 2);
+              circleNumNodes = Math.max(0, nodes.length - 2) + 1;
             }
           }
         } catch (err) {
