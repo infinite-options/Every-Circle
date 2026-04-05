@@ -392,7 +392,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
           ? parsePrice(item.bounty)
           : parsePrice(item.bs_bounty),
         quantity: parseInt(item.quantity) || 1,
-        recommender_profile_id: recommenderProfileId,
+        recommender_profile_id: item.bounty_recommender_profile_id || recommenderProfileId,
       })),
     };
 
@@ -568,18 +568,18 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
 
     // Native Stripe flow (existing code)
-    try {
-      setLoading(true);
+      try {
+        setLoading(true);
       console.log("Starting checkout process...");
 
-      const initialized = await initializePayment();
+        const initialized = await initializePayment();
       if (!initialized) {
         console.log("Payment initialization failed");
         return;
       }
 
       console.log("Presenting payment sheet...");
-      const result = await presentPaymentSheet();
+        const result = await presentPaymentSheet();
 
       // Log Stripe result structure for debugging
       console.log("Stripe result structure:", {
@@ -588,27 +588,27 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         keys: Object.keys(result),
       });
 
-      if (result.error) {
+        if (result.error) {
         console.error("Payment error:", result.error);
-        Alert.alert("Error", "Payment failed. Please try again.");
-        return;
-      }
+          Alert.alert("Error", "Payment failed. Please try again.");
+          return;
+        }
 
       console.log("Payment successful!");
 
       // For successful payments, Stripe only returns { error: undefined }
       // We need to use the original client secret which contains the payment intent ID
       console.log("Using stored client secret as payment intent:", currentClientSecret);
-      const paymentIntent = currentClientSecret;
+        const paymentIntent = currentClientSecret;
 
       // Get the buyer's ID
-      const buyerUid = await AsyncStorage.getItem("profile_uid");
+        const buyerUid = await AsyncStorage.getItem("profile_uid");
       if (!buyerUid) {
         throw new Error("User ID not found");
       }
 
       // Record the transactions
-      await recordTransactions(buyerUid, paymentIntent, null, null, escrow);
+        await recordTransactions(buyerUid, paymentIntent, null, null, escrow);
 
       // Clear ALL cart data from AsyncStorage
       try {
@@ -639,12 +639,12 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       }
     } catch (error) {
       console.error("Checkout error:", error);
-      Alert.alert("Error", "An error occurred during checkout. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+        Alert.alert("Error", "An error occurred during checkout. Please try again.");
+      } finally {
+        setLoading(false);
+      }
   };
-
+  
   const content = (
     <View style={styles.container}>
       {/* Header */}

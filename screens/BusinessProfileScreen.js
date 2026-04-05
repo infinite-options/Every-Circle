@@ -52,6 +52,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [replyText, setReplyText] = useState("");
   const [submittingReply, setSubmittingReply] = useState(false);
 
+  const [selectedBountyRecipient, setSelectedBountyRecipient] = useState(null);
+
   // Handle viewport resize on web (for DevTools opening/closing)
   useEffect(() => {
     if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -141,6 +143,14 @@ export default function BusinessProfileScreen({ route, navigation }) {
         }
       });
 
+      // Sort by circle_num_nodes: lowest first, null at the end
+      otherReviews.sort((a, b) => {
+        if (a.circle_num_nodes === null && b.circle_num_nodes === null) return 0;
+        if (a.circle_num_nodes === null) return 1;
+        if (b.circle_num_nodes === null) return -1;
+        return a.circle_num_nodes - b.circle_num_nodes;
+      });
+
       setUserReview(userReviewFromAPI);
       setAllReviews(otherReviews);
     }
@@ -149,6 +159,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const fetchBusinessInfo = async () => {
     try {
       setLoading(true);
+      // Read viewer UID directly so it's available for the ratings call
+      const viewerUid = await AsyncStorage.getItem("profile_uid") || '';
       const endpoint = `${BusinessProfileApi}/${business_uid}`;
       console.log("BusinessProfileScreen GET endpoint:", endpoint);
       const response = await fetch(endpoint);
@@ -337,18 +349,23 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
       // Fetch is_verified flags from Ratings endpoint
       try {
-        const ratingsRes = await fetch(`${RATINGS_ENDPOINT}/${business_uid}`);
+        // const ratingsRes = await fetch(`${RATINGS_ENDPOINT}/${business_uid}`);
+        const ratingsRes = await fetch(`${RATINGS_ENDPOINT}/${business_uid}?viewer_uid=${viewerUid}`);
         const ratingsData = await ratingsRes.json();
         if (ratingsData?.result) {
-          const verifiedMap = {};
+          const ratingsMap = {};
           ratingsData.result.forEach(r => {
-            verifiedMap[r.rating_uid] = r.is_verified;
+            ratingsMap[r.rating_uid] = {
+              is_verified: r.is_verified,
+              circle_num_nodes: r.circle_num_nodes ?? null,
+            };
           });
           setBusiness(prev => ({
             ...prev,
             ratings: (prev.ratings || []).map(r => ({
               ...r,
-              is_verified: verifiedMap[r.rating_uid] || false
+              is_verified: ratingsMap[r.rating_uid]?.is_verified || false,
+              circle_num_nodes: ratingsMap[r.rating_uid]?.circle_num_nodes ?? null,
             }))
           }));
         }
@@ -428,6 +445,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const handleProductPress = (service) => {
     setSelectedService(service);
     setQuantity(1);
+    setSelectedBountyRecipient(null);
     setQuantityModalVisible(true);
   };
 
@@ -437,6 +455,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         ...selectedService,
         quantity: quantity,
         totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
+        bounty_recommender_profile_id: selectedBountyRecipient?.rating_profile_id || null, 
       };
 
       const existingItemIndex = cartItems.findIndex((item) => item.bs_uid === selectedService.bs_uid);
@@ -1007,6 +1026,12 @@ export default function BusinessProfileScreen({ route, navigation }) {
                             <Text style={[styles.reviewMetadataText, styles.unverifiedText]}>Purchase Not Verified</Text>
                           )}
                         </View>
+                        <Text style={[styles.reviewMetadataText, darkMode && styles.darkReviewMetadataText, { fontSize: 18, color: "#888" }]}>
+                          {review.circle_num_nodes !== null && review.circle_num_nodes !== undefined
+                            ? `Level ${review.circle_num_nodes} Connection`
+                            : "Not in your network"
+                          }
+                        </Text>
                       </View>
                     </TouchableOpacity>
 
@@ -1173,29 +1198,112 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
       <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Quantity</Text>
-            <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
+          <View style={[styles.modalContent, { maxHeight: "85%", width: "90%" }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalTitle}>Add to Cart</Text>
+              <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
 
-            <View style={styles.quantityContainer}>
-              <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => Math.max(1, prev - 1))}>
-                <Ionicons name='remove' size={24} color='#9C45F7' />
-              </TouchableOpacity>
+              {/* Quantity selector */}
+              <View style={styles.quantityContainer}>
+                <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => Math.max(1, prev - 1))}>
+                  <Ionicons name='remove' size={24} color='#9C45F7' />
+                </TouchableOpacity>
+                <Text style={styles.quantityText}>{quantity}</Text>
+                <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => prev + 1)}>
+                  <Ionicons name='add' size={24} color='#9C45F7' />
+                </TouchableOpacity>
+              </View>
 
-              <Text style={styles.quantityText}>{quantity}</Text>
+              <Text style={styles.totalPrice}>
+                Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}
+              </Text>
 
-              <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => prev + 1)}>
-                <Ionicons name='add' size={24} color='#9C45F7' />
-              </TouchableOpacity>
-            </View>
+              {/* Bounty recipient picker — only show if there are verified reviews */}
+              {allReviews.filter(r => r.is_verified).length > 0 && (
+                <View style={{ marginTop: 16, marginBottom: 8 }}>
+                  <Text style={[styles.modalTitle, { fontSize: 16, marginBottom: 4 }]}>
+                    💰 Who referred you? (optional)
+                  </Text>
+                  <Text style={{ fontSize: 12, color: "#888", marginBottom: 10, textAlign: "center" }}>
+                    Assign the bounty to a verified reviewer
+                  </Text>
+                  {allReviews.filter(r => r.is_verified).map((review) => {
+                    const isSelected = selectedBountyRecipient?.rating_uid === review.rating_uid;
+                    const name = [review.profile_personal_first_name, review.profile_personal_last_name]
+                      .filter(Boolean).join(" ") || `User ${review.rating_profile_id}`;
+                    return (
+                      <TouchableOpacity
+                        key={review.rating_uid}
+                        onPress={() => setSelectedBountyRecipient(isSelected ? null : review)}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          padding: 10,
+                          marginBottom: 8,
+                          borderRadius: 10,
+                          borderWidth: 1.5,
+                          borderColor: isSelected ? "#9C45F7" : "#ddd",
+                          backgroundColor: isSelected ? "#f5eeff" : "#fafafa",
+                        }}
+                      >
+                        {/* Radio */}
+                        <View style={{
+                          width: 20, height: 20, borderRadius: 10,
+                          borderWidth: 2, borderColor: isSelected ? "#9C45F7" : "#ccc",
+                          alignItems: "center", justifyContent: "center", marginRight: 10,
+                        }}>
+                          {isSelected && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#9C45F7" }} />}
+                        </View>
 
-            <Text style={styles.totalPrice}>Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
+                        {/* Avatar */}
+                        {review.profile_personal_image ? (
+                          <Image
+                            source={{ uri: review.profile_personal_image }}
+                            style={{ width: 36, height: 36, borderRadius: 18, marginRight: 10 }}
+                            defaultSource={require("../assets/profile.png")}
+                          />
+                        ) : (
+                          <View style={{
+                            width: 36, height: 36, borderRadius: 18, marginRight: 10,
+                            backgroundColor: "#e0e0e0", alignItems: "center", justifyContent: "center",
+                          }}>
+                            <Text style={{ fontWeight: "bold", color: "#555" }}>
+                              {(review.profile_personal_first_name?.charAt(0) || "U").toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+
+                        {/* Info */}
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontWeight: "600", color: "#333" }}>{name}</Text>
+                          <Text style={{ fontSize: 12, color: "#888" }}>
+                            {"★".repeat(review.rating_star)}{"☆".repeat(5 - review.rating_star)}
+                            {"  ·  Verified Purchase"}
+                          </Text>
+                        </View>
+
+                        {/* Bounty badge */}
+                        {selectedService?.bs_bounty && (
+                          <View style={{
+                            backgroundColor: isSelected ? "#9C45F7" : "#f0e8ff",
+                            borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
+                          }}>
+                            <Text style={{ color: isSelected ? "#fff" : "#9C45F7", fontWeight: "700", fontSize: 12 }}>
+                              ${parsePrice(selectedService.bs_bounty).toFixed(2)}
+                            </Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </ScrollView>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setQuantityModalVisible(false)}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-
               <TouchableOpacity style={[styles.modalButton, styles.confirmButton]} onPress={handleQuantityConfirm}>
                 <Text style={styles.confirmButtonText}>Add to Cart</Text>
               </TouchableOpacity>
