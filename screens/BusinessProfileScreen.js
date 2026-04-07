@@ -76,8 +76,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
       try {
         const storedCartData = await AsyncStorage.getItem(`cart_${business_uid}`);
         if (storedCartData) {
-          const cartData = JSON.parse(storedCartData);
+        const cartData = JSON.parse(storedCartData);
           setCartItems(cartData.items || []);
+          if (cartData.bounty_recipient) {
+            setSelectedBountyRecipient(cartData.bounty_recipient);
+          }
         }
       } catch (error) {
         console.error("Error loading cart items:", error);
@@ -445,7 +448,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const handleProductPress = (service) => {
     setSelectedService(service);
     setQuantity(1);
-    setSelectedBountyRecipient(null);
+    // setSelectedBountyRecipient(null);
     setQuantityModalVisible(true);
   };
 
@@ -479,6 +482,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         `cart_${business_uid}`,
         JSON.stringify({
           items: newCartItems,
+          bounty_recipient: selectedBountyRecipient || null,
         }),
       );
 
@@ -493,12 +497,16 @@ export default function BusinessProfileScreen({ route, navigation }) {
     try {
       const newCartItems = cartItems.filter((_, i) => i !== index);
       setCartItems(newCartItems);
+      const savedCart = await AsyncStorage.getItem(`cart_${business_uid}`);
+      const savedData = savedCart ? JSON.parse(savedCart) : {};
       await AsyncStorage.setItem(
         `cart_${business_uid}`,
         JSON.stringify({
           items: newCartItems,
+          bounty_recipient: newCartItems.length === 0 ? null : (savedData.bounty_recipient || null),
         }),
       );
+      if (newCartItems.length === 0) setSelectedBountyRecipient(null);
     } catch (error) {
       console.error("Error removing item from cart:", error);
       Alert.alert("Error", "Failed to remove item from cart");
@@ -967,11 +975,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
                     <TouchableOpacity
                       style={[styles.reviewCard, darkMode && styles.darkReviewCard, index > 0 && { marginTop: 10 }]}
                       onPress={() =>
-                        navigation.navigate("ReviewDetail", {
-                          business_uid,
-                          business_name: business.business_name,
-                          reviewer_profile_id: review.rating_profile_id,
-                          business_data: business,
+                        navigation.navigate("Profile", {
+                        profile_uid: review.rating_profile_id,
                         })
                       }
                       activeOpacity={0.7}
@@ -1199,7 +1204,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { maxHeight: "85%", width: "90%" }]}>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ alignItems: "center", width: "100%" }}>
               <Text style={styles.modalTitle}>Add to Cart</Text>
               <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
 
@@ -1221,8 +1226,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
               {/* Bounty recipient picker — only show if there are verified reviews */}
               {allReviews.filter(r => r.is_verified).length > 0 && (
                 <View style={{ marginTop: 16, marginBottom: 8 }}>
-                  <Text style={[styles.modalTitle, { fontSize: 16, marginBottom: 4 }]}>
-                    💰 Who referred you? (optional)
+                  <Text style={[styles.modalTitle, { fontSize: 16, marginBottom: 4, textAlign: "center" }]}>
+                    💰 Who referred you? 
                   </Text>
                   <Text style={{ fontSize: 12, color: "#888", marginBottom: 10, textAlign: "center" }}>
                     Assign the bounty to a verified reviewer
@@ -1276,10 +1281,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
                         {/* Info */}
                         <View style={{ flex: 1 }}>
                           <Text style={{ fontWeight: "600", color: "#333" }}>{name}</Text>
-                          <Text style={{ fontSize: 12, color: "#888" }}>
-                            {"★".repeat(review.rating_star)}{"☆".repeat(5 - review.rating_star)}
-                            {"  ·  Verified Purchase"}
-                          </Text>
+                          {review.circle_num_nodes !== null && review.circle_num_nodes !== undefined && (
+                            <Text style={{ fontSize: 12, color: "#888" }}>
+                              {`Level ${review.circle_num_nodes} Connection`}
+                            </Text>
+                          )}
                         </View>
 
                         {/* Bounty badge */}
@@ -1511,6 +1517,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#9C45F7",
     marginBottom: 20,
+    textAlign: "center",
   },
   modalButtons: {
     flexDirection: "row",

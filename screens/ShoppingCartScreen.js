@@ -359,110 +359,84 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
   };
 
-  const prepareTransactionData = (buyerUid, paymentIntent, totalAmount, processingFee = 0, escrowValue = true) => {
-    // Use the referral profile ID from route params, or fallback to a default
-    // If the recommender is "Charity", use a default referral ID
-    const recommenderProfileId = recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231"; // Default referral ID for charity purchases
+  
+  const recordTransactions = async (buyerUid, paymentIntent, totalAmount = null, processingFee = null, escrowValue = true) => {
+    console.log("=== recordTransactions CALLED ===");
+    console.log("buyerUid:", buyerUid);
 
-    // For the business_id, we need to handle the case where we have multiple businesses
-    // If business_uid is 'all' (from SearchScreen), we'll use the first item's business_uid
-    // Otherwise, use the passed business_uid
-    let transactionBusinessId = business_uid;
-    if (business_uid === "all" && cartItems.length > 0) {
-      const firstItem = cartItems[0];
-      transactionBusinessId = firstItem.itemType === "expertise" 
-        ? firstItem.profile_uid   // ← use profile_uid for expertise
-        : firstItem.business_uid;
+    let buyerProfileId;
+    if (!buyerUid.startsWith("110")) {
+      buyerProfileId = await getProfileId(buyerUid);
+    } else {
+      buyerProfileId = buyerUid;
     }
 
-    const subtotal = parseFloat(calculateTotal());
-    const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
+    const subtotal = calculateTotal();
+    const fee = processingFee !== null ? processingFee : subtotal * 0.03;
+    const total = totalAmount !== null ? totalAmount : subtotal + fee;
 
-    const transactionData = {
-      profile_id: buyerUid,
-      business_id: transactionBusinessId,
-      stripe_payment_intent: paymentIntent,
-      total_amount_paid: parseFloat(totalAmount),
-      total_costs: subtotal,
-      total_taxes: parseFloat(processingFee), // 3% processing fee for credit card payments
-      transaction_in_escrow: transactionInEscrow,
-      items: cartItems.map((item) => ({
-        bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
-        bounty: item.itemType === "expertise"
-          ? parsePrice(item.bounty)
-          : parsePrice(item.bs_bounty),
-        quantity: parseInt(item.quantity) || 1,
-        recommender_profile_id: item.bounty_recommender_profile_id || recommenderProfileId,
-      })),
-    };
+    // Group items by business
+    const businessGroups = {};
+    cartItems.forEach((item) => {
+      const bizId = item.business_uid || item.profile_uid;
+      if (!businessGroups[bizId]) businessGroups[bizId] = [];
+      businessGroups[bizId].push(item);
+    });
 
-    console.log("Prepared Transaction Data:", JSON.stringify(transactionData, null, 2));
-    console.log("transaction_in_escrow (sending to backend):", transactionInEscrow);
-    console.log("Subtotal:", subtotal);
-    console.log("Processing Fee (tax):", processingFee);
-    console.log("Total Amount Paid:", totalAmount);
-    console.log("Using recommender profile ID:", recommenderProfileId);
-    console.log("Original recommender from route:", recommender_profile_id);
-    console.log("Transaction business ID:", transactionBusinessId);
-    return transactionData;
-  };
+    const businessIds = Object.keys(businessGroups);
+    const subtotalPerBusiness = subtotal / businessIds.length; // proportional split
+    const feePerBusiness = fee / businessIds.length;
+    const totalPerBusiness = total / businessIds.length;
 
-  const recordTransactions = async (buyerUid, paymentIntent, totalAmount = null, processingFee = null, escrowValue = true) => {
-    try {
-      console.log("Recording transactions for items:", cartItems);
+    const businessesPaidBounty = new Set();
 
-      // Get the buyer's profile ID
-      let buyerProfileId;
-      if (!buyerUid.startsWith("110")) {
-        buyerProfileId = await getProfileId(buyerUid);
-        console.log("Buyer profile ID:", buyerProfileId);
-      } else {
-        buyerProfileId = buyerUid;
-      }
+    for (const bizId of businessIds) {
+      const items = businessGroups[bizId];
+      const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
 
-      // Calculate processing fee if not provided (3% for web Stripe payments)
-      const subtotal = calculateTotal();
-      const fee = processingFee !== null ? processingFee : subtotal * 0.03;
-      const total = totalAmount !== null ? totalAmount : subtotal + fee;
+      const transactionData = {
+        profile_id: buyerProfileId,
+        business_id: bizId,
+        stripe_payment_intent: paymentIntent,
+        total_amount_paid: parseFloat(totalPerBusiness.toFixed(2)),
+        total_costs: parseFloat(subtotalPerBusiness.toFixed(2)),
+        total_taxes: parseFloat(feePerBusiness.toFixed(2)),
+        transaction_in_escrow: transactionInEscrow,
+        items: items.map((item) => {
+          const isFirstForBusiness = !businessesPaidBounty.has(bizId);
+          if (isFirstForBusiness) businessesPaidBounty.add(bizId);
 
-      console.log("Transaction amounts - Subtotal:", subtotal, "Fee:", fee, "Total:", total);
+          return {
+            bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
+            bounty: isFirstForBusiness
+              ? (item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty))
+              : 0,
+            quantity: parseInt(item.quantity) || 1,
+            recommender_profile_id: isFirstForBusiness
+              ? (item.bounty_recommender_profile_id || "110-000231")
+              : "110-000231",
+          };
+        }),
+      };
 
-      // Prepare the transaction data
-      const transactionData = prepareTransactionData(buyerProfileId, paymentIntent || "PAYMENT_INTENT_ID", total, fee, escrowValue);
+      console.log(`Posting transaction for business ${bizId}:`, JSON.stringify(transactionData, null, 2));
 
-      console.log("============================================");
-      console.log("ENDPOINT: RECORD_TRANSACTIONS");
-      console.log("URL:", TRANSACTIONS_ENDPOINT);
-      console.log("METHOD: POST");
-      console.log("REQUEST BODY:", JSON.stringify(transactionData, null, 2));
-      console.log("============================================");
-
-      // Make a single API call with all transaction data
       const response = await fetch(TRANSACTIONS_ENDPOINT, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(transactionData),
       });
 
-      console.log("RESPONSE STATUS:", response.status);
-      console.log("RESPONSE OK:", response.ok);
-
+      console.log(`Response for business ${bizId}:`, response.status);
       const result = await response.json();
-      console.log("RESPONSE BODY:", JSON.stringify(result, null, 2));
-      console.log("Transactions recorded:", result);
+      console.log(`Result for business ${bizId}:`, JSON.stringify(result, null, 2));
 
       if (!response.ok) {
-        throw new Error(`Failed to record transactions: ${result.message || "Unknown error"}`);
+        throw new Error(`Failed to record transaction for business ${bizId}: ${result.message || "Unknown error"}`);
       }
-    } catch (error) {
-      console.error("Error recording transactions:", error);
-      throw error;
     }
   };
-
-  // Handle fees dialog continue
+  
   const handleFeesDialogContinue = async () => {
     try {
       setShowFeesDialog(false);
@@ -488,6 +462,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
   // Web Stripe payment submission handler
   const handleWebPaymentSubmit = async (paymentIntent, paymentMethod) => {
+    console.log("=== handleWebPaymentSubmit CALLED ===");
     try {
       setLoading(true);
       console.log("Web payment submitted - paymentIntent:", paymentIntent, "paymentMethod:", paymentMethod);
