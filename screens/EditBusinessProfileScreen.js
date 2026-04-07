@@ -628,6 +628,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           bs_sku: service.bs_sku || "",
           bs_bounty: service.bs_bounty || "",
           bs_bounty_currency: service.bs_bounty_currency || "USD",
+          bs_bounty_type: service.bs_bounty_type || "per_item",
           bs_is_taxable: typeof service.bs_is_taxable === "undefined" ? 1 : service.bs_is_taxable,
           bs_tax_rate: service.bs_tax_rate || "0",
           bs_discount_allowed: typeof service.bs_discount_allowed === "undefined" ? 1 : service.bs_discount_allowed,
@@ -1089,6 +1090,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_sku: "",
     bs_bounty: "",
     bs_bounty_currency: "USD",
+    bs_bounty_type: "per_item",
     bs_is_taxable: 1,
     bs_tax_rate: "0",
     bs_discount_allowed: 1,
@@ -1494,6 +1496,21 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 placeholder='Bounty Currency (e.g. USD)'
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
               />
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Bounty Type</Text>
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                <TouchableOpacity
+                  style={[styles.bountyTypeBtn, serviceForm.bs_bounty_type === "per_item" && styles.bountyTypeBtnActive]}
+                  onPress={() => handleServiceChange("bs_bounty_type", "per_item")}
+                >
+                  <Text style={[styles.bountyTypeBtnText, serviceForm.bs_bounty_type === "per_item" && styles.bountyTypeBtnTextActive]}>Per Item</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.bountyTypeBtn, serviceForm.bs_bounty_type === "total" && styles.bountyTypeBtnActive]}
+                  onPress={() => handleServiceChange("bs_bounty_type", "total")}
+                >
+                  <Text style={[styles.bountyTypeBtnText, serviceForm.bs_bounty_type === "total" && styles.bountyTypeBtnTextActive]}>Total (Fixed)</Text>
+                </TouchableOpacity>
+              </View>
               <TextInput
                 style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
                 value={serviceForm.bs_tags}
@@ -1731,6 +1748,27 @@ const styles = StyleSheet.create({
   },
   serviceFormInput: {
     marginBottom: 12,
+  },
+  bountyTypeBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    backgroundColor: "#f5f5f5",
+  },
+  bountyTypeBtnActive: {
+    backgroundColor: "#9C45F7",
+    borderColor: "#9C45F7",
+  },
+  bountyTypeBtnText: {
+    fontSize: 13,
+    color: "#444",
+    fontWeight: "500",
+  },
+  bountyTypeBtnTextActive: {
+    color: "#fff",
+    fontWeight: "bold",
   },
   businessEditorCard: {
     backgroundColor: "#f9f9f9",
@@ -1978,3 +2016,5 @@ const styles = StyleSheet.create({
 });
 
 export default EditBusinessProfileScreen;
+
+
