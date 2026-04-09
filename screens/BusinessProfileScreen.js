@@ -568,14 +568,38 @@ export default function BusinessProfileScreen({ route, navigation }) {
     }
   };
 
-  const handleViewCart = () => {
-    navigation.navigate("ShoppingCart", {
-      cartItems,
-      onRemoveItem: handleRemoveItem,
-      businessName: business.business_name,
-      business_uid: business_uid,
-      recommender_profile_id: currentUserProfileId,
-    });
+  const handleViewCart = async () => {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const cartKeys = keys.filter((key) => key.startsWith("cart_"));
+      const allCartData = await AsyncStorage.multiGet(cartKeys);
+      
+      let allItems = [];
+      allCartData.forEach(([key, value]) => {
+        if (value) {
+          const parsed = JSON.parse(value);
+          const items = parsed.items || [];
+          allItems = [...allItems, ...items];
+        }
+      });
+
+      navigation.navigate("ShoppingCart", {
+        cartItems: allItems,
+        onRemoveItem: handleRemoveItem,
+        businessName: "My Cart",
+        business_uid: business_uid,
+        recommender_profile_id: currentUserProfileId,
+      });
+    } catch (error) {
+      console.error("Error loading all cart items:", error);
+      navigation.navigate("ShoppingCart", {
+        cartItems,
+        onRemoveItem: handleRemoveItem,
+        businessName: business.business_name,
+        business_uid: business_uid,
+        recommender_profile_id: currentUserProfileId,
+      });
+    }
   };
 
   const renderStars = (rating) => {
@@ -1174,12 +1198,12 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 <Text style={styles.sectionHeaderText}>PRODUCTS & SERVICES</Text>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                   {/*checkout from the business*/}
-                  {/* {!isOwner && cartItems.length > 0 && (
+                  {cartItems.length > 0 && (
                     <TouchableOpacity style={[styles.cartButton, darkMode && styles.darkCartButton]} onPress={handleViewCart}>
                       <Ionicons name='cart' size={24} color={darkMode ? "#fff" : "#9C45F7"} />
                       <Text style={[styles.cartCount, darkMode && styles.darkCartCount]}>{cartItems.length}</Text>
                     </TouchableOpacity>
-                  )} */}
+                  )} 
                   <Ionicons name={showServices ? "chevron-up" : "chevron-down"} size={20} color='#000' />
                 </View>
               </TouchableOpacity>
