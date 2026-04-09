@@ -1380,7 +1380,7 @@ export default function AccountScreen({ navigation }) {
                               )}
                             </View>
                             <Text style={styles.transactionAmount}>
-                              ${parseFloat(transaction.ti_bs_cost || 0).toFixed(2)}
+                              ${parseFloat(transaction.transaction_total || 0).toFixed(2)}
                             </Text>
                           </View>
                         );
@@ -1451,7 +1451,7 @@ export default function AccountScreen({ navigation }) {
                             <Text style={styles.bountyTableCell}>{item.purchaser_name || item.transaction_profile_id || "N/A"}</Text>
                             <Text style={styles.bountyTableCell}>{item.display_name || item.transaction_business_id || "N/A"}</Text>
                             <Text style={styles.bountyTableCell}>{item.in_escrow === 1 ? "Pending" : "Paid"}</Text>
-                            <Text style={styles.bountyTableCell}>${(item.bounty_earned ?? 0).toFixed(2)}</Text>
+                            <Text style={styles.bountyTableCell}>${parseFloat(item.bounty_earned || 0).toFixed(2)}</Text>
                           </View>
                         );
                       })}
@@ -2211,3 +2211,5 @@ const styles = StyleSheet.create({
     color: "#18884A",
   },
 });
+
+

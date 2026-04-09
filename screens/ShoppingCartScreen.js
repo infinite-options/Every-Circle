@@ -359,84 +359,143 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
   };
 
-  
-  const recordTransactions = async (buyerUid, paymentIntent, totalAmount = null, processingFee = null, escrowValue = true) => {
-    console.log("=== recordTransactions CALLED ===");
-    console.log("buyerUid:", buyerUid);
+  const prepareTransactionData = (buyerUid, paymentIntent, totalAmount, processingFee = 0, escrowValue = true) => {
+    // Use the referral profile ID from route params, or fallback to a default
+    // If the recommender is "Charity", use a default referral ID
+    const recommenderProfileId = recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231"; // Default referral ID for charity purchases
 
-    let buyerProfileId;
-    if (!buyerUid.startsWith("110")) {
-      buyerProfileId = await getProfileId(buyerUid);
-    } else {
-      buyerProfileId = buyerUid;
+    // For the business_id, we need to handle the case where we have multiple businesses
+    // If business_uid is 'all' (from SearchScreen), we'll use the first item's business_uid
+    // Otherwise, use the passed business_uid
+    let transactionBusinessId = business_uid;
+    if (business_uid === "all" && cartItems.length > 0) {
+      const firstItem = cartItems[0];
+      transactionBusinessId =
+        firstItem.itemType === "expertise"
+          ? firstItem.profile_uid // ← use profile_uid for expertise
+          : firstItem.business_uid;
     }
 
-    const subtotal = calculateTotal();
-    const fee = processingFee !== null ? processingFee : subtotal * 0.03;
-    const total = totalAmount !== null ? totalAmount : subtotal + fee;
+    const subtotal = parseFloat(calculateTotal());
+    const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
 
-    // Group items by business
-    const businessGroups = {};
-    cartItems.forEach((item) => {
-      const bizId = item.business_uid || item.profile_uid;
-      if (!businessGroups[bizId]) businessGroups[bizId] = [];
-      businessGroups[bizId].push(item);
-    });
+    const transactionData = {
+      profile_id: buyerUid,
+      business_id: transactionBusinessId,
+      stripe_payment_intent: paymentIntent,
+      total_amount_paid: parseFloat(totalAmount),
+      total_costs: subtotal,
+      total_taxes: parseFloat(processingFee), // 3% processing fee for credit card payments
+      transaction_in_escrow: transactionInEscrow,
+      items: cartItems.map((item) => {
+        const qty = parseInt(item.quantity) || 1;
+        const bountyType = item.itemType === "expertise" ? "per_item" : item.bs_bounty_type || "per_item";
+        const bounty = item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty); // raw rate; backend multiplies by qty for per_item, uses as-is for total
+        return {
+          bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
+          bounty,
+          bounty_type: bountyType,
+          quantity: qty,
+          recommender_profile_id: recommenderProfileId,
+        };
+      }),
+    };
 
-    const businessIds = Object.keys(businessGroups);
-    const subtotalPerBusiness = subtotal / businessIds.length; // proportional split
-    const feePerBusiness = fee / businessIds.length;
-    const totalPerBusiness = total / businessIds.length;
+    console.log("Prepared Transaction Data:", JSON.stringify(transactionData, null, 2));
+    console.log("transaction_in_escrow (sending to backend):", transactionInEscrow);
+    console.log("Subtotal:", subtotal);
+    console.log("Processing Fee (tax):", processingFee);
+    console.log("Total Amount Paid:", totalAmount);
+    console.log("Using recommender profile ID:", recommenderProfileId);
+    console.log("Original recommender from route:", recommender_profile_id);
+    console.log("Transaction business ID:", transactionBusinessId);
+    return transactionData;
+  };
 
-    const businessesPaidBounty = new Set();
+  const recordTransactions = async (buyerUid, paymentIntent, totalAmount = null, processingFee = null, escrowValue = true) => {
+    try {
+      console.log("Recording transactions for items:", cartItems);
 
-    for (const bizId of businessIds) {
-      const items = businessGroups[bizId];
-      const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
+      // Get the buyer's profile ID
+      let buyerProfileId;
+      if (!buyerUid.startsWith("110")) {
+        buyerProfileId = await getProfileId(buyerUid);
+        console.log("Buyer profile ID:", buyerProfileId);
+      } else {
+        buyerProfileId = buyerUid;
+      }
 
-      const transactionData = {
-        profile_id: buyerProfileId,
-        business_id: bizId,
-        stripe_payment_intent: paymentIntent,
-        total_amount_paid: parseFloat(totalPerBusiness.toFixed(2)),
-        total_costs: parseFloat(subtotalPerBusiness.toFixed(2)),
-        total_taxes: parseFloat(feePerBusiness.toFixed(2)),
-        transaction_in_escrow: transactionInEscrow,
-        items: items.map((item) => {
-          const isFirstForBusiness = !businessesPaidBounty.has(bizId);
-          if (isFirstForBusiness) businessesPaidBounty.add(bizId);
+      // Calculate processing fee if not provided (3% for web Stripe payments)
+      const subtotal = calculateTotal();
+      const fee = processingFee !== null ? processingFee : subtotal * 0.03;
+      const total = totalAmount !== null ? totalAmount : subtotal + fee;
 
-          return {
-            bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
-            bounty: isFirstForBusiness
-              ? (item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty))
-              : 0,
-            quantity: parseInt(item.quantity) || 1,
-            recommender_profile_id: isFirstForBusiness
-              ? (item.bounty_recommender_profile_id || "110-000231")
-              : "110-000231",
-          };
-        }),
-      };
-
-      console.log(`Posting transaction for business ${bizId}:`, JSON.stringify(transactionData, null, 2));
-
-      const response = await fetch(TRANSACTIONS_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(transactionData),
+      // Group items by business
+      const businessGroups = {};
+      cartItems.forEach((item) => {
+        const bizId = item.business_uid || item.profile_uid;
+        if (!businessGroups[bizId]) businessGroups[bizId] = [];
+        businessGroups[bizId].push(item);
       });
 
-      console.log(`Response for business ${bizId}:`, response.status);
-      const result = await response.json();
-      console.log(`Result for business ${bizId}:`, JSON.stringify(result, null, 2));
+      const businessIds = Object.keys(businessGroups);
+      const subtotalPerBusiness = subtotal / businessIds.length; // proportional split
+      const feePerBusiness = fee / businessIds.length;
+      const totalPerBusiness = total / businessIds.length;
 
-      if (!response.ok) {
-        throw new Error(`Failed to record transaction for business ${bizId}: ${result.message || "Unknown error"}`);
+      const businessesPaidBounty = new Set();
+
+      for (const bizId of businessIds) {
+        const items = businessGroups[bizId];
+        const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
+
+        const transactionData = {
+          profile_id: buyerProfileId,
+          business_id: bizId,
+          stripe_payment_intent: paymentIntent,
+          total_amount_paid: parseFloat(totalPerBusiness.toFixed(2)),
+          total_costs: parseFloat(subtotalPerBusiness.toFixed(2)),
+          total_taxes: parseFloat(feePerBusiness.toFixed(2)),
+          transaction_in_escrow: transactionInEscrow,
+          items: items.map((item) => {
+            const isFirstForBusiness = !businessesPaidBounty.has(bizId);
+            if (isFirstForBusiness) businessesPaidBounty.add(bizId);
+
+            return {
+              bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
+              bounty: isFirstForBusiness ? (item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty)) : 0,
+              quantity: parseInt(item.quantity) || 1,
+              recommender_profile_id: isFirstForBusiness ? item.bounty_recommender_profile_id || "110-000231" : "110-000231",
+            };
+          }),
+        };
+
+        console.log(`Posting transaction for business ${bizId}:`, JSON.stringify(transactionData, null, 2));
+
+        const response = await fetch(TRANSACTIONS_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(transactionData),
+        });
+
+        console.log("RESPONSE STATUS:", response.status);
+        console.log("RESPONSE OK:", response.ok);
+
+        const result = await response.json();
+        console.log("RESPONSE BODY:", JSON.stringify(result, null, 2));
+        console.log("Transactions recorded:", result);
+
+        if (!response.ok) {
+          throw new Error(`Failed to record transactions for business ${bizId}: ${result.message || "Unknown error"}`);
+        }
       }
+    } catch (error) {
+      console.error("Error recording transactions:", error);
+      throw error;
     }
   };
-  
+
+  // Handle fees dialog continue
   const handleFeesDialogContinue = async () => {
     try {
       setShowFeesDialog(false);
@@ -543,18 +602,18 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
 
     // Native Stripe flow (existing code)
-      try {
-        setLoading(true);
+    try {
+      setLoading(true);
       console.log("Starting checkout process...");
 
-        const initialized = await initializePayment();
+      const initialized = await initializePayment();
       if (!initialized) {
         console.log("Payment initialization failed");
         return;
       }
 
       console.log("Presenting payment sheet...");
-        const result = await presentPaymentSheet();
+      const result = await presentPaymentSheet();
 
       // Log Stripe result structure for debugging
       console.log("Stripe result structure:", {
@@ -563,27 +622,27 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         keys: Object.keys(result),
       });
 
-        if (result.error) {
+      if (result.error) {
         console.error("Payment error:", result.error);
-          Alert.alert("Error", "Payment failed. Please try again.");
-          return;
-        }
+        Alert.alert("Error", "Payment failed. Please try again.");
+        return;
+      }
 
       console.log("Payment successful!");
 
       // For successful payments, Stripe only returns { error: undefined }
       // We need to use the original client secret which contains the payment intent ID
       console.log("Using stored client secret as payment intent:", currentClientSecret);
-        const paymentIntent = currentClientSecret;
+      const paymentIntent = currentClientSecret;
 
       // Get the buyer's ID
-        const buyerUid = await AsyncStorage.getItem("profile_uid");
+      const buyerUid = await AsyncStorage.getItem("profile_uid");
       if (!buyerUid) {
         throw new Error("User ID not found");
       }
 
       // Record the transactions
-        await recordTransactions(buyerUid, paymentIntent, null, null, escrow);
+      await recordTransactions(buyerUid, paymentIntent, null, null, escrow);
 
       // Clear ALL cart data from AsyncStorage
       try {
@@ -614,12 +673,12 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       }
     } catch (error) {
       console.error("Checkout error:", error);
-        Alert.alert("Error", "An error occurred during checkout. Please try again.");
-      } finally {
-        setLoading(false);
-      }
+      Alert.alert("Error", "An error occurred during checkout. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
-  
+
   const content = (
     <View style={styles.container}>
       {/* Header */}
@@ -638,19 +697,15 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                     <Ionicons name='close-circle' size={24} color='#FF3B30' />
                   </TouchableOpacity>
                   <View style={styles.cartItemContent}>
-                    <Text style={styles.itemName}>
-                      {item.itemType === "expertise" ? item.title : item.bs_service_name}
-                    </Text>
-                    <Text style={styles.itemDescription}>
-                      {item.itemType === "expertise" ? item.description : item.bs_service_desc}
-                    </Text>
+                    <Text style={styles.itemName}>{item.itemType === "expertise" ? item.title : item.bs_service_name}</Text>
+                    <Text style={styles.itemDescription}>{item.itemType === "expertise" ? item.description : item.bs_service_desc}</Text>
                     <View style={styles.priceContainer}>
                       <View style={styles.priceRow}>
                         <Text style={styles.priceLabel}>Price:</Text>
                         <Text style={styles.priceValue}>
                           {item.itemType === "expertise"
                             ? `$${parsePrice(item.cost).toFixed(2)}`
-                            : `${(item.bs_cost_currency === "USD" || !item.bs_cost_currency) ? "$" : item.bs_cost_currency + " "}${parsePrice(item.bs_cost).toFixed(2)}`}
+                            : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${parsePrice(item.bs_cost).toFixed(2)}`}
                         </Text>
                       </View>
                       <View style={styles.quantityContainer}>
@@ -670,7 +725,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                         <Text style={styles.totalValue}>
                           {item.itemType === "expertise"
                             ? `$${(parsePrice(item.cost) * (item.quantity || 1)).toFixed(2)}`
-                            : `${(item.bs_cost_currency === "USD" || !item.bs_cost_currency) ? "$" : item.bs_cost_currency + " "}${(parsePrice(item.totalPrice) || parsePrice(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
+                            : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${(parsePrice(item.totalPrice) || parsePrice(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
                         </Text>
                       </View>
                       {(item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty)) > 0 && (
@@ -680,7 +735,9 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                             $
                             {item.itemType === "expertise"
                               ? (parsePrice(item.bounty) * (item.quantity || 1)).toFixed(2)
-                              : (parsePrice(item.bs_bounty) * (item.quantity || 1)).toFixed(2)}
+                              : item.bs_bounty_type === "total"
+                                ? parsePrice(item.bs_bounty).toFixed(2)
+                                : (parsePrice(item.bs_bounty) * (item.quantity || 1)).toFixed(2)}
                           </Text>
                         </View>
                       )}
@@ -705,9 +762,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
               <View style={styles.escrowSection}>
                 <TouchableOpacity style={styles.escrowRow} onPress={() => setEscrow(!escrow)} activeOpacity={0.7}>
-                  <View style={[styles.checkbox, escrow && styles.checkboxChecked]}>
-                    {escrow && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
+                  <View style={[styles.checkbox, escrow && styles.checkboxChecked]}>{escrow && <Text style={styles.checkmark}>✓</Text>}</View>
                   <Text style={styles.escrowLabel}>Escrow</Text>
                   <Ionicons name='information-circle-outline' size={18} color='#666' style={styles.infoIcon} />
                 </TouchableOpacity>
