@@ -459,6 +459,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
         quantity: quantity,
         totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
         bounty_recommender_profile_id: selectedBountyRecipient?.rating_profile_id || null, 
+        business_uid: business_uid,  
+
       };
 
       const existingItemIndex = cartItems.findIndex((item) => item.bs_uid === selectedService.bs_uid);
@@ -477,7 +479,22 @@ export default function BusinessProfileScreen({ route, navigation }) {
         newCartItems = [...cartItems, serviceWithQuantity];
       }
 
+      // Always update ALL items from this business to use the latest selected reviewer
+      if (selectedBountyRecipient?.rating_profile_id) {
+        newCartItems = newCartItems.map((item) => {
+          // if (item.business_uid === business_uid) {
+          if (item.business_uid === business_uid || item.bs_business_id === business_uid) {
+            console.log("Updating bounty recipient for item:", item.bs_uid, "to:", selectedBountyRecipient.rating_profile_id);
+            return { ...item, bounty_recommender_profile_id: selectedBountyRecipient.rating_profile_id };
+          }
+          return item;
+        });
+      }
+
+      console.log("Final cart items recommenders:", newCartItems.map(i => ({ bs_uid: i.bs_uid, recommender: i.bounty_recommender_profile_id })));
+
       setCartItems(newCartItems);
+
       await AsyncStorage.setItem(
         `cart_${business_uid}`,
         JSON.stringify({
@@ -1156,12 +1173,13 @@ export default function BusinessProfileScreen({ route, navigation }) {
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowServices(!showServices)}>
                 <Text style={styles.sectionHeaderText}>PRODUCTS & SERVICES</Text>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  {!isOwner && cartItems.length > 0 && (
+                  {/*checkout from the business*/}
+                  {/* {!isOwner && cartItems.length > 0 && (
                     <TouchableOpacity style={[styles.cartButton, darkMode && styles.darkCartButton]} onPress={handleViewCart}>
                       <Ionicons name='cart' size={24} color={darkMode ? "#fff" : "#9C45F7"} />
                       <Text style={[styles.cartCount, darkMode && styles.darkCartCount]}>{cartItems.length}</Text>
                     </TouchableOpacity>
-                  )}
+                  )} */}
                   <Ionicons name={showServices ? "chevron-up" : "chevron-down"} size={20} color='#000' />
                 </View>
               </TouchableOpacity>

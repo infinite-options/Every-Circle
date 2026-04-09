@@ -1638,13 +1638,13 @@ export default function AccountScreen({ navigation }) {
               <ScrollView style={styles.receiptScrollView} horizontal>
                 <View>
                   <View style={styles.receiptTableHeader}>
-                    <Text style={styles.receiptHeaderCell}>Item ID</Text>
+                    <Text style={styles.receiptHeaderCell}>Item Name </Text>
                     <Text style={styles.receiptHeaderCell}>Qty</Text>
                     <Text style={styles.receiptHeaderCell}>Cost</Text>
                   </View>
                   {receiptData.map((item, index) => (
                     <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
-                      <Text style={styles.receiptTableCell}>{item.ti_bs_id || "N/A"}</Text>
+                      <Text style={styles.receiptTableCell}>{item.bs_service_name || "N/A"}</Text>
                       <Text style={styles.receiptTableCell}>{item.ti_bs_qty ?? "N/A"}</Text>
                       <Text style={styles.receiptTableCell}>${parseFloat(item.ti_bs_cost || 0).toFixed(2)}</Text>
                     </View>
