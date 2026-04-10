@@ -550,15 +550,17 @@ export default function SettingsScreen() {
         // Skip if already notified or explicitly ignored this session
         if (!uid || notifiedUidsRef.current.has(uid) || ignoredNearbyRef.current.has(uid)) return;
 
-        // Secondary client-side receiveFrom filter (Option A: backend sends broadly,
-        // frontend drops messages that don't match the user's preference).
-        // TODO: Once preferences are stored in the DB, move this filter server-side
-        //       so notifications are never sent to uninterested recipients.
+        // Apply receiveFrom filter to ALL notifications.
+        // recipient_in_circles is True only when the recipient has the sender in their
+        // circles WITH an assigned relationship (NULL and '' both treated as unassigned).
+        // This makes notification behaviour consistent with the Who's Nearby list.
+        //
+        // TODO: Once preferences are stored in the DB, move this filter fully server-side.
         const settings = nearbySettingsRef.current;
         if (settings.receiveFrom !== "everyone") {
           const inCircles = data.recipient_in_circles;
           const rel       = data.recipient_relationship;
-          if (!inCircles) return; // sender is not in my circles at all
+          if (!inCircles) return;
           if (settings.receiveFrom === "specific") {
             const activeTypes = Object.keys(settings.receiveFromTypes).filter(k => settings.receiveFromTypes[k]);
             const DB_TYPE_MAP = { friends: "friend", colleagues: "colleague", family: "family" };
