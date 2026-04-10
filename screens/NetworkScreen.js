@@ -333,7 +333,18 @@ const NetworkScreen = ({ navigation }) => {
   const loadNetworkSettings = async () => {
     try {
       console.log("📥 Loading Network screen settings from AsyncStorage...");
-      const [showAsyncStorageValue, degreeValue, viewModeValue, networkDataValue, groupedNetworkValue, activeViewValue, showViewMyNetworkValue, dateFilterValue, locationFilterValue, eventFilterValue] = await Promise.all([
+      const [
+        showAsyncStorageValue,
+        degreeValue,
+        viewModeValue,
+        networkDataValue,
+        groupedNetworkValue,
+        activeViewValue,
+        showViewMyNetworkValue,
+        dateFilterValue,
+        locationFilterValue,
+        eventFilterValue,
+      ] = await Promise.all([
         AsyncStorage.getItem("network_showAsyncStorage"),
         AsyncStorage.getItem("network_degree"),
         AsyncStorage.getItem("network_viewMode"),
@@ -633,7 +644,7 @@ const NetworkScreen = ({ navigation }) => {
         userUid = await AsyncStorage.getItem("user_uid");
         if (userUid) {
           userUid = String(userUid).trim();
-          console.log("NetworkScreen - Fetched user_uid for QR code:", userUid);
+          // console.log("NetworkScreen - Fetched user_uid for QR code:", userUid);
         }
       } catch (e) {
         console.warn("NetworkScreen - Could not fetch user_uid from AsyncStorage:", e);
@@ -713,12 +724,12 @@ const NetworkScreen = ({ navigation }) => {
           // On web, try dynamic import or use Ably from window if available
           if (typeof window !== "undefined" && window.Ably) {
             Ably = window.Ably;
-            console.log("✅ NetworkScreen - Ably loaded from window.Ably (web)");
+            // console.log("✅ NetworkScreen - Ably loaded from window.Ably (web)");
           } else {
             // Try require for web (might work with bundler)
             try {
               Ably = require("ably");
-              console.log("✅ NetworkScreen - Ably module loaded via require (web)");
+              // console.log("✅ NetworkScreen - Ably module loaded via require (web)");
             } catch (requireError) {
               // Try dynamic import for web
               console.warn("⚠️ NetworkScreen - require() failed on web, trying dynamic import");
@@ -728,7 +739,7 @@ const NetworkScreen = ({ navigation }) => {
         } else {
           // On native, use require
           Ably = require("ably");
-          console.log("✅ NetworkScreen - Ably module loaded (native)");
+          // console.log("✅ NetworkScreen - Ably module loaded (native)");
         }
       } catch (e) {
         const errorMessage = e.message || String(e);
@@ -761,8 +772,8 @@ const NetworkScreen = ({ navigation }) => {
 
       // Try multiple sources: app.config extra (loads .env at start), process.env (Expo web), @env (react-native-dotenv)
       const ablyApiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
-      console.log("🔵 NetworkScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
-      console.log("🔵 NetworkScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
+      // console.log("🔵 NetworkScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
+      // console.log("🔵 NetworkScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
       if (!ablyApiKey) {
         console.warn("⚠️ NetworkScreen - Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
         setAblyMessageReceived({
@@ -774,7 +785,7 @@ const NetworkScreen = ({ navigation }) => {
         return;
       }
 
-      console.log("🔵 NetworkScreen - Initializing Ably channel for profile_uid:", profileUid);
+      // console.log("🔵 NetworkScreen - Initializing Ably channel for profile_uid:", profileUid);
 
       // Create Ably client
       const client = new Ably.Realtime({ key: ablyApiKey });
@@ -782,16 +793,16 @@ const NetworkScreen = ({ navigation }) => {
 
       // Create channel name using profile_uid (e.g., /110-000014)
       const channelName = `/${profileUid}`;
-      console.log("🔵 NetworkScreen - Ably Channel Name:", channelName);
+      // console.log("🔵 NetworkScreen - Ably Channel Name:", channelName);
 
       const channel = client.channels.get(channelName);
       setAblyChannel(channel);
 
       // Listen for connection events
-      console.log("🔵 NetworkScreen - Initial connection state:", client.connection.state);
+      // console.log("🔵 NetworkScreen - Initial connection state:", client.connection.state);
 
       client.connection.on("connected", () => {
-        console.log("✅ NetworkScreen - Ably client connected");
+        // console.log("✅ NetworkScreen - Ably client connected");
       });
 
       client.connection.on("disconnected", () => {
@@ -807,15 +818,15 @@ const NetworkScreen = ({ navigation }) => {
       });
 
       // Attach to channel
-      console.log("🔵 NetworkScreen - Initial channel state:", channel.state);
-      console.log("🔵 NetworkScreen - Attaching to channel:", channelName);
+      // console.log("🔵 NetworkScreen - Initial channel state:", channel.state);
+      // console.log("🔵 NetworkScreen - Attaching to channel:", channelName);
 
       channel.attach((err) => {
         if (err) {
           console.error("❌ NetworkScreen - Error attaching to Ably channel:", err);
         } else {
-          console.log("✅ NetworkScreen - Ably channel attached:", channelName);
-          console.log("✅ NetworkScreen - Channel state after attach:", channel.state);
+          // console.log("✅ NetworkScreen - Ably channel attached:", channelName);
+          // console.log("✅ NetworkScreen - Channel state after attach:", channel.state);
           console.log("✅ NetworkScreen - Ready to receive messages on channel:", channelName);
         }
       });
@@ -831,11 +842,11 @@ const NetworkScreen = ({ navigation }) => {
       // Subscribe to messages on this channel
       channel.subscribe("new-connection-opened", async (message) => {
         console.log("📨 NetworkScreen - Received message on channel:", channelName);
-        console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
-        console.log("📨 NetworkScreen - Message name:", message.name);
+        // console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
+        // console.log("📨 NetworkScreen - Message name:", message.name);
 
         if (message.data && message.data.message) {
-          console.log("✅ NetworkScreen -", message.data.message);
+          // console.log("✅ NetworkScreen -", message.data.message);
 
           // Update state to display message info
           setAblyMessageReceived({
@@ -846,10 +857,10 @@ const NetworkScreen = ({ navigation }) => {
           });
 
           // If Form Switch is enabled and we have User 2's profile_uid, navigate to New Connection page
-          console.log("🔵 NetworkScreen - Checking Form Switch:", formSwitchEnabledRef.current, "scanner_profile_uid:", message.data.scanner_profile_uid);
+          // console.log("🔵 NetworkScreen - Checking Form Switch:", formSwitchEnabledRef.current, "scanner_profile_uid:", message.data.scanner_profile_uid);
           if (formSwitchEnabledRef.current && message.data.scanner_profile_uid) {
             const scannerProfileUid = message.data.scanner_profile_uid;
-            console.log("🔵 NetworkScreen - Form Switch is ON, navigating to NewConnection page for User 2:", scannerProfileUid);
+            // console.log("🔵 NetworkScreen - Form Switch is ON, navigating to NewConnection page for User 2:", scannerProfileUid);
             // Defer navigation so it runs in the main React/UI context (fixes iOS where Ably callback can run before navigation is ready)
             InteractionManager.runAfterInteractions(() => {
               navigation.navigate("NewConnection", {
@@ -868,8 +879,8 @@ const NetworkScreen = ({ navigation }) => {
       // Also subscribe to all messages for debugging
       channel.subscribe((message) => {
         console.log("📨 NetworkScreen - Received ANY message on channel:", channelName);
-        console.log("📨 NetworkScreen - Message name:", message.name);
-        console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
+        // console.log("📨 NetworkScreen - Message name:", message.name);
+        // console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
       });
     } catch (error) {
       console.error("❌ NetworkScreen - Error initializing Ably:", error);
@@ -880,7 +891,7 @@ const NetworkScreen = ({ navigation }) => {
   useEffect(() => {
     return () => {
       if (ablyClient) {
-        console.log("🔵 NetworkScreen - Closing Ably connection");
+        // console.log("🔵 NetworkScreen - Closing Ably connection");
         ablyClient.close();
         setAblyClient(null);
         setAblyChannel(null);
@@ -961,7 +972,7 @@ const NetworkScreen = ({ navigation }) => {
       const circleDate = `${year}-${month}-${day}`;
 
       // Handle both old format (just relationship string) and new format (object)
-      const relationship = typeof connectionData === "string" ? connectionData : connectionData?.relationship ?? null;
+      const relationship = typeof connectionData === "string" ? connectionData : (connectionData?.relationship ?? null);
       const event = typeof connectionData === "object" ? connectionData.event || "" : "";
       const note = typeof connectionData === "object" ? connectionData.note || "" : "";
       const city = typeof connectionData === "object" ? connectionData.city || "" : "";
@@ -971,9 +982,7 @@ const NetworkScreen = ({ navigation }) => {
       // Calculate circle_num_nodes
       let circleNumNodes = null;
       try {
-        const pathResponse = await fetch(
-          `${API_BASE_URL}/api/connections_path/${loggedInProfileUID}/${scannedProfileData.profile_uid}`
-        );
+        const pathResponse = await fetch(`${API_BASE_URL}/api/connections_path/${loggedInProfileUID}/${scannedProfileData.profile_uid}`);
         if (pathResponse.ok) {
           const pathData = await pathResponse.json();
           const combinedPath = pathData.combined_path || "";
@@ -1323,8 +1332,8 @@ const NetworkScreen = ({ navigation }) => {
       }
 
       const data = await response.json(); //parse JSON response
-      console.log("✅ Received", data.length, "connections");
-      console.log("✅ Sample data:", data[0]);
+      // console.log("✅ Received", data.length, "connections");
+      // console.log("✅ Sample data:", data[0]);
 
       // Format data - backend now has ALL fields, no need for additional API calls
       const formatted = data.map((node) => ({
@@ -1357,14 +1366,14 @@ const NetworkScreen = ({ navigation }) => {
         },
       }));
 
-      console.log("✅ Formatted sample:", formatted[0]);
+      // console.log("✅ Formatted sample:", formatted[0]);
 
       // Update state
       setNetworkData(formatted);
       setGroupedNetwork(groupByDegree(formatted));
-      console.log("🟢 groupedNetwork keys:", Object.keys(groupByDegree(formatted)));
-      console.log("🟢 formatted length:", formatted.length);
-      console.log("🟢 formatted[0].__mc:", formatted[0]?.__mc);
+      // console.log("🟢 groupedNetwork keys:", Object.keys(groupByDegree(formatted)));
+      // console.log("🟢 formatted length:", formatted.length);
+      // console.log("🟢 formatted[0].__mc:", formatted[0]?.__mc);
 
       // Save for asyncStorage
       try {
@@ -1383,7 +1392,7 @@ const NetworkScreen = ({ navigation }) => {
   };
 
   const fetchCircle = async () => {
-    console.log("🔘 Fetch Circle");
+    // console.log("🔘 Fetch Circle");
     setActiveView("circles");
 
     try {
@@ -1414,7 +1423,7 @@ const NetworkScreen = ({ navigation }) => {
         throw new Error("No profile UID available");
       }
 
-      console.log("Fetching circles for UID:", uid);
+      // console.log("Fetching circles for UID:", uid);
 
       // CORS handling for web
       const fetchOptions =
@@ -1440,12 +1449,12 @@ const NetworkScreen = ({ navigation }) => {
       }
 
       const result = await response.json();
-      console.log("✅ Received circles response:", result);
+      // console.log("✅ Received circles response:", result);
 
       // Check if result has data array
       if (result && result.data && Array.isArray(result.data)) {
         const circles = result.data;
-        console.log("✅ Received", circles.length, "circles");
+        // console.log("✅ Received", circles.length, "circles");
 
         // Circles payload includes profile fields per row — no N+1 profile requests
         const formatted = circles.map((circle) => {
@@ -1527,9 +1536,9 @@ const NetworkScreen = ({ navigation }) => {
 
   /** ✅ Build vis-network HTML (hierarchical layout by degree) */
   const generateVisHTML = (data, youId) => {
-    console.log("🔷 generateVisHTML called with:");
-    console.log("  - youId:", youId);
-    console.log("  - data length:", data.length);
+    // console.log("🔷 generateVisHTML called with:");
+    // console.log("  - youId:", youId);
+    // console.log("  - data length:", data.length);
     console.log(
       "  - data sample (first 3):",
       JSON.stringify(
@@ -1602,7 +1611,7 @@ const NetworkScreen = ({ navigation }) => {
     });
 
     const edges = [];
-    console.log("🔷 Building edges...");
+    // console.log("🔷 Building edges...");
     data.forEach((n) => {
       const deg = Number(n.degree) || 1;
       const nodeUid = n.network_profile_personal_uid;
