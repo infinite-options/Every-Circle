@@ -71,6 +71,8 @@ import ConnectScreen from "./screens/ConnectScreen";
 import ConnectWebScreen from "./screens/ConnectWebScreen";
 import NewConnectionScreen from "./screens/NewConnectionScreen";
 import QRScannerScreen from "./screens/QRScannerScreen";
+import InboxScreen from "./screens/InboxScreen";
+import ChatScreen from "./screens/ChatScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -1010,10 +1012,25 @@ export default function App() {
         },
         Login: "login",
         SignUp: "signup",
-        Profile: "profile",
+        Profile: {
+          path: "profile",
+          parse: {
+            profile_uid: (v) => v,
+          },
+        },
         Network: "network",
         Search: "search",
         Settings: "settings",
+        Inbox: "inbox",
+        Chat: {
+          path: "chat",
+          parse: {
+            conversation_uid: (v) => v,
+            other_uid: (v) => v,
+            other_name: (v) => v,
+            other_image: (v) => v,
+          },
+        },
       },
     },
   };
@@ -1134,6 +1151,8 @@ export default function App() {
             <Stack.Screen name='Connect' component={ConnectScreenWrapper} />
             <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
             <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
+            <Stack.Screen name='Inbox' component={InboxScreen} />
+            <Stack.Screen name='Chat' component={ChatScreen} />
           </Stack.Navigator>
         </NavigationContainer>
         </View>
