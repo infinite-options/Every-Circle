@@ -312,11 +312,15 @@ const NetworkScreen = ({ navigation }) => {
   const [graphHtml, setGraphHtml] = useState(""); // For web iframe
   const iframeContainerRef = React.useRef(null); // Ref for web iframe container
   const [activeView, setActiveView] = useState("connections"); // "connections" or "circles" - default to connections
+  const activeViewRef = React.useRef(activeView);
+  activeViewRef.current = activeView;
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [scannedProfileData, setScannedProfileData] = useState(null);
   const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
-  const [showViewMyNetwork, setShowViewMyNetwork] = useState(false);
+  const [showViewMyNetwork, setShowViewMyNetwork] = useState(true);
+  /** Bumped on each screen focus so debounced fetch runs once per visit (avoids duplicate immediate refetch). */
+  const [focusTick, setFocusTick] = useState(0);
   const [showFilterPopup, setShowFilterPopup] = useState(false);
   const [expandedDegrees, setExpandedDegrees] = useState({}); // { [deg]: boolean } - undefined/true = expanded
 
@@ -329,13 +333,14 @@ const NetworkScreen = ({ navigation }) => {
   const loadNetworkSettings = async () => {
     try {
       console.log("📥 Loading Network screen settings from AsyncStorage...");
-      const [showAsyncStorageValue, degreeValue, viewModeValue, networkDataValue, groupedNetworkValue, activeViewValue, dateFilterValue, locationFilterValue, eventFilterValue] = await Promise.all([
+      const [showAsyncStorageValue, degreeValue, viewModeValue, networkDataValue, groupedNetworkValue, activeViewValue, showViewMyNetworkValue, dateFilterValue, locationFilterValue, eventFilterValue] = await Promise.all([
         AsyncStorage.getItem("network_showAsyncStorage"),
         AsyncStorage.getItem("network_degree"),
         AsyncStorage.getItem("network_viewMode"),
         AsyncStorage.getItem("network_data"),
         AsyncStorage.getItem("network_grouped"),
         AsyncStorage.getItem("network_activeView"),
+        AsyncStorage.getItem("network_showViewMyNetwork"),
         AsyncStorage.getItem("network_dateFilter"),
         AsyncStorage.getItem("network_locationFilter"),
         AsyncStorage.getItem("network_eventFilter"),
@@ -422,6 +427,14 @@ const NetworkScreen = ({ navigation }) => {
         console.log("📥 No persisted activeView, using default: connections");
       }
 
+      if (showViewMyNetworkValue !== null) {
+        try {
+          setShowViewMyNetwork(JSON.parse(showViewMyNetworkValue) === true);
+        } catch (e) {
+          /* keep state */
+        }
+      }
+
       // Mark settings as loaded so we can start saving changes
       setSettingsLoaded(true);
       console.log("✅ Settings loaded, now tracking changes for persistence");
@@ -445,11 +458,13 @@ const NetworkScreen = ({ navigation }) => {
           showAsyncStorage,
           degree,
           viewMode,
+          showViewMyNetwork,
         });
         await Promise.all([
           AsyncStorage.setItem("network_showAsyncStorage", JSON.stringify(showAsyncStorage)),
           AsyncStorage.setItem("network_degree", degree),
           AsyncStorage.setItem("network_viewMode", viewMode),
+          AsyncStorage.setItem("network_showViewMyNetwork", JSON.stringify(showViewMyNetwork)),
           AsyncStorage.setItem("network_dateFilter", dateFilter),
           AsyncStorage.setItem("network_locationFilter", locationFilter),
           AsyncStorage.setItem("network_eventFilter", eventFilter),
@@ -460,22 +475,21 @@ const NetworkScreen = ({ navigation }) => {
       }
     };
     saveSettings();
-  }, [showAsyncStorage, degree, viewMode, dateFilter, locationFilter, eventFilter, settingsLoaded]);
+  }, [showAsyncStorage, degree, viewMode, showViewMyNetwork, dateFilter, locationFilter, eventFilter, settingsLoaded]);
 
-  // Auto-refresh connections when Levels to Display (degree) changes - no need to click Show Connections
-  // Only applies when viewing Connections (not Circles)
+  // Debounced GET /api/network: settings ready, panel open, connections view, and on focus (focusTick) or degree change.
+  // useFocusEffect no longer calls fetchNetwork — avoids duplicate with this effect. activeView via ref so Circles→Connections does not schedule twice.
   useEffect(() => {
-    if (!settingsLoaded || !showViewMyNetwork || activeView !== "connections") return;
+    if (!settingsLoaded || !showViewMyNetwork || activeViewRef.current !== "connections") return;
     const deg = String(degree || "").trim();
     if (!deg || Number(deg) < 1) return;
 
     const timer = setTimeout(() => {
-      setActiveView("connections");
       fetchNetwork(null, deg);
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [degree, settingsLoaded, showViewMyNetwork, activeView]);
+  }, [degree, settingsLoaded, showViewMyNetwork, focusTick]);
 
   // Extract unique events from network data
   useEffect(() => {
@@ -578,56 +592,33 @@ const NetworkScreen = ({ navigation }) => {
     loadAsyncStorage();
   }, []);
 
-  // Load settings when screen is focused
+  // Load settings when screen is focused; bump focusTick so debounced effect runs one /api/network fetch.
   useFocusEffect(
     React.useCallback(() => {
-      console.log("🔄 Network screen focused - loading settings...");
+      console.log("Network screen focused - loading settings...");
       loadNetworkSettings();
+      setFocusTick((t) => t + 1);
 
-      // Refetch network data when screen is focused to get updated relationship information
-      // This ensures relationship changes are reflected immediately
-      const refetchNetworkData = async () => {
+      const syncProfileUidFromStorage = async () => {
         let currentProfileUid = await AsyncStorage.getItem("profile_uid");
-        // Ensure currentProfileUid is always a string
         if (currentProfileUid) {
           try {
-            // Try to parse if it's JSON, but ensure it's a string
             const parsed = JSON.parse(currentProfileUid);
             currentProfileUid = typeof parsed === "string" ? parsed : String(parsed);
           } catch (e) {
-            // Not JSON, use as string
             currentProfileUid = String(currentProfileUid).trim();
           }
         } else {
           currentProfileUid = "";
         }
         if (currentProfileUid && currentProfileUid !== profileUid) {
-          console.log("🔄 Updating profileUid from AsyncStorage:", currentProfileUid);
+          console.log("Updating profileUid from AsyncStorage:", currentProfileUid);
           setProfileUid(currentProfileUid);
         }
-        const currentDegree = (await AsyncStorage.getItem("network_degree")) || "2";
-        const hasNetworkData = await AsyncStorage.getItem("network_data");
-        const currentActiveView = (await AsyncStorage.getItem("network_activeView")) || "connections";
-
-        // Only refetch if we have network data already (user has fetched before)
-        if (currentProfileUid && hasNetworkData) {
-          console.log("🔄 Refetching network data to get updated relationships (activeView:", currentActiveView, ")...");
-          if (currentActiveView === "circles") {
-            fetchCircle();
-          } else {
-            if (currentDegree) fetchNetwork(currentProfileUid, currentDegree);
-          }
-        }
       };
-      refetchNetworkData();
+      syncProfileUidFromStorage();
     }, []),
   );
-
-  // Also load settings on initial mount
-  useEffect(() => {
-    console.log("🔄 Network screen mounted - loading settings...");
-    loadNetworkSettings();
-  }, []);
 
   // Fetch user profile data to create QR code with public miniCard info
   const fetchUserProfileForQR = async (profileUID) => {
@@ -1456,62 +1447,47 @@ const NetworkScreen = ({ navigation }) => {
         const circles = result.data;
         console.log("✅ Received", circles.length, "circles");
 
-        // For circles, we need to fetch profile info for each circle_related_person_id
-        const formatted = await Promise.all(
-          circles.map(async (circle) => {
-            try {
-              // Fetch profile info for the related person
-              const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${circle.circle_related_person_id}`);
-              if (profileResponse.ok) {
-                const apiUser = await profileResponse.json();
-                const p = apiUser?.personal_info || {};
-                return {
-                  ...circle,
-                  __mc: {
-                    firstName: sanitizeText(p.profile_personal_first_name || ""),
-                    lastName: sanitizeText(p.profile_personal_last_name || ""),
-                    tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || ""),
-                    city: sanitizeText(p.profile_personal_city || ""),
-                    state: sanitizeText(p.profile_personal_state || ""),
-                    phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
-                    profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-                    relationship: circle.circle_relationship || null,
-                    emailIsPublic: p.profile_personal_email_is_public === 1,
-                    phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
-                    tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
-                    locationIsPublic: p.profile_personal_location_is_public === 1,
-                    imageIsPublic: p.profile_personal_image_is_public === 1,
-                    personal_info: {
-                      profile_personal_first_name: sanitizeText(p.profile_personal_first_name || ""),
-                      profile_personal_last_name: sanitizeText(p.profile_personal_last_name || ""),
-                      profile_personal_tag_line: sanitizeText(p.profile_personal_tag_line || ""),
-                      profile_personal_phone_number: sanitizeText(p.profile_personal_phone_number || ""),
-                      profile_personal_image: sanitizeText(p.profile_personal_image || ""),
-                      profile_personal_email_is_public: p.profile_personal_email_is_public || 0,
-                      profile_personal_phone_number_is_public: p.profile_personal_phone_number_is_public || 0,
-                      profile_personal_tag_line_is_public: p.profile_personal_tag_line_is_public || 0,
-                      profile_personal_image_is_public: p.profile_personal_image_is_public || 0,
-                    },
-                  },
-                  network_profile_personal_uid: circle.circle_related_person_id,
-                };
-              }
-            } catch (err) {
-              console.error(`Error fetching profile for circle ${circle.circle_related_person_id}:`, err);
-            }
-            // Return circle data even if profile fetch fails
-            return {
-              ...circle,
-              __mc: {
-                firstName: "",
-                lastName: "",
-                tagLine: "",
-                relationship: circle.circle_relationship || null,
+        // Circles payload includes profile fields per row — no N+1 profile requests
+        const formatted = circles.map((circle) => {
+          const p = circle;
+          const tagLineRaw = p.profile_personal_tag_line || p.profile_personal_tagline || "";
+          const emailRaw = p.user_email_id ?? p.user_email ?? "";
+          return {
+            ...circle,
+            __mc: {
+              firstName: sanitizeText(p.profile_personal_first_name || ""),
+              lastName: sanitizeText(p.profile_personal_last_name || ""),
+              tagLine: sanitizeText(tagLineRaw || ""),
+              city: sanitizeText(p.profile_personal_city || ""),
+              state: sanitizeText(p.profile_personal_state || ""),
+              email: sanitizeText(emailRaw || ""),
+              phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+              profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
+              relationship: circle.circle_relationship || null,
+              emailIsPublic: p.profile_personal_email_is_public === 1,
+              phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
+              tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
+              locationIsPublic: p.profile_personal_location_is_public === 1,
+              imageIsPublic: p.profile_personal_image_is_public === 1,
+              personal_info: {
+                profile_personal_first_name: sanitizeText(p.profile_personal_first_name || ""),
+                profile_personal_last_name: sanitizeText(p.profile_personal_last_name || ""),
+                profile_personal_tag_line: sanitizeText(tagLineRaw || ""),
+                profile_personal_tagline: sanitizeText(tagLineRaw || ""),
+                profile_personal_phone_number: sanitizeText(p.profile_personal_phone_number || ""),
+                profile_personal_image: sanitizeText(p.profile_personal_image || ""),
+                profile_personal_city: sanitizeText(p.profile_personal_city || ""),
+                profile_personal_state: sanitizeText(p.profile_personal_state || ""),
+                profile_personal_email_is_public: p.profile_personal_email_is_public || 0,
+                profile_personal_phone_number_is_public: p.profile_personal_phone_number_is_public || 0,
+                profile_personal_tag_line_is_public: p.profile_personal_tag_line_is_public || p.profile_personal_tagline_is_public || 0,
+                profile_personal_image_is_public: p.profile_personal_image_is_public || 0,
+                profile_personal_location_is_public: p.profile_personal_location_is_public || 0,
               },
-              network_profile_personal_uid: circle.circle_related_person_id,
-            };
-          }),
-        );
+            },
+            network_profile_personal_uid: circle.circle_related_person_id || circle.profile_personal_uid,
+          };
+        });
 
         // Update state with circles data
         setNetworkData(formatted);
@@ -2091,7 +2067,6 @@ const NetworkScreen = ({ navigation }) => {
                       setDegree("3");
                       setViewMode("list");
                       setActiveView("connections");
-                      fetchNetwork(null, "3");
                     }
                   }}
                   activeOpacity={0.7}
@@ -2138,7 +2113,6 @@ const NetworkScreen = ({ navigation }) => {
                             if (activeView === "connections") {
                               fetchCircle();
                             } else {
-                              setActiveView("connections");
                               fetchNetwork(null, degree);
                             }
                           }}
