@@ -84,6 +84,19 @@ const LOCATION_EXPIRY_HOURS = 1; // how long a manually-set location stays fresh
 // AsyncStorage key for ignored nearby UIDs (cleared when the sharing session ends)
 const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
 
+// AsyncStorage key for share / receive notification preferences
+const NEARBY_SETTINGS_KEY = "nearby_share_settings";
+
+// Default settings — mirrors the backend's default behaviour (all_circles for both)
+const DEFAULT_NEARBY_SETTINGS = {
+  shareWith:         "all_circles",  // 'everyone' | 'all_circles' | 'specific'
+  shareWithTypes:    { friends: true, colleagues: true, family: true },
+  receiveFrom:       "all_circles",  // 'everyone' | 'all_circles' | 'specific'
+  receiveFromTypes:  { friends: true, colleagues: true, family: true },
+  // TODO: Persist these settings to the DB so they can be enforced server-side
+  //       and survive across devices/sessions without relying on AsyncStorage alone.
+};
+
 // --- Live location sharing constants ---
 const SHARE_LOCATION_DURATION_HOURS  = 1;  // how long a sharing session lasts
 const SHARE_LOCATION_DISTANCE_METERS = 50; // min movement before watcher fires a callback
@@ -121,6 +134,7 @@ export default function SettingsScreen() {
   const [locationUpdating, setLocationUpdating] = useState(null); // key of option being saved
   const [storedCoords, setStoredCoords] = useState({ lat: null, lng: null, updatedAt: null });
   const [nearbyResultsVisible, setNearbyResultsVisible] = useState(false);
+  const [nearbyPrivacyModalVisible, setNearbyPrivacyModalVisible] = useState(false);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyUsers, setNearbyUsers] = useState([]);
   const [nearbyError, setNearbyError] = useState(null);
@@ -138,6 +152,10 @@ export default function SettingsScreen() {
   // Ignored nearby UIDs — persisted in AsyncStorage for the duration of the sharing session
   const ignoredNearbyRef   = useRef(new Set()); // ref for use inside callbacks
   const [ignoredNearbyUids, setIgnoredNearbyUids] = useState(new Set()); // state for reactive rendering
+
+  // Nearby share / receive settings — ref for callbacks, state for rendering
+  const nearbySettingsRef = useRef(DEFAULT_NEARBY_SETTINGS);
+  const [nearbySettings, setNearbySettings] = useState(DEFAULT_NEARBY_SETTINGS);
 
   // In-app nearby banner
   const [nearbyAlert, setNearbyAlert] = useState(null); // { sender_uid, sender_name, sender_image, distance_miles }
@@ -169,6 +187,16 @@ export default function SettingsScreen() {
           const s = new Set(uids);
           ignoredNearbyRef.current = s;
           setIgnoredNearbyUids(new Set(s));
+        }
+      } catch (_) {}
+
+      // Restore nearby share / receive settings
+      try {
+        const storedSettings = await AsyncStorage.getItem(NEARBY_SETTINGS_KEY);
+        if (storedSettings) {
+          const parsed = JSON.parse(storedSettings);
+          nearbySettingsRef.current = parsed;
+          setNearbySettings(parsed);
         }
       } catch (_) {}
 
@@ -472,11 +500,21 @@ export default function SettingsScreen() {
   // Shared PATCH helper used by both manual picker and live watcher
   const patchNearbyLocation = async (profileId, lat, lng, liveSharing = false) => {
     const { NEARBY_LOCATION_ENDPOINT } = require("../apiConfig");
+    const settings = nearbySettingsRef.current;
     try {
       const response = await fetch(NEARBY_LOCATION_ENDPOINT, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile_uid: profileId, lat, lng, live_sharing: liveSharing }),
+        body: JSON.stringify({
+          profile_uid:         profileId,
+          lat,
+          lng,
+          live_sharing:        liveSharing,
+          share_with:          settings.shareWith,
+          share_with_types:    Object.keys(settings.shareWithTypes).filter(k => settings.shareWithTypes[k]),
+          receive_from:        settings.receiveFrom,
+          receive_from_types:  Object.keys(settings.receiveFromTypes).filter(k => settings.receiveFromTypes[k]),
+        }),
       });
       const result = await response.json();
       if (result.code === 200) {
@@ -508,8 +546,27 @@ export default function SettingsScreen() {
       channel.subscribe("nearby-alert", (msg) => {
         const data = msg.data || {};
         const uid  = data.sender_uid;
+
         // Skip if already notified or explicitly ignored this session
         if (!uid || notifiedUidsRef.current.has(uid) || ignoredNearbyRef.current.has(uid)) return;
+
+        // Secondary client-side receiveFrom filter (Option A: backend sends broadly,
+        // frontend drops messages that don't match the user's preference).
+        // TODO: Once preferences are stored in the DB, move this filter server-side
+        //       so notifications are never sent to uninterested recipients.
+        const settings = nearbySettingsRef.current;
+        if (settings.receiveFrom !== "everyone") {
+          const inCircles = data.recipient_in_circles;
+          const rel       = data.recipient_relationship;
+          if (!inCircles) return; // sender is not in my circles at all
+          if (settings.receiveFrom === "specific") {
+            const activeTypes = Object.keys(settings.receiveFromTypes).filter(k => settings.receiveFromTypes[k]);
+            const DB_TYPE_MAP = { friends: "friend", colleagues: "colleague", family: "family" };
+            const dbTypes = activeTypes.map(t => DB_TYPE_MAP[t] || t);
+            if (!rel || !dbTypes.includes(rel)) return;
+          }
+        }
+
         notifiedUidsRef.current.add(uid);
         setNearbyAlert({
           sender_uid:     uid,
@@ -565,6 +622,15 @@ export default function SettingsScreen() {
     setIgnoredNearbyUids(new Set(next));
     try {
       await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next]));
+    } catch (_) {}
+  };
+
+  // Persist updated nearby share/receive settings
+  const updateNearbySettings = async (newSettings) => {
+    nearbySettingsRef.current = newSettings;
+    setNearbySettings(newSettings);
+    try {
+      await AsyncStorage.setItem(NEARBY_SETTINGS_KEY, JSON.stringify(newSettings));
     } catch (_) {}
   };
 
@@ -730,13 +796,20 @@ export default function SettingsScreen() {
       return;
     }
 
+    const settings = nearbySettingsRef.current;
+    let nearbyUrl = `${NEARBY_USERS_ENDPOINT}/${profileId}?mode=${settings.receiveFrom}`;
+    if (settings.receiveFrom === "specific") {
+      const types = Object.keys(settings.receiveFromTypes).filter(k => settings.receiveFromTypes[k]);
+      if (types.length > 0) nearbyUrl += `&types=${types.join(",")}`;
+    }
+
     setNearbyLoading(true);
     setNearbyError(null);
     setNearbyUsers([]);
     setNearbyResultsVisible(true);
 
     try {
-      const response = await fetch(`${NEARBY_USERS_ENDPOINT}/${profileId}`);
+      const response = await fetch(nearbyUrl);
       const result = await response.json();
 
       if (result.code === 200) {
@@ -905,6 +978,33 @@ export default function SettingsScreen() {
                 activeTrackColor={COLORS.switchTrackActive}
               />
             </View>
+
+            {/* Location Privacy — opens modal */}
+            {(() => {
+              const PRIVACY_LABEL = { everyone: "Everyone", all_circles: "All Circles", specific: "Specific" };
+              const shareLabel   = PRIVACY_LABEL[nearbySettings.shareWith]   || nearbySettings.shareWith;
+              const receiveLabel = PRIVACY_LABEL[nearbySettings.receiveFrom] || nearbySettings.receiveFrom;
+              return (
+                <TouchableOpacity
+                  style={[styles.settingItem, darkMode && styles.darkSettingItem]}
+                  onPress={() => setNearbyPrivacyModalVisible(true)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
+                    <Ionicons name="shield-checkmark-outline" size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                    <View>
+                      <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                        <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Location Privacy</Text>
+                      </Text>
+                      <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
+                        Share: {shareLabel} · Receive: {receiveLabel}
+                      </Text>
+                    </View>
+                  </View>
+                  <MaterialIcons name="chevron-right" size={22} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                </TouchableOpacity>
+              );
+            })()}
           </View>
           )}
 
@@ -1044,6 +1144,143 @@ export default function SettingsScreen() {
               disabled={locationUpdating !== null}
             >
               <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Location Privacy Modal */}
+      <Modal
+        visible={nearbyPrivacyModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setNearbyPrivacyModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox]}>
+            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Location Privacy</Text>
+            <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>
+              Control who can see your location and who you get notified about.
+            </Text>
+
+            {/* ── SHARE MY LOCATION WITH ── */}
+            <Text style={[styles.nearbyPrivacyGroupLabel, darkMode && styles.darkItemText, { marginTop: 8 }]}>
+              Share My Location With
+            </Text>
+            {[
+              { key: "everyone",    label: "Everyone (all app users)" },
+              { key: "all_circles", label: "All Circle Members" },
+              { key: "specific",    label: "Specific Types", disabled: true },
+            ].map(({ key, label, disabled }) => (
+              <TouchableOpacity
+                key={key}
+                style={[styles.nearbyPrivacyOptionRow, disabled && { opacity: 0.38 }]}
+                onPress={() => !disabled && updateNearbySettings({ ...nearbySettings, shareWith: key })}
+                activeOpacity={disabled ? 1 : 0.7}
+              >
+                <Ionicons
+                  name={nearbySettings.shareWith === key ? "radio-button-on" : "radio-button-off"}
+                  size={18}
+                  color={COLORS.primary}
+                  style={{ marginRight: 10 }}
+                />
+                <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>
+                  {label}{disabled ? "  (coming soon)" : ""}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            {nearbySettings.shareWith === "specific" && (
+              <View style={styles.nearbyPrivacyCheckboxGroup}>
+                {[
+                  { key: "friends",    label: "Friends" },
+                  { key: "colleagues", label: "Colleagues" },
+                  { key: "family",     label: "Family" },
+                ].map(({ key, label }) => (
+                  <TouchableOpacity
+                    key={key}
+                    style={styles.nearbyPrivacyCheckboxRow}
+                    onPress={() =>
+                      updateNearbySettings({
+                        ...nearbySettings,
+                        shareWithTypes: { ...nearbySettings.shareWithTypes, [key]: !nearbySettings.shareWithTypes[key] },
+                      })
+                    }
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={nearbySettings.shareWithTypes[key] ? "checkbox" : "square-outline"}
+                      size={17}
+                      color={COLORS.primary}
+                      style={{ marginRight: 10 }}
+                    />
+                    <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* ── RECEIVE NOTIFICATIONS FROM ── */}
+            <View style={[styles.nearbyPrivacyDivider, darkMode && { borderBottomColor: "#555" }]} />
+            <Text style={[styles.nearbyPrivacyGroupLabel, darkMode && styles.darkItemText]}>
+              Receive Notifications From
+            </Text>
+            {[
+              { key: "everyone",    label: "Everyone (all app users)" },
+              { key: "all_circles", label: "All Circle Members" },
+              { key: "specific",    label: "Specific Types", disabled: true },
+            ].map(({ key, label, disabled }) => (
+              <TouchableOpacity
+                key={key}
+                style={[styles.nearbyPrivacyOptionRow, disabled && { opacity: 0.38 }]}
+                onPress={() => !disabled && updateNearbySettings({ ...nearbySettings, receiveFrom: key })}
+                activeOpacity={disabled ? 1 : 0.7}
+              >
+                <Ionicons
+                  name={nearbySettings.receiveFrom === key ? "radio-button-on" : "radio-button-off"}
+                  size={18}
+                  color={COLORS.primary}
+                  style={{ marginRight: 10 }}
+                />
+                <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>
+                  {label}{disabled ? "  (coming soon)" : ""}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            {nearbySettings.receiveFrom === "specific" && (
+              <View style={styles.nearbyPrivacyCheckboxGroup}>
+                {[
+                  { key: "friends",    label: "Friends" },
+                  { key: "colleagues", label: "Colleagues" },
+                  { key: "family",     label: "Family" },
+                ].map(({ key, label }) => (
+                  <TouchableOpacity
+                    key={key}
+                    style={styles.nearbyPrivacyCheckboxRow}
+                    onPress={() =>
+                      updateNearbySettings({
+                        ...nearbySettings,
+                        receiveFromTypes: { ...nearbySettings.receiveFromTypes, [key]: !nearbySettings.receiveFromTypes[key] },
+                      })
+                    }
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={nearbySettings.receiveFromTypes[key] ? "checkbox" : "square-outline"}
+                      size={17}
+                      color={COLORS.primary}
+                      style={{ marginRight: 10 }}
+                    />
+                    <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            <TouchableOpacity
+              onPress={() => setNearbyPrivacyModalVisible(false)}
+              style={[styles.closeModalButton, { marginTop: 20, alignSelf: "stretch" }]}
+            >
+              <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Done</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1707,5 +1944,41 @@ const styles = StyleSheet.create({
   ignoredName: {
     textDecorationLine: "line-through",
     color: "#999",
+  },
+
+  // ── Nearby privacy settings matrix (used inside modal) ───────────────────
+  nearbyPrivacyGroupLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#555",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  nearbyPrivacyOptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 5,
+    paddingLeft: 4,
+  },
+  nearbyPrivacyOptionText: {
+    fontSize: 14,
+    color: "#333",
+  },
+  nearbyPrivacyCheckboxGroup: {
+    paddingLeft: 28,
+    marginTop: 2,
+    marginBottom: 4,
+  },
+  nearbyPrivacyCheckboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 4,
+  },
+  nearbyPrivacyDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    marginVertical: 10,
   },
 });
