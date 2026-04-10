@@ -50,7 +50,7 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
             </TouchableOpacity>
           </>
         ) : (
-          // Regular Navigation: Connect, Profile, Account, Settings, Search
+          // Regular Navigation: Connect, Profile, Account, Settings, Search, Inbox
           <>
             <TouchableOpacity
               style={styles.navButton}
@@ -81,6 +81,16 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
             <TouchableOpacity style={styles.navButton} onPress={() => handleNavigate("Search")}>
               <Image source={require("../assets/search.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
               {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Search</Text> */}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.navButton} onPress={() => handleNavigate("Inbox")}>
+              <Ionicons
+                name="chatbubble-ellipses-outline"
+                size={26}
+                color={darkMode ? "#ffffff" : "#222222"}
+                style={styles.navIcon}
+              />
+              {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Inbox</Text> */}
             </TouchableOpacity>
           </>
         )}

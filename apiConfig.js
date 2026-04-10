@@ -68,6 +68,14 @@ export const PROFILE_WISH_INFO_ENDPOINT = `${API_BASE_URL}/api/profilewishinfo`;
 // Circles Endpoint
 export const CIRCLES_ENDPOINT = `${API_BASE_URL}/api/v1/circles`;
 
+// Nearby Network Endpoints
+export const NEARBY_LOCATION_ENDPOINT = `${API_BASE_URL}/api/v1/nearby/location`;
+export const NEARBY_USERS_ENDPOINT = `${API_BASE_URL}/api/v1/nearby`;
+
+// Chat Endpoints
+export const CHAT_CONVERSATIONS_ENDPOINT = `${API_BASE_URL}/api/v1/chat/conversations`;
+export const CHAT_MESSAGES_ENDPOINT = `${API_BASE_URL}/api/v1/chat/messages`;
+
 console.log("API Configuration loaded");
 // console.log("Base URL:", API_BASE_URL);
 // console.log("Legacy Base URL:", API_BASE_URL);

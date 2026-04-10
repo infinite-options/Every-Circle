@@ -667,36 +667,53 @@ const ProfileScreen = ({ route, navigation }) => {
         return;
       }
 
-      // If a relationship already exists (circleUid exists), use PUT to update
+      // If a relationship already exists (circleUid exists), DELETE or PUT depending on selection
       if (circleUid) {
-        const updateEndpoint = `${CIRCLES_ENDPOINT}/${circleUid}`;
-        const updateRequestBody = {
-          circle_relationship: relationship, // This will be null if "None" is selected
-        };
+        const circleEndpoint = `${CIRCLES_ENDPOINT}/${circleUid}`;
+
+        if (relationship === null) {
+          // "Select None" — remove the connection entirely
+          console.log("ProfileScreen - ============================================");
+          console.log("ProfileScreen - MAKING API CALL: CIRCLES (DELETE — remove connection)");
+          console.log("ProfileScreen - URL:", circleEndpoint);
+          console.log("ProfileScreen - METHOD: DELETE");
+          console.log("ProfileScreen - circleUid:", circleUid);
+          console.log("ProfileScreen - ============================================");
+
+          const response = await fetch(circleEndpoint, { method: "DELETE" });
+
+          console.log("ProfileScreen - DELETE RESPONSE STATUS:", response.status);
+          const result = await response.json();
+          console.log("ProfileScreen - DELETE RESPONSE BODY:", JSON.stringify(result, null, 2));
+
+          if (!response.ok) {
+            throw new Error(result.message || "Failed to remove connection");
+          }
+
+          // Clear both relationship and circleUid — the row no longer exists
+          setRelationshipType(null);
+          setCircleUid(null);
+          Alert.alert("Success", "Connection removed");
+          return; // skip the refresh below — there is no circle row to re-fetch
+        }
+
+        // Changing to a different relationship label — use PUT
+        const updateRequestBody = { circle_relationship: relationship };
 
         console.log("ProfileScreen - ============================================");
         console.log("ProfileScreen - MAKING API CALL: CIRCLES (UPDATE)");
-        console.log("ProfileScreen - URL:", updateEndpoint);
+        console.log("ProfileScreen - URL:", circleEndpoint);
         console.log("ProfileScreen - METHOD: PUT");
         console.log("ProfileScreen - REQUEST BODY:", JSON.stringify(updateRequestBody, null, 2));
-        console.log("ProfileScreen - CIRCLES_ENDPOINT:", CIRCLES_ENDPOINT);
-        console.log("ProfileScreen - circleUid:", circleUid);
         console.log("ProfileScreen - ============================================");
 
-        const response = await fetch(updateEndpoint, {
+        const response = await fetch(circleEndpoint, {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updateRequestBody),
         });
 
-        console.log("ProfileScreen - API CALL COMPLETED");
-        console.log("ProfileScreen - Response status:", response.status);
-
         console.log("ProfileScreen - UPDATE RESPONSE STATUS:", response.status);
-        console.log("ProfileScreen - UPDATE RESPONSE OK:", response.ok);
-
         const result = await response.json();
         console.log("ProfileScreen - UPDATE RESPONSE BODY:", JSON.stringify(result, null, 2));
 
@@ -704,11 +721,8 @@ const ProfileScreen = ({ route, navigation }) => {
           throw new Error(result.message || "Failed to update relationship");
         }
 
-        console.log("ProfileScreen - Relationship updated successfully");
-        // Update state immediately for better UX
         setRelationshipType(relationship);
-        const successMessage = relationship === null ? "Relationship removed" : `Relationship updated to ${relationship.charAt(0).toUpperCase() + relationship.slice(1)}!`;
-        Alert.alert("Success", successMessage);
+        Alert.alert("Success", `Relationship updated to ${relationship.charAt(0).toUpperCase() + relationship.slice(1)}!`);
       } else if (relationship !== null) {
         // No existing relationship, create new one with POST
         // Format current date (YYYY-MM-DD)
@@ -1247,6 +1261,24 @@ const ProfileScreen = ({ route, navigation }) => {
               profileImage: isCurrentUserProfile || user.imageIsPublic ? user.profileImage : "",
             }}
           />
+
+          {/* Message button — only when viewing someone else's profile */}
+          {routeProfileUID && !isCurrentUserProfile && (
+            <TouchableOpacity
+              style={styles.chatButton}
+              activeOpacity={0.8}
+              onPress={() =>
+                navigation.navigate("Chat", {
+                  other_uid: profileUID,
+                  other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
+                  other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
+                })
+              }
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={17} color="#fff" style={{ marginRight: 7 }} />
+              <Text style={styles.chatButtonText}>Message</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Bio section */}
           {user.shortBioIsPublic && (
@@ -1930,6 +1962,23 @@ const styles = StyleSheet.create({
   },
   darkSeekingMetaText: {
     color: "#999",
+  },
+  chatButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    backgroundColor: "#AF52DE",
+    paddingVertical: 10,
+    paddingHorizontal: 28,
+    borderRadius: 24,
+    marginTop: 14,
+    marginBottom: 4,
+  },
+  chatButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 15,
   },
   sectionHeader: {
     flexDirection: "row",
