@@ -150,12 +150,12 @@ const ProfileScreen = ({ route, navigation }) => {
 
   async function fetchUserData(profileUID) {
     try {
-      console.log("Fetching user data for profile UID:", profileUID);
+      // console.log("Fetching user data for profile UID:", profileUID);
       const response = await fetch(`${ProfileScreenAPI}/${profileUID}`);
       const apiUser = await response.json();
-      console.log("ProfileScreen.js - Profile API Response:", JSON.stringify(apiUser, null, 2));
+      // console.log("ProfileScreen.js - Profile API Response:", JSON.stringify(apiUser, null, 2));
 
-      console.log("ProfileScreen - personal_info object:", JSON.stringify(apiUser.personal_info, null, 2));
+      // console.log("ProfileScreen - personal_info object:", JSON.stringify(apiUser.personal_info, null, 2));
 
       // Handle case where profile is not found (404 error)
       if (
@@ -164,7 +164,7 @@ const ProfileScreen = ({ route, navigation }) => {
         apiUser.message === "Profile not found for this user" ||
         (apiUser.code === 404 && apiUser.message === "Profile not found for this user")
       ) {
-        console.log("ProfileScreen - Profile not found for profile UID:", profileUID);
+        // console.log("ProfileScreen - Profile not found for profile UID:", profileUID);
 
         // Check if this is the current user's profile
         const currentUserUid = await AsyncStorage.getItem("user_uid");
@@ -248,8 +248,8 @@ const ProfileScreen = ({ route, navigation }) => {
           }))
         : [];
 
-      console.log("ProfileScreen - userData.businesses (after mapping):", JSON.stringify(userData.businesses, null, 2));
-      console.log("ProfileScreen - userData.businesses.length:", userData.businesses.length);
+      // console.log("ProfileScreen - userData.businesses (after mapping):", JSON.stringify(userData.businesses, null, 2));
+      // console.log("ProfileScreen - userData.businesses.length:", userData.businesses.length);
 
       userData.expertise = apiUser.expertise_info
         ? (typeof apiUser.expertise_info === "string" ? JSON.parse(apiUser.expertise_info) : apiUser.expertise_info).map((exp) => ({
@@ -281,14 +281,14 @@ const ProfileScreen = ({ route, navigation }) => {
       userData.twitter = socialLinks.twitter || "";
       userData.linkedin = socialLinks.linkedin || "";
       userData.youtube = socialLinks.youtube || "";
-      console.log("ProfileScreen - Setting user data:", userData);
-      console.log("ProfileScreen - Profile UID in userData:", userData.profile_uid);
+      // console.log("ProfileScreen - Setting user data:", userData);
+      // console.log("ProfileScreen - Profile UID in userData:", userData.profile_uid);
       setUser(userData);
 
       userData.ratings = apiUser.ratings_info || [];
       setUser(userData);
-      console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
-      console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
+      // console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
+      // console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
 
       const rawBusinessInfo = Array.isArray(apiUser.business_info)
         ? apiUser.business_info
@@ -352,10 +352,10 @@ const ProfileScreen = ({ route, navigation }) => {
       const dropdownMenu = document.querySelector("[data-dropdown-menu]");
       const target = event.target;
 
-      console.log("ProfileScreen - Click outside handler triggered");
-      console.log("ProfileScreen - Target:", target);
-      console.log("ProfileScreen - Dropdown button:", dropdownButton);
-      console.log("ProfileScreen - Dropdown menu:", dropdownMenu);
+      // console.log("ProfileScreen - Click outside handler triggered");
+      // console.log("ProfileScreen - Target:", target);
+      // console.log("ProfileScreen - Dropdown button:", dropdownButton);
+      // console.log("ProfileScreen - Dropdown menu:", dropdownMenu);
 
       // Check if click is inside the dropdown menu or button
       // Check if target or any of its parents is the dropdown button or menu
@@ -366,12 +366,12 @@ const ProfileScreen = ({ route, navigation }) => {
       while (element) {
         if (element === dropdownButton || element.getAttribute?.("data-dropdown-button")) {
           clickedButton = true;
-          console.log("ProfileScreen - Click detected on dropdown button");
+          // console.log("ProfileScreen - Click detected on dropdown button");
           break;
         }
         if (element === dropdownMenu || element.getAttribute?.("data-dropdown-menu")) {
           clickedMenu = true;
-          console.log("ProfileScreen - Click detected on dropdown menu");
+          // console.log("ProfileScreen - Click detected on dropdown menu");
           break;
         }
         element = element.parentElement;
@@ -379,7 +379,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
       // Only close if click is completely outside both button and menu
       if (!clickedButton && !clickedMenu) {
-        console.log("ProfileScreen - Click outside detected, closing dropdown");
+        // console.log("ProfileScreen - Click outside detected, closing dropdown");
         setShowRelationshipDropdown(false);
       } else {
         console.log("ProfileScreen - Click inside dropdown, not closing");
@@ -836,9 +836,7 @@ const ProfileScreen = ({ route, navigation }) => {
         // Calculate circle_num_nodes
         let circleNumNodes = null;
         try {
-          const pathResponse = await fetch(
-            `${API_BASE_URL}/api/connections_path/${loggedInProfileUID}/${viewedProfileUID}`
-          );
+          const pathResponse = await fetch(`${API_BASE_URL}/api/connections_path/${loggedInProfileUID}/${viewedProfileUID}`);
           if (pathResponse.ok) {
             const pathData = await pathResponse.json();
             const combinedPath = pathData.combined_path || "";
@@ -1041,57 +1039,58 @@ const ProfileScreen = ({ route, navigation }) => {
               >
                 <Ionicons name='add' size={28} color='#fff' />
               </Pressable>
-              {showRelationshipDropdown && (() => {
-                const headerColors = getHeaderColors("profileView");
-                const highlightColor = darkMode ? headerColors.darkModeBackgroundColor : headerColors.backgroundColor;
-                const isHighlighted = (rel) => {
-                  if (rel === null) return relationshipType == null || relationshipType === "null" || !relationshipType;
-                  return relationshipType === rel;
-                };
-                return (
-                  <View style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]} {...(isWeb && { "data-dropdown-menu": true })}>
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
-                        handleRelationshipSelect("friend");
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("friend") && { color: highlightColor, fontWeight: "bold" }]}>Friend</Text>
-                    </Pressable>
-                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
-                        handleRelationshipSelect("colleague");
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("colleague") && { color: highlightColor, fontWeight: "bold" }]}>Colleague</Text>
-                    </Pressable>
-                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
-                        handleRelationshipSelect("family");
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("family") && { color: highlightColor, fontWeight: "bold" }]}>Family</Text>
-                    </Pressable>
-                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
-                        handleRelationshipSelect(null);
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted(null) && { color: highlightColor, fontWeight: "bold" }]}>Select None</Text>
-                    </Pressable>
-                  </View>
-                );
-              })()}
+              {showRelationshipDropdown &&
+                (() => {
+                  const headerColors = getHeaderColors("profileView");
+                  const highlightColor = darkMode ? headerColors.darkModeBackgroundColor : headerColors.backgroundColor;
+                  const isHighlighted = (rel) => {
+                    if (rel === null) return relationshipType == null || relationshipType === "null" || !relationshipType;
+                    return relationshipType === rel;
+                  };
+                  return (
+                    <View style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]} {...(isWeb && { "data-dropdown-menu": true })}>
+                      <Pressable
+                        style={styles.dropdownItem}
+                        onPress={(e) => {
+                          if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
+                          handleRelationshipSelect("friend");
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("friend") && { color: highlightColor, fontWeight: "bold" }]}>Friend</Text>
+                      </Pressable>
+                      <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                      <Pressable
+                        style={styles.dropdownItem}
+                        onPress={(e) => {
+                          if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
+                          handleRelationshipSelect("colleague");
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("colleague") && { color: highlightColor, fontWeight: "bold" }]}>Colleague</Text>
+                      </Pressable>
+                      <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                      <Pressable
+                        style={styles.dropdownItem}
+                        onPress={(e) => {
+                          if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
+                          handleRelationshipSelect("family");
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("family") && { color: highlightColor, fontWeight: "bold" }]}>Family</Text>
+                      </Pressable>
+                      <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                      <Pressable
+                        style={styles.dropdownItem}
+                        onPress={(e) => {
+                          if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
+                          handleRelationshipSelect(null);
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted(null) && { color: highlightColor, fontWeight: "bold" }]}>Select None</Text>
+                      </Pressable>
+                    </View>
+                  );
+                })()}
             </View>
           ) : null
         }
@@ -1235,7 +1234,7 @@ const ProfileScreen = ({ route, navigation }) => {
                   user.profileImage && (isCurrentUserProfile || user.imageIsPublic) && String(user.profileImage).trim() !== "" ? { uri: String(user.profileImage) } : require("../assets/profile.png")
                 }
                 style={{ width: 200, height: 200 }}
-                resizeMode="cover"
+                resizeMode='cover'
                 defaultSource={require("../assets/profile.png")}
               />
             </View>
@@ -1586,7 +1585,10 @@ const ProfileScreen = ({ route, navigation }) => {
               {showBusiness &&
                 (publicBusinesses.length > 0 ? (
                   publicBusinesses.map((business, index) => (
-                    <View key={business.profile_business_uid || business.business_uid || index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
+                    <View
+                      key={business.profile_business_uid || business.business_uid || index}
+                      style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}
+                    >
                       <TouchableOpacity
                         onPress={() => {
                           const uid = business.business_uid || business.profile_business_uid;
