@@ -1859,10 +1859,10 @@ const NetworkScreen = ({ navigation }) => {
   // Debug: Log render start
   if (__DEV__) {
     console.log("🔵 NetworkScreen - RENDER START");
-    console.log("🔵 NetworkScreen - profileUid:", profileUid, "type:", typeof profileUid);
-    console.log("🔵 NetworkScreen - storageData length:", storageData.length);
-    console.log("🔵 NetworkScreen - networkData length:", networkData.length);
-    console.log("🔵 NetworkScreen - groupedNetwork keys:", Object.keys(groupedNetwork));
+    // console.log("🔵 NetworkScreen - profileUid:", profileUid, "type:", typeof profileUid);
+    // console.log("🔵 NetworkScreen - storageData length:", storageData.length);
+    // console.log("🔵 NetworkScreen - networkData length:", networkData.length);
+    // console.log("🔵 NetworkScreen - groupedNetwork keys:", Object.keys(groupedNetwork));
   }
 
   // Apply filters to network data for graph view
@@ -1973,14 +1973,14 @@ const NetworkScreen = ({ navigation }) => {
         >
           {/* QR Code Section */}
           {(() => {
-            if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR Code Section");
+            // if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR Code Section");
             if (qrCodeData && userProfileData && QRCodeComponent) {
-              if (__DEV__) console.log("🔵 NetworkScreen - QR Code data exists, rendering QR section");
+              // if (__DEV__) console.log("🔵 NetworkScreen - QR Code data exists, rendering QR section");
               return (
                 <View style={[styles.qrCodeContainer, darkMode && styles.darkQrCodeContainer]}>
                   {/* Display MiniCard */}
                   {(() => {
-                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
+                    // if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
                     if (userProfileData) {
                       return (
                         <View style={styles.qrCodeMiniCardContainer}>
@@ -2058,12 +2058,12 @@ const NetworkScreen = ({ navigation }) => {
                 </View>
               );
             }
-            if (__DEV__) console.log("🔵 NetworkScreen - QR Code section not rendered (missing data)");
+            // if (__DEV__) console.log("🔵 NetworkScreen - QR Code section not rendered (missing data)");
             return null;
           })()}
 
           {(() => {
-            if (__DEV__) console.log("🔵 NetworkScreen - Rendering Network Section");
+            // if (__DEV__) console.log("🔵 NetworkScreen - Rendering Network Section");
             return (
               <View style={{ marginTop: 20 }}>
                 {/* View My Network Dropdown Header */}
@@ -2239,19 +2239,19 @@ const NetworkScreen = ({ navigation }) => {
                     )}
 
                     {(() => {
-                      if (__DEV__) console.log("🔵 NetworkScreen - Checking list view mode");
+                      // if (__DEV__) console.log("🔵 NetworkScreen - Checking list view mode");
                       return (
                         <>
                           {/* List View */}
                           {viewMode === "list" && Object.keys(groupedNetwork).length > 0 && (
                             <View style={{ marginTop: 10 }}>
                               {(() => {
-                                if (__DEV__) console.log("🔵 NetworkScreen - Rendering network list items");
+                                // if (__DEV__) console.log("🔵 NetworkScreen - Rendering network list items");
                                 return Object.keys(groupedNetwork)
                                   .map((d) => Number(d))
                                   .sort((a, b) => a - b)
                                   .map((deg) => {
-                                    if (__DEV__) console.log(`🔵 NetworkScreen - Processing degree ${deg}`);
+                                    // if (__DEV__) console.log(`🔵 NetworkScreen - Processing degree ${deg}`);
                                     // Filter the list based on relationship type
                                     let list = groupedNetwork[deg];
                                     if (relationshipFilter !== "All") {
@@ -2269,7 +2269,7 @@ const NetworkScreen = ({ navigation }) => {
                                     }
                                     // Apply date filter
                                     if (dateFilter !== "All") {
-                                      console.log(`🔵 NetworkScreen - Applying date filter: ${dateFilter}`);
+                                      // console.log(`🔵 NetworkScreen - Applying date filter: ${dateFilter}`);
                                       const now = new Date();
                                       const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
                                       const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
@@ -2298,7 +2298,7 @@ const NetworkScreen = ({ navigation }) => {
 
                                     // Apply location filter
                                     if (locationFilter !== "All") {
-                                      console.log(`🔵 NetworkScreen - Applying location filter: ${locationFilter}`);
+                                      // console.log(`🔵 NetworkScreen - Applying location filter: ${locationFilter}`);
                                       list = list.filter((node) => {
                                         const city = node.circle_city || "";
                                         const state = node.circle_state || "";
@@ -2316,7 +2316,7 @@ const NetworkScreen = ({ navigation }) => {
 
                                     // Apply event filter
                                     if (eventFilter !== "All") {
-                                      console.log(`🔵 NetworkScreen - Applying event filter: ${eventFilter}`);
+                                      // console.log(`🔵 NetworkScreen - Applying event filter: ${eventFilter}`);
                                       list = list.filter((node) => {
                                         const nodeEvent = (node.circle_event || "").trim();
                                         return nodeEvent === eventFilter;
@@ -2351,7 +2351,7 @@ const NetworkScreen = ({ navigation }) => {
                                       return null;
                                     }
 
-                                    if (__DEV__) console.log(`🔵 NetworkScreen - Rendering degree ${deg} with ${list.length} items`);
+                                    // if (__DEV__) console.log(`🔵 NetworkScreen - Rendering degree ${deg} with ${list.length} items`);
                                     const label = activeView === "circles" ? "Circles" : degreeLabel(Number(deg));
                                     const isExpanded = expandedDegrees[deg] !== false;
                                     return (
@@ -2368,12 +2368,12 @@ const NetworkScreen = ({ navigation }) => {
                                         {isExpanded && (
                                           <View style={{ marginTop: 8 }}>
                                             {list.map((node, index) => {
-                                              if (__DEV__) console.log(`🔵 NetworkScreen - Rendering node ${deg}-${index}, __mc:`, node.__mc);
+                                              // if (__DEV__) console.log(`🔵 NetworkScreen - Rendering node ${deg}-${index}, __mc:`, node.__mc);
                                               if (!node.__mc) {
                                                 if (__DEV__) console.log(`🔵 NetworkScreen - Node ${deg}-${index} has no __mc, skipping`);
                                                 return null;
                                               }
-                                              if (__DEV__) console.log(`🔵 NetworkScreen - Rendering MiniCard for node ${deg}-${index}`);
+                                              // if (__DEV__) console.log(`🔵 NetworkScreen - Rendering MiniCard for node ${deg}-${index}`);
                                               return (
                                                 <TouchableOpacity
                                                   key={`${deg}-${index}`}
@@ -2402,7 +2402,7 @@ const NetworkScreen = ({ navigation }) => {
                     })()}
 
                     {(() => {
-                      if (__DEV__) console.log("🔵 NetworkScreen - Rendering 'No connections' message");
+                      // if (__DEV__) console.log("🔵 NetworkScreen - Rendering 'No connections' message");
                       if (!loading && !error && Object.keys(groupedNetwork).length === 0) {
                         return <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>{activeView === "circles" ? "No circles found." : "No network connections found."}</Text>;
                       }
@@ -2491,7 +2491,7 @@ const NetworkScreen = ({ navigation }) => {
           )}
 
           {(() => {
-            if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage Section");
+            // if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage Section");
             return (
               <View>
                 <TouchableOpacity
@@ -2507,9 +2507,9 @@ const NetworkScreen = ({ navigation }) => {
                   <Ionicons name={showAsyncStorage ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
                 </TouchableOpacity>
                 {(() => {
-                  if (__DEV__) console.log("🔵 NetworkScreen - showAsyncStorage:", showAsyncStorage);
+                  // if (__DEV__) console.log("🔵 NetworkScreen - showAsyncStorage:", showAsyncStorage);
                   if (showAsyncStorage) {
-                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage data, length:", storageData.length);
+                    // if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage data, length:", storageData.length);
                     return (
                       <>
                         {storageData.length === 0 ? (
@@ -2517,12 +2517,12 @@ const NetworkScreen = ({ navigation }) => {
                         ) : (
                           storageData
                             .map(([key, value], idx) => {
-                              if (__DEV__) console.log(`🔵 NetworkScreen - Processing AsyncStorage item ${idx}:`, { key, value, keyType: typeof key, valueType: typeof value });
+                              // if (__DEV__) console.log(`🔵 NetworkScreen - Processing AsyncStorage item ${idx}:`, { key, value, keyType: typeof key, valueType: typeof value });
                               const sanitizedKey = sanitizeText(key, "Unknown");
                               const sanitizedValue = sanitizeText(value, "N/A");
-                              if (__DEV__) console.log(`🔵 NetworkScreen - After sanitization ${idx}:`, { sanitizedKey, sanitizedValue });
+                              // if (__DEV__) console.log(`🔵 NetworkScreen - After sanitization ${idx}:`, { sanitizedKey, sanitizedValue });
                               if (!isSafeForConditional(sanitizedKey) && !isSafeForConditional(sanitizedValue)) {
-                                if (__DEV__) console.log(`🔵 NetworkScreen - Skipping item ${idx} (unsafe)`);
+                                // if (__DEV__) console.log(`🔵 NetworkScreen - Skipping item ${idx} (unsafe)`);
                                 return null;
                               }
                               return (
