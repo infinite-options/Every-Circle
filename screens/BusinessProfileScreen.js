@@ -1274,7 +1274,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
                   <Text style={{ fontSize: 12, color: "#888", marginBottom: 10, textAlign: "center" }}>
                     Assign the bounty to a verified reviewer
                   </Text>
-                  {allReviews.filter(r => r.is_verified).map((review) => {
+                  {allReviews
+                    .filter(r => r.is_verified && r.circle_num_nodes !== null && r.circle_num_nodes !== undefined)
+                    .sort((a, b) => a.circle_num_nodes - b.circle_num_nodes)
+                    .slice(0, 5)
+                    .map((review) => {
                     const isSelected = selectedBountyRecipient?.rating_uid === review.rating_uid;
                     const name = [review.profile_personal_first_name, review.profile_personal_last_name]
                       .filter(Boolean).join(" ") || `User ${review.rating_profile_id}`;

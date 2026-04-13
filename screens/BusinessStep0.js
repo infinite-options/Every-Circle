@@ -144,11 +144,20 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
           <ScrollView
             style={{ flex: 1, width: "100%" }}
-            contentContainerStyle={{ padding: 20, alignItems: "center", paddingBottom: 140 }}
+            contentContainerStyle={{
+              padding: Platform.OS === "web" ? 40 : 20,
+              alignItems: "center",
+              paddingBottom: 140,
+              minHeight: "100%",
+            }}
             keyboardShouldPersistTaps='handled'
             nestedScrollEnabled={true}
           >
-            <View style={[styles.formCard, darkMode && styles.darkFormCard]}>
+            <View style={[
+              styles.formCard,
+              darkMode && styles.darkFormCard,
+              Platform.OS === "web" && styles.formCardWeb,
+            ]}>
               <Text style={[styles.title, darkMode && styles.darkTitle]}>Welcome to Every Circle!</Text>
               <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Let's Start Building Your Business Page!</Text>
 
@@ -331,6 +340,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderWidth: 1,
     borderColor: "#ddd",
+    ...(Platform.OS === "web" && {
+      fontSize: 16,
+      outlineStyle: "none",
+    }),
   },
   loadingIndicator: {
     marginTop: 20,
@@ -338,11 +351,17 @@ const styles = StyleSheet.create({
   formCard: {
     backgroundColor: "#fff",
     borderRadius: 30,
-    padding: 0,
+    padding: 20,
     width: "100%",
     maxWidth: 420,
     alignSelf: "center",
     marginBottom: 16,
+  },
+  formCardWeb: {
+    maxWidth: "100%",
+    width: "100%",
+    borderRadius: 16,
+    padding: 40,
   },
   helperText: {
     fontSize: 12,

@@ -465,7 +465,7 @@ export default function BusinessSetupController({ navigation, route }) {
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       <AppHeader title='Business Setup' backgroundColor='#FF9500' onBackPress={handleHeaderBack} />
       {renderStep()}
-      <BusinessFooter activeStep={activeStep} onBack={handleBack} onContinue={handleContinue} onSubmit={submitBusinessData} totalSteps={3} />
+      <BusinessFooter activeStep={activeStep} onBack={handleBack} onContinue={handleContinue} onSubmit={handleContinue} totalSteps={3} />
       <BottomNavBar navigation={navigation} />
     </View>
   );
