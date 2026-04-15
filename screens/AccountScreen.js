@@ -169,6 +169,32 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
+  const loadAutoPaidIds = async () => {
+    try {
+      const stored = await AsyncStorage.getItem("auto_paid_transaction_ids");
+      if (stored) {
+        setAutoPaidTransactionIds(new Set(JSON.parse(stored)));
+      }
+    } catch (e) {
+      console.error("Failed to load auto-paid IDs:", e);
+    }
+  };
+
+  const saveAutoPaidId = async (transactionUid) => {
+    try {
+      console.log("saveAutoPaidId called with:", transactionUid); // ← add
+      const stored = await AsyncStorage.getItem("auto_paid_transaction_ids");
+      console.log("existing stored value:", stored); // ← add
+      const existing = stored ? JSON.parse(stored) : [];
+      const updated = [...new Set([...existing, transactionUid])];
+      await AsyncStorage.setItem("auto_paid_transaction_ids", JSON.stringify(updated));
+      console.log("saved updated list:", updated); // ← add
+      setAutoPaidTransactionIds(new Set(updated));
+    } catch (e) {
+      console.error("Failed to save auto-paid ID:", e);
+    }
+  };
+
   const updateTransactionEscrow = async (transactionUid) => {
     try {
       setUpdatingEscrow(true);
@@ -673,6 +699,7 @@ export default function AccountScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       checkAuth();
+      loadAutoPaidIds();
       refreshBountyData();
       refreshTransactionData();
       refreshExpertiseData();
@@ -765,14 +792,14 @@ export default function AccountScreen({ navigation }) {
     if (transaction.transaction_in_escrow !== 1) return false;
     if (!transaction.transaction_datetime) return false;
     const diffDays = (new Date() - new Date(transaction.transaction_datetime)) / (1000 * 60 * 60 * 24);
+    console.log("isAutoPaid check:", transaction.transaction_uid, "diffDays:", diffDays); // ← add
     return diffDays >= 5;
   };
 
   // Silently releases escrow for aged-out transactions
   const triggerAutoPay = useCallback(async (transactionUid) => {
     try {
-      // Mark as auto-paid immediately so the label shows before refresh
-      setAutoPaidTransactionIds((prev) => new Set([...prev, transactionUid]));
+      await saveAutoPaidId(transactionUid); // persists + updates state
       await fetch(`${API_BASE_URL}/api/v1/transactions`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -781,7 +808,6 @@ export default function AccountScreen({ navigation }) {
       await refreshTransactionData();
     } catch (error) {
       console.error("Auto-pay failed for transaction:", transactionUid, error);
-      // Remove from set if it failed
       setAutoPaidTransactionIds((prev) => {
         const next = new Set(prev);
         next.delete(transactionUid);
@@ -1377,10 +1403,23 @@ export default function AccountScreen({ navigation }) {
                       </View>
                       {/* Table Rows */}
                       {transactionData.map((transaction, i) => {
+                        // const isSeeking = (transaction.purchase_type || "").toLowerCase() === "seeking";
+                        // const isBusiness = (transaction.purchase_type || "").toLowerCase() === "business";
+                        // const isPending = transaction.transaction_in_escrow === 1;
+                        // const showPendingLink = (isSeeking || isBusiness) && isPending;
+                        // const wasAutoPaid = autoPaidTransactionIds.has(transaction.transaction_uid);
+
                         const isSeeking = (transaction.purchase_type || "").toLowerCase() === "seeking";
                         const isBusiness = (transaction.purchase_type || "").toLowerCase() === "business";
                         const isPending = transaction.transaction_in_escrow === 1;
+                        const purchaseDate = new Date(transaction.transaction_datetime);
+                        const isOlderThan5Days = (new Date() - purchaseDate) / (1000 * 60 * 60 * 24) >= 5;
                         const showPendingLink = (isSeeking || isBusiness) && isPending;
+                        const showAutoPaid = (isSeeking || isBusiness) && !isPending && isOlderThan5Days;
+
+
+                        console.log("autoPaidTransactionIds:", [...autoPaidTransactionIds]);
+                        console.log("this transaction:", transaction.transaction_uid);
 
                         return (
                           <View key={transaction.ti_uid || i} style={styles.transactionRow}>
@@ -1397,11 +1436,11 @@ export default function AccountScreen({ navigation }) {
                             </View>
                             <Text style={styles.transactionQty}>{transaction.ti_bs_qty || 1}</Text>
                             <View style={styles.transactionPaidCell}>
-                              {autoPaidTransactionIds.has(transaction.transaction_uid) ? (
-                                <Text style={styles.transactionPaidText}>Auto-Paid</Text>
-                              ) : showPendingLink && isAutoPaid(transaction) ? (
+                              {showAutoPaid ? (
+                                <Text style={styles.transactionPaidText}>Auto-Received</Text>
+                              ) : showPendingLink && isOlderThan5Days ? (
                                 (() => { triggerAutoPay(transaction.transaction_uid); return null; })() ||
-                                <Text style={styles.transactionPaidText}>Auto-Paid</Text>
+                                <Text style={styles.transactionPaidText}>Auto-Received</Text>
                               ) : showPendingLink ? (
                                 <TouchableOpacity
                                   onPress={() => {
@@ -1413,7 +1452,7 @@ export default function AccountScreen({ navigation }) {
                                   <Text style={styles.pendingLink}>Pending</Text>
                                 </TouchableOpacity>
                               ) : (
-                                <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Paid"}</Text>
+                                <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Received"}</Text>
                               )}
                             </View>
                             <Text style={styles.transactionAmount}>
@@ -1487,7 +1526,13 @@ export default function AccountScreen({ navigation }) {
                             <Text style={styles.bountyTableCell}>{formatDate(item.transaction_datetime)}</Text>
                             <Text style={styles.bountyTableCell}>{item.purchaser_name || item.transaction_profile_id || "N/A"}</Text>
                             <Text style={styles.bountyTableCell}>{item.display_name || item.transaction_business_id || "N/A"}</Text>
-                            <Text style={styles.bountyTableCell}>{item.in_escrow === 1 ? "Pending" : "Paid"}</Text>
+                            <Text style={styles.bountyTableCell}>
+                              {item.in_escrow === 1 && (new Date() - new Date(item.transaction_datetime)) / (1000 * 60 * 60 * 24) >= 30
+                                ? "Paid"
+                                : item.in_escrow === 1
+                                ? "Pending"
+                                : "Paid"}
+                            </Text>
                             <Text style={styles.bountyTableCell}>${parseFloat(item.bounty_earned || 0).toFixed(2)}</Text>
                           </View>
                         );
@@ -1795,7 +1840,7 @@ const styles = StyleSheet.create({
   transactionAmount: { width: 70, fontSize: 11, color: "#333", textAlign: "right" },
   transactionPaid: { width: 60, fontSize: 11, color: "#333", textAlign: "center" },
   transactionPaidCell: { width: 60, justifyContent: "center", alignItems: "center" },
-  transactionPaidText: { fontSize: 11, color: "#333" },
+  transactionPaidText: { fontSize: 11, color: "#333", textAlign: "center" },
   pendingLink: { fontSize: 11, color: "#007AFF", textDecorationLine: "underline" },
   // Header styles
   transactionHeaderDate: { width: 50, fontSize: 13, color: "#fff", fontWeight: "bold" },
