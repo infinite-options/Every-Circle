@@ -59,6 +59,8 @@ export default function AccountScreen({ navigation }) {
   // Define custom questions for the Account page
   const accountFeedbackQuestions = ["Account - Question 1?", "Account - Question 2?", "Account - Question 3?"];
 
+  const [autoPaidTransactionIds, setAutoPaidTransactionIds] = useState(new Set());
+
   // above your effect or focus logic
   const checkAuth = async () => {
     try {
@@ -758,6 +760,36 @@ export default function AccountScreen({ navigation }) {
     return `${month}/${day}`;
   };
 
+  // Returns true if a pending transaction is 5+ days old and should auto-pay
+  const isAutoPaid = (transaction) => {
+    if (transaction.transaction_in_escrow !== 1) return false;
+    if (!transaction.transaction_datetime) return false;
+    const diffDays = (new Date() - new Date(transaction.transaction_datetime)) / (1000 * 60 * 60 * 24);
+    return diffDays >= 5;
+  };
+
+  // Silently releases escrow for aged-out transactions
+  const triggerAutoPay = useCallback(async (transactionUid) => {
+    try {
+      // Mark as auto-paid immediately so the label shows before refresh
+      setAutoPaidTransactionIds((prev) => new Set([...prev, transactionUid]));
+      await fetch(`${API_BASE_URL}/api/v1/transactions`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transaction_uid: transactionUid, transaction_in_escrow: 0 }),
+      });
+      await refreshTransactionData();
+    } catch (error) {
+      console.error("Auto-pay failed for transaction:", transactionUid, error);
+      // Remove from set if it failed
+      setAutoPaidTransactionIds((prev) => {
+        const next = new Set(prev);
+        next.delete(transactionUid);
+        return next;
+      });
+    }
+  }, []);
+
   const budgetData = [
     { item: "per Impression", costPer: "$0.01", monthlyCap: "$10.00", currentSpend: "$0.50" },
     { item: "per Click", costPer: "$0.10", monthlyCap: "$10.00", currentSpend: "$7.20" },
@@ -1365,7 +1397,12 @@ export default function AccountScreen({ navigation }) {
                             </View>
                             <Text style={styles.transactionQty}>{transaction.ti_bs_qty || 1}</Text>
                             <View style={styles.transactionPaidCell}>
-                              {showPendingLink ? (
+                              {autoPaidTransactionIds.has(transaction.transaction_uid) ? (
+                                <Text style={styles.transactionPaidText}>Auto-Paid</Text>
+                              ) : showPendingLink && isAutoPaid(transaction) ? (
+                                (() => { triggerAutoPay(transaction.transaction_uid); return null; })() ||
+                                <Text style={styles.transactionPaidText}>Auto-Paid</Text>
+                              ) : showPendingLink ? (
                                 <TouchableOpacity
                                   onPress={() => {
                                     setPendingTransactionForConfirm(transaction);
