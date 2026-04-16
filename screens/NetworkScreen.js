@@ -157,7 +157,7 @@ const FilterPopup = ({
             paddingVertical: 16,
             borderBottomWidth: 1,
             borderBottomColor: borderColor,
-            backgroundColor: darkMode ? "#252538" : "#f0f2ff",
+            backgroundColor: darkMode ? "#252538" : "#f0f2ff"
           }}
         >
           <Text style={{ fontSize: 17, fontWeight: "800", color: textColor, letterSpacing: 0.3 }}>Filter Connections</Text>
@@ -312,11 +312,15 @@ const NetworkScreen = ({ navigation }) => {
   const [graphHtml, setGraphHtml] = useState(""); // For web iframe
   const iframeContainerRef = React.useRef(null); // Ref for web iframe container
   const [activeView, setActiveView] = useState("connections"); // "connections" or "circles" - default to connections
+  const activeViewRef = React.useRef(activeView);
+  activeViewRef.current = activeView;
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [scannedProfileData, setScannedProfileData] = useState(null);
   const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
-  const [showViewMyNetwork, setShowViewMyNetwork] = useState(false);
+  const [showViewMyNetwork, setShowViewMyNetwork] = useState(true);
+  /** Bumped on each screen focus so debounced fetch runs once per visit (avoids duplicate immediate refetch). */
+  const [focusTick, setFocusTick] = useState(0);
   const [showFilterPopup, setShowFilterPopup] = useState(false);
   const [expandedDegrees, setExpandedDegrees] = useState({}); // { [deg]: boolean } - undefined/true = expanded
 
@@ -329,13 +333,25 @@ const NetworkScreen = ({ navigation }) => {
   const loadNetworkSettings = async () => {
     try {
       console.log("📥 Loading Network screen settings from AsyncStorage...");
-      const [showAsyncStorageValue, degreeValue, viewModeValue, networkDataValue, groupedNetworkValue, activeViewValue, dateFilterValue, locationFilterValue, eventFilterValue] = await Promise.all([
+      const [
+        showAsyncStorageValue,
+        degreeValue,
+        viewModeValue,
+        networkDataValue,
+        groupedNetworkValue,
+        activeViewValue,
+        showViewMyNetworkValue,
+        dateFilterValue,
+        locationFilterValue,
+        eventFilterValue,
+      ] = await Promise.all([
         AsyncStorage.getItem("network_showAsyncStorage"),
         AsyncStorage.getItem("network_degree"),
         AsyncStorage.getItem("network_viewMode"),
         AsyncStorage.getItem("network_data"),
         AsyncStorage.getItem("network_grouped"),
         AsyncStorage.getItem("network_activeView"),
+        AsyncStorage.getItem("network_showViewMyNetwork"),
         AsyncStorage.getItem("network_dateFilter"),
         AsyncStorage.getItem("network_locationFilter"),
         AsyncStorage.getItem("network_eventFilter"),
@@ -422,6 +438,14 @@ const NetworkScreen = ({ navigation }) => {
         console.log("📥 No persisted activeView, using default: connections");
       }
 
+      if (showViewMyNetworkValue !== null) {
+        try {
+          setShowViewMyNetwork(JSON.parse(showViewMyNetworkValue) === true);
+        } catch (e) {
+          /* keep state */
+        }
+      }
+
       // Mark settings as loaded so we can start saving changes
       setSettingsLoaded(true);
       console.log("✅ Settings loaded, now tracking changes for persistence");
@@ -445,11 +469,13 @@ const NetworkScreen = ({ navigation }) => {
           showAsyncStorage,
           degree,
           viewMode,
+          showViewMyNetwork,
         });
         await Promise.all([
           AsyncStorage.setItem("network_showAsyncStorage", JSON.stringify(showAsyncStorage)),
           AsyncStorage.setItem("network_degree", degree),
           AsyncStorage.setItem("network_viewMode", viewMode),
+          AsyncStorage.setItem("network_showViewMyNetwork", JSON.stringify(showViewMyNetwork)),
           AsyncStorage.setItem("network_dateFilter", dateFilter),
           AsyncStorage.setItem("network_locationFilter", locationFilter),
           AsyncStorage.setItem("network_eventFilter", eventFilter),
@@ -460,22 +486,21 @@ const NetworkScreen = ({ navigation }) => {
       }
     };
     saveSettings();
-  }, [showAsyncStorage, degree, viewMode, dateFilter, locationFilter, eventFilter, settingsLoaded]);
+  }, [showAsyncStorage, degree, viewMode, showViewMyNetwork, dateFilter, locationFilter, eventFilter, settingsLoaded]);
 
-  // Auto-refresh connections when Levels to Display (degree) changes - no need to click Show Connections
-  // Only applies when viewing Connections (not Circles)
+  // Debounced GET /api/network: settings ready, panel open, connections view, and on focus (focusTick) or degree change.
+  // useFocusEffect no longer calls fetchNetwork — avoids duplicate with this effect. activeView via ref so Circles→Connections does not schedule twice.
   useEffect(() => {
-    if (!settingsLoaded || !showViewMyNetwork || activeView !== "connections") return;
+    if (!settingsLoaded || !showViewMyNetwork || activeViewRef.current !== "connections") return;
     const deg = String(degree || "").trim();
     if (!deg || Number(deg) < 1) return;
 
     const timer = setTimeout(() => {
-      setActiveView("connections");
       fetchNetwork(null, deg);
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [degree, settingsLoaded, showViewMyNetwork, activeView]);
+  }, [degree, settingsLoaded, showViewMyNetwork, focusTick]);
 
   // Extract unique events from network data
   useEffect(() => {
@@ -578,56 +603,33 @@ const NetworkScreen = ({ navigation }) => {
     loadAsyncStorage();
   }, []);
 
-  // Load settings when screen is focused
+  // Load settings when screen is focused; bump focusTick so debounced effect runs one /api/network fetch.
   useFocusEffect(
     React.useCallback(() => {
-      console.log("🔄 Network screen focused - loading settings...");
+      console.log("Network screen focused - loading settings...");
       loadNetworkSettings();
+      setFocusTick((t) => t + 1);
 
-      // Refetch network data when screen is focused to get updated relationship information
-      // This ensures relationship changes are reflected immediately
-      const refetchNetworkData = async () => {
+      const syncProfileUidFromStorage = async () => {
         let currentProfileUid = await AsyncStorage.getItem("profile_uid");
-        // Ensure currentProfileUid is always a string
         if (currentProfileUid) {
           try {
-            // Try to parse if it's JSON, but ensure it's a string
             const parsed = JSON.parse(currentProfileUid);
             currentProfileUid = typeof parsed === "string" ? parsed : String(parsed);
           } catch (e) {
-            // Not JSON, use as string
             currentProfileUid = String(currentProfileUid).trim();
           }
         } else {
           currentProfileUid = "";
         }
         if (currentProfileUid && currentProfileUid !== profileUid) {
-          console.log("🔄 Updating profileUid from AsyncStorage:", currentProfileUid);
+          console.log("Updating profileUid from AsyncStorage:", currentProfileUid);
           setProfileUid(currentProfileUid);
         }
-        const currentDegree = (await AsyncStorage.getItem("network_degree")) || "2";
-        const hasNetworkData = await AsyncStorage.getItem("network_data");
-        const currentActiveView = (await AsyncStorage.getItem("network_activeView")) || "connections";
-
-        // Only refetch if we have network data already (user has fetched before)
-        if (currentProfileUid && hasNetworkData) {
-          console.log("🔄 Refetching network data to get updated relationships (activeView:", currentActiveView, ")...");
-          if (currentActiveView === "circles") {
-            fetchCircle();
-          } else {
-            if (currentDegree) fetchNetwork(currentProfileUid, currentDegree);
-          }
-        }
       };
-      refetchNetworkData();
+      syncProfileUidFromStorage();
     }, []),
   );
-
-  // Also load settings on initial mount
-  useEffect(() => {
-    console.log("🔄 Network screen mounted - loading settings...");
-    loadNetworkSettings();
-  }, []);
 
   // Fetch user profile data to create QR code with public miniCard info
   const fetchUserProfileForQR = async (profileUID) => {
@@ -642,7 +644,7 @@ const NetworkScreen = ({ navigation }) => {
         userUid = await AsyncStorage.getItem("user_uid");
         if (userUid) {
           userUid = String(userUid).trim();
-          console.log("NetworkScreen - Fetched user_uid for QR code:", userUid);
+          // console.log("NetworkScreen - Fetched user_uid for QR code:", userUid);
         }
       } catch (e) {
         console.warn("NetworkScreen - Could not fetch user_uid from AsyncStorage:", e);
@@ -722,12 +724,12 @@ const NetworkScreen = ({ navigation }) => {
           // On web, try dynamic import or use Ably from window if available
           if (typeof window !== "undefined" && window.Ably) {
             Ably = window.Ably;
-            console.log("✅ NetworkScreen - Ably loaded from window.Ably (web)");
+            // console.log("✅ NetworkScreen - Ably loaded from window.Ably (web)");
           } else {
             // Try require for web (might work with bundler)
             try {
               Ably = require("ably");
-              console.log("✅ NetworkScreen - Ably module loaded via require (web)");
+              // console.log("✅ NetworkScreen - Ably module loaded via require (web)");
             } catch (requireError) {
               // Try dynamic import for web
               console.warn("⚠️ NetworkScreen - require() failed on web, trying dynamic import");
@@ -737,7 +739,7 @@ const NetworkScreen = ({ navigation }) => {
         } else {
           // On native, use require
           Ably = require("ably");
-          console.log("✅ NetworkScreen - Ably module loaded (native)");
+          // console.log("✅ NetworkScreen - Ably module loaded (native)");
         }
       } catch (e) {
         const errorMessage = e.message || String(e);
@@ -770,8 +772,8 @@ const NetworkScreen = ({ navigation }) => {
 
       // Try multiple sources: app.config extra (loads .env at start), process.env (Expo web), @env (react-native-dotenv)
       const ablyApiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
-      console.log("🔵 NetworkScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
-      console.log("🔵 NetworkScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
+      // console.log("🔵 NetworkScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
+      // console.log("🔵 NetworkScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
       if (!ablyApiKey) {
         console.warn("⚠️ NetworkScreen - Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
         setAblyMessageReceived({
@@ -783,7 +785,7 @@ const NetworkScreen = ({ navigation }) => {
         return;
       }
 
-      console.log("🔵 NetworkScreen - Initializing Ably channel for profile_uid:", profileUid);
+      // console.log("🔵 NetworkScreen - Initializing Ably channel for profile_uid:", profileUid);
 
       // Create Ably client
       const client = new Ably.Realtime({ key: ablyApiKey });
@@ -791,16 +793,16 @@ const NetworkScreen = ({ navigation }) => {
 
       // Create channel name using profile_uid (e.g., /110-000014)
       const channelName = `/${profileUid}`;
-      console.log("🔵 NetworkScreen - Ably Channel Name:", channelName);
+      // console.log("🔵 NetworkScreen - Ably Channel Name:", channelName);
 
       const channel = client.channels.get(channelName);
       setAblyChannel(channel);
 
       // Listen for connection events
-      console.log("🔵 NetworkScreen - Initial connection state:", client.connection.state);
+      // console.log("🔵 NetworkScreen - Initial connection state:", client.connection.state);
 
       client.connection.on("connected", () => {
-        console.log("✅ NetworkScreen - Ably client connected");
+        // console.log("✅ NetworkScreen - Ably client connected");
       });
 
       client.connection.on("disconnected", () => {
@@ -816,15 +818,15 @@ const NetworkScreen = ({ navigation }) => {
       });
 
       // Attach to channel
-      console.log("🔵 NetworkScreen - Initial channel state:", channel.state);
-      console.log("🔵 NetworkScreen - Attaching to channel:", channelName);
+      // console.log("🔵 NetworkScreen - Initial channel state:", channel.state);
+      // console.log("🔵 NetworkScreen - Attaching to channel:", channelName);
 
       channel.attach((err) => {
         if (err) {
           console.error("❌ NetworkScreen - Error attaching to Ably channel:", err);
         } else {
-          console.log("✅ NetworkScreen - Ably channel attached:", channelName);
-          console.log("✅ NetworkScreen - Channel state after attach:", channel.state);
+          // console.log("✅ NetworkScreen - Ably channel attached:", channelName);
+          // console.log("✅ NetworkScreen - Channel state after attach:", channel.state);
           console.log("✅ NetworkScreen - Ready to receive messages on channel:", channelName);
         }
       });
@@ -840,11 +842,11 @@ const NetworkScreen = ({ navigation }) => {
       // Subscribe to messages on this channel
       channel.subscribe("new-connection-opened", async (message) => {
         console.log("📨 NetworkScreen - Received message on channel:", channelName);
-        console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
-        console.log("📨 NetworkScreen - Message name:", message.name);
+        // console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
+        // console.log("📨 NetworkScreen - Message name:", message.name);
 
         if (message.data && message.data.message) {
-          console.log("✅ NetworkScreen -", message.data.message);
+          // console.log("✅ NetworkScreen -", message.data.message);
 
           // Update state to display message info
           setAblyMessageReceived({
@@ -855,10 +857,10 @@ const NetworkScreen = ({ navigation }) => {
           });
 
           // If Form Switch is enabled and we have User 2's profile_uid, navigate to New Connection page
-          console.log("🔵 NetworkScreen - Checking Form Switch:", formSwitchEnabledRef.current, "scanner_profile_uid:", message.data.scanner_profile_uid);
+          // console.log("🔵 NetworkScreen - Checking Form Switch:", formSwitchEnabledRef.current, "scanner_profile_uid:", message.data.scanner_profile_uid);
           if (formSwitchEnabledRef.current && message.data.scanner_profile_uid) {
             const scannerProfileUid = message.data.scanner_profile_uid;
-            console.log("🔵 NetworkScreen - Form Switch is ON, navigating to NewConnection page for User 2:", scannerProfileUid);
+            // console.log("🔵 NetworkScreen - Form Switch is ON, navigating to NewConnection page for User 2:", scannerProfileUid);
             // Defer navigation so it runs in the main React/UI context (fixes iOS where Ably callback can run before navigation is ready)
             InteractionManager.runAfterInteractions(() => {
               navigation.navigate("NewConnection", {
@@ -877,8 +879,8 @@ const NetworkScreen = ({ navigation }) => {
       // Also subscribe to all messages for debugging
       channel.subscribe((message) => {
         console.log("📨 NetworkScreen - Received ANY message on channel:", channelName);
-        console.log("📨 NetworkScreen - Message name:", message.name);
-        console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
+        // console.log("📨 NetworkScreen - Message name:", message.name);
+        // console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
       });
     } catch (error) {
       console.error("❌ NetworkScreen - Error initializing Ably:", error);
@@ -889,7 +891,7 @@ const NetworkScreen = ({ navigation }) => {
   useEffect(() => {
     return () => {
       if (ablyClient) {
-        console.log("🔵 NetworkScreen - Closing Ably connection");
+        // console.log("🔵 NetworkScreen - Closing Ably connection");
         ablyClient.close();
         setAblyClient(null);
         setAblyChannel(null);
@@ -970,7 +972,7 @@ const NetworkScreen = ({ navigation }) => {
       const circleDate = `${year}-${month}-${day}`;
 
       // Handle both old format (just relationship string) and new format (object)
-      const relationship = typeof connectionData === "string" ? connectionData : connectionData?.relationship ?? null;
+      const relationship = typeof connectionData === "string" ? connectionData : (connectionData?.relationship ?? null);
       const event = typeof connectionData === "object" ? connectionData.event || "" : "";
       const note = typeof connectionData === "object" ? connectionData.note || "" : "";
       const city = typeof connectionData === "object" ? connectionData.city || "" : "";
@@ -980,9 +982,7 @@ const NetworkScreen = ({ navigation }) => {
       // Calculate circle_num_nodes
       let circleNumNodes = null;
       try {
-        const pathResponse = await fetch(
-          `${API_BASE_URL}/api/connections_path/${loggedInProfileUID}/${scannedProfileData.profile_uid}`
-        );
+        const pathResponse = await fetch(`${API_BASE_URL}/api/connections_path/${loggedInProfileUID}/${scannedProfileData.profile_uid}`);
         if (pathResponse.ok) {
           const pathData = await pathResponse.json();
           const combinedPath = pathData.combined_path || "";
@@ -1332,8 +1332,8 @@ const NetworkScreen = ({ navigation }) => {
       }
 
       const data = await response.json(); //parse JSON response
-      console.log("✅ Received", data.length, "connections");
-      console.log("✅ Sample data:", data[0]);
+      // console.log("✅ Received", data.length, "connections");
+      // console.log("✅ Sample data:", data[0]);
 
       // Format data - backend now has ALL fields, no need for additional API calls
       const formatted = data.map((node) => ({
@@ -1366,14 +1366,14 @@ const NetworkScreen = ({ navigation }) => {
         },
       }));
 
-      console.log("✅ Formatted sample:", formatted[0]);
+      // console.log("✅ Formatted sample:", formatted[0]);
 
       // Update state
       setNetworkData(formatted);
       setGroupedNetwork(groupByDegree(formatted));
-      console.log("🟢 groupedNetwork keys:", Object.keys(groupByDegree(formatted)));
-      console.log("🟢 formatted length:", formatted.length);
-      console.log("🟢 formatted[0].__mc:", formatted[0]?.__mc);
+      // console.log("🟢 groupedNetwork keys:", Object.keys(groupByDegree(formatted)));
+      // console.log("🟢 formatted length:", formatted.length);
+      // console.log("🟢 formatted[0].__mc:", formatted[0]?.__mc);
 
       // Save for asyncStorage
       try {
@@ -1392,7 +1392,7 @@ const NetworkScreen = ({ navigation }) => {
   };
 
   const fetchCircle = async () => {
-    console.log("🔘 Fetch Circle");
+    // console.log("🔘 Fetch Circle");
     setActiveView("circles");
 
     try {
@@ -1423,7 +1423,7 @@ const NetworkScreen = ({ navigation }) => {
         throw new Error("No profile UID available");
       }
 
-      console.log("Fetching circles for UID:", uid);
+      // console.log("Fetching circles for UID:", uid);
 
       // CORS handling for web
       const fetchOptions =
@@ -1449,69 +1449,55 @@ const NetworkScreen = ({ navigation }) => {
       }
 
       const result = await response.json();
-      console.log("✅ Received circles response:", result);
+      // console.log("✅ Received circles response:", result);
 
       // Check if result has data array
       if (result && result.data && Array.isArray(result.data)) {
         const circles = result.data;
-        console.log("✅ Received", circles.length, "circles");
+        // console.log("✅ Received", circles.length, "circles");
 
-        // For circles, we need to fetch profile info for each circle_related_person_id
-        const formatted = await Promise.all(
-          circles.map(async (circle) => {
-            try {
-              // Fetch profile info for the related person
-              const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${circle.circle_related_person_id}`);
-              if (profileResponse.ok) {
-                const apiUser = await profileResponse.json();
-                const p = apiUser?.personal_info || {};
-                return {
-                  ...circle,
-                  __mc: {
-                    firstName: sanitizeText(p.profile_personal_first_name || ""),
-                    lastName: sanitizeText(p.profile_personal_last_name || ""),
-                    tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || ""),
-                    city: sanitizeText(p.profile_personal_city || ""),
-                    state: sanitizeText(p.profile_personal_state || ""),
-                    phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
-                    profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-                    relationship: circle.circle_relationship || null,
-                    emailIsPublic: p.profile_personal_email_is_public === 1,
-                    phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
-                    tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
-                    locationIsPublic: p.profile_personal_location_is_public === 1,
-                    imageIsPublic: p.profile_personal_image_is_public === 1,
-                    personal_info: {
-                      profile_personal_first_name: sanitizeText(p.profile_personal_first_name || ""),
-                      profile_personal_last_name: sanitizeText(p.profile_personal_last_name || ""),
-                      profile_personal_tag_line: sanitizeText(p.profile_personal_tag_line || ""),
-                      profile_personal_phone_number: sanitizeText(p.profile_personal_phone_number || ""),
-                      profile_personal_image: sanitizeText(p.profile_personal_image || ""),
-                      profile_personal_email_is_public: p.profile_personal_email_is_public || 0,
-                      profile_personal_phone_number_is_public: p.profile_personal_phone_number_is_public || 0,
-                      profile_personal_tag_line_is_public: p.profile_personal_tag_line_is_public || 0,
-                      profile_personal_image_is_public: p.profile_personal_image_is_public || 0,
-                    },
-                  },
-                  network_profile_personal_uid: circle.circle_related_person_id,
-                };
-              }
-            } catch (err) {
-              console.error(`Error fetching profile for circle ${circle.circle_related_person_id}:`, err);
-            }
-            // Return circle data even if profile fetch fails
-            return {
-              ...circle,
-              __mc: {
-                firstName: "",
-                lastName: "",
-                tagLine: "",
-                relationship: circle.circle_relationship || null,
+        // Circles payload includes profile fields per row — no N+1 profile requests
+        const formatted = circles.map((circle) => {
+          const p = circle;
+          const tagLineRaw = p.profile_personal_tag_line || p.profile_personal_tagline || "";
+          const emailRaw = p.user_email_id ?? p.user_email ?? "";
+          return {
+            ...circle,
+            degree: 1,
+            __mc: {
+              firstName: sanitizeText(p.profile_personal_first_name || ""),
+              lastName: sanitizeText(p.profile_personal_last_name || ""),
+              tagLine: sanitizeText(tagLineRaw || ""),
+              city: sanitizeText(p.profile_personal_city || ""),
+              state: sanitizeText(p.profile_personal_state || ""),
+              email: sanitizeText(emailRaw || ""),
+              phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+              profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
+              relationship: circle.circle_relationship || null,
+              emailIsPublic: p.profile_personal_email_is_public === 1,
+              phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
+              tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
+              locationIsPublic: p.profile_personal_location_is_public === 1,
+              imageIsPublic: p.profile_personal_image_is_public === 1,
+              personal_info: {
+                profile_personal_first_name: sanitizeText(p.profile_personal_first_name || ""),
+                profile_personal_last_name: sanitizeText(p.profile_personal_last_name || ""),
+                profile_personal_tag_line: sanitizeText(tagLineRaw || ""),
+                profile_personal_tagline: sanitizeText(tagLineRaw || ""),
+                profile_personal_phone_number: sanitizeText(p.profile_personal_phone_number || ""),
+                profile_personal_image: sanitizeText(p.profile_personal_image || ""),
+                profile_personal_city: sanitizeText(p.profile_personal_city || ""),
+                profile_personal_state: sanitizeText(p.profile_personal_state || ""),
+                profile_personal_email_is_public: p.profile_personal_email_is_public || 0,
+                profile_personal_phone_number_is_public: p.profile_personal_phone_number_is_public || 0,
+                profile_personal_tag_line_is_public: p.profile_personal_tag_line_is_public || p.profile_personal_tagline_is_public || 0,
+                profile_personal_image_is_public: p.profile_personal_image_is_public || 0,
+                profile_personal_location_is_public: p.profile_personal_location_is_public || 0,
               },
-              network_profile_personal_uid: circle.circle_related_person_id,
-            };
-          }),
-        );
+            },
+            network_profile_personal_uid: circle.circle_related_person_id || circle.profile_personal_uid,
+          };
+        });
 
         // Update state with circles data
         setNetworkData(formatted);
@@ -1551,9 +1537,9 @@ const NetworkScreen = ({ navigation }) => {
 
   /** ✅ Build vis-network HTML (hierarchical layout by degree) */
   const generateVisHTML = (data, youId) => {
-    console.log("🔷 generateVisHTML called with:");
-    console.log("  - youId:", youId);
-    console.log("  - data length:", data.length);
+    // console.log("🔷 generateVisHTML called with:");
+    // console.log("  - youId:", youId);
+    // console.log("  - data length:", data.length);
     console.log(
       "  - data sample (first 3):",
       JSON.stringify(
@@ -1626,7 +1612,7 @@ const NetworkScreen = ({ navigation }) => {
     });
 
     const edges = [];
-    console.log("🔷 Building edges...");
+    // console.log("🔷 Building edges...");
     data.forEach((n) => {
       const deg = Number(n.degree) || 1;
       const nodeUid = n.network_profile_personal_uid;
@@ -1641,7 +1627,11 @@ const NetworkScreen = ({ navigation }) => {
       let parent = null;
 
       // HIGHEST PRIORITY: Use profile_personal_referred_by - this is who referred/connected this person
-      if (n.profile_personal_referred_by && allUids.has(n.profile_personal_referred_by)) {
+      if (
+        n.profile_personal_referred_by &&
+        n.profile_personal_referred_by !== nodeUid &&
+        allUids.has(n.profile_personal_referred_by)
+      ) {
         const referredByNode = data.find((x) => x.network_profile_personal_uid === n.profile_personal_referred_by);
         if (referredByNode) {
           const referredByDeg = Number(referredByNode.degree) || 1;
@@ -1679,9 +1669,12 @@ const NetworkScreen = ({ navigation }) => {
       }
 
       // Fallback: Check if this node's profile_personal_uid or target_uid points to a valid parent
+      // Circle API rows set profile_personal_uid to the *contact* (same as network_profile_personal_uid).
+      // Treating that as "parent" sets parent === nodeUid (self-loop) and breaks vis-network layout
+      // (image vs ring misalignment, missing-looking edges). Connections rows use these as real parent refs.
       if (!parent && (n.profile_personal_uid || n.target_uid)) {
         const directParentUid = n.profile_personal_uid || n.target_uid;
-        if (allUids.has(directParentUid)) {
+        if (directParentUid !== nodeUid && allUids.has(directParentUid)) {
           const parentNode = data.find((x) => x.network_profile_personal_uid === directParentUid);
           if (parentNode) {
             const parentDeg = Number(parentNode.degree) || 1;
@@ -1874,10 +1867,10 @@ const NetworkScreen = ({ navigation }) => {
   // Debug: Log render start
   if (__DEV__) {
     console.log("🔵 NetworkScreen - RENDER START");
-    console.log("🔵 NetworkScreen - profileUid:", profileUid, "type:", typeof profileUid);
-    console.log("🔵 NetworkScreen - storageData length:", storageData.length);
-    console.log("🔵 NetworkScreen - networkData length:", networkData.length);
-    console.log("🔵 NetworkScreen - groupedNetwork keys:", Object.keys(groupedNetwork));
+    // console.log("🔵 NetworkScreen - profileUid:", profileUid, "type:", typeof profileUid);
+    // console.log("🔵 NetworkScreen - storageData length:", storageData.length);
+    // console.log("🔵 NetworkScreen - networkData length:", networkData.length);
+    // console.log("🔵 NetworkScreen - groupedNetwork keys:", Object.keys(groupedNetwork));
   }
 
   // Apply filters to network data for graph view
@@ -1988,14 +1981,14 @@ const NetworkScreen = ({ navigation }) => {
         >
           {/* QR Code Section */}
           {(() => {
-            if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR Code Section");
+            // if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR Code Section");
             if (qrCodeData && userProfileData && QRCodeComponent) {
-              if (__DEV__) console.log("🔵 NetworkScreen - QR Code data exists, rendering QR section");
+              // if (__DEV__) console.log("🔵 NetworkScreen - QR Code data exists, rendering QR section");
               return (
                 <View style={[styles.qrCodeContainer, darkMode && styles.darkQrCodeContainer]}>
                   {/* Display MiniCard */}
                   {(() => {
-                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
+                    // if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
                     if (userProfileData) {
                       return (
                         <View style={styles.qrCodeMiniCardContainer}>
@@ -2006,7 +1999,7 @@ const NetworkScreen = ({ navigation }) => {
                     return null;
                   })()}
 
-                  <Text style={[styles.qrCodeTitle, darkMode && styles.darkQrCodeTitle]}>Connect with Me!</Text>
+                  <Text accessibilityRole="header" style={[styles.qrCodeTitle, darkMode && styles.darkQrCodeTitle]}>Connect with Me!</Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 15 }}>
                     <Text style={[styles.qrCodeSubtitle, darkMode && styles.darkQrCodeSubtitle, { marginBottom: 0 }]}>SCAN My QR Code</Text>
                     {/* <TouchableOpacity
@@ -2051,6 +2044,10 @@ const NetworkScreen = ({ navigation }) => {
                         ios_backgroundColor='#767577'
                         activeThumbColor={getHeaderColor("network")}
                         activeTrackColor='rgba(36, 52, 194, 0.5)'
+                        accessibilityRole="switch"
+                        accessibilityLabel="Exchange contact info"
+                        accessibilityHint="Turns contact info exchange on or off when someone scans your QR code"
+                        accessibilityState={{ checked: formSwitchEnabled }}
                       />
                     </View>
 
@@ -2073,12 +2070,12 @@ const NetworkScreen = ({ navigation }) => {
                 </View>
               );
             }
-            if (__DEV__) console.log("🔵 NetworkScreen - QR Code section not rendered (missing data)");
+            // if (__DEV__) console.log("🔵 NetworkScreen - QR Code section not rendered (missing data)");
             return null;
           })()}
 
           {(() => {
-            if (__DEV__) console.log("🔵 NetworkScreen - Rendering Network Section");
+            // if (__DEV__) console.log("🔵 NetworkScreen - Rendering Network Section");
             return (
               <View style={{ marginTop: 20 }}>
                 {/* View My Network Dropdown Header */}
@@ -2091,7 +2088,6 @@ const NetworkScreen = ({ navigation }) => {
                       setDegree("3");
                       setViewMode("list");
                       setActiveView("connections");
-                      fetchNetwork(null, "3");
                     }
                   }}
                   activeOpacity={0.7}
@@ -2113,6 +2109,10 @@ const NetworkScreen = ({ navigation }) => {
                             placeholder='Search Connections...'
                             placeholderTextColor={darkMode ? "#888" : "#999"}
                             borderless
+                            accessibilityLabel="Search connections"
+                            accessibilityHint="Type to search your connections by name, location, event, or relationship"
+                            accessibilityRole="search"
+                            aria-label="search connection"
                           />
                         </View>
                       </View>
@@ -2138,7 +2138,6 @@ const NetworkScreen = ({ navigation }) => {
                             if (activeView === "connections") {
                               fetchCircle();
                             } else {
-                              setActiveView("connections");
                               fetchNetwork(null, degree);
                             }
                           }}
@@ -2152,7 +2151,11 @@ const NetworkScreen = ({ navigation }) => {
                         <View style={styles.controlRow}>
                           <Text style={styles.controlRowLabel}>2. Levels to Display</Text>
                           <View style={[styles.pullDownButton, { overflow: "hidden", height: 30 }]}>
-                            <WebTextInput style={styles.pullDownButtonInputInner} value={degree} onChangeText={setDegree} keyboardType='numeric' borderless />
+                            <WebTextInput style={styles.pullDownButtonInputInner} value={degree} onChangeText={setDegree} keyboardType='numeric' borderless
+                            accessibilityLabel="Levels to display"
+                            accessibilityHint="Enter the number of connection levels to show"
+                            aria-label="Levels to display"
+                            />
                           </View>
                         </View>
                       )}
@@ -2256,19 +2259,19 @@ const NetworkScreen = ({ navigation }) => {
                     )}
 
                     {(() => {
-                      if (__DEV__) console.log("🔵 NetworkScreen - Checking list view mode");
+                      // if (__DEV__) console.log("🔵 NetworkScreen - Checking list view mode");
                       return (
                         <>
                           {/* List View */}
                           {viewMode === "list" && Object.keys(groupedNetwork).length > 0 && (
                             <View style={{ marginTop: 10 }}>
                               {(() => {
-                                if (__DEV__) console.log("🔵 NetworkScreen - Rendering network list items");
+                                // if (__DEV__) console.log("🔵 NetworkScreen - Rendering network list items");
                                 return Object.keys(groupedNetwork)
                                   .map((d) => Number(d))
                                   .sort((a, b) => a - b)
                                   .map((deg) => {
-                                    if (__DEV__) console.log(`🔵 NetworkScreen - Processing degree ${deg}`);
+                                    // if (__DEV__) console.log(`🔵 NetworkScreen - Processing degree ${deg}`);
                                     // Filter the list based on relationship type
                                     let list = groupedNetwork[deg];
                                     if (relationshipFilter !== "All") {
@@ -2286,7 +2289,7 @@ const NetworkScreen = ({ navigation }) => {
                                     }
                                     // Apply date filter
                                     if (dateFilter !== "All") {
-                                      console.log(`🔵 NetworkScreen - Applying date filter: ${dateFilter}`);
+                                      // console.log(`🔵 NetworkScreen - Applying date filter: ${dateFilter}`);
                                       const now = new Date();
                                       const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
                                       const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
@@ -2315,7 +2318,7 @@ const NetworkScreen = ({ navigation }) => {
 
                                     // Apply location filter
                                     if (locationFilter !== "All") {
-                                      console.log(`🔵 NetworkScreen - Applying location filter: ${locationFilter}`);
+                                      // console.log(`🔵 NetworkScreen - Applying location filter: ${locationFilter}`);
                                       list = list.filter((node) => {
                                         const city = node.circle_city || "";
                                         const state = node.circle_state || "";
@@ -2333,7 +2336,7 @@ const NetworkScreen = ({ navigation }) => {
 
                                     // Apply event filter
                                     if (eventFilter !== "All") {
-                                      console.log(`🔵 NetworkScreen - Applying event filter: ${eventFilter}`);
+                                      // console.log(`🔵 NetworkScreen - Applying event filter: ${eventFilter}`);
                                       list = list.filter((node) => {
                                         const nodeEvent = (node.circle_event || "").trim();
                                         return nodeEvent === eventFilter;
@@ -2368,7 +2371,7 @@ const NetworkScreen = ({ navigation }) => {
                                       return null;
                                     }
 
-                                    if (__DEV__) console.log(`🔵 NetworkScreen - Rendering degree ${deg} with ${list.length} items`);
+                                    // if (__DEV__) console.log(`🔵 NetworkScreen - Rendering degree ${deg} with ${list.length} items`);
                                     const label = activeView === "circles" ? "Circles" : degreeLabel(Number(deg));
                                     const isExpanded = expandedDegrees[deg] !== false;
                                     return (
@@ -2385,12 +2388,12 @@ const NetworkScreen = ({ navigation }) => {
                                         {isExpanded && (
                                           <View style={{ marginTop: 8 }}>
                                             {list.map((node, index) => {
-                                              if (__DEV__) console.log(`🔵 NetworkScreen - Rendering node ${deg}-${index}, __mc:`, node.__mc);
+                                              // if (__DEV__) console.log(`🔵 NetworkScreen - Rendering node ${deg}-${index}, __mc:`, node.__mc);
                                               if (!node.__mc) {
                                                 if (__DEV__) console.log(`🔵 NetworkScreen - Node ${deg}-${index} has no __mc, skipping`);
                                                 return null;
                                               }
-                                              if (__DEV__) console.log(`🔵 NetworkScreen - Rendering MiniCard for node ${deg}-${index}`);
+                                              // if (__DEV__) console.log(`🔵 NetworkScreen - Rendering MiniCard for node ${deg}-${index}`);
                                               return (
                                                 <TouchableOpacity
                                                   key={`${deg}-${index}`}
@@ -2419,7 +2422,7 @@ const NetworkScreen = ({ navigation }) => {
                     })()}
 
                     {(() => {
-                      if (__DEV__) console.log("🔵 NetworkScreen - Rendering 'No connections' message");
+                      // if (__DEV__) console.log("🔵 NetworkScreen - Rendering 'No connections' message");
                       if (!loading && !error && Object.keys(groupedNetwork).length === 0) {
                         return <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>{activeView === "circles" ? "No circles found." : "No network connections found."}</Text>;
                       }
@@ -2508,7 +2511,7 @@ const NetworkScreen = ({ navigation }) => {
           )}
 
           {(() => {
-            if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage Section");
+            // if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage Section");
             return (
               <View>
                 <TouchableOpacity
@@ -2524,9 +2527,9 @@ const NetworkScreen = ({ navigation }) => {
                   <Ionicons name={showAsyncStorage ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
                 </TouchableOpacity>
                 {(() => {
-                  if (__DEV__) console.log("🔵 NetworkScreen - showAsyncStorage:", showAsyncStorage);
+                  // if (__DEV__) console.log("🔵 NetworkScreen - showAsyncStorage:", showAsyncStorage);
                   if (showAsyncStorage) {
-                    if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage data, length:", storageData.length);
+                    // if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage data, length:", storageData.length);
                     return (
                       <>
                         {storageData.length === 0 ? (
@@ -2534,12 +2537,12 @@ const NetworkScreen = ({ navigation }) => {
                         ) : (
                           storageData
                             .map(([key, value], idx) => {
-                              if (__DEV__) console.log(`🔵 NetworkScreen - Processing AsyncStorage item ${idx}:`, { key, value, keyType: typeof key, valueType: typeof value });
+                              // if (__DEV__) console.log(`🔵 NetworkScreen - Processing AsyncStorage item ${idx}:`, { key, value, keyType: typeof key, valueType: typeof value });
                               const sanitizedKey = sanitizeText(key, "Unknown");
                               const sanitizedValue = sanitizeText(value, "N/A");
-                              if (__DEV__) console.log(`🔵 NetworkScreen - After sanitization ${idx}:`, { sanitizedKey, sanitizedValue });
+                              // if (__DEV__) console.log(`🔵 NetworkScreen - After sanitization ${idx}:`, { sanitizedKey, sanitizedValue });
                               if (!isSafeForConditional(sanitizedKey) && !isSafeForConditional(sanitizedValue)) {
-                                if (__DEV__) console.log(`🔵 NetworkScreen - Skipping item ${idx} (unsafe)`);
+                                // if (__DEV__) console.log(`🔵 NetworkScreen - Skipping item ${idx} (unsafe)`);
                                 return null;
                               }
                               return (

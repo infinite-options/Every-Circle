@@ -76,21 +76,21 @@ export default function AccountScreen({ navigation }) {
   // Transaction data loader
   const refreshTransactionData = async () => {
     try {
-      console.log("=== STARTING TRANSACTION DATA LOAD ===");
+      // console.log("=== STARTING TRANSACTION DATA LOAD ===");
       setTransactionLoading(true);
       const profileId = await AsyncStorage.getItem("profile_uid");
-      console.log("Profile ID from AsyncStorage:", profileId);
+      // console.log("Profile ID from AsyncStorage:", profileId);
       if (profileId) {
         const transactionsUrl = `${API_BASE_URL}/api/v1/transactions/${profileId}`;
-        console.log("Making GET request to:", transactionsUrl);
+        // console.log("Making GET request to:", transactionsUrl);
         const response = await fetch(transactionsUrl, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
           },
         });
-        console.log("Response status:", response.status);
-        console.log("Response ok:", response.ok);
+        // console.log("Response status:", response.status);
+        // console.log("Response ok:", response.ok);
 
         // Handle 400 status as empty transactions (no transactions found)
         if (response.status === 400) {
@@ -104,16 +104,16 @@ export default function AccountScreen({ navigation }) {
         }
 
         const result = await response.json();
-        console.log("=== TRANSACTION API RESPONSE ===");
-        console.log("Full API response:", JSON.stringify(result, null, 2));
-        console.log("Response code:", result?.code);
-        console.log("Response message:", result?.message);
-        console.log("Data array length:", result?.data?.length);
-        console.log("Count:", result?.count);
-        if (result?.data && result.data.length > 0) {
-          console.log("First transaction:", JSON.stringify(result.data[0], null, 2));
-        }
-        console.log("=== END TRANSACTION API RESPONSE ===");
+        // console.log("=== TRANSACTION API RESPONSE ===");
+        // console.log("Full API response:", JSON.stringify(result, null, 2));
+        // console.log("Response code:", result?.code);
+        // console.log("Response message:", result?.message);
+        // console.log("Data array length:", result?.data?.length);
+        // console.log("Count:", result?.count);
+        // if (result?.data && result.data.length > 0) {
+        //   console.log("First transaction:", JSON.stringify(result.data[0], null, 2));
+        // }
+        // console.log("=== END TRANSACTION API RESPONSE ===");
 
         // Extract transactions from response.data
         const transactions = result && result.code === 200 && Array.isArray(result.data) ? result.data : [];
@@ -271,7 +271,7 @@ export default function AccountScreen({ navigation }) {
         }
 
         const result = await response.json();
-        console.log("Bounty results:", result);
+        // console.log("Bounty results:", result);
         setBountyData(result);
       }
     } catch (error) {
@@ -296,7 +296,7 @@ export default function AccountScreen({ navigation }) {
         }
 
         const profileResult = await profileResponse.json();
-        console.log("Expertise API response:", profileResult);
+        // console.log("Expertise API response:", profileResult);
 
         // Parse expertise_info
         const expertiseList = profileResult.expertise_info ? (typeof profileResult.expertise_info === "string" ? JSON.parse(profileResult.expertise_info) : profileResult.expertise_info) : [];
@@ -349,21 +349,21 @@ export default function AccountScreen({ navigation }) {
 
           // Calculate total quantity sold for this expertise
           let totalQty = 0;
-          console.log(`Checking seller transactions for expertise: ${exp.profile_expertise_title} (UID: ${expertiseUid})`);
-          console.log(`Total seller transaction items to check: ${sellerTransactions.length}`);
+          // console.log(`Checking seller transactions for expertise: ${exp.profile_expertise_title} (UID: ${expertiseUid})`);
+          // console.log(`Total seller transaction items to check: ${sellerTransactions.length}`);
 
           sellerTransactions.forEach((transaction) => {
-            console.log(`Seller transaction item ti_bs_id: ${transaction.ti_bs_id}, ti_bs_qty: ${transaction.ti_bs_qty}`);
+            // console.log(`Seller transaction item ti_bs_id: ${transaction.ti_bs_id}, ti_bs_qty: ${transaction.ti_bs_qty}`);
 
             if (transaction.ti_bs_id === expertiseUid) {
-              console.log(`✓ MATCH found for ${exp.profile_expertise_title}!`);
+              // console.log(`✓ MATCH found for ${exp.profile_expertise_title}!`);
               const qty = parseInt(transaction.ti_bs_qty) || 0;
               totalQty += qty;
-              console.log(`Added quantity: ${qty}, New total: ${totalQty}`);
+              // console.log(`Added quantity: ${qty}, New total: ${totalQty}`);
             }
           });
 
-          console.log(`Final quantity for ${exp.profile_expertise_title}: ${totalQty}`);
+          // console.log(`Final quantity for ${exp.profile_expertise_title}: ${totalQty}`);
 
           return {
             name: exp.profile_expertise_title || "",
@@ -506,7 +506,7 @@ export default function AccountScreen({ navigation }) {
 
   const refreshBusinessTransactionData = async () => {
     try {
-      console.log("=== STARTING BUSINESS TRANSACTION DATA LOAD ===");
+      // console.log("=== STARTING BUSINESS TRANSACTION DATA LOAD ===");
       setBusinessTransactionLoading(true);
 
       // If personal account is selected, don't load business data
@@ -526,7 +526,7 @@ export default function AccountScreen({ navigation }) {
         return;
       }
 
-      console.log(`Fetching transactions for business: ${targetBusinessUID}`);
+      // console.log(`Fetching transactions for business: ${targetBusinessUID}`);
 
       // First, fetch the business bounty data which has bs_bounty and ti_bs_qty
       let bountyDataByTransaction = {};
@@ -534,7 +534,7 @@ export default function AccountScreen({ navigation }) {
         const bountyResponse = await fetch(`${BUSINESS_BOUNTY_RESULTS_ENDPOINT}/${targetBusinessUID}`);
         if (bountyResponse.ok) {
           const bountyResult = await bountyResponse.json();
-          console.log("Business bounty result:", bountyResult);
+          // console.log("Business bounty result:", bountyResult);
 
           if (bountyResult && bountyResult.data && Array.isArray(bountyResult.data)) {
             // Group by transaction_uid and sum bounty_paid
@@ -625,8 +625,8 @@ export default function AccountScreen({ navigation }) {
           return dateB - dateA;
         });
 
-        console.log(`Total business transactions found: ${filteredTransactions.length}`);
-        console.log("Sample transaction with bounty:", filteredTransactions[0]);
+        // console.log(`Total business transactions found: ${filteredTransactions.length}`);
+        // console.log("Sample transaction with bounty:", filteredTransactions[0]);
         setBusinessTransactionData(filteredTransactions);
       }
     } catch (error) {
@@ -681,7 +681,7 @@ export default function AccountScreen({ navigation }) {
             return dateB - dateA;
           });
 
-          console.log("Business Bounty results:", result);
+          // console.log("Business Bounty results:", result);
           setBusinessBountyData(result);
         }
       } catch (error) {
@@ -718,7 +718,7 @@ export default function AccountScreen({ navigation }) {
   // Load business data when switching to business account
   useEffect(() => {
     if (selectedAccount !== "personal") {
-      console.log("Switched to business account, loading business data for:", selectedAccount);
+      // console.log("Switched to business account, loading business data for:", selectedAccount);
       const loadBusinessData = async () => {
         await refreshBusinessTransactionData();
         await refreshBusinessBountyData();
@@ -1423,9 +1423,7 @@ export default function AccountScreen({ navigation }) {
 
                         return (
                           <View key={transaction.ti_uid || i} style={styles.transactionRow}>
-                            <Text style={styles.transactionDate}>
-                              {formatTransactionDate(transaction.transaction_datetime)}
-                            </Text>
+                            <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
                             <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text>
                             <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "N/A"}</Text>
                             <Text style={styles.transactionBusiness}>{transaction.business_name || "N/A"}</Text>
@@ -1455,9 +1453,7 @@ export default function AccountScreen({ navigation }) {
                                 <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Received"}</Text>
                               )}
                             </View>
-                            <Text style={styles.transactionAmount}>
-                              ${parseFloat(transaction.transaction_total || 0).toFixed(2)}
-                            </Text>
+                            <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
                           </View>
                         );
                       })}
@@ -1736,10 +1732,7 @@ export default function AccountScreen({ navigation }) {
             ) : (
               <Text style={[styles.noDataText, { marginVertical: 24 }]}>No receipt data available.</Text>
             )}
-            <TouchableOpacity
-              style={[styles.receiptCloseButton, darkMode && styles.darkCancelButton]}
-              onPress={() => setShowReceiptModal(false)}
-            >
+            <TouchableOpacity style={[styles.receiptCloseButton, darkMode && styles.darkCancelButton]} onPress={() => setShowReceiptModal(false)}>
               <Text style={[styles.receiptCloseButtonText, darkMode && styles.darkCancelButtonText]}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -2293,5 +2286,3 @@ const styles = StyleSheet.create({
     color: "#18884A",
   },
 });
-
-

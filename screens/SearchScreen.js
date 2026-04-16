@@ -1300,6 +1300,9 @@ export default function SearchScreen({ route }) {
               onChangeText={setSearchQuery}
               returnKeyType='search'
               onSubmitEditing={onSearch}
+              accessibilityLabel="Search"
+              accessibilityHint="Enter text to search"
+              accessibilityRole="search"
             />
             <TouchableOpacity style={[styles.searchButton, darkMode && styles.darkSearchButton]} onPress={onSearch}>
               <Ionicons name='search' size={22} color={darkMode ? "#ffffff" : "#000000"} />

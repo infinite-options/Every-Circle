@@ -77,15 +77,15 @@ const ProfileScreen = ({ route, navigation }) => {
   useFocusEffect(
     React.useCallback(() => {
       async function loadProfile() {
-        console.log("ProfileScreen - useFocusEffect triggered, reloading profile data");
+        // console.log("ProfileScreen - useFocusEffect triggered, reloading profile data");
         setLoading(true);
 
         // Check if a specific profile_uid was passed via route params (for viewing other users' profiles)
         const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
 
         if (routeProfileUID) {
-          console.log("ProfileScreen - Loading profile from route params:", routeProfileUID);
-          console.log("ProfileScreen - Logged in profile UID:", loggedInProfileUID);
+          // console.log("ProfileScreen - Loading profile from route params:", routeProfileUID);
+          // console.log("ProfileScreen - Logged in profile UID:", loggedInProfileUID);
           setProfileUID(routeProfileUID);
           // Check if the profile being viewed matches the logged-in user's profile
           setIsCurrentUserProfile(routeProfileUID === loggedInProfileUID);
@@ -98,10 +98,10 @@ const ProfileScreen = ({ route, navigation }) => {
         }
 
         let profileId = loggedInProfileUID;
-        console.log("ProfileScreen - profileId from AsyncStorage:", profileId);
+        // console.log("ProfileScreen - profileId from AsyncStorage:", profileId);
         if (profileId) {
           setProfileUID(profileId);
-          console.log("ProfileScreen - Setting profileUID state to:", profileId);
+          // console.log("ProfileScreen - Setting profileUID state to:", profileId);
           // This is the logged-in user's own profile
           setIsCurrentUserProfile(true);
           await fetchUserData(profileId);
@@ -110,7 +110,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
         // If no profile_uid, try to get user_uid and fetch profile
         const userId = await AsyncStorage.getItem("user_uid");
-        console.log("ProfileScreen - userId:", userId);
+        // console.log("ProfileScreen - userId:", userId);
         if (userId) {
           try {
             const response = await fetch(`${ProfileScreenAPI}/${userId}`);
@@ -118,7 +118,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
             // Handle case where profile is not found (404 error)
             if ((!response.ok && response.status === 404) || apiUser.message === "Profile not found for this user" || (apiUser.code === 404 && apiUser.message === "Profile not found for this user")) {
-              console.log("ProfileScreen - Profile not found for current user, routing to UserInfo");
+              // console.log("ProfileScreen - Profile not found for current user, routing to UserInfo");
               setLoading(false);
               // Clear any existing profile data but keep user credentials
               await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
@@ -150,12 +150,12 @@ const ProfileScreen = ({ route, navigation }) => {
 
   async function fetchUserData(profileUID) {
     try {
-      console.log("Fetching user data for profile UID:", profileUID);
+      // console.log("Fetching user data for profile UID:", profileUID);
       const response = await fetch(`${ProfileScreenAPI}/${profileUID}`);
       const apiUser = await response.json();
-      console.log("ProfileScreen.js - Profile API Response:", JSON.stringify(apiUser, null, 2));
+      // console.log("ProfileScreen.js - Profile API Response:", JSON.stringify(apiUser, null, 2));
 
-      console.log("ProfileScreen - personal_info object:", JSON.stringify(apiUser.personal_info, null, 2));
+      // console.log("ProfileScreen - personal_info object:", JSON.stringify(apiUser.personal_info, null, 2));
 
       // Handle case where profile is not found (404 error)
       if (
@@ -164,7 +164,7 @@ const ProfileScreen = ({ route, navigation }) => {
         apiUser.message === "Profile not found for this user" ||
         (apiUser.code === 404 && apiUser.message === "Profile not found for this user")
       ) {
-        console.log("ProfileScreen - Profile not found for profile UID:", profileUID);
+        // console.log("ProfileScreen - Profile not found for profile UID:", profileUID);
 
         // Check if this is the current user's profile
         const currentUserUid = await AsyncStorage.getItem("user_uid");
@@ -172,7 +172,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
         // If the profileUID matches user_uid or is the current user's profile, route to UserInfo
         if (isCurrentUserProfile || profileUID === currentUserUid || profileUID === currentProfileUid) {
-          console.log("ProfileScreen - Current user's profile not found, routing to UserInfo");
+          // console.log("ProfileScreen - Current user's profile not found, routing to UserInfo");
           setLoading(false);
           // Clear any existing profile data but keep user credentials
           await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
@@ -249,8 +249,8 @@ const ProfileScreen = ({ route, navigation }) => {
           }))
         : [];
 
-      console.log("ProfileScreen - userData.businesses (after mapping):", JSON.stringify(userData.businesses, null, 2));
-      console.log("ProfileScreen - userData.businesses.length:", userData.businesses.length);
+      // console.log("ProfileScreen - userData.businesses (after mapping):", JSON.stringify(userData.businesses, null, 2));
+      // console.log("ProfileScreen - userData.businesses.length:", userData.businesses.length);
 
       userData.expertise = apiUser.expertise_info
         ? (typeof apiUser.expertise_info === "string" ? JSON.parse(apiUser.expertise_info) : apiUser.expertise_info).map((exp) => ({
@@ -282,14 +282,14 @@ const ProfileScreen = ({ route, navigation }) => {
       userData.twitter = socialLinks.twitter || "";
       userData.linkedin = socialLinks.linkedin || "";
       userData.youtube = socialLinks.youtube || "";
-      console.log("ProfileScreen - Setting user data:", userData);
-      console.log("ProfileScreen - Profile UID in userData:", userData.profile_uid);
+      // console.log("ProfileScreen - Setting user data:", userData);
+      // console.log("ProfileScreen - Profile UID in userData:", userData.profile_uid);
       setUser(userData);
 
       userData.ratings = apiUser.ratings_info || [];
       setUser(userData);
-      console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
-      console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
+      // console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
+      // console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
 
       const rawBusinessInfo = Array.isArray(apiUser.business_info)
         ? apiUser.business_info
@@ -328,7 +328,7 @@ const ProfileScreen = ({ route, navigation }) => {
           index,
         };
       });
-      console.log("mappedBusinesses result:", JSON.stringify(mappedBusinesses, null, 2));
+      // console.log("mappedBusinesses result:", JSON.stringify(mappedBusinesses, null, 2));
       setBusinessesData(mappedBusinesses);
       setLoading(false);
     } catch (error) {
@@ -353,10 +353,10 @@ const ProfileScreen = ({ route, navigation }) => {
       const dropdownMenu = document.querySelector("[data-dropdown-menu]");
       const target = event.target;
 
-      console.log("ProfileScreen - Click outside handler triggered");
-      console.log("ProfileScreen - Target:", target);
-      console.log("ProfileScreen - Dropdown button:", dropdownButton);
-      console.log("ProfileScreen - Dropdown menu:", dropdownMenu);
+      // console.log("ProfileScreen - Click outside handler triggered");
+      // console.log("ProfileScreen - Target:", target);
+      // console.log("ProfileScreen - Dropdown button:", dropdownButton);
+      // console.log("ProfileScreen - Dropdown menu:", dropdownMenu);
 
       // Check if click is inside the dropdown menu or button
       // Check if target or any of its parents is the dropdown button or menu
@@ -367,12 +367,12 @@ const ProfileScreen = ({ route, navigation }) => {
       while (element) {
         if (element === dropdownButton || element.getAttribute?.("data-dropdown-button")) {
           clickedButton = true;
-          console.log("ProfileScreen - Click detected on dropdown button");
+          // console.log("ProfileScreen - Click detected on dropdown button");
           break;
         }
         if (element === dropdownMenu || element.getAttribute?.("data-dropdown-menu")) {
           clickedMenu = true;
-          console.log("ProfileScreen - Click detected on dropdown menu");
+          // console.log("ProfileScreen - Click detected on dropdown menu");
           break;
         }
         element = element.parentElement;
@@ -380,7 +380,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
       // Only close if click is completely outside both button and menu
       if (!clickedButton && !clickedMenu) {
-        console.log("ProfileScreen - Click outside detected, closing dropdown");
+        // console.log("ProfileScreen - Click outside detected, closing dropdown");
         setShowRelationshipDropdown(false);
       } else {
         console.log("ProfileScreen - Click inside dropdown, not closing");
@@ -402,10 +402,10 @@ const ProfileScreen = ({ route, navigation }) => {
     try {
       // console.log("ProfileScreen - fetchBusinessesData called with businesses:", JSON.stringify(businesses, null, 2));
       // console.log("ProfileScreen - Number of businesses to fetch:", businesses.length);
-      console.log("ProfileScreen - fetchBusinessesData called with businesses:", JSON.stringify(businesses, null, 2));
+      // console.log("ProfileScreen - fetchBusinessesData called with businesses:", JSON.stringify(businesses, null, 2));
 
       const businessPromises = businesses.map(async (bus, index) => {
-        console.log("ProfileScreen - Processing business:", bus);
+        // console.log("ProfileScreen - Processing business:", bus);
         if (!bus.profile_business_uid) {
           console.log("ProfileScreen - Skipping business - no profile_business_uid:", bus);
           return null;
@@ -413,7 +413,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
         try {
           const businessEndpoint = `${BUSINESS_INFO_ENDPOINT}/${bus.profile_business_uid}`;
-          console.log("ProfileScreen - Fetching business from:", businessEndpoint);
+          // console.log("ProfileScreen - Fetching business from:", businessEndpoint);
           const response = await fetch(businessEndpoint);
           const result = await response.json();
           // console.log("ProfileScreen - Business API response for", bus.profile_business_uid, ":", JSON.stringify(result, null, 2));
@@ -465,7 +465,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
           // Get role and approval status from the original business_info entry
           const originalBusiness = businesses.find((b) => b.profile_business_uid === bus.profile_business_uid);
-          console.log("ProfileScreen - originalBusiness for", rawBusiness.business_name, ":", JSON.stringify(originalBusiness, null, 2));
+          // console.log("ProfileScreen - originalBusiness for", rawBusiness.business_name, ":", JSON.stringify(originalBusiness, null, 2));
 
           // Profile image from business_profile_img; fallback to first of business_images_url for MiniCard
           const businessProfileImg = rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
@@ -477,12 +477,12 @@ const ProfileScreen = ({ route, navigation }) => {
             rawBusiness.business_image_is_public === 1 ||
             rawBusiness.image_is_public === "1" ||
             rawBusiness.image_is_public === 1;
-          console.log("ProfileScreen - Business image data for", rawBusiness.business_name, ":", {
-            businessProfileImg: !!businessProfileImg,
-            businessImagesLength: businessImages?.length || 0,
-            firstImage: !!firstImage,
-            imageIsPublic,
-          });
+          // console.log("ProfileScreen - Business image data for", rawBusiness.business_name, ":", {
+          //   businessProfileImg: !!businessProfileImg,
+          //   businessImagesLength: businessImages?.length || 0,
+          //   firstImage: !!firstImage,
+          //   imageIsPublic,
+          // });
           return {
             business_name: sanitizeText(rawBusiness.business_name, ""),
             tagline: sanitizeText(rawBusiness.business_tag_line || rawBusiness.tagline || "", ""),
@@ -517,8 +517,8 @@ const ProfileScreen = ({ route, navigation }) => {
       const fetchedBusinesses = await Promise.all(businessPromises);
       // console.log("ProfileScreen - Fetched businesses (before filter):", JSON.stringify(fetchedBusinesses, null, 2));
       const validBusinesses = fetchedBusinesses.filter(Boolean);
-      console.log("ProfileScreen - Valid businesses (after filter):", JSON.stringify(validBusinesses, null, 2));
-      console.log("ProfileScreen - Setting businessesData with", validBusinesses.length, "businesses");
+      // console.log("ProfileScreen - Valid businesses (after filter):", JSON.stringify(validBusinesses, null, 2));
+      // console.log("ProfileScreen - Setting businessesData with", validBusinesses.length, "businesses");
       setBusinessesData(validBusinesses);
     } catch (error) {
       // console.error("ProfileScreen - Error fetching businesses data:", error);
@@ -530,12 +530,12 @@ const ProfileScreen = ({ route, navigation }) => {
 
   const fetchRelationship = async (loggedInProfileUID, viewedProfileUID) => {
     try {
-      console.log("ProfileScreen - Fetching relationship...");
-      console.log("ProfileScreen - Logged in profile UID:", loggedInProfileUID);
-      console.log("ProfileScreen - Viewed profile UID:", viewedProfileUID);
+      // console.log("ProfileScreen - Fetching relationship...");
+      // console.log("ProfileScreen - Logged in profile UID:", loggedInProfileUID);
+      // console.log("ProfileScreen - Viewed profile UID:", viewedProfileUID);
 
       const endpoint = `${CIRCLES_ENDPOINT}/${loggedInProfileUID}?circle_related_person_id=${viewedProfileUID}`;
-      console.log("ProfileScreen - Relationship endpoint:", endpoint);
+      // console.log("ProfileScreen - Relationship endpoint:", endpoint);
 
       const response = await fetch(endpoint, {
         method: "GET",
@@ -544,16 +544,16 @@ const ProfileScreen = ({ route, navigation }) => {
         },
       });
 
-      console.log("ProfileScreen - Relationship response status:", response.status);
-      console.log("ProfileScreen - Relationship response ok:", response.ok);
+      // console.log("ProfileScreen - Relationship response status:", response.status);
+      // console.log("ProfileScreen - Relationship response ok:", response.ok);
 
       const result = await response.json();
-      console.log("ProfileScreen - ============================================");
-      console.log("ProfileScreen - ENDPOINT RETURN (GET Relationship):");
-      console.log("ProfileScreen - URL:", endpoint);
-      console.log("ProfileScreen - RESPONSE STATUS:", response.status);
-      console.log("ProfileScreen - RESPONSE BODY:", JSON.stringify(result, null, 2));
-      console.log("ProfileScreen - ============================================");
+      // console.log("ProfileScreen - ============================================");
+      // console.log("ProfileScreen - ENDPOINT RETURN (GET Relationship):");
+      // console.log("ProfileScreen - URL:", endpoint);
+      // console.log("ProfileScreen - RESPONSE STATUS:", response.status);
+      // console.log("ProfileScreen - RESPONSE BODY:", JSON.stringify(result, null, 2));
+      // console.log("ProfileScreen - ============================================");
 
       if (response.ok && result && result.data && result.data.length > 0) {
         // Extract relationship data from the first item in the data array
@@ -566,27 +566,27 @@ const ProfileScreen = ({ route, navigation }) => {
         setRelationshipType(relationship);
         setCircleUid(uid);
 
-        console.log("ProfileScreen - Relationship found:", relationshipData);
-        console.log("ProfileScreen - Relationship type extracted:", relationship);
-        console.log("ProfileScreen - Circle UID extracted:", uid);
-        console.log("ProfileScreen - Data passed to ProfileScreen - relationshipType:", relationship);
-        console.log("ProfileScreen - Data passed to ProfileScreen - circleUid:", uid);
+        // console.log("ProfileScreen - Relationship found:", relationshipData);
+        // console.log("ProfileScreen - Relationship type extracted:", relationship);
+        // console.log("ProfileScreen - Circle UID extracted:", uid);
+        // console.log("ProfileScreen - Data passed to ProfileScreen - relationshipType:", relationship);
+        // console.log("ProfileScreen - Data passed to ProfileScreen - circleUid:", uid);
       } else {
         // No relationship found or error
         setExistingRelationship(null);
         setRelationshipType(null);
         setCircleUid(null);
-        console.log("ProfileScreen - No relationship found or error");
-        console.log("ProfileScreen - Data passed to ProfileScreen - relationshipType: null");
-        console.log("ProfileScreen - Data passed to ProfileScreen - circleUid: null");
+        // console.log("ProfileScreen - No relationship found or error");
+        // console.log("ProfileScreen - Data passed to ProfileScreen - relationshipType: null");
+        // console.log("ProfileScreen - Data passed to ProfileScreen - circleUid: null");
       }
     } catch (error) {
       console.error("ProfileScreen - Error fetching relationship:", error);
       setExistingRelationship(null);
       setRelationshipType(null);
       setCircleUid(null);
-      console.log("ProfileScreen - Data passed to ProfileScreen - relationshipType: null (error)");
-      console.log("ProfileScreen - Data passed to ProfileScreen - circleUid: null (error)");
+      // console.log("ProfileScreen - Data passed to ProfileScreen - relationshipType: null (error)");
+      // console.log("ProfileScreen - Data passed to ProfileScreen - circleUid: null (error)");
     }
   };
 
@@ -629,12 +629,12 @@ const ProfileScreen = ({ route, navigation }) => {
   };
 
   const handleRelationshipSelect = async (relationship) => {
-    console.log("============================================");
-    console.log("ProfileScreen - handleRelationshipSelect CALLED");
-    console.log("ProfileScreen - Selected relationship:", relationship);
-    console.log("ProfileScreen - Current relationshipType:", relationshipType);
-    console.log("ProfileScreen - Current circleUid:", circleUid);
-    console.log("============================================");
+    // console.log("============================================");
+    // console.log("ProfileScreen - handleRelationshipSelect CALLED");
+    // console.log("ProfileScreen - Selected relationship:", relationship);
+    // console.log("ProfileScreen - Current relationshipType:", relationshipType);
+    // console.log("ProfileScreen - Current circleUid:", circleUid);
+    // console.log("============================================");
 
     try {
       // Close dropdown immediately for better UX
@@ -650,7 +650,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
       // Get the current logged-in user's profile_uid
       const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
-      console.log("ProfileScreen - loggedInProfileUID:", loggedInProfileUID);
+      // console.log("ProfileScreen - loggedInProfileUID:", loggedInProfileUID);
       if (!loggedInProfileUID) {
         console.error("ProfileScreen - ERROR: User profile not found");
         Alert.alert("Error", "User profile not found. Please try again.");
@@ -659,57 +659,71 @@ const ProfileScreen = ({ route, navigation }) => {
 
       // Get the profile_uid of the user being viewed
       const viewedProfileUID = routeProfileUID || profileUID;
-      console.log("ProfileScreen - viewedProfileUID:", viewedProfileUID);
-      console.log("ProfileScreen - routeProfileUID:", routeProfileUID);
-      console.log("ProfileScreen - profileUID:", profileUID);
+      // console.log("ProfileScreen - viewedProfileUID:", viewedProfileUID);
+      // console.log("ProfileScreen - routeProfileUID:", routeProfileUID);
+      // console.log("ProfileScreen - profileUID:", profileUID);
       if (!viewedProfileUID) {
         console.error("ProfileScreen - ERROR: Profile information not found");
         Alert.alert("Error", "Profile information not found.");
         return;
       }
 
-      // If a relationship already exists (circleUid exists), use PUT to update
+      // If a relationship already exists (circleUid exists), DELETE or PUT depending on selection
       if (circleUid) {
-        const updateEndpoint = `${CIRCLES_ENDPOINT}/${circleUid}`;
-        const updateRequestBody = {
-          circle_relationship: relationship, // This will be null if "None" is selected
-        };
+        const circleEndpoint = `${CIRCLES_ENDPOINT}/${circleUid}`;
 
-        console.log("ProfileScreen - ============================================");
-        console.log("ProfileScreen - MAKING API CALL: CIRCLES (UPDATE)");
-        console.log("ProfileScreen - URL:", updateEndpoint);
-        console.log("ProfileScreen - METHOD: PUT");
-        console.log("ProfileScreen - REQUEST BODY:", JSON.stringify(updateRequestBody, null, 2));
-        console.log("ProfileScreen - CIRCLES_ENDPOINT:", CIRCLES_ENDPOINT);
-        console.log("ProfileScreen - circleUid:", circleUid);
-        console.log("ProfileScreen - ============================================");
+        if (relationship === null) {
+          // "Select None" — remove the connection entirely
+          // console.log("ProfileScreen - ============================================");
+          // console.log("ProfileScreen - MAKING API CALL: CIRCLES (DELETE — remove connection)");
+          // console.log("ProfileScreen - URL:", circleEndpoint);
+          // console.log("ProfileScreen - METHOD: DELETE");
+          // console.log("ProfileScreen - circleUid:", circleUid);
+          // console.log("ProfileScreen - ============================================");
 
-        const response = await fetch(updateEndpoint, {
+          const response = await fetch(circleEndpoint, { method: "DELETE" });
+
+          // console.log("ProfileScreen - DELETE RESPONSE STATUS:", response.status);
+          const result = await response.json();
+          // console.log("ProfileScreen - DELETE RESPONSE BODY:", JSON.stringify(result, null, 2));
+
+          if (!response.ok) {
+            throw new Error(result.message || "Failed to remove connection");
+          }
+
+          // Clear both relationship and circleUid — the row no longer exists
+          setRelationshipType(null);
+          setCircleUid(null);
+          Alert.alert("Success", "Connection removed");
+          return; // skip the refresh below — there is no circle row to re-fetch
+        }
+
+        // Changing to a different relationship label — use PUT
+        const updateRequestBody = { circle_relationship: relationship };
+
+        // console.log("ProfileScreen - ============================================");
+        // console.log("ProfileScreen - MAKING API CALL: CIRCLES (UPDATE)");
+        // console.log("ProfileScreen - URL:", circleEndpoint);
+        // console.log("ProfileScreen - METHOD: PUT");
+        // console.log("ProfileScreen - REQUEST BODY:", JSON.stringify(updateRequestBody, null, 2));
+        // console.log("ProfileScreen - ============================================");
+
+        const response = await fetch(circleEndpoint, {
           method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updateRequestBody),
         });
 
-        console.log("ProfileScreen - API CALL COMPLETED");
-        console.log("ProfileScreen - Response status:", response.status);
-
-        console.log("ProfileScreen - UPDATE RESPONSE STATUS:", response.status);
-        console.log("ProfileScreen - UPDATE RESPONSE OK:", response.ok);
-
+        // console.log("ProfileScreen - UPDATE RESPONSE STATUS:", response.status);
         const result = await response.json();
-        console.log("ProfileScreen - UPDATE RESPONSE BODY:", JSON.stringify(result, null, 2));
+        // console.log("ProfileScreen - UPDATE RESPONSE BODY:", JSON.stringify(result, null, 2));
 
         if (!response.ok) {
           throw new Error(result.message || "Failed to update relationship");
         }
 
-        console.log("ProfileScreen - Relationship updated successfully");
-        // Update state immediately for better UX
         setRelationshipType(relationship);
-        const successMessage = relationship === null ? "Relationship removed" : `Relationship updated to ${relationship.charAt(0).toUpperCase() + relationship.slice(1)}!`;
-        Alert.alert("Success", successMessage);
+        Alert.alert("Success", `Relationship updated to ${relationship.charAt(0).toUpperCase() + relationship.slice(1)}!`);
       } else if (relationship !== null) {
         // No existing relationship, create new one with POST
         // Format current date (YYYY-MM-DD)
@@ -727,14 +741,14 @@ const ProfileScreen = ({ route, navigation }) => {
           circle_date: circleDate,
         };
 
-        console.log("ProfileScreen - ============================================");
-        console.log("ProfileScreen - MAKING API CALL: CIRCLES (CREATE)");
-        console.log("ProfileScreen - URL:", CIRCLES_ENDPOINT);
-        console.log("ProfileScreen - METHOD: POST");
-        console.log("ProfileScreen - REQUEST BODY:", JSON.stringify(requestBody, null, 2));
-        console.log("ProfileScreen - loggedInProfileUID:", loggedInProfileUID);
-        console.log("ProfileScreen - viewedProfileUID:", viewedProfileUID);
-        console.log("ProfileScreen - ============================================");
+        // console.log("ProfileScreen - ============================================");
+        // console.log("ProfileScreen - MAKING API CALL: CIRCLES (CREATE)");
+        // console.log("ProfileScreen - URL:", CIRCLES_ENDPOINT);
+        // console.log("ProfileScreen - METHOD: POST");
+        // console.log("ProfileScreen - REQUEST BODY:", JSON.stringify(requestBody, null, 2));
+        // console.log("ProfileScreen - loggedInProfileUID:", loggedInProfileUID);
+        // console.log("ProfileScreen - viewedProfileUID:", viewedProfileUID);
+        // console.log("ProfileScreen - ============================================");
 
         // Make the API call
         const response = await fetch(CIRCLES_ENDPOINT, {
@@ -745,20 +759,20 @@ const ProfileScreen = ({ route, navigation }) => {
           body: JSON.stringify(requestBody),
         });
 
-        console.log("ProfileScreen - API CALL COMPLETED");
-        console.log("ProfileScreen - Response status:", response.status);
+        // console.log("ProfileScreen - API CALL COMPLETED");
+        // console.log("ProfileScreen - Response status:", response.status);
 
-        console.log("ProfileScreen - CREATE RESPONSE STATUS:", response.status);
-        console.log("ProfileScreen - CREATE RESPONSE OK:", response.ok);
+        // console.log("ProfileScreen - CREATE RESPONSE STATUS:", response.status);
+        // console.log("ProfileScreen - CREATE RESPONSE OK:", response.ok);
 
         const result = await response.json();
-        console.log("ProfileScreen - CREATE RESPONSE BODY:", JSON.stringify(result, null, 2));
+        // console.log("ProfileScreen - CREATE RESPONSE BODY:", JSON.stringify(result, null, 2));
 
         if (!response.ok) {
           throw new Error(result.message || "Failed to save relationship");
         }
 
-        console.log("ProfileScreen - Relationship saved successfully");
+        // console.log("ProfileScreen - Relationship saved successfully");
         // Update state immediately for better UX
         setRelationshipType(relationship);
         if (result && result.data && result.data.circle_uid) {
@@ -769,16 +783,16 @@ const ProfileScreen = ({ route, navigation }) => {
         Alert.alert("Success", `Relationship saved as ${relationship.charAt(0).toUpperCase() + relationship.slice(1)}!`);
       } else {
         // relationship is null and no circleUid exists - nothing to do
-        console.log("ProfileScreen - No relationship selected and no existing circle, nothing to do");
+        // console.log("ProfileScreen - No relationship selected and no existing circle, nothing to do");
         setRelationshipType(null);
       }
 
       // Refresh the relationship data to ensure consistency
       if (loggedInProfileUID && viewedProfileUID) {
         await fetchRelationship(loggedInProfileUID, viewedProfileUID);
-        console.log("ProfileScreen - Relationship refreshed after save/update");
-        console.log("ProfileScreen - Updated relationshipType:", relationshipType);
-        console.log("ProfileScreen - Updated circleUid:", circleUid);
+        // console.log("ProfileScreen - Relationship refreshed after save/update");
+        // console.log("ProfileScreen - Updated relationshipType:", relationshipType);
+        // console.log("ProfileScreen - Updated circleUid:", circleUid);
       }
     } catch (error) {
       console.error("ProfileScreen - ============================================");
@@ -837,9 +851,7 @@ const ProfileScreen = ({ route, navigation }) => {
         // Calculate circle_num_nodes
         let circleNumNodes = null;
         try {
-          const pathResponse = await fetch(
-            `${API_BASE_URL}/api/connections_path/${loggedInProfileUID}/${viewedProfileUID}`
-          );
+          const pathResponse = await fetch(`${API_BASE_URL}/api/connections_path/${loggedInProfileUID}/${viewedProfileUID}`);
           if (pathResponse.ok) {
             const pathData = await pathResponse.json();
             const combinedPath = pathData.combined_path || "";
@@ -1042,57 +1054,58 @@ const ProfileScreen = ({ route, navigation }) => {
               >
                 <Ionicons name='add' size={28} color='#fff' />
               </Pressable>
-              {showRelationshipDropdown && (() => {
-                const headerColors = getHeaderColors("profileView");
-                const highlightColor = darkMode ? headerColors.darkModeBackgroundColor : headerColors.backgroundColor;
-                const isHighlighted = (rel) => {
-                  if (rel === null) return relationshipType == null || relationshipType === "null" || !relationshipType;
-                  return relationshipType === rel;
-                };
-                return (
-                  <View style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]} {...(isWeb && { "data-dropdown-menu": true })}>
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
-                        handleRelationshipSelect("friend");
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("friend") && { color: highlightColor, fontWeight: "bold" }]}>Friend</Text>
-                    </Pressable>
-                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
-                        handleRelationshipSelect("colleague");
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("colleague") && { color: highlightColor, fontWeight: "bold" }]}>Colleague</Text>
-                    </Pressable>
-                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
-                        handleRelationshipSelect("family");
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("family") && { color: highlightColor, fontWeight: "bold" }]}>Family</Text>
-                    </Pressable>
-                    <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
-                    <Pressable
-                      style={styles.dropdownItem}
-                      onPress={(e) => {
-                        if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
-                        handleRelationshipSelect(null);
-                      }}
-                    >
-                      <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted(null) && { color: highlightColor, fontWeight: "bold" }]}>Select None</Text>
-                    </Pressable>
-                  </View>
-                );
-              })()}
+              {showRelationshipDropdown &&
+                (() => {
+                  const headerColors = getHeaderColors("profileView");
+                  const highlightColor = darkMode ? headerColors.darkModeBackgroundColor : headerColors.backgroundColor;
+                  const isHighlighted = (rel) => {
+                    if (rel === null) return relationshipType == null || relationshipType === "null" || !relationshipType;
+                    return relationshipType === rel;
+                  };
+                  return (
+                    <View style={[styles.dropdownMenu, darkMode && styles.darkDropdownMenu]} {...(isWeb && { "data-dropdown-menu": true })}>
+                      <Pressable
+                        style={styles.dropdownItem}
+                        onPress={(e) => {
+                          if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
+                          handleRelationshipSelect("friend");
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("friend") && { color: highlightColor, fontWeight: "bold" }]}>Friend</Text>
+                      </Pressable>
+                      <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                      <Pressable
+                        style={styles.dropdownItem}
+                        onPress={(e) => {
+                          if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
+                          handleRelationshipSelect("colleague");
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("colleague") && { color: highlightColor, fontWeight: "bold" }]}>Colleague</Text>
+                      </Pressable>
+                      <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                      <Pressable
+                        style={styles.dropdownItem}
+                        onPress={(e) => {
+                          if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
+                          handleRelationshipSelect("family");
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted("family") && { color: highlightColor, fontWeight: "bold" }]}>Family</Text>
+                      </Pressable>
+                      <View style={[styles.dropdownDivider, darkMode && styles.darkDropdownDivider]} />
+                      <Pressable
+                        style={styles.dropdownItem}
+                        onPress={(e) => {
+                          if (Platform.OS === "web" && e?.nativeEvent) e.nativeEvent.stopPropagation?.();
+                          handleRelationshipSelect(null);
+                        }}
+                      >
+                        <Text style={[styles.dropdownItemText, darkMode && styles.darkDropdownItemText, isHighlighted(null) && { color: highlightColor, fontWeight: "bold" }]}>Select None</Text>
+                      </Pressable>
+                    </View>
+                  );
+                })()}
             </View>
           ) : null
         }
@@ -1236,7 +1249,7 @@ const ProfileScreen = ({ route, navigation }) => {
                   user.profileImage && (isCurrentUserProfile || user.imageIsPublic) && String(user.profileImage).trim() !== "" ? { uri: String(user.profileImage) } : require("../assets/profile.png")
                 }
                 style={{ width: 200, height: 200 }}
-                resizeMode="cover"
+                resizeMode='cover'
                 defaultSource={require("../assets/profile.png")}
               />
             </View>
@@ -1249,6 +1262,24 @@ const ProfileScreen = ({ route, navigation }) => {
               profileImage: isCurrentUserProfile || user.imageIsPublic ? user.profileImage : "",
             }}
           />
+
+          {/* Message button — only when viewing someone else's profile */}
+          {routeProfileUID && !isCurrentUserProfile && (
+            <TouchableOpacity
+              style={styles.chatButton}
+              activeOpacity={0.8}
+              onPress={() =>
+                navigation.navigate("Chat", {
+                  other_uid: profileUID,
+                  other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
+                  other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
+                })
+              }
+            >
+              <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' style={{ marginRight: 7 }} />
+              <Text style={styles.chatButtonText}>Message</Text>
+            </TouchableOpacity>
+          )}
 
           {/* Bio section */}
           {user.shortBioIsPublic && (
@@ -1587,7 +1618,10 @@ const ProfileScreen = ({ route, navigation }) => {
               {showBusiness &&
                 (publicBusinesses.length > 0 ? (
                   publicBusinesses.map((business, index) => (
-                    <View key={business.profile_business_uid || business.business_uid || index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
+                    <View
+                      key={business.profile_business_uid || business.business_uid || index}
+                      style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}
+                    >
                       <TouchableOpacity
                         onPress={() => {
                           const uid = business.business_uid || business.profile_business_uid;
@@ -1929,6 +1963,23 @@ const styles = StyleSheet.create({
   },
   darkSeekingMetaText: {
     color: "#999",
+  },
+  chatButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    backgroundColor: "#AF52DE",
+    paddingVertical: 10,
+    paddingHorizontal: 28,
+    borderRadius: 24,
+    marginTop: 14,
+    marginBottom: 4,
+  },
+  chatButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 15,
   },
   sectionHeader: {
     flexDirection: "row",

@@ -48,7 +48,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const businessFeedbackInstructions = "Instructions for Business Profile";
   const businessFeedbackQuestions = ["Business Profile - Question 1?", "Business Profile - Question 2?", "Business Profile - Question 3?"];
 
-  const [replyingTo, setReplyingTo] = useState(null);   // rating_uid currently being replied to
+  const [replyingTo, setReplyingTo] = useState(null); // rating_uid currently being replied to
   const [replyText, setReplyText] = useState("");
   const [submittingReply, setSubmittingReply] = useState(false);
 
@@ -81,6 +81,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       try {
         const storedCartData = await AsyncStorage.getItem(`cart_${business_uid}`);
         if (storedCartData) {
+          const cartData = JSON.parse(storedCartData);
           const cartData = JSON.parse(storedCartData);
           setCartItems(cartData.items || []);
           if (cartData.bounty_recipient) {
@@ -181,7 +182,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
     try {
       setLoading(true);
       // Read viewer UID directly so it's available for the ratings call
-      const viewerUid = await AsyncStorage.getItem("profile_uid") || '';
+      const viewerUid = (await AsyncStorage.getItem("profile_uid")) || "";
       const endpoint = `${BusinessProfileApi}/${business_uid}`;
       console.log("BusinessProfileScreen GET endpoint:", endpoint);
       const response = await fetch(endpoint);
@@ -375,23 +376,23 @@ export default function BusinessProfileScreen({ route, navigation }) {
         const ratingsData = await ratingsRes.json();
         if (ratingsData?.result) {
           const ratingsMap = {};
-          ratingsData.result.forEach(r => {
+          ratingsData.result.forEach((r) => {
             ratingsMap[r.rating_uid] = {
               is_verified: r.is_verified,
               circle_num_nodes: r.circle_num_nodes ?? null,
             };
           });
-          setBusiness(prev => ({
+          setBusiness((prev) => ({
             ...prev,
-            ratings: (prev.ratings || []).map(r => ({
+            ratings: (prev.ratings || []).map((r) => ({
               ...r,
               is_verified: ratingsMap[r.rating_uid]?.is_verified || false,
               circle_num_nodes: ratingsMap[r.rating_uid]?.circle_num_nodes ?? null,
-            }))
+            })),
           }));
         }
       } catch (e) {
-        console.log('Could not fetch verified ratings:', e);
+        console.log("Could not fetch verified ratings:", e);
       }
 
       if (result.business_users && Array.isArray(result.business_users)) {
@@ -473,9 +474,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
   const handleQuantityConfirm = async () => {
     // If there are verified reviews, bounty assignment is mandatory
-    const verifiedReviews = allReviews
-      .filter(r => r.is_verified && r.circle_num_nodes !== null && r.circle_num_nodes !== undefined)
-      .slice(0, 5);
+    const verifiedReviews = allReviews.filter((r) => r.is_verified && r.circle_num_nodes !== null && r.circle_num_nodes !== undefined).slice(0, 5);
 
     if (verifiedReviews.length > 0 && !selectedBountyRecipient) {
       Alert.alert("Select a Reviewer", "Please select who referred you before adding to cart.");
@@ -486,9 +485,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
         ...selectedService,
         quantity: quantity,
         totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
-        bounty_recommender_profile_id: selectedBountyRecipient?.rating_profile_id || null, 
-        business_uid: business_uid,  
-
+        bounty_recommender_profile_id: selectedBountyRecipient?.rating_profile_id || null,
+        business_uid: business_uid,
       };
 
       const existingItemIndex = cartItems.findIndex((item) => item.bs_uid === selectedService.bs_uid);
@@ -519,7 +517,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
         });
       }
 
-      console.log("Final cart items recommenders:", newCartItems.map(i => ({ bs_uid: i.bs_uid, recommender: i.bounty_recommender_profile_id })));
+      console.log(
+        "Final cart items recommenders:",
+        newCartItems.map((i) => ({ bs_uid: i.bs_uid, recommender: i.bounty_recommender_profile_id })),
+      );
 
       setCartItems(newCartItems);
       setTotalCartCount((prev) => prev + 1);
@@ -549,7 +550,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         `cart_${business_uid}`,
         JSON.stringify({
           items: newCartItems,
-          bounty_recipient: newCartItems.length === 0 ? null : (savedData.bounty_recipient || null),
+          bounty_recipient: newCartItems.length === 0 ? null : savedData.bounty_recipient || null,
         }),
       );
       if (newCartItems.length === 0) setSelectedBountyRecipient(null);
@@ -576,15 +577,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
       if (response.ok) {
         setBusiness((prev) => ({
           ...prev,
-          ratings: (prev.ratings || []).map((r) =>
-            r.rating_uid === rating_uid ? { ...r, ratings_response: replyText.trim() } : r
-          ),
+          ratings: (prev.ratings || []).map((r) => (r.rating_uid === rating_uid ? { ...r, ratings_response: replyText.trim() } : r)),
         }));
-        setAllReviews((prev) =>
-          prev.map((r) =>
-            r.rating_uid === rating_uid ? { ...r, ratings_response: replyText.trim() } : r
-          )
-        );
+        setAllReviews((prev) => prev.map((r) => (r.rating_uid === rating_uid ? { ...r, ratings_response: replyText.trim() } : r)));
         setReplyingTo(null);
         setReplyText("");
       } else {
@@ -602,7 +597,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       const keys = await AsyncStorage.getAllKeys();
       const cartKeys = keys.filter((key) => key.startsWith("cart_"));
       const allCartData = await AsyncStorage.multiGet(cartKeys);
-      
+
       let allItems = [];
       allCartData.forEach(([key, value]) => {
         if (value) {
@@ -1035,7 +1030,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
             <View style={styles.fieldContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowReviews(!showReviews)}>
                 <Text style={styles.sectionHeaderText}>REVIEWS ({allReviews.length})</Text>
-                <Ionicons name={showReviews ? "chevron-up" : "chevron-down"} size={20} color="#000" />
+                <Ionicons name={showReviews ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
 
               {showReviews &&
@@ -1046,7 +1041,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                       style={[styles.reviewCard, darkMode && styles.darkReviewCard, index > 0 && { marginTop: 10 }]}
                       onPress={() =>
                         navigation.navigate("Profile", {
-                        profile_uid: review.rating_profile_id,
+                          profile_uid: review.rating_profile_id,
                         })
                       }
                       activeOpacity={0.7}
@@ -1061,35 +1056,25 @@ export default function BusinessProfileScreen({ route, navigation }) {
                             />
                           ) : (
                             <View style={[styles.reviewProfileAvatar, darkMode && styles.darkReviewProfileAvatar]}>
-                              <Text style={[styles.reviewProfileInitial, darkMode && styles.darkReviewProfileInitial]}>
-                                {(review.profile_personal_first_name?.charAt(0) || "U").toUpperCase()}
-                              </Text>
+                              <Text style={[styles.reviewProfileInitial, darkMode && styles.darkReviewProfileInitial]}>{(review.profile_personal_first_name?.charAt(0) || "U").toUpperCase()}</Text>
                             </View>
                           )}
                           <View style={styles.reviewProfileDetails}>
                             <Text style={[styles.reviewProfileName, darkMode && styles.darkReviewProfileName]}>
-                              {[review.profile_personal_first_name, review.profile_personal_last_name]
-                                .filter(Boolean)
-                                .join(" ") || `User ${review.rating_profile_id}`}
+                              {[review.profile_personal_first_name, review.profile_personal_last_name].filter(Boolean).join(" ") || `User ${review.rating_profile_id}`}
                             </Text>
-                            <Text style={[styles.reviewDate, darkMode && styles.darkReviewDate]}>
-                              {review.rating_receipt_date}
-                            </Text>
+                            <Text style={[styles.reviewDate, darkMode && styles.darkReviewDate]}>{review.rating_receipt_date}</Text>
                           </View>
                         </View>
                         <View style={styles.reviewRatingContainer}>
                           {renderStars(review.rating_star)}
-                          <Text style={[styles.reviewRatingText, darkMode && styles.darkReviewRatingText]}>
-                            {review.rating_star}/5
-                          </Text>
+                          <Text style={[styles.reviewRatingText, darkMode && styles.darkReviewRatingText]}>{review.rating_star}/5</Text>
                         </View>
                       </View>
 
                       {review.rating_description && (
                         <View style={styles.reviewContent}>
-                          <Text style={[styles.reviewDescription, darkMode && styles.darkReviewDescription]}>
-                            {review.rating_description}
-                          </Text>
+                          <Text style={[styles.reviewDescription, darkMode && styles.darkReviewDescription]}>{review.rating_description}</Text>
                         </View>
                       )}
 
@@ -1102,10 +1087,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                           )}
                         </View>
                         <Text style={[styles.reviewMetadataText, darkMode && styles.darkReviewMetadataText, { fontSize: 18, color: "#888" }]}>
-                          {review.circle_num_nodes !== null && review.circle_num_nodes !== undefined
-                            ? `Level ${review.circle_num_nodes} Connection`
-                            : "Not in your network"
-                          }
+                          {review.circle_num_nodes !== null && review.circle_num_nodes !== undefined ? `Level ${review.circle_num_nodes} Connection` : "Not in your network"}
                         </Text>
                       </View>
                     </TouchableOpacity>
@@ -1115,12 +1097,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
                       // Existing response: always visible to everyone; owner can edit
                       <View style={[styles.ownerResponseSection, darkMode && styles.darkOwnerResponseSection]}>
                         <View style={styles.ownerResponseHeader}>
-                          <Ionicons name="chatbubble-ellipses" size={14} color="#9C45F7" />
+                          <Ionicons name='chatbubble-ellipses' size={14} color='#9C45F7' />
                           <Text style={styles.ownerResponseLabel}>Owner's Response</Text>
                         </View>
-                        <Text style={[styles.ownerResponseText, darkMode && styles.darkOwnerResponseText]}>
-                          {review.ratings_response}
-                        </Text>
+                        <Text style={[styles.ownerResponseText, darkMode && styles.darkOwnerResponseText]}>{review.ratings_response}</Text>
                         {isOwner && replyingTo !== review.rating_uid && (
                           <TouchableOpacity
                             style={styles.editReplyLink}
@@ -1129,7 +1109,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                               setReplyText(review.ratings_response);
                             }}
                           >
-                            <Ionicons name="pencil" size={12} color="#9C45F7" />
+                            <Ionicons name='pencil' size={12} color='#9C45F7' />
                             <Text style={styles.editReplyLinkText}>Edit Response</Text>
                           </TouchableOpacity>
                         )}
@@ -1139,7 +1119,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                               style={[styles.replyInput, darkMode && styles.darkReplyInput]}
                               value={replyText}
                               onChangeText={setReplyText}
-                              placeholder="Edit your response..."
+                              placeholder='Edit your response...'
                               placeholderTextColor={darkMode ? "#888" : "#aaa"}
                               multiline
                               maxLength={1000}
@@ -1147,18 +1127,15 @@ export default function BusinessProfileScreen({ route, navigation }) {
                             <View style={styles.replyActions}>
                               <TouchableOpacity
                                 style={styles.replyCancelButton}
-                                onPress={() => { setReplyingTo(null); setReplyText(""); }}
+                                onPress={() => {
+                                  setReplyingTo(null);
+                                  setReplyText("");
+                                }}
                               >
                                 <Text style={styles.replyCancelText}>Cancel</Text>
                               </TouchableOpacity>
-                              <TouchableOpacity
-                                style={[styles.replySubmitButton, submittingReply && { opacity: 0.6 }]}
-                                onPress={() => handleSubmitReply(review.rating_uid)}
-                                disabled={submittingReply}
-                              >
-                                <Text style={styles.replySubmitText}>
-                                  {submittingReply ? "Saving..." : "Save Changes"}
-                                </Text>
+                              <TouchableOpacity style={[styles.replySubmitButton, submittingReply && { opacity: 0.6 }]} onPress={() => handleSubmitReply(review.rating_uid)} disabled={submittingReply}>
+                                <Text style={styles.replySubmitText}>{submittingReply ? "Saving..." : "Save Changes"}</Text>
                               </TouchableOpacity>
                             </View>
                           </View>
@@ -1166,54 +1143,50 @@ export default function BusinessProfileScreen({ route, navigation }) {
                       </View>
                     ) : (
                       // No response yet — owner sees "Reply" button; non-owners see nothing
-                      isOwner && (
-                        replyingTo === review.rating_uid ? (
-                          <View style={[styles.ownerResponseSection, darkMode && styles.darkOwnerResponseSection]}>
-                            <View style={styles.ownerResponseHeader}>
-                              <Ionicons name="chatbubble-ellipses-outline" size={14} color="#9C45F7" />
-                              <Text style={styles.ownerResponseLabel}>Write a Response</Text>
-                            </View>
-                            <TextInput
-                              style={[styles.replyInput, darkMode && styles.darkReplyInput]}
-                              value={replyText}
-                              onChangeText={setReplyText}
-                              placeholder="Write your response to this review..."
-                              placeholderTextColor={darkMode ? "#888" : "#aaa"}
-                              multiline
-                              maxLength={1000}
-                              autoFocus
-                            />
-                            <View style={styles.replyActions}>
-                              <TouchableOpacity
-                                style={styles.replyCancelButton}
-                                onPress={() => { setReplyingTo(null); setReplyText(""); }}
-                              >
-                                <Text style={styles.replyCancelText}>Cancel</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                style={[styles.replySubmitButton, submittingReply && { opacity: 0.6 }]}
-                                onPress={() => handleSubmitReply(review.rating_uid)}
-                                disabled={submittingReply}
-                              >
-                                <Text style={styles.replySubmitText}>
-                                  {submittingReply ? "Posting..." : "Post Reply"}
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
+                      isOwner &&
+                      (replyingTo === review.rating_uid ? (
+                        <View style={[styles.ownerResponseSection, darkMode && styles.darkOwnerResponseSection]}>
+                          <View style={styles.ownerResponseHeader}>
+                            <Ionicons name='chatbubble-ellipses-outline' size={14} color='#9C45F7' />
+                            <Text style={styles.ownerResponseLabel}>Write a Response</Text>
                           </View>
-                        ) : (
-                          <TouchableOpacity
-                            style={[styles.replyTriggerButton, darkMode && styles.darkReplyTriggerButton]}
-                            onPress={() => {
-                              setReplyingTo(review.rating_uid);
-                              setReplyText("");
-                            }}
-                          >
-                            <Ionicons name="chatbubble-outline" size={14} color="#9C45F7" />
-                            <Text style={styles.replyTriggerText}>Reply to this review</Text>
-                          </TouchableOpacity>
-                        )
-                      )
+                          <TextInput
+                            style={[styles.replyInput, darkMode && styles.darkReplyInput]}
+                            value={replyText}
+                            onChangeText={setReplyText}
+                            placeholder='Write your response to this review...'
+                            placeholderTextColor={darkMode ? "#888" : "#aaa"}
+                            multiline
+                            maxLength={1000}
+                            autoFocus
+                          />
+                          <View style={styles.replyActions}>
+                            <TouchableOpacity
+                              style={styles.replyCancelButton}
+                              onPress={() => {
+                                setReplyingTo(null);
+                                setReplyText("");
+                              }}
+                            >
+                              <Text style={styles.replyCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[styles.replySubmitButton, submittingReply && { opacity: 0.6 }]} onPress={() => handleSubmitReply(review.rating_uid)} disabled={submittingReply}>
+                              <Text style={styles.replySubmitText}>{submittingReply ? "Posting..." : "Post Reply"}</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={[styles.replyTriggerButton, darkMode && styles.darkReplyTriggerButton]}
+                          onPress={() => {
+                            setReplyingTo(review.rating_uid);
+                            setReplyText("");
+                          }}
+                        >
+                          <Ionicons name='chatbubble-outline' size={14} color='#9C45F7' />
+                          <Text style={styles.replyTriggerText}>Reply to this review</Text>
+                        </TouchableOpacity>
+                      ))
                     )}
                   </View>
                 ))}
@@ -1232,14 +1205,13 @@ export default function BusinessProfileScreen({ route, navigation }) {
                       <Ionicons name='cart' size={24} color={darkMode ? "#fff" : "#9C45F7"} />
                       <Text style={[styles.cartCount, darkMode && styles.darkCartCount]}>{totalCartCount}</Text>
                     </TouchableOpacity>
-                  )} 
+                  )}
                   <Ionicons name={showServices ? "chevron-up" : "chevron-down"} size={20} color='#000' />
                 </View>
               </TouchableOpacity>
               {showServices && business.business_services.map((service, idx) => <ProductCard key={idx} service={service} showEditButton={isOwner} onPress={() => handleProductPress(service)} />)}
             </View>
           )}
-
 
           {/* Shopping Cart Button - Only show if there are reviews */}
           {/* {!isOwner && allReviews.length > 0 && (
@@ -1290,25 +1262,19 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.totalPrice}>
-                Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}
-              </Text>
+              <Text style={styles.totalPrice}>Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
 
               {/* Bounty recipient picker — only show if there are verified reviews */}
-              {allReviews.filter(r => r.is_verified).length > 0 && (
+              {allReviews.filter((r) => r.is_verified).length > 0 && (
                 <View style={{ marginTop: 16, marginBottom: 8, width: "100%" }}>
                   <Text style={[styles.modalTitle, { fontSize: 16, marginBottom: 4, textAlign: "center" }]}>
                     💰 Who referred you? <Text style={{ color: "#FF3B30" }}>*</Text>
                   </Text>
-                  <Text style={{ fontSize: 11, color: "#FF3B30", textAlign: "center", marginBottom: 4 }}>
-                    Required — select a reviewer to assign the bounty
-                  </Text>
-                  <Text style={{ fontSize: 12, color: "#888", marginBottom: 10, textAlign: "center" }}>
-                    Assign the bounty to a verified reviewer
-                  </Text>
+                  <Text style={{ fontSize: 11, color: "#FF3B30", textAlign: "center", marginBottom: 4 }}>Required — select a reviewer to assign the bounty</Text>
+                  <Text style={{ fontSize: 12, color: "#888", marginBottom: 10, textAlign: "center" }}>Assign the bounty to a verified reviewer</Text>
                   {(() => {
                     const sorted = allReviews
-                      .filter(r => r.is_verified && r.circle_num_nodes !== null && r.circle_num_nodes !== undefined)
+                      .filter((r) => r.is_verified && r.circle_num_nodes !== null && r.circle_num_nodes !== undefined)
                       .sort((a, b) => {
                         if (bountySort === "name") {
                           const nameA = [a.profile_personal_first_name, a.profile_personal_last_name].filter(Boolean).join(" ").toLowerCase();
@@ -1327,24 +1293,24 @@ export default function BusinessProfileScreen({ route, navigation }) {
                           <TouchableOpacity
                             onPress={() => setBountySort("connection")}
                             style={{
-                              paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
+                              paddingHorizontal: 14,
+                              paddingVertical: 6,
+                              borderRadius: 20,
                               backgroundColor: bountySort === "connection" ? "#9C45F7" : "#f0e8ff",
                             }}
                           >
-                            <Text style={{ color: bountySort === "connection" ? "#fff" : "#9C45F7", fontWeight: "600", fontSize: 12 }}>
-                              By Connection
-                            </Text>
+                            <Text style={{ color: bountySort === "connection" ? "#fff" : "#9C45F7", fontWeight: "600", fontSize: 12 }}>By Connection</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             onPress={() => setBountySort("name")}
                             style={{
-                              paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
+                              paddingHorizontal: 14,
+                              paddingVertical: 6,
+                              borderRadius: 20,
                               backgroundColor: bountySort === "name" ? "#9C45F7" : "#f0e8ff",
                             }}
                           >
-                            <Text style={{ color: bountySort === "name" ? "#fff" : "#9C45F7", fontWeight: "600", fontSize: 12 }}>
-                              By Name
-                            </Text>
+                            <Text style={{ color: bountySort === "name" ? "#fff" : "#9C45F7", fontWeight: "600", fontSize: 12 }}>By Name</Text>
                           </TouchableOpacity>
                         </View>
 
@@ -1363,8 +1329,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
                               marginBottom: 10,
                               width: "100%",
                             }}
-                            placeholder="Search by name..."
-                            placeholderTextColor="#aaa"
+                            placeholder='Search by name...'
+                            placeholderTextColor='#aaa'
                             value={bountySearch}
                             onChangeText={setBountySearch}
                           />
@@ -1373,86 +1339,95 @@ export default function BusinessProfileScreen({ route, navigation }) {
                         {sorted
                           .filter((review) => {
                             if (bountySort !== "name" || !bountySearch.trim()) return true;
-                            const name = [review.profile_personal_first_name, review.profile_personal_last_name]
-                              .filter(Boolean).join(" ").toLowerCase();
+                            const name = [review.profile_personal_first_name, review.profile_personal_last_name].filter(Boolean).join(" ").toLowerCase();
                             return name.includes(bountySearch.trim().toLowerCase());
                           })
                           .map((review) => {
-                          const isSelected = selectedBountyRecipient?.rating_uid === review.rating_uid;
-                          const name = [review.profile_personal_first_name, review.profile_personal_last_name]
-                            .filter(Boolean).join(" ") || `User ${review.rating_profile_id}`;
-                          return (
-                            <TouchableOpacity
-                              key={review.rating_uid}
-                              onPress={() => setSelectedBountyRecipient(isSelected ? null : review)}
-                              style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                padding: 10,
-                                marginBottom: 8,
-                                borderRadius: 10,
-                                borderWidth: 1.5,
-                                borderColor: isSelected ? "#9C45F7" : "#ddd",
-                                backgroundColor: isSelected ? "#f5eeff" : "#fafafa",
-                              }}
-                            >
-                              {/* Radio */}
-                              <View style={{
-                                width: 20, height: 20, borderRadius: 10,
-                                borderWidth: 2, borderColor: isSelected ? "#9C45F7" : "#ccc",
-                                alignItems: "center", justifyContent: "center", marginRight: 10,
-                              }}>
-                                {isSelected && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#9C45F7" }} />}
-                              </View>
-
-                              {/* Avatar */}
-                              {review.profile_personal_image ? (
-                                <Image
-                                  source={{ uri: review.profile_personal_image }}
-                                  style={{ width: 36, height: 36, borderRadius: 18, marginRight: 10 }}
-                                  defaultSource={require("../assets/profile.png")}
-                                />
-                              ) : (
-                                <View style={{
-                                  width: 36, height: 36, borderRadius: 18, marginRight: 10,
-                                  backgroundColor: "#e0e0e0", alignItems: "center", justifyContent: "center",
-                                }}>
-                                  <Text style={{ fontWeight: "bold", color: "#555" }}>
-                                    {(review.profile_personal_first_name?.charAt(0) || "U").toUpperCase()}
-                                  </Text>
+                            const isSelected = selectedBountyRecipient?.rating_uid === review.rating_uid;
+                            const name = [review.profile_personal_first_name, review.profile_personal_last_name].filter(Boolean).join(" ") || `User ${review.rating_profile_id}`;
+                            return (
+                              <TouchableOpacity
+                                key={review.rating_uid}
+                                onPress={() => setSelectedBountyRecipient(isSelected ? null : review)}
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  padding: 10,
+                                  marginBottom: 8,
+                                  borderRadius: 10,
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? "#9C45F7" : "#ddd",
+                                  backgroundColor: isSelected ? "#f5eeff" : "#fafafa",
+                                }}
+                              >
+                                {/* Radio */}
+                                <View
+                                  style={{
+                                    width: 20,
+                                    height: 20,
+                                    borderRadius: 10,
+                                    borderWidth: 2,
+                                    borderColor: isSelected ? "#9C45F7" : "#ccc",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    marginRight: 10,
+                                  }}
+                                >
+                                  {isSelected && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#9C45F7" }} />}
                                 </View>
-                              )}
 
-                              {/* Info */}
-                              <View style={{ flex: 1 }}>
-                                <Text style={{ fontWeight: "600", color: "#333" }}>{name}</Text>
-                                {review.circle_num_nodes !== null && review.circle_num_nodes !== undefined && (
-                                  <Text style={{ fontSize: 12, color: "#888" }}>
-                                    {`Level ${review.circle_num_nodes} Connection`}
-                                  </Text>
+                                {/* Avatar */}
+                                {review.profile_personal_image ? (
+                                  <Image
+                                    source={{ uri: review.profile_personal_image }}
+                                    style={{ width: 36, height: 36, borderRadius: 18, marginRight: 10 }}
+                                    defaultSource={require("../assets/profile.png")}
+                                  />
+                                ) : (
+                                  <View
+                                    style={{
+                                      width: 36,
+                                      height: 36,
+                                      borderRadius: 18,
+                                      marginRight: 10,
+                                      backgroundColor: "#e0e0e0",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                    }}
+                                  >
+                                    <Text style={{ fontWeight: "bold", color: "#555" }}>{(review.profile_personal_first_name?.charAt(0) || "U").toUpperCase()}</Text>
+                                  </View>
                                 )}
-                              </View>
 
-                              {/* Bounty badge */}
-                              {selectedService?.bs_bounty && (
-                                <View style={{
-                                  backgroundColor: isSelected ? "#9C45F7" : "#f0e8ff",
-                                  borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4,
-                                }}>
-                                  <Text style={{ color: isSelected ? "#fff" : "#9C45F7", fontWeight: "700", fontSize: 12 }}>
-                                    ${parsePrice(selectedService.bs_bounty).toFixed(2)}
-                                  </Text>
+                                {/* Info */}
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontWeight: "600", color: "#333" }}>{name}</Text>
+                                  {review.circle_num_nodes !== null && review.circle_num_nodes !== undefined && (
+                                    <Text style={{ fontSize: 12, color: "#888" }}>{`Level ${review.circle_num_nodes} Connection`}</Text>
+                                  )}
                                 </View>
-                              )}
-                            </TouchableOpacity>
-                          );
-                        })}
+
+                                {/* Bounty badge */}
+                                {selectedService?.bs_bounty && (
+                                  <View
+                                    style={{
+                                      backgroundColor: isSelected ? "#9C45F7" : "#f0e8ff",
+                                      borderRadius: 8,
+                                      paddingHorizontal: 8,
+                                      paddingVertical: 4,
+                                    }}
+                                  >
+                                    <Text style={{ color: isSelected ? "#fff" : "#9C45F7", fontWeight: "700", fontSize: 12 }}>${parsePrice(selectedService.bs_bounty).toFixed(2)}</Text>
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
                       </>
                     );
                   })()}
                 </View>
               )}
-
             </ScrollView>
 
             <View style={styles.modalButtons}>
@@ -1463,7 +1438,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 <Text style={styles.confirmButtonText}>Add to Cart</Text>
               </TouchableOpacity>
             </View>
-
           </View>
         </View>
       </Modal>
@@ -1982,13 +1956,13 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
   },
   verifiedText: {
-    color: '#2e7d32',
-    fontWeight: '600',
+    color: "#2e7d32",
+    fontWeight: "600",
     fontSize: 11,
   },
   unverifiedText: {
-    color: '#b71c1c',
-    fontWeight: '600',
+    color: "#b71c1c",
+    fontWeight: "600",
     fontSize: 11,
   },
   // Owner response section

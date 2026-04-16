@@ -71,6 +71,8 @@ import ConnectScreen from "./screens/ConnectScreen";
 import ConnectWebScreen from "./screens/ConnectWebScreen";
 import NewConnectionScreen from "./screens/NewConnectionScreen";
 import QRScannerScreen from "./screens/QRScannerScreen";
+import InboxScreen from "./screens/InboxScreen";
+import ChatScreen from "./screens/ChatScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -1010,10 +1012,25 @@ export default function App() {
         },
         Login: "login",
         SignUp: "signup",
-        Profile: "profile",
+        Profile: {
+          path: "profile",
+          parse: {
+            profile_uid: (v) => v,
+          },
+        },
         Network: "network",
         Search: "search",
         Settings: "settings",
+        Inbox: "inbox",
+        Chat: {
+          path: "chat",
+          parse: {
+            conversation_uid: (v) => v,
+            other_uid: (v) => v,
+            other_name: (v) => v,
+            other_image: (v) => v,
+          },
+        },
       },
     },
   };
@@ -1091,51 +1108,53 @@ export default function App() {
     <TextNodeErrorBoundary>
       <DarkModeProvider>
         <View style={styles.appRoot}>
-        <NavigationContainer ref={navigationRef} linking={isWeb ? linking : undefined} onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={onNavigationStateChange}>
-          <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
-            <Stack.Screen name='Home' component={HomeScreen} />
-            <Stack.Screen
-              name='Login'
-              children={(props) => (
-                <LoginScreen {...props} onGoogleSignIn={() => signInHandler(props.navigation)} onAppleSignIn={(userInfo) => handleAppleSignIn(userInfo, props.navigation)} onError={setError} />
-              )}
-            />
-            <Stack.Screen
-              name='SignUp'
-              children={(props) => (
-                <SignUpScreen {...props} onGoogleSignUp={() => signUpHandler(props.navigation)} onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation)} onError={setError} />
-              )}
-            />
-            <Stack.Screen name='HowItWorksScreen' component={HowItWorksScreen} />
-            <Stack.Screen name='UserInfo' component={UserInfoScreen} />
-            {/* <Stack.Screen name="UserProfile" component={UserProfile} /> */}
-            <Stack.Screen name='AccountType' component={AccountTypeScreen} />
-            <Stack.Screen name='Profile' component={ProfileScreen} />
-            <Stack.Screen name='EditProfile' component={EditProfileScreen} />
-            <Stack.Screen name='Settings' component={SettingsScreen} />
-            <Stack.Screen name='Account' component={AccountScreen} />
-            <Stack.Screen name='Network' component={NetworkScreen} />
-            <Stack.Screen name='Search' component={SearchScreen} />
-            <Stack.Screen name='BusinessSetup' component={BusinessSetupController} />
-            <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
-            <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
-            <Stack.Screen name='Filters' component={FilterScreen} />
-            <Stack.Screen name='SearchTab' component={SearchTab} />
+          <NavigationContainer ref={navigationRef} linking={isWeb ? linking : undefined} onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={onNavigationStateChange}>
+            <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
+              <Stack.Screen name='Home' component={HomeScreen} />
+              <Stack.Screen
+                name='Login'
+                children={(props) => (
+                  <LoginScreen {...props} onGoogleSignIn={() => signInHandler(props.navigation)} onAppleSignIn={(userInfo) => handleAppleSignIn(userInfo, props.navigation)} onError={setError} />
+                )}
+              />
+              <Stack.Screen
+                name='SignUp'
+                children={(props) => (
+                  <SignUpScreen {...props} onGoogleSignUp={() => signUpHandler(props.navigation)} onAppleSignUp={(userInfo) => handleAppleSignUp(userInfo, props.navigation)} onError={setError} />
+                )}
+              />
+              <Stack.Screen name='HowItWorksScreen' component={HowItWorksScreen} />
+              <Stack.Screen name='UserInfo' component={UserInfoScreen} />
+              {/* <Stack.Screen name="UserProfile" component={UserProfile} /> */}
+              <Stack.Screen name='AccountType' component={AccountTypeScreen} />
+              <Stack.Screen name='Profile' component={ProfileScreen} />
+              <Stack.Screen name='EditProfile' component={EditProfileScreen} />
+              <Stack.Screen name='Settings' component={SettingsScreen} />
+              <Stack.Screen name='Account' component={AccountScreen} />
+              <Stack.Screen name='Network' component={NetworkScreen} />
+              <Stack.Screen name='Search' component={SearchScreen} />
+              <Stack.Screen name='BusinessSetup' component={BusinessSetupController} />
+              <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
+              <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
+              <Stack.Screen name='Filters' component={FilterScreen} />
+              <Stack.Screen name='SearchTab' component={SearchTab} />
 
-            <Stack.Screen name='TermsAndConditions' component={TermsAndConditionsScreen} options={{ title: "Terms & Conditions" }} />
-            <Stack.Screen name='PrivacyPolicy' component={PrivacyPolicyScreen} options={{ title: "Privacy Policy" }} />
-            <Stack.Screen name='EditBusinessProfile' component={EditBusinessProfileScreen} />
-            <Stack.Screen name='ShoppingCart' component={ShoppingCartScreen} />
-            <Stack.Screen name='ReviewBusiness' component={ReviewBusinessScreen} options={{ headerShown: false }} />
-            <Stack.Screen name='ReviewDetail' component={ReviewDetailScreen} options={{ headerShown: false }} />
-            <Stack.Screen name='ExpertiseDetail' component={ExpertiseDetailScreen} options={{ headerShown: false }} />
-            <Stack.Screen name='WishDetail' component={WishDetailScreen} options={{ headerShown: false }} />
-            <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
-            <Stack.Screen name='Connect' component={ConnectScreenWrapper} />
-            <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
-            <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
-          </Stack.Navigator>
-        </NavigationContainer>
+              <Stack.Screen name='TermsAndConditions' component={TermsAndConditionsScreen} options={{ title: "Terms & Conditions" }} />
+              <Stack.Screen name='PrivacyPolicy' component={PrivacyPolicyScreen} options={{ title: "Privacy Policy" }} />
+              <Stack.Screen name='EditBusinessProfile' component={EditBusinessProfileScreen} />
+              <Stack.Screen name='ShoppingCart' component={ShoppingCartScreen} />
+              <Stack.Screen name='ReviewBusiness' component={ReviewBusinessScreen} options={{ headerShown: false }} />
+              <Stack.Screen name='ReviewDetail' component={ReviewDetailScreen} options={{ headerShown: false }} />
+              <Stack.Screen name='ExpertiseDetail' component={ExpertiseDetailScreen} options={{ headerShown: false }} />
+              <Stack.Screen name='WishDetail' component={WishDetailScreen} options={{ headerShown: false }} />
+              <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
+              <Stack.Screen name='Connect' component={ConnectScreenWrapper} />
+              <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
+              <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
+              <Stack.Screen name='Inbox' component={InboxScreen} />
+              <Stack.Screen name='Chat' component={ChatScreen} />
+            </Stack.Navigator>
+          </NavigationContainer>
         </View>
       </DarkModeProvider>
     </TextNodeErrorBoundary>

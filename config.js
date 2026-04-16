@@ -27,7 +27,7 @@ const ENV = {
   APP_SLUG: EXPO_PUBLIC_APP_SLUG,
   BUNDLE_IDENTIFIER: EXPO_PUBLIC_BUNDLE_IDENTIFIER,
 };
-console.log("Environment variables loaded:", ENV);
+// console.log("Environment variables loaded:", ENV);
 
 if (!ENV.IOS_CLIENT_ID) {
   console.error("ERROR: EXPO_PUBLIC_IOS_CLIENT_ID is not defined in .env file");
@@ -69,20 +69,20 @@ const getGoogleURLScheme = () => {
   return `com.googleusercontent.apps.${ENV.IOS_CLIENT_ID.split(".")[0]}`;
 };
 
-console.log("Generating URL scheme:", getGoogleURLScheme());
-console.log("Bundle Identifier from app.json:", ENV.BUNDLE_IDENTIFIER);
-console.log("Expected app.json URL scheme:", ENV.BUNDLE_IDENTIFIER);
-console.log("Expected eas.json GOOGLE_URL_SCHEME:", getGoogleURLScheme());
+// console.log("Generating URL scheme:", getGoogleURLScheme());
+// console.log("Bundle Identifier from app.json:", ENV.BUNDLE_IDENTIFIER);
+// console.log("Expected app.json URL scheme:", ENV.BUNDLE_IDENTIFIER);
+// console.log("Expected eas.json GOOGLE_URL_SCHEME:", getGoogleURLScheme());
 
-console.log("Loading Maps API key:", process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY);
+// console.log("Loading Maps API key:", process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY);
 
 const getAndroidClientId = () => {
   const clientId = __DEV__ ? EXPO_PUBLIC_ANDROID_CLIENT_ID_DEBUG : EXPO_PUBLIC_ANDROID_CLIENT_ID_RELEASE;
 
-  console.log("Android Environment:", __DEV__ ? "Development" : "Production");
-  console.log("Selected Android Client ID:", clientId);
-  console.log("Debug Client ID available:", EXPO_PUBLIC_ANDROID_CLIENT_ID_DEBUG);
-  console.log("Release Client ID available:", EXPO_PUBLIC_ANDROID_CLIENT_ID_RELEASE);
+  // console.log("Android Environment:", __DEV__ ? "Development" : "Production");
+  // console.log("Selected Android Client ID:", clientId);
+  // console.log("Debug Client ID available:", EXPO_PUBLIC_ANDROID_CLIENT_ID_DEBUG);
+  // console.log("Release Client ID available:", EXPO_PUBLIC_ANDROID_CLIENT_ID_RELEASE);
 
   return clientId;
 };
@@ -98,16 +98,16 @@ const config = {
   googleMapsApiKey: ENV.GOOGLE_MAPS_API_KEY,
 };
 
-console.log("Exporting config:", config);
-console.log("Verify these values match:");
-console.log("1. app.json bundleIdentifier:", ENV.BUNDLE_IDENTIFIER);
-console.log("2. app.json CFBundleURLSchemes:", ENV.BUNDLE_IDENTIFIER);
-console.log("3. eas.json GOOGLE_URL_SCHEME:", getGoogleURLScheme());
-console.log("4. Info.plist CFBundleURLSchemes:", getGoogleURLScheme());
+// console.log("Exporting config:", config);
+// console.log("Verify these values match:");
+// console.log("1. app.json bundleIdentifier:", ENV.BUNDLE_IDENTIFIER);
+// console.log("2. app.json CFBundleURLSchemes:", ENV.BUNDLE_IDENTIFIER);
+// console.log("3. eas.json GOOGLE_URL_SCHEME:", getGoogleURLScheme());
+// console.log("4. Info.plist CFBundleURLSchemes:", getGoogleURLScheme());
 
-console.log("Final Maps configuration:", {
-  apiKey: ENV.GOOGLE_MAPS_API_KEY,
-  bundleId: ENV.BUNDLE_IDENTIFIER,
-});
+// console.log("Final Maps configuration:", {
+//   apiKey: ENV.GOOGLE_MAPS_API_KEY,
+//   bundleId: ENV.BUNDLE_IDENTIFIER,
+// });
 
 export default config;
