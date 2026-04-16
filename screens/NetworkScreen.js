@@ -1463,6 +1463,7 @@ const NetworkScreen = ({ navigation }) => {
           const emailRaw = p.user_email_id ?? p.user_email ?? "";
           return {
             ...circle,
+            degree: 1,
             __mc: {
               firstName: sanitizeText(p.profile_personal_first_name || ""),
               lastName: sanitizeText(p.profile_personal_last_name || ""),
@@ -1626,7 +1627,11 @@ const NetworkScreen = ({ navigation }) => {
       let parent = null;
 
       // HIGHEST PRIORITY: Use profile_personal_referred_by - this is who referred/connected this person
-      if (n.profile_personal_referred_by && allUids.has(n.profile_personal_referred_by)) {
+      if (
+        n.profile_personal_referred_by &&
+        n.profile_personal_referred_by !== nodeUid &&
+        allUids.has(n.profile_personal_referred_by)
+      ) {
         const referredByNode = data.find((x) => x.network_profile_personal_uid === n.profile_personal_referred_by);
         if (referredByNode) {
           const referredByDeg = Number(referredByNode.degree) || 1;
@@ -1664,9 +1669,12 @@ const NetworkScreen = ({ navigation }) => {
       }
 
       // Fallback: Check if this node's profile_personal_uid or target_uid points to a valid parent
+      // Circle API rows set profile_personal_uid to the *contact* (same as network_profile_personal_uid).
+      // Treating that as "parent" sets parent === nodeUid (self-loop) and breaks vis-network layout
+      // (image vs ring misalignment, missing-looking edges). Connections rows use these as real parent refs.
       if (!parent && (n.profile_personal_uid || n.target_uid)) {
         const directParentUid = n.profile_personal_uid || n.target_uid;
-        if (allUids.has(directParentUid)) {
+        if (directParentUid !== nodeUid && allUids.has(directParentUid)) {
           const parentNode = data.find((x) => x.network_profile_personal_uid === directParentUid);
           if (parentNode) {
             const parentDeg = Number(parentNode.degree) || 1;
