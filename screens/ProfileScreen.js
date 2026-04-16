@@ -245,6 +245,7 @@ const ProfileScreen = ({ route, navigation }) => {
             isApproved: bus.profile_business_approved === "1" || bus.profile_business_approved === 1 || bus.isApproved === true || bus.isApproved === "1",
             isPublic: bus.profile_business_is_visible === "1" || bus.profile_business_is_visible === 1 || bus.isPublic === true || bus.isPublic === "1",
             bu_individual_business_is_public: bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === true,
+            individualIsPublic: bus.bu_individual_business_is_public === true || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1",
           }))
         : [];
 
