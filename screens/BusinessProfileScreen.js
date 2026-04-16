@@ -54,6 +54,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
   const [selectedBountyRecipient, setSelectedBountyRecipient] = useState(null);
 
+  const [bountySort, setBountySort] = useState("connection"); // 'connection' or 'name'
+  const [bountySearch, setBountySearch] = useState("");
+
+  const [totalCartCount, setTotalCartCount] = useState(0);
+
   // Handle viewport resize on web (for DevTools opening/closing)
   useEffect(() => {
     if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -77,11 +82,25 @@ export default function BusinessProfileScreen({ route, navigation }) {
         const storedCartData = await AsyncStorage.getItem(`cart_${business_uid}`);
         if (storedCartData) {
           const cartData = JSON.parse(storedCartData);
+          const cartData = JSON.parse(storedCartData);
           setCartItems(cartData.items || []);
           if (cartData.bounty_recipient) {
             setSelectedBountyRecipient(cartData.bounty_recipient);
           }
         }
+
+        // Count ALL cart items across all businesses
+        const keys = await AsyncStorage.getAllKeys();
+        const cartKeys = keys.filter((key) => key.startsWith("cart_") && !key.startsWith("cart_expertise_"));
+        let total = 0;
+        for (const key of cartKeys) {
+          const data = await AsyncStorage.getItem(key);
+          if (data) {
+            const parsed = JSON.parse(data);
+            total += (parsed.items || []).length;
+          }
+        }
+        setTotalCartCount(total);
       } catch (error) {
         console.error("Error loading cart items:", error);
       }
@@ -448,11 +467,19 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const handleProductPress = (service) => {
     setSelectedService(service);
     setQuantity(1);
+    setBountySort("connection"); //reset sort
     // setSelectedBountyRecipient(null);
     setQuantityModalVisible(true);
   };
 
   const handleQuantityConfirm = async () => {
+    // If there are verified reviews, bounty assignment is mandatory
+    const verifiedReviews = allReviews.filter((r) => r.is_verified && r.circle_num_nodes !== null && r.circle_num_nodes !== undefined).slice(0, 5);
+
+    if (verifiedReviews.length > 0 && !selectedBountyRecipient) {
+      Alert.alert("Select a Reviewer", "Please select who referred you before adding to cart.");
+      return;
+    }
     try {
       const serviceWithQuantity = {
         ...selectedService,
@@ -496,6 +523,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       );
 
       setCartItems(newCartItems);
+      setTotalCartCount((prev) => prev + 1);
 
       await AsyncStorage.setItem(
         `cart_${business_uid}`,
@@ -1193,7 +1221,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                   {cartItems.length > 0 && (
                     <TouchableOpacity style={[styles.cartButton, darkMode && styles.darkCartButton]} onPress={handleViewCart}>
                       <Ionicons name='cart' size={24} color={darkMode ? "#fff" : "#9C45F7"} />
-                      <Text style={[styles.cartCount, darkMode && styles.darkCartCount]}>{cartItems.length}</Text>
+                      <Text style={[styles.cartCount, darkMode && styles.darkCartCount]}>{totalCartCount}</Text>
                     </TouchableOpacity>
                   )}
                   <Ionicons name={showServices ? "chevron-up" : "chevron-down"} size={20} color='#000' />
@@ -1257,91 +1285,165 @@ export default function BusinessProfileScreen({ route, navigation }) {
               {/* Bounty recipient picker — only show if there are verified reviews */}
               {allReviews.filter((r) => r.is_verified).length > 0 && (
                 <View style={{ marginTop: 16, marginBottom: 8, width: "100%" }}>
-                  <Text style={[styles.modalTitle, { fontSize: 16, marginBottom: 4, textAlign: "center" }]}>💰 Who referred you?</Text>
+                  <Text style={[styles.modalTitle, { fontSize: 16, marginBottom: 4, textAlign: "center" }]}>
+                    💰 Who referred you? <Text style={{ color: "#FF3B30" }}>*</Text>
+                  </Text>
+                  <Text style={{ fontSize: 11, color: "#FF3B30", textAlign: "center", marginBottom: 4 }}>Required — select a reviewer to assign the bounty</Text>
                   <Text style={{ fontSize: 12, color: "#888", marginBottom: 10, textAlign: "center" }}>Assign the bounty to a verified reviewer</Text>
-                  {allReviews
-                    .filter((r) => r.is_verified)
-                    .map((review) => {
-                      const isSelected = selectedBountyRecipient?.rating_uid === review.rating_uid;
-                      const name = [review.profile_personal_first_name, review.profile_personal_last_name].filter(Boolean).join(" ") || `User ${review.rating_profile_id}`;
-                      return (
-                        <TouchableOpacity
-                          key={review.rating_uid}
-                          onPress={() => setSelectedBountyRecipient(isSelected ? null : review)}
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            padding: 10,
-                            marginBottom: 8,
-                            borderRadius: 10,
-                            borderWidth: 1.5,
-                            borderColor: isSelected ? "#9C45F7" : "#ddd",
-                            backgroundColor: isSelected ? "#f5eeff" : "#fafafa",
-                          }}
-                        >
-                          {/* Radio */}
-                          <View
+                  {(() => {
+                    const sorted = allReviews
+                      .filter((r) => r.is_verified && r.circle_num_nodes !== null && r.circle_num_nodes !== undefined)
+                      .sort((a, b) => {
+                        if (bountySort === "name") {
+                          const nameA = [a.profile_personal_first_name, a.profile_personal_last_name].filter(Boolean).join(" ").toLowerCase();
+                          const nameB = [b.profile_personal_first_name, b.profile_personal_last_name].filter(Boolean).join(" ").toLowerCase();
+                          return nameA.localeCompare(nameB);
+                        }
+                        return a.circle_num_nodes - b.circle_num_nodes;
+                      })
+                      //.slice(0, 5);
+                      .slice(0, bountySort === "connection" ? 5 : undefined);
+
+                    return (
+                      <>
+                        {/* Sort Toggle */}
+                        <View style={{ flexDirection: "row", justifyContent: "center", marginBottom: 10, gap: 8 }}>
+                          <TouchableOpacity
+                            onPress={() => setBountySort("connection")}
                             style={{
-                              width: 20,
-                              height: 20,
-                              borderRadius: 10,
-                              borderWidth: 2,
-                              borderColor: isSelected ? "#9C45F7" : "#ccc",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              marginRight: 10,
+                              paddingHorizontal: 14,
+                              paddingVertical: 6,
+                              borderRadius: 20,
+                              backgroundColor: bountySort === "connection" ? "#9C45F7" : "#f0e8ff",
                             }}
                           >
-                            {isSelected && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#9C45F7" }} />}
-                          </View>
+                            <Text style={{ color: bountySort === "connection" ? "#fff" : "#9C45F7", fontWeight: "600", fontSize: 12 }}>By Connection</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => setBountySort("name")}
+                            style={{
+                              paddingHorizontal: 14,
+                              paddingVertical: 6,
+                              borderRadius: 20,
+                              backgroundColor: bountySort === "name" ? "#9C45F7" : "#f0e8ff",
+                            }}
+                          >
+                            <Text style={{ color: bountySort === "name" ? "#fff" : "#9C45F7", fontWeight: "600", fontSize: 12 }}>By Name</Text>
+                          </TouchableOpacity>
+                        </View>
 
-                          {/* Avatar */}
-                          {review.profile_personal_image ? (
-                            <Image
-                              source={{ uri: review.profile_personal_image }}
-                              style={{ width: 36, height: 36, borderRadius: 18, marginRight: 10 }}
-                              defaultSource={require("../assets/profile.png")}
-                            />
-                          ) : (
-                            <View
-                              style={{
-                                width: 36,
-                                height: 36,
-                                borderRadius: 18,
-                                marginRight: 10,
-                                backgroundColor: "#e0e0e0",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              <Text style={{ fontWeight: "bold", color: "#555" }}>{(review.profile_personal_first_name?.charAt(0) || "U").toUpperCase()}</Text>
-                            </View>
-                          )}
+                        {/* Search bar — only shown when sorting by name */}
+                        {bountySort === "name" && (
+                          <TextInput
+                            style={{
+                              borderWidth: 1,
+                              borderColor: "#c4b5fd",
+                              borderRadius: 8,
+                              paddingHorizontal: 12,
+                              paddingVertical: 8,
+                              fontSize: 14,
+                              color: "#333",
+                              backgroundColor: "#fff",
+                              marginBottom: 10,
+                              width: "100%",
+                            }}
+                            placeholder='Search by name...'
+                            placeholderTextColor='#aaa'
+                            value={bountySearch}
+                            onChangeText={setBountySearch}
+                          />
+                        )}
 
-                          {/* Info */}
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontWeight: "600", color: "#333" }}>{name}</Text>
-                            {review.circle_num_nodes !== null && review.circle_num_nodes !== undefined && (
-                              <Text style={{ fontSize: 12, color: "#888" }}>{`Level ${review.circle_num_nodes} Connection`}</Text>
-                            )}
-                          </View>
+                        {sorted
+                          .filter((review) => {
+                            if (bountySort !== "name" || !bountySearch.trim()) return true;
+                            const name = [review.profile_personal_first_name, review.profile_personal_last_name].filter(Boolean).join(" ").toLowerCase();
+                            return name.includes(bountySearch.trim().toLowerCase());
+                          })
+                          .map((review) => {
+                            const isSelected = selectedBountyRecipient?.rating_uid === review.rating_uid;
+                            const name = [review.profile_personal_first_name, review.profile_personal_last_name].filter(Boolean).join(" ") || `User ${review.rating_profile_id}`;
+                            return (
+                              <TouchableOpacity
+                                key={review.rating_uid}
+                                onPress={() => setSelectedBountyRecipient(isSelected ? null : review)}
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  padding: 10,
+                                  marginBottom: 8,
+                                  borderRadius: 10,
+                                  borderWidth: 1.5,
+                                  borderColor: isSelected ? "#9C45F7" : "#ddd",
+                                  backgroundColor: isSelected ? "#f5eeff" : "#fafafa",
+                                }}
+                              >
+                                {/* Radio */}
+                                <View
+                                  style={{
+                                    width: 20,
+                                    height: 20,
+                                    borderRadius: 10,
+                                    borderWidth: 2,
+                                    borderColor: isSelected ? "#9C45F7" : "#ccc",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    marginRight: 10,
+                                  }}
+                                >
+                                  {isSelected && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#9C45F7" }} />}
+                                </View>
 
-                          {/* Bounty badge */}
-                          {selectedService?.bs_bounty && (
-                            <View
-                              style={{
-                                backgroundColor: isSelected ? "#9C45F7" : "#f0e8ff",
-                                borderRadius: 8,
-                                paddingHorizontal: 8,
-                                paddingVertical: 4,
-                              }}
-                            >
-                              <Text style={{ color: isSelected ? "#fff" : "#9C45F7", fontWeight: "700", fontSize: 12 }}>${parsePrice(selectedService.bs_bounty).toFixed(2)}</Text>
-                            </View>
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
+                                {/* Avatar */}
+                                {review.profile_personal_image ? (
+                                  <Image
+                                    source={{ uri: review.profile_personal_image }}
+                                    style={{ width: 36, height: 36, borderRadius: 18, marginRight: 10 }}
+                                    defaultSource={require("../assets/profile.png")}
+                                  />
+                                ) : (
+                                  <View
+                                    style={{
+                                      width: 36,
+                                      height: 36,
+                                      borderRadius: 18,
+                                      marginRight: 10,
+                                      backgroundColor: "#e0e0e0",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                    }}
+                                  >
+                                    <Text style={{ fontWeight: "bold", color: "#555" }}>{(review.profile_personal_first_name?.charAt(0) || "U").toUpperCase()}</Text>
+                                  </View>
+                                )}
+
+                                {/* Info */}
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontWeight: "600", color: "#333" }}>{name}</Text>
+                                  {review.circle_num_nodes !== null && review.circle_num_nodes !== undefined && (
+                                    <Text style={{ fontSize: 12, color: "#888" }}>{`Level ${review.circle_num_nodes} Connection`}</Text>
+                                  )}
+                                </View>
+
+                                {/* Bounty badge */}
+                                {selectedService?.bs_bounty && (
+                                  <View
+                                    style={{
+                                      backgroundColor: isSelected ? "#9C45F7" : "#f0e8ff",
+                                      borderRadius: 8,
+                                      paddingHorizontal: 8,
+                                      paddingVertical: 4,
+                                    }}
+                                  >
+                                    <Text style={{ color: isSelected ? "#fff" : "#9C45F7", fontWeight: "700", fontSize: 12 }}>${parsePrice(selectedService.bs_bounty).toFixed(2)}</Text>
+                                  </View>
+                                )}
+                              </TouchableOpacity>
+                            );
+                          })}
+                      </>
+                    );
+                  })()}
                 </View>
               )}
             </ScrollView>

@@ -72,6 +72,8 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const [paymentError, setPaymentError] = useState(null);
   const [customerUid, setCustomerUid] = useState(null);
   const [escrow, setEscrow] = useState(true);
+  const [refundAcknowledged, setRefundAcknowledged] = useState(false); //refund acknowledgement state
+  const [refundError, setRefundError] = useState(false); 
 
   useEffect(() => {
     console.log("ShoppingCartScreen mounted");
@@ -587,6 +589,12 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       return;
     }
 
+    if (!refundAcknowledged) {
+      setRefundError(true);
+      return;
+    }
+    setRefundError(false);
+
     // Web Stripe flow
     if (isWeb) {
       try {
@@ -766,6 +774,33 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                   <Text style={styles.escrowLabel}>Escrow</Text>
                   <Ionicons name='information-circle-outline' size={18} color='#666' style={styles.infoIcon} />
                 </TouchableOpacity>
+              </View>
+
+              <View style={styles.escrowSection}>
+                <TouchableOpacity
+                  style={styles.escrowRow}
+                  onPress={() => {
+                    setRefundAcknowledged(!refundAcknowledged);
+                    setRefundError(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={[
+                    styles.checkbox,
+                    refundAcknowledged && styles.checkboxChecked,
+                    refundError && { borderColor: "#FF3B30" },
+                  ]}>
+                    {refundAcknowledged && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={[styles.escrowLabel, { flex: 1 }, refundError && { color: "#FF3B30" }]}>
+                    Return must be made in 5 days for a full refund, any returns past 5 days will result in a partial refund. Check the box to acknowledge.
+                  </Text>
+                </TouchableOpacity>
+                {refundError && (
+                  <Text style={{ color: "#FF3B30", fontSize: 13, marginTop: 6, marginLeft: 34 }}>
+                    You must acknowledge the return policy before checking out.
+                  </Text>
+                )}
               </View>
             </>
           )}
