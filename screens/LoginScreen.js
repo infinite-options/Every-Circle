@@ -300,13 +300,13 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
           <View style={styles.inputContainer}>
             <View style={styles.fieldContainer}>
               <Text style={styles.label}>Email</Text>
-              <TextInput style={styles.input} placeholder='Email' value={email} onChangeText={handleEmailChange} keyboardType='email-address' autoCapitalize='none' />
+              <TextInput style={styles.input} placeholder='Email' value={email} onChangeText={handleEmailChange} keyboardType='email-address' autoCapitalize='none' accessibilityLabel="Email" />
               {!!emailError && <Text style={styles.emailErrorText}>{emailError}</Text>}
             </View>
             <View style={styles.fieldContainer}>
               <Text style={styles.label}>Password</Text>
               <View style={styles.passwordInputContainer}>
-                <TextInput style={styles.input} placeholder='Password' value={password} onChangeText={handlePasswordChange} secureTextEntry={!isPasswordVisible} autoCapitalize='none' />
+                <TextInput style={styles.input} placeholder='Password' value={password} onChangeText={handlePasswordChange} secureTextEntry={!isPasswordVisible} autoCapitalize='none' accessibilityLabel="Password" />
                 <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
                   <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
                 </TouchableOpacity>

@@ -157,7 +157,7 @@ const FilterPopup = ({
             paddingVertical: 16,
             borderBottomWidth: 1,
             borderBottomColor: borderColor,
-            backgroundColor: darkMode ? "#252538" : "#f0f2ff",
+            backgroundColor: darkMode ? "#252538" : "#f0f2ff"
           }}
         >
           <Text style={{ fontSize: 17, fontWeight: "800", color: textColor, letterSpacing: 0.3 }}>Filter Connections</Text>
@@ -1991,7 +1991,7 @@ const NetworkScreen = ({ navigation }) => {
                     return null;
                   })()}
 
-                  <Text style={[styles.qrCodeTitle, darkMode && styles.darkQrCodeTitle]}>Connect with Me!</Text>
+                  <Text accessibilityRole="header" style={[styles.qrCodeTitle, darkMode && styles.darkQrCodeTitle]}>Connect with Me!</Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 15 }}>
                     <Text style={[styles.qrCodeSubtitle, darkMode && styles.darkQrCodeSubtitle, { marginBottom: 0 }]}>SCAN My QR Code</Text>
                     {/* <TouchableOpacity
@@ -2036,6 +2036,10 @@ const NetworkScreen = ({ navigation }) => {
                         ios_backgroundColor='#767577'
                         activeThumbColor={getHeaderColor("network")}
                         activeTrackColor='rgba(36, 52, 194, 0.5)'
+                        accessibilityRole="switch"
+                        accessibilityLabel="Exchange contact info"
+                        accessibilityHint="Turns contact info exchange on or off when someone scans your QR code"
+                        accessibilityState={{ checked: formSwitchEnabled }}
                       />
                     </View>
 
@@ -2097,6 +2101,10 @@ const NetworkScreen = ({ navigation }) => {
                             placeholder='Search Connections...'
                             placeholderTextColor={darkMode ? "#888" : "#999"}
                             borderless
+                            accessibilityLabel="Search connections"
+                            accessibilityHint="Type to search your connections by name, location, event, or relationship"
+                            accessibilityRole="search"
+                            aria-label="search connection"
                           />
                         </View>
                       </View>
@@ -2135,7 +2143,11 @@ const NetworkScreen = ({ navigation }) => {
                         <View style={styles.controlRow}>
                           <Text style={styles.controlRowLabel}>2. Levels to Display</Text>
                           <View style={[styles.pullDownButton, { overflow: "hidden", height: 30 }]}>
-                            <WebTextInput style={styles.pullDownButtonInputInner} value={degree} onChangeText={setDegree} keyboardType='numeric' borderless />
+                            <WebTextInput style={styles.pullDownButtonInputInner} value={degree} onChangeText={setDegree} keyboardType='numeric' borderless
+                            accessibilityLabel="Levels to display"
+                            accessibilityHint="Enter the number of connection levels to show"
+                            aria-label="Levels to display"
+                            />
                           </View>
                         </View>
                       )}
