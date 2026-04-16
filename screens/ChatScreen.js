@@ -10,9 +10,10 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
@@ -59,6 +60,10 @@ export default function ChatScreen() {
   const route = useRoute();
   const { darkMode } = useDarkMode();
   const { setActiveChat, clearActiveChat, enterChatView, leaveChatView } = useUnread();
+  const insets = useSafeAreaInsets();
+  // BottomNavBar content height (paddingTop 6 + icon 28 + marginBottom 2 + paddingVertical 4×2 + border 1)
+  // plus the device's bottom safe-area inset that the navbar's own SafeAreaView also adds.
+  const NAV_BAR_HEIGHT = 45 + insets.bottom;
 
   // Params — either pass an existing conversation_uid or just other_uid to create one
   const {
@@ -304,11 +309,17 @@ export default function ChatScreen() {
   // ─── layout ───────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={[styles.container, darkMode && styles.containerDark, styles.screenWithBottomNav]}>
+    <SafeAreaView edges={["top"]} style={[styles.container, darkMode && styles.containerDark]}>
       <AppHeader
         title={otherName}
         backgroundColor="#AF52DE"
-        onBackPress={() => navigation.goBack()}
+        onBackPress={() => {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.navigate("Network");
+          }
+        }}
         rightButton={
           other_uid ? (
             <TouchableOpacity
@@ -321,8 +332,9 @@ export default function ChatScreen() {
         }
       />
 
+      {/* paddingBottom reserves space for the absolutely-positioned BottomNavBar */}
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={{ flex: 1, paddingBottom: NAV_BAR_HEIGHT }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={0}
       >
@@ -458,8 +470,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    paddingBottom: Platform.OS === "ios" ? 10 : 8,
+    paddingTop: 8,
+    paddingBottom: 8,
     borderTopWidth: 1,
     borderTopColor: "#eee",
     backgroundColor: "#fff",
