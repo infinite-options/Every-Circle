@@ -82,7 +82,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
         const storedCartData = await AsyncStorage.getItem(`cart_${business_uid}`);
         if (storedCartData) {
           const cartData = JSON.parse(storedCartData);
-          const cartData = JSON.parse(storedCartData);
           setCartItems(cartData.items || []);
           if (cartData.bounty_recipient) {
             setSelectedBountyRecipient(cartData.bounty_recipient);
@@ -1038,7 +1037,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
               }
               activeOpacity={0.8}
             >
-              <Ionicons name="chatbubble-ellipses-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+              <Ionicons name='chatbubble-ellipses-outline' size={18} color='#fff' style={{ marginRight: 8 }} />
               <Text style={styles.chatButtonText}>Message Business</Text>
             </TouchableOpacity>
           )}
