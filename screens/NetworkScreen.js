@@ -2035,9 +2035,38 @@ const NetworkScreen = ({ navigation }) => {
     if (!uid) return;
     setConversationsLoading(true);
     try {
-      const res = await fetch(`${CHAT_CONVERSATIONS_ENDPOINT}/${uid}`);
-      const json = await res.json();
-      setConversations(json.result || []);
+      // Fetch business UIDs from profile API (110- path always returns business_info)
+      let bizUids = [];
+      try {
+        const profRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${uid}`);
+        const profJson = await profRes.json();
+        bizUids = (profJson.business_info || []).map((b) => b.business_uid).filter(Boolean);
+      } catch (_) {}
+
+      // Fetch conversations for personal UID + all owned business UIDs
+      const uidsToFetch = [uid, ...bizUids];
+      const results = await Promise.all(
+        uidsToFetch.map((u) =>
+          fetch(`${CHAT_CONVERSATIONS_ENDPOINT}/${u}`)
+            .then((r) => r.json())
+            .then((j) => j.result || [])
+            .catch(() => [])
+        )
+      );
+
+      // Merge, deduplicate, and sort newest-first
+      const merged = Object.values(
+        results.flat().reduce((acc, conv) => {
+          if (!acc[conv.conversation_uid]) acc[conv.conversation_uid] = conv;
+          return acc;
+        }, {})
+      );
+      merged.sort((a, b) => {
+        const ta = new Date((a.last_sent_at || a.last_message_at || "").replace(" ", "T") + "Z");
+        const tb = new Date((b.last_sent_at || b.last_message_at || "").replace(" ", "T") + "Z");
+        return tb - ta;
+      });
+      setConversations(merged);
     } catch (_) {}
     setConversationsLoading(false);
   };
@@ -2712,14 +2741,17 @@ const NetworkScreen = ({ navigation }) => {
                         darkMode && styles.messagesRowDark,
                         idx > 0 && (darkMode ? styles.messagesRowBorderDark : styles.messagesRowBorder),
                       ]}
-                      onPress={() =>
+                      onPress={() => {
+                        const myPersonalUid = profileUid;
                         navigation.navigate("Chat", {
                           conversation_uid: conv.conversation_uid,
                           other_uid: conv.other_uid,
                           other_name: name,
                           other_image: conv.image || null,
-                        })
-                      }
+                          // If this conversation belongs to an owned business, send as that business
+                          my_uid_override: conv.my_uid !== myPersonalUid ? conv.my_uid : undefined,
+                        });
+                      }}
                       activeOpacity={0.7}
                     >
                       <View style={styles.messagesAvatar}>

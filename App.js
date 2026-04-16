@@ -92,6 +92,16 @@ const ConnectScreenWrapper = (props) => {
   return Platform.OS === "web" ? <ConnectWebScreen {...props} /> : <ConnectScreen {...props} />;
 };
 
+/** Persist the list of business UIDs owned by the current user so that
+ *  InboxScreen and ChatScreen can query/send on their behalf. */
+async function _storeMyBusinessUids(fullUser) {
+  try {
+    const bizList = fullUser?.business_info || [];
+    const uids = bizList.map((b) => b.business_uid).filter(Boolean);
+    await AsyncStorage.setItem("my_business_uids", JSON.stringify(uids));
+  } catch (_) {}
+}
+
 export default function App() {
   const [initialRoute, setInitialRoute] = useState("Home");
   const [loading, setLoading] = useState(true);
@@ -299,6 +309,7 @@ export default function App() {
               await AsyncStorage.setItem("profile_uid", fullUser.personal_info.profile_personal_uid);
               console.log("App.js - Stored profile_uid in AsyncStorage:", fullUser.personal_info.profile_personal_uid);
             }
+            await _storeMyBusinessUids(fullUser);
             if (userInfo.user.email) {
               await AsyncStorage.setItem("user_email_id", userInfo.user.email);
               console.log("App.js - Stored user_email_id in AsyncStorage:", userInfo.user.email);
@@ -474,6 +485,7 @@ export default function App() {
         } else {
           console.log("App.js - Warning: No profile_personal_uid found in fullUser:", fullUser);
         }
+        await _storeMyBusinessUids(fullUser);
         if (userInfo.user.email) {
           await AsyncStorage.setItem("user_email_id", userInfo.user.email);
           console.log("App.js - Stored user_email_id in AsyncStorage:", userInfo.user.email);
@@ -674,6 +686,7 @@ export default function App() {
 
         if (fullUser && fullUser.personal_info?.profile_personal_uid) {
           await AsyncStorage.setItem("profile_uid", fullUser.personal_info.profile_personal_uid);
+          await _storeMyBusinessUids(fullUser);
 
           // Navigate to Profile page as if it was a successful login
           navigation.navigate("Profile", {
@@ -800,6 +813,7 @@ export default function App() {
 
         await AsyncStorage.setItem("profile_uid", fullUser.personal_info?.profile_personal_uid || "");
         await AsyncStorage.setItem("user_email_id", fullUser.user_email || "");
+        await _storeMyBusinessUids(fullUser);
         // await AsyncStorage.setItem("user_name", user.name);
         // await AsyncStorage.setItem("user_id", fullUser.personal_info?.profile_personal_user_id || "");
 

@@ -997,6 +997,24 @@ export default function BusinessProfileScreen({ route, navigation }) {
               </TouchableOpacity>
             ))}
 
+          {/* Chat with Business Button — visible to non-owners only */}
+          {!isOwner && (
+            <TouchableOpacity
+              style={[styles.chatButton, darkMode && styles.chatButtonDark]}
+              onPress={() =>
+                navigation.navigate("Chat", {
+                  other_uid: business_uid,
+                  other_name: business?.business_name || "Business",
+                  other_image: business?.business_profile_img || null,
+                })
+              }
+              activeOpacity={0.8}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={18} color="#fff" style={{ marginRight: 8 }} />
+              <Text style={styles.chatButtonText}>Message Business</Text>
+            </TouchableOpacity>
+          )}
+
           {/* All Reviews Section */}
           {allReviews.length > 0 && (
             <View style={styles.fieldContainer}>
@@ -1567,6 +1585,26 @@ const styles = StyleSheet.create({
     color: "white",
     textAlign: "center",
     fontWeight: "bold",
+  },
+  chatButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#AF52DE",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    marginHorizontal: 0,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  chatButtonDark: {
+    backgroundColor: "#8B35C4",
+  },
+  chatButtonText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
   },
   reviewButton: {
     backgroundColor: "#9C45F7",

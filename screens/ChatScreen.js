@@ -65,12 +65,14 @@ export default function ChatScreen() {
   // plus the device's bottom safe-area inset that the navbar's own SafeAreaView also adds.
   const NAV_BAR_HEIGHT = 45 + insets.bottom;
 
-  // Params — either pass an existing conversation_uid or just other_uid to create one
+  // Params — either pass an existing conversation_uid or just other_uid to create one.
+  // my_uid_override is set when a business owner opens a conversation as their business entity.
   const {
     conversation_uid: initialConvUid,
     other_uid,
     other_name: paramOtherName,
     other_image: paramOtherImage,
+    my_uid_override,
   } = route.params || {};
 
   const [myUid, setMyUid] = useState(null);
@@ -93,7 +95,8 @@ export default function ChatScreen() {
 
   useEffect(() => {
     (async () => {
-      const uid = await AsyncStorage.getItem("profile_uid");
+      // If coming from InboxScreen as a business owner, use the override UID
+      const uid = my_uid_override || await AsyncStorage.getItem("profile_uid");
       setMyUid(uid);
       myUidRef.current = uid;
     })();
