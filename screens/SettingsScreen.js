@@ -891,6 +891,10 @@ export default function SettingsScreen() {
                 ios_backgroundColor={COLORS.switchTrackInactive}
                 activeThumbColor={COLORS.switchThumbActive}
                 activeTrackColor={COLORS.switchTrackActive}
+                accessibilityRole="switch"
+                accessibilityLabel="Allow cookies"
+                accessibilityHint="Turns cookies on or off"
+                accessibilityState={{ checked: allowCookies }}
               />
             </View>
 
@@ -911,6 +915,10 @@ export default function SettingsScreen() {
                 ios_backgroundColor={COLORS.switchTrackInactive}
                 activeThumbColor={COLORS.switchThumbActive}
                 activeTrackColor={COLORS.switchTrackActive}
+                accessibilityRole="switch"
+                accessibilityLabel="Accept terms and conditions"
+                accessibilityHint="Turns acceptance of the terms and conditions on or off"
+                accessibilityState={{ checked: termsAccepted }}
               />
             </View>
 
@@ -931,6 +939,10 @@ export default function SettingsScreen() {
                 ios_backgroundColor={COLORS.switchTrackInactive}
                 activeThumbColor={COLORS.switchThumbActive}
                 activeTrackColor={COLORS.switchTrackActive}
+                accessibilityRole="switch"
+                accessibilityLabel="Dark mode"
+                accessibilityHint="Changes the background appearance between light and dark"
+                accessibilityState={{ checked: darkMode }}
               />
             </View>
 
@@ -951,6 +963,10 @@ export default function SettingsScreen() {
                 ios_backgroundColor={COLORS.switchTrackInactive}
                 activeThumbColor={COLORS.switchThumbActive}
                 activeTrackColor={COLORS.switchTrackActive}
+                accessibilityRole="switch"
+                accessibilityLabel="Allow notifications"
+                accessibilityHint="Turns notifications on or off"
+                accessibilityState={{ checked: allowNotifications }}
               />
             </View>
 
@@ -978,6 +994,10 @@ export default function SettingsScreen() {
                 ios_backgroundColor={COLORS.switchTrackInactive}
                 activeThumbColor={COLORS.switchThumbActive}
                 activeTrackColor={COLORS.switchTrackActive}
+                accessibilityRole="switch"
+                accessibilityLabel="Share live location"
+                accessibilityHint="Turns live location sharing on or off"
+                accessibilityState={{ checked: shareLocationActive }}
               />
             </View>
 
@@ -1489,7 +1509,7 @@ export default function SettingsScreen() {
           <View style={[styles.modalBox, darkMode && styles.darkModalBox]}>
             <MaterialIcons name='warning' size={48} color={COLORS.warningRed} style={{ marginBottom: 15 }} />
             <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle]}>Cookies Required</Text>
-            <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>If you do not allow cookies, you will only have access to the Settings screen.</Text>
+            <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>If you do not allow cookies, you will only have access to the Settings scresen.</Text>
             <View style={styles.warningButtonContainer}>
               <TouchableOpacity onPress={cancelCookiesRejection} style={[styles.warningButton, styles.cancelButton]}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
