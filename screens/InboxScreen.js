@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { useUnread } from "../contexts/UnreadContext";
 import { CHAT_CONVERSATIONS_ENDPOINT } from "../apiConfig";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -46,6 +47,7 @@ function getInitials(firstName, lastName) {
 export default function InboxScreen() {
   const navigation = useNavigation();
   const { darkMode } = useDarkMode();
+  const { clearUnread, enterChatView, leaveChatView } = useUnread();
 
   const [myUid, setMyUid] = useState(null);
   const [conversations, setConversations] = useState([]);
@@ -77,11 +79,14 @@ export default function InboxScreen() {
     [myUid]
   );
 
-  // Reload whenever the screen gains focus
+  // Reload whenever the screen gains focus, clear the dot, and suppress banners
   useFocusEffect(
     useCallback(() => {
       fetchConversations();
-    }, [fetchConversations])
+      clearUnread();
+      enterChatView();
+      return () => leaveChatView();
+    }, [fetchConversations, clearUnread, enterChatView, leaveChatView])
   );
 
   const onRefresh = () => {

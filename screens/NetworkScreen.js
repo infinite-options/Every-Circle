@@ -1,13 +1,13 @@
 // NetworkScreen.js - Web-compatible version
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useFocusEffect } from "@react-navigation/native";
-import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
+import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT, CHAT_CONVERSATIONS_ENDPOINT } from "../apiConfig";
 import MiniCard from "../components/MiniCard";
 import WebTextInput from "../components/WebTextInput";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
@@ -322,6 +322,9 @@ const NetworkScreen = ({ navigation }) => {
   /** Bumped on each screen focus so debounced fetch runs once per visit (avoids duplicate immediate refetch). */
   const [focusTick, setFocusTick] = useState(0);
   const [showFilterPopup, setShowFilterPopup] = useState(false);
+  const [showMessages, setShowMessages] = useState(false);
+  const [conversations, setConversations] = useState([]);
+  const [conversationsLoading, setConversationsLoading] = useState(false);
   const [expandedDegrees, setExpandedDegrees] = useState({}); // { [deg]: boolean } - undefined/true = expanded
 
   const networkFeedbackInstructions = "Instructions for Connect";
@@ -1955,6 +1958,32 @@ const NetworkScreen = ({ navigation }) => {
     }
   }, [showLocationDropdown, showEventDropdown]);
 
+  const fetchConversations = async () => {
+    const uid = profileUid || (await AsyncStorage.getItem("profile_uid"));
+    if (!uid) return;
+    setConversationsLoading(true);
+    try {
+      const res = await fetch(`${CHAT_CONVERSATIONS_ENDPOINT}/${uid}`);
+      const json = await res.json();
+      setConversations(json.result || []);
+    } catch (_) {}
+    setConversationsLoading(false);
+  };
+
+  const _convRelTime = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso.replace(" ", "T") + "Z");
+    const diffMs = Date.now() - d;
+    const m = Math.floor(diffMs / 60000);
+    if (m < 1) return "just now";
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const days = Math.floor(h / 24);
+    if (days < 7) return `${days}d ago`;
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  };
+
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header */}
@@ -2413,6 +2442,82 @@ const NetworkScreen = ({ navigation }) => {
               </View>
             );
           })()}
+          {/* ── Messages Accordion ─────────────────────────────────────── */}
+          <TouchableOpacity
+            style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader, { marginTop: 8 }]}
+            onPress={() => {
+              const willExpand = !showMessages;
+              setShowMessages(willExpand);
+              if (willExpand) fetchConversations();
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>Messages</Text>
+            <Ionicons name={showMessages ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+          </TouchableOpacity>
+
+          {showMessages && (
+            <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
+              {conversationsLoading ? (
+                <ActivityIndicator size="small" color="#AF52DE" style={{ paddingVertical: 20 }} />
+              ) : conversations.length === 0 ? (
+                <View style={styles.messagesEmpty}>
+                  <Ionicons name="chatbubbles-outline" size={40} color={darkMode ? "#555" : "#ccc"} />
+                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark]}>
+                    No conversations yet
+                  </Text>
+                </View>
+              ) : (
+                conversations.map((conv, idx) => {
+                  const name = `${conv.first_name || ""} ${conv.last_name || ""}`.trim() || "Unknown";
+                  const initials = ((conv.first_name || "").charAt(0) + (conv.last_name || "").charAt(0)).toUpperCase() || "?";
+                  const preview = conv.last_message || "No messages yet";
+                  const time = _convRelTime(conv.last_sent_at || conv.last_message_at);
+                  return (
+                    <TouchableOpacity
+                      key={conv.conversation_uid}
+                      style={[
+                        styles.messagesRow,
+                        darkMode && styles.messagesRowDark,
+                        idx > 0 && (darkMode ? styles.messagesRowBorderDark : styles.messagesRowBorder),
+                      ]}
+                      onPress={() =>
+                        navigation.navigate("Chat", {
+                          conversation_uid: conv.conversation_uid,
+                          other_uid: conv.other_uid,
+                          other_name: name,
+                          other_image: conv.image || null,
+                        })
+                      }
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.messagesAvatar}>
+                        {conv.image ? (
+                          <Image source={{ uri: conv.image }} style={styles.messagesAvatarImg} />
+                        ) : (
+                          <View style={[styles.messagesAvatarImg, styles.messagesAvatarFallback]}>
+                            <Text style={styles.messagesAvatarText}>{initials}</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View style={styles.messagesTextBlock}>
+                        <View style={styles.messagesNameRow}>
+                          <Text style={[styles.messagesName, darkMode && styles.messagesNameDark]} numberOfLines={1}>
+                            {name}
+                          </Text>
+                          <Text style={[styles.messagesTime, darkMode && styles.messagesTimeDark]}>{time}</Text>
+                        </View>
+                        <Text style={[styles.messagesPreview, darkMode && styles.messagesPreviewDark]} numberOfLines={1}>
+                          {preview}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </View>
+          )}
+
           {/* QR / ABLY DEBUG Dropdown */}
           <TouchableOpacity style={[styles.debugDropdownHeader, darkMode && styles.darkDebugDropdownHeader]} onPress={() => setShowDebugBlocks((prev) => !prev)} activeOpacity={0.7}>
             <Text style={[styles.debugDropdownHeaderText, darkMode && styles.darkDebugDropdownHeaderText]}>QR / ABLY DEBUG</Text>
@@ -2626,6 +2731,54 @@ const styles = StyleSheet.create({
   darkDegreeLevelHeaderText: {
     color: "#e0e0e0",
   },
+  // ── Messages accordion ───────────────────────────────────────
+  messagesAccordionBody: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    marginBottom: 8,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#eee",
+  },
+  messagesAccordionBodyDark: {
+    backgroundColor: "#1e1e1e",
+    borderColor: "#2a2a2a",
+  },
+  messagesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: "#fff",
+  },
+  messagesRowDark: { backgroundColor: "#1e1e1e" },
+  messagesRowBorder: { borderTopWidth: 1, borderTopColor: "#f0f0f0" },
+  messagesRowBorderDark: { borderTopWidth: 1, borderTopColor: "#2a2a2a" },
+  messagesAvatar: { marginRight: 12 },
+  messagesAvatarImg: { width: 44, height: 44, borderRadius: 22 },
+  messagesAvatarFallback: {
+    backgroundColor: "#AF52DE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  messagesAvatarText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  messagesTextBlock: { flex: 1 },
+  messagesNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 3,
+  },
+  messagesName: { fontSize: 14, fontWeight: "600", color: "#222", flex: 1, marginRight: 8 },
+  messagesNameDark: { color: "#fff" },
+  messagesTime: { fontSize: 11, color: "#999" },
+  messagesTimeDark: { color: "#666" },
+  messagesPreview: { fontSize: 12, color: "#666" },
+  messagesPreviewDark: { color: "#aaa" },
+  messagesEmpty: { alignItems: "center", paddingVertical: 28 },
+  messagesEmptyText: { marginTop: 10, fontSize: 14, color: "#aaa" },
+  messagesEmptyTextDark: { color: "#666" },
+
   debugDropdownHeader: {
     flexDirection: "row",
     justifyContent: "space-between",

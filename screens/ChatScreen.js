@@ -15,9 +15,11 @@ import {
 import { useNavigation, useRoute } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { useUnread } from "../contexts/UnreadContext";
 import { CHAT_CONVERSATIONS_ENDPOINT, CHAT_MESSAGES_ENDPOINT } from "../apiConfig";
 import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
 
@@ -56,6 +58,7 @@ export default function ChatScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { darkMode } = useDarkMode();
+  const { setActiveChat, clearActiveChat, enterChatView, leaveChatView } = useUnread();
 
   // Params — either pass an existing conversation_uid or just other_uid to create one
   const {
@@ -139,6 +142,19 @@ export default function ChatScreen() {
     }
   };
 
+  // Tell UnreadContext we're on a chat screen so it suppresses both the banner
+  // and the unread dot for this specific conversation.
+  useEffect(() => {
+    enterChatView();
+    return () => leaveChatView();
+  }, []);
+
+  useEffect(() => {
+    if (!convUid) return;
+    setActiveChat(convUid);
+    return () => clearActiveChat();
+  }, [convUid]);
+
   // Subscribe to real-time messages once convUid is ready
   useEffect(() => {
     if (!convUid) return;
@@ -157,24 +173,34 @@ export default function ChatScreen() {
 
   const subscribeAbly = useCallback((cid) => {
     try {
-      const Ably = require("ably");
-      const apiKey = EXPO_PUBLIC_ABLY_API_KEY;
+      let Ably;
+      if (Platform.OS === "web" && typeof window !== "undefined" && window.Ably) {
+        Ably = window.Ably;
+      } else {
+        Ably = require("ably");
+      }
+
+      const apiKey =
+        Constants.expoConfig?.extra?.ablyApiKey ||
+        process.env.EXPO_PUBLIC_ABLY_API_KEY ||
+        EXPO_PUBLIC_ABLY_API_KEY ||
+        "";
       if (!apiKey) return;
 
-      const client = new Ably.Realtime(apiKey);
+      const client = new Ably.Realtime({ key: apiKey });
       ablyClientRef.current = client;
 
-      client.connection.on("connected", () => {
-        const channel = client.channels.get(`chat::${cid}`);
-        ablyChannelRef.current = channel;
-        channel.subscribe("new-message", (msg) => {
-          const data = msg.data || {};
-          // Skip messages we sent ourselves — they are already in state via optimistic UI
-          if (data.sender_uid === myUidRef.current) return;
-          setMessages((prev) => {
-            if (prev.some((m) => m.message_uid === data.message_uid)) return prev;
-            return [...prev, { ...data }];
-          });
+      // Subscribe directly — Ably queues messages until the connection is ready,
+      // so we don't need to wait for the "connected" event.
+      const channel = client.channels.get(`chat::${cid}`);
+      ablyChannelRef.current = channel;
+      channel.subscribe("new-message", (msg) => {
+        const data = msg.data || {};
+        // Skip messages we sent ourselves — already in state via optimistic UI
+        if (data.sender_uid === myUidRef.current) return;
+        setMessages((prev) => {
+          if (prev.some((m) => m.message_uid === data.message_uid)) return prev;
+          return [...prev, { ...data }];
         });
       });
     } catch (e) {

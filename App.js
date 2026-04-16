@@ -39,6 +39,8 @@ import config from "./config";
 import { GOOGLE_SIGNUP_ENDPOINT, GOOGLE_SIGNIN_ENDPOINT, APPLE_SIGNIN_ENDPOINT, API_BASE_URL } from "./apiConfig";
 import versionData from "./version.json";
 import { DarkModeProvider } from "./contexts/DarkModeContext";
+import { UnreadProvider } from "./contexts/UnreadContext";
+import MessageNotificationBanner from "./components/MessageNotificationBanner";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
 import LoginScreen from "./screens/LoginScreen";
 import SignUpScreen from "./screens/SignUpScreen";
@@ -1107,6 +1109,7 @@ export default function App() {
   return (
     <TextNodeErrorBoundary>
       <DarkModeProvider>
+      <UnreadProvider>
         <View style={styles.appRoot}>
           <NavigationContainer ref={navigationRef} linking={isWeb ? linking : undefined} onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={onNavigationStateChange}>
             <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
@@ -1155,7 +1158,19 @@ export default function App() {
               <Stack.Screen name='Chat' component={ChatScreen} />
             </Stack.Navigator>
           </NavigationContainer>
+        <MessageNotificationBanner
+          onOpen={(conversationUid, senderUid, senderName) => {
+            if (navigationRef.current) {
+              navigationRef.current.navigate("Chat", {
+                conversation_uid: conversationUid,
+                other_uid: senderUid,
+                other_name: senderName,
+              });
+            }
+          }}
+        />
         </View>
+      </UnreadProvider>
       </DarkModeProvider>
     </TextNodeErrorBoundary>
   );
