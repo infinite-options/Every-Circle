@@ -6,8 +6,9 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { useUnread } from "../contexts/UnreadContext";
 import { useFocusEffect } from "@react-navigation/native";
-import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT, CHAT_CONVERSATIONS_ENDPOINT } from "../apiConfig";
+import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT, CHAT_CONVERSATIONS_ENDPOINT, NEARBY_USERS_ENDPOINT } from "../apiConfig";
 import MiniCard from "../components/MiniCard";
 import WebTextInput from "../components/WebTextInput";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
@@ -282,6 +283,7 @@ const FilterPopup = ({
 
 const NetworkScreen = ({ navigation }) => {
   const { darkMode } = useDarkMode();
+  const { clearUnread } = useUnread();
   const [storageData, setStorageData] = useState([]);
   const [networkData, setNetworkData] = useState([]);
   const [groupedNetwork, setGroupedNetwork] = useState({});
@@ -325,6 +327,12 @@ const NetworkScreen = ({ navigation }) => {
   const [showMessages, setShowMessages] = useState(false);
   const [conversations, setConversations] = useState([]);
   const [conversationsLoading, setConversationsLoading] = useState(false);
+
+  const [showNearby, setShowNearby] = useState(false);
+  const [nearbyUsers, setNearbyUsers] = useState([]);
+  const [nearbyLoading, setNearbyLoading] = useState(false);
+  const [nearbyError, setNearbyError] = useState(null);
+  const [ignoredNearbyUids, setIgnoredNearbyUids] = useState(new Set());
   const [expandedDegrees, setExpandedDegrees] = useState({}); // { [deg]: boolean } - undefined/true = expanded
 
   const networkFeedbackInstructions = "Instructions for Connect";
@@ -1958,6 +1966,62 @@ const NetworkScreen = ({ navigation }) => {
     }
   }, [showLocationDropdown, showEventDropdown]);
 
+  const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
+  const NEARBY_SETTINGS_KEY = "nearby_share_settings";
+
+  const fetchNearbyUsers = async () => {
+    const uid = profileUid || (await AsyncStorage.getItem("profile_uid"));
+    if (!uid) return;
+
+    // Reuse the same privacy settings that SettingsScreen persists
+    let mode = "all_circles";
+    try {
+      const raw = await AsyncStorage.getItem(NEARBY_SETTINGS_KEY);
+      if (raw) {
+        const s = JSON.parse(raw);
+        mode = s.receiveFrom || "all_circles";
+      }
+    } catch (_) {}
+
+    // Load ignored UIDs from storage
+    try {
+      const raw = await AsyncStorage.getItem(NEARBY_IGNORED_KEY);
+      if (raw) setIgnoredNearbyUids(new Set(JSON.parse(raw)));
+    } catch (_) {}
+
+    setNearbyLoading(true);
+    setNearbyError(null);
+    setNearbyUsers([]);
+    try {
+      const res = await fetch(`${NEARBY_USERS_ENDPOINT}/${uid}?mode=${mode}`);
+      const json = await res.json();
+      if (json.code === 200) {
+        setNearbyUsers(json.result || []);
+      } else if (json.code === 410) {
+        setNearbyError("Your location has expired. Update it in Settings to see who's nearby.");
+      } else {
+        setNearbyError(json.message || "Could not fetch nearby users.");
+      }
+    } catch (_) {
+      setNearbyError("Network error. Please try again.");
+    }
+    setNearbyLoading(false);
+  };
+
+  const ignoreNearbyUser = async (uid) => {
+    const next = new Set(ignoredNearbyUids);
+    next.add(uid);
+    setIgnoredNearbyUids(next);
+    try { await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next])); } catch (_) {}
+  };
+
+  const unignoreNearbyUser = async (uid) => {
+    const next = new Set(ignoredNearbyUids);
+    next.delete(uid);
+    setIgnoredNearbyUids(next);
+    try { await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next])); } catch (_) {}
+  };
+
   const fetchConversations = async () => {
     const uid = profileUid || (await AsyncStorage.getItem("profile_uid"));
     if (!uid) return;
@@ -2442,13 +2506,160 @@ const NetworkScreen = ({ navigation }) => {
               </View>
             );
           })()}
+          {/* ── Who's Nearby Accordion ───────────────────────────────── */}
+          <TouchableOpacity
+            style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader, { marginTop: 8 }]}
+            onPress={() => {
+              const willExpand = !showNearby;
+              setShowNearby(willExpand);
+              if (willExpand) fetchNearbyUsers();
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>Who's Nearby?</Text>
+            <Ionicons name={showNearby ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+          </TouchableOpacity>
+
+          {showNearby && (
+            <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
+              {nearbyLoading ? (
+                <ActivityIndicator size="small" color="#AF52DE" style={{ paddingVertical: 20 }} />
+              ) : nearbyError ? (
+                <View style={styles.messagesEmpty}>
+                  <Ionicons name="location-outline" size={40} color={darkMode ? "#555" : "#ccc"} />
+                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark, { textAlign: "center", paddingHorizontal: 16 }]}>
+                    {nearbyError}
+                  </Text>
+                </View>
+              ) : nearbyUsers.filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid)).length === 0 &&
+                 nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length === 0 ? (
+                <View style={styles.messagesEmpty}>
+                  <Ionicons name="people-outline" size={40} color={darkMode ? "#555" : "#ccc"} />
+                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark]}>
+                    No one nearby right now
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  {/* Active (non-ignored) users */}
+                  {nearbyUsers
+                    .filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))
+                    .map((item, idx) => {
+                      const fullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
+                      const initials = `${(item.profile_personal_first_name || "?")[0]}${(item.profile_personal_last_name || "?")[0]}`.toUpperCase();
+                      const distMiles = item.distance_meters != null ? (item.distance_meters / 1609).toFixed(1) : "?";
+                      return (
+                        <View
+                          key={item.profile_personal_uid}
+                          style={[
+                            styles.nearbyRow,
+                            darkMode && styles.nearbyRowDark,
+                            idx > 0 && (darkMode ? styles.messagesRowBorderDark : styles.messagesRowBorder),
+                          ]}
+                        >
+                          {item.profile_personal_image ? (
+                            <Image source={{ uri: item.profile_personal_image }} style={styles.nearbyAvatar} />
+                          ) : (
+                            <View style={[styles.nearbyAvatar, styles.nearbyAvatarFallback]}>
+                              <Text style={styles.nearbyAvatarText}>{initials}</Text>
+                            </View>
+                          )}
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.messagesName, darkMode && styles.messagesNameDark]} numberOfLines={1}>
+                              {fullName}
+                            </Text>
+                            <Text style={[styles.nearbyDist, darkMode && styles.nearbyDistDark]}>
+                              {distMiles} mi away
+                            </Text>
+                          </View>
+                          {/* View profile */}
+                          <TouchableOpacity
+                            style={styles.nearbyBtn}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            onPress={() => navigation.navigate("Profile", { profile_uid: item.profile_personal_uid })}
+                          >
+                            <Ionicons name="person-outline" size={16} color="#4B2E83" />
+                          </TouchableOpacity>
+                          {/* Chat */}
+                          <TouchableOpacity
+                            style={[styles.nearbyBtn, styles.nearbyBtnChat]}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            onPress={() => navigation.navigate("Chat", {
+                              other_uid: item.profile_personal_uid,
+                              other_name: fullName || "Chat",
+                              other_image: item.profile_personal_image || null,
+                            })}
+                          >
+                            <Ionicons name="chatbubble-ellipses-outline" size={16} color="#fff" />
+                          </TouchableOpacity>
+                          {/* Ignore */}
+                          <TouchableOpacity
+                            style={[styles.nearbyBtn, styles.nearbyBtnIgnore]}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            onPress={() => ignoreNearbyUser(item.profile_personal_uid)}
+                          >
+                            <Ionicons name="eye-off-outline" size={16} color="#fff" />
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
+
+                  {/* Ignored section */}
+                  {nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length > 0 && (
+                    <>
+                      <View style={[styles.nearbyIgnoredHeader, darkMode && styles.nearbyIgnoredHeaderDark]}>
+                        <Ionicons name="eye-off-outline" size={13} color={darkMode ? "#888" : "#aaa"} style={{ marginRight: 5 }} />
+                        <Text style={[styles.nearbyIgnoredTitle, darkMode && styles.nearbyIgnoredTitleDark]}>
+                          Ignored ({nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length})
+                        </Text>
+                      </View>
+                      {nearbyUsers
+                        .filter((u) => ignoredNearbyUids.has(u.profile_personal_uid))
+                        .map((item) => {
+                          const iName = `${(item.profile_personal_first_name || "?")[0]}${(item.profile_personal_last_name || "?")[0]}`.toUpperCase();
+                          const iFullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
+                          return (
+                            <View key={item.profile_personal_uid} style={[styles.nearbyRow, styles.nearbyRowIgnored, darkMode && styles.nearbyRowDark]}>
+                              {item.profile_personal_image ? (
+                                <Image source={{ uri: item.profile_personal_image }} style={[styles.nearbyAvatar, { opacity: 0.4 }]} />
+                              ) : (
+                                <View style={[styles.nearbyAvatar, styles.nearbyAvatarFallback, { opacity: 0.4 }]}>
+                                  <Text style={styles.nearbyAvatarText}>{iName}</Text>
+                                </View>
+                              )}
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.messagesName, { opacity: 0.5 }, darkMode && styles.messagesNameDark]} numberOfLines={1}>
+                                  {iFullName}
+                                </Text>
+                              </View>
+                              {/* Unignore */}
+                              <TouchableOpacity
+                                style={[styles.nearbyBtn, styles.nearbyBtnUnignore]}
+                                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                                onPress={() => unignoreNearbyUser(item.profile_personal_uid)}
+                              >
+                                <Ionicons name="eye-outline" size={16} color="#fff" />
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        })}
+                    </>
+                  )}
+                </>
+              )}
+            </View>
+          )}
+
           {/* ── Messages Accordion ─────────────────────────────────────── */}
           <TouchableOpacity
             style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader, { marginTop: 8 }]}
             onPress={() => {
               const willExpand = !showMessages;
               setShowMessages(willExpand);
-              if (willExpand) fetchConversations();
+              if (willExpand) {
+                fetchConversations();
+                clearUnread();
+              }
             }}
             activeOpacity={0.7}
           >
@@ -2778,6 +2989,51 @@ const styles = StyleSheet.create({
   messagesEmpty: { alignItems: "center", paddingVertical: 28 },
   messagesEmptyText: { marginTop: 10, fontSize: 14, color: "#aaa" },
   messagesEmptyTextDark: { color: "#666" },
+
+  // ── Nearby accordion ─────────────────────────────────────────
+  nearbyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: "#fff",
+    gap: 10,
+  },
+  nearbyRowDark: { backgroundColor: "#1e1e1e" },
+  nearbyRowIgnored: { opacity: 0.6 },
+  nearbyAvatar: { width: 40, height: 40, borderRadius: 20 },
+  nearbyAvatarFallback: {
+    backgroundColor: "#AF52DE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  nearbyAvatarText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  nearbyDist: { fontSize: 11, color: "#888", marginTop: 2 },
+  nearbyDistDark: { color: "#666" },
+  nearbyBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    borderColor: "#4B2E83",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  nearbyBtnChat: { backgroundColor: "#AF52DE", borderColor: "#AF52DE" },
+  nearbyBtnIgnore: { backgroundColor: "#e57373", borderColor: "#e57373" },
+  nearbyBtnUnignore: { backgroundColor: "#66bb6a", borderColor: "#66bb6a" },
+  nearbyIgnoredHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: "#f0f0f0",
+    backgroundColor: "#fafafa",
+  },
+  nearbyIgnoredHeaderDark: { backgroundColor: "#252525", borderTopColor: "#2a2a2a" },
+  nearbyIgnoredTitle: { fontSize: 12, color: "#aaa" },
+  nearbyIgnoredTitleDark: { color: "#666" },
 
   debugDropdownHeader: {
     flexDirection: "row",

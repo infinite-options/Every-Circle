@@ -52,7 +52,7 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
             </TouchableOpacity>
           </>
         ) : (
-          // Regular Navigation: Connect, Profile, Account, Settings, Search, Inbox
+          // Regular Navigation: Connect, Profile, Account, Settings, Search (Inbox hidden — see comment below)
           <>
             <TouchableOpacity
               style={styles.navButton}
@@ -61,7 +61,10 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
                 handleNavigate("Network");
               }}
             >
-              <Image source={require("../assets/connect.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
+              <View style={styles.iconWrap}>
+                <Image source={require("../assets/connect.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
+                {hasUnread && <View style={styles.unreadDot} />}
+              </View>
               {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Connect</Text> */}
             </TouchableOpacity>
 
@@ -85,6 +88,7 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
               {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Search</Text> */}
             </TouchableOpacity>
 
+            {/* Inbox button — hidden for now, unread dot moved to Network icon above
             <TouchableOpacity style={styles.navButton} onPress={() => handleNavigate("Inbox")}>
               <View style={styles.iconWrap}>
                 <Ionicons
@@ -95,8 +99,8 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
                 />
                 {hasUnread && <View style={styles.unreadDot} />}
               </View>
-              {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Inbox</Text> */}
             </TouchableOpacity>
+            */}
           </>
         )}
       </View>
@@ -151,8 +155,8 @@ const styles = StyleSheet.create({
   },
   unreadDot: {
     position: "absolute",
-    top: 0,
-    right: 0,
+    top: -1,
+    right: -1,
     width: 9,
     height: 9,
     borderRadius: 5,
