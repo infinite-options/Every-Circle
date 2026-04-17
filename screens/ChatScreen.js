@@ -8,7 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Image,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -64,6 +64,8 @@ export default function ChatScreen() {
   // BottomNavBar content height (paddingTop 6 + icon 28 + marginBottom 2 + paddingVertical 4×2 + border 1)
   // plus the device's bottom safe-area inset that the navbar's own SafeAreaView also adds.
   const NAV_BAR_HEIGHT = 45 + insets.bottom;
+  /** Added to reported keyboard height so the full composer clears the keyboard (IME height is often slightly low). */
+  const KEYBOARD_COMPOSER_EXTRA_PAD = 20;
 
   // Params — either pass an existing conversation_uid or just other_uid to create one.
   // my_uid_override is set when a business owner opens a conversation as their business entity.
@@ -84,6 +86,8 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
+  /** Bottom inset when keyboard is open — pushes composer above keyboard (KAV alone is unreliable with tab bar). */
+  const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
 
   const flatListRef = useRef(null);
   const ablyClientRef = useRef(null);
@@ -176,6 +180,46 @@ export default function ChatScreen() {
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
     }
   }, [messages.length]);
+
+  useEffect(() => {
+    // iOS: keyboardWill* (before animation). Android: only keyboardDid* exists — there is no keyboardWillShow.
+    const showEvt = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvt = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const onShow = (e) => {
+      const h = e?.endCoordinates?.height;
+      const coords = e?.endCoordinates;
+      if (__DEV__) {
+        console.log("[Chat keyboard]", showEvt, {
+          platform: Platform.OS,
+          height: h,
+          screenY: coords?.y,
+          screenX: coords?.x,
+          width: coords?.width,
+        });
+      }
+      if (typeof h === "number" && h > 0) {
+        setKeyboardBottomInset(h);
+      } else if (__DEV__) {
+        console.warn("[Chat keyboard] show event had no usable height; inset unchanged");
+      }
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 120);
+    };
+
+    const onHide = () => {
+      if (__DEV__) {
+        console.log("[Chat keyboard]", hideEvt, { platform: Platform.OS });
+      }
+      setKeyboardBottomInset(0);
+    };
+
+    const subShow = Keyboard.addListener(showEvt, onShow);
+    const subHide = Keyboard.addListener(hideEvt, onHide);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, []);
 
   // ─── ably ────────────────────────────────────────────────────────────────
 
@@ -335,11 +379,13 @@ export default function ChatScreen() {
         }
       />
 
-      {/* paddingBottom reserves space for the absolutely-positioned BottomNavBar */}
-      <KeyboardAvoidingView
-        style={{ flex: 1, paddingBottom: NAV_BAR_HEIGHT }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={0}
+      {/* Reserve bottom: tab bar when keyboard closed; keyboard height when open (keeps composer visible). */}
+      <View
+        style={{
+          flex: 1,
+          minHeight: 0,
+          paddingBottom: keyboardBottomInset > 0 ? keyboardBottomInset + KEYBOARD_COMPOSER_EXTRA_PAD : NAV_BAR_HEIGHT,
+        }}
       >
         {loading ? (
           <View style={styles.center}>
@@ -352,10 +398,13 @@ export default function ChatScreen() {
         ) : (
           <FlatList
             ref={flatListRef}
+            style={styles.messageListFlex}
             data={messages}
             keyExtractor={(item) => item.message_uid}
             renderItem={renderMessage}
             contentContainerStyle={styles.messageList}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             ListEmptyComponent={
               <View style={styles.emptyMessages}>
                 <Ionicons
@@ -374,7 +423,6 @@ export default function ChatScreen() {
           />
         )}
 
-        {/* Input bar */}
         <View style={[styles.inputBar, darkMode && styles.inputBarDark]}>
           <TextInput
             style={[styles.input, darkMode && styles.inputDark]}
@@ -398,7 +446,7 @@ export default function ChatScreen() {
             )}
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
       <BottomNavBar navigation={navigation} />
     </SafeAreaView>
   );
@@ -416,6 +464,7 @@ const styles = StyleSheet.create({
 
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
 
+  messageListFlex: { flex: 1, minHeight: 0 },
   // Message list
   messageList: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 16, flexGrow: 1 },
 

@@ -732,7 +732,23 @@ export default function SettingsScreen() {
       }
       await patchNearbyLocation(profileId, lat, lng, true);
     } catch (e) {
-      console.error("Initial position fetch failed:", e);
+      if (!isWeb) {
+        try {
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Lowest,
+            maximumAge: 120000,
+          });
+          await patchNearbyLocation(profileId, loc.coords.latitude, loc.coords.longitude, true);
+        } catch (e2) {
+          const msg = (e2 && e2.message) || (e && e.message) || String(e2 || e);
+          console.warn(
+            "Live location: initial GPS fix unavailable (common on Android emulator without mock location; watcher may still deliver a fix later).",
+            msg
+          );
+        }
+      } else {
+        console.warn("Live location: initial browser position failed:", e?.message || e);
+      }
     }
 
     await startWatcher(expiresAt);

@@ -49,6 +49,8 @@ module.exports = ({ config: expoConfig }) => ({
 
     android: {
       package: process.env.EXPO_PUBLIC_BUNDLE_IDENTIFIER || "com.infiniteoptions.everycircle",
+      /** Lets the window shrink above the keyboard so chat composer stays visible without manual keyboard insets. */
+      softwareKeyboardLayoutMode: "resize",
 
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
