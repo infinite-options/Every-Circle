@@ -141,7 +141,7 @@ export default function InboxScreen() {
 
   const EmptyState = () => (
     <View style={styles.empty}>
-      <Ionicons name="chatbubbles-outline" size={56} color={darkMode ? "#555" : "#ccc"} />
+      <Ionicons name="chatbubbles-outline" size={56} color={darkMode ? "#555" : "#767676"} />
       <Text style={[styles.emptyText, darkMode && styles.emptyTextDark]}>No conversations yet</Text>
       <Text style={[styles.emptySubText, darkMode && styles.emptySubTextDark]}>
         Navigate to someone's profile and start a chat
@@ -149,7 +149,7 @@ export default function InboxScreen() {
     </View>
   );
 
-  // ─── layout ───────────────────────────────────────────────────────────────
+  // ─── layout ───────────────────────────────────────────────────────────────s
 
   return (
     <SafeAreaView style={[styles.container, darkMode && styles.containerDark]}>
@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
   emptyText: { marginTop: 16, fontSize: 17, fontWeight: "600", color: "#555" },
   emptyTextDark: { color: "#aaa" },
-  emptySubText: { marginTop: 8, fontSize: 13, color: "#999", textAlign: "center" },
+  emptySubText: { marginTop: 8, fontSize: 13, color: "#4d4d4d", textAlign: "center" },
   emptySubTextDark: { color: "#666" },
 
   // Error

@@ -259,28 +259,70 @@ export default function UserInfoScreen({ navigation, route }) {
     }
   };
 
-  return (
-    <View style={styles.container}>
-      <AppHeader title='Your Profile' {...getHeaderColors("userInfo")} />
-      <Text style={styles.title}>Complete Your Profile</Text>
-      <Text style={styles.subtitle}>Please provide your information to continue</Text>
+return (
+  <View style={styles.container}>
+    <AppHeader title="Your Profile" {...getHeaderColors("userInfo")} />
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>First Name (Required)</Text>
-        <TextInput style={styles.input} value={firstName} onChangeText={setFirstName} placeholder='Enter your first name' autoCapitalize='words' />
+    <Text accessibilityRole="header" style={styles.title}>
+      Complete Your Profile
+    </Text>
 
-        <Text style={styles.label}>Last Name (Required)</Text>
-        <TextInput style={styles.input} value={lastName} onChangeText={setLastName} placeholder='Enter your last name' autoCapitalize='words' />
+    <Text style={styles.subtitle}>
+      Please provide your information to continue
+    </Text>
 
-        <Text style={styles.label}>Phone Number (Required for password recovery)</Text>
-        <TextInput style={styles.input} value={phoneNumber} onChangeText={(text) => setPhoneNumber(formatPhoneNumber(text))} placeholder='(000) 000-0000' keyboardType='phone-pad' />
-      </View>
+    <View style={styles.inputContainer}>
+      <Text style={styles.label}>First Name (Required)</Text>
+      <TextInput
+        style={styles.input}
+        value={firstName}
+        onChangeText={setFirstName}
+        placeholder="Enter your first name"
+        autoCapitalize="words"
+        accessibilityLabel="First name"
+        accessibilityHint="Required"
+      />
 
-      <TouchableOpacity style={[styles.button, (!isValid || loading) && styles.buttonDisabled]} onPress={handleContinue} disabled={!isValid || loading}>
-        {loading ? <ActivityIndicator color='#fff' /> : <Text style={styles.buttonText}>Continue</Text>}
-      </TouchableOpacity>
+      <Text style={styles.label}>Last Name (Required)</Text>
+      <TextInput
+        style={styles.input}
+        value={lastName}
+        onChangeText={setLastName}
+        placeholder="Enter your last name"
+        autoCapitalize="words"
+        accessibilityLabel="Last name"
+        accessibilityHint="Required"
+      />
+
+      <Text style={styles.label}>Phone Number (Required for password recovery)</Text>
+      <TextInput
+        style={styles.input}
+        value={phoneNumber}
+        onChangeText={(text) => setPhoneNumber(formatPhoneNumber(text))}
+        placeholder="(000) 000-0000"
+        keyboardType="phone-pad"
+        accessibilityLabel="Phone number"
+        accessibilityHint="Required for password recovery"
+      />
     </View>
-  );
+
+    <TouchableOpacity
+      style={[styles.button, (!isValid || loading) && styles.buttonDisabled]}
+      onPress={handleContinue}
+      disabled={!isValid || loading}
+      accessibilityRole="button"
+      accessibilityLabel={loading ? "Continuing" : "Continue"}
+      accessibilityHint={
+        !isValid
+          ? "Complete all required fields before continuing"
+          : "Continues to the next step"
+      }
+      accessibilityState={{ disabled: !isValid || loading, busy: loading }}
+    >
+      {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue</Text>}
+    </TouchableOpacity>
+  </View>
+);
 }
 
 const styles = StyleSheet.create({

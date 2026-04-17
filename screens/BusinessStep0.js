@@ -171,6 +171,12 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                     language: "en",
                     types: "establishment",
                   }}
+                  textInputProps={{
+                    accessibilityLabel: "Search for a business or organization",
+                    accessibilityHint: "Type a business or organization name and choose one from the suggestions",
+                    accessibilityRole: "search",
+                    "aria-label": "Search for a business or organization",
+                  }}
                   styles={{
                     textInput: {
                       backgroundColor: darkMode ? "#2d2d2d" : "#fff",
@@ -207,6 +213,9 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                 placeholder='Enter business name'
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
                 onChangeText={(text) => updateFormData("businessName", text)}
+                accessibilityLabel="Business name"
+                accessibilityHint="Required"
+                aria-label="Business name"
               />
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Phone Number</Text>
@@ -217,6 +226,9 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                 placeholder='(000) 000-0000'
                 placeholderTextColor={darkMode ? "#ffffff" : "#666"}
                 onChangeText={(text) => updateFormData("phoneNumber", formatPhoneNumber(text))}
+                accessibilityLabel="Phone number"
+                accessibilityHint="Enter your phone number"
+                aria-label="Phone number"
               />
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Address</Text>
@@ -226,6 +238,9 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                 placeholder='Enter street address'
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
                 onChangeText={(text) => updateFormData("addressLine1", text)}
+                accessibilityLabel="Street address"
+                accessibilityHint="Enter your street address"
+                aria-label="Street address"
               />
 
               <View style={{ flexDirection: "row", width: "100%", gap: 10 }}>
@@ -237,6 +252,9 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                     placeholder='City'
                     placeholderTextColor={darkMode ? "#cccccc" : "#666"}
                     onChangeText={(text) => updateFormData("city", text)}
+                    accessibilityLabel="City"
+                    accessibilityHint="Enter your city"
+                    aria-label="City"
                   />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -247,6 +265,9 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                     placeholder='State'
                     placeholderTextColor={darkMode ? "#cccccc" : "#666"}
                     onChangeText={(text) => updateFormData("state", text)}
+                    accessibilityLabel="State"
+                    accessibilityHint="Enter your state"
+                    aria-label="State"
                   />
                 </View>
               </View>
@@ -259,6 +280,9 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                 placeholder='Zip Code'
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
                 onChangeText={(text) => updateFormData("zip", text)}
+                accessibilityLabel="Zip code"
+                accessibilityHint="Enter your zip code"
+                aria-label="Zip code"
               />
 
               {/* <Text style={styles.label}>Business Role</Text>

@@ -1637,7 +1637,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
   },
-  tableHeaderText: { fontSize: 16, color: "#888" },
+  tableHeaderText: { fontSize: 16, color: "#686868" },
 
   resultsContainer: { flex: 1, marginBottom: 15 },
   loadingText: { textAlign: "center", marginVertical: 10 },

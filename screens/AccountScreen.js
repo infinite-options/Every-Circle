@@ -921,7 +921,7 @@ export default function AccountScreen({ navigation }) {
     if (chartData.dates.length === 0) {
       return (
         <View style={{ width: chartWidth, height: chartHeight, justifyContent: "center", alignItems: "center" }}>
-          <Text style={{ color: "#888" }}>No data available</Text>
+          <Text style={{ color: "#717171" }}>No data available</Text>
         </View>
       );
     }
@@ -1814,7 +1814,7 @@ const styles = StyleSheet.create({
     color: "red",
   },
   noDataText: {
-    color: "#888",
+    color: "#6f6e6e",
   },
   // Dropdown styles
   dropdownButton: {
