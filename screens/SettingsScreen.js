@@ -190,13 +190,30 @@ export default function SettingsScreen() {
         }
       } catch (_) {}
 
-      // Restore nearby share / receive settings
+      // Restore nearby share / receive settings and push to DB immediately
+      // so the server-side consent check is always up-to-date on load.
       try {
         const storedSettings = await AsyncStorage.getItem(NEARBY_SETTINGS_KEY);
         if (storedSettings) {
           const parsed = JSON.parse(storedSettings);
           nearbySettingsRef.current = parsed;
           setNearbySettings(parsed);
+          // Push to DB (fire-and-forget)
+          const uid = await AsyncStorage.getItem("profile_uid");
+          if (uid) {
+            const { NEARBY_LOCATION_ENDPOINT } = require("../apiConfig");
+            fetch(NEARBY_LOCATION_ENDPOINT, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                profile_uid:        uid,
+                share_with:         parsed.shareWith,
+                share_with_types:   Object.keys(parsed.shareWithTypes).filter(k => parsed.shareWithTypes[k]),
+                receive_from:       parsed.receiveFrom,
+                receive_from_types: Object.keys(parsed.receiveFromTypes).filter(k => parsed.receiveFromTypes[k]),
+              }),
+            }).catch(() => {});
+          }
         }
       } catch (_) {}
 
@@ -550,12 +567,10 @@ export default function SettingsScreen() {
         // Skip if already notified or explicitly ignored this session
         if (!uid || notifiedUidsRef.current.has(uid) || ignoredNearbyRef.current.has(uid)) return;
 
-        // Apply receiveFrom filter to ALL notifications.
-        // recipient_in_circles is True only when the recipient has the sender in their
-        // circles WITH an assigned relationship (NULL and '' both treated as unassigned).
-        // This makes notification behaviour consistent with the Who's Nearby list.
-        //
-        // TODO: Once preferences are stored in the DB, move this filter fully server-side.
+        // Always apply the viewer's own receive_from filter regardless of source.
+        // source='share'  → server already filtered by sender's share_with, but receiver
+        //                    still has the right to gate what they see (receive_from).
+        // source='receive' → same filter applies.
         const settings = nearbySettingsRef.current;
         if (settings.receiveFrom !== "everyone") {
           const inCircles = data.recipient_in_circles;
@@ -627,12 +642,33 @@ export default function SettingsScreen() {
     } catch (_) {}
   };
 
-  // Persist updated nearby share/receive settings
+  // Persist updated nearby share/receive settings — also pushes to DB immediately
+  // so the server-side consent check always reflects the latest preference.
   const updateNearbySettings = async (newSettings) => {
     nearbySettingsRef.current = newSettings;
     setNearbySettings(newSettings);
     try {
       await AsyncStorage.setItem(NEARBY_SETTINGS_KEY, JSON.stringify(newSettings));
+    } catch (_) {}
+
+    // Push to backend (prefs-only PATCH — no lat/lng required)
+    try {
+      const { NEARBY_LOCATION_ENDPOINT } = require("../apiConfig");
+      const uid = await AsyncStorage.getItem("profile_uid");
+      if (uid) {
+        await fetch(NEARBY_LOCATION_ENDPOINT, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profile_uid:        uid,
+            share_with:         newSettings.shareWith,
+            share_with_types:   Object.keys(newSettings.shareWithTypes).filter(k => newSettings.shareWithTypes[k]),
+            receive_from:       newSettings.receiveFrom,
+            receive_from_types: Object.keys(newSettings.receiveFromTypes).filter(k => newSettings.receiveFromTypes[k]),
+            // no lat/lng → prefs-only update
+          }),
+        });
+      }
     } catch (_) {}
   };
 
@@ -1192,13 +1228,13 @@ export default function SettingsScreen() {
             {[
               { key: "everyone",    label: "Everyone (all app users)" },
               { key: "all_circles", label: "All Circle Members" },
-              { key: "specific",    label: "Specific Types", disabled: true },
-            ].map(({ key, label, disabled }) => (
+              { key: "specific",    label: "Specific Circles" },
+            ].map(({ key, label }) => (
               <TouchableOpacity
                 key={key}
-                style={[styles.nearbyPrivacyOptionRow, disabled && { opacity: 0.38 }]}
-                onPress={() => !disabled && updateNearbySettings({ ...nearbySettings, shareWith: key })}
-                activeOpacity={disabled ? 1 : 0.7}
+                style={styles.nearbyPrivacyOptionRow}
+                onPress={() => updateNearbySettings({ ...nearbySettings, shareWith: key })}
+                activeOpacity={0.7}
               >
                 <Ionicons
                   name={nearbySettings.shareWith === key ? "radio-button-on" : "radio-button-off"}
@@ -1207,7 +1243,7 @@ export default function SettingsScreen() {
                   style={{ marginRight: 10 }}
                 />
                 <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>
-                  {label}{disabled ? "  (coming soon)" : ""}
+                  {label}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -1249,13 +1285,13 @@ export default function SettingsScreen() {
             {[
               { key: "everyone",    label: "Everyone (all app users)" },
               { key: "all_circles", label: "All Circle Members" },
-              { key: "specific",    label: "Specific Types", disabled: true },
-            ].map(({ key, label, disabled }) => (
+              { key: "specific",    label: "Specific Circles" },
+            ].map(({ key, label }) => (
               <TouchableOpacity
                 key={key}
-                style={[styles.nearbyPrivacyOptionRow, disabled && { opacity: 0.38 }]}
-                onPress={() => !disabled && updateNearbySettings({ ...nearbySettings, receiveFrom: key })}
-                activeOpacity={disabled ? 1 : 0.7}
+                style={styles.nearbyPrivacyOptionRow}
+                onPress={() => updateNearbySettings({ ...nearbySettings, receiveFrom: key })}
+                activeOpacity={0.7}
               >
                 <Ionicons
                   name={nearbySettings.receiveFrom === key ? "radio-button-on" : "radio-button-off"}
@@ -1264,7 +1300,7 @@ export default function SettingsScreen() {
                   style={{ marginRight: 10 }}
                 />
                 <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>
-                  {label}{disabled ? "  (coming soon)" : ""}
+                  {label}
                 </Text>
               </TouchableOpacity>
             ))}

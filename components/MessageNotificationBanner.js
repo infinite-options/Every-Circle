@@ -101,7 +101,8 @@ export default function MessageNotificationBanner({ onOpen }) {
               onOpen(
                 notification.conversationUid,
                 notification.senderUid,
-                notification.senderName
+                notification.senderName,
+                notification.senderImage
               );
           }}
           activeOpacity={0.8}
@@ -124,7 +125,8 @@ export default function MessageNotificationBanner({ onOpen }) {
               onOpen(
                 notification.conversationUid,
                 notification.senderUid,
-                notification.senderName
+                notification.senderName,
+                notification.senderImage
               );
           }}
         >

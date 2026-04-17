@@ -1173,12 +1173,13 @@ export default function App() {
             </Stack.Navigator>
           </NavigationContainer>
         <MessageNotificationBanner
-          onOpen={(conversationUid, senderUid, senderName) => {
+          onOpen={(conversationUid, senderUid, senderName, senderImage) => {
             if (navigationRef.current) {
               navigationRef.current.navigate("Chat", {
                 conversation_uid: conversationUid,
-                other_uid: senderUid,
-                other_name: senderName,
+                other_uid:        senderUid,
+                other_name:       senderName,
+                other_image:      senderImage || null,
               });
             }
           }}
