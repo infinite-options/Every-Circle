@@ -2,7 +2,7 @@
 // Uncomment the appropriate line for your environment
 
 // Production/Development Environment
-export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
+//export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
 // export const SEARCH_BASE_URL = "http://54.183.12.163:5001";
 // export const SEARCH_BASE_URL = "http://13.52.244.236:5001";
 // export const SEARCH_BASE_URL = "http://13.52.82.86:5001";
@@ -12,7 +12,7 @@ export const SEARCH_BASE_URL = "https://ioec2vrecsearch.infiniteoptions.com";
 // export const API_BASE_URL = "https://ioec2ecaspm.infiniteoptions.com";
 
 // Local Development (commented out by default)
-// export const API_BASE_URL = "http://localhost:4090";
+export const API_BASE_URL = "http://localhost:4090";
 // export const API_BASE_URL = "http://127.0.0.1:4090";
 
 // Google and Apple Authentication Endpoints
@@ -35,12 +35,14 @@ export const GET_STRIPE_PUBLIC_KEY_ENDPOINT = "https://huo8rhh76i.execute-api.us
 // User Profile Endpoints
 export const USER_PROFILE_INFO_ENDPOINT = `${API_BASE_URL}/api/v1/userprofileinfo`;
 export const REFERRAL_API_ENDPOINT = `${API_BASE_URL}/api/v1/userprofileinfo/`;
+export const PROFILE_VIEWS_ENDPOINT = `${API_BASE_URL}/api/v1/profile_views`;
 
 // Business Endpoints
 export const BUSINESS_INFO_ENDPOINT = `${API_BASE_URL}/api/v1/businessinfo`;
 export const BUSINESSES_ENDPOINT = `${API_BASE_URL}/businesses`;
 export const CATEGORY_LIST_ENDPOINT = `${API_BASE_URL}/category_list/all`;
 export const BUSINESS_AVG_RATINGS_ENDPOINT = `${API_BASE_URL}/api/v1/businessavgratings`;
+export const BUSINESS_MAX_BOUNTY_ENDPOINT = `${API_BASE_URL}/api/v1/businessmaxbounty`;
 export const BUSINESS_TAG_SEARCH_ENDPOINT = `${API_BASE_URL}/api/v1/businesstagsearch`;
 
 // Search and Network Endpoints

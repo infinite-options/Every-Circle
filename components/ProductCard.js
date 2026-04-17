@@ -30,7 +30,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton }) => {
             <View style={styles.bountyContainerRight}>
               <Text style={styles.bountyEmojiIcon}>💰</Text>
               <Text style={styles.amountText}>
-                Bounty: {(service.bs_bounty_currency === "USD" || !service.bs_bounty_currency) ? "$" : service.bs_bounty_currency + " "}{service.bs_bounty}
+                Bounty: {(service.bs_bounty_currency === "USD" || !service.bs_bounty_currency) ? "$" : service.bs_bounty_currency + " "}{service.bs_bounty}{service.bs_bounty_type === "per_item" ? " / item" : " total"}
             </Text>
             </View>
           ) : null}
