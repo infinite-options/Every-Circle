@@ -768,7 +768,25 @@ export default function SettingsScreen() {
       }
       await patchNearbyLocation(profileId, lat, lng, true);
     } catch (e) {
-      console.error("Initial position fetch failed:", e);
+      // Location ON + permission granted still fails when there is no fix yet (common on emulator
+      // without a mock location, indoors, or slow GPS). Retry with lowest accuracy; watcher may fix later.
+      if (!isWeb) {
+        try {
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Lowest,
+            maximumAge: 120000,
+          });
+          await patchNearbyLocation(profileId, loc.coords.latitude, loc.coords.longitude, true);
+        } catch (e2) {
+          const msg = (e2 && e2.message) || (e && e.message) || String(e2 || e);
+          console.warn(
+            "[Live location] No immediate GPS fix. Services can be ON and this still happens on emulators without a mock location, or before the first satellite/network fix. Watcher will keep trying.",
+            msg
+          );
+        }
+      } else {
+        console.warn("[Live location] Initial browser position failed:", e?.message || e);
+      }
     }
 
     await startWatcher(expiresAt);
