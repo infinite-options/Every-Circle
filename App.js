@@ -39,6 +39,8 @@ import config from "./config";
 import { GOOGLE_SIGNUP_ENDPOINT, GOOGLE_SIGNIN_ENDPOINT, APPLE_SIGNIN_ENDPOINT, API_BASE_URL } from "./apiConfig";
 import versionData from "./version.json";
 import { DarkModeProvider } from "./contexts/DarkModeContext";
+import { UnreadProvider } from "./contexts/UnreadContext";
+import MessageNotificationBanner from "./components/MessageNotificationBanner";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
 import LoginScreen from "./screens/LoginScreen";
 import SignUpScreen from "./screens/SignUpScreen";
@@ -89,6 +91,16 @@ const ConnectScreenWrapper = (props) => {
   // Otherwise use the original Connect screen
   return Platform.OS === "web" ? <ConnectWebScreen {...props} /> : <ConnectScreen {...props} />;
 };
+
+/** Persist the list of business UIDs owned by the current user so that
+ *  InboxScreen and ChatScreen can query/send on their behalf. */
+async function _storeMyBusinessUids(fullUser) {
+  try {
+    const bizList = fullUser?.business_info || [];
+    const uids = bizList.map((b) => b.business_uid).filter(Boolean);
+    await AsyncStorage.setItem("my_business_uids", JSON.stringify(uids));
+  } catch (_) {}
+}
 
 export default function App() {
   const [initialRoute, setInitialRoute] = useState("Home");
@@ -297,6 +309,7 @@ export default function App() {
               await AsyncStorage.setItem("profile_uid", fullUser.personal_info.profile_personal_uid);
               console.log("App.js - Stored profile_uid in AsyncStorage:", fullUser.personal_info.profile_personal_uid);
             }
+            await _storeMyBusinessUids(fullUser);
             if (userInfo.user.email) {
               await AsyncStorage.setItem("user_email_id", userInfo.user.email);
               console.log("App.js - Stored user_email_id in AsyncStorage:", userInfo.user.email);
@@ -472,6 +485,7 @@ export default function App() {
         } else {
           console.log("App.js - Warning: No profile_personal_uid found in fullUser:", fullUser);
         }
+        await _storeMyBusinessUids(fullUser);
         if (userInfo.user.email) {
           await AsyncStorage.setItem("user_email_id", userInfo.user.email);
           console.log("App.js - Stored user_email_id in AsyncStorage:", userInfo.user.email);
@@ -672,6 +686,7 @@ export default function App() {
 
         if (fullUser && fullUser.personal_info?.profile_personal_uid) {
           await AsyncStorage.setItem("profile_uid", fullUser.personal_info.profile_personal_uid);
+          await _storeMyBusinessUids(fullUser);
 
           // Navigate to Profile page as if it was a successful login
           navigation.navigate("Profile", {
@@ -798,6 +813,7 @@ export default function App() {
 
         await AsyncStorage.setItem("profile_uid", fullUser.personal_info?.profile_personal_uid || "");
         await AsyncStorage.setItem("user_email_id", fullUser.user_email || "");
+        await _storeMyBusinessUids(fullUser);
         // await AsyncStorage.setItem("user_name", user.name);
         // await AsyncStorage.setItem("user_id", fullUser.personal_info?.profile_personal_user_id || "");
 
@@ -1107,6 +1123,7 @@ export default function App() {
   return (
     <TextNodeErrorBoundary>
       <DarkModeProvider>
+      <UnreadProvider>
         <View style={styles.appRoot}>
           <NavigationContainer ref={navigationRef} linking={isWeb ? linking : undefined} onReady={() => console.log("App.js - NavigationContainer ready")} onStateChange={onNavigationStateChange}>
             <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
@@ -1155,7 +1172,19 @@ export default function App() {
               <Stack.Screen name='Chat' component={ChatScreen} />
             </Stack.Navigator>
           </NavigationContainer>
+        <MessageNotificationBanner
+          onOpen={(conversationUid, senderUid, senderName) => {
+            if (navigationRef.current) {
+              navigationRef.current.navigate("Chat", {
+                conversation_uid: conversationUid,
+                other_uid: senderUid,
+                other_name: senderName,
+              });
+            }
+          }}
+        />
         </View>
+      </UnreadProvider>
       </DarkModeProvider>
     </TextNodeErrorBoundary>
   );

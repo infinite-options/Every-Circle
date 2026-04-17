@@ -10,14 +10,17 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { useUnread } from "../contexts/UnreadContext";
 import { CHAT_CONVERSATIONS_ENDPOINT, CHAT_MESSAGES_ENDPOINT } from "../apiConfig";
 import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
 
@@ -56,13 +59,20 @@ export default function ChatScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { darkMode } = useDarkMode();
+  const { setActiveChat, clearActiveChat, enterChatView, leaveChatView } = useUnread();
+  const insets = useSafeAreaInsets();
+  // BottomNavBar content height (paddingTop 6 + icon 28 + marginBottom 2 + paddingVertical 4×2 + border 1)
+  // plus the device's bottom safe-area inset that the navbar's own SafeAreaView also adds.
+  const NAV_BAR_HEIGHT = 45 + insets.bottom;
 
-  // Params — either pass an existing conversation_uid or just other_uid to create one
+  // Params — either pass an existing conversation_uid or just other_uid to create one.
+  // my_uid_override is set when a business owner opens a conversation as their business entity.
   const {
     conversation_uid: initialConvUid,
     other_uid,
     other_name: paramOtherName,
     other_image: paramOtherImage,
+    my_uid_override,
   } = route.params || {};
 
   const [myUid, setMyUid] = useState(null);
@@ -85,7 +95,8 @@ export default function ChatScreen() {
 
   useEffect(() => {
     (async () => {
-      const uid = await AsyncStorage.getItem("profile_uid");
+      // If coming from InboxScreen as a business owner, use the override UID
+      const uid = my_uid_override || await AsyncStorage.getItem("profile_uid");
       setMyUid(uid);
       myUidRef.current = uid;
     })();
@@ -139,6 +150,19 @@ export default function ChatScreen() {
     }
   };
 
+  // Tell UnreadContext we're on a chat screen so it suppresses both the banner
+  // and the unread dot for this specific conversation.
+  useEffect(() => {
+    enterChatView();
+    return () => leaveChatView();
+  }, []);
+
+  useEffect(() => {
+    if (!convUid) return;
+    setActiveChat(convUid);
+    return () => clearActiveChat();
+  }, [convUid]);
+
   // Subscribe to real-time messages once convUid is ready
   useEffect(() => {
     if (!convUid) return;
@@ -157,24 +181,34 @@ export default function ChatScreen() {
 
   const subscribeAbly = useCallback((cid) => {
     try {
-      const Ably = require("ably");
-      const apiKey = EXPO_PUBLIC_ABLY_API_KEY;
+      let Ably;
+      if (Platform.OS === "web" && typeof window !== "undefined" && window.Ably) {
+        Ably = window.Ably;
+      } else {
+        Ably = require("ably");
+      }
+
+      const apiKey =
+        Constants.expoConfig?.extra?.ablyApiKey ||
+        process.env.EXPO_PUBLIC_ABLY_API_KEY ||
+        EXPO_PUBLIC_ABLY_API_KEY ||
+        "";
       if (!apiKey) return;
 
-      const client = new Ably.Realtime(apiKey);
+      const client = new Ably.Realtime({ key: apiKey });
       ablyClientRef.current = client;
 
-      client.connection.on("connected", () => {
-        const channel = client.channels.get(`chat::${cid}`);
-        ablyChannelRef.current = channel;
-        channel.subscribe("new-message", (msg) => {
-          const data = msg.data || {};
-          // Skip messages we sent ourselves — they are already in state via optimistic UI
-          if (data.sender_uid === myUidRef.current) return;
-          setMessages((prev) => {
-            if (prev.some((m) => m.message_uid === data.message_uid)) return prev;
-            return [...prev, { ...data }];
-          });
+      // Subscribe directly — Ably queues messages until the connection is ready,
+      // so we don't need to wait for the "connected" event.
+      const channel = client.channels.get(`chat::${cid}`);
+      ablyChannelRef.current = channel;
+      channel.subscribe("new-message", (msg) => {
+        const data = msg.data || {};
+        // Skip messages we sent ourselves — already in state via optimistic UI
+        if (data.sender_uid === myUidRef.current) return;
+        setMessages((prev) => {
+          if (prev.some((m) => m.message_uid === data.message_uid)) return prev;
+          return [...prev, { ...data }];
         });
       });
     } catch (e) {
@@ -278,11 +312,17 @@ export default function ChatScreen() {
   // ─── layout ───────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={[styles.container, darkMode && styles.containerDark, styles.screenWithBottomNav]}>
+    <SafeAreaView edges={["top"]} style={[styles.container, darkMode && styles.containerDark]}>
       <AppHeader
         title={otherName}
         backgroundColor="#AF52DE"
-        onBackPress={() => navigation.goBack()}
+        onBackPress={() => {
+          if (navigation.canGoBack()) {
+            navigation.goBack();
+          } else {
+            navigation.navigate("Network");
+          }
+        }}
         rightButton={
           other_uid ? (
             <TouchableOpacity
@@ -295,8 +335,9 @@ export default function ChatScreen() {
         }
       />
 
+      {/* paddingBottom reserves space for the absolutely-positioned BottomNavBar */}
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={{ flex: 1, paddingBottom: NAV_BAR_HEIGHT }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={0}
       >
@@ -432,8 +473,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    paddingBottom: Platform.OS === "ios" ? 10 : 8,
+    paddingTop: 8,
+    paddingBottom: 8,
     borderTopWidth: 1,
     borderTopColor: "#eee",
     backgroundColor: "#fff",

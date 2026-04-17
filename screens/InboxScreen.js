@@ -16,7 +16,8 @@ import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
-import { CHAT_CONVERSATIONS_ENDPOINT } from "../apiConfig";
+import { useUnread } from "../contexts/UnreadContext";
+import { CHAT_CONVERSATIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -46,27 +47,65 @@ function getInitials(firstName, lastName) {
 export default function InboxScreen() {
   const navigation = useNavigation();
   const { darkMode } = useDarkMode();
+  const { clearUnread, enterChatView, leaveChatView } = useUnread();
 
   const [myUid, setMyUid] = useState(null);
+  const [myBusinessUids, setMyBusinessUids] = useState(null); // null = not yet loaded
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  // Load the logged-in user's UID once
+  // Load the logged-in user's profile UID, then fetch their owned business UIDs
+  // directly from the profile API (the 110- path always returns business_info correctly)
   useEffect(() => {
-    AsyncStorage.getItem("profile_uid").then((uid) => setMyUid(uid));
+    let cancelled = false;
+    AsyncStorage.getItem("profile_uid").then(async (uid) => {
+      if (cancelled || !uid) return;
+      setMyUid(uid);
+      try {
+        const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${uid}`);
+        const json = await res.json();
+        const bizList = json.business_info || [];
+        const uids = bizList.map((b) => b.business_uid).filter(Boolean);
+        if (!cancelled) setMyBusinessUids(uids);
+      } catch (_) {
+        if (!cancelled) setMyBusinessUids([]);
+      }
+    });
+    return () => { cancelled = true; };
   }, []);
 
   const fetchConversations = useCallback(
     async (silent = false) => {
-      if (!myUid) return;
+      if (!myUid || myBusinessUids === null) return; // wait until both are ready
       if (!silent) setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${CHAT_CONVERSATIONS_ENDPOINT}/${myUid}`);
-        const json = await res.json();
-        setConversations(json.result || []);
+        // Fetch personal conversations + one fetch per owned business UID
+        const uidsToFetch = [myUid, ...myBusinessUids];
+        const results = await Promise.all(
+          uidsToFetch.map((uid) =>
+            fetch(`${CHAT_CONVERSATIONS_ENDPOINT}/${uid}`)
+              .then((r) => r.json())
+              .then((j) => j.result || [])
+              .catch(() => [])
+          )
+        );
+        // Merge and deduplicate by conversation_uid
+        const merged = Object.values(
+          results.flat().reduce((acc, conv) => {
+            if (!acc[conv.conversation_uid]) acc[conv.conversation_uid] = conv;
+            return acc;
+          }, {})
+        );
+        // Sort newest-first
+        merged.sort((a, b) => {
+          const ta = new Date(a.last_sent_at || a.last_message_at || 0);
+          const tb = new Date(b.last_sent_at || b.last_message_at || 0);
+          return tb - ta;
+        });
+        setConversations(merged);
       } catch (e) {
         setError("Could not load conversations.");
       } finally {
@@ -74,14 +113,25 @@ export default function InboxScreen() {
         setRefreshing(false);
       }
     },
-    [myUid]
+    [myUid, myBusinessUids]
   );
 
-  // Reload whenever the screen gains focus
+  // Re-run fetchConversations once both myUid and myBusinessUids are ready
+  // (handles the case where screen is already focused when they load)
+  useEffect(() => {
+    if (myUid && myBusinessUids !== null) {
+      fetchConversations();
+    }
+  }, [myUid, myBusinessUids]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reload whenever the screen gains focus, clear the dot, and suppress banners
   useFocusEffect(
     useCallback(() => {
       fetchConversations();
-    }, [fetchConversations])
+      clearUnread();
+      enterChatView();
+      return () => leaveChatView();
+    }, [fetchConversations, clearUnread, enterChatView, leaveChatView])
   );
 
   const onRefresh = () => {
@@ -90,11 +140,16 @@ export default function InboxScreen() {
   };
 
   const openChat = (conv) => {
+    // Determine which UID the current user is in this conversation
+    // (may be one of their owned business UIDs instead of their personal UID)
+    const senderUid =
+      myBusinessUids.includes(conv.my_uid) ? conv.my_uid : myUid;
     navigation.navigate("Chat", {
       conversation_uid: conv.conversation_uid,
       other_uid: conv.other_uid,
       other_name: `${conv.first_name || ""} ${conv.last_name || ""}`.trim() || "Chat",
       other_image: conv.image || null,
+      my_uid_override: senderUid !== myUid ? senderUid : undefined,
     });
   };
 

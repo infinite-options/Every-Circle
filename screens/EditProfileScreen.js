@@ -76,7 +76,8 @@ const EditProfileScreen = ({ route, navigation }) => {
       business_uid: biz.business_uid || biz.profile_business_business_id || "",
       name: biz.name || biz.profile_business_name || "",
       role: biz.role || biz.profile_business_role || "",
-      isPublic: biz.isPublic !== undefined ? biz.isPublic : biz.profile_business_is_visible === 1,
+      // isPublic: biz.isPublic !== undefined ? biz.isPublic : biz.profile_business_is_visible === 1,
+      isPublic: biz.individualIsPublic === true || biz.isPublic === true,
       isApproved: biz.isApproved !== undefined ? biz.isApproved : biz.profile_business_approved === "1",
       individualIsPublic:
         biz.individualIsPublic !== undefined
@@ -478,7 +479,8 @@ const EditProfileScreen = ({ route, navigation }) => {
               profile_business_role: biz.role || "",
               isPublic: biz.isPublic ? 1 : 0,
               isApproved: biz.isApproved ? 1 : 0,
-              individualIsPublic: biz.individualIsPublic ? 1 : 0,
+              // individualIsPublic: biz.individualIsPublic ? 1 : 0,
+              individualIsPublic: biz.isPublic ? 1 : 0,
             };
           }
 
@@ -489,7 +491,8 @@ const EditProfileScreen = ({ route, navigation }) => {
             isPublic: biz.isPublic ? 1 : 0,
             isApproved: 1, // Set to approved for new businesses
             profile_business_approver_id: profileUID, // Use the current user's profile UID as approver
-            individualIsPublic: biz.individualIsPublic ? 1 : 0,
+            // individualIsPublic: biz.individualIsPublic ? 1 : 0,
+            individualIsPublic: biz.isPublic ? 1 : 0,
           };
         })
         .filter(Boolean);

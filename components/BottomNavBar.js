@@ -3,11 +3,13 @@ import { View, Text, TouchableOpacity, StyleSheet, Image, Platform, Dimensions }
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { useUnread } from "../contexts/UnreadContext";
 
 const { width, height } = Dimensions.get("window");
 
 const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContinue, onBeforeNavigate }) => {
   const { darkMode } = useDarkMode();
+  const { hasUnread } = useUnread();
 
   // Helper function to handle navigation with interceptor
   const handleNavigate = (destination) => {
@@ -50,7 +52,7 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
             </TouchableOpacity>
           </>
         ) : (
-          // Regular Navigation: Connect, Profile, Account, Settings, Search, Inbox
+          // Regular Navigation: Connect, Profile, Account, Settings, Search (Inbox hidden — see comment below)
           <>
             <TouchableOpacity
               style={styles.navButton}
@@ -59,7 +61,10 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
                 handleNavigate("Network");
               }}
             >
-              <Image source={require("../assets/connect.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
+              <View style={styles.iconWrap}>
+                <Image source={require("../assets/connect.png")} style={[styles.navIcon, darkMode && styles.darkNavIcon]} tintColor={darkMode ? "#ffffff" : undefined} />
+                {hasUnread && <View style={styles.unreadDot} />}
+              </View>
               {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Connect</Text> */}
             </TouchableOpacity>
 
@@ -83,15 +88,19 @@ const BottomNavBar = ({ navigation, onSharePress, businessStep, onBack, onContin
               {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Search</Text> */}
             </TouchableOpacity>
 
+            {/* Inbox button — hidden for now, unread dot moved to Network icon above
             <TouchableOpacity style={styles.navButton} onPress={() => handleNavigate("Inbox")}>
-              <Ionicons
-                name="chatbubble-ellipses-outline"
-                size={26}
-                color={darkMode ? "#ffffff" : "#222222"}
-                style={styles.navIcon}
-              />
-              {/* <Text style={[styles.navLabel, darkMode && styles.darkNavLabel]}>Inbox</Text> */}
+              <View style={styles.iconWrap}>
+                <Ionicons
+                  name="chatbubble-ellipses-outline"
+                  size={26}
+                  color={darkMode ? "#ffffff" : "#222222"}
+                  style={styles.navIcon}
+                />
+                {hasUnread && <View style={styles.unreadDot} />}
+              </View>
             </TouchableOpacity>
+            */}
           </>
         )}
       </View>
@@ -136,6 +145,24 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: "400",
     letterSpacing: 0.2,
+  },
+
+  iconWrap: {
+    position: "relative",
+    width: 28,
+    height: 28,
+    marginBottom: 2,
+  },
+  unreadDot: {
+    position: "absolute",
+    top: -1,
+    right: -1,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: "#FF3B30",
+    borderWidth: 1.5,
+    borderColor: "#fff",
   },
 
   // Dark mode styles

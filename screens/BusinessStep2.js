@@ -173,10 +173,15 @@ export default function BusinessStep2({ formData, setFormData, navigation }) {
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#fff" }}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
-        <View style={{ flex: 1, padding: 20, alignItems: "center" }}>
+        <View style={{ flex: 1, padding: Platform.OS === "web" ? 40 : 20, alignItems: "center" }}>
           <ScrollView
             style={{ flex: 1, width: "100%" }}
-            contentContainerStyle={{ justifyContent: "center", alignItems: "center", paddingBottom: 140 }}
+            contentContainerStyle={{
+              // justifyContent: "center",
+              alignItems: "center",
+              paddingBottom: 140,
+              minHeight: "100%",
+            }}
             keyboardShouldPersistTaps='handled'
             nestedScrollEnabled={true}
           >
@@ -502,9 +507,9 @@ const styles = StyleSheet.create({
   formCard: {
     backgroundColor: "#fff",
     borderRadius: 30,
-    padding: 0,
+    padding: 20,
     width: "100%",
-    maxWidth: 420,
+    maxWidth: Platform.OS === "web" ? "100%" : 420,
     alignSelf: "center",
     marginBottom: 16,
     // shadowColor: '#000',
