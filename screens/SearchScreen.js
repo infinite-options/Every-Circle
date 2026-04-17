@@ -15,7 +15,9 @@ import {
   TAG_CATEGORY_DISTINCT_ENDPOINT,
   SEARCH_BASE_URL,
   BUSINESS_AVG_RATINGS_ENDPOINT,
+  BUSINESS_MAX_BOUNTY_ENDPOINT,
   BUSINESS_TAG_SEARCH_ENDPOINT,
+  BUSINESS_INFO_ENDPOINT,
   USER_PROFILE_INFO_ENDPOINT,
   PROFILE_WISH_INFO_ENDPOINT,
 } from "../apiConfig";
@@ -76,6 +78,10 @@ export default function SearchScreen({ route }) {
   const [searchType, setSearchType] = useState("businesses");
 
   const [currentProfileUid, setCurrentProfileUid] = useState(null);
+  const [connectionDegreeMap, setConnectionDegreeMap] = useState({});
+  const connectionDegreeMapRef = useRef({});
+  // Stores unsorted results so bounty filter can re-sort without re-fetching
+  const rawResultsRef = useRef([]);
 
   useEffect(() => {
     AsyncStorage.getItem("profile_uid").then(uid => setCurrentProfileUid(uid));
@@ -94,7 +100,7 @@ export default function SearchScreen({ route }) {
         if (state.network !== undefined) setNetwork(state.network);
         if (state.bounty !== undefined) setBounty(state.bounty);
         if (state.rating !== undefined) setRating(state.rating);
-        console.log("✅ Search screen state restored");
+        console.log(" Search screen state restored");
       }
     }, [route.params?.restoreState, route.params?.searchState]),
   );
@@ -181,9 +187,45 @@ export default function SearchScreen({ route }) {
           console.log("📋 Restoring last search for user:", userUid, "Query:", savedSearchQuery);
           setSearchQuery(savedSearchQuery);
           if (savedSearchType) setSearchType(savedSearchType);
-          setResults(JSON.parse(savedResults));
+          // Clear stale ratings/connections from cached business items
+          const parsedResults = JSON.parse(savedResults).map((item) =>
+            item.itemType === "businesses" ? { ...item, rating: null, ratingCount: 0, connection_degree: null } : item
+          );
+          setResults(parsedResults);
           setIsFirstVisit(false);
           setHasLoadedInitialSearch(true);
+          // Re-fetch live ratings + bounty for cached business items, then populate rawResultsRef
+          const bizItems = parsedResults.filter((r) => r.itemType === "businesses" && r.id);
+          if (bizItems.length > 0) {
+            const uids = bizItems.map((b) => b.id).join(",");
+            AsyncStorage.getItem("profile_uid").then(async (cachedProfileUid) => {
+              try {
+                const [ratingsJson, bountyJson] = await Promise.all([
+                  fetch(`${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${encodeURIComponent(uids)}${cachedProfileUid ? `&viewer_uid=${cachedProfileUid}` : ""}`).then((r) => r.json()),
+                  fetch(`${BUSINESS_MAX_BOUNTY_ENDPOINT}?uids=${encodeURIComponent(uids)}`).then((r) => r.json()),
+                ]);
+                setResults((prev) => {
+                  const updated = prev.map((b) => {
+                    if (b.itemType !== "businesses") return b;
+                    const parsed = parseFloat(ratingsJson.result?.[b.id]?.avg_rating);
+                    return {
+                      ...b,
+                      rating: ratingsJson.result?.[b.id] && Number.isFinite(parsed) ? parsed : null,
+                      ratingCount: ratingsJson.result?.[b.id] ? ratingsJson.result[b.id].rating_count : 0,
+                      connection_degree: ratingsJson.result?.[b.id]?.nearest_connection ?? null,
+                      max_bounty: bountyJson.result?.[b.id] ? parseFloat(bountyJson.result[b.id].max_bounty) : null,
+                      max_per_item_bounty: bountyJson.result?.[b.id] ? parseFloat(bountyJson.result[b.id].max_per_item_bounty) || null : null,
+                      max_total_bounty: bountyJson.result?.[b.id] ? parseFloat(bountyJson.result[b.id].max_total_bounty) || null : null,
+                    };
+                  });
+                  rawResultsRef.current = [...updated];
+                  return updated;
+                });
+              } catch (e) {
+                console.error("Could not fetch ratings/bounty from cache:", e);
+              }
+            });
+          }
         } else {
           // First time user, search for "Chinese"
           console.log("🆕 First visit for user:", userUid, "- searching for 'Chinese'");
@@ -216,6 +258,31 @@ export default function SearchScreen({ route }) {
       return () => clearTimeout(timer);
     }
   }, [hasLoadedInitialSearch]);
+
+  // Re-sort results reactively when bounty filter changes
+  useEffect(() => {
+    const base = rawResultsRef.current;
+    if (base.length === 0) return;
+
+    if (!bounty) {
+      // Reset: restore original search order
+      setResults([...base]);
+      return;
+    }
+
+    const dir = bounty === "Ascending" ? 1 : -1;
+    const sorted = [...base].sort((a, b) => {
+      if (a.itemType !== "businesses" || b.itemType !== "businesses") return 0;
+      const aTier = a.max_per_item_bounty ? 0 : a.max_total_bounty ? 1 : 2;
+      const bTier = b.max_per_item_bounty ? 0 : b.max_total_bounty ? 1 : 2;
+      if (aTier !== bTier) return aTier - bTier;
+      if (aTier === 2) return 0;
+      const aVal = aTier === 0 ? a.max_per_item_bounty : a.max_total_bounty;
+      const bVal = bTier === 0 ? b.max_per_item_bounty : b.max_total_bounty;
+      return dir * (aVal - bVal);
+    });
+    setResults(sorted);
+  }, [bounty]);
 
   // Save search state whenever results change (but not on initial load)
   useEffect(() => {
@@ -284,7 +351,7 @@ export default function SearchScreen({ route }) {
   // Filter options (same as FilterScreen)
   const distanceOptions = [5, 10, 15, 25, 50, 100];
   const networkOptions = [1, 2, 3, 4, 5];
-  const bountyOptions = ["Any", "Low", "Medium", "High"];
+  const bountyOptions = ["Ascending", "Descending"];
   const ratingOptions = ["> 1", "> 2", "> 3", "> 4", "> 4.5", "> 4.6", "> 4.8"];
 
   // Extracted search function that can be called programmatically
@@ -580,15 +647,17 @@ export default function SearchScreen({ route }) {
             id: `${b.business_uid || i}`,
             company: sanitizeText(b.business_name || b.company) || "Unknown Business",
             business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
-            rating: typeof b.rating_star === "number" ? b.rating_star : typeof b.score === "number" ? Math.min(5, Math.max(1, Math.round(b.score * 5))) : 4,
+            rating: typeof b.rating_star === "number" ? b.rating_star : null,
             hasPriceTag: b.has_price_tag || false,
             hasX: b.has_x || false,
             hasDollar: b.has_dollar_sign || false,
+            max_bounty: b.max_bounty || b.business_max_bounty || null,
             business_short_bio: sanitizeText(b.business_short_bio),
             business_tag_line: sanitizeText(b.business_tag_line),
             tags: b.tags || [],
             score: b.score || 0,
             itemType: "businesses",
+            profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
           };
         });
 
@@ -628,36 +697,72 @@ export default function SearchScreen({ route }) {
           console.log("Could not fetch tag search results:", e);
         }
 
-        // Fetch avg ratings from your backend
+        // Fetch avg ratings + nearest connection from your backend
         try {
+          const profileUid = await AsyncStorage.getItem("profile_uid");
           const uids = list.map((b) => b.id).join(",");
-          //const ratingsRes = await fetch(`${API_BASE_URL}/api/v1/businessavgratings?uids=${uids}`);
-          const ratingsRes = await fetch(`${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${uids}`);
+          const ratingsUrl = `${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${uids}${profileUid ? `&viewer_uid=${profileUid}` : ""}`;
+          const ratingsRes = await fetch(ratingsUrl);
           const ratingsJson = await ratingsRes.json();
-
-          console.log("Ratings fetch URL:", `${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${uids}`);
-          console.log("Ratings response:", JSON.stringify(ratingsJson, null, 2));
 
           if (ratingsJson.result) {
             list = list.map((b) => ({
-              // ...b,
-              // rating: ratingsJson.result[b.id]?.avg_rating ?? b.rating,
-              // ratingCount: ratingsJson.result[b.id]?.rating_count ?? 0,
               ...b,
-              rating: ratingsJson.result[b.id] ? parseFloat(ratingsJson.result[b.id].avg_rating) : null,
+              rating: ratingsJson.result[b.id] && Number.isFinite(parseFloat(ratingsJson.result[b.id].avg_rating)) ? parseFloat(ratingsJson.result[b.id].avg_rating) : null,
+              ratingCount: ratingsJson.result[b.id] ? ratingsJson.result[b.id].rating_count : 0,
+              connection_degree: ratingsJson.result[b.id]?.nearest_connection ?? null,
             }));
-            console.log("After ratings merge, first item profile img:", list[0]?.business_profile_img);
           }
         } catch (e) {
           console.log("Could not fetch avg ratings:", e);
         }
+
+        // Fetch max bounty per business
+        try {
+          const uids = list.map((b) => b.id).join(",");
+          const bountyRes = await fetch(`${BUSINESS_MAX_BOUNTY_ENDPOINT}?uids=${encodeURIComponent(uids)}`);
+          const bountyJson = await bountyRes.json();
+          if (bountyJson.result) {
+            list = list.map((b) => ({
+              ...b,
+              max_bounty: bountyJson.result[b.id] ? parseFloat(bountyJson.result[b.id].max_bounty) : null,
+              max_per_item_bounty: bountyJson.result[b.id] ? parseFloat(bountyJson.result[b.id].max_per_item_bounty) || null : null,
+              max_total_bounty: bountyJson.result[b.id] ? parseFloat(bountyJson.result[b.id].max_total_bounty) || null : null,
+            }));
+          }
+        } catch (e) {
+          console.log("Could not fetch bounty data:", e);
+        }
+
+        // Sort by highest rating if rating filter is active
+        if (rating !== null) {
+          list = [...list].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+        }
+
+        // Save unsorted snapshot BEFORE bounty sort so reset can restore original order
+        rawResultsRef.current = [...list];
+
+        // Sort by bounty — tier 1: per_item bounty, tier 2: total bounty, tier 3: no bounty (always last)
+        if (bounty === "Ascending" || bounty === "Descending") {
+          const dir = bounty === "Ascending" ? 1 : -1;
+          list = [...list].sort((a, b) => {
+            const aTier = a.max_per_item_bounty ? 0 : a.max_total_bounty ? 1 : 2;
+            const bTier = b.max_per_item_bounty ? 0 : b.max_total_bounty ? 1 : 2;
+            if (aTier !== bTier) return aTier - bTier; // tier ordering is always ascending
+            if (aTier === 2) return 0; // both have no bounty
+            const aVal = aTier === 0 ? a.max_per_item_bounty : a.max_total_bounty;
+            const bVal = bTier === 0 ? b.max_per_item_bounty : b.max_total_bounty;
+            return dir * (aVal - bVal);
+          });
+        }
+
       }
 
-      console.log("✅ Processed search results:", list.length, "items");
+      console.log("Processed search results:", list.length, "items");
       setResults(list);
       setHasLoadedInitialSearch(true);
     } catch (err) {
-      console.error("❌ Search failed for query:", q, "Error:", err);
+      console.error(" Search failed for query:", q, "Error:", err);
 
       if (err.message.includes("Network request failed") || err.message.includes("Failed to fetch")) {
         Alert.alert("Network Error", "Unable to connect to the search server. Please check your internet connection or try again later.", [{ text: "OK" }]);
@@ -714,7 +819,6 @@ export default function SearchScreen({ route }) {
               };
 
         const res = await fetch(endpoint, altFetchOptions);
-        console.log("📡 Alternative endpoint response status:", res.status);
 
         if (res.ok) {
           const responseText = await res.text();
@@ -738,7 +842,7 @@ export default function SearchScreen({ route }) {
               company: sanitizeText(b.business_name || b.company) || "Unknown Business",
               business_profile_img: b.business_profile_img || null,
               // Use score as rating if rating_star not available, convert to 1-5 scale
-              rating: typeof b.rating_star === "number" ? b.rating_star : typeof b.score === "number" ? Math.min(5, Math.max(1, Math.round(b.score * 5))) : 4,
+              rating: typeof b.rating_star === "number" ? b.rating_star : null,
               hasPriceTag: b.has_price_tag || false,
               hasX: b.has_x || false,
               hasDollar: b.has_dollar_sign || false,
@@ -1117,18 +1221,29 @@ export default function SearchScreen({ route }) {
           </View>
         </View>
         <View style={styles.resultActions}>
-          <View style={styles.ratingContainer}>
-            <Ionicons name='star' size={16} color='#FFCD3C' />
-            <Text style={[styles.ratingText, darkMode && styles.darkRatingText]}>
-              {typeof item.rating === "number" ? item.rating.toFixed(1) : "N/A"}
-              {item.ratingCount > 0 ? ` (${item.ratingCount})` : ""}
-            </Text>
+          {Number.isFinite(item.rating) && (
+            <View style={styles.ratingContainer}>
+              <Ionicons name='star' size={16} color='#FFCD3C' />
+              <Text style={[styles.ratingText, darkMode && styles.darkRatingText]}>
+                {item.rating.toFixed(1)}
+                {item.ratingCount > 0 ? ` (${item.ratingCount})` : ""}
+              </Text>
+            </View>
+          )}
+
+          {/* Bounty indicator for businesses */}
+          <View style={[styles.ratingContainer, { marginLeft: 6 }]}>
+            {item.max_bounty != null ? (
+              <Text style={styles.bountyEmojiIcon}>💰</Text>
+            ) : (
+              <Text style={[styles.xSymbol, darkMode && styles.darkXSymbol]}>X</Text>
+            )}
           </View>
 
           <TouchableOpacity
             style={styles.actionButton}
             onPress={(e) => {
-              e.stopPropagation(); // Prevent triggering the parent TouchableOpacity
+              e.stopPropagation();
               navigation.navigate("SearchTab", {
                 centerCompany: {
                   id: item.id,
@@ -1138,7 +1253,17 @@ export default function SearchScreen({ route }) {
               });
             }}
           >
-            <Ionicons name='share-social-outline' size={22} color={darkMode ? "#ffffff" : "#000000"} />
+            <View style={{ position: "relative" }}>
+              <Image
+                source={require("../assets/connect.png")}
+                style={{ width: 22, height: 22, tintColor: darkMode ? "#ffffff" : "#000000" }}
+              />
+              {item.connection_degree != null && (
+                <View style={styles.connectionBadge}>
+                  <Text style={styles.connectionBadgeText}>{item.connection_degree}</Text>
+                </View>
+              )}
+            </View>
           </TouchableOpacity>
 
           {/* Bounty indicator */}
@@ -1974,6 +2099,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "bold",
     color: "#ffffff",
+  },
+  connectionBadge: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    backgroundColor: "#9C45F7",
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 3,
+  },
+  connectionBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#ffffff",
+    lineHeight: 12,
   },
   bountyEmojiIcon: {
     fontSize: 20,

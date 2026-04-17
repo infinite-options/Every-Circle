@@ -9,7 +9,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT, RATINGS_ENDPOINT } from "../apiConfig";
+import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT, RATINGS_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { parsePrice } from "../utils/priceUtils";
@@ -43,6 +43,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [showReviews, setShowReviews] = useState(true);
   const [showServices, setShowServices] = useState(true);
   const [showTagline, setShowTagline] = useState(true);
+  const [businessViewers, setBusinessViewers] = useState([]);
+  const [showBusinessViewers, setShowBusinessViewers] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const businessFeedbackInstructions = "Instructions for Business Profile";
@@ -396,6 +398,30 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
       if (result.business_users && Array.isArray(result.business_users)) {
         setBusinessUsers(result.business_users);
+
+        // Record profile view for each business owner — skip if viewer is an owner
+        try {
+          const viewerProfileId = await AsyncStorage.getItem("profile_uid");
+          if (viewerProfileId) {
+            const ownerProfileIds = result.business_users
+              .map((bu) => bu.profile_id)
+              .filter(Boolean);
+            const viewerIsOwner = ownerProfileIds.includes(viewerProfileId);
+            if (!viewerIsOwner) {
+              // Record view against the business_uid so business owners can see who visited
+              fetch(PROFILE_VIEWS_ENDPOINT, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  profile_view_profile_id: business_uid,
+                  profile_view_viewer_id: viewerProfileId,
+                }),
+              }).catch((e) => console.warn("BusinessProfileScreen - failed to record view:", e));
+            }
+          }
+        } catch (e) {
+          console.warn("BusinessProfileScreen - error recording profile view:", e);
+        }
       } else {
         setBusinessUsers([]);
       }
@@ -424,7 +450,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           (bu) =>
             (userUid && (bu.user_uid === userUid || bu.bu_user_id === userUid || bu.business_user_id === userUid)) ||
             (profileUid &&
-              (bu.profile_uid === profileUid || bu.profile_personal_uid === profileUid || String(bu.profile_uid || bu.profile_personal_uid || "").trim() === String(profileUid || "").trim())),
+              (bu.profile_id === profileUid || bu.profile_uid === profileUid || bu.profile_personal_uid === profileUid || String(bu.profile_id || bu.profile_uid || bu.profile_personal_uid || "").trim() === String(profileUid || "").trim())),
         );
         if (matchInBusinessUsers) {
           setIsOwner(true);
@@ -454,6 +480,25 @@ export default function BusinessProfileScreen({ route, navigation }) {
       checkBusinessOwnership();
     }
   }, [business_uid, business, businessUsers]);
+
+  const fetchBusinessViewers = async () => {
+    try {
+      const response = await fetch(`${PROFILE_VIEWS_ENDPOINT}/${business_uid}`);
+      if (response.ok) {
+        const data = await response.json();
+        setBusinessViewers(data.viewers || []);
+      }
+    } catch (e) {
+      console.warn("BusinessProfileScreen - Failed to fetch business viewers:", e);
+    }
+  };
+
+  // Fetch viewers whenever this screen is focused and user is the owner
+  useEffect(() => {
+    if (isOwner) {
+      fetchBusinessViewers();
+    }
+  }, [isOwner, business_uid]);
 
   // Use useFocusEffect like ProfileScreen
   useFocusEffect(
@@ -982,6 +1027,53 @@ export default function BusinessProfileScreen({ route, navigation }) {
             );
           })()}
 
+          {/* Who Viewed My Business — only visible to the business owner */}
+          {isOwner && (
+            <View style={styles.fieldContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBusinessViewers(!showBusinessViewers)}>
+                <Text style={styles.sectionHeaderText}>WHO VIEWED MY BUSINESS</Text>
+                <Ionicons name={showBusinessViewers ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showBusinessViewers && (
+                businessViewers.length > 0 ? (
+                  businessViewers.map((viewer, index) => (
+                    <TouchableOpacity
+                      key={viewer.view_viewer_id || index}
+                      activeOpacity={0.7}
+                      onPress={() => navigation.navigate("Profile", { profile_uid: viewer.view_viewer_id, returnTo: "BusinessProfile" })}
+                      style={index > 0 ? { marginTop: 4 } : undefined}
+                    >
+                      <MiniCard
+                        user={{
+                          firstName: viewer.viewer_first_name || "",
+                          lastName: viewer.viewer_last_name || "",
+                          email: viewer.viewer_email || "",
+                          phoneNumber: viewer.viewer_phone || "",
+                          tagLine: viewer.viewer_tag_line || "",
+                          city: viewer.viewer_city || "",
+                          state: viewer.viewer_state || "",
+                          profileImage: viewer.viewer_image || "",
+                          emailIsPublic: viewer.viewer_email_is_public === 1 || viewer.viewer_email_is_public === "1",
+                          phoneIsPublic: viewer.viewer_phone_is_public === 1 || viewer.viewer_phone_is_public === "1",
+                          tagLineIsPublic: viewer.viewer_tag_line_is_public === 1 || viewer.viewer_tag_line_is_public === "1",
+                          imageIsPublic: viewer.viewer_image_is_public === 1 || viewer.viewer_image_is_public === "1",
+                          locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
+                        }}
+                      />
+                      {viewer.view_timestamp ? (
+                        <Text style={{ fontSize: 11, color: "#999", paddingHorizontal: 12, paddingBottom: 6 }}>
+                          Viewed: {new Date(viewer.view_timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        </Text>
+                      ) : null}
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <Text style={{ fontStyle: "italic", color: "#666", padding: 12 }}>No business profile views yet</Text>
+                )
+              )}
+            </View>
+          )}
+
           {/* Review Business Button or User Review */}
           {!isOwner &&
             (userReview ? (
@@ -1434,7 +1526,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                                       paddingVertical: 4,
                                     }}
                                   >
-                                    <Text style={{ color: isSelected ? "#fff" : "#9C45F7", fontWeight: "700", fontSize: 12 }}>${parsePrice(selectedService.bs_bounty).toFixed(2)}</Text>
+                                    <Text style={{ color: isSelected ? "#fff" : "#9C45F7", fontWeight: "700", fontSize: 12 }}>💰 ${parsePrice(selectedService.bs_bounty).toFixed(2)}{selectedService.bs_bounty_type === "per_item" ? " / item" : " total"}</Text>
                                   </View>
                                 )}
                               </TouchableOpacity>
