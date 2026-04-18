@@ -158,7 +158,7 @@ const FilterPopup = ({
             paddingVertical: 16,
             borderBottomWidth: 1,
             borderBottomColor: borderColor,
-            backgroundColor: darkMode ? "#252538" : "#f0f2ff"
+            backgroundColor: darkMode ? "#252538" : "#f0f2ff",
           }}
         >
           <Text style={{ fontSize: 17, fontWeight: "800", color: textColor, letterSpacing: 0.3 }}>Filter Connections</Text>
@@ -1638,11 +1638,7 @@ const NetworkScreen = ({ navigation }) => {
       let parent = null;
 
       // HIGHEST PRIORITY: Use profile_personal_referred_by - this is who referred/connected this person
-      if (
-        n.profile_personal_referred_by &&
-        n.profile_personal_referred_by !== nodeUid &&
-        allUids.has(n.profile_personal_referred_by)
-      ) {
+      if (n.profile_personal_referred_by && n.profile_personal_referred_by !== nodeUid && allUids.has(n.profile_personal_referred_by)) {
         const referredByNode = data.find((x) => x.network_profile_personal_uid === n.profile_personal_referred_by);
         if (referredByNode) {
           const referredByDeg = Number(referredByNode.degree) || 1;
@@ -2020,14 +2016,18 @@ const NetworkScreen = ({ navigation }) => {
     const next = new Set(ignoredNearbyUids);
     next.add(uid);
     setIgnoredNearbyUids(next);
-    try { await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next])); } catch (_) {}
+    try {
+      await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next]));
+    } catch (_) {}
   };
 
   const unignoreNearbyUser = async (uid) => {
     const next = new Set(ignoredNearbyUids);
     next.delete(uid);
     setIgnoredNearbyUids(next);
-    try { await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next])); } catch (_) {}
+    try {
+      await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next]));
+    } catch (_) {}
   };
 
   const fetchConversations = async () => {
@@ -2050,8 +2050,8 @@ const NetworkScreen = ({ navigation }) => {
           fetch(`${CHAT_CONVERSATIONS_ENDPOINT}/${u}`)
             .then((r) => r.json())
             .then((j) => j.result || [])
-            .catch(() => [])
-        )
+            .catch(() => []),
+        ),
       );
 
       // Merge, deduplicate, and sort newest-first
@@ -2059,7 +2059,7 @@ const NetworkScreen = ({ navigation }) => {
         results.flat().reduce((acc, conv) => {
           if (!acc[conv.conversation_uid]) acc[conv.conversation_uid] = conv;
           return acc;
-        }, {})
+        }, {}),
       );
       merged.sort((a, b) => {
         const ta = new Date((a.last_sent_at || a.last_message_at || "").replace(" ", "T") + "Z");
@@ -2107,7 +2107,7 @@ const NetworkScreen = ({ navigation }) => {
             if (qrCodeData && userProfileData && QRCodeComponent) {
               // if (__DEV__) console.log("🔵 NetworkScreen - QR Code data exists, rendering QR section");
               return (
-                <View style={[styles.qrCodeContainer, darkMode && styles.darkQrCodeContainer]}>
+                <View style={styles.qrCodeContainer}>
                   {/* Display MiniCard */}
                   {(() => {
                     // if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
@@ -2121,7 +2121,9 @@ const NetworkScreen = ({ navigation }) => {
                     return null;
                   })()}
 
-                  <Text accessibilityRole="header" style={[styles.qrCodeTitle, darkMode && styles.darkQrCodeTitle]}>Connect with Me!</Text>
+                  <Text accessibilityRole='header' style={[styles.qrCodeTitle, darkMode && styles.darkQrCodeTitle]}>
+                    Connect with Me!
+                  </Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 15 }}>
                     <Text style={[styles.qrCodeSubtitle, darkMode && styles.darkQrCodeSubtitle, { marginBottom: 0 }]}>SCAN My QR Code</Text>
                     {/* <TouchableOpacity
@@ -2136,7 +2138,7 @@ const NetworkScreen = ({ navigation }) => {
                     </TouchableOpacity> */}
                   </View>
 
-                  {/* QR Code and form boxes - same width */}
+                  {/* QR at original 220px; form rows wider (286px) */}
                   <View style={styles.qrCodeSectionWrapper}>
                     <View style={[styles.qrCodeWrapper, darkMode && styles.darkQrCodeWrapper]}>
                       <QRCodeComponent value={qrCodeData} size={200} color={darkMode ? "#ffffff" : "#000000"} backgroundColor={darkMode ? "#1a1a1a" : "#ffffff"} />
@@ -2166,9 +2168,9 @@ const NetworkScreen = ({ navigation }) => {
                         ios_backgroundColor='#767577'
                         activeThumbColor={getHeaderColor("network")}
                         activeTrackColor='rgba(36, 52, 194, 0.5)'
-                        accessibilityRole="switch"
-                        accessibilityLabel="Exchange contact info"
-                        accessibilityHint="Turns contact info exchange on or off when someone scans your QR code"
+                        accessibilityRole='switch'
+                        accessibilityLabel='Exchange contact info'
+                        accessibilityHint='Turns contact info exchange on or off when someone scans your QR code'
                         accessibilityState={{ checked: formSwitchEnabled }}
                       />
                     </View>
@@ -2231,10 +2233,10 @@ const NetworkScreen = ({ navigation }) => {
                             placeholder='Search Connections...'
                             placeholderTextColor={darkMode ? "#888" : "#999"}
                             borderless
-                            accessibilityLabel="Search connections"
-                            accessibilityHint="Type to search your connections by name, location, event, or relationship"
-                            accessibilityRole="search"
-                            aria-label="search connection"
+                            accessibilityLabel='Search connections'
+                            accessibilityHint='Type to search your connections by name, location, event, or relationship'
+                            accessibilityRole='search'
+                            aria-label='search connection'
                           />
                         </View>
                       </View>
@@ -2273,10 +2275,15 @@ const NetworkScreen = ({ navigation }) => {
                         <View style={styles.controlRow}>
                           <Text style={styles.controlRowLabel}>2. Levels to Display</Text>
                           <View style={[styles.pullDownButton, { overflow: "hidden", height: 30 }]}>
-                            <WebTextInput style={styles.pullDownButtonInputInner} value={degree} onChangeText={setDegree} keyboardType='numeric' borderless
-                            accessibilityLabel="Levels to display"
-                            accessibilityHint="Enter the number of connection levels to show"
-                            aria-label="Levels to display"
+                            <WebTextInput
+                              style={styles.pullDownButtonInputInner}
+                              value={degree}
+                              onChangeText={setDegree}
+                              keyboardType='numeric'
+                              borderless
+                              accessibilityLabel='Levels to display'
+                              accessibilityHint='Enter the number of connection levels to show'
+                              aria-label='Levels to display'
                             />
                           </View>
                         </View>
@@ -2572,21 +2579,16 @@ const NetworkScreen = ({ navigation }) => {
           {showNearby && (
             <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
               {nearbyLoading ? (
-                <ActivityIndicator size="small" color="#AF52DE" style={{ paddingVertical: 20 }} />
+                <ActivityIndicator size='small' color='#AF52DE' style={{ paddingVertical: 20 }} />
               ) : nearbyError ? (
                 <View style={styles.messagesEmpty}>
-                  <Ionicons name="location-outline" size={40} color={darkMode ? "#555" : "#ccc"} />
-                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark, { textAlign: "center", paddingHorizontal: 16 }]}>
-                    {nearbyError}
-                  </Text>
+                  <Ionicons name='location-outline' size={40} color={darkMode ? "#555" : "#ccc"} />
+                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark, { textAlign: "center", paddingHorizontal: 16 }]}>{nearbyError}</Text>
                 </View>
-              ) : nearbyUsers.filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid)).length === 0 &&
-                 nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length === 0 ? (
+              ) : nearbyUsers.filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid)).length === 0 && nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length === 0 ? (
                 <View style={styles.messagesEmpty}>
-                  <Ionicons name="people-outline" size={40} color={darkMode ? "#555" : "#ccc"} />
-                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark]}>
-                    No one nearby right now
-                  </Text>
+                  <Ionicons name='people-outline' size={40} color={darkMode ? "#555" : "#ccc"} />
+                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark]}>No one nearby right now</Text>
                 </View>
               ) : (
                 <>
@@ -2600,11 +2602,7 @@ const NetworkScreen = ({ navigation }) => {
                       return (
                         <View
                           key={item.profile_personal_uid}
-                          style={[
-                            styles.nearbyRow,
-                            darkMode && styles.nearbyRowDark,
-                            idx > 0 && (darkMode ? styles.messagesRowBorderDark : styles.messagesRowBorder),
-                          ]}
+                          style={[styles.nearbyRow, darkMode && styles.nearbyRowDark, idx > 0 && (darkMode ? styles.messagesRowBorderDark : styles.messagesRowBorder)]}
                         >
                           {item.profile_personal_image ? (
                             <Image source={{ uri: item.profile_personal_image }} style={styles.nearbyAvatar} />
@@ -2617,9 +2615,7 @@ const NetworkScreen = ({ navigation }) => {
                             <Text style={[styles.messagesName, darkMode && styles.messagesNameDark]} numberOfLines={1}>
                               {fullName}
                             </Text>
-                            <Text style={[styles.nearbyDist, darkMode && styles.nearbyDistDark]}>
-                              {distMiles} mi away
-                            </Text>
+                            <Text style={[styles.nearbyDist, darkMode && styles.nearbyDistDark]}>{distMiles} mi away</Text>
                           </View>
                           {/* View profile */}
                           <TouchableOpacity
@@ -2627,19 +2623,21 @@ const NetworkScreen = ({ navigation }) => {
                             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                             onPress={() => navigation.navigate("Profile", { profile_uid: item.profile_personal_uid })}
                           >
-                            <Ionicons name="person-outline" size={16} color="#4B2E83" />
+                            <Ionicons name='person-outline' size={16} color='#4B2E83' />
                           </TouchableOpacity>
                           {/* Chat */}
                           <TouchableOpacity
                             style={[styles.nearbyBtn, styles.nearbyBtnChat]}
                             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                            onPress={() => navigation.navigate("Chat", {
-                              other_uid: item.profile_personal_uid,
-                              other_name: fullName || "Chat",
-                              other_image: item.profile_personal_image || null,
-                            })}
+                            onPress={() =>
+                              navigation.navigate("Chat", {
+                                other_uid: item.profile_personal_uid,
+                                other_name: fullName || "Chat",
+                                other_image: item.profile_personal_image || null,
+                              })
+                            }
                           >
-                            <Ionicons name="chatbubble-ellipses-outline" size={16} color="#fff" />
+                            <Ionicons name='chatbubble-ellipses-outline' size={16} color='#fff' />
                           </TouchableOpacity>
                           {/* Ignore */}
                           <TouchableOpacity
@@ -2647,7 +2645,7 @@ const NetworkScreen = ({ navigation }) => {
                             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                             onPress={() => ignoreNearbyUser(item.profile_personal_uid)}
                           >
-                            <Ionicons name="eye-off-outline" size={16} color="#fff" />
+                            <Ionicons name='eye-off-outline' size={16} color='#fff' />
                           </TouchableOpacity>
                         </View>
                       );
@@ -2657,7 +2655,7 @@ const NetworkScreen = ({ navigation }) => {
                   {nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length > 0 && (
                     <>
                       <View style={[styles.nearbyIgnoredHeader, darkMode && styles.nearbyIgnoredHeaderDark]}>
-                        <Ionicons name="eye-off-outline" size={13} color={darkMode ? "#888" : "#aaa"} style={{ marginRight: 5 }} />
+                        <Ionicons name='eye-off-outline' size={13} color={darkMode ? "#888" : "#aaa"} style={{ marginRight: 5 }} />
                         <Text style={[styles.nearbyIgnoredTitle, darkMode && styles.nearbyIgnoredTitleDark]}>
                           Ignored ({nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length})
                         </Text>
@@ -2687,7 +2685,7 @@ const NetworkScreen = ({ navigation }) => {
                                 hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                                 onPress={() => unignoreNearbyUser(item.profile_personal_uid)}
                               >
-                                <Ionicons name="eye-outline" size={16} color="#fff" />
+                                <Ionicons name='eye-outline' size={16} color='#fff' />
                               </TouchableOpacity>
                             </View>
                           );
@@ -2719,13 +2717,11 @@ const NetworkScreen = ({ navigation }) => {
           {showMessages && (
             <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
               {conversationsLoading ? (
-                <ActivityIndicator size="small" color="#AF52DE" style={{ paddingVertical: 20 }} />
+                <ActivityIndicator size='small' color='#AF52DE' style={{ paddingVertical: 20 }} />
               ) : conversations.length === 0 ? (
                 <View style={styles.messagesEmpty}>
-                  <Ionicons name="chatbubbles-outline" size={40} color={darkMode ? "#555" : "#ccc"} />
-                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark]}>
-                    No conversations yet
-                  </Text>
+                  <Ionicons name='chatbubbles-outline' size={40} color={darkMode ? "#555" : "#ccc"} />
+                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark]}>No conversations yet</Text>
                 </View>
               ) : (
                 conversations.map((conv, idx) => {
@@ -2736,11 +2732,7 @@ const NetworkScreen = ({ navigation }) => {
                   return (
                     <TouchableOpacity
                       key={conv.conversation_uid}
-                      style={[
-                        styles.messagesRow,
-                        darkMode && styles.messagesRowDark,
-                        idx > 0 && (darkMode ? styles.messagesRowBorderDark : styles.messagesRowBorder),
-                      ]}
+                      style={[styles.messagesRow, darkMode && styles.messagesRowDark, idx > 0 && (darkMode ? styles.messagesRowBorderDark : styles.messagesRowBorder)]}
                       onPress={() => {
                         const myPersonalUid = profileUid;
                         navigation.navigate("Chat", {
@@ -3225,16 +3217,8 @@ const styles = StyleSheet.create({
     color: "#fff",
   },
   qrCodeContainer: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 20,
     alignItems: "center",
     marginBottom: 20,
-    boxShadow: "0px 2px 4px 0px rgba(0,0,0,0.1)",
-    elevation: 3,
-  },
-  darkQrCodeContainer: {
-    backgroundColor: "#2d2d2d",
   },
   qrCodeTitle: {
     fontSize: 30,
@@ -3257,10 +3241,13 @@ const styles = StyleSheet.create({
     color: "#aaa",
   },
   qrCodeSectionWrapper: {
-    width: 220,
+    alignItems: "center",
     alignSelf: "center",
+    width: "100%",
   },
   qrCodeWrapper: {
+    width: 220,
+    alignSelf: "center",
     padding: 10,
     backgroundColor: "#fff",
     borderRadius: 8,
@@ -3598,12 +3585,15 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     backgroundColor: "#f8f9fa",
     borderRadius: 10,
-    padding: 15,
+    paddingHorizontal: 15,
+    paddingVertical: 0,
+    height: 64,
     marginTop: 15,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: "#e0e0e0",
-    alignSelf: "stretch",
+    alignSelf: "center",
+    width: 286,
   },
   darkFormSwitchContainer: {
     backgroundColor: "#2d2d2d",
