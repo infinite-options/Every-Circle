@@ -59,7 +59,7 @@ export default function ChatScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { darkMode } = useDarkMode();
-  const { setActiveChat, clearActiveChat, enterChatView, leaveChatView } = useUnread();
+  const { setActiveChat, clearActiveChat, clearUnread, enterChatView, leaveChatView } = useUnread();
   const insets = useSafeAreaInsets();
   // BottomNavBar content height (paddingTop 6 + icon 28 + marginBottom 2 + paddingVertical 4×2 + border 1)
   // plus the device's bottom safe-area inset that the navbar's own SafeAreaView also adds.
@@ -163,6 +163,7 @@ export default function ChatScreen() {
   useEffect(() => {
     if (!convUid) return;
     setActiveChat(convUid);
+    clearUnread(); // user is actively reading — clear the unread dot
     return () => clearActiveChat();
   }, [convUid]);
 

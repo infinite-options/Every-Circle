@@ -21,7 +21,7 @@ const AUTO_DISMISS_MS = 6000;
  * while the user is not in that conversation.
  *
  * Props:
- *   onOpen – (conversationUid, senderUid, senderName) => void   navigate to chat
+ *   onOpen – (conversationUid, senderUid, senderName, senderImage) => void   navigate to chat
  */
 export default function MessageNotificationBanner({ onOpen }) {
   const { notification, dismissNotification } = useUnread();
