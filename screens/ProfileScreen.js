@@ -64,6 +64,7 @@ const ProfileScreen = ({ route, navigation }) => {
   const [showExperience, setShowExperience] = useState(true);
   const [showEducation, setShowEducation] = useState(true);
   const [showBusiness, setShowBusiness] = useState(true);
+  const [showReviews, setShowReviews] = useState(true);
   const [showOffering, setShowOffering] = useState(true);
   const [showSeeking, setShowSeeking] = useState(true);
 
@@ -1681,31 +1682,35 @@ const ProfileScreen = ({ route, navigation }) => {
             </View>
           )}
 
-          {/* Reviewed Section */}
+          {/* Reviews — collapsible section */}
           {user.ratings && user.ratings.length > 0 && (
             <View style={styles.fieldContainer}>
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Reviewed:</Text>
-              {user.ratings.map((review, index) => (
-                <TouchableOpacity
-                  key={review.rating_uid || index}
-                  style={[styles.inputContainer, darkMode && styles.darkInputContainer, index > 0 && { marginTop: 4 }]}
-                  onPress={() => navigation.navigate("BusinessProfile", { business_uid: review.rating_business_id })}
-                  activeOpacity={0.7}
-                >
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{review.business_name || review.rating_business_id}</Text>
-                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#999", fontSize: 12 }]}>{review.rating_receipt_date}</Text>
-                  </View>
-                  {review.business_phone_number ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.business_phone_number}</Text> : null}
-                  {review.business_city || review.business_state ? (
-                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{[review.business_city, review.business_state].filter(Boolean).join(", ")}</Text>
-                  ) : null}
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
-                    {"⭐".repeat(review.rating_star)} {review.rating_star}/5
-                  </Text>
-                  {review.rating_description ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.rating_description}</Text> : null}
-                </TouchableOpacity>
-              ))}
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
+                <Text style={styles.sectionHeaderText}>REVIEWS</Text>
+                <Ionicons name={showReviews ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showReviews &&
+                user.ratings.map((review, index) => (
+                  <TouchableOpacity
+                    key={review.rating_uid || index}
+                    style={[styles.inputContainer, darkMode && styles.darkInputContainer, index > 0 && { marginTop: 4 }]}
+                    onPress={() => navigation.navigate("BusinessProfile", { business_uid: review.rating_business_id })}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                      <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{review.business_name || review.rating_business_id}</Text>
+                      <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#999", fontSize: 12 }]}>{review.rating_receipt_date}</Text>
+                    </View>
+                    {review.business_phone_number ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.business_phone_number}</Text> : null}
+                    {review.business_city || review.business_state ? (
+                      <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{[review.business_city, review.business_state].filter(Boolean).join(", ")}</Text>
+                    ) : null}
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
+                      {"⭐".repeat(review.rating_star)} {review.rating_star}/5
+                    </Text>
+                    {review.rating_description ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.rating_description}</Text> : null}
+                  </TouchableOpacity>
+                ))}
             </View>
           )}
 

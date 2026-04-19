@@ -40,6 +40,9 @@ if (Platform.OS !== "web") {
   }
 }
 
+/** 0 = hide QR/Ably debug + AsyncStorage inspector on Connect; 1 = show (dropdowns work as today). */
+const SHOW_NETWORK_DEBUG_UI = 0;
+
 // ─── FilterPopup component ────────────────────────────────────────────────────
 const FilterPopup = ({
   visible,
@@ -1584,6 +1587,9 @@ const NetworkScreen = ({ navigation }) => {
     // User's node should be 150% of the max other node size
     const userNodeSize = Math.round(maxOtherSize * 1.5);
 
+    // Current user: red circle (border + fill); image nodes get a red ring via border
+    const userNodeColor = { border: "#b71c1c", background: "#e53935" };
+
     const nodes = [
       {
         id: youId || "YOU",
@@ -1591,8 +1597,8 @@ const NetworkScreen = ({ navigation }) => {
         shape: hasUserImage ? "circularImage" : "dot",
         image: hasUserImage ? userImage : undefined,
         size: userNodeSize,
-        borderWidth: 2,
-        color: hasUserImage ? undefined : { border: "#444444", background: "#b894ff" },
+        borderWidth: hasUserImage ? 3 : 2,
+        color: userNodeColor,
         font: { color: "#ffffff", size: 10 },
         level: 0,
       },
@@ -2773,135 +2779,133 @@ const NetworkScreen = ({ navigation }) => {
             </View>
           )}
 
-          {/* QR / ABLY DEBUG Dropdown */}
-          <TouchableOpacity style={[styles.debugDropdownHeader, darkMode && styles.darkDebugDropdownHeader]} onPress={() => setShowDebugBlocks((prev) => !prev)} activeOpacity={0.7}>
-            <Text style={[styles.debugDropdownHeaderText, darkMode && styles.darkDebugDropdownHeaderText]}>QR / ABLY DEBUG</Text>
-            <Ionicons name={showDebugBlocks ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
-          </TouchableOpacity>
-          {showDebugBlocks && (
+          {SHOW_NETWORK_DEBUG_UI !== 0 && (
             <>
-              {/* Display QR Code Contains Block */}
-              {qrCodeDataObject && (
-                <View style={[styles.qrCodeContainsContainer, darkMode && styles.darkQrCodeContainsContainer]}>
-                  <Text style={[styles.qrCodeContainsTitle, darkMode && styles.darkQrCodeContainsTitle]}>📋 QR Code Contains:</Text>
-                  <View style={[styles.qrCodeContainsContent, darkMode && styles.darkQrCodeContainsContent]}>
-                    {Object.entries(qrCodeDataObject).map(([key, value]) => (
-                      <View key={key} style={styles.qrCodeContainsRow}>
-                        <Text style={[styles.qrCodeContainsKey, darkMode && styles.darkQrCodeContainsKey]}>{key}:</Text>
-                        <Text style={[styles.qrCodeContainsValue, darkMode && styles.darkQrCodeContainsValue]}>{typeof value === "object" ? JSON.stringify(value) : String(value)}</Text>
+              {/* QR / ABLY DEBUG Dropdown */}
+              <TouchableOpacity style={[styles.debugDropdownHeader, darkMode && styles.darkDebugDropdownHeader]} onPress={() => setShowDebugBlocks((prev) => !prev)} activeOpacity={0.7}>
+                <Text style={[styles.debugDropdownHeaderText, darkMode && styles.darkDebugDropdownHeaderText]}>QR / ABLY DEBUG</Text>
+                <Ionicons name={showDebugBlocks ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+              </TouchableOpacity>
+              {showDebugBlocks && (
+                <>
+                  {/* Display QR Code Contains Block */}
+                  {qrCodeDataObject && (
+                    <View style={[styles.qrCodeContainsContainer, darkMode && styles.darkQrCodeContainsContainer]}>
+                      <Text style={[styles.qrCodeContainsTitle, darkMode && styles.darkQrCodeContainsTitle]}>📋 QR Code Contains:</Text>
+                      <View style={[styles.qrCodeContainsContent, darkMode && styles.darkQrCodeContainsContent]}>
+                        {Object.entries(qrCodeDataObject).map(([key, value]) => (
+                          <View key={key} style={styles.qrCodeContainsRow}>
+                            <Text style={[styles.qrCodeContainsKey, darkMode && styles.darkQrCodeContainsKey]}>{key}:</Text>
+                            <Text style={[styles.qrCodeContainsValue, darkMode && styles.darkQrCodeContainsValue]}>{typeof value === "object" ? JSON.stringify(value) : String(value)}</Text>
+                          </View>
+                        ))}
                       </View>
-                    ))}
-                  </View>
-                </View>
-              )}
-
-              {/* Display Ably Messages Received Block */}
-              <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
-                <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📨 Ably Messages Received:</Text>
-                <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
-                  {ablyMessageReceived ? (
-                    <>
-                      <View style={styles.ablyMessageRow}>
-                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
-                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.channel}</Text>
-                      </View>
-                      <View style={styles.ablyMessageRow}>
-                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
-                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.message}</Text>
-                      </View>
-                      <View style={styles.ablyMessageRow}>
-                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
-                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{new Date(ablyMessageReceived.timestamp).toLocaleString()}</Text>
-                      </View>
-                    </>
-                  ) : (
-                    <View style={styles.ablyMessageRow}>
-                      <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue, { fontStyle: "italic", color: "#999" }]}>
-                        No messages received yet. Listening for messages...
-                      </Text>
                     </View>
                   )}
-                  {qrCodeDataObject?.profile_uid && (
-                    <>
-                      <View style={styles.ablyMessageRow}>
-                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Listening on Channel:</Text>
-                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeDataObject.profile_uid}</Text>
-                      </View>
-                      <View style={styles.ablyMessageRow}>
-                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Connection Status:</Text>
-                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyClient?.connection?.state || "Not connected"}</Text>
-                      </View>
-                      <View style={styles.ablyMessageRow}>
-                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel Status:</Text>
-                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyChannel?.state || "Not attached"}</Text>
-                      </View>
-                      <View style={styles.ablyMessageRow}>
-                        <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
-                        <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                          {EXPO_PUBLIC_ABLY_API_KEY
-                            ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
-                            : "Not configured"}
-                        </Text>
-                      </View>
-                    </>
-                  )}
-                </View>
-              </View>
+
+                  {/* Display Ably Messages Received Block */}
+                  <View style={[styles.ablyMessageContainer, darkMode && styles.darkAblyMessageContainer]}>
+                    <Text style={[styles.ablyMessageTitle, darkMode && styles.darkAblyMessageTitle]}>📨 Ably Messages Received:</Text>
+                    <View style={[styles.ablyMessageContent, darkMode && styles.darkAblyMessageContent]}>
+                      {ablyMessageReceived ? (
+                        <>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.channel}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Message:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyMessageReceived.message}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Timestamp:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{new Date(ablyMessageReceived.timestamp).toLocaleString()}</Text>
+                          </View>
+                        </>
+                      ) : (
+                        <View style={styles.ablyMessageRow}>
+                          <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue, { fontStyle: "italic", color: "#999" }]}>
+                            No messages received yet. Listening for messages...
+                          </Text>
+                        </View>
+                      )}
+                      {qrCodeDataObject?.profile_uid && (
+                        <>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Listening on Channel:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeDataObject.profile_uid}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Connection Status:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyClient?.connection?.state || "Not connected"}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel Status:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyChannel?.state || "Not attached"}</Text>
+                          </View>
+                          <View style={styles.ablyMessageRow}>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                              {EXPO_PUBLIC_ABLY_API_KEY
+                                ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
+                                : "Not configured"}
+                            </Text>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  </View>
+                </>
+              )}
+
+              {(() => {
+                return (
+                  <View>
+                    <TouchableOpacity
+                      style={[styles.debugDropdownHeader, darkMode && styles.darkDebugDropdownHeader]}
+                      onPress={() => {
+                        const newValue = !showAsyncStorage;
+                        console.log("👁️ Toggling AsyncStorage visibility from", showAsyncStorage, "to", newValue);
+                        setShowAsyncStorage(newValue);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.debugDropdownHeaderText, darkMode && styles.darkDebugDropdownHeaderText]}>ASYNC STORAGE</Text>
+                      <Ionicons name={showAsyncStorage ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+                    </TouchableOpacity>
+                    {(() => {
+                      if (showAsyncStorage) {
+                        return (
+                          <>
+                            {storageData.length === 0 ? (
+                              <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>No data in AsyncStorage.</Text>
+                            ) : (
+                              storageData
+                                .map(([key, value], idx) => {
+                                  const sanitizedKey = sanitizeText(key, "Unknown");
+                                  const sanitizedValue = sanitizeText(value, "N/A");
+                                  if (!isSafeForConditional(sanitizedKey) && !isSafeForConditional(sanitizedValue)) {
+                                    return null;
+                                  }
+                                  return (
+                                    <View key={key} style={{ marginBottom: 8 }}>
+                                      {isSafeForConditional(sanitizedKey) && <Text style={[styles.keyText, darkMode && styles.darkKeyText]}>{sanitizedKey}:</Text>}
+                                      {isSafeForConditional(sanitizedValue) && <Text style={[styles.valueText, darkMode && styles.darkValueText]}>{sanitizedValue}</Text>}
+                                    </View>
+                                  );
+                                })
+                                .filter(Boolean)
+                            )}
+                          </>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </View>
+                );
+              })()}
             </>
           )}
-
-          {(() => {
-            // if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage Section");
-            return (
-              <View>
-                <TouchableOpacity
-                  style={[styles.debugDropdownHeader, darkMode && styles.darkDebugDropdownHeader]}
-                  onPress={() => {
-                    const newValue = !showAsyncStorage;
-                    console.log("👁️ Toggling AsyncStorage visibility from", showAsyncStorage, "to", newValue);
-                    setShowAsyncStorage(newValue);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.debugDropdownHeaderText, darkMode && styles.darkDebugDropdownHeaderText]}>ASYNC STORAGE</Text>
-                  <Ionicons name={showAsyncStorage ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
-                </TouchableOpacity>
-                {(() => {
-                  // if (__DEV__) console.log("🔵 NetworkScreen - showAsyncStorage:", showAsyncStorage);
-                  if (showAsyncStorage) {
-                    // if (__DEV__) console.log("🔵 NetworkScreen - Rendering AsyncStorage data, length:", storageData.length);
-                    return (
-                      <>
-                        {storageData.length === 0 ? (
-                          <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>No data in AsyncStorage.</Text>
-                        ) : (
-                          storageData
-                            .map(([key, value], idx) => {
-                              // if (__DEV__) console.log(`🔵 NetworkScreen - Processing AsyncStorage item ${idx}:`, { key, value, keyType: typeof key, valueType: typeof value });
-                              const sanitizedKey = sanitizeText(key, "Unknown");
-                              const sanitizedValue = sanitizeText(value, "N/A");
-                              // if (__DEV__) console.log(`🔵 NetworkScreen - After sanitization ${idx}:`, { sanitizedKey, sanitizedValue });
-                              if (!isSafeForConditional(sanitizedKey) && !isSafeForConditional(sanitizedValue)) {
-                                // if (__DEV__) console.log(`🔵 NetworkScreen - Skipping item ${idx} (unsafe)`);
-                                return null;
-                              }
-                              return (
-                                <View key={key} style={{ marginBottom: 8 }}>
-                                  {isSafeForConditional(sanitizedKey) && <Text style={[styles.keyText, darkMode && styles.darkKeyText]}>{sanitizedKey}:</Text>}
-                                  {isSafeForConditional(sanitizedValue) && <Text style={[styles.valueText, darkMode && styles.darkValueText]}>{sanitizedValue}</Text>}
-                                </View>
-                              );
-                            })
-                            .filter(Boolean)
-                        )}
-                      </>
-                    );
-                  }
-                  return null;
-                })()}
-              </View>
-            );
-          })()}
         </ScrollView>
 
         <BottomNavBar navigation={navigation} />
