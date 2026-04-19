@@ -13,6 +13,10 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
 // import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
+
+/** 1 = compact: Transaction History (Date, Type, Seller, Paid, Amount) + Bounty Results (hide ID); 0 = full tables */
+const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 1;
+
 export default function AccountScreen({ navigation }) {
   const { darkMode } = useDarkMode();
   const [userUID, setUserUID] = useState(null);
@@ -1394,10 +1398,11 @@ export default function AccountScreen({ navigation }) {
                       {/* Table Header */}
                       <View style={styles.transactionHeaderRow}>
                         <Text style={styles.transactionHeaderDate}>Date</Text>
-                        <Text style={styles.transactionHeaderId}>Transaction ID</Text>
+                        {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderId}>Transaction ID</Text>}
                         <Text style={styles.transactionHeaderPurchaseType}>Type</Text>
                         <Text style={styles.transactionHeaderBusiness}>Seller</Text>
-                        <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text>
+                        {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text>}
+                        {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderQty}>Qty</Text>}
                         <Text style={styles.transactionHeaderPaid}>Paid</Text>
                         <Text style={styles.transactionHeaderAmount}>Amount</Text>
                       </View>
@@ -1417,28 +1422,34 @@ export default function AccountScreen({ navigation }) {
                         const showPendingLink = (isSeeking || isBusiness) && isPending;
                         const showAutoPaid = (isSeeking || isBusiness) && !isPending && isOlderThan5Days;
 
-
-                        console.log("autoPaidTransactionIds:", [...autoPaidTransactionIds]);
-                        console.log("this transaction:", transaction.transaction_uid);
+                        const compactTx = ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS === 1;
 
                         return (
                           <View key={transaction.ti_uid || i} style={styles.transactionRow}>
                             <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
-                            <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text>
+                            {!compactTx && <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text>}
                             <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "N/A"}</Text>
-                            <Text style={styles.transactionBusiness}>{transaction.business_name || "N/A"}</Text>
-                            <View style={styles.transactionPurchasedItemCell}>
+                            <View style={{ flex: 1, paddingHorizontal: 4, justifyContent: "center", minWidth: 0 }}>
                               <TouchableOpacity onPress={() => fetchReceipt(transaction)} activeOpacity={0.7}>
-                                <Text style={styles.receiptLink}>{transaction.purchased_item || "N/A"}</Text>
+                                <Text style={[styles.transactionBusiness, styles.receiptLink]} numberOfLines={4}>
+                                  {transaction.business_name || "N/A"}
+                                </Text>
                               </TouchableOpacity>
                             </View>
-                            <Text style={styles.transactionQty}>{transaction.ti_bs_qty || 1}</Text>
+                            {!compactTx && (
+                              <View style={styles.transactionPurchasedItemCell}>
+                                <Text style={styles.transactionPurchasedItem}>{transaction.purchased_item || "N/A"}</Text>
+                              </View>
+                            )}
+                            {!compactTx && <Text style={styles.transactionQty}>{transaction.ti_bs_qty || 1}</Text>}
                             <View style={styles.transactionPaidCell}>
                               {showAutoPaid ? (
-                                <Text style={styles.transactionPaidText}>Auto-Received</Text>
+                                <Text style={styles.transactionPaidText}>Auto</Text>
                               ) : showPendingLink && isOlderThan5Days ? (
-                                (() => { triggerAutoPay(transaction.transaction_uid); return null; })() ||
-                                <Text style={styles.transactionPaidText}>Auto-Received</Text>
+                                (() => {
+                                  triggerAutoPay(transaction.transaction_uid);
+                                  return null;
+                                })() || <Text style={styles.transactionPaidText}>Auto</Text>
                               ) : showPendingLink ? (
                                 <TouchableOpacity
                                   onPress={() => {
@@ -1497,42 +1508,50 @@ export default function AccountScreen({ navigation }) {
                         <Text style={styles.bountyTotalText}>Total Transactions: {bountyData.total_bounties}</Text>
                         <Text style={styles.bountyTotalText}>Total Earned: ${bountyData.total_bounty_earned?.toFixed(2)}</Text>
                       </View>
-                      {/* Table Header */}
-                      <View style={styles.bountyTableHeader}>
-                        <Text style={styles.bountyTableHeaderCell}>ID</Text>
-                        <Text style={styles.bountyTableHeaderCell}>Date</Text>
-                        <Text style={styles.bountyTableHeaderCell}>Purchaser</Text>
-                        <Text style={styles.bountyTableHeaderCell}>Business</Text>
-                        <Text style={styles.bountyTableHeaderCell}>Paid</Text>
-                        <Text style={styles.bountyTableHeaderCell}>Bounty Earned</Text>
-                      </View>
-                      {/* Table Rows - new API: ti_transaction_id, transaction_datetime, purchaser_name, display_name, in_escrow, bounty_earned */}
-                      {bountyData.data.map((item, index) => {
-                        // Format date to MM/DD
-                        const formatDate = (dateString) => {
-                          if (!dateString) return "N/A";
-                          const date = new Date(dateString);
-                          const month = String(date.getMonth() + 1).padStart(2, "0");
-                          const day = String(date.getDate()).padStart(2, "0");
-                          return `${month}/${day}`;
-                        };
-                        return (
-                          <View key={item.tb_uid || item.ti_transaction_id || index} style={styles.bountyTableRow}>
-                            <Text style={styles.bountyTableCell}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text>
-                            <Text style={styles.bountyTableCell}>{formatDate(item.transaction_datetime)}</Text>
-                            <Text style={styles.bountyTableCell}>{item.purchaser_name || item.transaction_profile_id || "N/A"}</Text>
-                            <Text style={styles.bountyTableCell}>{item.display_name || item.transaction_business_id || "N/A"}</Text>
-                            <Text style={styles.bountyTableCell}>
-                              {item.in_escrow === 1 && (new Date() - new Date(item.transaction_datetime)) / (1000 * 60 * 60 * 24) >= 30
-                                ? "Paid"
-                                : item.in_escrow === 1
+                      {/* Table — same layout as Transaction History (full-width rows) */}
+                      <View style={styles.transactionsContainer}>
+                        <View style={styles.transactionHeaderRow}>
+                          {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderId}>ID</Text>}
+                          <Text style={styles.transactionHeaderDate}>Date</Text>
+                          <Text style={styles.transactionHeaderBusiness}>Purchaser</Text>
+                          <Text style={styles.transactionHeaderPurchasedItem}>Business</Text>
+                          <Text style={styles.transactionHeaderPaid}>Paid</Text>
+                          <Text style={styles.transactionHeaderAmount}>Bounty</Text>
+                        </View>
+                        {bountyData.data.map((item, index) => {
+                          const formatDate = (dateString) => {
+                            if (!dateString) return "N/A";
+                            const date = new Date(dateString);
+                            const month = String(date.getMonth() + 1).padStart(2, "0");
+                            const day = String(date.getDate()).padStart(2, "0");
+                            return `${month}/${day}`;
+                          };
+                          const paidLabel =
+                            item.in_escrow === 1 && (new Date() - new Date(item.transaction_datetime)) / (1000 * 60 * 60 * 24) >= 30
+                              ? "Paid"
+                              : item.in_escrow === 1
                                 ? "Pending"
-                                : "Paid"}
-                            </Text>
-                            <Text style={styles.bountyTableCell}>${parseFloat(item.bounty_earned || 0).toFixed(2)}</Text>
-                          </View>
-                        );
-                      })}
+                                : "Paid";
+                          return (
+                            <View key={item.tb_uid || item.ti_transaction_id || index} style={styles.transactionRow}>
+                              {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && (
+                                <Text style={styles.transactionId}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text>
+                              )}
+                              <Text style={styles.transactionDate}>{formatDate(item.transaction_datetime)}</Text>
+                              <Text style={styles.transactionBusiness} numberOfLines={4}>
+                                {item.purchaser_name || item.transaction_profile_id || "N/A"}
+                              </Text>
+                              <Text style={styles.transactionPurchasedItem} numberOfLines={4}>
+                                {item.display_name || item.transaction_business_id || "N/A"}
+                              </Text>
+                              <View style={styles.transactionPaidCell}>
+                                <Text style={styles.transactionPaidText}>{paidLabel}</Text>
+                              </View>
+                              <Text style={styles.transactionAmount}>${parseFloat(item.bounty_earned || 0).toFixed(2)}</Text>
+                            </View>
+                          );
+                        })}
+                      </View>
                     </View>
                   ) : (
                     <Text style={styles.noDataText}>No bounty data available.</Text>
@@ -1815,7 +1834,7 @@ const styles = StyleSheet.create({
   tableHeaderText: { fontSize: 12, color: "#000" },
   tableRow: { flexDirection: "row", alignItems: "center", paddingVertical: 6 },
   tableCell: { fontSize: 12 },
-  transactionsContainer: { backgroundColor: "transparent", paddingVertical: 6 },
+  transactionsContainer: { backgroundColor: "transparent", paddingVertical: 6, alignSelf: "stretch", width: "100%" },
   transactionHeaderRow: {
     flexDirection: "row",
     backgroundColor: "#18884A",
@@ -1858,36 +1877,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#333",
-  },
-  bountyTableHeader: {
-    flexDirection: "row",
-    backgroundColor: "#18884A",
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    borderRadius: 8,
-    marginBottom: 2,
-  },
-  bountyTableHeaderCell: {
-    flex: 1,
-    fontSize: 12,
-    color: "#fff",
-    fontWeight: "bold",
-    paddingHorizontal: 2,
-    textAlign: "center",
-  },
-  bountyTableRow: {
-    flexDirection: "row",
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  bountyTableCell: {
-    flex: 1,
-    fontSize: 10,
-    color: "#333",
-    paddingHorizontal: 2,
-    textAlign: "center",
   },
   loadingText: {
     color: "#888",
