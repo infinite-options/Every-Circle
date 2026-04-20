@@ -53,6 +53,7 @@ export default function AccountScreen({ navigation }) {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [receiptData, setReceiptData] = useState([]);
   const [receiptLoading, setReceiptLoading] = useState(false);
+  const [receiptTransaction, setReceiptTransaction] = useState(null);
 
   const accountFeedbackInstructions = "Instructions for Account";
 
@@ -60,6 +61,7 @@ export default function AccountScreen({ navigation }) {
   const accountFeedbackQuestions = ["Account - Question 1?", "Account - Question 2?", "Account - Question 3?"];
 
   const [autoPaidTransactionIds, setAutoPaidTransactionIds] = useState(new Set());
+  const [returnRequests, setReturnRequests] = useState({});
 
   // above your effect or focus logic
   const checkAuth = async () => {
@@ -142,6 +144,7 @@ export default function AccountScreen({ navigation }) {
     try {
       setReceiptLoading(true);
       setReceiptData([]);
+      setReceiptTransaction(transaction);
       setShowReceiptModal(true);
       const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${profileId}/${transactionUid}`;
       const response = await fetch(url, { method: "GET", headers: { "Content-Type": "application/json" } });
@@ -169,6 +172,25 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
+  const handleReturnRequest = async (transaction) => {
+    Alert.alert(
+      "Request Return",
+      "Are you sure you want to request a return for this item?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm",
+          onPress: async () => {
+            const uid = transaction?.transaction_uid;
+            if (!uid) return;
+            setReturnRequests((prev) => ({ ...prev, [uid]: true }));
+            await AsyncStorage.setItem(`return_request_${uid}`, "true");
+          },
+        },
+      ]
+    );
+  };
+
   const loadAutoPaidIds = async () => {
     try {
       const stored = await AsyncStorage.getItem("auto_paid_transaction_ids");
@@ -177,6 +199,21 @@ export default function AccountScreen({ navigation }) {
       }
     } catch (e) {
       console.error("Failed to load auto-paid IDs:", e);
+    }
+  };
+
+  const loadReturnRequests = async () => {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const returnKeys = keys.filter((k) => k.startsWith("return_request_"));
+      const loaded = {};
+      for (const key of returnKeys) {
+        const uid = key.replace("return_request_", "");
+        loaded[uid] = true;
+      }
+      setReturnRequests(loaded);
+    } catch (e) {
+      console.error("Failed to load return requests:", e);
     }
   };
 
@@ -700,6 +737,7 @@ export default function AccountScreen({ navigation }) {
     useCallback(() => {
       checkAuth();
       loadAutoPaidIds();
+      loadReturnRequests();
       refreshBountyData();
       refreshTransactionData();
       refreshExpertiseData();
@@ -1398,6 +1436,7 @@ export default function AccountScreen({ navigation }) {
                         <Text style={styles.transactionHeaderPurchaseType}>Type</Text>
                         <Text style={styles.transactionHeaderBusiness}>Seller</Text>
                         <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text>
+                        <Text style={styles.transactionHeaderQty}>Qty</Text>
                         <Text style={styles.transactionHeaderPaid}>Paid</Text>
                         <Text style={styles.transactionHeaderAmount}>Amount</Text>
                       </View>
@@ -1709,7 +1748,7 @@ export default function AccountScreen({ navigation }) {
       <Modal animationType='fade' transparent={true} visible={showReceiptModal} onRequestClose={() => setShowReceiptModal(false)}>
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiptModalContent, darkMode && styles.darkModalContent]}>
-            <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle]}>Transaction Receipt</Text>
+           <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle, { textAlign: "center" }]}>Transaction Receipt</Text>
             {receiptLoading ? (
               <ActivityIndicator size='large' color='#18884A' style={{ marginVertical: 24 }} />
             ) : receiptData.length > 0 ? (
@@ -1732,6 +1771,23 @@ export default function AccountScreen({ navigation }) {
             ) : (
               <Text style={[styles.noDataText, { marginVertical: 24 }]}>No receipt data available.</Text>
             )}
+            {returnRequests[receiptTransaction?.transaction_uid] && (
+              <Text style={{ color: "#B71C1C", textAlign: "center", marginBottom: 8, fontWeight: "500" }}>
+                ✓ Return Requested
+              </Text>
+            )}
+            <TouchableOpacity
+              style={[
+                styles.receiptCloseButton,
+                { borderColor: "#B71C1C", marginBottom: 10 },
+                returnRequests[receiptTransaction?.transaction_uid] && { opacity: 0.4 },
+              ]}
+              onPress={() => !returnRequests[receiptTransaction?.transaction_uid] && handleReturnRequest(receiptTransaction)}
+            >
+              <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>
+                {returnRequests[receiptTransaction?.transaction_uid] ? "Return Requested" : "Request Return"}
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity style={[styles.receiptCloseButton, darkMode && styles.darkCancelButton]} onPress={() => setShowReceiptModal(false)}>
               <Text style={[styles.receiptCloseButtonText, darkMode && styles.darkCancelButtonText]}>Close</Text>
             </TouchableOpacity>
@@ -2257,6 +2313,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "bold",
     paddingHorizontal: 8,
+    textAlign: "center",
   },
   receiptTableRow: {
     flexDirection: "row",
@@ -2270,6 +2327,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#333",
     paddingHorizontal: 8,
+    textAlign: "center",
   },
   receiptCloseButton: {
     backgroundColor: "#F5F5F5",
