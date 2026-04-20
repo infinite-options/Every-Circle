@@ -65,6 +65,10 @@ export default function AccountScreen({ navigation }) {
 
   const [autoPaidTransactionIds, setAutoPaidTransactionIds] = useState(new Set());
 
+  //for returns
+  const [returnRequests, setReturnRequests] = useState({});
+  const [receiptTransaction, setReceiptTransaction] = useState(null);
+
   // above your effect or focus logic
   const checkAuth = async () => {
     try {
@@ -147,6 +151,7 @@ export default function AccountScreen({ navigation }) {
       setReceiptLoading(true);
       setReceiptData([]);
       setShowReceiptModal(true);
+      setReceiptTransaction(transaction);
       const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${profileId}/${transactionUid}`;
       const response = await fetch(url, { method: "GET", headers: { "Content-Type": "application/json" } });
       if (!response.ok) {
@@ -170,6 +175,25 @@ export default function AccountScreen({ navigation }) {
       setShowReceiptModal(false);
     } finally {
       setReceiptLoading(false);
+    }
+  };
+
+  const handleReturnRequest = async (transaction) => {
+    const uid = transaction?.transaction_uid;
+    if (!uid) return;
+    try {
+      await fetch(`${API_BASE_URL}/api/v1/transactions`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transaction_uid: uid,
+          transaction_return_requested: 1,
+        }),
+      });
+      setReturnRequests((prev) => ({ ...prev, [uid]: true }));
+    } catch (error) {
+      console.error("Error requesting return:", error);
+      Alert.alert("Error", "Failed to submit return request. Please try again.");
     }
   };
 
@@ -618,6 +642,7 @@ export default function AccountScreen({ navigation }) {
               bounty_paid: bounty,
               net_earning: netEarning,
               business_name: item.business_name,
+              transaction_return_requested: item.transaction_return_requested || 0,
             };
           }
         });
@@ -1658,16 +1683,24 @@ export default function AccountScreen({ navigation }) {
                           <View key={transaction.transaction_uid || i}>
                             {/* Main Transaction Row */}
                             <TouchableOpacity
-                              style={styles.businessTransactionRow}
+                              style={[
+                                styles.businessTransactionRow,
+                                transaction.transaction_return_requested === 1 && {
+                                  backgroundColor: "#FDECEA",
+                                  borderLeftWidth: 4,
+                                  borderLeftColor: "#b35454",
+                                }
+                              ]}
                               onPress={() => {
                                 setExpandedTransactionId(isExpanded ? null : transaction.transaction_uid);
                               }}
                               activeOpacity={0.7}
                             >
+                              <Text style={styles.businessTransactionCell}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
                               <Text style={styles.businessTransactionCell}>
                                 {transaction.transaction_uid || "N/A"} {isExpanded ? "▲" : "▼"}
                               </Text>
-                              <Text style={styles.businessTransactionCell}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                              
                               <Text style={styles.businessTransactionCell}>{transaction.transaction_profile_id?.substring(0, 10) || "N/A"}</Text>
                               <Text style={styles.businessTransactionCell}>${transaction.transaction_total.toFixed(2)}</Text>
                               <Text style={styles.businessTransactionCell}>${transaction.bounty_paid.toFixed(2)}</Text>
@@ -1704,6 +1737,24 @@ export default function AccountScreen({ navigation }) {
                                 ) : (
                                   <Text style={styles.noServicesText}>No services data available</Text>
                                 )}
+                                {/* Return request indicator */}
+                                {transaction.transaction_return_requested === 1 && (
+                                  <View style={{
+                                    marginTop: 8,
+                                    padding: 8,
+                                    backgroundColor: "#FDECEA",
+                                    borderRadius: 6,
+                                    borderWidth: 1,
+                                    borderColor: "#B71C1C",
+                                    flexDirection: "row",
+                                    alignItems: "center",
+                                  }}>
+                                    <Ionicons name="return-down-back-outline" size={14} color="#B71C1C" style={{ marginRight: 6 }} />
+                                    <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>
+                                      Return Requested by Customer
+                                    </Text>
+                                  </View>
+                                )}
                               </View>
                             )}
                           </View>
@@ -1728,14 +1779,14 @@ export default function AccountScreen({ navigation }) {
       <Modal animationType='fade' transparent={true} visible={showReceiptModal} onRequestClose={() => setShowReceiptModal(false)}>
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiptModalContent, darkMode && styles.darkModalContent]}>
-            <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle]}>Transaction Receipt</Text>
+            <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle, { textAlign: "center" }]}>Transaction Receipt</Text>
             {receiptLoading ? (
               <ActivityIndicator size='large' color='#18884A' style={{ marginVertical: 24 }} />
             ) : receiptData.length > 0 ? (
               <ScrollView style={styles.receiptScrollView} horizontal>
                 <View>
                   <View style={styles.receiptTableHeader}>
-                    <Text style={styles.receiptHeaderCell}>Item Name </Text>
+                    <Text style={styles.receiptHeaderCell}>Item Name</Text>
                     <Text style={styles.receiptHeaderCell}>Qty</Text>
                     <Text style={styles.receiptHeaderCell}>Cost</Text>
                   </View>
@@ -1751,7 +1802,37 @@ export default function AccountScreen({ navigation }) {
             ) : (
               <Text style={[styles.noDataText, { marginVertical: 24 }]}>No receipt data available.</Text>
             )}
-            <TouchableOpacity style={[styles.receiptCloseButton, darkMode && styles.darkCancelButton]} onPress={() => setShowReceiptModal(false)}>
+
+            {/* Return requested confirmation message */}
+            {(returnRequests[receiptTransaction?.transaction_uid] || receiptTransaction?.transaction_return_requested === 1) && (
+              <Text style={{ color: "#B71C1C", textAlign: "center", marginTop: 12, fontWeight: "600", fontSize: 14 }}>
+                ✓ Return has been requested
+              </Text>
+            )}
+
+            {/* Request Return button */}
+            <TouchableOpacity
+              style={[
+                styles.receiptCloseButton,
+                { borderColor: "#B71C1C", marginTop: 12 },
+                returnRequests[receiptTransaction?.transaction_uid] && { opacity: 0.4 },
+              ]}
+              onPress={() => {
+                if (!returnRequests[receiptTransaction?.transaction_uid]) {
+                  handleReturnRequest(receiptTransaction);
+                }
+              }}
+              disabled={!!(returnRequests[receiptTransaction?.transaction_uid] || receiptTransaction?.transaction_return_requested === 1)}
+            >
+              <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>
+                {returnRequests[receiptTransaction?.transaction_uid] ? "Return Requested" : "Request Return"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.receiptCloseButton, darkMode && styles.darkCancelButton]}
+              onPress={() => setShowReceiptModal(false)}
+            >
               <Text style={[styles.receiptCloseButtonText, darkMode && styles.darkCancelButtonText]}>Close</Text>
             </TouchableOpacity>
           </View>

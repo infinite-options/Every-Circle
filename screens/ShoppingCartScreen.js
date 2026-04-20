@@ -793,7 +793,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                     {refundAcknowledged && <Text style={styles.checkmark}>✓</Text>}
                   </View>
                   <Text style={[styles.escrowLabel, { flex: 1 }, refundError && { color: "#FF3B30" }]}>
-                    Return must be made in 5 days for a full refund, any returns past 5 days will result in a partial refund. Check the box to acknowledge.
+                    Returns must be requested 30 days after product is received for a full refund, any returns past 30 days will result in a partial refund. Check the box to acknowledge.
                   </Text>
                 </TouchableOpacity>
                 {refundError && (
