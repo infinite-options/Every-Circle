@@ -10,3 +10,6 @@ export const parsePrice = (val) => {
   const n = parseFloat(cleaned);
   return isNaN(n) ? 0 : n;
 };
+
+/** Whole dollars for display (no cents), e.g. bounties on expertise. */
+export const formatWholeDollars = (val) => Math.round(parsePrice(val));

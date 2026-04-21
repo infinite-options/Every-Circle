@@ -25,8 +25,19 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
 import { isWishEnded } from "../utils/wishUtils";
+import { formatWholeDollars } from "../utils/priceUtils";
 
 // Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
+/** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. */
+function NoBountyIcon({ darkMode }) {
+  return (
+    <View style={styles.noBountyIconWrap} accessibilityLabel="No bounty">
+      <Text style={styles.noBountyEmoji}>💰</Text>
+      <View pointerEvents="none" style={[styles.noBountySlash, darkMode && styles.darkNoBountySlash]} />
+    </View>
+  );
+}
+
 const formatDateTimeForDisplay = (value) => {
   if (!value || typeof value !== "string" || value.trim() === "") return "";
   const trimmed = value.trim();
@@ -1130,16 +1141,16 @@ export default function SearchScreen({ route }) {
               <View style={styles.wishBountyContainerRight}>
                 <Text style={styles.bountyEmojiIcon}>💰</Text>
                 <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>
-                  {String(expertise.bounty).toLowerCase() !== "free" ? `Bounty: $${String(expertise.bounty).replace(/^\$/, "")}` : `Bounty: ${expertise.bounty}`}
+                  {String(expertise.bounty).toLowerCase() !== "free"
+                    ? `Bounty: $${formatWholeDollars(expertise.bounty)}`
+                    : `Bounty: ${expertise.bounty}`}
                 </Text>
               </View>
             )}
           </View>
         </View>
         {isOwnExpertise && (
-          <Text style={{ fontSize: 20, color: '#6e1010', fontStyle: 'italic', marginTop: 4 }}>
-            You cannot purchase your own expertise.
-          </Text>
+          <Text style={[styles.ownExpertiseNotice, darkMode && styles.darkOwnExpertiseNotice]}>You cannot purchase your own expertise.</Text>
         )}
       </TouchableOpacity>
     );
@@ -1220,75 +1231,82 @@ export default function SearchScreen({ route }) {
             </View>
           </View>
         </View>
-        <View style={styles.resultActions}>
-          {Number.isFinite(item.rating) && (
-            <View style={styles.ratingContainer}>
-              <Ionicons name='star' size={16} color='#FFCD3C' />
-              <Text style={[styles.ratingText, darkMode && styles.darkRatingText]}>
-                {item.rating.toFixed(1)}
-                {item.ratingCount > 0 ? ` (${item.ratingCount})` : ""}
-              </Text>
-            </View>
-          )}
-
-          {/* Bounty indicator for businesses */}
-          <View style={[styles.ratingContainer, { marginLeft: 6 }]}>
-            {item.max_bounty != null ? (
-              <Text style={styles.bountyEmojiIcon}>💰</Text>
+        <View style={styles.businessResultActions}>
+          <View style={styles.businessTableRatingCol}>
+            {Number.isFinite(item.rating) ? (
+              <View style={styles.ratingContainer}>
+                <Ionicons name='star' size={16} color='#FFCD3C' />
+                <Text style={[styles.ratingText, darkMode && styles.darkRatingText]}>
+                  {item.rating.toFixed(1)}
+                  {item.ratingCount > 0 ? ` (${item.ratingCount})` : ""}
+                </Text>
+              </View>
             ) : (
-              <Text style={[styles.xSymbol, darkMode && styles.darkXSymbol]}>X</Text>
+              <Text style={[styles.metricPlaceholder, darkMode && styles.darkMetricPlaceholder]}>—</Text>
             )}
           </View>
 
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              navigation.navigate("SearchTab", {
-                centerCompany: {
-                  id: item.id,
-                  name: item.company,
-                  rating: item.rating,
-                },
-              });
-            }}
-          >
-            <View style={{ position: "relative" }}>
-              <Image
-                source={require("../assets/connect.png")}
-                style={{ width: 22, height: 22, tintColor: darkMode ? "#ffffff" : "#000000" }}
-              />
-              {item.connection_degree != null && (
-                <View style={styles.connectionBadge}>
-                  <Text style={styles.connectionBadgeText}>{item.connection_degree}</Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
+          <View style={styles.businessTableBountyCol}>
+            {item.max_bounty != null ? (
+              <Text style={[styles.bountyEmojiIcon, styles.bountyEmojiIconCompact]}>💰</Text>
+            ) : (
+              <NoBountyIcon darkMode={darkMode} />
+            )}
+          </View>
 
-          {/* Bounty indicator */}
-          {item.hasBounty && (
-            <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
-              <Text style={styles.bountyEmojiIcon}>💰</Text>
-            </TouchableOpacity>
-          )}
-
-          {item.hasX && (
-            <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
-              <Text style={[styles.xSymbol, darkMode && styles.darkXSymbol]}>X</Text>
-            </TouchableOpacity>
-          )}
-          {item.hasPriceTag && (
-            <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
-              <Text style={[styles.percentSymbol, darkMode && styles.darkPercentSymbol]}>:%</Text>
-            </TouchableOpacity>
-          )}
-          {item.hasDollar && (
-            <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
-              <View style={[styles.moneyBagContainer, darkMode && styles.darkMoneyBagContainer]}>
-                <Text style={[styles.dollarSymbol, darkMode && styles.darkDollarSymbol]}>$</Text>
+          <View style={styles.businessTableLevelCol}>
+            <TouchableOpacity
+              style={styles.levelButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                navigation.navigate("SearchTab", {
+                  centerCompany: {
+                    id: item.id,
+                    name: item.company,
+                    rating: item.rating,
+                  },
+                });
+              }}
+            >
+              <View style={{ position: "relative" }}>
+                <Image
+                  source={require("../assets/connect.png")}
+                  style={{ width: 22, height: 22, tintColor: darkMode ? "#ffffff" : "#000000" }}
+                />
+                {item.connection_degree != null && (
+                  <View style={styles.connectionBadge}>
+                    <Text style={styles.connectionBadgeText}>{item.connection_degree}</Text>
+                  </View>
+                )}
               </View>
             </TouchableOpacity>
+          </View>
+
+          {(item.hasBounty || item.hasX || item.hasPriceTag || item.hasDollar) && (
+            <View style={styles.businessDemoExtras}>
+              {item.hasBounty && (
+                <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
+                  <Text style={styles.bountyEmojiIcon}>💰</Text>
+                </TouchableOpacity>
+              )}
+              {item.hasX && (
+                <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
+                  <NoBountyIcon darkMode={darkMode} />
+                </TouchableOpacity>
+              )}
+              {item.hasPriceTag && (
+                <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
+                  <Text style={[styles.percentSymbol, darkMode && styles.darkPercentSymbol]}>:%</Text>
+                </TouchableOpacity>
+              )}
+              {item.hasDollar && (
+                <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
+                  <View style={[styles.moneyBagContainer, darkMode && styles.darkMoneyBagContainer]}>
+                    <Text style={[styles.dollarSymbol, darkMode && styles.darkDollarSymbol]}>$</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
         </View>
       </TouchableOpacity>
@@ -1532,8 +1550,12 @@ export default function SearchScreen({ route }) {
           {/* Only show table header for businesses, not for expertise or seeking */}
           {searchType === "businesses" && (
             <View style={[styles.tableHeader, darkMode && styles.darkTableHeader]}>
-              <Text style={[styles.tableHeaderText, darkMode && styles.darkTableHeaderText]}>Company</Text>
-              <Text style={[styles.tableHeaderText, darkMode && styles.darkTableHeaderText]}>Rating</Text>
+              <Text style={[styles.tableHeaderText, styles.tableHeaderCompany, darkMode && styles.darkTableHeaderText]}>Company</Text>
+              <Text style={[styles.tableHeaderText, styles.tableHeaderRating, darkMode && styles.darkTableHeaderText]}>Rating(#)</Text>
+              <Text style={[styles.tableHeaderText, styles.tableHeaderBounty, darkMode && styles.darkTableHeaderText]} numberOfLines={1}>
+                Bounty
+              </Text>
+              <Text style={[styles.tableHeaderText, styles.tableHeaderLevel, darkMode && styles.darkTableHeaderText]}>Level</Text>
             </View>
           )}
 
@@ -1756,13 +1778,34 @@ const styles = StyleSheet.create({
 
   tableHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 10,
     paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
   },
-  tableHeaderText: { fontSize: 16, color: "#686868" },
+  tableHeaderText: { fontSize: 14, color: "#686868" },
+  tableHeaderCompany: {
+    flex: 1,
+    paddingRight: 8,
+  },
+  tableHeaderRating: {
+    width: 100,
+    textAlign: "right",
+    paddingRight: 6,
+    flexShrink: 0,
+  },
+  /** Wider than `businessTableBountyCol` so the label stays one line; row icons stay narrow. */
+  tableHeaderBounty: {
+    width: 58,
+    textAlign: "center",
+    flexShrink: 0,
+  },
+  tableHeaderLevel: {
+    width: 52,
+    textAlign: "center",
+    flexShrink: 0,
+  },
 
   resultsContainer: { flex: 1, marginBottom: 15 },
   loadingText: { textAlign: "center", marginVertical: 10 },
@@ -1783,8 +1826,40 @@ const styles = StyleSheet.create({
   resultContent: { flex: 1 },
   companyName: { fontSize: 16, fontWeight: "500", color: "#333" },
   businessTagLine: { fontSize: 12, color: "#666", marginTop: 2, fontStyle: "italic" },
-  resultActions: { flexDirection: "row", alignItems: "center" },
-  actionButton: { marginLeft: 15 },
+  businessResultActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexShrink: 0,
+  },
+  businessTableRatingCol: {
+    width: 100,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  businessTableBountyCol: {
+    width: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  businessTableLevelCol: {
+    width: 52,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  levelButton: {
+    padding: 4,
+  },
+  metricPlaceholder: {
+    fontSize: 16,
+    color: "#999",
+    fontWeight: "500",
+  },
+  businessDemoExtras: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 6,
+  },
+  actionButton: { marginLeft: 10 },
 
   ratingContainer: { flexDirection: "row" },
   starCircle: {
@@ -1794,7 +1869,23 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFCD3C",
     marginRight: 5,
   },
-  xSymbol: { fontSize: 22, fontWeight: "bold" },
+  noBountyIconWrap: {
+    width: 24,
+    height: 22,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  noBountyEmoji: {
+    fontSize: 20,
+  },
+  noBountySlash: {
+    position: "absolute",
+    width: 26,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: "#1a1a1a",
+    transform: [{ rotate: "-42deg" }],
+  },
   percentSymbol: {
     fontSize: 18,
     borderWidth: 1,
@@ -1950,8 +2041,11 @@ const styles = StyleSheet.create({
   darkRatingText: {
     color: "#cccccc",
   },
-  darkXSymbol: {
-    color: "#ffffff",
+  darkMetricPlaceholder: {
+    color: "#777777",
+  },
+  darkNoBountySlash: {
+    backgroundColor: "#f0f0f0",
   },
   darkPercentSymbol: {
     color: "#ffffff",
@@ -2122,6 +2216,10 @@ const styles = StyleSheet.create({
     fontSize: 20,
     marginRight: 6,
   },
+  bountyEmojiIconCompact: {
+    fontSize: 20,
+    marginRight: 0,
+  },
   wishBountyLabel: {
     fontSize: 14,
     color: "#666",
@@ -2170,6 +2268,15 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginTop: 5,
+  },
+  ownExpertiseNotice: {
+    fontSize: 13,
+    color: "#6e1010",
+    fontStyle: "italic",
+    marginTop: 4,
+  },
+  darkOwnExpertiseNotice: {
+    color: "#e8a0a0",
   },
 
   offeringStatement: {

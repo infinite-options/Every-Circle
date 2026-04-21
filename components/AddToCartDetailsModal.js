@@ -182,7 +182,7 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
             {bountyAmount > 0 && (
               <View style={[styles.summaryRow, styles.bountyNoteRow, darkMode && styles.darkBountyNoteRow]}>
                 <Text style={[styles.bountyNoteLabel, darkMode && styles.darkBountyNoteLabel]}>Bounty (paid by Seller)</Text>
-                <Text style={[styles.bountyNoteValue, darkMode && styles.darkBountyNoteValue]}>${bountyAmount.toFixed(2)}</Text>
+                <Text style={[styles.bountyNoteValue, darkMode && styles.darkBountyNoteValue]}>${Math.round(bountyAmount)}</Text>
               </View>
             )}
           </View>

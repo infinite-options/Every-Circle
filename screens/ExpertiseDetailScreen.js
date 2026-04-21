@@ -25,6 +25,7 @@ if (!isWeb) {
 import { REACT_APP_STRIPE_PUBLIC_KEY } from "@env";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CREATE_PAYMENT_INTENT_ENDPOINT, TRANSACTIONS_ENDPOINT, GET_STRIPE_PUBLIC_KEY_ENDPOINT } from "../apiConfig";
+import { formatWholeDollars } from "../utils/priceUtils";
 
 // Web Stripe imports (only load on web)
 let loadStripe = null;
@@ -108,6 +109,7 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
   const [customerUid, setCustomerUid] = useState(null);
 
   const [addToCartModalVisible, setAddToCartModalVisible] = useState(false);
+  const [viewerProfileUid, setViewerProfileUid] = useState(null);
 
   // Initialize Stripe on mount
   useEffect(() => {
@@ -131,6 +133,7 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
       try {
         const uid = await AsyncStorage.getItem("profile_uid");
         setCustomerUid(uid);
+        setViewerProfileUid(uid);
       } catch (error) {
         console.error("Error getting customer UID:", error);
       }
@@ -711,6 +714,23 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
             </View>
           </TouchableOpacity>
 
+          {profile_uid && viewerProfileUid && viewerProfileUid !== profile_uid && (
+            <TouchableOpacity
+              style={[styles.chatButton, darkMode && styles.darkChatButton]}
+              activeOpacity={0.8}
+              onPress={() =>
+                navigation.navigate("Chat", {
+                  other_uid: profile_uid,
+                  other_name: `${userForMiniCard.firstName} ${userForMiniCard.lastName}`.trim() || "Chat",
+                  other_image: userForMiniCard.profileImage && userForMiniCard.imageIsPublic ? userForMiniCard.profileImage : null,
+                })
+              }
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={17} color="#fff" style={{ marginRight: 7 }} />
+              <Text style={styles.chatButtonText}>Message</Text>
+            </TouchableOpacity>
+          )}
+
           {/* Expertise Description */}
           <View style={[styles.card, darkMode && styles.darkCard]}>
             <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Expertise Description</Text>
@@ -740,7 +760,11 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
               {expertiseData?.bounty && (
                 <View style={styles.pricingRow}>
                   <Text style={styles.bountyEmojiIcon}>💰</Text>
-                  <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>Bounty: ${(parseFloat(expertiseData.bounty) || 0).toFixed(2)}</Text>
+                  <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>
+                    {String(expertiseData.bounty).trim().toLowerCase() === "free"
+                      ? `Bounty: ${expertiseData.bounty}`
+                      : `Bounty: $${formatWholeDollars(expertiseData.bounty)}`}
+                  </Text>
                 </View>
               )}
             </View>
@@ -937,6 +961,25 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 18,
     fontWeight: "bold",
+  },
+  chatButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    backgroundColor: "#AF52DE",
+    paddingVertical: 10,
+    paddingHorizontal: 28,
+    borderRadius: 24,
+    marginBottom: 15,
+  },
+  chatButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 15,
+  },
+  darkChatButton: {
+    backgroundColor: "#8e3ec4",
   },
   // Dark mode styles
   darkPageContainer: {
