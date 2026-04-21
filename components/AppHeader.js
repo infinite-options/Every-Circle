@@ -26,9 +26,7 @@ const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButto
   );
 
   return (
-    <View style={styles.wrapper}>
-      {/* Decorative background ONLY */}
-      <View style={[styles.background, { backgroundColor: finalBgColor }]} />
+      <View style={[styles.background, { backgroundColor: finalBgColor }]}>
 
       {/* Interactive content */}
       <View style={styles.content}>
@@ -47,18 +45,18 @@ const AppHeader = ({ title, backgroundColor = "#AF52DE", onBackPress, rightButto
 };
 
 const styles = StyleSheet.create({
-  wrapper: {
-    height: HEADER_HEIGHT,
-    width: "100%",
-    position: "relative",
-    zIndex: 10000,
-  },
+  // wrapper: {
+  //   height: HEADER_HEIGHT,
+  //   width: "100%",
+  //   position: "relative",
+  //   zIndex: 10000,
+  //   backgroundColor: "#0f0d0d",
+  //   borderBottomLeftRadius: 300,
+  //   borderBottomRightRadius: 300,
+  // },
 
   background: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
+    position: "relative",
     height: HEADER_HEIGHT,
     borderBottomLeftRadius: 300,
     borderBottomRightRadius: 300,
@@ -107,3 +105,4 @@ const styles = StyleSheet.create({
 });
 
 export default AppHeader;
+
