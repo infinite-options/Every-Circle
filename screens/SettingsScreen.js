@@ -29,6 +29,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import QRCode from "react-native-qrcode-svg";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { useUnread } from "../contexts/UnreadContext";
 import { getHeaderColors } from "../config/headerColors";
 import versionData from "../version.json";
 
@@ -116,6 +117,7 @@ export default function SettingsScreen() {
   const [shareLocationActive, setShareLocationActive] = useState(false);
   const [shareLocationUntil, setShareLocationUntil] = useState(null); // Date | null
   const { darkMode, toggleDarkMode } = useDarkMode();
+  const { reinitialize } = useUnread();
   const [allowCookies, setAllowCookies] = useState(true);
   const [termsAccepted, setTermsAccepted] = useState(true);
   const [displayEmail, setDisplayEmail] = useState(true);
@@ -365,6 +367,7 @@ export default function SettingsScreen() {
 
         // Business data
         "businessFormData",
+        "my_business_uids",
 
         // Cart data (all cart keys)
         ...allKeys.filter((key) => key.startsWith("cart_")),
@@ -385,6 +388,8 @@ export default function SettingsScreen() {
       console.log("SettingsScreen.js - Total keys to remove:", keysToRemove.length);
       await AsyncStorage.multiRemove(keysToRemove);
       console.log("SettingsScreen.js - AsyncStorage cleared successfully");
+
+      reinitialize().catch(() => {});
 
       // Reset dark mode to light mode when logging out
       toggleDarkMode(false);

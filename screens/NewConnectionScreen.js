@@ -167,11 +167,7 @@ const NewConnectionScreen = () => {
       }
 
       // Try multiple sources: app.config extra (loads .env at start), process.env (Expo web), @env (react-native-dotenv)
-      const ablyApiKey =
-        Constants.expoConfig?.extra?.ablyApiKey ||
-        process.env.EXPO_PUBLIC_ABLY_API_KEY ||
-        EXPO_PUBLIC_ABLY_API_KEY ||
-        "";
+      const ablyApiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
       console.log("🔵 NewConnectionScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
       console.log("🔵 NewConnectionScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
       if (!ablyApiKey) {

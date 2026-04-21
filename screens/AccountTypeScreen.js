@@ -6,6 +6,8 @@ import axios from "axios";
 import { REFERRAL_API_ENDPOINT } from "../apiConfig";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
+import { useUnread } from "../contexts/UnreadContext";
+import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 import BottomNavBar from "../components/BottomNavBar";
 
 const isWeb = Platform.OS === "web";
@@ -15,6 +17,7 @@ const userProfileAPI = REFERRAL_API_ENDPOINT;
 const ICON_SIZE = 40;
 
 const AccountTypeScreen = ({ navigation, route }) => {
+  const { reinitialize } = useUnread();
   const [email, setEmail] = useState(route.params?.email || "");
   const { user_uid = "" } = route.params || {};
 
@@ -68,6 +71,8 @@ const AccountTypeScreen = ({ navigation, route }) => {
         if (profileData.personal_info.profile_personal_uid) {
           await AsyncStorage.setItem("profile_uid", profileData.personal_info.profile_personal_uid);
         }
+        await persistMyBusinessUidsFromProfile(profileData);
+        reinitialize().catch(() => {});
 
         navigation.navigate("Profile", {
           user: profileData,
@@ -88,6 +93,8 @@ const AccountTypeScreen = ({ navigation, route }) => {
         if (errorData.personal_info.profile_personal_uid) {
           await AsyncStorage.setItem("profile_uid", errorData.personal_info.profile_personal_uid);
         }
+        await persistMyBusinessUidsFromProfile(errorData);
+        reinitialize().catch(() => {});
 
         navigation.navigate("Profile", {
           user: errorData,

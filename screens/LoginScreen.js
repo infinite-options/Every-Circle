@@ -26,6 +26,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
+import { useUnread } from "../contexts/UnreadContext";
+import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 // import SignUpScreen from "./screens/SignUpScreen";
 
 // Helper function to extract the last two digits before .apps.googleusercontent.com
@@ -66,6 +68,7 @@ const getFirstFourDigits = (clientId) => {
 
 // Accept navigation from props
 export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn, onError }) {
+  const { reinitialize } = useUnread();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isValid, setIsValid] = useState(false);
@@ -239,6 +242,10 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
       await AsyncStorage.setItem("user_uid", user_uid);
       await AsyncStorage.setItem("user_email_id", user_email);
       await AsyncStorage.setItem("profile_uid", fullUser.personal_info?.profile_personal_uid || "");
+      await persistMyBusinessUidsFromProfile(fullUser);
+
+      // Subscribe Ably to personal + owned-business chat channels (business UIDs from profile payload above)
+      reinitialize().catch(() => {});
 
       console.log("LoginScreen - user_uid", user_uid);
       // console.log("LoginScreen - User Email", user_email);
@@ -300,13 +307,21 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
           <View style={styles.inputContainer}>
             <View style={styles.fieldContainer}>
               <Text style={styles.label}>Email</Text>
-              <TextInput style={styles.input} placeholder='Email' value={email} onChangeText={handleEmailChange} keyboardType='email-address' autoCapitalize='none' accessibilityLabel="Email" />
+              <TextInput style={styles.input} placeholder='Email' value={email} onChangeText={handleEmailChange} keyboardType='email-address' autoCapitalize='none' accessibilityLabel='Email' />
               {!!emailError && <Text style={styles.emailErrorText}>{emailError}</Text>}
             </View>
             <View style={styles.fieldContainer}>
               <Text style={styles.label}>Password</Text>
               <View style={styles.passwordInputContainer}>
-                <TextInput style={styles.input} placeholder='Password' value={password} onChangeText={handlePasswordChange} secureTextEntry={!isPasswordVisible} autoCapitalize='none' accessibilityLabel="Password" />
+                <TextInput
+                  style={styles.input}
+                  placeholder='Password'
+                  value={password}
+                  onChangeText={handlePasswordChange}
+                  secureTextEntry={!isPasswordVisible}
+                  autoCapitalize='none'
+                  accessibilityLabel='Password'
+                />
                 <TouchableOpacity style={styles.passwordVisibilityToggle} onPress={() => setIsPasswordVisible(!isPasswordVisible)}>
                   <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
                 </TouchableOpacity>

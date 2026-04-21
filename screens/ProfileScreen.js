@@ -9,6 +9,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_INFO_ENDPOINT, CIRCLES_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { reinitializeUnreadFromOutside } from "../contexts/UnreadContext";
+import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 import { sanitizeText } from "../utils/textSanitizer";
 import { isWishEnded } from "../utils/wishUtils";
 import FeedbackPopup from "../components/FeedbackPopup";
@@ -128,6 +130,7 @@ const ProfileScreen = ({ route, navigation }) => {
               setLoading(false);
               // Clear any existing profile data but keep user credentials
               await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+              reinitializeUnreadFromOutside().catch(() => {});
               navigation.navigate("UserInfo");
               return;
             }
@@ -138,6 +141,7 @@ const ProfileScreen = ({ route, navigation }) => {
               // This is the logged-in user's own profile (fetched via user_uid)
               setIsCurrentUserProfile(true);
               await AsyncStorage.setItem("profile_uid", profileId);
+              reinitializeUnreadFromOutside().catch(() => {});
               await fetchUserData(profileId);
               return;
             }
@@ -215,6 +219,12 @@ const ProfileScreen = ({ route, navigation }) => {
         setUser(null);
         setLoading(false);
         return;
+      }
+
+      const storedProfileUid = await AsyncStorage.getItem("profile_uid");
+      if (storedProfileUid && profileUID === storedProfileUid) {
+        const bizListChanged = await persistMyBusinessUidsFromProfile(apiUser);
+        if (bizListChanged) reinitializeUnreadFromOutside().catch(() => {});
       }
 
       const userData = {

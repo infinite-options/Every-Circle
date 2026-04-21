@@ -1,9 +1,8 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from "react";
-import { Platform } from "react-native";
+import { Platform, AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
-import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 
 const UnreadContext = createContext({
   hasUnread: false,
@@ -17,64 +16,71 @@ const UnreadContext = createContext({
   reinitialize: () => {},
 });
 
+/** Set by UnreadProvider each render. Lets App.js auth handlers (outside the provider’s child tree) resubscribe Ably after AsyncStorage changes. */
+let reinitializeUnreadImpl = async () => {};
+
+/** Call after login / logout when you cannot use `useUnread().reinitialize` (e.g. handlers defined in App.js before NavigationContainer). */
+export function reinitializeUnreadFromOutside() {
+  return reinitializeUnreadImpl();
+}
+
 export function UnreadProvider({ children }) {
   const [hasUnread, setHasUnread] = useState(false);
   // notification: { senderName, senderImage, body, conversationUid, senderUid } | null
   const [notification, setNotification] = useState(null);
 
-  const ablyClientRef       = useRef(null);
+  const ablyClientRef = useRef(null);
   // All subscribed channels (personal + owned businesses)
-  const ablyChannelsRef     = useRef([]);
+  const ablyChannelsRef = useRef([]);
   // Tracks the specific conversation_uid the user is in → suppresses the unread dot
-  const activeChatRef       = useRef(null);
+  const activeChatRef = useRef(null);
   // True whenever the user is on ChatScreen or InboxScreen → suppresses the banner
-  const inChatViewRef       = useRef(false);
+  const inChatViewRef = useRef(false);
   // Track currently-subscribed personal UID and business UIDs to detect changes
-  const subscribedUidRef    = useRef(null);
+  const subscribedUidRef = useRef(null);
   const subscribedBizUidsRef = useRef([]);
 
   const teardown = () => {
     ablyChannelsRef.current.forEach((ch) => {
-      try { ch.unsubscribe("new-message"); } catch (_) {}
+      try {
+        ch.unsubscribe("new-message");
+      } catch (_) {}
     });
     ablyChannelsRef.current = [];
-    try { ablyClientRef.current?.close(); } catch (_) {}
-    ablyClientRef.current     = null;
-    subscribedUidRef.current  = null;
+    try {
+      ablyClientRef.current?.close();
+    } catch (_) {}
+    ablyClientRef.current = null;
+    subscribedUidRef.current = null;
     subscribedBizUidsRef.current = [];
   };
 
-  /** Fetch the owned business UIDs for a profile UID.
-   *  Tries the API first (always fresh); falls back to AsyncStorage on error. */
-  const fetchBizUids = async (uid) => {
+  /** Owned business UIDs for Ably — written by login/profile flows from the same userprofileinfo response (no duplicate fetch here). */
+  const readBizUidsFromStorage = async () => {
     try {
-      const res  = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${uid}`);
-      const json = await res.json();
-      const uids = (json.business_info || []).map((b) => b.business_uid).filter(Boolean);
-      // Keep AsyncStorage in sync for other consumers
-      AsyncStorage.setItem("my_business_uids", JSON.stringify(uids)).catch(() => {});
-      return uids;
+      const raw = await AsyncStorage.getItem("my_business_uids");
+      const parsed = JSON.parse(raw || "[]");
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
     } catch (_) {
-      try {
-        const raw = await AsyncStorage.getItem("my_business_uids");
-        return JSON.parse(raw || "[]") || [];
-      } catch (_2) { return []; }
+      return [];
     }
   };
 
   const setup = async () => {
     const uid = await AsyncStorage.getItem("profile_uid");
-    if (!uid) return false; // not logged in yet
+    if (!uid) {
+      teardown();
+      setHasUnread(false);
+      setNotification(null);
+      return false;
+    }
 
-    // Always fetch fresh business UIDs so newly-created businesses are picked up
-    const bizUids = await fetchBizUids(uid);
+    const bizUids = await readBizUidsFromStorage();
 
     // Check if anything has actually changed before rebuilding the Ably connection
     const sameUid = subscribedUidRef.current === uid;
     const prevBiz = subscribedBizUidsRef.current;
-    const sameBiz =
-      bizUids.length === prevBiz.length &&
-      bizUids.every((u) => prevBiz.includes(u));
+    const sameBiz = bizUids.length === prevBiz.length && bizUids.every((u) => prevBiz.includes(u));
 
     if (sameUid && sameBiz) return true; // nothing to do
 
@@ -88,11 +94,7 @@ export function UnreadProvider({ children }) {
         Ably = require("ably");
       }
 
-      const apiKey =
-        Constants.expoConfig?.extra?.ablyApiKey ||
-        process.env.EXPO_PUBLIC_ABLY_API_KEY ||
-        EXPO_PUBLIC_ABLY_API_KEY ||
-        "";
+      const apiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
       if (!apiKey) return false;
 
       const client = new Ably.Realtime({ key: apiKey });
@@ -105,10 +107,10 @@ export function UnreadProvider({ children }) {
         setHasUnread(true);
         if (!inChatViewRef.current) {
           setNotification({
-            senderUid:       data.sender_uid,
-            senderName:      data.sender_name || "New message",
-            senderImage:     data.sender_image || null,
-            body:            data.body || "",
+            senderUid: data.sender_uid,
+            senderName: data.sender_name || "New message",
+            senderImage: data.sender_image || null,
+            body: data.body || "",
             conversationUid: data.conversation_uid,
           });
         }
@@ -126,7 +128,7 @@ export function UnreadProvider({ children }) {
         ablyChannelsRef.current.push(bizCh);
       });
 
-      subscribedUidRef.current     = uid;
+      subscribedUidRef.current = uid;
       subscribedBizUidsRef.current = bizUids;
       return true;
     } catch (e) {
@@ -136,47 +138,56 @@ export function UnreadProvider({ children }) {
   };
 
   useEffect(() => {
-    let cancelled    = false;
-    let retryTimeout = null;
-    let pollInterval = null;
+    let cancelled = false;
 
     const trySetup = async () => {
       if (cancelled) return;
-      const ok = await setup();
-      if (!ok && !cancelled) {
-        // Not logged in yet — retry every 2 s until we get a UID
-        retryTimeout = setTimeout(trySetup, 2000);
-      }
+      await setup();
     };
 
     trySetup();
 
-    // Poll every 30 s to detect account switches (login with a different profile_uid).
-    // setup() is a no-op if the UID hasn't changed, so the overhead is minimal.
-    pollInterval = setInterval(() => {
-      if (!cancelled) setup();
-    }, 30000);
+    // Re-check when app returns to foreground (e.g. logged in elsewhere, or storage updated) — no periodic polling
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active" && !cancelled) trySetup();
+    });
 
     return () => {
       cancelled = true;
-      if (retryTimeout) clearTimeout(retryTimeout);
-      if (pollInterval) clearInterval(pollInterval);
+      sub.remove();
       teardown();
     };
   }, []);
 
-  // Call after login or account switch to re-subscribe to the new user's channels
+  // Call after login / account switch: tears down Ably and re-subscribes using my_business_uids from AsyncStorage.
+  // Does not affect Search API results — search hits search endpoints, not this list.
   const reinitialize = async () => {
     subscribedUidRef.current = null; // force re-subscription
     await setup();
   };
 
-  const clearUnread         = ()         => setHasUnread(false);
-  const dismissNotification = ()         => setNotification(null);
-  const setActiveChat       = (convUid)  => { activeChatRef.current = convUid; };
-  const clearActiveChat     = ()         => { activeChatRef.current = null; };
-  const enterChatView       = ()         => { inChatViewRef.current = true; };
-  const leaveChatView       = ()         => { inChatViewRef.current = false; };
+  reinitializeUnreadImpl = reinitialize;
+
+  useEffect(() => {
+    return () => {
+      reinitializeUnreadImpl = async () => {};
+    };
+  }, []);
+
+  const clearUnread = () => setHasUnread(false);
+  const dismissNotification = () => setNotification(null);
+  const setActiveChat = (convUid) => {
+    activeChatRef.current = convUid;
+  };
+  const clearActiveChat = () => {
+    activeChatRef.current = null;
+  };
+  const enterChatView = () => {
+    inChatViewRef.current = true;
+  };
+  const leaveChatView = () => {
+    inChatViewRef.current = false;
+  };
 
   return (
     <UnreadContext.Provider

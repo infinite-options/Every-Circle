@@ -24,8 +24,11 @@ import * as Crypto from "expo-crypto";
 import ReferralSearch from "../components/ReferralSearch";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
+import { useUnread } from "../contexts/UnreadContext";
+import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 
 export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, navigation, route }) {
+  const { reinitialize } = useUnread();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -389,6 +392,8 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               await AsyncStorage.setItem("user_uid", user_uid);
               await AsyncStorage.setItem("user_email_id", user_email);
               await AsyncStorage.setItem("profile_uid", fullUser.personal_info?.profile_personal_uid || "");
+              await persistMyBusinessUidsFromProfile(fullUser);
+              reinitialize().catch(() => {});
 
               setIsAttemptingLogin(false);
               navigation.navigate("Profile", {
