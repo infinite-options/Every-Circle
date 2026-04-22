@@ -154,13 +154,17 @@ export default function App() {
       }
     };
 
-    // Add timeout to prevent infinite loading
+    // Failsafe: end splash if init hangs. Use functional setState so we read current
+    // loading state (avoids a stale `loading` from the first render always being true at 5s).
     const timeout = setTimeout(() => {
-      if (loading) {
-        console.warn("App.js - Loading timeout, forcing load complete");
-        setLoading(false);
-      }
-    }, 5000); // 5 second timeout
+      setLoading((prev) => {
+        if (prev) {
+          console.warn("App.js - Loading timeout, forcing load complete");
+          return false;
+        }
+        return prev;
+      });
+    }, 5000);
 
     initialize();
 
