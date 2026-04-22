@@ -299,6 +299,8 @@ const NetworkScreen = ({ navigation }) => {
   const [qrCodeDataObject, setQrCodeDataObject] = useState(null); // Store parsed QR code data object for display
   const [ablyClient, setAblyClient] = useState(null); // Store Ably client instance
   const [ablyChannel, setAblyChannel] = useState(null); // Store Ably channel instance
+  const [ablyConnectionStatus, setAblyConnectionStatus] = useState("Not connected");
+  const [ablyChannelStatus, setAblyChannelStatus] = useState("Not attached");
   const [ablyMessageReceived, setAblyMessageReceived] = useState(null); // Store Ably message received info: { channel, message, timestamp }
   const ablyNewConnectionHandlerRef = useRef(null);
   const ablyAnyMessageHandlerRef = useRef(null);
@@ -808,6 +810,7 @@ const NetworkScreen = ({ navigation }) => {
       // const client = new Ably.Realtime({ key: ablyApiKey });
       const client = createAblyRealtimeClient(profileUid);
       setAblyClient(client);
+      setAblyConnectionStatus(client?.connection?.state || "Connecting");
 
       // Create channel name using profile_uid (e.g., /110-000014)
       const channelName = `/${profileUid}`;
@@ -815,46 +818,70 @@ const NetworkScreen = ({ navigation }) => {
 
       const channel = client.channels.get(channelName);
       setAblyChannel(channel);
+      setAblyChannelStatus(channel?.state || "Initializing");
+      if (channel?.state === "attached") {
+        setAblyChannelStatus("attached");
+      }
 
       // Listen for connection events
       // console.log("🔵 NetworkScreen - Initial connection state:", client.connection.state);
 
       client.connection.on("connected", () => {
         // console.log("✅ NetworkScreen - Ably client connected");
+        setAblyConnectionStatus("connected");
       });
 
       client.connection.on("disconnected", () => {
         console.log("⚠️ NetworkScreen - Ably client disconnected");
+        setAblyConnectionStatus("disconnected");
       });
 
       client.connection.on("failed", (stateChange) => {
         console.error("❌ NetworkScreen - Ably connection failed:", stateChange);
+        setAblyConnectionStatus("failed");
       });
 
       client.connection.on("suspended", () => {
         console.warn("⚠️ NetworkScreen - Ably connection suspended");
+        setAblyConnectionStatus("suspended");
       });
 
       // Attach to channel
-      // console.log("🔵 NetworkScreen - Initial channel state:", channel.state);
-      // console.log("🔵 NetworkScreen - Attaching to channel:", channelName);
+      console.log("🔵 NetworkScreen - Initial channel state:", channel.state);
+      console.log("🔵 NetworkScreen - Attaching to channel:", channelName);
+
+      channel.on("attaching", () => {
+        setAblyChannelStatus("attaching");
+      });
+
+      channel.on("attached", () => {
+        setAblyChannelStatus("attached");
+      });
+
+      channel.on("failed", () => {
+        setAblyChannelStatus("failed");
+      });
 
       channel.attach((err) => {
         if (err) {
           console.error("❌ NetworkScreen - Error attaching to Ably channel:", err);
+          setAblyChannelStatus("attach-error");
         } else {
           // console.log("✅ NetworkScreen - Ably channel attached:", channelName);
           // console.log("✅ NetworkScreen - Channel state after attach:", channel.state);
           console.log("✅ NetworkScreen - Ready to receive messages on channel:", channelName);
+          setAblyChannelStatus(channel?.state || "attached");
         }
       });
 
       channel.on("detached", () => {
         console.warn("⚠️ NetworkScreen - Channel detached");
+        setAblyChannelStatus("detached");
       });
 
       channel.on("suspended", () => {
         console.warn("⚠️ NetworkScreen - Channel suspended");
+        setAblyChannelStatus("suspended");
       });
 
       // Subscribe to messages on this channel
@@ -925,6 +952,8 @@ const NetworkScreen = ({ navigation }) => {
       // Do not close shared client here; other screens reuse it.
       setAblyClient(null);
       setAblyChannel(null);
+      setAblyConnectionStatus("Not connected");
+      setAblyChannelStatus("Not attached");
     };
   }, [ablyChannel]);
 
@@ -2852,11 +2881,11 @@ const NetworkScreen = ({ navigation }) => {
                           </View>
                           <View style={styles.ablyMessageRow}>
                             <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Connection Status:</Text>
-                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyClient?.connection?.state || "Not connected"}</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyConnectionStatus}</Text>
                           </View>
                           <View style={styles.ablyMessageRow}>
                             <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel Status:</Text>
-                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyChannel?.state || "Not attached"}</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyChannelStatus}</Text>
                           </View>
                           <View style={styles.ablyMessageRow}>
                             <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
