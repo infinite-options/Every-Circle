@@ -41,7 +41,7 @@ if (Platform.OS !== "web") {
 }
 
 /** 0 = hide QR/Ably debug + AsyncStorage inspector on Connect; 1 = show (dropdowns work as today). */
-const SHOW_NETWORK_DEBUG_UI = 0;
+const SHOW_NETWORK_DEBUG_UI = 1;
 
 // ─── FilterPopup component ────────────────────────────────────────────────────
 const FilterPopup = ({

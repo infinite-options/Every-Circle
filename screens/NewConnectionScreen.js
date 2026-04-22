@@ -92,16 +92,28 @@ const NewConnectionScreen = () => {
         }
         setQrCodeReceivedData(parsedData);
         console.log("✅ NewConnectionScreen - Created QR code data from route params:", parsedData);
+      } else if (profileUid) {
+        // Web: profile id often comes from the URL (see profileUid above) before React Navigation
+        // injects route.params, so the branches above can leave parsedData null and skip Ably.
+        const minimal = {
+          type: "everycircle",
+          profile_uid: profileUid,
+          version: "1.0",
+          url: `https://everycircle.com/newconnection/${profileUid}`,
+        };
+        setQrCodeReceivedData(minimal);
+        parsedData = minimal;
+        console.log("✅ NewConnectionScreen - Built QR data from profileUid (e.g. web URL path):", minimal);
       }
 
-      // Send Ably message if we have a profile_uid
-      if (parsedData?.profile_uid) {
-        await sendAblyMessage(parsedData.profile_uid);
+      const uidToMessage = parsedData?.profile_uid ?? profileUid;
+      if (uidToMessage) {
+        await sendAblyMessage(uidToMessage);
       }
     };
 
     parseQRCodeDataAndSendMessage();
-  }, [route.params]);
+  }, [route.params, profileUid]);
 
   // Function to send "New Connection Page Opened" message via Ably
   const sendAblyMessage = async (profileUid) => {
