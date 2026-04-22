@@ -54,6 +54,12 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
     autoCorrect,
     autoFocus,
     returnKeyType,
+    accessibilityHint,
+    accessibilityLabel,
+    accessibilityRole,
+    accessibilityState,
+    accessibilityValue,
+    testID,
     ...domProps
   } = props;
   // On web, use a native HTML input element

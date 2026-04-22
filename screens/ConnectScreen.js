@@ -1,7 +1,7 @@
 // ConnectScreen.js - Handles QR code deep links to add connections
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Alert } from "react-native";
-import { useRoute, useNavigation } from "@react-navigation/native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Alert } from "react-native";
+import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -15,8 +15,9 @@ const ConnectScreen = () => {
   const { darkMode } = useDarkMode();
   const route = useRoute();
   const navigation = useNavigation();
-  const [loading, setLoading] = useState(true);
-  const [profileData, setProfileData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [profileData, setProfileData] = useState(null);   // scanned person
+  const [myProfileData, setMyProfileData] = useState(null); // logged-in user
   const [error, setError] = useState(null);
   const [addingConnection, setAddingConnection] = useState(false);
 
@@ -24,12 +25,49 @@ const ConnectScreen = () => {
 
   useEffect(() => {
     if (profileUid) {
+      setLoading(true);
       fetchProfileData();
-    } else {
-      setError("No profile UID provided");
-      setLoading(false);
     }
   }, [profileUid]);
+
+  // Load logged-in user's profile + businesses on focus
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchMyData();
+    }, []),
+  );
+
+  const fetchMyData = async () => {
+    try {
+      const profileId = await AsyncStorage.getItem("profile_uid");
+      if (!profileId) return;
+      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+      if (!response.ok) return;
+      const result = await response.json();
+
+      // Build my profile card data
+      const p = result?.personal_info || {};
+      setMyProfileData({
+        profile_uid: profileId,
+        firstName: sanitizeText(p.profile_personal_first_name || ""),
+        lastName: sanitizeText(p.profile_personal_last_name || ""),
+        tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || ""),
+        city: sanitizeText(p.profile_personal_city || ""),
+        state: sanitizeText(p.profile_personal_state || ""),
+        email: sanitizeText(result?.user_email || ""),
+        phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+        profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
+        emailIsPublic: p.profile_personal_email_is_public === 1,
+        phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
+        tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
+        locationIsPublic: p.profile_personal_location_is_public === 1,
+        imageIsPublic: p.profile_personal_image_is_public === 1,
+      });
+
+    } catch (e) {
+      console.warn("ConnectScreen - Failed to fetch my data:", e);
+    }
+  };
 
   const fetchProfileData = async () => {
     try {
@@ -145,29 +183,6 @@ const ConnectScreen = () => {
     );
   }
 
-  if (error || !profileData) {
-    return (
-      <View style={[styles.container, darkMode && styles.darkContainer]}>
-        <AppHeader
-          title='Connect'
-          rightButton={
-            <TouchableOpacity style={styles.cameraButton} onPress={() => navigation.navigate("QRScanner")}>
-              <Ionicons name='camera' size={20} color='#fff' />
-            </TouchableOpacity>
-          }
-        />
-        <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
-          <View style={styles.errorContainer}>
-            <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>{error || "Profile not found"}</Text>
-            <TouchableOpacity style={styles.button} onPress={() => navigation.goBack()}>
-              <Text style={styles.buttonText}>Go Back</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </View>
-    );
-  }
-
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       <AppHeader
@@ -180,38 +195,65 @@ const ConnectScreen = () => {
       />
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          <Text style={[styles.title, darkMode && styles.darkTitle]}>Add to Your Network</Text>
-          <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Scan this person's QR code to connect</Text>
 
-          <View style={styles.cardContainer}>
-            <MiniCard user={profileData} />
-          </View>
+          {/* Logged-in user's own profile card */}
+          {myProfileData && (
+            <View style={styles.myProfileCard}>
+              <MiniCard user={myProfileData} />
+            </View>
+          )}
 
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity style={[styles.addButton, addingConnection && styles.addButtonDisabled]} onPress={() => handleAddConnection("friend")} disabled={addingConnection}>
-              {addingConnection ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.addButtonText}>Add as Friend</Text>}
-            </TouchableOpacity>
+          {/* Divider before scanned person card */}
+          {profileData && (
+            <View style={styles.divider} />
+          )}
 
-            <TouchableOpacity
-              style={[styles.addButton, styles.addButtonSecondary, addingConnection && styles.addButtonDisabled]}
-              onPress={() => handleAddConnection("colleague")}
-              disabled={addingConnection}
-            >
-              {addingConnection ? <ActivityIndicator size='small' color='#AF52DE' /> : <Text style={[styles.addButtonText, styles.addButtonTextSecondary]}>Add as Colleague</Text>}
-            </TouchableOpacity>
+          {/* Scanned person's card + Add Connection buttons (only when arriving via QR) */}
+          {profileData && (
+            <>
+              {error ? (
+                <View style={styles.errorContainer}>
+                  <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>{error}</Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={[styles.title, darkMode && styles.darkTitle]}>Add to Your Network</Text>
+                  <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Connect with this person</Text>
 
-            <TouchableOpacity
-              style={[styles.addButton, styles.addButtonSecondary, addingConnection && styles.addButtonDisabled]}
-              onPress={() => handleAddConnection("family")}
-              disabled={addingConnection}
-            >
-              {addingConnection ? <ActivityIndicator size='small' color='#AF52DE' /> : <Text style={[styles.addButtonText, styles.addButtonTextSecondary]}>Add as Family</Text>}
-            </TouchableOpacity>
-          </View>
+                  <View style={styles.cardContainer}>
+                    <MiniCard user={profileData} />
+                  </View>
 
-          <TouchableOpacity style={styles.viewProfileButton} onPress={() => navigation.navigate("Profile", { profile_uid: profileUid })}>
-            <Text style={[styles.viewProfileText, darkMode && styles.darkViewProfileText]}>View Full Profile</Text>
-          </TouchableOpacity>
+                  <View style={styles.buttonContainer}>
+                    <TouchableOpacity style={[styles.addButton, addingConnection && styles.addButtonDisabled]} onPress={() => handleAddConnection("friend")} disabled={addingConnection}>
+                      {addingConnection ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.addButtonText}>Add as Friend</Text>}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.addButton, styles.addButtonSecondary, addingConnection && styles.addButtonDisabled]}
+                      onPress={() => handleAddConnection("colleague")}
+                      disabled={addingConnection}
+                    >
+                      {addingConnection ? <ActivityIndicator size='small' color='#AF52DE' /> : <Text style={[styles.addButtonText, styles.addButtonTextSecondary]}>Add as Colleague</Text>}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.addButton, styles.addButtonSecondary, addingConnection && styles.addButtonDisabled]}
+                      onPress={() => handleAddConnection("family")}
+                      disabled={addingConnection}
+                    >
+                      {addingConnection ? <ActivityIndicator size='small' color='#AF52DE' /> : <Text style={[styles.addButtonText, styles.addButtonTextSecondary]}>Add as Family</Text>}
+                    </TouchableOpacity>
+                  </View>
+
+                  <TouchableOpacity style={styles.viewProfileButton} onPress={() => navigation.navigate("Profile", { profile_uid: profileUid })}>
+                    <Text style={[styles.viewProfileText, darkMode && styles.darkViewProfileText]}>View Full Profile</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </>
+          )}
+
         </ScrollView>
         <BottomNavBar navigation={navigation} />
       </SafeAreaView>
@@ -348,6 +390,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     zIndex: 1,
+  },
+  myProfileCard: {
+    marginBottom: 16,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#e0e0e0",
+    marginVertical: 20,
   },
 });
 
