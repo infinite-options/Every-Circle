@@ -16,7 +16,7 @@ import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors, getHeaderColor } from "../config/headerColors";
-import { createAblyRealtimeClient } from "../utils/ablyClient";
+import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTokenNoLongerActive } from "../utils/ablyClient";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -297,13 +297,18 @@ const NetworkScreen = ({ navigation }) => {
   const [userProfileData, setUserProfileData] = useState(null);
   const [qrCodeData, setQrCodeData] = useState("");
   const [qrCodeDataObject, setQrCodeDataObject] = useState(null); // Store parsed QR code data object for display
-  const [ablyClient, setAblyClient] = useState(null); // Store Ably client instance
-  const [ablyChannel, setAblyChannel] = useState(null); // Store Ably channel instance
-  const [ablyConnectionStatus, setAblyConnectionStatus] = useState("Not connected");
-  const [ablyChannelStatus, setAblyChannelStatus] = useState("Not attached");
+  /** Ably `connection.state` and `Channel.state` (exact strings from the SDK) */
+  const [ablyConnectionStatus, setAblyConnectionStatus] = useState("—");
+  const [ablyChannelStatus, setAblyChannelStatus] = useState("—");
+  /** Channel name this screen subscribed to, e.g. /110-000016 */
+  const [ablyListeningChannel, setAblyListeningChannel] = useState("");
+  /** `null` = no active token for display; string = obscured credential from Ably auth. */
+  const [ablyTokenObscured, setAblyTokenObscured] = useState(null);
   const [ablyMessageReceived, setAblyMessageReceived] = useState(null); // Store Ably message received info: { channel, message, timestamp }
   const ablyNewConnectionHandlerRef = useRef(null);
   const ablyAnyMessageHandlerRef = useRef(null);
+  const ablyNetworkChannelRef = useRef(null);
+  const ablyStateSyncCleanupRef = useRef(null);
   const [formSwitchEnabled, setFormSwitchEnabled] = useState(false); // Form Switch: show form when others scan your QR code
   const formSwitchEnabledRef = React.useRef(false); // Ref to track current value for Ably callback
   const [showDebugBlocks, setShowDebugBlocks] = useState(false); // Toggle visibility of QR Code Contains and Ably Messages Received blocks
@@ -732,17 +737,25 @@ const NetworkScreen = ({ navigation }) => {
     }
 
     try {
+      if (ablyStateSyncCleanupRef.current) {
+        try {
+          ablyStateSyncCleanupRef.current();
+        } catch (_) {}
+        ablyStateSyncCleanupRef.current = null;
+      }
       // Remove previous handlers before setting a new channel subscription.
       try {
-        if (ablyChannel) {
+        const prevCh = ablyNetworkChannelRef.current;
+        if (prevCh) {
           if (ablyNewConnectionHandlerRef.current) {
-            ablyChannel.unsubscribe("new-connection-opened", ablyNewConnectionHandlerRef.current);
+            prevCh.unsubscribe("new-connection-opened", ablyNewConnectionHandlerRef.current);
           }
           if (ablyAnyMessageHandlerRef.current) {
-            ablyChannel.unsubscribe(ablyAnyMessageHandlerRef.current);
+            prevCh.unsubscribe(ablyAnyMessageHandlerRef.current);
           }
         }
       } catch (_) {}
+      ablyNetworkChannelRef.current = null;
 
       // Dynamically import Ably - handle web vs native differently
       let Ably;
@@ -808,80 +821,54 @@ const NetworkScreen = ({ navigation }) => {
       //   return;
       // }
       // const client = new Ably.Realtime({ key: ablyApiKey });
-      const client = createAblyRealtimeClient(profileUid);
-      setAblyClient(client);
-      setAblyConnectionStatus(client?.connection?.state || "Connecting");
+      const client = createAblyRealtimeClient(profileUid, {
+        onTokenObtained: (obscured) => setAblyTokenObscured(obscured),
+      });
 
       // Create channel name using profile_uid (e.g., /110-000014)
       const channelName = `/${profileUid}`;
-      // console.log("🔵 NetworkScreen - Ably Channel Name:", channelName);
+      setAblyListeningChannel(channelName);
 
       const channel = client.channels.get(channelName);
-      setAblyChannel(channel);
-      setAblyChannelStatus(channel?.state || "Initializing");
-      if (channel?.state === "attached") {
-        setAblyChannelStatus("attached");
-      }
+      ablyNetworkChannelRef.current = channel;
 
-      // Listen for connection events
-      // console.log("🔵 NetworkScreen - Initial connection state:", client.connection.state);
+      // Mirror exact Ably `connection.state` and `Channel.state` (see ably-js ConnectionState / ChannelState)
+      const onConnectionStateChange = (stateChange) => {
+        const state = String(stateChange && stateChange.current != null ? stateChange.current : client.connection.state);
+        if (state === "failed" || state === "closed") {
+          markAblyTokenNoLongerActive();
+          setAblyTokenObscured(null);
+        }
+        setAblyConnectionStatus(state);
+      };
+      const onChannelStateChange = (stateChange) => {
+        setAblyChannelStatus(String(stateChange && stateChange.current != null ? stateChange.current : channel.state));
+      };
+      client.connection.on(onConnectionStateChange);
+      channel.on(onChannelStateChange);
+      setAblyConnectionStatus(String(client.connection.state));
+      setAblyChannelStatus(String(channel.state));
 
-      client.connection.on("connected", () => {
-        // console.log("✅ NetworkScreen - Ably client connected");
-        setAblyConnectionStatus("connected");
-      });
-
-      client.connection.on("disconnected", () => {
-        console.log("⚠️ NetworkScreen - Ably client disconnected");
-        setAblyConnectionStatus("disconnected");
-      });
-
-      client.connection.on("failed", (stateChange) => {
-        console.error("❌ NetworkScreen - Ably connection failed:", stateChange);
-        setAblyConnectionStatus("failed");
-      });
-
-      client.connection.on("suspended", () => {
-        console.warn("⚠️ NetworkScreen - Ably connection suspended");
-        setAblyConnectionStatus("suspended");
-      });
+      ablyStateSyncCleanupRef.current = () => {
+        try {
+          client.connection.off(onConnectionStateChange);
+        } catch (_) {}
+        try {
+          channel.off(onChannelStateChange);
+        } catch (_) {}
+      };
 
       // Attach to channel
       console.log("🔵 NetworkScreen - Initial channel state:", channel.state);
       console.log("🔵 NetworkScreen - Attaching to channel:", channelName);
 
-      channel.on("attaching", () => {
-        setAblyChannelStatus("attaching");
-      });
-
-      channel.on("attached", () => {
-        setAblyChannelStatus("attached");
-      });
-
-      channel.on("failed", () => {
-        setAblyChannelStatus("failed");
-      });
-
       channel.attach((err) => {
         if (err) {
           console.error("❌ NetworkScreen - Error attaching to Ably channel:", err);
-          setAblyChannelStatus("attach-error");
         } else {
-          // console.log("✅ NetworkScreen - Ably channel attached:", channelName);
-          // console.log("✅ NetworkScreen - Channel state after attach:", channel.state);
           console.log("✅ NetworkScreen - Ready to receive messages on channel:", channelName);
-          setAblyChannelStatus(channel?.state || "attached");
         }
-      });
-
-      channel.on("detached", () => {
-        console.warn("⚠️ NetworkScreen - Channel detached");
-        setAblyChannelStatus("detached");
-      });
-
-      channel.on("suspended", () => {
-        console.warn("⚠️ NetworkScreen - Channel suspended");
-        setAblyChannelStatus("suspended");
+        setAblyChannelStatus(String(channel.state));
       });
 
       // Subscribe to messages on this channel
@@ -936,26 +923,44 @@ const NetworkScreen = ({ navigation }) => {
     }
   };
 
-  // Cleanup Ably connection when component unmounts or profile changes
+  // Unsubscribe and remove this screen's state listeners on unmount only (do not close shared client).
   useEffect(() => {
     return () => {
+      if (ablyStateSyncCleanupRef.current) {
+        try {
+          ablyStateSyncCleanupRef.current();
+        } catch (_) {}
+        ablyStateSyncCleanupRef.current = null;
+      }
+      const ch = ablyNetworkChannelRef.current;
       try {
-        if (ablyChannel) {
+        if (ch) {
           if (ablyNewConnectionHandlerRef.current) {
-            ablyChannel.unsubscribe("new-connection-opened", ablyNewConnectionHandlerRef.current);
+            ch.unsubscribe("new-connection-opened", ablyNewConnectionHandlerRef.current);
           }
           if (ablyAnyMessageHandlerRef.current) {
-            ablyChannel.unsubscribe(ablyAnyMessageHandlerRef.current);
+            ch.unsubscribe(ablyAnyMessageHandlerRef.current);
           }
         }
       } catch (_) {}
-      // Do not close shared client here; other screens reuse it.
-      setAblyClient(null);
-      setAblyChannel(null);
-      setAblyConnectionStatus("Not connected");
-      setAblyChannelStatus("Not attached");
+      ablyNetworkChannelRef.current = null;
+      setAblyConnectionStatus("—");
+      setAblyChannelStatus("—");
+      setAblyListeningChannel("");
+      setAblyTokenObscured(null);
     };
-  }, [ablyChannel]);
+  }, []);
+
+  // Keep token row in sync when JWT `exp` passes (Ably may refresh in the background separately).
+  useEffect(() => {
+    if (!ablyListeningChannel) {
+      return undefined;
+    }
+    const id = setInterval(() => {
+      setAblyTokenObscured(getAblyTokenObscuredIfStillValid());
+    }, 5000);
+    return () => clearInterval(id);
+  }, [ablyListeningChannel]);
 
   // Handle QR scan complete - fetch profile data and show popup
   const handleQRScanComplete = async (scanData) => {
@@ -2876,20 +2881,24 @@ const NetworkScreen = ({ navigation }) => {
                       {qrCodeDataObject?.profile_uid && (
                         <>
                           <View style={styles.ablyMessageRow}>
-                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Listening on Channel:</Text>
-                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>/{qrCodeDataObject.profile_uid}</Text>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Listening on channel:</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                              {ablyListeningChannel || `/${String(qrCodeDataObject.profile_uid)}`}
+                            </Text>
                           </View>
                           <View style={styles.ablyMessageRow}>
-                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Connection Status:</Text>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Connection state (Ably):</Text>
                             <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyConnectionStatus}</Text>
                           </View>
                           <View style={styles.ablyMessageRow}>
-                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel Status:</Text>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Channel state (Ably):</Text>
                             <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyChannelStatus}</Text>
                           </View>
                           <View style={styles.ablyMessageRow}>
-                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
-                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>Token auth via /api/v1/ably/token</Text>
+                            <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Token (obscured):</Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
+                              {ablyTokenObscured == null ? "null" : ablyTokenObscured}
+                            </Text>
                           </View>
                         </>
                       )}
