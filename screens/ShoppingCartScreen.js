@@ -45,38 +45,9 @@ import { parsePrice } from "../utils/priceUtils";
 const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
 // console.log("STRIPE_PUBLISHABLE_KEY:", STRIPE_PUBLISHABLE_KEY);
 
-const GENERIC_CART_TITLES = ["All Items", "My Cart", "Cart"];
-
 const ShoppingCartScreen = ({ route, navigation }) => {
   const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id } = route.params;
   const [cartItems, setCartItems] = useState(initialCartItems);
-
-  const resolveItemBusinessName = (item) => {
-    if (item.itemType === "expertise") {
-      if (item.business_name && String(item.business_name).trim()) return String(item.business_name).trim();
-      const p = item.profileData;
-      const n = p ? `${p.firstName || ""} ${p.lastName || ""}`.trim() : "";
-      return n || null;
-    }
-    const fromItem = item.business_name && String(item.business_name).trim();
-    if (fromItem) return fromItem;
-    if (
-      business_uid &&
-      business_uid !== "all" &&
-      item.business_uid === business_uid &&
-      businessName &&
-      !GENERIC_CART_TITLES.includes(String(businessName))
-    ) {
-      return String(businessName).trim();
-    }
-    return null;
-  };
-
-  const showVendorHeader =
-    Boolean(businessName && String(businessName).trim()) &&
-    business_uid &&
-    business_uid !== "all" &&
-    !GENERIC_CART_TITLES.includes(String(businessName));
 
   // Only use Stripe hook if available (not on web)
   let initPaymentSheet, presentPaymentSheet;
@@ -390,66 +361,111 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
   };
 
-  /** One POST per checkout: full Stripe totals + all line items. Each item includes `business_id` (seller) for multi-seller carts. */
+  const prepareTransactionData = (buyerUid, paymentIntent, totalAmount, processingFee = 0, escrowValue = true) => {
+    // Use the referral profile ID from route params, or fallback to a default
+    // If the recommender is "Charity", use a default referral ID
+    const recommenderProfileId = recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231"; // Default referral ID for charity purchases
+
+    // For the business_id, we need to handle the case where we have multiple businesses
+    // If business_uid is 'all' (from SearchScreen), we'll use the first item's business_uid
+    // Otherwise, use the passed business_uid
+    let transactionBusinessId = business_uid;
+    if (business_uid === "all" && cartItems.length > 0) {
+      const firstItem = cartItems[0];
+      transactionBusinessId =
+        firstItem.itemType === "expertise"
+          ? firstItem.profile_uid // ← use profile_uid for expertise
+          : firstItem.business_uid;
+    }
+
+    const subtotal = parseFloat(calculateTotal());
+    const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
+
+    const transactionData = {
+      profile_id: buyerUid,
+      business_id: transactionBusinessId,
+      stripe_payment_intent: paymentIntent,
+      total_amount_paid: parseFloat(totalAmount),
+      total_costs: subtotal,
+      total_taxes: parseFloat(processingFee), // 3% processing fee for credit card payments
+      transaction_in_escrow: transactionInEscrow,
+      items: cartItems.map((item) => {
+        const qty = parseInt(item.quantity) || 1;
+        const bountyType = item.itemType === "expertise" ? "per_item" : item.bs_bounty_type || "per_item";
+        const bounty = item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty); // raw rate; backend multiplies by qty for per_item, uses as-is for total
+        return {
+          bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
+          bounty,
+          bounty_type: bountyType,
+          quantity: qty,
+          recommender_profile_id: recommenderProfileId,
+        };
+      }),
+    };
+
+    console.log("Prepared Transaction Data:", JSON.stringify(transactionData, null, 2));
+    console.log("transaction_in_escrow (sending to backend):", transactionInEscrow);
+    console.log("Subtotal:", subtotal);
+    console.log("Processing Fee (tax):", processingFee);
+    console.log("Total Amount Paid:", totalAmount);
+    console.log("Using recommender profile ID:", recommenderProfileId);
+    console.log("Original recommender from route:", recommender_profile_id);
+    console.log("Transaction business ID:", transactionBusinessId);
+    return transactionData;
+  };
+
   const recordTransactions = async (buyerUid, paymentIntent, totalAmount = null, processingFee = null, escrowValue = true) => {
     try {
-      console.log("Recording single transaction for cart items:", cartItems);
+      console.log("Recording transactions for items:", cartItems);
 
+      // Resolve buyer profile ID
       let buyerProfileId;
       if (!buyerUid.startsWith("110")) {
         buyerProfileId = await getProfileId(buyerUid);
-        console.log("Buyer profile ID:", buyerProfileId);
       } else {
         buyerProfileId = buyerUid;
       }
 
+      // Calculate amounts
       const subtotal = calculateTotal();
       const fee = processingFee !== null ? processingFee : subtotal * 0.03;
       const total = totalAmount !== null ? totalAmount : subtotal + fee;
 
-      const defaultRecommender =
-        recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231";
-
-      const first = cartItems[0];
-      const legacyBusinessId =
-        first != null
-          ? first.itemType === "expertise"
-            ? first.profile_uid
-            : first.business_uid
-          : business_uid && business_uid !== "all"
-            ? business_uid
-            : null;
+      // Determine the business ID for the transaction
+      let transactionBusinessId = business_uid;
+      if (business_uid === "all" && cartItems.length > 0) {
+        const firstItem = cartItems[0];
+        transactionBusinessId =
+          firstItem.itemType === "expertise"
+            ? firstItem.profile_uid
+            : firstItem.business_uid;
+      }
 
       const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
 
-      const items = cartItems.map((item) => {
-        const qty = parseInt(item.quantity, 10) || 1;
-        const bountyType = item.itemType === "expertise" ? "per_item" : item.bs_bounty_type || "per_item";
-        const bounty = item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty);
-        const sellerBusinessId = item.business_uid || item.profile_uid;
-        return {
-          business_id: sellerBusinessId,
-          bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
-          item_type: item.itemType === "expertise" ? "expertise" : "service",
-          bounty,
-          bounty_type: bountyType,
-          quantity: qty,
-          recommender_profile_id: item.bounty_recommender_profile_id || defaultRecommender,
-        };
-      });
-
+      // Build a single transaction with all items
       const transactionData = {
         profile_id: buyerProfileId,
-        business_id: legacyBusinessId,
+        business_id: transactionBusinessId,
         stripe_payment_intent: paymentIntent,
-        total_amount_paid: parseFloat(Number(total).toFixed(2)),
-        total_costs: parseFloat(Number(subtotal).toFixed(2)),
-        total_taxes: parseFloat(Number(fee).toFixed(2)),
+        total_amount_paid: parseFloat(total.toFixed(2)),
+        total_costs: parseFloat(subtotal.toFixed(2)),
+        total_taxes: parseFloat(fee.toFixed(2)),
         transaction_in_escrow: transactionInEscrow,
-        items,
+        items: cartItems.map((item, index) => ({
+          bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
+          bounty: index === 0
+            ? (item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty))
+            : 0,
+          bounty_type: item.itemType === "expertise" ? "per_item" : item.bs_bounty_type || "per_item",
+          quantity: parseInt(item.quantity) || 1,
+          recommender_profile_id: index === 0
+            ? (item.bounty_recommender_profile_id || recommender_profile_id || "110-000231")
+            : "110-000231",
+        })),
       };
 
-      console.log("Posting single transaction (multi-seller lines in items[]):", JSON.stringify(transactionData, null, 2));
+      console.log("Posting single transaction:", JSON.stringify(transactionData, null, 2));
 
       const response = await fetch(TRANSACTIONS_ENDPOINT, {
         method: "POST",
@@ -457,18 +473,14 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         body: JSON.stringify(transactionData),
       });
 
-      console.log("RESPONSE STATUS:", response.status);
-      console.log("RESPONSE OK:", response.ok);
-
       const result = await response.json();
-      console.log("RESPONSE BODY:", JSON.stringify(result, null, 2));
       console.log("Transaction recorded:", result);
 
       if (!response.ok) {
         throw new Error(`Failed to record transaction: ${result.message || "Unknown error"}`);
       }
     } catch (error) {
-      console.error("Error recording transactions:", error);
+      console.error("Error recording transaction:", error);
       throw error;
     }
   };
@@ -674,27 +686,14 @@ const ShoppingCartScreen = ({ route, navigation }) => {
             <Text style={styles.emptyCart}>Your cart is empty</Text>
           ) : (
             <>
-              {showVendorHeader ? (
-                <View style={styles.cartVendorHeader}>
-                  <Text style={styles.cartVendorLabel}>Business</Text>
-                  <Text style={styles.businessName}>{businessName}</Text>
-                </View>
-              ) : (
-                <Text style={styles.cartOverviewTitle}>Your cart</Text>
-              )}
-              {cartItems.map((item, index) => {
-                const lineBusiness = resolveItemBusinessName(item);
-                const showLineBusiness =
-                  Boolean(lineBusiness) &&
-                  (item.itemType === "expertise" || business_uid === "all" || !showVendorHeader);
-                return (
+              <Text style={styles.businessName}>{businessName}</Text>
+              {cartItems.map((item, index) => (
                 <View key={index} style={styles.cartItemContainer}>
                   <TouchableOpacity style={styles.removeButton} onPress={() => handleRemoveItem(index)}>
                     <Ionicons name='close-circle' size={24} color='#FF3B30' />
                   </TouchableOpacity>
                   <View style={styles.cartItemContent}>
                     <Text style={styles.itemName}>{item.itemType === "expertise" ? item.title : item.bs_service_name}</Text>
-                    {showLineBusiness ? <Text style={styles.itemBusinessName}>{lineBusiness}</Text> : null}
                     <Text style={styles.itemDescription}>{item.itemType === "expertise" ? item.description : item.bs_service_desc}</Text>
                     <View style={styles.priceContainer}>
                       <View style={styles.priceRow}>
@@ -741,8 +740,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                     </View>
                   </View>
                 </View>
-              );
-              })}
+              ))}
               <View style={styles.totalContainer}>
                 <View style={styles.totalRow}>
                   <Text style={styles.totalLabel}>Subtotal:</Text>
@@ -783,7 +781,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                     {refundAcknowledged && <Text style={styles.checkmark}>✓</Text>}
                   </View>
                   <Text style={[styles.escrowLabel, { flex: 1 }, refundError && { color: "#FF3B30" }]}>
-                    Return must be made in 5 days for a full refund, any returns past 5 days will result in a partial refund. Check the box to acknowledge.
+                    Returns must be requested 30 days after product is received for a full refund, any returns past 30 days will result in a partial refund. Check the box to acknowledge.
                   </Text>
                 </TouchableOpacity>
                 {refundError && (
@@ -884,34 +882,11 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 50,
   },
-  cartVendorHeader: {
-    marginBottom: 16,
-  },
-  cartVendorLabel: {
-    fontSize: 12,
-    color: "#888",
-    fontWeight: "600",
-    letterSpacing: 0.5,
-    marginBottom: 4,
-    textTransform: "uppercase",
-  },
-  cartOverviewTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 16,
-    color: "#333",
-  },
   businessName: {
     fontSize: 20,
     fontWeight: "bold",
+    marginBottom: 20,
     color: "#333",
-  },
-  itemBusinessName: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#666",
-    marginTop: 4,
-    marginBottom: 8,
   },
   cartItemContainer: {
     position: "relative",
