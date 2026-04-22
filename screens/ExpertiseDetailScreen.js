@@ -593,6 +593,7 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
     try {
       const { quantity: qty, escrow, subtotal, totalWithFee } = modalData;
       const cartKey = `cart_expertise_${expertiseData?.expertise_uid}`;
+      const sellerDisplayName = [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim();
       const cartItem = {
         expertise_uid: expertiseData?.expertise_uid,
         title: expertiseData?.title,
@@ -601,6 +602,7 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
         bounty: expertiseData?.bounty,
         profile_uid: profile_uid,
         profileData: profileData,
+        business_name: sellerDisplayName || "",
         itemType: "expertise",
         quantity: qty,
         escrow,

@@ -270,6 +270,8 @@ export default function ReviewDetailScreen({ route, navigation }) {
         ...selectedService,
         quantity: quantity,
         totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
+        business_uid: business_uid,
+        business_name: sanitizeText(business?.business_name || business_name || "") || "",
       };
 
       // Check if the item already exists in the cart

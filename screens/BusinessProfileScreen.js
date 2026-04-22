@@ -531,6 +531,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
         bounty_recommender_profile_id: selectedBountyRecipient?.rating_profile_id || null,
         business_uid: business_uid,
+        business_name: sanitizeText(business.business_name || "") || "",
       };
 
       const existingItemIndex = cartItems.findIndex((item) => item.bs_uid === selectedService.bs_uid);

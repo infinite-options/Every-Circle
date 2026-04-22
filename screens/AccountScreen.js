@@ -15,7 +15,7 @@ import { getHeaderColors } from "../config/headerColors";
 import MiniCard from "../components/MiniCard";
 
 /** 1 = compact: Transaction History (Date, Type, Seller, Paid, Amount) + Bounty Results (hide ID); 0 = full tables */
-const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 1;
+const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
 
 export default function AccountScreen({ navigation }) {
   const { darkMode } = useDarkMode();
@@ -1527,16 +1527,10 @@ export default function AccountScreen({ navigation }) {
                             return `${month}/${day}`;
                           };
                           const paidLabel =
-                            item.in_escrow === 1 && (new Date() - new Date(item.transaction_datetime)) / (1000 * 60 * 60 * 24) >= 30
-                              ? "Paid"
-                              : item.in_escrow === 1
-                                ? "Pending"
-                                : "Paid";
+                            item.in_escrow === 1 && (new Date() - new Date(item.transaction_datetime)) / (1000 * 60 * 60 * 24) >= 30 ? "Paid" : item.in_escrow === 1 ? "Pending" : "Paid";
                           return (
                             <View key={item.tb_uid || item.ti_transaction_id || index} style={styles.transactionRow}>
-                              {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && (
-                                <Text style={styles.transactionId}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text>
-                              )}
+                              {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionId}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text>}
                               <Text style={styles.transactionDate}>{formatDate(item.transaction_datetime)}</Text>
                               <Text style={styles.transactionBusiness} numberOfLines={4}>
                                 {item.purchaser_name || item.transaction_profile_id || "N/A"}
