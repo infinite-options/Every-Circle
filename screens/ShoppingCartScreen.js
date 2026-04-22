@@ -418,81 +418,69 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     try {
       console.log("Recording transactions for items:", cartItems);
 
-      // Get the buyer's profile ID
+      // Resolve buyer profile ID
       let buyerProfileId;
       if (!buyerUid.startsWith("110")) {
         buyerProfileId = await getProfileId(buyerUid);
-        console.log("Buyer profile ID:", buyerProfileId);
       } else {
         buyerProfileId = buyerUid;
       }
 
-      // Calculate processing fee if not provided (3% for web Stripe payments)
+      // Calculate amounts
       const subtotal = calculateTotal();
       const fee = processingFee !== null ? processingFee : subtotal * 0.03;
       const total = totalAmount !== null ? totalAmount : subtotal + fee;
 
-      // Group items by business
-      const businessGroups = {};
-      cartItems.forEach((item) => {
-        const bizId = item.business_uid || item.profile_uid;
-        if (!businessGroups[bizId]) businessGroups[bizId] = [];
-        businessGroups[bizId].push(item);
+      // Determine the business ID for the transaction
+      let transactionBusinessId = business_uid;
+      if (business_uid === "all" && cartItems.length > 0) {
+        const firstItem = cartItems[0];
+        transactionBusinessId =
+          firstItem.itemType === "expertise"
+            ? firstItem.profile_uid
+            : firstItem.business_uid;
+      }
+
+      const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
+
+      // Build a single transaction with all items
+      const transactionData = {
+        profile_id: buyerProfileId,
+        business_id: transactionBusinessId,
+        stripe_payment_intent: paymentIntent,
+        total_amount_paid: parseFloat(total.toFixed(2)),
+        total_costs: parseFloat(subtotal.toFixed(2)),
+        total_taxes: parseFloat(fee.toFixed(2)),
+        transaction_in_escrow: transactionInEscrow,
+        items: cartItems.map((item, index) => ({
+          bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
+          bounty: index === 0
+            ? (item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty))
+            : 0,
+          bounty_type: item.itemType === "expertise" ? "per_item" : item.bs_bounty_type || "per_item",
+          quantity: parseInt(item.quantity) || 1,
+          recommender_profile_id: index === 0
+            ? (item.bounty_recommender_profile_id || recommender_profile_id || "110-000231")
+            : "110-000231",
+        })),
+      };
+
+      console.log("Posting single transaction:", JSON.stringify(transactionData, null, 2));
+
+      const response = await fetch(TRANSACTIONS_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(transactionData),
       });
 
-      const businessIds = Object.keys(businessGroups);
-      const subtotalPerBusiness = subtotal / businessIds.length; // proportional split
-      const feePerBusiness = fee / businessIds.length;
-      const totalPerBusiness = total / businessIds.length;
+      const result = await response.json();
+      console.log("Transaction recorded:", result);
 
-      const businessesPaidBounty = new Set();
-
-      for (const bizId of businessIds) {
-        const items = businessGroups[bizId];
-        const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
-
-        const transactionData = {
-          profile_id: buyerProfileId,
-          business_id: bizId,
-          stripe_payment_intent: paymentIntent,
-          total_amount_paid: parseFloat(totalPerBusiness.toFixed(2)),
-          total_costs: parseFloat(subtotalPerBusiness.toFixed(2)),
-          total_taxes: parseFloat(feePerBusiness.toFixed(2)),
-          transaction_in_escrow: transactionInEscrow,
-          items: items.map((item) => {
-            const isFirstForBusiness = !businessesPaidBounty.has(bizId);
-            if (isFirstForBusiness) businessesPaidBounty.add(bizId);
-
-            return {
-              bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
-              bounty: isFirstForBusiness ? (item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty)) : 0,
-              quantity: parseInt(item.quantity) || 1,
-              recommender_profile_id: isFirstForBusiness ? item.bounty_recommender_profile_id || "110-000231" : "110-000231",
-            };
-          }),
-        };
-
-        console.log(`Posting transaction for business ${bizId}:`, JSON.stringify(transactionData, null, 2));
-
-        const response = await fetch(TRANSACTIONS_ENDPOINT, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(transactionData),
-        });
-
-        console.log("RESPONSE STATUS:", response.status);
-        console.log("RESPONSE OK:", response.ok);
-
-        const result = await response.json();
-        console.log("RESPONSE BODY:", JSON.stringify(result, null, 2));
-        console.log("Transactions recorded:", result);
-
-        if (!response.ok) {
-          throw new Error(`Failed to record transactions for business ${bizId}: ${result.message || "Unknown error"}`);
-        }
+      if (!response.ok) {
+        throw new Error(`Failed to record transaction: ${result.message || "Unknown error"}`);
       }
     } catch (error) {
-      console.error("Error recording transactions:", error);
+      console.error("Error recording transaction:", error);
       throw error;
     }
   };
