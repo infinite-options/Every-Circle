@@ -16,13 +16,12 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
-import Constants from "expo-constants";
 import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { CHAT_CONVERSATIONS_ENDPOINT, CHAT_MESSAGES_ENDPOINT } from "../apiConfig";
-import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
+import { createAblyRealtimeClient } from "../utils/ablyClient";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -202,21 +201,21 @@ export default function ChatScreen() {
 
   const subscribeAbly = useCallback((cid) => {
     try {
-      let Ably;
-      if (Platform.OS === "web" && typeof window !== "undefined" && window.Ably) {
-        Ably = window.Ably;
-      } else {
-        Ably = require("ably");
-      }
-
-      const apiKey =
-        Constants.expoConfig?.extra?.ablyApiKey ||
-        process.env.EXPO_PUBLIC_ABLY_API_KEY ||
-        EXPO_PUBLIC_ABLY_API_KEY ||
-        "";
-      if (!apiKey) return;
-
-      const client = new Ably.Realtime({ key: apiKey });
+      // Old key-based auth (kept for reference):
+      // let Ably;
+      // if (Platform.OS === "web" && typeof window !== "undefined" && window.Ably) {
+      //   Ably = window.Ably;
+      // } else {
+      //   Ably = require("ably");
+      // }
+      // const apiKey =
+      //   Constants.expoConfig?.extra?.ablyApiKey ||
+      //   process.env.EXPO_PUBLIC_ABLY_API_KEY ||
+      //   EXPO_PUBLIC_ABLY_API_KEY ||
+      //   "";
+      // if (!apiKey) return;
+      // const client = new Ably.Realtime({ key: apiKey });
+      const client = createAblyRealtimeClient(myUidRef.current || myUid || "chat-client");
       ablyClientRef.current = client;
 
       // Subscribe directly — Ably queues messages until the connection is ready,

@@ -13,8 +13,7 @@ import WebTextInput from "../components/WebTextInput";
 import * as Location from "expo-location";
 import { Dropdown } from "react-native-element-dropdown";
 import { Ionicons } from "@expo/vector-icons";
-import Constants from "expo-constants";
-import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
+import { createAblyRealtimeClient } from "../utils/ablyClient";
 
 const NewConnectionScreen = () => {
   const { darkMode } = useDarkMode();
@@ -178,25 +177,16 @@ const NewConnectionScreen = () => {
         return;
       }
 
-      // Try multiple sources: app.config extra (loads .env at start), process.env (Expo web), @env (react-native-dotenv)
-      const ablyApiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
-      console.log("🔵 NewConnectionScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
-      console.log("🔵 NewConnectionScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
-      if (!ablyApiKey) {
-        console.warn("⚠️ NewConnectionScreen - Ably API key not configured");
-        setAblyMessageSent({
-          channel: `/${profileUid}`,
-          message: "Error: Ably API key not configured",
-          timestamp: new Date().toISOString(),
-          error: "EXPO_PUBLIC_ABLY_API_KEY environment variable is missing",
-        });
-        return;
-      }
-
       console.log("🔵 NewConnectionScreen - Sending Ably message to channel:", `/${profileUid}`);
 
-      // Create Ably client
-      const client = new Ably.Realtime({ key: ablyApiKey });
+      // Old key-based auth (kept for reference):
+      // const ablyApiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
+      // if (!ablyApiKey) {
+      //   console.warn("⚠️ NewConnectionScreen - Ably API key not configured");
+      //   return;
+      // }
+      // const client = new Ably.Realtime({ key: ablyApiKey });
+      const client = createAblyRealtimeClient(profileUid);
       const channelName = `/${profileUid}`;
       const channel = client.channels.get(channelName);
 
@@ -958,11 +948,7 @@ const NewConnectionScreen = () => {
                   )}
                   <View style={styles.ablyMessageRow}>
                     <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
-                    <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                      {EXPO_PUBLIC_ABLY_API_KEY
-                        ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
-                        : "Not configured"}
-                    </Text>
+                    <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>Token auth via /api/v1/ably/token</Text>
                   </View>
                 </View>
               </View>

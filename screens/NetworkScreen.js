@@ -16,8 +16,7 @@ import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors, getHeaderColor } from "../config/headerColors";
-import Constants from "expo-constants";
-import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
+import { createAblyRealtimeClient } from "../utils/ablyClient";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -784,25 +783,16 @@ const NetworkScreen = ({ navigation }) => {
         return;
       }
 
-      // Try multiple sources: app.config extra (loads .env at start), process.env (Expo web), @env (react-native-dotenv)
-      const ablyApiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
-      // console.log("🔵 NetworkScreen - Ably API Key check:", ablyApiKey ? "Present" : "Missing");
-      // console.log("🔵 NetworkScreen - Ably API Key length:", ablyApiKey ? ablyApiKey.length : 0);
-      if (!ablyApiKey) {
-        console.warn("⚠️ NetworkScreen - Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
-        setAblyMessageReceived({
-          channel: `/${profileUid}`,
-          message: "Error: Ably API key not configured",
-          timestamp: new Date().toISOString(),
-          error: "EXPO_PUBLIC_ABLY_API_KEY environment variable is missing",
-        });
-        return;
-      }
-
       // console.log("🔵 NetworkScreen - Initializing Ably channel for profile_uid:", profileUid);
 
-      // Create Ably client
-      const client = new Ably.Realtime({ key: ablyApiKey });
+      // Old key-based auth (kept for reference):
+      // const ablyApiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
+      // if (!ablyApiKey) {
+      //   console.warn("⚠️ NetworkScreen - Ably API key not configured. Please add EXPO_PUBLIC_ABLY_API_KEY to your .env file");
+      //   return;
+      // }
+      // const client = new Ably.Realtime({ key: ablyApiKey });
+      const client = createAblyRealtimeClient(profileUid);
       setAblyClient(client);
 
       // Create channel name using profile_uid (e.g., /110-000014)
@@ -2845,11 +2835,7 @@ const NetworkScreen = ({ navigation }) => {
                           </View>
                           <View style={styles.ablyMessageRow}>
                             <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Ably API Key:</Text>
-                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                              {EXPO_PUBLIC_ABLY_API_KEY
-                                ? `${EXPO_PUBLIC_ABLY_API_KEY.substring(0, 8)}...${EXPO_PUBLIC_ABLY_API_KEY.substring(EXPO_PUBLIC_ABLY_API_KEY.length - 4)} (${EXPO_PUBLIC_ABLY_API_KEY.length} chars)`
-                                : "Not configured"}
-                            </Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>Token auth via /api/v1/ably/token</Text>
                           </View>
                         </>
                       )}

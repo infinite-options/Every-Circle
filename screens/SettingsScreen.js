@@ -10,8 +10,7 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
-import Constants from "expo-constants";
-import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
+import { createAblyRealtimeClient } from "../utils/ablyClient";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -552,19 +551,20 @@ export default function SettingsScreen() {
   // Subscribe to the user's personal Ably channel to receive nearby-alert messages
   const subscribeAblyNearby = async (profileId) => {
     try {
-      let Ably;
-      if (Platform.OS === "web" && typeof window !== "undefined" && window.Ably) {
-        Ably = window.Ably;
-      } else {
-        Ably = require("ably");
-      }
-      const ablyApiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
-      if (!ablyApiKey) {
-        console.warn("Ably API key missing — nearby alerts disabled");
-        return;
-      }
-
-      const client = new Ably.Realtime({ key: ablyApiKey });
+      // Old key-based auth (kept for reference):
+      // let Ably;
+      // if (Platform.OS === "web" && typeof window !== "undefined" && window.Ably) {
+      //   Ably = window.Ably;
+      // } else {
+      //   Ably = require("ably");
+      // }
+      // const ablyApiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
+      // if (!ablyApiKey) {
+      //   console.warn("Ably API key missing — nearby alerts disabled");
+      //   return;
+      // }
+      // const client = new Ably.Realtime({ key: ablyApiKey });
+      const client = createAblyRealtimeClient(profileId);
       const channel = client.channels.get(`/${profileId}`);
 
       channel.subscribe("nearby-alert", (msg) => {

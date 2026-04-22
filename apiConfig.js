@@ -77,6 +77,7 @@ export const NEARBY_USERS_ENDPOINT = `${API_BASE_URL}/api/v1/nearby`;
 // Chat Endpoints
 export const CHAT_CONVERSATIONS_ENDPOINT = `${API_BASE_URL}/api/v1/chat/conversations`;
 export const CHAT_MESSAGES_ENDPOINT = `${API_BASE_URL}/api/v1/chat/messages`;
+export const ABLY_TOKEN_ENDPOINT = `${API_BASE_URL}/api/v1/ably/token`;
 
 console.log("API Configuration loaded");
 // console.log("Base URL:", API_BASE_URL);

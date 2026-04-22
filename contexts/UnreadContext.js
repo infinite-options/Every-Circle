@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from "react";
-import { Platform, AppState } from "react-native";
+import { AppState } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Constants from "expo-constants";
-import { EXPO_PUBLIC_ABLY_API_KEY } from "@env";
+import { createAblyRealtimeClient } from "../utils/ablyClient";
 
 const UnreadContext = createContext({
   hasUnread: false,
@@ -87,17 +86,17 @@ export function UnreadProvider({ children }) {
     teardown();
 
     try {
-      let Ably;
-      if (Platform.OS === "web" && typeof window !== "undefined" && window.Ably) {
-        Ably = window.Ably;
-      } else {
-        Ably = require("ably");
-      }
-
-      const apiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
-      if (!apiKey) return false;
-
-      const client = new Ably.Realtime({ key: apiKey });
+      // Old key-based auth (kept for reference):
+      // let Ably;
+      // if (Platform.OS === "web" && typeof window !== "undefined" && window.Ably) {
+      //   Ably = window.Ably;
+      // } else {
+      //   Ably = require("ably");
+      // }
+      // const apiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
+      // if (!apiKey) return false;
+      // const client = new Ably.Realtime({ key: apiKey });
+      const client = createAblyRealtimeClient(uid);
       ablyClientRef.current = client;
 
       // Shared message handler for all channels (personal + business)
