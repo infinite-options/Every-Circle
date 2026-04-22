@@ -485,16 +485,17 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           <View style={styles.inputContainer}>
             <View style={styles.fieldContainer}>
               <Text style={styles.label}>Email</Text>
-              <TextInput 
-              style={styles.input}
-              placeholder='Email'
-              value={email}
-              onChangeText={handleEmailChange} keyboardType='email-address'
-              autoCapitalize='none'
-              editable={!isGoogleSignUp}
-              accessibilityLabel="Email"
-              accessibilityHint="Enter your email address"
-               />
+              <TextInput
+                style={styles.input}
+                placeholder='Email'
+                value={email}
+                onChangeText={handleEmailChange}
+                keyboardType='email-address'
+                autoCapitalize='none'
+                editable={!isGoogleSignUp}
+                accessibilitylabel='Email'
+                accessibilityHint='Enter your email address'
+              />
             </View>
             {!isGoogleSignUp && (
               <>
@@ -502,20 +503,21 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   <Text style={styles.label}>Password</Text>
                   <View style={styles.passwordInputContainer}>
                     <TextInput
-                    style={styles.input}
-                    placeholder='Password'
-                    value={password}
-                    onChangeText={handlePasswordChange}
-                    secureTextEntry={!isPasswordVisible}autoCapitalize='none'
-                    accessibilityLabel="Password"
-                    accessibilityHint="Enter your password"
+                      style={styles.input}
+                      placeholder='Password'
+                      value={password}
+                      onChangeText={handlePasswordChange}
+                      secureTextEntry={!isPasswordVisible}
+                      autoCapitalize='none'
+                      accessibilitylabel='Password'
+                      accessibilityHint='Enter your password'
                     />
                     <TouchableOpacity
-                    style={styles.passwordVisibilityToggle}
-                    onPress={() => setIsPasswordVisib(!isPasswordVisible)}
-                    accessibilityRole="button"
-                    accessibilityLabel={isPasswordVisible ? "Hide password" : "Show password"}
-                    accessibilityHint="Toggles password visibility"
+                      style={styles.passwordVisibilityToggle}
+                      onPress={() => setIsPasswordVisib(!isPasswordVisible)}
+                      accessibilityRole='button'
+                      accessibilitylabel={isPasswordVisible ? "Hide password" : "Show password"}
+                      accessibilityHint='Toggles password visibility'
                     >
                       <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
                     </TouchableOpacity>
@@ -531,16 +533,16 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                       onChangeText={handleConfirmPasswordChange}
                       secureTextEntry={!isConfirmPasswordVisible}
                       autoCapitalize='none'
-                      accessibilityLabel="Confirm password"
-                      accessibilityHint="Re-enter your password"
+                      accessibilitylabel='Confirm password'
+                      accessibilityHint='Re-enter your password'
                     />
-                    <TouchableOpacity 
-                     style={styles.passwordVisibilityToggle}
-                     onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}
-                     accessibilityRole="button"
-                     accessibilityLabel={isConfirmPasswordVisible ? "Hide confirm password" : "Show confirm password"}
-                     accessibilityHint="Toggles confirm password visibility"
-                     >
+                    <TouchableOpacity
+                      style={styles.passwordVisibilityToggle}
+                      onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}
+                      accessibilityRole='button'
+                      accessibilitylabel={isConfirmPasswordVisible ? "Hide confirm password" : "Show confirm password"}
+                      accessibilityHint='Toggles confirm password visibility'
+                    >
                       <Ionicons name={isConfirmPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
                     </TouchableOpacity>
                   </View>
@@ -605,8 +607,8 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   keyboardType='email-address'
                   autoCapitalize='none'
                   editable={!isCheckingReferral}
-                  accessibilityLabel="Referral email"
-                  accessibilityHint="Enter the email address of the person who referred you, or leave it blank"
+                  accessibilitylabel='Referral email'
+                  accessibilityHint='Enter the email address of the person who referred you, or leave it blank'
                   accessibilityState={{ disabled: isCheckingReferral }}
                 />
                 {!!referralError && <Text style={{ color: "red", marginBottom: 8 }}>{referralError}</Text>}
@@ -614,9 +616,9 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   style={{ backgroundColor: "#FF9500", paddingVertical: 12, paddingHorizontal: 30, borderRadius: 25, minWidth: 100, alignItems: "center", justifyContent: "center", marginBottom: 12 }}
                   onPress={handleReferralSubmit}
                   disabled={isCheckingReferral}
-                  accessibilityRole="button"
-                  accessibilityLabel={isCheckingReferral ? "Checking referral" : "Continue"}
-                  accessibilityHint="Checks the referral email and continues"
+                  accessibilityRole='button'
+                  accessibilitylabel={isCheckingReferral ? "Checking referral" : "Continue"}
+                  accessibilityHint='Checks the referral email and continues'
                   accessibilityState={{ disabled: isCheckingReferral, busy: isCheckingReferral }}
                 >
                   <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 16 }}>{isCheckingReferral ? "Checking..." : "Continue"}</Text>

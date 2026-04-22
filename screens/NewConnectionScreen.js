@@ -886,7 +886,7 @@ const NewConnectionScreen = () => {
             <TouchableOpacity
               onPress={() => setShowDebugBlocks((prev) => !prev)}
               style={[styles.eyeToggleButton, darkMode && styles.darkEyeToggleButton]}
-              accessibilityLabel={showDebugBlocks ? "Hide debug blocks" : "Show debug blocks"}
+              accessibilitylabel={showDebugBlocks ? "Hide debug blocks" : "Show debug blocks"}
             >
               <Ionicons name={showDebugBlocks ? "eye-off-outline" : "eye-outline"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
             </TouchableOpacity>

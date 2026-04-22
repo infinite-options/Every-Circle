@@ -46,16 +46,55 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
   if (borderless && typeof document !== "undefined") {
     ensureBorderlessStyles();
   }
-  // Filter out React Native-specific props that shouldn't be passed to DOM elements
+  // Filter out React Native–specific props (they are not valid HTML attributes; passing them
+  // to <input> / <textarea> triggers "React does not recognize the `accessibilityHint` prop…" on web).
   const {
-    // Remove React Native-specific props
     secureTextEntry,
     autoCapitalize,
     autoCorrect,
     autoFocus,
     returnKeyType,
+    accessibilityActions,
+    accessibilityElementsHidden,
+    accessibilityHint,
+    accessibilityIgnoresInvertColors,
+    accessibilityLabel,
+    accessibilityLanguage,
+    accessibilityLiveRegion,
+    accessibilityRole,
+    accessibilityState,
+    accessibilityValue,
+    accessible,
+    onAccessibilityAction,
+    onAccessibilityTap,
+    onMagicTap,
+    onAccessibilityEscape,
+    testID,
+    underlineColorAndroid,
+    selectionColor,
+    showSoftInputOnFocus,
+    allowFontScaling,
+    maxFontSizeMultiplier,
+    caretHidden,
+    contextMenuHidden,
+    editable,
+    selectTextOnFocus,
+    dataDetectorType,
+    dataDetectorTypes,
+    inputAccessoryViewID,
+    rejectResponderTermination,
+    scrollEnabled,
+    submitBehavior,
+    lineBreakStrategyIOS,
+    lineBreakModeIOS,
     ...domProps
   } = props;
+
+  // Map RN a11y to standard HTML.
+  const a11yForDom = {
+    ...(accessibilityLabel != null && typeof accessibilityLabel === "string" && accessibilityLabel ? { "aria-label": accessibilityLabel } : {}),
+    ...(accessibilityHint != null && typeof accessibilityHint === "string" && accessibilityHint ? { title: accessibilityHint } : {}),
+  };
   // On web, use a native HTML input element
   const webStyle = {
     borderWidth: style?.borderWidth || 1,
@@ -116,6 +155,7 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
         }),
       },
       ...domProps,
+      ...a11yForDom,
     });
 
     // Apply placeholder color via a style tag if needed
@@ -175,6 +215,7 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
     "data-borderless": borderless ? "true" : undefined,
     style: inputStyle,
     ...domProps,
+    ...a11yForDom,
   });
 
   // Apply placeholder color via a style tag if needed

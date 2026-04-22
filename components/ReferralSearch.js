@@ -88,31 +88,24 @@ const ReferralSearch = ({
     <>
       {/* Search Input */}
       <View style={styles.searchContainer}>
-        <Ionicons
-          name="search"
-          size={20}
-          color="#666"
-          style={styles.searchIcon}
-          accessible={false}
-          importantForAccessibility="no"
-        />
+        <Ionicons name='search' size={20} color='#666' style={styles.searchIcon} accessible={false} importantForAccessibility='no' />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search by name or city"
+          placeholder='Search by name or city'
           value={searchQuery}
           onChangeText={setSearchQuery}
           onSubmitEditing={handleSearch}
-          autoCapitalize="words"
-          accessibilityLabel="Search by name or city"
-          accessibilityHint="Enter a name or city to search"
-          accessibilityRole="search"
+          autoCapitalize='words'
+          accessibilitylabel='Search by name or city'
+          accessibilityHint='Enter a name or city to search'
+          accessibilityRole='search'
         />
         <TouchableOpacity
           onPress={handleSearch}
           style={[styles.searchButton, searchButtonColor && { backgroundColor: searchButtonColor }]}
-          accessibilityRole="button"
-          accessibilityLabel="Search"
-          accessibilityHint="Runs the search"
+          accessibilityRole='button'
+          accessibilitylabel='Search'
+          accessibilityHint='Runs the search'
         >
           <Text style={styles.searchButtonText}>Search</Text>
         </TouchableOpacity>

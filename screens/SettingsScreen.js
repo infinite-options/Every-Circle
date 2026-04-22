@@ -974,7 +974,7 @@ export default function SettingsScreen() {
                   activeThumbColor={COLORS.switchThumbActive}
                   activeTrackColor={COLORS.switchTrackActive}
                   accessibilityRole='switch'
-                  accessibilityLabel='Allow cookies'
+                  accessibilitylabel='Allow cookies'
                   accessibilityHint='Turns cookies on or off'
                   accessibilityState={{ checked: allowCookies }}
                 />
@@ -998,7 +998,7 @@ export default function SettingsScreen() {
                   activeThumbColor={COLORS.switchThumbActive}
                   activeTrackColor={COLORS.switchTrackActive}
                   accessibilityRole='switch'
-                  accessibilityLabel='Accept terms and conditions'
+                  accessibilitylabel='Accept terms and conditions'
                   accessibilityHint='Turns acceptance of the terms and conditions on or off'
                   accessibilityState={{ checked: termsAccepted }}
                 />
@@ -1022,7 +1022,7 @@ export default function SettingsScreen() {
                   activeThumbColor={COLORS.switchThumbActive}
                   activeTrackColor={COLORS.switchTrackActive}
                   accessibilityRole='switch'
-                  accessibilityLabel='Dark mode'
+                  accessibilitylabel='Dark mode'
                   accessibilityHint='Changes the background appearance between light and dark'
                   accessibilityState={{ checked: darkMode }}
                 />
@@ -1046,7 +1046,7 @@ export default function SettingsScreen() {
                   activeThumbColor={COLORS.switchThumbActive}
                   activeTrackColor={COLORS.switchTrackActive}
                   accessibilityRole='switch'
-                  accessibilityLabel='Allow notifications'
+                  accessibilitylabel='Allow notifications'
                   accessibilityHint='Turns notifications on or off'
                   accessibilityState={{ checked: allowNotifications }}
                 />
@@ -1077,7 +1077,7 @@ export default function SettingsScreen() {
                   activeThumbColor={COLORS.switchThumbActive}
                   activeTrackColor={COLORS.switchTrackActive}
                   accessibilityRole='switch'
-                  accessibilityLabel='Share live location'
+                  accessibilitylabel='Share live location'
                   accessibilityHint='Turns live location sharing on or off'
                   accessibilityState={{ checked: shareLocationActive }}
                 />

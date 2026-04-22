@@ -2224,7 +2224,7 @@ const NetworkScreen = ({ navigation }) => {
                         activeThumbColor={getHeaderColor("network")}
                         activeTrackColor='rgba(36, 52, 194, 0.5)'
                         accessibilityRole='switch'
-                        accessibilityLabel='Exchange contact info'
+                        accessibilitylabel='Exchange contact info'
                         accessibilityHint='Turns contact info exchange on or off when someone scans your QR code'
                         accessibilityState={{ checked: formSwitchEnabled }}
                       />
@@ -2288,7 +2288,7 @@ const NetworkScreen = ({ navigation }) => {
                             placeholder='Search Connections...'
                             placeholderTextColor={darkMode ? "#888" : "#999"}
                             borderless
-                            accessibilityLabel='Search connections'
+                            accessibilitylabel='Search connections'
                             accessibilityHint='Type to search your connections by name, location, event, or relationship'
                             accessibilityRole='search'
                             aria-label='search connection'
@@ -2336,7 +2336,7 @@ const NetworkScreen = ({ navigation }) => {
                               onChangeText={setDegree}
                               keyboardType='numeric'
                               borderless
-                              accessibilityLabel='Levels to display'
+                              accessibilitylabel='Levels to display'
                               accessibilityHint='Enter the number of connection levels to show'
                               aria-label='Levels to display'
                             />
@@ -2882,9 +2882,7 @@ const NetworkScreen = ({ navigation }) => {
                         <>
                           <View style={styles.ablyMessageRow}>
                             <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Listening on channel:</Text>
-                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                              {ablyListeningChannel || `/${String(qrCodeDataObject.profile_uid)}`}
-                            </Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyListeningChannel || `/${String(qrCodeDataObject.profile_uid)}`}</Text>
                           </View>
                           <View style={styles.ablyMessageRow}>
                             <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Connection state (Ably):</Text>
@@ -2896,9 +2894,7 @@ const NetworkScreen = ({ navigation }) => {
                           </View>
                           <View style={styles.ablyMessageRow}>
                             <Text style={[styles.ablyMessageKey, darkMode && styles.darkAblyMessageKey]}>Token (obscured):</Text>
-                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>
-                              {ablyTokenObscured == null ? "null" : ablyTokenObscured}
-                            </Text>
+                            <Text style={[styles.ablyMessageValue, darkMode && styles.darkAblyMessageValue]}>{ablyTokenObscured == null ? "null" : ablyTokenObscured}</Text>
                           </View>
                         </>
                       )}

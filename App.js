@@ -946,7 +946,7 @@ export default function App() {
           <Text style={styles.welcomeText}>Welcome!</Text>
 
           <View style={styles.circleMain}>
-            <Image source={require("./assets/everycirclelogonew_1024x1024.png")} style={{ width: 200, height: 200, resizeMode: "contain" }} accessibilityLabel='Every Circle Logo' />
+            <Image source={require("./assets/everycirclelogonew_1024x1024.png")} style={{ width: 200, height: 200, resizeMode: "contain" }} accessibilitylabel='Every Circle Logo' />
             {/* <View style={styles.videoContainer}>
             <Video
               source={{ uri: "https://every-circle.s3.us-west-1.amazonaws.com/EveryB2B.mp4" }}

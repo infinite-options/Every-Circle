@@ -31,9 +31,9 @@ import { formatWholeDollars } from "../utils/priceUtils";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. */
 function NoBountyIcon({ darkMode }) {
   return (
-    <View style={styles.noBountyIconWrap} accessibilityLabel="No bounty">
+    <View style={styles.noBountyIconWrap} accessibilitylabel='No bounty'>
       <Text style={styles.noBountyEmoji}>💰</Text>
-      <View pointerEvents="none" style={[styles.noBountySlash, darkMode && styles.darkNoBountySlash]} />
+      <View pointerEvents='none' style={[styles.noBountySlash, darkMode && styles.darkNoBountySlash]} />
     </View>
   );
 }
@@ -95,7 +95,7 @@ export default function SearchScreen({ route }) {
   const rawResultsRef = useRef([]);
 
   useEffect(() => {
-    AsyncStorage.getItem("profile_uid").then(uid => setCurrentProfileUid(uid));
+    AsyncStorage.getItem("profile_uid").then((uid) => setCurrentProfileUid(uid));
   }, []);
 
   // Restore search state when returning from Profile
@@ -122,7 +122,7 @@ export default function SearchScreen({ route }) {
       try {
         const keys = await AsyncStorage.getAllKeys();
         const cartKeys = keys.filter((key) => key.startsWith("cart_"));
-        
+
         let totalItems = 0;
         let allCartItems = [];
 
@@ -130,14 +130,14 @@ export default function SearchScreen({ route }) {
           const cartData = await AsyncStorage.getItem(key);
           if (cartData) {
             const parsed = JSON.parse(cartData);
-            
+
             if (key.startsWith("cart_expertise_")) {
               // Expertise items stored as single objects, not { items: [] }
               totalItems += 1;
               allCartItems.push({ ...parsed, cart_key: key });
             } else {
               // Business items stored as { items: [] }
-              const items = parsed.items || [];  // ← safe fallback
+              const items = parsed.items || []; // ← safe fallback
               totalItems += items.length;
               const businessUid = key.replace("cart_", "");
               const itemsWithBusiness = items.map((item) => ({
@@ -199,9 +199,7 @@ export default function SearchScreen({ route }) {
           setSearchQuery(savedSearchQuery);
           if (savedSearchType) setSearchType(savedSearchType);
           // Clear stale ratings/connections from cached business items
-          const parsedResults = JSON.parse(savedResults).map((item) =>
-            item.itemType === "businesses" ? { ...item, rating: null, ratingCount: 0, connection_degree: null } : item
-          );
+          const parsedResults = JSON.parse(savedResults).map((item) => (item.itemType === "businesses" ? { ...item, rating: null, ratingCount: 0, connection_degree: null } : item));
           setResults(parsedResults);
           setIsFirstVisit(false);
           setHasLoadedInitialSearch(true);
@@ -766,7 +764,6 @@ export default function SearchScreen({ route }) {
             return dir * (aVal - bVal);
           });
         }
-
       }
 
       console.log("Processed search results:", list.length, "items");
@@ -924,7 +921,7 @@ export default function SearchScreen({ route }) {
     // Render wish item with MiniCard-like profile display
     const profile = item.profileData || {};
     const wish = item.wishData || {};
-    
+
     const isOwnWish = currentProfileUid && item.profile_uid === currentProfileUid;
 
     return (
@@ -1048,11 +1045,7 @@ export default function SearchScreen({ route }) {
             </View>
           )}
         </View>
-        {isOwnWish && (
-          <Text style={{ fontSize: 20, color: '#6e1010', fontStyle: 'italic', marginTop: 4 }}>
-            You cannot respond to your own request.
-          </Text>
-        )}
+        {isOwnWish && <Text style={{ fontSize: 20, color: "#6e1010", fontStyle: "italic", marginTop: 4 }}>You cannot respond to your own request.</Text>}
       </TouchableOpacity>
     );
   };
@@ -1066,12 +1059,12 @@ export default function SearchScreen({ route }) {
 
     return (
       <TouchableOpacity
-       key={`${item.id}-${idx}`}
-       activeOpacity={isOwnExpertise ? 1 : 0.7}
-       // style={[styles.wishItem, darkMode && styles.darkWishItem]}
-       style={[styles.wishItem, darkMode && styles.darkWishItem, isOwnExpertise && { opacity: 0.6 }]}
-       onPress={() => {
-       if (isOwnExpertise) return;
+        key={`${item.id}-${idx}`}
+        activeOpacity={isOwnExpertise ? 1 : 0.7}
+        // style={[styles.wishItem, darkMode && styles.darkWishItem]}
+        style={[styles.wishItem, darkMode && styles.darkWishItem, isOwnExpertise && { opacity: 0.6 }]}
+        onPress={() => {
+          if (isOwnExpertise) return;
           console.log("🏢 Navigating to ExpertiseDetail from expertise card:", expertise.title, "Profile ID:", item.profile_uid);
           if (item.profile_uid && expertise) {
             navigation.navigate("ExpertiseDetail", {
@@ -1141,17 +1134,13 @@ export default function SearchScreen({ route }) {
               <View style={styles.wishBountyContainerRight}>
                 <Text style={styles.bountyEmojiIcon}>💰</Text>
                 <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>
-                  {String(expertise.bounty).toLowerCase() !== "free"
-                    ? `Bounty: $${formatWholeDollars(expertise.bounty)}`
-                    : `Bounty: ${expertise.bounty}`}
+                  {String(expertise.bounty).toLowerCase() !== "free" ? `Bounty: $${formatWholeDollars(expertise.bounty)}` : `Bounty: ${expertise.bounty}`}
                 </Text>
               </View>
             )}
           </View>
         </View>
-        {isOwnExpertise && (
-          <Text style={[styles.ownExpertiseNotice, darkMode && styles.darkOwnExpertiseNotice]}>You cannot purchase your own expertise.</Text>
-        )}
+        {isOwnExpertise && <Text style={[styles.ownExpertiseNotice, darkMode && styles.darkOwnExpertiseNotice]}>You cannot purchase your own expertise.</Text>}
       </TouchableOpacity>
     );
   };
@@ -1247,11 +1236,7 @@ export default function SearchScreen({ route }) {
           </View>
 
           <View style={styles.businessTableBountyCol}>
-            {item.max_bounty != null ? (
-              <Text style={[styles.bountyEmojiIcon, styles.bountyEmojiIconCompact]}>💰</Text>
-            ) : (
-              <NoBountyIcon darkMode={darkMode} />
-            )}
+            {item.max_bounty != null ? <Text style={[styles.bountyEmojiIcon, styles.bountyEmojiIconCompact]}>💰</Text> : <NoBountyIcon darkMode={darkMode} />}
           </View>
 
           <View style={styles.businessTableLevelCol}>
@@ -1269,10 +1254,7 @@ export default function SearchScreen({ route }) {
               }}
             >
               <View style={{ position: "relative" }}>
-                <Image
-                  source={require("../assets/connect.png")}
-                  style={{ width: 22, height: 22, tintColor: darkMode ? "#ffffff" : "#000000" }}
-                />
+                <Image source={require("../assets/connect.png")} style={{ width: 22, height: 22, tintColor: darkMode ? "#ffffff" : "#000000" }} />
                 {item.connection_degree != null && (
                   <View style={styles.connectionBadge}>
                     <Text style={styles.connectionBadgeText}>{item.connection_degree}</Text>
@@ -1443,9 +1425,9 @@ export default function SearchScreen({ route }) {
               onChangeText={setSearchQuery}
               returnKeyType='search'
               onSubmitEditing={onSearch}
-              accessibilityLabel="Search"
-              accessibilityHint="Enter text to search"
-              accessibilityRole="search"
+              accessibilitylabel='Search'
+              accessibilityHint='Enter text to search'
+              accessibilityRole='search'
             />
             <TouchableOpacity style={[styles.searchButton, darkMode && styles.darkSearchButton]} onPress={onSearch}>
               <Ionicons name='search' size={22} color={darkMode ? "#ffffff" : "#000000"} />
