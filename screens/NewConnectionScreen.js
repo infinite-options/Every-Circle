@@ -186,7 +186,8 @@ const NewConnectionScreen = () => {
       //   return;
       // }
       // const client = new Ably.Realtime({ key: ablyApiKey });
-      const client = createAblyRealtimeClient(profileUid);
+      const authClientId = (await AsyncStorage.getItem("profile_uid")) || profileUid;
+      const client = createAblyRealtimeClient(authClientId);
       const channelName = `/${profileUid}`;
       const channel = client.channels.get(channelName);
 
@@ -302,10 +303,7 @@ const NewConnectionScreen = () => {
         timestamp: messageData.timestamp,
       });
 
-      // Close connection after a short delay to ensure message is sent
-      setTimeout(() => {
-        client.close();
-      }, 500);
+      // Do not close shared client here; other screens reuse it.
     } catch (error) {
       console.error("❌ NewConnectionScreen - Error sending Ably message:", error);
       // Update state to show error

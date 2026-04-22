@@ -1,5 +1,5 @@
 // NetworkScreen.js - Web-compatible version
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import BottomNavBar from "../components/BottomNavBar";
@@ -300,6 +300,8 @@ const NetworkScreen = ({ navigation }) => {
   const [ablyClient, setAblyClient] = useState(null); // Store Ably client instance
   const [ablyChannel, setAblyChannel] = useState(null); // Store Ably channel instance
   const [ablyMessageReceived, setAblyMessageReceived] = useState(null); // Store Ably message received info: { channel, message, timestamp }
+  const ablyNewConnectionHandlerRef = useRef(null);
+  const ablyAnyMessageHandlerRef = useRef(null);
   const [formSwitchEnabled, setFormSwitchEnabled] = useState(false); // Form Switch: show form when others scan your QR code
   const formSwitchEnabledRef = React.useRef(false); // Ref to track current value for Ably callback
   const [showDebugBlocks, setShowDebugBlocks] = useState(false); // Toggle visibility of QR Code Contains and Ably Messages Received blocks
@@ -728,6 +730,18 @@ const NetworkScreen = ({ navigation }) => {
     }
 
     try {
+      // Remove previous handlers before setting a new channel subscription.
+      try {
+        if (ablyChannel) {
+          if (ablyNewConnectionHandlerRef.current) {
+            ablyChannel.unsubscribe("new-connection-opened", ablyNewConnectionHandlerRef.current);
+          }
+          if (ablyAnyMessageHandlerRef.current) {
+            ablyChannel.unsubscribe(ablyAnyMessageHandlerRef.current);
+          }
+        }
+      } catch (_) {}
+
       // Dynamically import Ably - handle web vs native differently
       let Ably;
       const isWeb = Platform.OS === "web";
@@ -844,7 +858,7 @@ const NetworkScreen = ({ navigation }) => {
       });
 
       // Subscribe to messages on this channel
-      channel.subscribe("new-connection-opened", async (message) => {
+      const newConnectionHandler = async (message) => {
         console.log("📨 NetworkScreen - Received message on channel:", channelName);
         // console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
         // console.log("📨 NetworkScreen - Message name:", message.name);
@@ -878,14 +892,18 @@ const NetworkScreen = ({ navigation }) => {
         } else {
           console.warn("⚠️ NetworkScreen - Message received but data structure unexpected:", message.data);
         }
-      });
+      };
+      ablyNewConnectionHandlerRef.current = newConnectionHandler;
+      channel.subscribe("new-connection-opened", newConnectionHandler);
 
       // Also subscribe to all messages for debugging
-      channel.subscribe((message) => {
+      const anyMessageHandler = (message) => {
         console.log("📨 NetworkScreen - Received ANY message on channel:", channelName);
         // console.log("📨 NetworkScreen - Message name:", message.name);
         // console.log("📨 NetworkScreen - Message data:", JSON.stringify(message.data, null, 2));
-      });
+      };
+      ablyAnyMessageHandlerRef.current = anyMessageHandler;
+      channel.subscribe(anyMessageHandler);
     } catch (error) {
       console.error("❌ NetworkScreen - Error initializing Ably:", error);
     }
@@ -894,14 +912,21 @@ const NetworkScreen = ({ navigation }) => {
   // Cleanup Ably connection when component unmounts or profile changes
   useEffect(() => {
     return () => {
-      if (ablyClient) {
-        // console.log("🔵 NetworkScreen - Closing Ably connection");
-        ablyClient.close();
-        setAblyClient(null);
-        setAblyChannel(null);
-      }
+      try {
+        if (ablyChannel) {
+          if (ablyNewConnectionHandlerRef.current) {
+            ablyChannel.unsubscribe("new-connection-opened", ablyNewConnectionHandlerRef.current);
+          }
+          if (ablyAnyMessageHandlerRef.current) {
+            ablyChannel.unsubscribe(ablyAnyMessageHandlerRef.current);
+          }
+        }
+      } catch (_) {}
+      // Do not close shared client here; other screens reuse it.
+      setAblyClient(null);
+      setAblyChannel(null);
     };
-  }, [ablyClient]);
+  }, [ablyChannel]);
 
   // Handle QR scan complete - fetch profile data and show popup
   const handleQRScanComplete = async (scanData) => {

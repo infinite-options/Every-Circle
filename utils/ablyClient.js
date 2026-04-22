@@ -1,7 +1,24 @@
 import { Platform } from "react-native";
 import { ABLY_TOKEN_ENDPOINT } from "../apiConfig";
 
+let sharedClient = null;
+let sharedClientId = null;
+
 export function createAblyRealtimeClient(clientId) {
+  const normalizedClientId = clientId || "anonymous-client";
+
+  if (sharedClient && sharedClientId === normalizedClientId) {
+    return sharedClient;
+  }
+
+  if (sharedClient && sharedClientId !== normalizedClientId) {
+    try {
+      sharedClient.close();
+    } catch (_) {}
+    sharedClient = null;
+    sharedClientId = null;
+  }
+
   let Ably;
   if (Platform.OS === "web" && typeof window !== "undefined" && window.Ably) {
     Ably = window.Ably;
@@ -9,9 +26,9 @@ export function createAblyRealtimeClient(clientId) {
     Ably = require("ably");
   }
 
-  const tokenUrl = `${ABLY_TOKEN_ENDPOINT}?client_id=${encodeURIComponent(clientId || "anonymous-client")}`;
+  const tokenUrl = `${ABLY_TOKEN_ENDPOINT}?client_id=${encodeURIComponent(normalizedClientId)}`;
 
-  return new Ably.Realtime({
+  sharedClient = new Ably.Realtime({
     authCallback: async (_tokenParams, callback) => {
       try {
         const res = await fetch(tokenUrl);
@@ -26,5 +43,17 @@ export function createAblyRealtimeClient(clientId) {
       }
     },
   });
+  sharedClientId = normalizedClientId;
+  return sharedClient;
+}
+
+export function resetSharedAblyClient() {
+  if (sharedClient) {
+    try {
+      sharedClient.close();
+    } catch (_) {}
+  }
+  sharedClient = null;
+  sharedClientId = null;
 }
 

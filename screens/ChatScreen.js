@@ -90,6 +90,7 @@ export default function ChatScreen() {
   const flatListRef = useRef(null);
   const ablyClientRef = useRef(null);
   const ablyChannelRef = useRef(null);
+  const ablyMessageHandlerRef = useRef(null);
   // Keep a live ref to myUid so Ably callbacks can read it without stale closure
   const myUidRef = useRef(null);
 
@@ -222,7 +223,7 @@ export default function ChatScreen() {
       // so we don't need to wait for the "connected" event.
       const channel = client.channels.get(`chat::${cid}`);
       ablyChannelRef.current = channel;
-      channel.subscribe("new-message", (msg) => {
+      const handler = (msg) => {
         const data = msg.data || {};
         // Skip messages we sent ourselves — already in state via optimistic UI
         if (data.sender_uid === myUidRef.current) return;
@@ -230,7 +231,9 @@ export default function ChatScreen() {
           if (prev.some((m) => m.message_uid === data.message_uid)) return prev;
           return [...prev, { ...data }];
         });
-      });
+      };
+      ablyMessageHandlerRef.current = handler;
+      channel.subscribe("new-message", handler);
     } catch (e) {
       console.warn("ChatScreen Ably error:", e);
     }
@@ -238,11 +241,16 @@ export default function ChatScreen() {
 
   const unsubscribeAbly = useCallback(() => {
     try {
-      ablyChannelRef.current?.unsubscribe();
-      ablyClientRef.current?.close();
+      if (ablyChannelRef.current && ablyMessageHandlerRef.current) {
+        ablyChannelRef.current.unsubscribe("new-message", ablyMessageHandlerRef.current);
+      } else {
+        ablyChannelRef.current?.unsubscribe();
+      }
+      // Do not close shared client here; other screens reuse it.
     } catch (_) {}
     ablyChannelRef.current = null;
     ablyClientRef.current = null;
+    ablyMessageHandlerRef.current = null;
   }, []);
 
   // ─── send ────────────────────────────────────────────────────────────────

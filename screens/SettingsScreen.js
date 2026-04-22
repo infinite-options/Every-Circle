@@ -10,7 +10,7 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
-import { createAblyRealtimeClient } from "../utils/ablyClient";
+import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -148,6 +148,7 @@ export default function SettingsScreen() {
   // Ably nearby-alert subscription (live while sharing is active)
   const ablyClientRef = useRef(null);
   const ablyChannelRef = useRef(null);
+  const nearbyAlertHandlerRef = useRef(null);
   const notifiedUidsRef = useRef(new Set()); // UIDs already alerted this session
 
   // Ignored nearby UIDs — persisted in AsyncStorage for the duration of the sharing session
@@ -388,6 +389,8 @@ export default function SettingsScreen() {
       await AsyncStorage.multiRemove(keysToRemove);
       console.log("SettingsScreen.js - AsyncStorage cleared successfully");
 
+      // Clear shared Ably client so next login reauths cleanly with new client_id.
+      resetSharedAblyClient();
       reinitialize().catch(() => {});
 
       // Reset dark mode to light mode when logging out
@@ -567,7 +570,7 @@ export default function SettingsScreen() {
       const client = createAblyRealtimeClient(profileId);
       const channel = client.channels.get(`/${profileId}`);
 
-      channel.subscribe("nearby-alert", (msg) => {
+      const handler = (msg) => {
         const data = msg.data || {};
         const uid = data.sender_uid;
 
@@ -598,7 +601,9 @@ export default function SettingsScreen() {
           sender_image: data.sender_image || null,
           distance_miles: data.distance_miles ?? "?",
         });
-      });
+      };
+      nearbyAlertHandlerRef.current = handler;
+      channel.subscribe("nearby-alert", handler);
 
       ablyClientRef.current = client;
       ablyChannelRef.current = channel;
@@ -612,13 +617,16 @@ export default function SettingsScreen() {
   const unsubscribeAblyNearby = () => {
     try {
       if (ablyChannelRef.current) {
-        ablyChannelRef.current.unsubscribe();
+        if (nearbyAlertHandlerRef.current) {
+          ablyChannelRef.current.unsubscribe("nearby-alert", nearbyAlertHandlerRef.current);
+        } else {
+          ablyChannelRef.current.unsubscribe();
+        }
         ablyChannelRef.current = null;
       }
-      if (ablyClientRef.current) {
-        ablyClientRef.current.close();
-        ablyClientRef.current = null;
-      }
+      // Do not close shared client here; other screens reuse it.
+      ablyClientRef.current = null;
+      nearbyAlertHandlerRef.current = null;
       notifiedUidsRef.current = new Set();
     } catch (e) {
       console.warn("SettingsScreen - Ably unsubscribe error:", e.message);

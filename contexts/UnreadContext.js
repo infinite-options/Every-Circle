@@ -46,9 +46,7 @@ export function UnreadProvider({ children }) {
       } catch (_) {}
     });
     ablyChannelsRef.current = [];
-    try {
-      ablyClientRef.current?.close();
-    } catch (_) {}
+    // Do not close the shared Ably client here; other screens reuse it.
     ablyClientRef.current = null;
     subscribedUidRef.current = null;
     subscribedBizUidsRef.current = [];
