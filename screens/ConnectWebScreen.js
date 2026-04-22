@@ -1,29 +1,39 @@
-// ConnectWebScreen.js - Web landing page for QR code links
-// This screen is shown when someone scans a QR code on the web
-// It tries to open the app, and if that fails, shows signup/vCard options
+// ConnectWebScreen.js - Web Connect tab: shows own profile + viewers, and handles QR code deep links
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform } from "react-native";
-import { useRoute, useNavigation } from "@react-navigation/native";
+import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
-import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { USER_PROFILE_INFO_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
 import MiniCard from "../components/MiniCard";
 import { sanitizeText } from "../utils/textSanitizer";
 import AppHeader from "../components/AppHeader";
+import BottomNavBar from "../components/BottomNavBar";
 
 const ConnectWebScreen = () => {
   const { darkMode } = useDarkMode();
   const route = useRoute();
   const navigation = useNavigation();
-  const [loading, setLoading] = useState(true);
-  const [profileData, setProfileData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [profileData, setProfileData] = useState(null);   // scanned person (QR)
+  const [myProfileData, setMyProfileData] = useState(null); // logged-in user
   const [error, setError] = useState(null);
   const [appOpened, setAppOpened] = useState(false);
+
+  // Viewer section state
+  const [selectedAccount, setSelectedAccount] = useState("personal");
+  const [showAccountDropdown, setShowAccountDropdown] = useState(false);
+  const [businesses, setBusinesses] = useState([]);
+  const [profileViewers, setProfileViewers] = useState([]);
+  const [viewersLoading, setViewersLoading] = useState(false);
+  const [showViewers, setShowViewers] = useState(true);
 
   const profileUid = route.params?.profile_uid || (Platform.OS === "web" && typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("profile_uid") : null);
 
   useEffect(() => {
     if (profileUid) {
+      setLoading(true);
       fetchProfileData();
       // Try to open the app
       attemptOpenApp();
@@ -32,6 +42,18 @@ const ConnectWebScreen = () => {
       setLoading(false);
     }
   }, [profileUid]);
+
+  // Load logged-in user's profile + businesses on focus
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchMyData();
+    }, []),
+  );
+
+  // Reload viewers when account selection or businesses change
+  useEffect(() => {
+    fetchViewers();
+  }, [selectedAccount, businesses]);
 
   const attemptOpenApp = () => {
     if (!profileUid || Platform.OS !== "web") return;
@@ -66,6 +88,61 @@ const ConnectWebScreen = () => {
     } catch (err) {
       console.error("Error attempting to open app:", err);
       setAppOpened(false);
+    }
+  };
+
+  const fetchMyData = async () => {
+    try {
+      const profileId = await AsyncStorage.getItem("profile_uid");
+      if (!profileId) return;
+      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+      if (!response.ok) return;
+      const result = await response.json();
+      const p = result?.personal_info || {};
+      setMyProfileData({
+        profile_uid: profileId,
+        firstName: sanitizeText(p.profile_personal_first_name || ""),
+        lastName: sanitizeText(p.profile_personal_last_name || ""),
+        tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || ""),
+        city: sanitizeText(p.profile_personal_city || ""),
+        state: sanitizeText(p.profile_personal_state || ""),
+        email: sanitizeText(result?.user_email || ""),
+        phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+        profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
+        emailIsPublic: p.profile_personal_email_is_public === 1,
+        phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
+        tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
+        locationIsPublic: p.profile_personal_location_is_public === 1,
+        imageIsPublic: p.profile_personal_image_is_public === 1,
+      });
+      const businessList = result.business_info
+        ? typeof result.business_info === "string"
+          ? JSON.parse(result.business_info)
+          : result.business_info
+        : [];
+      setBusinesses(businessList);
+    } catch (e) {
+      console.warn("ConnectWebScreen - Failed to fetch my data:", e);
+    }
+  };
+
+  const fetchViewers = async () => {
+    try {
+      setViewersLoading(true);
+      const id = selectedAccount === "personal" ? await AsyncStorage.getItem("profile_uid") : selectedAccount;
+      if (!id) return;
+      const response = await fetch(`${PROFILE_VIEWS_ENDPOINT}/${id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setProfileViewers(data.viewers || []);
+      } else {
+        setProfileViewers([]);
+      }
+    } catch (e) {
+      console.warn("ConnectWebScreen - Failed to fetch viewers:", e);
+      setProfileViewers([]);
+    } finally {
+      setViewersLoading(false);
     }
   };
 
@@ -210,40 +287,145 @@ const ConnectWebScreen = () => {
       />
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-          {appOpened ? (
-            <View style={styles.appOpeningContainer}>
-              <Text style={[styles.title, darkMode && styles.darkTitle]}>Opening EveryCircle App...</Text>
-              <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>If the app doesn't open, use the options below</Text>
+          {/* Logged-in user's own profile card */}
+          {myProfileData && (
+            <View style={styles.myProfileCard}>
+              <MiniCard user={myProfileData} />
             </View>
-          ) : (
-            <>
-              <Text style={[styles.title, darkMode && styles.darkTitle]}>Connect with {profileData.firstName}</Text>
-              <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Add this person to your network</Text>
-
-              <View style={styles.cardContainer}>
-                <MiniCard user={profileData} />
-              </View>
-
-              <View style={styles.buttonContainer}>
-                <TouchableOpacity
-                  style={styles.primaryButton}
-                  onPress={() => (Platform.OS === "web" && typeof window !== "undefined" ? (window.location.href = "/SignUp") : navigation.navigate("SignUp"))}
-                >
-                  <Text style={styles.primaryButtonText}>Sign Up for EveryCircle</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.secondaryButton} onPress={downloadVCard}>
-                  <Text style={[styles.secondaryButtonText, darkMode && styles.darkSecondaryButtonText]}>Download Contact (vCard)</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.linkButton} onPress={attemptOpenApp}>
-                  <Text style={[styles.linkText, darkMode && styles.darkLinkText]}>Try Opening App Again</Text>
-                </TouchableOpacity>
-              </View>
-            </>
           )}
+
+          {/* Select Profile Dropdown */}
+          <View style={styles.selectProfileRow}>
+            <Text style={[styles.selectProfileLabel, darkMode && styles.darkText]}>Select Profile</Text>
+            <TouchableOpacity style={styles.selectProfileDropdown} onPress={() => setShowAccountDropdown(!showAccountDropdown)} activeOpacity={0.7}>
+              <Text style={styles.selectProfileDropdownText}>
+                {selectedAccount === "personal" ? "Personal" : businesses.find((b) => (b.business_uid || b.profile_business_uid) === selectedAccount)?.business_name || "Business"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {showAccountDropdown && (
+            <View style={styles.selectProfileMenu}>
+              <TouchableOpacity
+                style={styles.dropdownItem}
+                onPress={() => {
+                  setSelectedAccount("personal");
+                  setShowAccountDropdown(false);
+                }}
+              >
+                <Text style={[styles.dropdownItemText, selectedAccount === "personal" && styles.dropdownItemTextActive]}>Personal</Text>
+              </TouchableOpacity>
+              {businesses.map((business, index) => {
+                const businessId = business.business_uid || business.profile_business_uid;
+                const businessName = business.business_name || business.profile_business_name || `Business ${index + 1}`;
+                return (
+                  <TouchableOpacity
+                    key={businessId || index}
+                    style={styles.dropdownItem}
+                    onPress={() => {
+                      setSelectedAccount(businessId);
+                      setShowAccountDropdown(false);
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, selectedAccount === businessId && styles.dropdownItemTextActive]}>{businessName}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Who Viewed My Profile */}
+          <View style={styles.viewersContainer}>
+            <TouchableOpacity style={styles.viewersSectionHeader} onPress={() => setShowViewers(!showViewers)}>
+              <Text style={styles.viewersSectionHeaderText}>
+                {selectedAccount === "personal" ? "WHO VIEWED MY PROFILE" : "WHO VIEWED MY BUSINESS"}
+              </Text>
+              <Ionicons name={showViewers ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+            </TouchableOpacity>
+            {showViewers && (
+              viewersLoading ? (
+                <ActivityIndicator size='small' color='#AF52DE' style={{ marginVertical: 12 }} />
+              ) : profileViewers.length > 0 ? (
+                profileViewers.map((viewer, index) => (
+                  <TouchableOpacity
+                    key={viewer.view_viewer_id || index}
+                    activeOpacity={0.7}
+                    onPress={() => navigation.navigate("Profile", { profile_uid: viewer.view_viewer_id, returnTo: "Connect" })}
+                    style={index > 0 ? { marginTop: 4 } : undefined}
+                  >
+                    <MiniCard
+                      user={{
+                        firstName: viewer.viewer_first_name || "",
+                        lastName: viewer.viewer_last_name || "",
+                        email: viewer.viewer_email || "",
+                        phoneNumber: viewer.viewer_phone || "",
+                        tagLine: viewer.viewer_tag_line || "",
+                        city: viewer.viewer_city || "",
+                        state: viewer.viewer_state || "",
+                        profileImage: viewer.viewer_image || "",
+                        emailIsPublic: viewer.viewer_email_is_public === 1 || viewer.viewer_email_is_public === "1",
+                        phoneIsPublic: viewer.viewer_phone_is_public === 1 || viewer.viewer_phone_is_public === "1",
+                        tagLineIsPublic: viewer.viewer_tag_line_is_public === 1 || viewer.viewer_tag_line_is_public === "1",
+                        imageIsPublic: viewer.viewer_image_is_public === 1 || viewer.viewer_image_is_public === "1",
+                        locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
+                      }}
+                    />
+                    {viewer.view_timestamp ? (
+                      <Text style={styles.viewedTimestamp}>
+                        Viewed: {new Date(viewer.view_timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </Text>
+                    ) : null}
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <Text style={[styles.noViewersText, darkMode && styles.darkNoViewersText]}>
+                  {selectedAccount === "personal" ? "No profile views yet" : "No business profile views yet"}
+                </Text>
+              )
+            )}
+          </View>
+
+          {/* Divider before scanned person card (QR scan) */}
+          {profileData && <View style={styles.divider} />}
+
+          {/* Scanned person card + web-specific actions (only when arriving via QR) */}
+          {profileData && (
+            appOpened ? (
+              <View style={styles.appOpeningContainer}>
+                <Text style={[styles.title, darkMode && styles.darkTitle]}>Opening EveryCircle App...</Text>
+                <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>If the app doesn't open, use the options below</Text>
+              </View>
+            ) : (
+              <>
+                <Text style={[styles.title, darkMode && styles.darkTitle]}>Connect with {profileData.firstName}</Text>
+                <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Add this person to your network</Text>
+
+                <View style={styles.cardContainer}>
+                  <MiniCard user={profileData} />
+                </View>
+
+                <View style={styles.buttonContainer}>
+                  <TouchableOpacity
+                    style={styles.primaryButton}
+                    onPress={() => (Platform.OS === "web" && typeof window !== "undefined" ? (window.location.href = "/SignUp") : navigation.navigate("SignUp"))}
+                  >
+                    <Text style={styles.primaryButtonText}>Sign Up for EveryCircle</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.secondaryButton} onPress={downloadVCard}>
+                    <Text style={[styles.secondaryButtonText, darkMode && styles.darkSecondaryButtonText]}>Download Contact (vCard)</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.linkButton} onPress={attemptOpenApp}>
+                    <Text style={[styles.linkText, darkMode && styles.darkLinkText]}>Try Opening App Again</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )
+          )}
+
         </ScrollView>
-      </SafeAreaView>
+        <BottomNavBar navigation={navigation} />
     </View>
   );
 };
@@ -267,7 +449,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
   loadingContainer: {
     flex: 1,
@@ -375,20 +557,104 @@ const styles = StyleSheet.create({
     backgroundColor: "#AF52DE",
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 8,
-    marginTop: 10,
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-    textAlign: "center",
-  },
   cameraButton: {
     padding: 4,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 1,
+  },
+  myProfileCard: {
+    marginBottom: 16,
+  },
+  selectProfileRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 24,
+    marginBottom: 12,
+    gap: 16,
+  },
+  selectProfileLabel: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#333",
+    minWidth: 90,
+  },
+  darkText: {
+    color: "#fff",
+  },
+  selectProfileDropdown: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 25,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: "#f5f5f5",
+    alignItems: "center",
+  },
+  selectProfileDropdownText: {
+    fontSize: 15,
+    color: "#333",
+  },
+  selectProfileMenu: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    marginBottom: 16,
+    boxShadow: "0px 2px 4px rgba(0,0,0,0.15)",
+  },
+  dropdownItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  dropdownItemText: {
+    fontSize: 15,
+    color: "#333",
+  },
+  dropdownItemTextActive: {
+    color: "#AF52DE",
+    fontWeight: "600",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#e0e0e0",
+    marginVertical: 20,
+  },
+  viewersContainer: {
+    marginTop: 8,
+    marginBottom: 16,
+    backgroundColor: "#fff",
+  },
+  viewersSectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgba(175, 82, 222, 0.15)",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  viewersSectionHeaderText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+  },
+  viewedTimestamp: {
+    fontSize: 11,
+    color: "#999",
+    paddingHorizontal: 12,
+    paddingBottom: 6,
+  },
+  noViewersText: {
+    fontStyle: "italic",
+    color: "#666",
+    padding: 12,
+  },
+  darkNoViewersText: {
+    color: "#aaa",
   },
 });
 
