@@ -163,7 +163,20 @@ export default function AccountScreen({ navigation }) {
       } else if (result?.data) {
         items = [result.data];
       }
+      
       setReceiptData(items);
+      // Compute per-seller total from receipt line items and patch it onto the transaction row
+      const sellerTotal = items.reduce((sum, item) => {
+        return sum + (parseFloat(item.ti_bs_cost || 0) * (parseInt(item.ti_bs_qty) || 1));
+      }, 0);
+      setTransactionData(prev =>
+        prev.map(t =>
+          t.transaction_uid === transaction.transaction_uid &&
+          (t.business_name === transaction.business_name || t.seller_id === transaction.seller_id)
+            ? { ...t, seller_total: sellerTotal }
+            : t
+        )
+      );
     } catch (error) {
       console.error("Error fetching receipt:", error);
       Alert.alert("Error", error.message || "Failed to load receipt.");
@@ -1464,7 +1477,9 @@ export default function AccountScreen({ navigation }) {
                                 <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Received"}</Text>
                               )}
                             </View>
-                            <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
+                            <Text style={styles.transactionAmount}>
+                              ${parseFloat(transaction.seller_total || transaction.transaction_total || 0).toFixed(2)}
+                            </Text>
                           </View>
                         );
                       })}
