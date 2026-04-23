@@ -167,14 +167,29 @@ export function createAblyRealtimeClient(clientId, options = {}) {
     latestOnTokenObtained = onTokenObtained;
   }
   const normalizedClientId = clientId || "anonymous-client";
+  // console.log("[AblyDebug] createAblyRealtimeClient called", {
+  //   requestedClientId: normalizedClientId,
+  //   currentSharedClientId: sharedClientId,
+  //   hasSharedClient: !!sharedClient,
+  //   ts: new Date().toISOString(),
+  // });
 
   if (sharedClient && sharedClientId === normalizedClientId) {
+    // console.log("[AblyDebug] Reusing shared Ably client", {
+    //   clientId: normalizedClientId,
+    //   ts: new Date().toISOString(),
+    // });
     const ob = getAblyTokenObscuredIfStillValid();
     latestOnTokenObtained?.(ob);
     return sharedClient;
   }
 
   if (sharedClient && sharedClientId !== normalizedClientId) {
+    // console.warn("[AblyDebug] Recreating shared Ably client due to clientId change", {
+    //   previousClientId: sharedClientId,
+    //   nextClientId: normalizedClientId,
+    //   ts: new Date().toISOString(),
+    // });
     try {
       sharedClient.close();
     } catch (_) {}
@@ -212,11 +227,19 @@ export function createAblyRealtimeClient(clientId, options = {}) {
     },
   });
   sharedClientId = normalizedClientId;
+  // console.log("[AblyDebug] Created new shared Ably client", {
+  //   clientId: sharedClientId,
+  //   ts: new Date().toISOString(),
+  // });
   return sharedClient;
 }
 
 export function resetSharedAblyClient() {
   if (sharedClient) {
+    // console.warn("[AblyDebug] resetSharedAblyClient closing shared client", {
+    //   clientId: sharedClientId,
+    //   ts: new Date().toISOString(),
+    // });
     try {
       sharedClient.close();
     } catch (_) {}

@@ -167,12 +167,14 @@ export default function ChatScreen() {
     return () => clearActiveChat();
   }, [convUid]);
 
-  // Subscribe to real-time messages once convUid is ready
+  // Subscribe to real-time messages once convUid and myUid are both ready.
+  // This avoids creating a shared Ably client with a fallback ID ("chat-client"),
+  // which can force a disconnect/recreate cycle for other screens.
   useEffect(() => {
-    if (!convUid) return;
+    if (!convUid || !myUid) return;
     subscribeAbly(convUid);
     return () => unsubscribeAbly();
-  }, [convUid]);
+  }, [convUid, myUid]);
 
   // Scroll to bottom whenever messages change
   useEffect(() => {
@@ -216,7 +218,9 @@ export default function ChatScreen() {
       //   "";
       // if (!apiKey) return;
       // const client = new Ably.Realtime({ key: apiKey });
-      const client = createAblyRealtimeClient(myUidRef.current || myUid || "chat-client");
+      const stableClientId = myUidRef.current || myUid;
+      if (!stableClientId) return;
+      const client = createAblyRealtimeClient(stableClientId);
       ablyClientRef.current = client;
 
       // Subscribe directly — Ably queues messages until the connection is ready,
