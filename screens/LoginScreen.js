@@ -4,19 +4,8 @@ import React, { useState } from "react";
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, ActivityIndicator, Platform, Modal, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// Only import GoogleSigninButton on native platforms (not web)
-let GoogleSigninButton = null;
-const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
-if (!isWeb) {
-  try {
-    const googleSigninModule = require("@react-native-google-signin/google-signin");
-    GoogleSigninButton = googleSigninModule.GoogleSigninButton;
-  } catch (e) {
-    console.warn("GoogleSigninButton not available:", e.message);
-  }
-}
-
 import AppleSignIn from "../AppleSignIn";
+import GoogleBrandedSignInButton from "../components/GoogleBrandedSignInButton";
 import * as Crypto from "expo-crypto";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
@@ -354,42 +343,22 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
           </View>
 
           <View style={styles.socialContainer}>
-            {GoogleSigninButton && !isWeb ? (
-              <GoogleSigninButton
-                style={styles.googleButton}
-                size={GoogleSigninButton.Size.Wide}
-                color={GoogleSigninButton.Color.Dark}
-                onPress={async () => {
-                  if (!signingIn) {
-                    setSigningIn(true);
-                    try {
-                      await onGoogleSignIn();
-                    } finally {
-                      setSigningIn(false);
-                    }
+            <GoogleBrandedSignInButton
+              label='Sign in with Google'
+              signingIn={signingIn}
+              onPress={async () => {
+                if (!signingIn) {
+                  setSigningIn(true);
+                  try {
+                    await onGoogleSignIn();
+                  } finally {
+                    setSigningIn(false);
                   }
-                }}
-                disabled={signingIn}
-              />
-            ) : (
-              <TouchableOpacity
-                style={styles.googleButton}
-                onPress={async () => {
-                  if (!signingIn) {
-                    setSigningIn(true);
-                    try {
-                      await onGoogleSignIn();
-                    } finally {
-                      setSigningIn(false);
-                    }
-                  }
-                }}
-                disabled={signingIn}
-              >
-                <Text style={styles.googleButtonText}>Sign in with Google</Text>
-              </TouchableOpacity>
-            )}
+                }
+              }}
+            />
             <AppleSignIn
+              mode='signIn'
               onSignIn={async (...args) => {
                 if (!signingIn) {
                   setSigningIn(true);
@@ -492,7 +461,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff" },
   contentContainer: { padding: 20 },
   header: { alignItems: "center", marginBottom: 40 },
-  title: { fontSize: 28, fontWeight: "bold", marginTop: 100, marginBottom: 10, color: "#007AFF" },
+  title: { fontSize: 28, fontWeight: "bold", marginTop: 0, marginBottom: 10, color: "#007AFF" },
   subtitle: { fontSize: 16, color: "#666", textAlign: "center" },
   inputContainer: { marginBottom: 30 },
   fieldContainer: { marginBottom: 15 },
@@ -550,8 +519,6 @@ const styles = StyleSheet.create({
   divider: { flex: 1, height: 1, backgroundColor: "#E5E5E5" },
   dividerText: { marginHorizontal: 10, color: "#666" },
   socialContainer: { alignItems: "center", marginBottom: 30 },
-  googleButton: { width: 192, height: 48, marginBottom: 15 },
-  googleButtonText: { color: "#fff", textAlign: "center", padding: 12, backgroundColor: "#4285F4", borderRadius: 8 },
   footer: { alignItems: "center" },
   footerText: { fontSize: 16, color: "#666" },
   signUpText: { color: "#FF9500", fontWeight: "bold" },

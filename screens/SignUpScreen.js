@@ -2,19 +2,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Platform, Modal, ActivityIndicator, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// Only import GoogleSigninButton on native platforms (not web)
-let GoogleSigninButton = null;
-const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
-if (!isWeb) {
-  try {
-    const googleSigninModule = require("@react-native-google-signin/google-signin");
-    GoogleSigninButton = googleSigninModule.GoogleSigninButton;
-  } catch (e) {
-    console.warn("GoogleSigninButton not available:", e.message);
-  }
-}
-
 import AppleSignIn from "../AppleSignIn";
+import GoogleBrandedSignInButton from "../components/GoogleBrandedSignInButton";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { ACCOUNT_SALT_ENDPOINT, CREATE_ACCOUNT_ENDPOINT, GOOGLE_SIGNUP_ENDPOINT, REFERRAL_API_ENDPOINT, LOGIN_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
@@ -571,14 +560,8 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               </View>
 
               <View style={styles.socialContainer}>
-                {GoogleSigninButton && !isWeb ? (
-                  <GoogleSigninButton style={styles.googleButton} size={GoogleSigninButton.Size.Wide} color={GoogleSigninButton.Color.Dark} onPress={onGoogleSignUp} />
-                ) : (
-                  <TouchableOpacity style={styles.googleButton} onPress={onGoogleSignUp}>
-                    <Text style={styles.googleButtonText}>Sign up with Google</Text>
-                  </TouchableOpacity>
-                )}
-                <AppleSignIn onSignIn={onAppleSignUp} onError={onError} buttonText='Sign up with Apple' />
+                <GoogleBrandedSignInButton label='Sign up with Google' onPress={onGoogleSignUp} disabled={isAttemptingLogin} />
+                <AppleSignIn mode='signUp' onSignIn={onAppleSignUp} onError={onError} disabled={isAttemptingLogin} />
               </View>
             </>
           )}
@@ -656,7 +639,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: "center",
-    marginTop: 100,
+    marginTop: 0,
     marginBottom: 40,
   },
   title: {
@@ -748,18 +731,6 @@ const styles = StyleSheet.create({
   socialContainer: {
     alignItems: "center",
     marginBottom: 30,
-  },
-  googleButton: {
-    width: 192,
-    height: 48,
-    marginBottom: 15,
-  },
-  googleButtonText: {
-    color: "#fff",
-    textAlign: "center",
-    padding: 12,
-    backgroundColor: "#4285F4",
-    borderRadius: 8,
   },
   footer: {
     alignItems: "center",
