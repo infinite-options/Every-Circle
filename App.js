@@ -99,6 +99,115 @@ async function _storeMyBusinessUids(fullUser) {
   await persistMyBusinessUidsFromProfile(fullUser);
 }
 
+/**
+ * After Google returns identity: create account or route existing user.
+ * @param {string} googleAuthToken - Native OAuth access token, or web ID token (JWT) from Google Identity Services
+ */
+async function completeGoogleAccountCreation(navigation, userInfo, googleAuthToken) {
+  const payload = {
+    email: userInfo.user.email,
+    password: "GOOGLE_LOGIN",
+    google_auth_token: googleAuthToken,
+    social_id: userInfo.user.id,
+    first_name: userInfo.user.givenName || "",
+    last_name: userInfo.user.familyName || "",
+    profile_picture: userInfo.user.photo || "",
+  };
+  console.log("App.js - Sign up payload prepared:", payload);
+
+  const response = await fetch(GOOGLE_SIGNUP_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const result = await response.json();
+  console.log("App.js - Sign up response:", result);
+
+  if (result.user_uid && result.code >= 200 && result.code < 300) {
+    console.log("App.js - Sign up successful, storing user data");
+    await AsyncStorage.setItem("user_uid", result.user_uid);
+    await AsyncStorage.setItem("user_email_id", userInfo.user.email);
+  } else if (result.message === "User already exists") {
+    console.log("App.js - User already exists, treating as successful login");
+
+    await AsyncStorage.setItem("user_uid", result.user_uid || userInfo.user.id);
+    await AsyncStorage.setItem("user_email_id", userInfo.user.email);
+
+    const baseURI = API_BASE_URL;
+    const endpointPath = `/api/v1/userprofileinfo/${result.user_uid || userInfo.user.id}`;
+    const endpoint = baseURI + endpointPath;
+    console.log(`App.js - Fetching profile for existing user: ${endpoint}`);
+
+    const profileResponse = await fetch(endpoint);
+    const fullUser = await profileResponse.json();
+    console.log("App.js - Existing user profile:", JSON.stringify(fullUser, null, 2));
+
+    const is404 = !profileResponse.ok && profileResponse.status === 404;
+    const isProfileNotFound = fullUser.message === "Profile not found for this user";
+    const is404Code = fullUser.code === 404;
+
+    if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
+      console.log("App.js - Profile not found for existing user, routing to UserInfo");
+      await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+      reinitializeUnreadFromOutside().catch(() => {});
+      await AsyncStorage.setItem("user_uid", result.user_uid || userInfo.user.id);
+      await AsyncStorage.setItem("user_email_id", userInfo.user.email);
+
+      navigation.navigate("UserInfo", {
+        googleUserInfo: {
+          email: userInfo.user.email,
+          firstName: userInfo.user.givenName,
+          lastName: userInfo.user.familyName,
+          profilePicture: userInfo.user.photo,
+          googleId: userInfo.user.id,
+          accessToken: googleAuthToken,
+        },
+      });
+      return;
+    }
+
+    if (fullUser && fullUser.personal_info?.profile_personal_uid) {
+      await AsyncStorage.setItem("profile_uid", fullUser.personal_info.profile_personal_uid);
+      await _storeMyBusinessUids(fullUser);
+      reinitializeUnreadFromOutside().catch(() => {});
+
+      navigation.navigate("Profile", {
+        user: {
+          ...fullUser,
+          user_email: userInfo.user.email,
+        },
+        profile_uid: fullUser.personal_info.profile_personal_uid,
+      });
+    } else {
+      Alert.alert("Profile Not Found", "Your account exists but profile data could not be loaded. Please try signing in instead.", [
+        {
+          text: "OK",
+          onPress: () => navigation.navigate("Login"),
+        },
+      ]);
+    }
+    return;
+  } else {
+    console.log("App.js - Failed to create account");
+    throw new Error("Failed to create account");
+  }
+  if (await AsyncStorage.getItem("user_uid")) {
+    navigation.navigate("UserInfo", {
+      googleUserInfo: {
+        email: userInfo.user.email,
+        firstName: userInfo.user.givenName,
+        lastName: userInfo.user.familyName,
+        profilePicture: userInfo.user.photo,
+        googleId: userInfo.user.id,
+        accessToken: googleAuthToken,
+      },
+    });
+  } else {
+    Alert.alert("Error", "Failed to store user ID. Please try again.");
+  }
+}
+
 export default function App() {
   const [initialRoute, setInitialRoute] = useState("Home");
   const [loading, setLoading] = useState(true);
@@ -190,7 +299,7 @@ export default function App() {
         script.defer = true;
         script.onload = () => {
           console.log("App.js - Google Identity Services script loaded");
-          initializeWebGoogleSignIn(navigation, resolve, reject);
+          initializeWebGoogleSignIn(navigation, resolve, reject, "signIn");
         };
         script.onerror = (error) => {
           console.error("App.js - Failed to load Google Identity Services:", error);
@@ -198,12 +307,40 @@ export default function App() {
         };
         document.head.appendChild(script);
       } else {
-        initializeWebGoogleSignIn(navigation, resolve, reject);
+        initializeWebGoogleSignIn(navigation, resolve, reject, "signIn");
       }
     });
   }, []);
 
-  const initializeWebGoogleSignIn = (navigation, resolve, reject) => {
+  // Web Google Sign-Up: same GSI (JWT) as sign-in, then POST to GOOGLE_SIGNUP_ENDPOINT
+  const handleWebGoogleSignUp = useCallback(async (navigation) => {
+    console.log("App.js - handleWebGoogleSignUp - Starting");
+    return new Promise((resolve, reject) => {
+      if (typeof window === "undefined") {
+        reject(new Error("Window object not available"));
+        return;
+      }
+      if (!window.google || !window.google.accounts) {
+        const script = document.createElement("script");
+        script.src = "https://accounts.google.com/gsi/client";
+        script.async = true;
+        script.defer = true;
+        script.onload = () => {
+          console.log("App.js - Google Identity Services script loaded (sign-up)");
+          initializeWebGoogleSignIn(navigation, resolve, reject, "signUp");
+        };
+        script.onerror = (error) => {
+          console.error("App.js - Failed to load Google Identity Services:", error);
+          reject(new Error("Failed to load Google Sign-In library"));
+        };
+        document.head.appendChild(script);
+      } else {
+        initializeWebGoogleSignIn(navigation, resolve, reject, "signUp");
+      }
+    });
+  }, []);
+
+  const initializeWebGoogleSignIn = (navigation, resolve, reject, mode = "signIn") => {
     try {
       const webClientId = config.googleClientIds.web;
       console.log("App.js - Initializing Google Sign-In with client ID:", webClientId?.substring(0, 20) + "...");
@@ -253,6 +390,19 @@ export default function App() {
           };
 
           console.log("App.js - User info extracted:", userInfo);
+
+          if (mode === "signUp") {
+            try {
+              await AsyncStorage.clear();
+              await completeGoogleAccountCreation(navigation, userInfo, credential);
+              resolve();
+            } catch (signUpErr) {
+              console.error("App.js - Web Google Sign-Up error:", signUpErr);
+              Alert.alert("Sign Up Failed", signUpErr.message || "Unable to create account. Please try again.");
+              reject(signUpErr);
+            }
+            return;
+          }
 
           // Call the backend API to sign in
           const apiResponse = await fetch(`${GOOGLE_SIGNIN_ENDPOINT}/${userEmail}`);
@@ -564,188 +714,51 @@ export default function App() {
     }
   }, []);
 
-  const signUpHandler = useCallback(async (navigation) => {
-    console.log("App.js - signUpHandler - Google Button Pressed");
+  const signUpHandler = useCallback(
+    async (navigation) => {
+      console.log("App.js - signUpHandler - Google Button Pressed");
 
-    // Google Sign-In is not available on web
-    if (isWeb || !GoogleSignin) {
-      Alert.alert("Not Available", "Google Sign-In is not available on web. Please use email/password sign up.");
-      return;
-    }
-
-    try {
-      // Clear AsyncStorage before starting sign up to avoid stale data
-      await AsyncStorage.clear();
-      // Check if already signed in
-      const isSignedIn = await GoogleSignin.isSignedIn();
-      console.log("App.js - Is user already signed in?", isSignedIn);
-
-      if (isSignedIn) {
-        console.log("App.js - Signing out existing user");
-        await GoogleSignin.signOut();
+      if (isWeb) {
+        try {
+          await handleWebGoogleSignUp(navigation);
+        } catch (error) {
+          console.error("App.js - Web Google Sign-Up error:", error);
+        }
+        return;
       }
 
-      // Check for Play Services
-      console.log("App.js - Checking Play Services");
-      await GoogleSignin.hasPlayServices();
-      console.log("App.js - Play Services available");
-
-      // Get user info from Google
-      console.log("App.js - Starting Google Sign In");
-      const userInfo = await GoogleSignin.signIn();
-      console.log("App.js - Google Sign In successful");
-      console.log("App.js - User Info:", {
-        email: userInfo.user.email,
-        name: userInfo.user.name,
-        givenName: userInfo.user.givenName,
-        familyName: userInfo.user.familyName,
-        photo: userInfo.user.photo,
-        id: userInfo.user.id,
-      });
-
-      // Get tokens for backend authentication
-      console.log("App.js - Getting tokens");
-      const tokens = await GoogleSignin.getTokens();
-      console.log("App.js - Tokens received:", {
-        accessToken: tokens.accessToken ? "Present" : "Missing",
-        idToken: tokens.idToken ? "Present" : "Missing",
-      });
-
-      // Create the sign-up payload
-      const payload = {
-        email: userInfo.user.email,
-        password: "GOOGLE_LOGIN",
-        google_auth_token: tokens.accessToken,
-        social_id: userInfo.user.id,
-        first_name: userInfo.user.givenName || "",
-        last_name: userInfo.user.familyName || "",
-        profile_picture: userInfo.user.photo || "",
-      };
-      console.log("App.js - Sign up payload prepared:", payload);
-
-      // Make the sign-up request
-      console.log("App.js - Making sign-up request");
-      const response = await fetch(GOOGLE_SIGNUP_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const result = await response.json();
-      console.log("App.js - Sign up response:", result);
-
-      if (result.user_uid && result.code >= 200 && result.code < 300) {
-        console.log("App.js - Sign up successful, storing user data");
-        await AsyncStorage.setItem("user_uid", result.user_uid);
-        await AsyncStorage.setItem("user_email_id", userInfo.user.email);
-        // if (user_uid) {
-        //   navigation.navigate("UserInfo");
-        // } else {
-        //   Alert.alert("Error", "Failed to store user ID. Please try again.");
-        // }
-      } else if (result.message === "User already exists") {
-        console.log("App.js - User already exists, treating as successful login");
-
-        // Store user data as if it was a successful login
-        await AsyncStorage.setItem("user_uid", result.user_uid || userInfo.user.id);
-        await AsyncStorage.setItem("user_email_id", userInfo.user.email);
-
-        // Fetch user profile data
-        const baseURI = API_BASE_URL;
-        const endpointPath = `/api/v1/userprofileinfo/${result.user_uid || userInfo.user.id}`;
-        const endpoint = baseURI + endpointPath;
-        console.log(`App.js - Fetching profile for existing user: ${endpoint}`);
-
-        const profileResponse = await fetch(endpoint);
-        const fullUser = await profileResponse.json();
-        console.log("App.js - Existing user profile:", JSON.stringify(fullUser, null, 2));
-
-        // Handle case where profile is not found (404 error)
-        // Check response status, response body message, and code
-        const is404 = !profileResponse.ok && profileResponse.status === 404;
-        const isProfileNotFound = fullUser.message === "Profile not found for this user";
-        const is404Code = fullUser.code === 404;
-
-        if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
-          console.log("App.js - Profile not found for existing user, routing to UserInfo");
-          // Clear any existing profile data but keep user credentials
-          await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
-          reinitializeUnreadFromOutside().catch(() => {});
-          await AsyncStorage.setItem("user_uid", result.user_uid || userInfo.user.id);
-          await AsyncStorage.setItem("user_email_id", userInfo.user.email);
-
-          // Navigate to UserInfo to complete profile
-          navigation.navigate("UserInfo", {
-            googleUserInfo: {
-              email: userInfo.user.email,
-              firstName: userInfo.user.givenName,
-              lastName: userInfo.user.familyName,
-              profilePicture: userInfo.user.photo,
-              googleId: userInfo.user.id,
-              accessToken: tokens.accessToken,
-            },
-          });
-          return;
-        }
-
-        if (fullUser && fullUser.personal_info?.profile_personal_uid) {
-          await AsyncStorage.setItem("profile_uid", fullUser.personal_info.profile_personal_uid);
-          await _storeMyBusinessUids(fullUser);
-          reinitializeUnreadFromOutside().catch(() => {});
-
-          // Navigate to Profile page as if it was a successful login
-          navigation.navigate("Profile", {
-            user: {
-              ...fullUser,
-              user_email: userInfo.user.email,
-            },
-            profile_uid: fullUser.personal_info.profile_personal_uid,
-          });
-        } else {
-          // Fallback if profile not found (but not a 404)
-          Alert.alert("Profile Not Found", "Your account exists but profile data could not be loaded. Please try signing in instead.", [
-            {
-              text: "OK",
-              onPress: () => navigation.navigate("Login"),
-            },
-          ]);
-        }
-        return; // Add return to prevent further execution
-      } else {
-        console.log("App.js - Failed to create account");
-        throw new Error("Failed to create account");
+      if (!GoogleSignin) {
+        Alert.alert("Not Available", "Google Sign-In is not available. Please use email/password sign up.");
+        return;
       }
-      if (await AsyncStorage.getItem("user_uid")) {
-        // Pass Google user info to UserInfoScreen for pre-filling
-        navigation.navigate("UserInfo", {
-          googleUserInfo: {
-            email: userInfo.user.email,
-            firstName: userInfo.user.givenName,
-            lastName: userInfo.user.familyName,
-            profilePicture: userInfo.user.photo,
-            googleId: userInfo.user.id,
-            accessToken: tokens.accessToken,
-          },
-        });
-      } else {
-        Alert.alert("Error", "Failed to store user ID. Please try again.");
-      }
-    } catch (err) {
-      console.error("App.js - Google Sign Up error:", err);
-      if (statusCodes) {
-        if (err.code === statusCodes.SIGN_IN_CANCELLED) {
-          console.log("App.js - User cancelled the sign-in flow");
-          return;
+
+      try {
+        await AsyncStorage.clear();
+        const isSignedIn = await GoogleSignin.isSignedIn();
+        if (isSignedIn) {
+          await GoogleSignin.signOut();
         }
-        if (err.code === statusCodes.IN_PROGRESS) {
-          console.log("App.js - Sign in already in progress");
-          Alert.alert("Sign In In Progress", "Please wait for the current sign in process to complete.", [{ text: "OK" }]);
-          return;
+        await GoogleSignin.hasPlayServices();
+        const userInfo = await GoogleSignin.signIn();
+        const tokens = await GoogleSignin.getTokens();
+        await completeGoogleAccountCreation(navigation, userInfo, tokens.accessToken);
+      } catch (err) {
+        console.error("App.js - Google Sign Up error:", err);
+        if (statusCodes) {
+          if (err.code === statusCodes.SIGN_IN_CANCELLED) {
+            console.log("App.js - User cancelled the sign-in flow");
+            return;
+          }
+          if (err.code === statusCodes.IN_PROGRESS) {
+            Alert.alert("Sign In In Progress", "Please wait for the current sign in process to complete.", [{ text: "OK" }]);
+            return;
+          }
         }
+        Alert.alert("Sign Up Failed", "Unable to create account. Please try again.", [{ text: "OK" }]);
       }
-      Alert.alert("Sign Up Failed", "Unable to create account. Please try again.", [{ text: "OK" }]);
-    }
-  }, []);
+    },
+    [handleWebGoogleSignUp]
+  );
 
   const handleAppleSignIn = useCallback(async (userInfo, navigation) => {
     try {
@@ -979,23 +992,13 @@ export default function App() {
               <Text style={styles.brandRegularText}>Circle</Text>
               <Text style={styles.brandText}>.com</Text>
             </Text>
-            <Text
-              style={[styles.tagline, { fontSize: taglineFontSize }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit={Platform.OS === "ios"}
-              minimumFontScale={0.72}
-            >
+            <Text style={[styles.tagline, { fontSize: taglineFontSize }]} numberOfLines={1} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.72}>
               Connecting Circles of Influence
             </Text>
             {/* <Text style={styles.tagline}>It Pays to Be Connected</Text> */}
 
             {SHOW_HOME_BUILD_INFO && (
-              <Text
-                style={[styles.dateTimeText, { fontSize: buildInfoFontSize }]}
-                numberOfLines={1}
-                adjustsFontSizeToFit={Platform.OS === "ios"}
-                minimumFontScale={0.7}
-              >
+              <Text style={[styles.dateTimeText, { fontSize: buildInfoFontSize }]} numberOfLines={1} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.7}>
                 PM {versionData.pm_version} Version {versionData.major}.{versionData.build} - Last Change: {versionData.last_change}
               </Text>
             )}
@@ -1004,14 +1007,24 @@ export default function App() {
           <View style={styles.circlesContainer}>
             <TouchableOpacity style={styles.circleBox} onPress={() => navigation.navigate("SignUp")} activeOpacity={0.85}>
               <View style={[styles.circle, { width: circleSize, height: circleSize, borderRadius: circleSize / 2, backgroundColor: "#800000" }]}>
-                <Text style={[styles.circleText, { fontSize: circleLabelSize, lineHeight: Math.round(circleLabelSize * 1.2) }]} numberOfLines={2} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.75}>
+                <Text
+                  style={[styles.circleText, { fontSize: circleLabelSize, lineHeight: Math.round(circleLabelSize * 1.2) }]}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit={Platform.OS === "ios"}
+                  minimumFontScale={0.75}
+                >
                   Sign Up
                 </Text>
               </View>
             </TouchableOpacity>
             <TouchableOpacity style={styles.circleBox} onPress={() => navigation.navigate("HowItWorksScreen")} activeOpacity={0.85}>
               <View style={[styles.circle, { width: circleSize, height: circleSize, borderRadius: circleSize / 2, backgroundColor: "#FF9500" }]}>
-                <Text style={[styles.circleText, { fontSize: circleLabelSize, lineHeight: Math.round(circleLabelSize * 1.2) }]} numberOfLines={2} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.75}>
+                <Text
+                  style={[styles.circleText, { fontSize: circleLabelSize, lineHeight: Math.round(circleLabelSize * 1.2) }]}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit={Platform.OS === "ios"}
+                  minimumFontScale={0.75}
+                >
                   How It Works
                 </Text>
               </View>
@@ -1025,7 +1038,12 @@ export default function App() {
               activeOpacity={0.85}
             >
               <View style={[styles.circle, { width: circleSize, height: circleSize, borderRadius: circleSize / 2, backgroundColor: "#2434C2" }]}>
-                <Text style={[styles.circleText, { fontSize: circleLabelSize, lineHeight: Math.round(circleLabelSize * 1.2) }]} numberOfLines={2} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.75}>
+                <Text
+                  style={[styles.circleText, { fontSize: circleLabelSize, lineHeight: Math.round(circleLabelSize * 1.2) }]}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit={Platform.OS === "ios"}
+                  minimumFontScale={0.75}
+                >
                   Log In
                 </Text>
               </View>
