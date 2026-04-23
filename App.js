@@ -4,9 +4,7 @@ if (typeof document !== "undefined" && document.head) {
   require("./utils/injectBorderlessInputStyles");
 }
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { LogBox, Platform } from "react-native";
-
-import { StyleSheet, Text, View, Alert, ActivityIndicator, TouchableOpacity, Image } from "react-native";
+import { LogBox, Platform, useWindowDimensions, StyleSheet, Text, View, Alert, ActivityIndicator, TouchableOpacity, Image } from "react-native";
 
 // Check if we're on web by checking for window object (works at module load time)
 // This must be defined before any code that uses it
@@ -81,6 +79,9 @@ const Stack = createNativeStackNavigator();
 
 export const mapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 const mapsApiKeyDisplay = mapsApiKey ? "..." + mapsApiKey.slice(-4) : "Not set";
+
+/** Home screen: show version / last-build line (PM version, app version, last change). */
+const SHOW_HOME_BUILD_INFO = true;
 
 // Wrapper component for Connect screen to handle conditional rendering
 const ConnectScreenWrapper = (props) => {
@@ -906,9 +907,20 @@ export default function App() {
 
   const HomeScreen = ({ navigation }) => {
     console.log("App.js - Rendering HomeScreen");
+    const { width: windowWidth } = useWindowDimensions();
     const [hasLoggedPlaying, setHasLoggedPlaying] = useState(false);
     // Static timestamp - set once when component mounts (represents last build/change time)
     const [buildTimestamp] = useState(new Date());
+
+    // Fit tagline on one line: slightly less horizontal padding on narrow devices + scale font
+    const brandingPaddingH = windowWidth < 400 ? 8 : windowWidth < 480 ? 16 : 20;
+    const taglineFontSize = Math.max(14, Math.min(24, (windowWidth - 56) / 14));
+    // Version line: small enough to stay on one line; scales down on narrow screens
+    const buildInfoFontSize = Math.max(9, Math.min(12, (windowWidth - 32) / 42));
+    // Three circles in one row: contentBox padding 20*2, circles row padding 8*2, gaps 8*2 between circles
+    const circlesInnerW = windowWidth - 40 - 32;
+    const circleSize = Math.max(60, Math.min(102, (circlesInnerW - 16) / 3));
+    const circleLabelSize = Math.max(10, Math.min(15, circleSize * 0.17));
 
     // Format date and time
     const formatDateTime = (date) => {
@@ -961,32 +973,47 @@ export default function App() {
           </View>
 
           {/* Branding Text */}
-          <View style={styles.brandingContainer}>
+          <View style={[styles.brandingContainer, { paddingHorizontal: brandingPaddingH }]}>
             <Text style={styles.brandName}>
               <Text style={styles.brandItalicText}>every</Text>
               <Text style={styles.brandRegularText}>Circle</Text>
               <Text style={styles.brandText}>.com</Text>
             </Text>
-            <Text style={styles.tagline}>Connecting Circles of Influence</Text>
+            <Text
+              style={[styles.tagline, { fontSize: taglineFontSize }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit={Platform.OS === "ios"}
+              minimumFontScale={0.72}
+            >
+              Connecting Circles of Influence
+            </Text>
             {/* <Text style={styles.tagline}>It Pays to Be Connected</Text> */}
 
-            {/* Build Timestamp - Last Change Date/Time with Version */}
-            <Text style={styles.dateTimeText}>
-              PM {versionData.pm_version} Version {versionData.major}.{versionData.build} - Last Change: {versionData.last_change}
-            </Text>
+            {SHOW_HOME_BUILD_INFO && (
+              <Text
+                style={[styles.dateTimeText, { fontSize: buildInfoFontSize }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit={Platform.OS === "ios"}
+                minimumFontScale={0.7}
+              >
+                PM {versionData.pm_version} Version {versionData.major}.{versionData.build} - Last Change: {versionData.last_change}
+              </Text>
+            )}
           </View>
 
           <View style={styles.circlesContainer}>
-            <TouchableOpacity style={styles.circleBox} onPress={() => navigation.navigate("SignUp")}>
-              {/* <View style={[styles.circle, { backgroundColor: "#007AFF" }]}> */}
-              <View style={[styles.circle, { backgroundColor: "#800000" }]}>
-                <Text style={styles.circleText}>Sign Up</Text>
+            <TouchableOpacity style={styles.circleBox} onPress={() => navigation.navigate("SignUp")} activeOpacity={0.85}>
+              <View style={[styles.circle, { width: circleSize, height: circleSize, borderRadius: circleSize / 2, backgroundColor: "#800000" }]}>
+                <Text style={[styles.circleText, { fontSize: circleLabelSize, lineHeight: Math.round(circleLabelSize * 1.2) }]} numberOfLines={2} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.75}>
+                  Sign Up
+                </Text>
               </View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.circleBox} onPress={() => navigation.navigate("HowItWorksScreen")}>
-              {/* <View style={[styles.circle, { backgroundColor: "#00C7BE" }]}> */}
-              <View style={[styles.circle, { backgroundColor: "#FF9500" }]}>
-                <Text style={styles.circleText}>How It Works</Text>
+            <TouchableOpacity style={styles.circleBox} onPress={() => navigation.navigate("HowItWorksScreen")} activeOpacity={0.85}>
+              <View style={[styles.circle, { width: circleSize, height: circleSize, borderRadius: circleSize / 2, backgroundColor: "#FF9500" }]}>
+                <Text style={[styles.circleText, { fontSize: circleLabelSize, lineHeight: Math.round(circleLabelSize * 1.2) }]} numberOfLines={2} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.75}>
+                  How It Works
+                </Text>
               </View>
             </TouchableOpacity>
             <TouchableOpacity
@@ -995,10 +1022,12 @@ export default function App() {
                 console.log("App.js - Login Button Pressed");
                 navigation.navigate("Login");
               }}
+              activeOpacity={0.85}
             >
-              {/* <View style={[styles.circle, { backgroundColor: "#AF52DE" }]}> */}
-              <View style={[styles.circle, { backgroundColor: "#2434C2" }]}>
-                <Text style={styles.circleText}>Log In</Text>
+              <View style={[styles.circle, { width: circleSize, height: circleSize, borderRadius: circleSize / 2, backgroundColor: "#2434C2" }]}>
+                <Text style={[styles.circleText, { fontSize: circleLabelSize, lineHeight: Math.round(circleLabelSize * 1.2) }]} numberOfLines={2} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.75}>
+                  Log In
+                </Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -1223,14 +1252,20 @@ const styles = StyleSheet.create({
   },
   circlesContainer: {
     marginTop: 50,
+    width: "100%",
     flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-around",
-    padding: 20,
+    flexWrap: "nowrap",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 8,
   },
   circleBox: {
-    margin: 10,
+    flex: 1,
+    minWidth: 0,
+    marginHorizontal: 2,
     alignItems: "center",
+    justifyContent: "center",
   },
   circleMain: {
     width: 200,
@@ -1256,12 +1291,9 @@ const styles = StyleSheet.create({
     height: 200,
   },
   circle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
     justifyContent: "center",
     alignItems: "center",
-    padding: 10,
+    padding: 6,
   },
   circleText: {
     color: "#fff",
@@ -1279,44 +1311,42 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   dateTimeText: {
-    fontSize: 14,
     fontFamily: Platform.OS === "web" ? "Arial, sans-serif" : undefined,
     color: "#666",
     textAlign: "left",
     marginTop: 8,
+    alignSelf: "stretch",
   },
   brandingContainer: {
     alignItems: "flex-start",
     marginTop: 20,
     marginBottom: 20,
     width: "100%",
-    paddingHorizontal: 30, // Match circlesContainer padding (20) + circleBox margin (10) to align with Sign Up button
   },
   brandName: {
     fontSize: 36,
-    fontStyle: "regular",
-    // fontWeight: "bold",
-    fontFamily: Platform.OS === "web" ? "Arial, sans-serif" : undefined,
+    fontStyle: "normal",
+    fontFamily: Platform.select({ web: "Arial, sans-serif", ios: "Georgia", android: "serif", default: undefined }),
     color: "#000",
     textAlign: "left",
   },
   brandItalicText: {
     fontStyle: "italic",
-    fontFamily: Platform.OS === "web" ? '"Castoro", serif' : "Castoro",
+    fontFamily: Platform.select({ web: '"Castoro", serif', ios: "Georgia", android: "serif", default: "serif" }),
   },
   brandRegularText: {
     color: "#800000",
-    fontFamily: Platform.OS === "web" ? '"Castoro", serif' : "Castoro",
-    fontStyle: "normal", // Explicitly set to normal to override any italic inheritance
-    fontWeight: "normal", // Ensure normal weight
+    fontStyle: "normal",
+    fontWeight: "normal",
+    fontFamily: Platform.select({ web: '"Castoro", serif', ios: "Georgia", android: "serif", default: "serif" }),
   },
   brandText: {
     color: "#000",
     fontSize: 20,
   },
   tagline: {
-    fontSize: 24,
-    // fontStyle: "italic",
+    alignSelf: "stretch",
+    maxWidth: "100%",
     fontFamily: Platform.OS === "web" ? "Arial, sans-serif" : undefined,
     color: "#000",
     textAlign: "left",
