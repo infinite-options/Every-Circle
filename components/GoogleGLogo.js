@@ -1,11 +1,12 @@
 // Multicolor "G" from Google's pre-approved Sign in with Google artwork (Firebase UI pack)
 import React from "react";
+import { Platform } from "react-native";
 import Svg, { Path } from "react-native-svg";
 
 export default function GoogleGLogo({ size = 18 }) {
   const aspect = 120 / 118;
   return (
-    <Svg width={size} height={size * aspect} viewBox='0 0 118 120' accessible={false}>
+    <Svg width={size} height={size * aspect} viewBox='0 0 118 120' {...(Platform.OS === "web" ? { "aria-hidden": true } : { accessible: false })}>
       <Path
         fill='#4285F4'
         d='M117.6,61.3636364 C117.6,57.1090909 117.218182,53.0181818 116.509091,49.0909091 L60,49.0909091 L60,72.3 L92.2909091,72.3 C90.9,79.8 86.6727273,86.1545455 80.3181818,90.4090909 L80.3181818,105.463636 L99.7090909,105.463636 C111.054545,95.0181818 117.6,79.6363636 117.6,61.3636364 L117.6,61.3636364 Z'

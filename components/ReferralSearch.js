@@ -1,6 +1,6 @@
 // components/ReferralSearch.js
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, Modal, FlatList, Image, ActivityIndicator, StyleSheet } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Modal, FlatList, Image, ActivityIndicator, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SEARCH_REFERRAL_ENDPOINT } from "../apiConfig";
 
@@ -88,7 +88,14 @@ const ReferralSearch = ({
     <>
       {/* Search Input */}
       <View style={styles.searchContainer}>
-        <Ionicons name='search' size={20} color='#666' style={styles.searchIcon} accessible={false} importantForAccessibility='no' />
+        <Ionicons
+          name='search'
+          size={20}
+          color='#666'
+          style={styles.searchIcon}
+          importantForAccessibility='no'
+          {...(Platform.OS === "web" ? { "aria-hidden": true } : { accessible: false })}
+        />
         <TextInput
           style={styles.searchInput}
           placeholder='Search by name or city'

@@ -118,7 +118,7 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
 
         const authUrl = `https://appleid.apple.com/auth/authorize?client_id=${encodeURIComponent(
           servicesId,
-        )}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code%20id_token&scope=name%20email&response_mode=query`;
+        )}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code%20id_token&scope=name%20email&response_mode=form_post`;
         const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
         if (result.type === "success") {
