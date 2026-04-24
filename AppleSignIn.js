@@ -4,6 +4,7 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import * as WebBrowser from "expo-web-browser";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import AppleLogomarkWhite from "./components/AppleLogomarkWhite";
+import { EXPO_PUBLIC_APPLE_SERVICES_ID, EXPO_PUBLIC_APPLE_REDIRECT_URI, EXPO_PUBLIC_EXPO_ACCOUNT } from "@env";
 
 const AUTH_BTN_H = 48;
 function buttonWidthForWindow(windowW) {
@@ -105,12 +106,16 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
         }
       } else {
         console.log("AppleSignIn - non-iOS (web or Android) web auth session");
-        const result = await WebBrowser.openAuthSessionAsync(
-          `https://appleid.apple.com/auth/authorize?client_id=${process.env.EXPO_PUBLIC_APPLE_SERVICES_ID}&redirect_uri=${encodeURIComponent(
-            "https://auth.expo.io/@pmarathay/google-auth-demo/redirect",
-          )}&response_type=code id_token&scope=name email&response_mode=form_post`,
-          "https://auth.expo.io/@pmarathay/google-auth-demo/redirect",
-        );
+        const servicesId = EXPO_PUBLIC_APPLE_SERVICES_ID;
+        const redirectUri = (EXPO_PUBLIC_APPLE_REDIRECT_URI || EXPO_PUBLIC_EXPO_ACCOUNT || "").trim();
+        if (!servicesId || !redirectUri) {
+          onError("Missing EXPO_PUBLIC_APPLE_SERVICES_ID or EXPO_PUBLIC_APPLE_REDIRECT_URI (or EXPO_PUBLIC_EXPO_ACCOUNT) in .env");
+          return;
+        }
+        const authUrl = `https://appleid.apple.com/auth/authorize?client_id=${encodeURIComponent(
+          servicesId,
+        )}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code%20id_token&scope=name%20email&response_mode=form_post`;
+        const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
         if (result.type === "success") {
           console.log("Web authentication successful:", result);
