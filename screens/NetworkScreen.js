@@ -8,7 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { useFocusEffect } from "@react-navigation/native";
-import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT, CHAT_CONVERSATIONS_ENDPOINT, NEARBY_USERS_ENDPOINT } from "../apiConfig";
+import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT, CHAT_CONVERSATIONS_ENDPOINT, NEARBY_USERS_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
 import MiniCard from "../components/MiniCard";
 import WebTextInput from "../components/WebTextInput";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
@@ -346,6 +346,34 @@ const NetworkScreen = ({ navigation }) => {
   const [ignoredNearbyUids, setIgnoredNearbyUids] = useState(new Set());
   const [expandedDegrees, setExpandedDegrees] = useState({}); // { [deg]: boolean } - undefined/true = expanded
 
+  // Who Viewed My Profile
+  const [profileViewers, setProfileViewers] = useState([]);
+  const [viewersLoading, setViewersLoading] = useState(false);
+  const [showProfileViewers, setShowProfileViewers] = useState(false);
+  const [viewersSelectedAccount, setViewersSelectedAccount] = useState("personal");
+  const [viewerBusinesses, setViewerBusinesses] = useState([]);
+  const [showViewersAccountDropdown, setShowViewersAccountDropdown] = useState(false);
+
+  const fetchProfileViewers = async (accountId) => {
+    try {
+      setViewersLoading(true);
+      const id = accountId || await AsyncStorage.getItem("profile_uid");
+      if (!id) return;
+      const response = await fetch(`${PROFILE_VIEWS_ENDPOINT}/${id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setProfileViewers(data.viewers || []);
+      } else {
+        setProfileViewers([]);
+      }
+    } catch (e) {
+      console.warn("NetworkScreen - Failed to fetch viewers:", e);
+      setProfileViewers([]);
+    } finally {
+      setViewersLoading(false);
+    }
+  };
+
   const networkFeedbackInstructions = "Instructions for Connect";
 
   //Define custom questions for the Network page
@@ -605,6 +633,21 @@ const NetworkScreen = ({ navigation }) => {
             setProfileUid(uid);
             // Fetch user profile data for QR code
             fetchUserProfileForQR(uid);
+            // Load businesses for "Who Viewed My Profile" account switcher
+            try {
+              const profRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${uid}`);
+              if (profRes.ok) {
+                const profJson = await profRes.json();
+                const bizList = profJson.business_info
+                  ? typeof profJson.business_info === "string"
+                    ? JSON.parse(profJson.business_info)
+                    : profJson.business_info
+                  : [];
+                setViewerBusinesses(bizList);
+              }
+            } catch (e) {
+              console.warn("NetworkScreen - Failed to load viewer businesses:", e);
+            }
           } else {
             console.warn("⚠️ Invalid profile_uid loaded:", uid);
           }
@@ -2828,6 +2871,111 @@ const NetworkScreen = ({ navigation }) => {
             </View>
           )}
 
+          {/* ── Who Viewed My Profile ─────────────────────────────── */}
+          <TouchableOpacity
+            style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader, { marginTop: 8 }]}
+            onPress={() => {
+              const willExpand = !showProfileViewers;
+              setShowProfileViewers(willExpand);
+              if (willExpand) fetchProfileViewers(viewersSelectedAccount === "personal" ? null : viewersSelectedAccount);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>Who Viewed My Profile</Text>
+            <Ionicons name={showProfileViewers ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+          </TouchableOpacity>
+          {showProfileViewers && (
+            <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
+              <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4 }}>
+                <TouchableOpacity
+                  style={styles.viewersDropdownBtn}
+                  onPress={() => setShowViewersAccountDropdown((p) => !p)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.viewersDropdownBtnText, darkMode && { color: "#e0e0e0" }]}>
+                    {viewersSelectedAccount === "personal"
+                      ? "Personal"
+                      : viewerBusinesses.find((b) => (b.business_uid || b.profile_business_uid) === viewersSelectedAccount)?.business_name || "Business"}
+                  </Text>
+                  <Ionicons name={showViewersAccountDropdown ? "chevron-up" : "chevron-down"} size={16} color={darkMode ? "#e0e0e0" : "#333"} />
+                </TouchableOpacity>
+                {showViewersAccountDropdown && (
+                  <View style={[styles.viewersDropdownMenu, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444" }]}>
+                    <TouchableOpacity
+                      style={styles.viewersDropdownItem}
+                      onPress={() => {
+                        setViewersSelectedAccount("personal");
+                        setShowViewersAccountDropdown(false);
+                        fetchProfileViewers(null);
+                      }}
+                    >
+                      <Text style={[styles.viewersDropdownItemText, viewersSelectedAccount === "personal" && styles.viewersDropdownItemActive, darkMode && { color: "#e0e0e0" }]}>Personal</Text>
+                    </TouchableOpacity>
+                    {viewerBusinesses.map((b, idx) => {
+                      const bId = b.business_uid || b.profile_business_uid;
+                      const bName = b.business_name || b.profile_business_name || `Business ${idx + 1}`;
+                      return (
+                        <TouchableOpacity
+                          key={bId || idx}
+                          style={styles.viewersDropdownItem}
+                          onPress={() => {
+                            setViewersSelectedAccount(bId);
+                            setShowViewersAccountDropdown(false);
+                            fetchProfileViewers(bId);
+                          }}
+                        >
+                          <Text style={[styles.viewersDropdownItemText, viewersSelectedAccount === bId && styles.viewersDropdownItemActive, darkMode && { color: "#e0e0e0" }]}>{bName}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+              {viewersLoading ? (
+                <ActivityIndicator size="small" color="#AF52DE" style={{ paddingVertical: 20 }} />
+              ) : profileViewers.length > 0 ? (
+                profileViewers.map((viewer, index) => (
+                  <TouchableOpacity
+                    key={viewer.view_viewer_id || index}
+                    activeOpacity={0.7}
+                    onPress={() => navigation.navigate("Profile", { profile_uid: viewer.view_viewer_id, returnTo: "Network" })}
+                    style={{ paddingHorizontal: 8, marginTop: index > 0 ? 4 : 0 }}
+                  >
+                    <MiniCard
+                      user={{
+                        firstName: viewer.viewer_first_name || "",
+                        lastName: viewer.viewer_last_name || "",
+                        email: viewer.viewer_email || "",
+                        phoneNumber: viewer.viewer_phone || "",
+                        tagLine: viewer.viewer_tag_line || "",
+                        city: viewer.viewer_city || "",
+                        state: viewer.viewer_state || "",
+                        profileImage: viewer.viewer_image || "",
+                        emailIsPublic: viewer.viewer_email_is_public === 1 || viewer.viewer_email_is_public === "1",
+                        phoneIsPublic: viewer.viewer_phone_is_public === 1 || viewer.viewer_phone_is_public === "1",
+                        tagLineIsPublic: viewer.viewer_tag_line_is_public === 1 || viewer.viewer_tag_line_is_public === "1",
+                        imageIsPublic: viewer.viewer_image_is_public === 1 || viewer.viewer_image_is_public === "1",
+                        locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
+                      }}
+                    />
+                    {viewer.view_timestamp ? (
+                      <Text style={styles.viewedTimestamp}>
+                        Viewed: {new Date(viewer.view_timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </Text>
+                    ) : null}
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <View style={styles.messagesEmpty}>
+                  <Ionicons name="eye-outline" size={40} color={darkMode ? "#555" : "#ccc"} />
+                  <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark]}>
+                    {viewersSelectedAccount === "personal" ? "No profile views yet" : "No business profile views yet"}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
           {SHOW_NETWORK_DEBUG_UI !== 0 && (
             <>
               {/* QR / ABLY DEBUG Dropdown */}
@@ -3079,6 +3227,35 @@ const styles = StyleSheet.create({
   messagesTimeDark: { color: "#666" },
   messagesPreview: { fontSize: 12, color: "#666" },
   messagesPreviewDark: { color: "#aaa" },
+  viewersDropdownBtn: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    backgroundColor: "#f5f5f5",
+    marginBottom: 4,
+  },
+  viewersDropdownBtnText: { fontSize: 14, color: "#333" },
+  viewersDropdownMenu: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    marginBottom: 8,
+  },
+  viewersDropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  viewersDropdownItemText: { fontSize: 14, color: "#333" },
+  viewersDropdownItemActive: { color: "#AF52DE", fontWeight: "600" },
+  viewedTimestamp: { fontSize: 11, color: "#999", paddingHorizontal: 12, paddingBottom: 6 },
   messagesEmpty: { alignItems: "center", paddingVertical: 28 },
   messagesEmptyText: { marginTop: 10, fontSize: 14, color: "#aaa" },
   messagesEmptyTextDark: { color: "#666" },

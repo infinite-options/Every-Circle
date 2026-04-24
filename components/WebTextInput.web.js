@@ -88,7 +88,7 @@ const WebTextInput = ({ style, value, onChangeText, placeholder, keyboardType, i
     lineBreakStrategyIOS,
     lineBreakModeIOS,
     ...domProps
-  } = props;
+  } = props;  // On web, use a native HTML input element
 
   // Map RN a11y to standard HTML.
   const a11yForDom = {

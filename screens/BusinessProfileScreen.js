@@ -182,6 +182,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const fetchBusinessInfo = async () => {
     try {
       setLoading(true);
+      console.log("[BusinessProfileScreen] fetchBusinessInfo - business_uid from route params:", business_uid);
       // Read viewer UID directly so it's available for the ratings call
       const viewerUid = (await AsyncStorage.getItem("profile_uid")) || "";
       const endpoint = `${BusinessProfileApi}/${business_uid}`;
@@ -409,13 +410,15 @@ export default function BusinessProfileScreen({ route, navigation }) {
             const viewerIsOwner = ownerProfileIds.includes(viewerProfileId);
             if (!viewerIsOwner) {
               // Record view against the business_uid so business owners can see who visited
+              const viewPayload = {
+                profile_view_profile_id: business_uid,
+                profile_view_viewer_id: viewerProfileId,
+              };
+              console.log("BusinessProfileScreen - Recording view payload:", viewPayload);
               fetch(PROFILE_VIEWS_ENDPOINT, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  profile_view_profile_id: business_uid,
-                  profile_view_viewer_id: viewerProfileId,
-                }),
+                body: JSON.stringify(viewPayload),
               }).catch((e) => console.warn("BusinessProfileScreen - failed to record view:", e));
             }
           }
