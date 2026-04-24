@@ -209,9 +209,15 @@ export default function SearchScreen({ route }) {
             const uids = bizItems.map((b) => b.id).join(",");
             AsyncStorage.getItem("profile_uid").then(async (cachedProfileUid) => {
               try {
+                const safeJson = async (r) => {
+                  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                  const text = await r.text();
+                  if (!text || text.trimStart().startsWith("<")) throw new Error("Server returned HTML instead of JSON");
+                  return JSON.parse(text);
+                };
                 const [ratingsJson, bountyJson] = await Promise.all([
-                  fetch(`${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${encodeURIComponent(uids)}${cachedProfileUid ? `&viewer_uid=${cachedProfileUid}` : ""}`).then((r) => r.json()),
-                  fetch(`${BUSINESS_MAX_BOUNTY_ENDPOINT}?uids=${encodeURIComponent(uids)}`).then((r) => r.json()),
+                  fetch(`${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${encodeURIComponent(uids)}${cachedProfileUid ? `&viewer_uid=${cachedProfileUid}` : ""}`).then(safeJson),
+                  fetch(`${BUSINESS_MAX_BOUNTY_ENDPOINT}?uids=${encodeURIComponent(uids)}`).then(safeJson),
                 ]);
                 setResults((prev) => {
                   const updated = prev.map((b) => {

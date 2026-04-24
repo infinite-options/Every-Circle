@@ -71,8 +71,6 @@ const ProfileScreen = ({ route, navigation }) => {
   const [showSeeking, setShowSeeking] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
-  const [profileViewers, setProfileViewers] = useState([]);
-  const [showViewers, setShowViewers] = useState(true);
 
   const profileFeedbackInstructions = "Instructions for Profile";
 
@@ -112,7 +110,6 @@ const ProfileScreen = ({ route, navigation }) => {
           // This is the logged-in user's own profile
           setIsCurrentUserProfile(true);
           await fetchUserData(profileId);
-          await fetchProfileViewers(profileId);
           return;
         }
 
@@ -160,6 +157,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
   async function recordProfileView(viewedProfileId, viewerProfileId) {
     try {
+      console.log("[ProfileScreen] recordProfileView - view_profile_id:", viewedProfileId, "view_viewer_id:", viewerProfileId);
       await fetch(PROFILE_VIEWS_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -167,18 +165,6 @@ const ProfileScreen = ({ route, navigation }) => {
       });
     } catch (e) {
       console.warn("ProfileScreen - Failed to record profile view:", e);
-    }
-  }
-
-  async function fetchProfileViewers(profileId) {
-    try {
-      const response = await fetch(`${PROFILE_VIEWS_ENDPOINT}/${profileId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setProfileViewers(data.viewers || []);
-      }
-    } catch (e) {
-      console.warn("ProfileScreen - Failed to fetch profile viewers:", e);
     }
   }
 
@@ -1724,52 +1710,6 @@ const ProfileScreen = ({ route, navigation }) => {
             </View>
           )}
 
-          {/* Who Viewed My Profile — only visible on your own profile */}
-          {isCurrentUserProfile && (
-            <View style={styles.fieldContainer}>
-              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowViewers(!showViewers)}>
-                <Text style={styles.sectionHeaderText}>WHO VIEWED MY PROFILE</Text>
-                <Ionicons name={showViewers ? "chevron-up" : "chevron-down"} size={20} color='#000' />
-              </TouchableOpacity>
-              {showViewers && (
-                profileViewers.length > 0 ? (
-                  profileViewers.map((viewer, index) => (
-                    <TouchableOpacity
-                      key={viewer.view_viewer_id || index}
-                      activeOpacity={0.7}
-                      onPress={() => navigation.navigate("Profile", { profile_uid: viewer.view_viewer_id, returnTo: "Profile" })}
-                      style={index > 0 ? { marginTop: 4 } : undefined}
-                    >
-                      <MiniCard
-                        user={{
-                          firstName: viewer.viewer_first_name || "",
-                          lastName: viewer.viewer_last_name || "",
-                          email: viewer.viewer_email || "",
-                          phoneNumber: viewer.viewer_phone || "",
-                          tagLine: viewer.viewer_tag_line || "",
-                          city: viewer.viewer_city || "",
-                          state: viewer.viewer_state || "",
-                          profileImage: viewer.viewer_image || "",
-                          emailIsPublic: viewer.viewer_email_is_public === 1 || viewer.viewer_email_is_public === "1",
-                          phoneIsPublic: viewer.viewer_phone_is_public === 1 || viewer.viewer_phone_is_public === "1",
-                          tagLineIsPublic: viewer.viewer_tag_line_is_public === 1 || viewer.viewer_tag_line_is_public === "1",
-                          imageIsPublic: viewer.viewer_image_is_public === 1 || viewer.viewer_image_is_public === "1",
-                          locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
-                        }}
-                      />
-                      {viewer.view_timestamp ? (
-                        <Text style={{ fontSize: 11, color: "#999", paddingHorizontal: 12, paddingBottom: 6 }}>
-                          Viewed: {new Date(viewer.view_timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                        </Text>
-                      ) : null}
-                    </TouchableOpacity>
-                  ))
-                ) : (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No profile views yet</Text>
-                )
-              )}
-            </View>
-          )}
         </ScrollView>
 
         <BottomNavBar navigation={navigation} />
