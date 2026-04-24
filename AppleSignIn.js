@@ -107,11 +107,15 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
       } else {
         console.log("AppleSignIn - non-iOS (web or Android) web auth session");
         const servicesId = EXPO_PUBLIC_APPLE_SERVICES_ID;
-        const redirectUri = (EXPO_PUBLIC_APPLE_REDIRECT_URI || EXPO_PUBLIC_EXPO_ACCOUNT || "").trim();
+        const redirectUri = EXPO_PUBLIC_APPLE_REDIRECT_URI?.trim();
+        console.log("AppleSignIn - servicesId:", servicesId);
+        console.log("AppleSignIn - redirectUri:", redirectUri);
+
         if (!servicesId || !redirectUri) {
-          onError("Missing EXPO_PUBLIC_APPLE_SERVICES_ID or EXPO_PUBLIC_APPLE_REDIRECT_URI (or EXPO_PUBLIC_EXPO_ACCOUNT) in .env");
+          onError("Missing EXPO_PUBLIC_APPLE_SERVICES_ID or EXPO_PUBLIC_APPLE_REDIRECT_URI");
           return;
         }
+
         const authUrl = `https://appleid.apple.com/auth/authorize?client_id=${encodeURIComponent(
           servicesId,
         )}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code%20id_token&scope=name%20email&response_mode=query`;
