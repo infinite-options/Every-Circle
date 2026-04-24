@@ -1,0 +1,5 @@
+# Netlify: serve the single-page app for every path so /, /login, /profile, etc. all load
+# index.html and React Navigation can read the URL. Required for Apple Return URLs that
+# point at any path you registered (e.g. https://everycircle.com/ or .../login/).
+# https://docs.netlify.com/routing/redirects/rewrites-proxies/#history-pushstate-and-single-page-apps
+/*    /index.html   200
