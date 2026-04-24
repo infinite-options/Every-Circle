@@ -73,6 +73,7 @@ import NewConnectionScreen from "./screens/NewConnectionScreen";
 import QRScannerScreen from "./screens/QRScannerScreen";
 import InboxScreen from "./screens/InboxScreen";
 import ChatScreen from "./screens/ChatScreen";
+import AddReviewSearchScreen from "./screens/AddReviewSearchScreen";
 import { persistMyBusinessUidsFromProfile } from "./utils/myBusinessUids";
 
 const Stack = createNativeStackNavigator();
@@ -980,6 +981,7 @@ export default function App() {
                 <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
                 <Stack.Screen name='Inbox' component={InboxScreen} />
                 <Stack.Screen name='Chat' component={ChatScreen} />
+                <Stack.Screen name='AddReviewSearch' component={AddReviewSearchScreen} options={{ headerShown: false }} />
               </Stack.Navigator>
             </NavigationContainer>
             <MessageNotificationBanner

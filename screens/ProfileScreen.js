@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useLayoutEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, ScrollView, Image, SafeAreaView, TouchableWithoutFeedback, Platform, Pressable } from "react-native";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, ScrollView, Image, SafeAreaView, TouchableWithoutFeedback, Platform, Pressable, Modal, KeyboardAvoidingView, FlatList } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 // import axios from 'axios';
 import MiniCard from "../components/MiniCard";
@@ -7,11 +7,13 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_INFO_ENDPOINT, CIRCLES_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
+import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_INFO_ENDPOINT, CIRCLES_ENDPOINT, PROFILE_VIEWS_ENDPOINT, BUSINESS_RESULTS_ENDPOINT, BUSINESS_AVG_RATINGS_ENDPOINT, BUSINESS_MAX_BOUNTY_ENDPOINT, BUSINESS_TAG_SEARCH_ENDPOINT } from "../apiConfig";
+import config from "../config";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { reinitializeUnreadFromOutside } from "../contexts/UnreadContext";
 import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 import { sanitizeText } from "../utils/textSanitizer";
+import { getBusinessSuggestions as fetchGooglePlaces, getPlaceDetails } from "../utils/googlePlaces";
 import { isWishEnded } from "../utils/wishUtils";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
@@ -19,6 +21,16 @@ import { getHeaderColors } from "../config/headerColors";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 console.log(`ProfileScreen - Full endpoint: ${ProfileScreenAPI}`);
+
+/** Matches SearchScreen: 💰 with a slash overlay for "no bounty" */
+function NoBountyIcon({ darkMode }) {
+  return (
+    <View style={profileStyles.noBountyIconWrap} accessibilitylabel="No bounty">
+      <Text style={profileStyles.noBountyEmoji}>💰</Text>
+      <View pointerEvents="none" style={[profileStyles.noBountySlash, darkMode && profileStyles.darkNoBountySlash]} />
+    </View>
+  );
+}
 
 // Helper function to format phone number for display
 const formatPhoneNumberForDisplay = (phoneNumber) => {
@@ -68,6 +80,173 @@ const ProfileScreen = ({ route, navigation }) => {
   const [showBusiness, setShowBusiness] = useState(true);
   const [showReviews, setShowReviews] = useState(true);
   const [showOffering, setShowOffering] = useState(true);
+
+  // Review search modal
+  const [reviewSearchVisible, setReviewSearchVisible] = useState(false);
+  const [reviewSearchQuery, setReviewSearchQuery] = useState("");
+  const [reviewSearchResults, setReviewSearchResults] = useState([]);
+  const [reviewSearchLoading, setReviewSearchLoading] = useState(false);
+  const [reviewSearchDone, setReviewSearchDone] = useState(false);
+  // Google Places autocomplete
+  const [placeSuggestions, setPlaceSuggestions] = useState([]);
+  const [savingGooglePlace, setSavingGooglePlace] = useState(false);
+  const placesDebounceRef = useRef(null);
+
+  const fetchPlacesSuggestions = (text) => {
+    if (placesDebounceRef.current) clearTimeout(placesDebounceRef.current);
+    if (!text.trim()) { setPlaceSuggestions([]); return; }
+    placesDebounceRef.current = setTimeout(async () => {
+      const results = await fetchGooglePlaces(text);
+      setPlaceSuggestions(results);
+    }, 400);
+  };
+
+  // ─── User picks a Google Place from the overlay ────────────────────────────
+  const handleGooglePlaceSelect = async (place) => {
+    setPlaceSuggestions([]);
+    setReviewSearchVisible(false);
+    setSavingGooglePlace(true);
+    try {
+      const pd = await getPlaceDetails(place.place_id);
+      const uid = (await AsyncStorage.getItem("user_uid")) || (await AsyncStorage.getItem("profile_uid")) || "";
+
+      const formData = new FormData();
+      formData.append("user_uid", uid);
+      formData.append("business_name", place.structured_formatting?.main_text || place.description);
+      formData.append("business_google_id", place.place_id);
+      formData.append("business_role", "unclaimed");  // reviewer-saved; owner can claim later
+      if (pd.address_line_1)    formData.append("business_address_line_1", pd.address_line_1);
+      if (pd.city)              formData.append("business_city", pd.city);
+      if (pd.state)             formData.append("business_state", pd.state);
+      if (pd.country)           formData.append("business_country", pd.country);
+      if (pd.zip)               formData.append("business_zip_code", pd.zip);
+      if (pd.lat != null)       formData.append("business_latitude", String(pd.lat));
+      if (pd.lng != null)       formData.append("business_longitude", String(pd.lng));
+      if (pd.phone)             formData.append("business_phone_number", pd.phone);
+      if (pd.website)           formData.append("business_website", pd.website);
+
+      const saveRes = await fetch(BUSINESS_INFO_ENDPOINT, { method: "POST", body: formData });
+      const saveJson = await saveRes.json();
+
+      // Backend returns business_uid even on 409 (already exists)
+      let businessUid = saveJson.business_uid;
+
+      if (saveRes.status === 409 && !businessUid) {
+        // Fallback for older backend versions
+        const srRes = await fetch(`${BUSINESS_RESULTS_ENDPOINT}?q=${encodeURIComponent(place.structured_formatting?.main_text || place.description)}`);
+        const srJson = await srRes.json();
+        const arr = Array.isArray(srJson) ? srJson : srJson.results || srJson.result || [];
+        businessUid = arr[0]?.business_uid;
+      }
+
+      if (!businessUid) {
+        Alert.alert("Error", "Could not find or create this business. Please try again.");
+        return;
+      }
+
+      navigation.navigate("ReviewBusiness", {
+        business_uid: businessUid,
+        business_name: place.structured_formatting?.main_text || place.description,
+      });
+    } catch (e) {
+      console.error("[ProfileScreen] google place select error:", e);
+      Alert.alert("Error", "Could not load business. Please try again.");
+    } finally {
+      setSavingGooglePlace(false);
+    }
+  };
+
+  const searchBusinessesForReview = async (q) => {
+    const trimmed = q.trim();
+    if (!trimmed) return;
+    setPlaceSuggestions([]);
+    setReviewSearchLoading(true);
+    setReviewSearchDone(false);
+
+    // Fire Places in parallel — results will only be shown if DB returns nothing
+    fetchPlacesSuggestions(trimmed);
+
+    try {
+      const res = await fetch(`${BUSINESS_RESULTS_ENDPOINT}?q=${encodeURIComponent(trimmed)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      if (!text || text.trimStart().startsWith("<")) throw new Error("Non-JSON");
+      const json = JSON.parse(text);
+      // SearchScreen checks Array.isArray first — the API may return an array directly
+      const arr = Array.isArray(json) ? json : json.results || json.result || [];
+      const sanitize = (t) => { if (!t) return ""; const s = String(t).trim(); return s === "." ? "" : s; };
+      let list = arr.map((b) => ({
+        id: String(b.business_uid || ""),
+        company: sanitize(b.business_name || b.company) || "Unknown Business",
+        business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
+        business_tag_line: sanitize(b.business_tag_line),
+        rating: null,
+        ratingCount: 0,
+        max_bounty: b.max_bounty || b.business_max_bounty || null,
+        connection_degree: null,
+      }));
+      // Tag search — same as SearchScreen
+      try {
+        const tagRes = await fetch(`${BUSINESS_TAG_SEARCH_ENDPOINT}?q=${encodeURIComponent(trimmed)}`);
+        const tagJson = await tagRes.json();
+        const tagResults = tagJson.result || [];
+        if (tagResults.length > 0) {
+          const existingIds = new Set(list.map((b) => b.id));
+          const tagList = tagResults
+            .filter((b) => !existingIds.has(b.business_uid))
+            .map((b) => ({
+              id: b.business_uid,
+              company: sanitize(b.business_name) || "Unknown Business",
+              business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
+              business_tag_line: sanitize(b.business_tag_line),
+              rating: null,
+              ratingCount: 0,
+              max_bounty: null,
+              connection_degree: null,
+            }));
+          list = [...list, ...tagList];
+        }
+      } catch (_) {}
+      // Fetch avg ratings + connection degree (same as SearchScreen)
+      try {
+        const profileUid = await AsyncStorage.getItem("profile_uid");
+        const uids = list.map((b) => b.id).join(",");
+        const ratingsUrl = `${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${uids}${profileUid ? `&viewer_uid=${profileUid}` : ""}`;
+        const ratingsRes = await fetch(ratingsUrl);
+        const ratingsJson = await ratingsRes.json();
+        if (ratingsJson.result) {
+          list = list.map((b) => ({
+            ...b,
+            rating: ratingsJson.result[b.id] && Number.isFinite(parseFloat(ratingsJson.result[b.id].avg_rating))
+              ? parseFloat(ratingsJson.result[b.id].avg_rating) : null,
+            ratingCount: ratingsJson.result[b.id] ? ratingsJson.result[b.id].rating_count : 0,
+            connection_degree: ratingsJson.result[b.id]?.nearest_connection ?? null,
+          }));
+        }
+      } catch (_) {}
+      // Fetch max bounty (same as SearchScreen)
+      try {
+        const uids = list.map((b) => b.id).join(",");
+        const bountyRes = await fetch(`${BUSINESS_MAX_BOUNTY_ENDPOINT}?uids=${encodeURIComponent(uids)}`);
+        const bountyJson = await bountyRes.json();
+        if (bountyJson.result) {
+          list = list.map((b) => ({
+            ...b,
+            max_bounty: bountyJson.result[b.id] ? parseFloat(bountyJson.result[b.id].max_bounty) : null,
+          }));
+        }
+      } catch (_) {}
+      setReviewSearchResults(list);
+      // Places fired in parallel — always let them show alongside DB results
+    } catch (e) {
+      console.error("[ProfileScreen] review search error:", e);
+      setReviewSearchResults([]);
+      // Places already fired in parallel — leave them to show
+    } finally {
+      setReviewSearchLoading(false);
+      setReviewSearchDone(true);
+    }
+  };
   const [showSeeking, setShowSeeking] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
@@ -1679,13 +1858,207 @@ const ProfileScreen = ({ route, navigation }) => {
           )}
 
           {/* Reviews — collapsible section */}
-          {user.ratings && user.ratings.length > 0 && (
-            <View style={styles.fieldContainer}>
-              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
-                <Text style={styles.sectionHeaderText}>REVIEWS</Text>
-                <Ionicons name={showReviews ? "chevron-up" : "chevron-down"} size={20} color='#000' />
-              </TouchableOpacity>
-              {showReviews &&
+          <View style={styles.fieldContainer}>
+              <View style={[styles.sectionHeader, { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }]}>
+                <TouchableOpacity style={{ flex: 1 }} onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
+                  <Text style={styles.sectionHeaderText}>REVIEWS</Text>
+                </TouchableOpacity>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  {isCurrentUserProfile && (
+                    <TouchableOpacity onPress={() => { setReviewSearchQuery(""); setReviewSearchResults([]); setReviewSearchDone(false); setReviewSearchVisible(!reviewSearchVisible); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Text style={[styles.sectionHeaderText, { fontSize: 28, lineHeight: 28 }]}>+</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
+                    <Ionicons name={showReviews ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              {/* Review search overlay modal */}
+              <Modal
+                visible={reviewSearchVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => { setReviewSearchVisible(false); setPlaceSuggestions([]); }}
+              >
+                <TouchableWithoutFeedback onPress={() => { setReviewSearchVisible(false); setPlaceSuggestions([]); }}>
+                  <View style={profileStyles.overlayBackdrop} />
+                </TouchableWithoutFeedback>
+                <KeyboardAvoidingView
+                  behavior={Platform.OS === "ios" ? "padding" : "height"}
+                  style={profileStyles.overlayContainer}
+                  pointerEvents="box-none"
+                >
+                  <View style={[profileStyles.overlayCard, darkMode && profileStyles.darkOverlayCard]}>
+                    {/* Header */}
+                    <View style={profileStyles.overlayHeader}>
+                      <Text style={[profileStyles.overlayTitle, darkMode && { color: "#fff" }]}>Add a Review</Text>
+                      <TouchableOpacity onPress={() => { setReviewSearchVisible(false); setPlaceSuggestions([]); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Ionicons name="close" size={22} color={darkMode ? "#fff" : "#333"} />
+                      </TouchableOpacity>
+                    </View>
+                    {/* Search row — matches SearchScreen layout */}
+                    <View style={profileStyles.overlaySearchRow}>
+                      <TextInput
+                        style={[profileStyles.inlineSearchInput, darkMode && profileStyles.darkInlineSearchInput]}
+                        placeholder="What are you looking for?"
+                        placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                        value={reviewSearchQuery}
+                        onChangeText={setReviewSearchQuery}
+                        onSubmitEditing={() => searchBusinessesForReview(reviewSearchQuery)}
+                        returnKeyType="search"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        autoFocus={true}
+                      />
+                      <TouchableOpacity
+                        style={[profileStyles.inlineSearchBtn, darkMode && profileStyles.darkInlineSearchBtn]}
+                        onPress={() => searchBusinessesForReview(reviewSearchQuery)}
+                        disabled={reviewSearchLoading}
+                      >
+                        {reviewSearchLoading
+                          ? <ActivityIndicator size="small" color={darkMode ? "#fff" : "#000"} />
+                          : <Ionicons name="search" size={22} color={darkMode ? "#ffffff" : "#000000"} />}
+                      </TouchableOpacity>
+                    </View>
+                    {/* Results — identical to SearchScreen renderResultItem */}
+                    <FlatList
+                      data={reviewSearchResults}
+                      keyExtractor={(item) => item.id}
+                      keyboardShouldPersistTaps="handled"
+                      style={{ maxHeight: 340 }}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
+                          style={[profileStyles.inlineResultCard, darkMode && profileStyles.darkInlineResultCard]}
+                          onPress={() => {
+                            setReviewSearchVisible(false);
+                            navigation.navigate("ReviewBusiness", { business_uid: item.id, business_name: item.company });
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          {/* Left: image + name/tagline — same as SearchScreen resultContent */}
+                          <View style={profileStyles.resultContent}>
+                            <View style={{ flexDirection: "row", alignItems: "center" }}>
+                              <Image
+                                source={item.business_profile_img ? { uri: encodeURI(item.business_profile_img.trim()) } : require("../assets/profile.png")}
+                                style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10 }}
+                                defaultSource={require("../assets/profile.png")}
+                              />
+                              <View style={{ flex: 1 }}>
+                                <Text style={[profileStyles.companyName, darkMode && profileStyles.darkCompanyName]} numberOfLines={1}>
+                                  {item.company ? String(item.company).trim() : ""}
+                                </Text>
+                                {(() => {
+                                  const tagLine = item.business_tag_line ? String(item.business_tag_line).trim() : "";
+                                  if (tagLine && tagLine !== "." && tagLine.length > 0) {
+                                    return <Text style={[profileStyles.businessTagLine, darkMode && profileStyles.darkBusinessTagLine]} numberOfLines={1}>{tagLine}</Text>;
+                                  }
+                                  return null;
+                                })()}
+                              </View>
+                            </View>
+                          </View>
+                          {/* Right: Rating | Bounty | Level — same as SearchScreen businessResultActions */}
+                          <View style={profileStyles.businessResultActions}>
+                            <View style={profileStyles.businessTableRatingCol}>
+                              {Number.isFinite(item.rating) ? (
+                                <View style={profileStyles.ratingContainer}>
+                                  <Ionicons name="star" size={16} color="#FFCD3C" />
+                                  <Text style={[profileStyles.ratingText, darkMode && profileStyles.darkRatingText]}>
+                                    {item.rating.toFixed(1)}{item.ratingCount > 0 ? ` (${item.ratingCount})` : ""}
+                                  </Text>
+                                </View>
+                              ) : (
+                                <Text style={[profileStyles.metricPlaceholder, darkMode && profileStyles.darkMetricPlaceholder]}>—</Text>
+                              )}
+                            </View>
+                            <View style={profileStyles.businessTableBountyCol}>
+                              {item.max_bounty != null
+                                ? <Text style={[profileStyles.bountyEmojiIcon, profileStyles.bountyEmojiIconCompact]}>💰</Text>
+                                : <NoBountyIcon darkMode={darkMode} />}
+                            </View>
+                            <View style={profileStyles.businessTableLevelCol}>
+                              <View style={profileStyles.levelButton}>
+                                <View style={{ position: "relative" }}>
+                                  <Image source={require("../assets/connect.png")} style={{ width: 22, height: 22, tintColor: darkMode ? "#ffffff" : "#000000" }} />
+                                  {item.connection_degree != null && (
+                                    <View style={profileStyles.connectionBadge}>
+                                      <Text style={profileStyles.connectionBadgeText}>{item.connection_degree}</Text>
+                                    </View>
+                                  )}
+                                </View>
+                              </View>
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      )}
+                      ListEmptyComponent={
+                        reviewSearchDone && !reviewSearchLoading && reviewSearchResults.length === 0 && placeSuggestions.length === 0 ? (
+                          <Text style={[profileStyles.inlineEmptyText, darkMode && { color: "#aaa" }]}>No results found for "{reviewSearchQuery}"</Text>
+                        ) : null
+                      }
+                    />
+                    {/* Google Places — always shown below DB results when search has been done */}
+                    {reviewSearchDone && placeSuggestions.length > 0 && (
+                      <>
+                        <View style={profileStyles.placesSeparator}>
+                          <View style={profileStyles.placesSeparatorLine} />
+                          <Text style={[profileStyles.placesSeparatorLabel, darkMode && { color: "#aaa" }]}>Also on Google</Text>
+                          <View style={profileStyles.placesSeparatorLine} />
+                        </View>
+                        <FlatList
+                          data={placeSuggestions}
+                          keyExtractor={(item) => item.place_id}
+                          keyboardShouldPersistTaps="handled"
+                          style={{ maxHeight: 260 }}
+                          renderItem={({ item }) => (
+                            <TouchableOpacity
+                              style={[profileStyles.inlineResultCard, darkMode && profileStyles.darkInlineResultCard]}
+                              onPress={() => handleGooglePlaceSelect(item)}
+                              activeOpacity={0.7}
+                            >
+                              {/* Left: pin icon + name + address — same layout as DB card */}
+                              <View style={profileStyles.resultContent}>
+                                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                                  <View style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10, backgroundColor: darkMode ? "#404040" : "#f0f0f0", justifyContent: "center", alignItems: "center" }}>
+                                    <Ionicons name="location-outline" size={22} color={darkMode ? "#aaa" : "#666"} />
+                                  </View>
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={[profileStyles.companyName, darkMode && profileStyles.darkCompanyName]} numberOfLines={1}>
+                                      {item.structured_formatting?.main_text || item.description}
+                                    </Text>
+                                    {item.structured_formatting?.secondary_text ? (
+                                      <Text style={[profileStyles.businessTagLine, darkMode && profileStyles.darkBusinessTagLine]} numberOfLines={1}>
+                                        📍 {item.structured_formatting.secondary_text}
+                                      </Text>
+                                    ) : null}
+                                  </View>
+                                </View>
+                              </View>
+                              {/* Right: same 3-column layout as DB card */}
+                              <View style={profileStyles.businessResultActions}>
+                                <View style={profileStyles.businessTableRatingCol}>
+                                  <Text style={[profileStyles.metricPlaceholder, darkMode && profileStyles.darkMetricPlaceholder, { fontSize: 10, textAlign: "center" }]}>No{"\n"}reviews</Text>
+                                </View>
+                                <View style={profileStyles.businessTableBountyCol}>
+                                  <NoBountyIcon darkMode={darkMode} />
+                                </View>
+                                <View style={profileStyles.businessTableLevelCol}>
+                                  <View style={profileStyles.levelButton}>
+                                    <Image source={require("../assets/connect.png")} style={{ width: 22, height: 22, tintColor: darkMode ? "#ffffff" : "#000000" }} />
+                                  </View>
+                                </View>
+                              </View>
+                            </TouchableOpacity>
+                          )}
+                        />
+                      </>
+                    )}
+                  </View>
+                </KeyboardAvoidingView>
+              </Modal>
+              {showReviews && (
+                user.ratings && user.ratings.length > 0 ? (
                 user.ratings.map((review, index) => (
                   <TouchableOpacity
                     key={review.rating_uid || index}
@@ -1706,9 +2079,12 @@ const ProfileScreen = ({ route, navigation }) => {
                     </Text>
                     {review.rating_description ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.rating_description}</Text> : null}
                   </TouchableOpacity>
-                ))}
+                ))
+                ) : (
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No reviews yet</Text>
+                )
+              )}
             </View>
-          )}
 
         </ScrollView>
 
@@ -1731,6 +2107,15 @@ const ProfileScreen = ({ route, navigation }) => {
         onAddConnection={handleConnectPopupSave}
       />
       <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Profile' instructions={profileFeedbackInstructions} questions={profileFeedbackQuestions} />
+      {/* Full-screen spinner while saving a Google Place business to DB */}
+      {savingGooglePlace && (
+        <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "center", alignItems: "center", zIndex: 9999 }}>
+          <View style={{ backgroundColor: "#fff", borderRadius: 12, padding: 24, alignItems: "center", gap: 12 }}>
+            <ActivityIndicator size="large" color="#9C45F7" />
+            <Text style={{ fontSize: 14, color: "#333", fontWeight: "500" }}>Setting up business…</Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 };
@@ -2041,4 +2426,114 @@ const styles = StyleSheet.create({
   },
 });
 
+const profileStyles = StyleSheet.create({
+  /* Overlay backdrop */
+  overlayBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  overlayContainer: {
+    flex: 1,
+    justifyContent: "flex-start",
+    paddingTop: Platform.OS === "ios" ? 80 : 60,
+    paddingHorizontal: 16,
+  },
+  overlayCard: {
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  darkOverlayCard: { backgroundColor: "#1e1e1e" },
+  overlayHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  overlayTitle: { fontSize: 16, fontWeight: "700", color: "#000" },
+  /* Search bar — identical to SearchScreen */
+  overlaySearchRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  inlineSearchInput: {
+    flex: 1,
+    backgroundColor: "#f0f0f0",
+    borderRadius: 8,
+    padding: 12,
+    marginRight: 10,
+    fontSize: 14,
+    color: "#000",
+  },
+  darkInlineSearchInput: { backgroundColor: "#404040", color: "#fff" },
+  /* search button — matches SearchScreen searchButton */
+  inlineSearchBtn: { marginLeft: 10, backgroundColor: "#f0f0f0", borderRadius: 8, padding: 12, justifyContent: "center", alignItems: "center" },
+  darkInlineSearchBtn: { backgroundColor: "#404040" },
+  /* Result cards — exact copy of SearchScreen resultItem */
+  inlineResultCard: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: "#000",
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    marginVertical: 4,
+  },
+  darkInlineResultCard: { backgroundColor: "#2d2d2d", borderBottomColor: "#404040" },
+  resultContent: { flex: 1 },
+  companyName: { fontSize: 16, fontWeight: "500", color: "#333" },
+  darkCompanyName: { color: "#ffffff" },
+  businessTagLine: { fontSize: 12, color: "#666", marginTop: 2, fontStyle: "italic" },
+  darkBusinessTagLine: { color: "#cccccc" },
+  /* Right-side actions — exact copy of SearchScreen */
+  businessResultActions: { flexDirection: "row", alignItems: "center", flexShrink: 0 },
+  businessTableRatingCol: { width: 100, justifyContent: "center", alignItems: "center" },
+  businessTableBountyCol: { width: 40, justifyContent: "center", alignItems: "center" },
+  businessTableLevelCol: { width: 52, justifyContent: "center", alignItems: "center" },
+  levelButton: { padding: 4 },
+  ratingContainer: { flexDirection: "row", alignItems: "center" },
+  ratingText: { marginLeft: 4, fontSize: 14, fontWeight: "500", color: "#333" },
+  darkRatingText: { color: "#cccccc" },
+  metricPlaceholder: { fontSize: 16, color: "#999", fontWeight: "500" },
+  darkMetricPlaceholder: { color: "#777777" },
+  bountyEmojiIcon: { fontSize: 20, marginRight: 6 },
+  bountyEmojiIconCompact: { fontSize: 20, marginRight: 0 },
+  /* NoBountyIcon — exact copy of SearchScreen */
+  noBountyIconWrap: { width: 24, height: 22, justifyContent: "center", alignItems: "center" },
+  noBountyEmoji: { fontSize: 20 },
+  noBountySlash: {
+    position: "absolute",
+    width: 26,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: "#1a1a1a",
+    transform: [{ rotate: "-42deg" }],
+  },
+  darkNoBountySlash: { backgroundColor: "#f0f0f0" },
+  /* Connection badge — exact copy of SearchScreen */
+  connectionBadge: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    backgroundColor: "#9C45F7",
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 3,
+  },
+  connectionBadgeText: { fontSize: 10, fontWeight: "700", color: "#ffffff", lineHeight: 12 },
+  inlineEmptyText: { fontSize: 13, color: "#666", textAlign: "center", paddingVertical: 10 },
+  placesSeparator: { flexDirection: "row", alignItems: "center", marginVertical: 10 },
+  placesSeparatorLine: { flex: 1, height: 1, backgroundColor: "#ddd" },
+  placesSeparatorLabel: { fontSize: 11, color: "#666", marginHorizontal: 8, fontWeight: "600" },
+});
+
 export default ProfileScreen;
+
