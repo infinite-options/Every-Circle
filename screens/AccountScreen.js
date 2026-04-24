@@ -122,7 +122,29 @@ export default function AccountScreen({ navigation }) {
         // Extract transactions from response.data
         const transactions = result && result.code === 200 && Array.isArray(result.data) ? result.data : [];
         console.log("Final transactions array length:", transactions.length);
-        setTransactionData(transactions);
+
+        // Pre-fetch seller totals for all transactions in parallel
+        const withTotals = await Promise.all(
+          transactions.map(async (t) => {
+            try {
+              const r = await fetch(`${TRANSACTION_RECEIPT_ENDPOINT}/${t.transaction_profile_id}/${t.transaction_uid}`, {
+                method: "GET",
+                headers: { "Content-Type": "application/json" },
+              });
+              if (!r.ok) return t;
+              const data = await r.json();
+              const items = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+              const sellerTotal = items.reduce((sum, item) => {
+                return sum + parseFloat(item.ti_bs_cost || 0) * (parseInt(item.ti_bs_qty) || 1);
+              }, 0);
+              return { ...t, seller_total: sellerTotal };
+            } catch {
+              return t;
+            }
+          })
+        );
+
+        setTransactionData(withTotals);
       } else {
         console.log("No profile ID found, skipping transaction data fetch");
         setTransactionData([]);
@@ -163,7 +185,20 @@ export default function AccountScreen({ navigation }) {
       } else if (result?.data) {
         items = [result.data];
       }
+      
       setReceiptData(items);
+      // Compute per-seller total from receipt line items and patch it onto the transaction row
+      const sellerTotal = items.reduce((sum, item) => {
+        return sum + (parseFloat(item.ti_bs_cost || 0) * (parseInt(item.ti_bs_qty) || 1));
+      }, 0);
+      setTransactionData(prev =>
+        prev.map(t =>
+          t.transaction_uid === transaction.transaction_uid &&
+          (t.business_name === transaction.business_name || t.seller_id === transaction.seller_id)
+            ? { ...t, seller_total: sellerTotal }
+            : t
+        )
+      );
     } catch (error) {
       console.error("Error fetching receipt:", error);
       Alert.alert("Error", error.message || "Failed to load receipt.");
@@ -1464,7 +1499,9 @@ export default function AccountScreen({ navigation }) {
                                 <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Received"}</Text>
                               )}
                             </View>
-                            <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
+                            <Text style={styles.transactionAmount}>
+                              ${parseFloat(transaction.seller_total || transaction.transaction_total || 0).toFixed(2)}
+                            </Text>
                           </View>
                         );
                       })}
