@@ -34,7 +34,7 @@ if (!isWeb) {
 }
 
 import config from "./config";
-import { GOOGLE_SIGNUP_ENDPOINT, GOOGLE_SIGNIN_ENDPOINT, APPLE_SIGNIN_ENDPOINT, API_BASE_URL } from "./apiConfig";
+import { GOOGLE_SIGNUP_ENDPOINT, GOOGLE_SOCIAL_AUTH_ENDPOINT, APPLE_SIGNIN_ENDPOINT, API_BASE_URL } from "./apiConfig";
 import versionData from "./version.json";
 import { DarkModeProvider } from "./contexts/DarkModeContext";
 import { UnreadProvider, reinitializeUnreadFromOutside } from "./contexts/UnreadContext";
@@ -100,10 +100,16 @@ async function _storeMyBusinessUids(fullUser) {
 }
 
 /**
- * After Google returns identity: create account or route existing user.
- * @param {string} googleAuthToken - Native OAuth access token, or web ID token (JWT) from Google Identity Services
+ * Unified Google path (Sign in + Sign up): POST to social auth, then open Profile on success.
+ * @param {string} googleAuthToken - Native access token, or web ID token (JWT)
+ * @param {{ clearStorage?: boolean }} [options] - set true for Sign Up screen to start from a clean local session
  */
-async function completeGoogleAccountCreation(navigation, userInfo, googleAuthToken) {
+async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, options = {}) {
+  const { clearStorage = false } = options;
+  if (clearStorage) {
+    await AsyncStorage.clear();
+  }
+
   const payload = {
     email: userInfo.user.email,
     password: "GOOGLE_LOGIN",
@@ -113,86 +119,49 @@ async function completeGoogleAccountCreation(navigation, userInfo, googleAuthTok
     last_name: userInfo.user.familyName || "",
     profile_picture: userInfo.user.photo || "",
   };
-  console.log("App.js - Sign up payload prepared:", payload);
+  console.log("App.js - Google social auth POST:", GOOGLE_SOCIAL_AUTH_ENDPOINT, payload);
 
-  const response = await fetch(GOOGLE_SIGNUP_ENDPOINT, {
+  const response = await fetch(GOOGLE_SOCIAL_AUTH_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 
   const result = await response.json();
-  console.log("App.js - Sign up response:", result);
+  console.log("App.js - Google social auth response:", result);
 
+  let userUid;
   if (result.user_uid && result.code >= 200 && result.code < 300) {
-    console.log("App.js - Sign up successful, storing user data");
-    await AsyncStorage.setItem("user_uid", result.user_uid);
-    await AsyncStorage.setItem("user_email_id", userInfo.user.email);
+    userUid = result.user_uid;
   } else if (result.message === "User already exists") {
-    console.log("App.js - User already exists, treating as successful login");
-
-    await AsyncStorage.setItem("user_uid", result.user_uid || userInfo.user.id);
-    await AsyncStorage.setItem("user_email_id", userInfo.user.email);
-
-    const baseURI = API_BASE_URL;
-    const endpointPath = `/api/v1/userprofileinfo/${result.user_uid || userInfo.user.id}`;
-    const endpoint = baseURI + endpointPath;
-    console.log(`App.js - Fetching profile for existing user: ${endpoint}`);
-
-    const profileResponse = await fetch(endpoint);
-    const fullUser = await profileResponse.json();
-    console.log("App.js - Existing user profile:", JSON.stringify(fullUser, null, 2));
-
-    const is404 = !profileResponse.ok && profileResponse.status === 404;
-    const isProfileNotFound = fullUser.message === "Profile not found for this user";
-    const is404Code = fullUser.code === 404;
-
-    if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
-      console.log("App.js - Profile not found for existing user, routing to UserInfo");
-      await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
-      reinitializeUnreadFromOutside().catch(() => {});
-      await AsyncStorage.setItem("user_uid", result.user_uid || userInfo.user.id);
-      await AsyncStorage.setItem("user_email_id", userInfo.user.email);
-
-      navigation.navigate("UserInfo", {
-        googleUserInfo: {
-          email: userInfo.user.email,
-          firstName: userInfo.user.givenName,
-          lastName: userInfo.user.familyName,
-          profilePicture: userInfo.user.photo,
-          googleId: userInfo.user.id,
-          accessToken: googleAuthToken,
-        },
-      });
-      return;
-    }
-
-    if (fullUser && fullUser.personal_info?.profile_personal_uid) {
-      await AsyncStorage.setItem("profile_uid", fullUser.personal_info.profile_personal_uid);
-      await _storeMyBusinessUids(fullUser);
-      reinitializeUnreadFromOutside().catch(() => {});
-
-      navigation.navigate("Profile", {
-        user: {
-          ...fullUser,
-          user_email: userInfo.user.email,
-        },
-        profile_uid: fullUser.personal_info.profile_personal_uid,
-      });
-    } else {
-      Alert.alert("Profile Not Found", "Your account exists but profile data could not be loaded. Please try signing in instead.", [
-        {
-          text: "OK",
-          onPress: () => navigation.navigate("Login"),
-        },
-      ]);
-    }
-    return;
+    userUid = result.user_uid || userInfo.user.id;
   } else {
-    console.log("App.js - Failed to create account");
+    console.log("App.js - Google social auth failed:", result);
     throw new Error("Failed to create account");
   }
-  if (await AsyncStorage.getItem("user_uid")) {
+
+  if (!userUid) {
+    throw new Error("Failed to create account");
+  }
+
+  await AsyncStorage.setItem("user_uid", String(userUid));
+  await AsyncStorage.setItem("user_email_id", userInfo.user.email);
+
+  const baseURI = API_BASE_URL;
+  const profileUrl = `${baseURI}/api/v1/userprofileinfo/${userUid}`;
+  const profileResponse = await fetch(profileUrl);
+  const fullUser = await profileResponse.json();
+  console.log("App.js - Profile after Google auth:", profileUrl, JSON.stringify(fullUser, null, 2).slice(0, 2000));
+
+  const is404 = !profileResponse.ok && profileResponse.status === 404;
+  const isProfileNotFound = fullUser.message === "Profile not found for this user";
+  const is404Code = fullUser.code === 404;
+  const noProfile =
+    is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info) || !fullUser.personal_info?.profile_personal_uid;
+
+  if (noProfile) {
+    await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+    reinitializeUnreadFromOutside().catch(() => {});
     navigation.navigate("UserInfo", {
       googleUserInfo: {
         email: userInfo.user.email,
@@ -203,9 +172,20 @@ async function completeGoogleAccountCreation(navigation, userInfo, googleAuthTok
         accessToken: googleAuthToken,
       },
     });
-  } else {
-    Alert.alert("Error", "Failed to store user ID. Please try again.");
+    return;
   }
+
+  await AsyncStorage.setItem("profile_uid", fullUser.personal_info.profile_personal_uid);
+  await _storeMyBusinessUids(fullUser);
+  reinitializeUnreadFromOutside().catch(() => {});
+
+  navigation.navigate("Profile", {
+    user: {
+      ...fullUser,
+      user_email: userInfo.user.email,
+    },
+    profile_uid: fullUser.personal_info.profile_personal_uid,
+  });
 }
 
 export default function App() {
@@ -312,7 +292,7 @@ export default function App() {
     });
   }, []);
 
-  // Web Google Sign-Up: same GSI (JWT) as sign-in, then POST to GOOGLE_SIGNUP_ENDPOINT
+  // Web Google Sign-Up: same GSI (JWT) as sign-in, then POST to GOOGLE_SOCIAL_AUTH_ENDPOINT
   const handleWebGoogleSignUp = useCallback(async (navigation) => {
     console.log("App.js - handleWebGoogleSignUp - Starting");
     return new Promise((resolve, reject) => {
@@ -391,114 +371,14 @@ export default function App() {
 
           console.log("App.js - User info extracted:", userInfo);
 
-          if (mode === "signUp") {
-            try {
-              await AsyncStorage.clear();
-              await completeGoogleAccountCreation(navigation, userInfo, credential);
-              resolve();
-            } catch (signUpErr) {
-              console.error("App.js - Web Google Sign-Up error:", signUpErr);
-              Alert.alert("Sign Up Failed", signUpErr.message || "Unable to create account. Please try again.");
-              reject(signUpErr);
-            }
-            return;
-          }
-
-          // Call the backend API to sign in
-          const apiResponse = await fetch(`${GOOGLE_SIGNIN_ENDPOINT}/${userEmail}`);
-          const result = await apiResponse.json();
-          console.log("App.js - Google Sign In result:", result);
-
-          if (result.message === "Correct Email" && result.result?.[0]) {
-            const user_uid = result.result[0];
-            console.log("App.js - User UID (from IO Login API):", user_uid);
-            await AsyncStorage.setItem("user_uid", user_uid);
-
-            const baseURI = API_BASE_URL;
-            const endpointPath = `/api/v1/userprofileinfo/${user_uid}`;
-            const endpoint = baseURI + endpointPath;
-            console.log(`App.js - Full endpoint: ${endpoint}`);
-
-            const profileResponse = await fetch(endpoint);
-            const fullUser = await profileResponse.json();
-
-            console.log("App.js - Endpoint Response:", JSON.stringify(fullUser, null, 2));
-
-            // Handle case where profile is not found (404 error)
-            const is404 = !profileResponse.ok && profileResponse.status === 404;
-            const isProfileNotFound = fullUser.message === "Profile not found for this user";
-            const is404Code = fullUser.code === 404;
-
-            if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
-              Alert.alert("User Not Found", "This account is not registered. Would you like to sign up?", [
-                {
-                  text: "Cancel",
-                  style: "cancel",
-                },
-                {
-                  text: "Sign Up",
-                  onPress: () => {
-                    navigation.navigate("UserInfo", {
-                      googleUserInfo: {
-                        email: userInfo.user.email,
-                        firstName: userInfo.user.givenName,
-                        lastName: userInfo.user.familyName,
-                        profilePicture: userInfo.user.photo,
-                        googleId: userInfo.user.id,
-                        accessToken: userInfo.idToken,
-                      },
-                    });
-                  },
-                },
-              ]);
-              resolve();
-              return;
-            }
-
-            // Store additional user data in AsyncStorage
-            if (fullUser.personal_info?.profile_personal_uid) {
-              await AsyncStorage.setItem("profile_uid", fullUser.personal_info.profile_personal_uid);
-              console.log("App.js - Stored profile_uid in AsyncStorage:", fullUser.personal_info.profile_personal_uid);
-            }
-            await _storeMyBusinessUids(fullUser);
-            if (userInfo.user.email) {
-              await AsyncStorage.setItem("user_email_id", userInfo.user.email);
-              console.log("App.js - Stored user_email_id in AsyncStorage:", userInfo.user.email);
-            }
-            reinitializeUnreadFromOutside().catch(() => {});
-
-            // Navigate to Profile
-            navigation.navigate("Profile", {
-              user: {
-                ...fullUser,
-                user_email: userInfo.user.email,
-              },
-              profile_uid: fullUser.personal_info?.profile_personal_uid || "",
-            });
+          try {
+            await completeGoogleSocialAuth(navigation, userInfo, credential, { clearStorage: mode === "signUp" });
             resolve();
-          } else {
-            Alert.alert("User Not Found", "This account is not registered. Would you like to sign up?", [
-              {
-                text: "Cancel",
-                style: "cancel",
-              },
-              {
-                text: "Sign Up",
-                onPress: () => {
-                  navigation.navigate("UserInfo", {
-                    googleUserInfo: {
-                      email: userInfo.user.email,
-                      firstName: userInfo.user.givenName,
-                      lastName: userInfo.user.familyName,
-                      profilePicture: userInfo.user.photo,
-                      googleId: userInfo.user.id,
-                      accessToken: userInfo.idToken,
-                    },
-                  });
-                },
-              },
-            ]);
-            resolve();
+          } catch (socialErr) {
+            console.error("App.js - Web Google social auth error:", socialErr);
+            const title = mode === "signUp" ? "Sign Up Failed" : "Sign In Failed";
+            Alert.alert(title, socialErr.message || "Please try again.");
+            reject(socialErr);
           }
         } catch (error) {
           console.error("App.js - Error processing Google Sign-In:", error);
@@ -573,130 +453,8 @@ export default function App() {
       const userInfo = await GoogleSignin.signIn();
       console.log("App.js - Google Sign In successful:", userInfo);
 
-      const response = await fetch(`${GOOGLE_SIGNIN_ENDPOINT}/${userInfo.user.email}`);
-      const result = await response.json();
-      console.log("App.js - Google Sign In result:", result);
-
-      if (result.message === "Correct Email" && result.result?.[0]) {
-        const user_uid = result.result[0];
-        console.log("App.js - User UID (from IO Login API):", user_uid);
-        await AsyncStorage.setItem("user_uid", user_uid);
-
-        // const profileResponse = await fetch(`https://ioec2ecaspm.infiniteoptions.com/api/v1/userprofileinfo/${user_uid}`);
-        const baseURI = API_BASE_URL;
-        const endpointPath = `/api/v1/userprofileinfo/${user_uid}`;
-        const endpoint = baseURI + endpointPath;
-        console.log(`App.js - Full endpoint 1: ${endpoint}`);
-
-        const profileResponse = await fetch(endpoint);
-        const fullUser = await profileResponse.json();
-
-        console.log("App.js - Endpoint Response:", JSON.stringify(fullUser, null, 2));
-
-        // Handle case where profile is not found (404 error)
-        const is404 = !profileResponse.ok && profileResponse.status === 404;
-        const isProfileNotFound = fullUser.message === "Profile not found for this user";
-        const is404Code = fullUser.code === 404;
-
-        if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
-          // Sign out from Google when profile is not found
-          await GoogleSignin.signOut();
-
-          Alert.alert("User Not Found", "This account is not registered. Would you like to sign up?", [
-            {
-              text: "Cancel",
-              style: "cancel",
-              onPress: () => {
-                // No need to do anything here as we've already signed out
-              },
-            },
-            {
-              text: "Sign Up",
-              onPress: () => {
-                // Navigate directly to UserInfo with Google user info
-                navigation.navigate("UserInfo", {
-                  googleUserInfo: {
-                    email: userInfo.user.email,
-                    firstName: userInfo.user.givenName,
-                    lastName: userInfo.user.familyName,
-                    profilePicture: userInfo.user.photo,
-                    googleId: userInfo.user.id,
-                    accessToken: userInfo.idToken,
-                  },
-                });
-              },
-            },
-          ]);
-          return;
-        }
-
-        // Store additional user data in AsyncStorage for ProfileScreen
-        if (fullUser.personal_info?.profile_personal_uid) {
-          await AsyncStorage.setItem("profile_uid", fullUser.personal_info.profile_personal_uid);
-          console.log("App.js - Stored profile_uid in AsyncStorage:", fullUser.personal_info.profile_personal_uid);
-        } else {
-          console.log("App.js - Warning: No profile_personal_uid found in fullUser:", fullUser);
-        }
-        await _storeMyBusinessUids(fullUser);
-        if (userInfo.user.email) {
-          await AsyncStorage.setItem("user_email_id", userInfo.user.email);
-          console.log("App.js - Stored user_email_id in AsyncStorage:", userInfo.user.email);
-        } else {
-          console.log("App.js - Warning: No email found in userInfo:", userInfo);
-        }
-        reinitializeUnreadFromOutside().catch(() => {});
-
-        // Log all AsyncStorage values for debugging
-        const storedUid = await AsyncStorage.getItem("user_uid");
-        const storedProfileUid = await AsyncStorage.getItem("profile_uid");
-        const storedEmail = await AsyncStorage.getItem("user_email_id");
-        console.log("App.js - AsyncStorage after update - user_uid:", storedUid, "profile_uid:", storedProfileUid, "user_email_id:", storedEmail);
-
-        console.log("App.js - Navigating to Profile with user data:", {
-          user: {
-            ...fullUser,
-            user_email: userInfo.user.email,
-          },
-          profile_uid: fullUser.personal_info?.profile_personal_uid || "",
-        });
-
-        navigation.navigate("Profile", {
-          user: {
-            ...fullUser,
-            user_email: userInfo.user.email,
-          },
-          profile_uid: fullUser.personal_info?.profile_personal_uid || "",
-        });
-      } else {
-        // Sign out from Google when user is not found
-        await GoogleSignin.signOut();
-
-        Alert.alert("User Not Found", "This account is not registered. Would you like to sign up?", [
-          {
-            text: "Cancel",
-            style: "cancel",
-            onPress: () => {
-              // No need to do anything here as we've already signed out
-            },
-          },
-          {
-            text: "Sign Up",
-            onPress: () => {
-              // Navigate directly to UserInfo with Google user info
-              navigation.navigate("UserInfo", {
-                googleUserInfo: {
-                  email: userInfo.user.email,
-                  firstName: userInfo.user.givenName,
-                  lastName: userInfo.user.familyName,
-                  profilePicture: userInfo.user.photo,
-                  googleId: userInfo.user.id,
-                  accessToken: userInfo.idToken,
-                },
-              });
-            },
-          },
-        ]);
-      }
+      const tokens = await GoogleSignin.getTokens();
+      await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, { clearStorage: false });
     } catch (err) {
       console.error("App.js - Google Sign In error:", err);
       if (statusCodes) {
@@ -733,7 +491,6 @@ export default function App() {
       }
 
       try {
-        await AsyncStorage.clear();
         const isSignedIn = await GoogleSignin.isSignedIn();
         if (isSignedIn) {
           await GoogleSignin.signOut();
@@ -741,7 +498,7 @@ export default function App() {
         await GoogleSignin.hasPlayServices();
         const userInfo = await GoogleSignin.signIn();
         const tokens = await GoogleSignin.getTokens();
-        await completeGoogleAccountCreation(navigation, userInfo, tokens.accessToken);
+        await completeGoogleSocialAuth(navigation, userInfo, tokens.accessToken, { clearStorage: true });
       } catch (err) {
         console.error("App.js - Google Sign Up error:", err);
         if (statusCodes) {

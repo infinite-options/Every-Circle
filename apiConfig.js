@@ -16,8 +16,11 @@ export const SEARCH_BASE_URL = "https://ioec2vrecsearch.infiniteoptions.com";
 // export const API_BASE_URL = "http://127.0.0.1:4090";
 
 // Google and Apple Authentication Endpoints
-export const GOOGLE_SIGNUP_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialSignUp/EVERY-CIRCLE";
-export const GOOGLE_SIGNIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialLogin/EVERY-CIRCLE";
+export const GOOGLE_SOCIAL_AUTH_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialAuth/EVERY-CIRCLE";
+// export const GOOGLE_SIGNUP_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialSignUp/EVERY-CIRCLE";
+/** Same URL as `GOOGLE_SIGNUP_ENDPOINT`: POST with token for unified Google sign-in or sign-up (backend upserts). */
+// export const GOOGLE_SOCIAL_AUTH_ENDPOINT = GOOGLE_SIGNUP_ENDPOINT;
+// export const GOOGLE_SIGNIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialLogin/EVERY-CIRCLE";
 export const APPLE_SIGNIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AppleLogin/EVERY-CIRCLE";
 
 // Account Management Endpoints
