@@ -34,7 +34,7 @@ if (!isWeb) {
 }
 
 import config from "./config";
-import { GOOGLE_SIGNUP_ENDPOINT, GOOGLE_SOCIAL_AUTH_ENDPOINT, APPLE_SIGNIN_ENDPOINT, API_BASE_URL } from "./apiConfig";
+import { GOOGLE_SIGNUP_ENDPOINT, GOOGLE_SOCIAL_AUTH_ENDPOINT, APPLE_AUTH_ENDPOINT, APPLE_SIGNIN_ENDPOINT, API_BASE_URL } from "./apiConfig";
 import versionData from "./version.json";
 import { DarkModeProvider } from "./contexts/DarkModeContext";
 import { UnreadProvider, reinitializeUnreadFromOutside } from "./contexts/UnreadContext";
@@ -76,6 +76,9 @@ import ChatScreen from "./screens/ChatScreen";
 import { persistMyBusinessUidsFromProfile } from "./utils/myBusinessUids";
 
 const Stack = createNativeStackNavigator();
+
+/** iOS and macOS: unified AppleAuth POST. Other platforms keep legacy Apple login / signup. */
+const NATIVE_APPLE = Platform.OS === "ios" || Platform.OS === "macos";
 
 export const mapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
 const mapsApiKeyDisplay = mapsApiKey ? "..." + mapsApiKey.slice(-4) : "Not set";
@@ -156,8 +159,7 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
   const is404 = !profileResponse.ok && profileResponse.status === 404;
   const isProfileNotFound = fullUser.message === "Profile not found for this user";
   const is404Code = fullUser.code === 404;
-  const noProfile =
-    is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info) || !fullUser.personal_info?.profile_personal_uid;
+  const noProfile = is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info) || !fullUser.personal_info?.profile_personal_uid;
 
   if (noProfile) {
     await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
@@ -183,6 +185,123 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     user: {
       ...fullUser,
       user_email: userInfo.user.email,
+    },
+    profile_uid: fullUser.personal_info.profile_personal_uid,
+  });
+}
+
+function resolveAppleAuthEmail(user, idToken) {
+  let userEmail = user?.email;
+  if (!userEmail || userEmail === "Apple User") {
+    if (idToken) {
+      try {
+        const payload = JSON.parse(atob(idToken.split(".")[1]));
+        userEmail = payload?.email || `apple_user_${user.id}@example.com`;
+      } catch (e) {
+        userEmail = `apple_user_${user.id}@example.com`;
+      }
+    } else {
+      userEmail = `apple_user_${user.id}@example.com`;
+    }
+  }
+  return userEmail;
+}
+
+/**
+ * Native Apple: POST to AppleAuth, then Profile or UserInfo (same flow as `completeGoogleSocialAuth`).
+ * @param {object} userInfo - from AppleSignIn: `{ user: { id, email, name }, idToken }`
+ */
+async function completeAppleSocialAuth(navigation, userInfo, options = {}) {
+  const { clearStorage = false } = options;
+  if (clearStorage) {
+    await AsyncStorage.clear();
+  }
+
+  const { user, idToken } = userInfo;
+  const identityToken = idToken;
+  if (!identityToken) {
+    throw new Error("Missing Apple identity token");
+  }
+
+  const userEmail = resolveAppleAuthEmail(user, identityToken);
+  const nameStr = user?.name && user.name !== "Apple User" ? String(user.name).trim() : "";
+  const nameParts = nameStr ? nameStr.split(/\s+/) : [];
+  const firstName = nameParts[0] || "";
+  const lastName = nameParts.slice(1).join(" ") || "";
+
+  const payload = {
+    email: userEmail,
+    password: "APPLE_LOGIN",
+    google_auth_token: identityToken,
+    google_refresh_token: "apple",
+    social_id: user.id,
+    first_name: firstName,
+    last_name: lastName,
+    profile_picture: "",
+    login_type: "apple",
+  };
+  console.log("App.js - Apple social auth POST:", APPLE_AUTH_ENDPOINT, { ...payload, google_auth_token: "[redacted]" });
+
+  const response = await fetch(APPLE_AUTH_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const result = await response.json();
+  console.log("App.js - Apple social auth response:", result);
+
+  let userUid;
+  if (result.user_uid && result.code >= 200 && result.code < 300) {
+    userUid = result.user_uid;
+  } else if (result.message === "User already exists") {
+    userUid = result.user_uid || user.id;
+  } else {
+    console.log("App.js - Apple social auth failed:", result);
+    throw new Error(result.message || "Failed to sign in with Apple");
+  }
+
+  if (!userUid) {
+    throw new Error("Failed to sign in with Apple");
+  }
+
+  await AsyncStorage.setItem("user_uid", String(userUid));
+  await AsyncStorage.setItem("user_email_id", userEmail);
+
+  const baseURI = API_BASE_URL;
+  const profileUrl = `${baseURI}/api/v1/userprofileinfo/${userUid}`;
+  const profileResponse = await fetch(profileUrl);
+  const fullUser = await profileResponse.json();
+  console.log("App.js - Profile after Apple auth:", profileUrl, JSON.stringify(fullUser, null, 2).slice(0, 2000));
+
+  const is404 = !profileResponse.ok && profileResponse.status === 404;
+  const isProfileNotFound = fullUser.message === "Profile not found for this user";
+  const is404Code = fullUser.code === 404;
+  const noProfile = is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info) || !fullUser.personal_info?.profile_personal_uid;
+
+  if (noProfile) {
+    await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+    reinitializeUnreadFromOutside().catch(() => {});
+    navigation.navigate("UserInfo", {
+      appleUserInfo: {
+        email: userEmail,
+        firstName,
+        lastName,
+        appleId: user.id,
+        idToken: identityToken,
+      },
+    });
+    return;
+  }
+
+  await AsyncStorage.setItem("profile_uid", fullUser.personal_info.profile_personal_uid);
+  await _storeMyBusinessUids(fullUser);
+  reinitializeUnreadFromOutside().catch(() => {});
+
+  navigation.navigate("Profile", {
+    user: {
+      ...fullUser,
+      user_email: userEmail,
     },
     profile_uid: fullUser.personal_info.profile_personal_uid,
   });
@@ -514,15 +633,18 @@ export default function App() {
         Alert.alert("Sign Up Failed", "Unable to create account. Please try again.", [{ text: "OK" }]);
       }
     },
-    [handleWebGoogleSignUp]
+    [handleWebGoogleSignUp],
   );
 
   const handleAppleSignIn = useCallback(async (userInfo, navigation) => {
     try {
-      console.log("App.js - handleAppleSignIn - userInfo:", userInfo);
+      if (NATIVE_APPLE) {
+        await completeAppleSocialAuth(navigation, userInfo, { clearStorage: false });
+        return;
+      }
+
+      console.log("App.js - handleAppleSignIn (legacy) - userInfo:", userInfo);
       const { user, idToken } = userInfo;
-      // console.log("App.js - handleAppleSignIn - user:", user);
-      // console.log("App.js - handleAppleSignIn - idToken:", idToken);
       let userEmail = user.email;
       // console.log("App.js - handleAppleSignIn - userEmail:", userEmail);
       if (!userEmail && idToken) {
@@ -611,6 +733,11 @@ export default function App() {
 
   const handleAppleSignUp = useCallback(async (userInfo, navigation) => {
     try {
+      if (NATIVE_APPLE) {
+        await completeAppleSocialAuth(navigation, userInfo, { clearStorage: true });
+        return;
+      }
+
       const { user, idToken } = userInfo;
       let userEmail = user.email || `apple_user_${user.id}@example.com`;
       const payload = {

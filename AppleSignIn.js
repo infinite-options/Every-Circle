@@ -1,9 +1,28 @@
 import React from "react";
-import { StyleSheet, View, Platform, Text, useWindowDimensions, Pressable, ActivityIndicator } from "react-native";
+import { StyleSheet, View, Platform, Text, useWindowDimensions, Pressable, ActivityIndicator, Alert } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as WebBrowser from "expo-web-browser";
+import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import AppleLogomarkWhite from "./components/AppleLogomarkWhite";
+
+/**
+ * `redirect_uri` for Sign in with Apple (web / non-iOS) must be listed exactly under your
+ * Services ID (Apple Developer → Identifiers → Services ID → Return URLs). See AppleSignIn
+ * and comment in getAppleOauthWebRedirectUri.
+ */
+function getAppleOauthWebRedirectUri() {
+  if (process.env.EXPO_PUBLIC_APPLE_REDIRECT_URI) {
+    return process.env.EXPO_PUBLIC_APPLE_REDIRECT_URI;
+  }
+  const cfg = Constants.expoConfig;
+  const owner = cfg?.owner || process.env.EXPO_PUBLIC_EXPO_ACCOUNT;
+  const slug = cfg?.slug;
+  if (owner && slug) {
+    return `https://auth.expo.io/@${owner}/${slug}/redirect`;
+  }
+  return null;
+}
 
 const AUTH_BTN_H = 48;
 function buttonWidthForWindow(windowW) {
@@ -105,12 +124,19 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
         }
       } else {
         console.log("AppleSignIn - non-iOS (web or Android) web auth session");
-        const result = await WebBrowser.openAuthSessionAsync(
-          `https://appleid.apple.com/auth/authorize?client_id=${process.env.EXPO_PUBLIC_APPLE_SERVICES_ID}&redirect_uri=${encodeURIComponent(
-            "https://auth.expo.io/@pmarathay/google-auth-demo/redirect",
-          )}&response_type=code id_token&scope=name email&response_mode=form_post`,
-          "https://auth.expo.io/@pmarathay/google-auth-demo/redirect",
-        );
+        const redirectUri = getAppleOauthWebRedirectUri();
+        if (!redirectUri) {
+          const msg =
+            "Apple web sign-in: set EXPO_PUBLIC_APPLE_REDIRECT_URI to your exact Return URL from Apple, or set EXPO_PUBLIC_EXPO_ACCOUNT in .env to your Expo username (with owner in app config) so the app can use https://auth.expo.io/@<username>/<slug>/redirect.";
+          console.error("AppleSignIn -", msg);
+          Alert.alert("Configuration required", msg);
+          onError?.(msg);
+          return;
+        }
+        const serviceId = process.env.EXPO_PUBLIC_APPLE_SERVICES_ID;
+        const authUrl = `https://appleid.apple.com/auth/authorize?client_id=${serviceId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code id_token&scope=name%20email&response_mode=form_post`;
+        console.log("AppleSignIn - web OAuth redirect_uri:", redirectUri);
+        const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
         if (result.type === "success") {
           console.log("Web authentication successful:", result);
