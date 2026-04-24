@@ -2,6 +2,9 @@
   command = "npm run build"
   publish = "dist"
 
+# Apple Sign in with Apple: POSTs to Return URL (form_post). netlify/edge-functions/apple-callback.js
+# turns that into a GET so the SPA and expo-web-browser can complete the session.
+
 # SPA fallback: same rule is also in public/_redirects (copied into dist by expo export).
 # Any path (/, /login, /profile, …) serves the app shell so deep links and Apple return URLs work.
 [[redirects]]

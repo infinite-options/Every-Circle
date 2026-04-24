@@ -1,7 +1,18 @@
 import { registerRootComponent } from 'expo';
+import * as WebBrowser from "expo-web-browser";
 
 // Check if we're on web and if App fails to load
 const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
+
+// Required for expo-web-browser OAuth on web: popup return URL must call this so
+// the opener receives postMessage with window.location (e.g. Apple /auth/.../callback?…).
+if (isWeb) {
+  try {
+    WebBrowser.maybeCompleteAuthSession();
+  } catch (e) {
+    /* non-auth callbacks or no session in localStorage; safe to ignore */
+  }
+}
 
 // Add global error handler for React Native Web text node errors
 if (isWeb && typeof window !== "undefined") {
