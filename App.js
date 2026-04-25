@@ -11,7 +11,7 @@ import { LogBox, Platform, useWindowDimensions, StyleSheet, Text, View, Alert, A
 const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
 
 // Set to false to POST to `APPLE_AUTH_ENDPOINT` and continue sign-in (profile) flow.
-const DEBUG_APPLE_SIGNIN_SKIP_BACKEND = true;
+const DEBUG_APPLE_SIGNIN_SKIP_BACKEND = false;
 
 // Video component removed - expo-av was causing build issues with new architecture
 // If needed in the future, re-add expo-av and configure it properly
@@ -126,10 +126,7 @@ function buildAppleAuthRequestBody(userInfo) {
   let first_name = firstName != null && firstName !== "" ? firstName : "";
   let last_name = lastName != null && lastName !== "" ? lastName : "";
   if (first_name === "" && last_name === "" && user?.name && user.name !== "Apple User") {
-    const p = String(user.name)
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
+    const p = String(user.name).trim().split(/\s+/).filter(Boolean);
     if (p.length) {
       first_name = p[0];
       last_name = p.slice(1).join(" ");
@@ -202,8 +199,7 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
   const is404 = !profileResponse.ok && profileResponse.status === 404;
   const isProfileNotFound = fullUser.message === "Profile not found for this user";
   const is404Code = fullUser.code === 404;
-  const noProfile =
-    is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info) || !fullUser.personal_info?.profile_personal_uid;
+  const noProfile = is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info) || !fullUser.personal_info?.profile_personal_uid;
 
   if (noProfile) {
     await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
@@ -560,7 +556,7 @@ export default function App() {
         Alert.alert("Sign Up Failed", "Unable to create account. Please try again.", [{ text: "OK" }]);
       }
     },
-    [handleWebGoogleSignUp]
+    [handleWebGoogleSignUp],
   );
 
   const handleAppleSignIn = useCallback(async (userInfo, navigation) => {
@@ -601,7 +597,15 @@ export default function App() {
       }
       const userEmail =
         appleAuthBody.email ||
-        (idToken && idToken.includes(".") ? (() => { try { return JSON.parse(atob(idToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).email; } catch (_) { return ""; } })() : "") ||
+        (idToken && idToken.includes(".")
+          ? (() => {
+              try {
+                return JSON.parse(atob(idToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).email;
+              } catch (_) {
+                return "";
+              }
+            })()
+          : "") ||
         (user?.email && user.email !== "Apple User" ? user.email : "");
       // Accept common success shapes: top-level user_uid, nested result array, or SQL success + rows
       let userUid = result.user_uid ?? result.userUid;
