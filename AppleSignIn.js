@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { StyleSheet, View, Platform, Text, useWindowDimensions, Pressable, ActivityIndicator } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as WebBrowser from "expo-web-browser";
@@ -40,8 +40,25 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
   const btnW = buttonWidthForWindow(windowW);
   const label = buttonTextOverride || (mode === "signUp" ? "Sign up with Apple" : "Sign in with Apple");
   const useSignUpType = mode === "signUp" && iosMajorVersion() >= 13.2;
+  // Only used on iOS: native Sign in with Apple is not available on all devices/configurations.
+  const [iosAppleAvailable, setIosAppleAvailable] = useState(Platform.OS === "ios" ? null : true);
 
-  // console.log("AppleSignIn - Rendering");
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const available = await AppleAuthentication.isAvailableAsync();
+        if (!cancelled) setIosAppleAvailable(available);
+      } catch (e) {
+        console.warn("AppleSignIn - isAvailableAsync failed:", e);
+        if (!cancelled) setIosAppleAvailable(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const handleAppleSignIn = async () => {
     if (disabled) return;
     try {
@@ -95,13 +112,17 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
           }
 
           // User is authenticated
+          const idTok = credential.idToken || credential.identityToken;
           const userInfo = {
             user: {
               id: credential.user,
               email: credential.email,
               name: credential.fullName?.givenName ? `${credential.fullName.givenName} ${credential.fullName.familyName}` : "Apple User",
             },
-            idToken: credential.idToken || credential.identityToken,
+            idToken: idTok,
+            authorizationCode: credential.authorizationCode,
+            firstName: credential.fullName?.givenName || "",
+            lastName: credential.fullName?.familyName || "",
           };
           console.log("AppleSignIn - userInfo saved", userInfo);
           onSignIn(userInfo);
@@ -130,13 +151,17 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
             }
           }
 
+          const idTok = credential.idToken || credential.identityToken;
           const userInfo = {
             user: {
               id: credential.user,
               email: userEmail || "Apple User",
               name: "Apple User",
             },
-            idToken: credential.idToken || credential.identityToken,
+            idToken: idTok,
+            authorizationCode: credential.authorizationCode,
+            firstName: "",
+            lastName: "",
           };
           console.log("AppleSignIn - userInfo saved", userInfo);
           onSignIn(userInfo);
@@ -218,13 +243,19 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
           }
           let email = null;
           let name = "Apple User";
+          let firstName = "";
+          let lastName = "";
           const userParam = u.searchParams.get("user");
           if (userParam) {
             try {
               const userObj = JSON.parse(userParam);
               if (userObj.email) email = userObj.email;
-              if (userObj.name && (userObj.name.firstName || userObj.name.lastName)) {
-                name = [userObj.name.firstName, userObj.name.lastName].filter(Boolean).join(" ") || name;
+              if (userObj.name) {
+                if (userObj.name.firstName) firstName = userObj.name.firstName;
+                if (userObj.name.lastName) lastName = userObj.name.lastName;
+                if (userObj.name.firstName || userObj.name.lastName) {
+                  name = [userObj.name.firstName, userObj.name.lastName].filter(Boolean).join(" ") || name;
+                }
               }
             } catch (_) {
               /* ignore */
@@ -245,6 +276,8 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
             user: { id: sub, email: email || "Apple User", name },
             idToken,
             authorizationCode: code || null,
+            firstName,
+            lastName,
           });
         } else {
           console.log("Web authentication cancelled or failed", result);
@@ -261,6 +294,12 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
   };
 
   if (Platform.OS === "ios") {
+    if (iosAppleAvailable === null) {
+      return null;
+    }
+    if (iosAppleAvailable === false) {
+      return null;
+    }
     return (
       <View style={styles.container}>
         <View style={[styles.iosButtonWrap, disabled && styles.iosButtonWrapDisabled]} pointerEvents={disabled ? "none" : "auto"}>

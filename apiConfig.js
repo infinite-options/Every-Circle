@@ -22,6 +22,8 @@ export const GOOGLE_SOCIAL_AUTH_ENDPOINT = "https://mrle52rri4.execute-api.us-we
 // export const GOOGLE_SOCIAL_AUTH_ENDPOINT = GOOGLE_SIGNUP_ENDPOINT;
 // export const GOOGLE_SIGNIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialLogin/EVERY-CIRCLE";
 export const APPLE_SIGNIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AppleLogin/EVERY-CIRCLE";
+/** Apple Sign in with Apple: POST JSON `code`, `id_token`, `sub`, `email`, `first_name`, `last_name` */
+export const APPLE_AUTH_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AppleAuth/EVERY-CIRCLE";
 
 // Account Management Endpoints
 export const ACCOUNT_SALT_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AccountSalt/EVERY-CIRCLE";
