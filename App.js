@@ -10,6 +10,9 @@ import { LogBox, Platform, useWindowDimensions, StyleSheet, Text, View, Alert, A
 // This must be defined before any code that uses it
 const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
 
+// Set to false when the backend is ready: POSTs to `APPLE_SIGNIN_ENDPOINT` and continues sign-in flow.
+const DEBUG_APPLE_SIGNIN_SKIP_BACKEND = true;
+
 // Video component removed - expo-av was causing build issues with new architecture
 // If needed in the future, re-add expo-av and configure it properly
 
@@ -520,19 +523,31 @@ export default function App() {
 
   const handleAppleSignIn = useCallback(async (userInfo, navigation) => {
     try {
-      console.log("App.js - handleAppleSignIn - userInfo:", userInfo);
-      const { user, idToken } = userInfo;
-      // console.log("App.js - handleAppleSignIn - user:", user);
-      // console.log("App.js - handleAppleSignIn - idToken:", idToken);
+      const { user, idToken, authorizationCode } = userInfo;
+      console.log("=== App.js: Apple sign-in — userInfo (passed from AppleSignIn) ===", userInfo);
+      if (idToken && typeof idToken === "string" && idToken.includes(".")) {
+        try {
+          const b64 = idToken.split(".")[1];
+          const claims = JSON.parse(atob(b64.replace(/-/g, "+").replace(/_/g, "/")));
+          console.log("=== App.js: id_token JWT payload (typical server verification claims) ===", claims);
+        } catch (e) {
+          console.log("=== App.js: id_token present but not decodable as JWT ===", e?.message);
+        }
+      } else {
+        console.log("=== App.js: no id_token string in userInfo (web may be code-only until exchange) ===");
+      }
+      if (authorizationCode) {
+        console.log("=== App.js: authorization code (for Apple token endpoint on the server) ===\n", authorizationCode);
+      }
+      if (DEBUG_APPLE_SIGNIN_SKIP_BACKEND) {
+        console.log("=== App.js: DEBUG_APPLE_SIGNIN_SKIP_BACKEND is true — skipping fetch to", APPLE_SIGNIN_ENDPOINT);
+        return;
+      }
       let userEmail = user.email;
-      // console.log("App.js - handleAppleSignIn - userEmail:", userEmail);
       if (!userEmail && idToken) {
-        // console.log("App.js - handleAppleSignIn - idToken:", idToken);
         const payload = JSON.parse(atob(idToken.split(".")[1]));
         userEmail = payload?.email || `apple_user_${user.id}@example.com`;
-        // console.log("App.js - handleAppleSignIn - userEmail:", userEmail);
       }
-      console.log("App.js - handleAppleSignIn - before APPLE_SIGNIN_ENDPOINT:", APPLE_SIGNIN_ENDPOINT);
       const response = await fetch(APPLE_SIGNIN_ENDPOINT, {
         method: "POST",
         headers: {

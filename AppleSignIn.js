@@ -7,6 +7,24 @@ import AppleLogomarkWhite from "./components/AppleLogomarkWhite";
 import { EXPO_PUBLIC_APPLE_SERVICES_ID, EXPO_PUBLIC_APPLE_REDIRECT_URI, EXPO_PUBLIC_EXPO_ACCOUNT } from "@env";
 
 const AUTH_BTN_H = 48;
+
+function decodeJwtPayload(jwt) {
+  if (!jwt || typeof jwt !== "string" || !jwt.includes(".")) return null;
+  try {
+    const part = jwt.split(".")[1];
+    if (!part) return null;
+    return JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
+  } catch (e) {
+    return { _decodeError: String(e) };
+  }
+}
+
+/** Logs everything useful from Apple; safe to use while wiring up a backend. */
+function logAppleAuthSummary(platform, details) {
+  console.log("=== Apple auth —", platform, "— raw summary ===");
+  console.log(JSON.stringify(details, null, 2));
+}
+
 function buttonWidthForWindow(windowW) {
   return Math.min(312, Math.max(200, windowW - 32));
 }
@@ -32,12 +50,31 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
         const credential = await AppleAuthentication.signInAsync({
           requestedScopes: [AppleAuthentication.AppleAuthenticationScope.FULL_NAME, AppleAuthentication.AppleAuthenticationScope.EMAIL],
         });
-        console.log("AppleSignIn Success- received credential", credential);
-        console.log("AppleSignIn - credential.email:", credential.email);
-        console.log("AppleSignIn - credential.idToken:", credential.idToken);
-        console.log("AppleSignIn - credential.identityToken:", credential.identityToken);
-        console.log("AppleSignIn - credential.user:", credential.user);
-        console.log("AppleSignIn - credential.fullName:", credential.fullName);
+        const idTokenString = credential.idToken || credential.identityToken;
+        logAppleAuthSummary("iOS (native ASAuthorizationAppleIDCredential via expo-apple-authentication)", {
+          user: credential.user,
+          email: credential.email ?? null,
+          realUserStatus: credential.realUserStatus,
+          state: credential.state ?? null,
+          fullName: credential.fullName
+            ? {
+                givenName: credential.fullName.givenName,
+                familyName: credential.fullName.familyName,
+                middleName: credential.fullName.middleName,
+                namePrefix: credential.fullName.namePrefix,
+                nameSuffix: credential.fullName.nameSuffix,
+                nickname: credential.fullName.nickname,
+              }
+            : null,
+          hasIdentityToken: Boolean(credential.identityToken),
+          hasIdToken: Boolean(credential.idToken),
+          identityTokenLength: credential.identityToken ? String(credential.identityToken).length : 0,
+          idTokenLength: credential.idToken ? String(credential.idToken).length : 0,
+          identityTokenJwtPayload: idTokenString ? decodeJwtPayload(idTokenString) : null,
+        });
+        if (idTokenString) {
+          console.log("=== Apple auth — iOS — identity / id token (JWT string) ===\n", idTokenString);
+        }
 
         // User is authenticated.  Do we need an if statement here?
         // if no email use credential to look up user info
@@ -121,19 +158,96 @@ const AppleSignIn = ({ onSignIn, onError, disabled, mode = "signIn", buttonText:
         )}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code%20id_token&scope=name%20email&response_mode=form_post`;
         const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
-        if (result.type === "success") {
-          console.log("Web authentication successful:", result);
-          const userInfo = {
-            user: {
-              id: "web_user_id",
-              email: "email_from_response",
-              name: "name_from_response",
-            },
-            idToken: "token_from_response",
-          };
-          onSignIn(userInfo);
+        if (result.type === "success" && result.url) {
+          const u = new URL(result.url);
+          const oidcError = u.searchParams.get("error");
+          const allParams = Object.fromEntries(u.searchParams.entries());
+          const idToken = u.searchParams.get("id_token");
+          const code = u.searchParams.get("code");
+          const state = u.searchParams.get("state");
+          const userRaw = u.searchParams.get("user");
+
+          logAppleAuthSummary("web (browser redirect / openAuthSessionAsync result)", {
+            resultType: result.type,
+            fullRedirectUrl: result.url,
+            urlOrigin: u.origin,
+            urlPath: u.pathname,
+            searchParams: allParams,
+            error: oidcError,
+            errorDescription: u.searchParams.get("error_description"),
+            hasIdToken: Boolean(idToken),
+            hasCode: Boolean(code),
+            hasState: Boolean(state),
+            hasUser: Boolean(userRaw),
+            idTokenLength: idToken ? idToken.length : 0,
+            idTokenJwtPayload: idToken ? decodeJwtPayload(idToken) : null,
+            userObjectFromApple: (() => {
+              if (!userRaw) return null;
+              try {
+                return JSON.parse(userRaw);
+              } catch (e) {
+                return { _parseError: String(e), raw: userRaw };
+              }
+            })(),
+          });
+          if (idToken) {
+            console.log("=== Apple auth — web — id_token (JWT string) ===\n", idToken);
+          }
+
+          if (oidcError) {
+            onError(u.searchParams.get("error_description") || oidcError);
+            return;
+          }
+          if (!idToken) {
+            onError(
+              code
+                ? "Apple returned a code but no id_token in the callback URL. If this persists, your server may need to exchange the code for tokens (response_type=code only)."
+                : "Apple did not return an id_token in the callback URL",
+            );
+            return;
+          }
+          let sub = "apple_web";
+          try {
+            const part = idToken.split(".")[1];
+            if (part) {
+              const json = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
+              if (json.sub) sub = json.sub;
+            }
+          } catch (_) {
+            /* keep default sub */
+          }
+          let email = null;
+          let name = "Apple User";
+          const userParam = u.searchParams.get("user");
+          if (userParam) {
+            try {
+              const userObj = JSON.parse(userParam);
+              if (userObj.email) email = userObj.email;
+              if (userObj.name && (userObj.name.firstName || userObj.name.lastName)) {
+                name = [userObj.name.firstName, userObj.name.lastName].filter(Boolean).join(" ") || name;
+              }
+            } catch (_) {
+              /* ignore */
+            }
+          }
+          if (!email) {
+            try {
+              const part = idToken.split(".")[1];
+              if (part) {
+                const json = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
+                if (json.email) email = json.email;
+              }
+            } catch (_) {
+              /* ignore */
+            }
+          }
+          onSignIn({
+            user: { id: sub, email: email || "Apple User", name },
+            idToken,
+            authorizationCode: code || null,
+          });
         } else {
-          console.log("Web authentication cancelled or failed");
+          console.log("Web authentication cancelled or failed", result);
         }
       }
     } catch (error) {
