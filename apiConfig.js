@@ -16,14 +16,16 @@ export const SEARCH_BASE_URL = "https://ioec2vrecsearch.infiniteoptions.com";
 // export const API_BASE_URL = "http://127.0.0.1:4090";
 
 // Google and Apple Authentication Endpoints
+/** Google Sign in + Sign up (App.js `completeGoogleSocialAuth`, SignUpScreen) — one endpoint for both. */
 export const GOOGLE_SOCIAL_AUTH_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialAuth/EVERY-CIRCLE";
 // export const GOOGLE_SIGNUP_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialSignUp/EVERY-CIRCLE";
 /** Same URL as `GOOGLE_SIGNUP_ENDPOINT`: POST with token for unified Google sign-in or sign-up (backend upserts). */
 // export const GOOGLE_SOCIAL_AUTH_ENDPOINT = GOOGLE_SIGNUP_ENDPOINT;
 // export const GOOGLE_SIGNIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialLogin/EVERY-CIRCLE";
-export const APPLE_SIGNIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AppleLogin/EVERY-CIRCLE";
-/** Apple Sign in with Apple: POST JSON `code`, `id_token`, `sub`, `email`, `first_name`, `last_name` */
+
+/** Apple Sign in + Sign up — POST JSON `code`, `id_token`, `sub`, `email`, `first_name`, `last_name` */
 export const APPLE_AUTH_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AppleAuth/EVERY-CIRCLE";
+// export const APPLE_SIGNIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AppleLogin/EVERY-CIRCLE";
 
 // Account Management Endpoints
 export const ACCOUNT_SALT_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AccountSalt/EVERY-CIRCLE";
@@ -87,8 +89,11 @@ export const ABLY_TOKEN_ENDPOINT = `${API_BASE_URL}/api/v1/ably/token`;
 console.log("API Configuration loaded");
 // console.log("Base URL:", API_BASE_URL);
 // console.log("Legacy Base URL:", API_BASE_URL);
+// console.log("Legacy Base URL:", API_BASE_URL);
+// console.log("Google social auth:", GOOGLE_SOCIAL_AUTH_ENDPOINT);
 // console.log("Google Signup:", GOOGLE_SIGNUP_ENDPOINT);
 // console.log("Google Signin:", GOOGLE_SIGNIN_ENDPOINT);
+// console.log("Apple Auth:", APPLE_AUTH_ENDPOINT);
 // console.log("Apple Signin:", APPLE_SIGNIN_ENDPOINT);
 // console.log("Stripe Key:", STRIPE_KEY_ENDPOINT);
 // console.log("Payment Intent:", CREATE_PAYMENT_INTENT_ENDPOINT);

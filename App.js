@@ -37,7 +37,7 @@ if (!isWeb) {
 }
 
 import config from "./config";
-import { GOOGLE_SIGNUP_ENDPOINT, GOOGLE_SOCIAL_AUTH_ENDPOINT, APPLE_AUTH_ENDPOINT, API_BASE_URL } from "./apiConfig";
+import { GOOGLE_SOCIAL_AUTH_ENDPOINT, APPLE_AUTH_ENDPOINT, API_BASE_URL } from "./apiConfig";
 import versionData from "./version.json";
 import { DarkModeProvider } from "./contexts/DarkModeContext";
 import { UnreadProvider, reinitializeUnreadFromOutside } from "./contexts/UnreadContext";
@@ -140,6 +140,126 @@ function buildAppleAuthRequestBody(userInfo) {
     first_name,
     last_name,
   };
+}
+
+/**
+ * Sign in and Sign up with Apple: same POST to `APPLE_AUTH_ENDPOINT`, then profile or UserInfo.
+ * @param {boolean} options.clearStorage - true for Sign Up (clean slate, like Google sign-up)
+ */
+async function completeAppleAuthSession(navigation, userInfo, options) {
+  const { clearStorage = false, setError, failureAlertTitle = "Apple" } = options;
+  try {
+    if (clearStorage) {
+      await AsyncStorage.clear();
+    }
+    const { user, idToken, authorizationCode } = userInfo;
+    console.log("=== App.js: Apple — userInfo (from AppleSignIn) ===", userInfo);
+    if (idToken && typeof idToken === "string" && idToken.includes(".")) {
+      try {
+        const b64 = idToken.split(".")[1];
+        const claims = JSON.parse(atob(b64.replace(/-/g, "+").replace(/_/g, "/")));
+        console.log("=== App.js: id_token JWT payload ===", claims);
+      } catch (e) {
+        console.log("=== App.js: id_token not decodable as JWT ===", e?.message);
+      }
+    } else {
+      console.log("=== App.js: no id_token in userInfo ===");
+    }
+    if (authorizationCode) {
+      console.log("=== App.js: authorization code ===\n", authorizationCode);
+    }
+    const appleAuthBody = buildAppleAuthRequestBody(userInfo);
+    console.log("=== App.js: AppleAuth POST body ===", JSON.stringify(appleAuthBody, null, 2));
+    if (DEBUG_APPLE_SIGNIN_SKIP_BACKEND) {
+      console.log("=== App.js: DEBUG_APPLE_SIGNIN_SKIP_BACKEND is true — skipping fetch to", APPLE_AUTH_ENDPOINT);
+      return;
+    }
+    const response = await fetch(APPLE_AUTH_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(appleAuthBody),
+    });
+    const result = await response.json();
+    console.log("App.js - AppleAuth response:", response.status, result);
+    if (!response.ok) {
+      throw new Error(result.message || `Apple auth failed (${response.status})`);
+    }
+    const userEmail =
+      appleAuthBody.email ||
+      (idToken && idToken.includes(".")
+        ? (() => {
+            try {
+              return JSON.parse(atob(idToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).email;
+            } catch (_) {
+              return "";
+            }
+          })()
+        : "") ||
+      (user?.email && user.email !== "Apple User" ? user.email : "");
+    let userUid = result.user_uid ?? result.userUid;
+    if (userUid == null && Array.isArray(result.result) && result.result[0]) {
+      userUid = result.result[0].user_uid ?? result.result[0].userUid;
+    }
+    if (userUid == null && result.data?.user_uid != null) {
+      userUid = result.data.user_uid;
+    }
+    if (userUid == null) {
+      console.warn("App.js - AppleAuth: no user_uid in response:", result);
+      throw new Error("Apple auth did not return a user id");
+    }
+    await AsyncStorage.setItem("user_uid", String(userUid));
+
+    const baseURI = API_BASE_URL;
+    const endpointPath = `/api/v1/userprofileinfo/${userUid}`;
+    const endpoint = baseURI + endpointPath;
+    console.log(`App.js - Apple - profile: ${endpoint}`);
+
+    const profileResponse = await fetch(endpoint);
+    const fullUser = await profileResponse.json();
+    console.log("App.js - Full user (Apple):", JSON.stringify(fullUser, null, 2).slice(0, 2000));
+
+    const is404 = !profileResponse.ok && profileResponse.status === 404;
+    const isProfileNotFound = fullUser.message === "Profile not found for this user";
+    const is404Code = fullUser.code === 404;
+
+    if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
+      console.log("App.js - Profile not found, routing to UserInfo");
+      await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+      reinitializeUnreadFromOutside().catch(() => {});
+      await AsyncStorage.setItem("user_uid", String(userUid));
+      await AsyncStorage.setItem("user_email_id", userEmail);
+
+      navigation.navigate("UserInfo", {
+        appleUserInfo: {
+          email: userEmail,
+          firstName: user.name?.split(" ")[0] || userInfo.firstName || "",
+          lastName: user.name?.split(" ").slice(1).join(" ") || userInfo.lastName || "",
+          appleId: user.id,
+          idToken: idToken,
+        },
+      });
+      return;
+    }
+
+    await AsyncStorage.setItem("profile_uid", fullUser.personal_info?.profile_personal_uid || "");
+    await AsyncStorage.setItem("user_email_id", fullUser.user_email || "");
+    await _storeMyBusinessUids(fullUser);
+    reinitializeUnreadFromOutside().catch(() => {});
+
+    navigation.navigate("Profile", {
+      user: {
+        ...fullUser,
+        user_email: userEmail,
+      },
+      profile_uid: fullUser.personal_info?.profile_personal_uid || "",
+    });
+  } catch (err) {
+    setError?.(err.message);
+    console.log("Fail");
+    Alert.alert(`${failureAlertTitle} Failed`, err.message);
+  }
 }
 
 /**
@@ -559,158 +679,27 @@ export default function App() {
     [handleWebGoogleSignUp],
   );
 
-  const handleAppleSignIn = useCallback(async (userInfo, navigation) => {
-    try {
-      const { user, idToken, authorizationCode } = userInfo;
-      console.log("=== App.js: Apple sign-in — userInfo (passed from AppleSignIn) ===", userInfo);
-      if (idToken && typeof idToken === "string" && idToken.includes(".")) {
-        try {
-          const b64 = idToken.split(".")[1];
-          const claims = JSON.parse(atob(b64.replace(/-/g, "+").replace(/_/g, "/")));
-          console.log("=== App.js: id_token JWT payload (typical server verification claims) ===", claims);
-        } catch (e) {
-          console.log("=== App.js: id_token present but not decodable as JWT ===", e?.message);
-        }
-      } else {
-        console.log("=== App.js: no id_token string in userInfo (web may be code-only until exchange) ===");
-      }
-      if (authorizationCode) {
-        console.log("=== App.js: authorization code (for Apple token endpoint on the server) ===\n", authorizationCode);
-      }
-      const appleAuthBody = buildAppleAuthRequestBody(userInfo);
-      console.log("=== App.js: AppleAuth POST body ===", JSON.stringify(appleAuthBody, null, 2));
-      if (DEBUG_APPLE_SIGNIN_SKIP_BACKEND) {
-        console.log("=== App.js: DEBUG_APPLE_SIGNIN_SKIP_BACKEND is true — skipping fetch to", APPLE_AUTH_ENDPOINT);
-        return;
-      }
-      const response = await fetch(APPLE_AUTH_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(appleAuthBody),
+  const handleAppleSignIn = useCallback(
+    async (userInfo, navigation) => {
+      await completeAppleAuthSession(navigation, userInfo, {
+        clearStorage: false,
+        setError,
+        failureAlertTitle: "Apple Sign In",
       });
-      const result = await response.json();
-      console.log("App.js - handleAppleSignIn - AppleAuth response:", response.status, result);
-      if (!response.ok) {
-        throw new Error(result.message || `Apple sign-in failed (${response.status})`);
-      }
-      const userEmail =
-        appleAuthBody.email ||
-        (idToken && idToken.includes(".")
-          ? (() => {
-              try {
-                return JSON.parse(atob(idToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).email;
-              } catch (_) {
-                return "";
-              }
-            })()
-          : "") ||
-        (user?.email && user.email !== "Apple User" ? user.email : "");
-      // Accept common success shapes: top-level user_uid, nested result array, or SQL success + rows
-      let userUid = result.user_uid ?? result.userUid;
-      if (userUid == null && Array.isArray(result.result) && result.result[0]) {
-        userUid = result.result[0].user_uid ?? result.result[0].userUid;
-      }
-      if (userUid == null && result.data?.user_uid != null) {
-        userUid = result.data.user_uid;
-      }
-      if (userUid == null) {
-        console.warn("App.js - AppleAuth: no user_uid in response; not navigating. Body:", result);
-        throw new Error("Apple sign-in did not return a user id");
-      }
-      await AsyncStorage.setItem("user_uid", String(userUid));
+    },
+    [setError],
+  );
 
-      const baseURI = API_BASE_URL;
-      const endpointPath = `/api/v1/userprofileinfo/${userUid}`;
-      const endpoint = baseURI + endpointPath;
-      console.log(`App.js - Apple sign-in - profile: ${endpoint}`);
-
-      const profileResponse = await fetch(endpoint);
-      const fullUser = await profileResponse.json();
-      console.log("App.js - Full user 2:", JSON.stringify(fullUser, null, 2));
-
-      const is404 = !profileResponse.ok && profileResponse.status === 404;
-      const isProfileNotFound = fullUser.message === "Profile not found for this user";
-      const is404Code = fullUser.code === 404;
-
-      if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
-        console.log("App.js - Profile not found for Apple sign in user, routing to UserInfo");
-        await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
-        reinitializeUnreadFromOutside().catch(() => {});
-        await AsyncStorage.setItem("user_uid", String(userUid));
-        await AsyncStorage.setItem("user_email_id", userEmail);
-
-        navigation.navigate("UserInfo", {
-          appleUserInfo: {
-            email: userEmail,
-            firstName: user.name?.split(" ")[0] || userInfo.firstName || "",
-            lastName: user.name?.split(" ").slice(1).join(" ") || userInfo.lastName || "",
-            appleId: user.id,
-            idToken: idToken,
-          },
-        });
-        return;
-      }
-
-      await AsyncStorage.setItem("profile_uid", fullUser.personal_info?.profile_personal_uid || "");
-      await AsyncStorage.setItem("user_email_id", fullUser.user_email || "");
-      await _storeMyBusinessUids(fullUser);
-      reinitializeUnreadFromOutside().catch(() => {});
-
-      navigation.navigate("Profile", {
-        user: {
-          ...fullUser,
-          user_email: userEmail,
-        },
-        profile_uid: fullUser.personal_info?.profile_personal_uid || "",
+  const handleAppleSignUp = useCallback(
+    async (userInfo, navigation) => {
+      await completeAppleAuthSession(navigation, userInfo, {
+        clearStorage: true,
+        setError,
+        failureAlertTitle: "Apple Sign Up",
       });
-    } catch (err) {
-      setError(err.message);
-      console.log("Fail");
-      Alert.alert("Apple Sign In Failed", err.message);
-    }
-  }, []);
-
-  const handleAppleSignUp = useCallback(async (userInfo, navigation) => {
-    try {
-      const { user, idToken } = userInfo;
-      let userEmail = user.email || `apple_user_${user.id}@example.com`;
-      const payload = {
-        email: userEmail,
-        password: "APPLE_LOGIN",
-        google_auth_token: idToken,
-        google_refresh_token: "apple",
-        social_id: user.id,
-        first_name: user.name?.split(" ")[0] || "",
-        last_name: user.name?.split(" ").slice(1).join(" ") || "",
-        profile_picture: "",
-        login_type: "apple",
-      };
-      const response = await fetch(GOOGLE_SIGNUP_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const result = await response.json();
-      if (result.user_uid) {
-        await AsyncStorage.setItem("user_uid", result.user_uid);
-        // Pass Apple user info to UserInfoScreen for pre-filling
-        navigation.navigate("UserInfo", {
-          appleUserInfo: {
-            email: userEmail,
-            firstName: user.name?.split(" ")[0] || "",
-            lastName: user.name?.split(" ").slice(1).join(" ") || "",
-            appleId: user.id,
-            idToken: idToken,
-          },
-        });
-      }
-    } catch (err) {
-      setError(err.message);
-      Alert.alert("Apple Sign Up Failed", err.message);
-    }
-  }, []);
+    },
+    [setError],
+  );
 
   if (loading) {
     console.log("App.js - Showing loading screen");
