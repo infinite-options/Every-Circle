@@ -81,6 +81,10 @@ export default function AccountScreen({ navigation }) {
   const [returnStatuses, setReturnStatuses] = useState({});
   const [viewingReturnTransactionUid, setViewingReturnTransactionUid] = useState(null);
 
+  //select item to return 
+  const [selectedReturnItems, setSelectedReturnItems] = useState([]);
+  const [returnModalReceiptData, setReturnModalReceiptData] = useState([]);
+
   // above your effect or focus logic
   const checkAuth = async () => {
     try {
@@ -210,16 +214,16 @@ export default function AccountScreen({ navigation }) {
         items = [result.data];
       }
       setReceiptData(items);
-      const sellerTotal = items.reduce((sum, item) => {
-        return sum + parseFloat(item.ti_bs_cost || 0) * (parseInt(item.ti_bs_qty) || 1);
-      }, 0);
-      setTransactionData(prev =>
-        prev.map(t =>
-          t.transaction_uid === transaction.transaction_uid
-            ? { ...t, seller_total: sellerTotal }
-            : t
-        )
-      );
+      // const sellerTotal = items.reduce((sum, item) => {
+      //   return sum + parseFloat(item.ti_bs_cost || 0) * (parseInt(item.ti_bs_qty) || 1);
+      // }, 0);
+      // setTransactionData(prev =>
+      //   prev.map(t =>
+      //     t.transaction_uid === transaction.transaction_uid
+      //       ? { ...t, seller_total: sellerTotal }
+      //       : t
+      //   )
+      // );
       } catch (error) {
         console.error("Error fetching receipt:", error);
       Alert.alert("Error", error.message || "Failed to load receipt.");
@@ -242,7 +246,11 @@ export default function AccountScreen({ navigation }) {
           transaction_return_note: note || "",
         }),
       });
-      const updated = { requested: true, note: note || "" };
+      const existing = returnRequests[uid] || { items: [], notes: [] };
+      const updated = {
+        items: [...(existing.items || []), ...selectedReturnItems],
+        notes: [...(existing.notes || []), { items: selectedReturnItems, note: note || "", date: new Date().toISOString() }],
+      };
       setReturnRequests((prev) => ({ ...prev, [uid]: updated }));
       await AsyncStorage.setItem(`return_request_${uid}`, JSON.stringify(updated));
       setReturnNote("");
@@ -309,7 +317,7 @@ export default function AccountScreen({ navigation }) {
       for (const key of returnKeys) {
         const uid = key.replace("return_request_", "");
         const val = await AsyncStorage.getItem(key);
-        loaded[uid] = val ? JSON.parse(val) : { requested: true, note: "" };
+        loaded[uid] = val ? JSON.parse(val) : { items: [], notes: [] };
       }
       setReturnRequests(loaded);
     } catch (e) {
@@ -1899,6 +1907,28 @@ export default function AccountScreen({ navigation }) {
                                     <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>Return Requested by Customer — Tap to view note</Text>
                                   </TouchableOpacity>
                                 )}
+                                {(returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted") && (
+                                <View style={{
+                                  flexDirection: "row",
+                                  paddingVertical: 8,
+                                  paddingHorizontal: 4,
+                                  backgroundColor: "#FDECEA",
+                                  borderLeftWidth: 4,
+                                  borderLeftColor: "#B71C1C",
+                                  marginTop: 4,
+                                  borderRadius: 4,
+                                }}>
+                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>RETURN</Text>
+                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>Refund</Text>
+                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
+                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
+                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
+                                  <Text style={{ width: 55, flex: 0, fontSize: 11, color: "#B71C1C", textAlign: "right" }}>
+                                    -${transaction.net_earning.toFixed(2)}
+                                  </Text>
+                                </View>
+                              )}
                               </View>
                             )}
                           </View>
@@ -1954,24 +1984,35 @@ export default function AccountScreen({ navigation }) {
               </Text>
             )}
 
-            <TouchableOpacity
-              style={[
-                styles.receiptCloseButton,
-                { borderColor: "#B71C1C", marginTop: 12 },
-                returnRequests[receiptTransaction?.transaction_uid]?.requested && { opacity: 0.4 },
-              ]}
-              onPress={() => {
-          const alreadyRequested = returnRequests[receiptTransaction?.transaction_uid]?.requested || receiptTransaction?.transaction_return_requested === 1;
-          if (!alreadyRequested) {
-            setShowReturnNoteModal(true);
-          }
-              }}
-              disabled={!!(returnRequests[receiptTransaction?.transaction_uid]?.requested || receiptTransaction?.transaction_return_requested === 1)}
-            >
-              <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>
-                {(returnRequests[receiptTransaction?.transaction_uid]?.requested || receiptTransaction?.transaction_return_requested === 1) ? "Return Requested" : "Request Return"}
-              </Text>
-            </TouchableOpacity>
+            {(() => {
+              const returnedItems = returnRequests[receiptTransaction?.transaction_uid]?.items || [];
+              const totalItems = receiptData.length;
+              const allItemsReturned = totalItems > 0 &&
+                Array.from({ length: totalItems }, (_, i) => String(i))
+                  .every(id => returnedItems.includes(id));
+
+              return (
+                <TouchableOpacity
+                  style={[
+                    styles.receiptCloseButton,
+                    { borderColor: "#B71C1C", marginTop: 12 },
+                    allItemsReturned && { opacity: 0.4 },
+                  ]}
+                  disabled={allItemsReturned}
+                  onPress={() => {
+                    if (!allItemsReturned) {
+                      setReturnModalReceiptData(receiptData);
+                      setShowReceiptModal(false);
+                      setTimeout(() => setShowReturnNoteModal(true), 300);
+                    }
+                  }}
+                >
+                  <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>
+                    {allItemsReturned ? "All Items Returned" : "Request Return"}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })()}
 
             {/* Request Return button */}
             {/* <TouchableOpacity
@@ -2005,12 +2046,62 @@ export default function AccountScreen({ navigation }) {
       {/* Return Note Input Modal */}
       <Modal animationType="fade" transparent={true} visible={showReturnNoteModal} onRequestClose={() => setShowReturnNoteModal(false)}>
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
-          <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent]}>
+          <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent, { maxHeight: "80%" }]}>
             <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>
               Request Return
             </Text>
-            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 12 }}>
-              Please describe the reason for your return:
+
+            {/* Item selection */}
+            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>
+              Select item(s) to return:
+            </Text>
+            <ScrollView style={{ maxHeight: 160, marginBottom: 12 }}>
+              {returnModalReceiptData.map((item, index) => {
+                const itemId = String(index);
+                const isSelected = selectedReturnItems.includes(itemId);
+                const alreadyReturned = (returnRequests[receiptTransaction?.transaction_uid]?.items || []).includes(itemId);
+                return (
+                  <TouchableOpacity
+                    key={itemId}
+                    disabled={alreadyReturned}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingVertical: 8,
+                      paddingHorizontal: 4,
+                      borderBottomWidth: 1,
+                      borderBottomColor: darkMode ? "#444" : "#eee",
+                      opacity: alreadyReturned ? 0.4 : 1,
+                    }}
+                    onPress={() => {
+                      if (!alreadyReturned) {
+                        setSelectedReturnItems(prev =>
+                          isSelected ? prev.filter(id => id !== itemId) : [...prev, itemId]
+                        );
+                      }
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={isSelected ? "checkbox" : "square-outline"}
+                      size={18}
+                      color={isSelected ? "#B71C1C" : "#555"}
+                      style={{ marginRight: 8 }}
+                    />
+                    <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", flex: 1 }}>
+                      {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {item.ti_bs_qty || 1}
+                    </Text>
+                    {alreadyReturned && (
+                      <Text style={{ fontSize: 11, color: "#B71C1C", marginLeft: 4 }}>Already returned</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Note input */}
+            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>
+              Reason for return:
             </Text>
             <TextInput
               style={{
@@ -2019,7 +2110,7 @@ export default function AccountScreen({ navigation }) {
                 borderRadius: 8,
                 padding: 12,
                 fontSize: 14,
-                minHeight: 100,
+                minHeight: 80,
                 textAlignVertical: "top",
                 backgroundColor: darkMode ? "#3a3a3a" : "#f9f9f9",
                 color: darkMode ? "#fff" : "#333",
@@ -2031,12 +2122,20 @@ export default function AccountScreen({ navigation }) {
               value={returnNote}
               onChangeText={setReturnNote}
             />
+
+            {selectedReturnItems.length === 0 && (
+              <Text style={{ color: "#B71C1C", fontSize: 12, marginBottom: 8, textAlign: "center" }}>
+                Please select at least one item to return.
+              </Text>
+            )}
+
             <View style={{ flexDirection: "row", gap: 12 }}>
               <TouchableOpacity
                 style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
                 onPress={() => {
                   setShowReturnNoteModal(false);
                   setReturnNote("");
+                  setSelectedReturnItems([]);
                 }}
               >
                 <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>
@@ -2044,11 +2143,18 @@ export default function AccountScreen({ navigation }) {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.receiveItemModalButton, { backgroundColor: "#B71C1C" }]}
+                style={[styles.receiveItemModalButton, { backgroundColor: selectedReturnItems.length === 0 ? "#ccc" : "#B71C1C" }]}
+                disabled={selectedReturnItems.length === 0}
                 onPress={async () => {
-                  await handleReturnRequest(receiptTransaction, returnNote);
+                  const selectedNames = returnModalReceiptData
+                    .filter((item, index) => selectedReturnItems.includes(String(index)))
+                    .map(item => item.bs_service_name || "Item")
+                    .join(", ");
+                  const fullNote = `Items: ${selectedNames}\n\nReason: ${returnNote}`;
+                  await handleReturnRequest(receiptTransaction, fullNote);
                   setShowReturnNoteModal(false);
                   setReturnNote("");
+                  setSelectedReturnItems([]);
                 }}
               >
                 <Text style={styles.receiveItemModalButtonText}>Submit</Text>
