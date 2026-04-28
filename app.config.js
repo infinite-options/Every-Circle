@@ -55,7 +55,11 @@ module.exports = ({ config: expoConfig }) => ({
         backgroundColor: "#ffffff",
       },
 
-      permissions: ["android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_FINE_LOCATION"],
+      permissions: [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+      ],
 
       config: {
         googleMaps: {
@@ -111,6 +115,12 @@ module.exports = ({ config: expoConfig }) => ({
 
       "expo-font",
       "expo-apple-authentication",
+      [
+        "expo-camera",
+        {
+          cameraPermission: "Allow $(PRODUCT_NAME) to use the camera to scan QR codes.",
+        },
+      ],
     ],
 
     extra: {

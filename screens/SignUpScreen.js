@@ -560,7 +560,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               </View>
 
               <View style={styles.socialContainer}>
-                <GoogleBrandedSignInButton label='Sign up with Google' onPress={onGoogleSignUp} disabled={isAttemptingLogin} />
+                <GoogleBrandedSignInButton mode='signUp' onPress={onGoogleSignUp} disabled={isAttemptingLogin} />
                 <AppleSignIn mode='signUp' onSignIn={onAppleSignUp} onError={onError} disabled={isAttemptingLogin} />
               </View>
             </>

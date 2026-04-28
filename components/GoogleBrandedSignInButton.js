@@ -17,16 +17,22 @@ const OFFICIAL_W = 312;
 const OFFICIAL_H = 48;
 
 /**
- * Native: official SDK GoogleSigninButton (light / wide, per current branding on white screens).
- * Web and fallback: white button, border, multicolor G + label (per custom-button guidelines).
+ * @param {"signIn" | "signUp"} [mode="signIn"]
+ *   Native `GoogleSigninButton` only offers “Sign in” / “Sign in with Google” (no stock “Sign up” asset
+ *   in the public SDK). For `signUp` we use the same compliant custom layout as web: multicolor G + label
+ *   (Google custom-button guidelines) on all platforms, including iOS/Android.
+ * Native (sign in only): official SDK `GoogleSigninButton` (light / wide) on light screens.
+ * Web + sign up: custom G + text.
  */
-export default function GoogleBrandedSignInButton({ onPress, label, disabled, signingIn }) {
+export default function GoogleBrandedSignInButton({ onPress, label, disabled, signingIn, mode = "signIn" }) {
   const blocked = !!(disabled || signingIn);
   const { width: windowW } = useWindowDimensions();
   const hPad = 32; // keep below ScrollView/column side padding
   const buttonW = Math.min(OFFICIAL_W, Math.max(200, windowW - hPad));
+  const displayLabel = label || (mode === "signUp" ? "Sign up with Google" : "Sign in with Google");
 
-  if (GoogleSigninButton && !isWeb) {
+  const useCompliantCustomButton = isWeb || mode === "signUp";
+  if (!useCompliantCustomButton && GoogleSigninButton) {
     return (
       <View style={[styles.nativeWrap, blocked && styles.dimmed]}>
         <GoogleSigninButton
@@ -41,11 +47,7 @@ export default function GoogleBrandedSignInButton({ onPress, label, disabled, si
 
   return (
     <TouchableOpacity
-      style={[
-        styles.fallbackButton,
-        { minWidth: Math.min(280, buttonW), width: buttonW, maxWidth: "100%" },
-        blocked && styles.fallbackButtonDimmed,
-      ]}
+      style={[styles.fallbackButton, { minWidth: Math.min(280, buttonW), width: buttonW, maxWidth: "100%" }, blocked && styles.fallbackButtonDimmed]}
       onPress={onPress}
       disabled={blocked}
       activeOpacity={0.85}
@@ -58,7 +60,7 @@ export default function GoogleBrandedSignInButton({ onPress, label, disabled, si
           <View style={styles.logoSlot}>
             <GoogleGLogo size={18} />
           </View>
-          <Text style={styles.fallbackLabel}>{label}</Text>
+          <Text style={styles.fallbackLabel}>{displayLabel}</Text>
         </View>
       )}
     </TouchableOpacity>

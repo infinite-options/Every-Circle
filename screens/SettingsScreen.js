@@ -6,6 +6,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useRoute } from "@react-navigation/native";
 import { CommonActions } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { clearAppAsyncStorage } from "../utils/clearAppAsyncStorage";
 import FeedbackPopup from "../components/FeedbackPopup";
 import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
@@ -341,53 +342,8 @@ export default function SettingsScreen() {
         console.log("SettingsScreen.js - Web platform: Skipping Google Sign Out");
       }
 
-      // Get all keys to clear Apple authentication data
-      const allKeys = await AsyncStorage.getAllKeys();
-      const appleKeys = allKeys.filter((key) => key.startsWith("apple_"));
-
-      // Clear all stored data - comprehensive cleanup
-      const keysToRemove = [
-        // User authentication data
-        "user_uid",
-        "user_email_id",
-        "profile_uid",
-        "user_id",
-        "user_name",
-
-        // User profile data
-        "user_email",
-        "user_first_name",
-        "user_last_name",
-        "user_phone_number",
-
-        // Settings
-        "displayEmail",
-        "displayPhone",
-        "darkMode",
-
-        // Business data
-        "businessFormData",
-        "my_business_uids",
-
-        // Cart data (all cart keys)
-        ...allKeys.filter((key) => key.startsWith("cart_")),
-
-        // Ratings data
-        "user_ratings_info",
-
-        // Live location session
-        "shareLiveLocationUntil",
-        // Auto-cleanup of ignore list disabled — uncomment to clear on logout
-        // NEARBY_IGNORED_KEY,
-
-        // Apple authentication data
-        ...appleKeys,
-      ];
-
-      console.log("SettingsScreen.js - Clearing AsyncStorage keys:", keysToRemove);
-      console.log("SettingsScreen.js - Total keys to remove:", keysToRemove.length);
-      await AsyncStorage.multiRemove(keysToRemove);
-      console.log("SettingsScreen.js - AsyncStorage cleared successfully");
+      await clearAppAsyncStorage();
+      console.log("SettingsScreen.js - AsyncStorage cleared successfully (full storage reset; terms/cookies prefs preserved)");
 
       // Clear shared Ably client so next login reauths cleanly with new client_id.
       resetSharedAblyClient();

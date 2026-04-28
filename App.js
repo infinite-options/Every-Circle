@@ -78,6 +78,7 @@ import InboxScreen from "./screens/InboxScreen";
 import ChatScreen from "./screens/ChatScreen";
 import AddReviewSearchScreen from "./screens/AddReviewSearchScreen";
 import { persistMyBusinessUidsFromProfile } from "./utils/myBusinessUids";
+import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFromEnv } from "./utils/clearAppAsyncStorage";
 
 const Stack = createNativeStackNavigator();
 
@@ -371,6 +372,10 @@ export default function App() {
 
     const initialize = async () => {
       try {
+        // Optional full wipe (env): logs user out on every relaunch. Otherwise clear only signup referrer cache.
+        await maybeClearAllStorageOnColdStartFromEnv();
+        await clearEphemeralReferralKeysOnLaunch();
+
         // Check user first
         console.log("App.js - Checking if user in AsyncStorage...");
         const uid = await AsyncStorage.getItem("user_uid");
