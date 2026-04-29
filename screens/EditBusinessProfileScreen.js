@@ -13,6 +13,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // BUSINESS-SPECIFIC
 import { Dropdown } from "react-native-element-dropdown";
+import { Ionicons } from "@expo/vector-icons";
 import ProductCard from "../components/ProductCard";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 
@@ -620,7 +621,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_short_bio_is_public", formData.shortBioIsPublic ? "1" : "0");
 
       // BUSINESS-SPECIFIC: Services/products handling (EditProfileScreen handles experience, education, expertise, wishes, businesses arrays)
+      const norm01 = (v) => (v === 1 || v === "1" || v === true ? 1 : 0);
       const fullServiceSchema = (service, idx) => {
+        const condType = service.bs_condition_type === "used" ? "used" : "new";
         const baseSchema = {
           bs_service_name: service.bs_service_name || "",
           bs_service_desc: service.bs_service_desc || "",
@@ -642,6 +645,11 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           bs_is_visible: typeof service.bs_is_visible === "undefined" ? 1 : service.bs_is_visible,
           bs_status: service.bs_status || "active",
           bs_image_key: service.bs_image_key || "",
+          bs_condition_type: condType,
+          bs_condition_detail: condType === "used" ? (service.bs_condition_detail || "").trim() : "",
+          bs_free_shipping: norm01(service.bs_free_shipping),
+          bs_buyer_pays_shipping: norm01(service.bs_buyer_pays_shipping),
+          bs_cc_fee_payer: service.bs_cc_fee_payer === "buyer" || service.bs_cc_fee_payer === "seller" ? service.bs_cc_fee_payer : "",
         };
 
         if (service.bs_uid && service.bs_uid.trim() !== "") {
@@ -1070,13 +1078,32 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   // Note: Business profile doesn't have single profile image visibility toggle
 
   // BUSINESS-SPECIFIC: Services state and management (EditProfileScreen uses formData.experience, formData.education, etc.)
-  const [services, setServices] = useState(() => {
-    const initialServices = business?.business_services || business?.services || [];
-    return initialServices.map((service) => ({
+  const normalizeServiceFromApi = (service) => {
+    const rawCond = service.bs_condition_type;
+    const next = {
       ...service,
       bs_uid: service.bs_uid || "",
       bs_tags: service.bs_tags || "",
-    }));
+      bs_condition_detail: service.bs_condition_detail || service.bs_used_condition || "",
+      bs_free_shipping: service.bs_free_shipping === 1 || service.bs_free_shipping === "1" || service.bs_free_shipping === true ? 1 : 0,
+      bs_buyer_pays_shipping:
+        service.bs_buyer_pays_shipping === 1 || service.bs_buyer_pays_shipping === "1" || service.bs_buyer_pays_shipping === true ? 1 : 0,
+      bs_cc_fee_payer:
+        String(service.bs_cc_fee_payer || "").toLowerCase() === "buyer"
+          ? "buyer"
+          : String(service.bs_cc_fee_payer || "").toLowerCase() === "seller"
+            ? "seller"
+            : "",
+    };
+    if (rawCond !== undefined && rawCond !== null && String(rawCond).trim() !== "") {
+      next.bs_condition_type = String(rawCond).toLowerCase() === "used" ? "used" : "new";
+    }
+    return next;
+  };
+
+  const [services, setServices] = useState(() => {
+    const initialServices = business?.business_services || business?.services || [];
+    return initialServices.map((service) => normalizeServiceFromApi(service));
   });
 
   const [showServiceForm, setShowServiceForm] = useState(false);
@@ -1110,6 +1137,31 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   const handleServiceChange = (field, value) => {
     setServiceForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const toggleFreeShipping = () => {
+    setServiceForm((prev) => {
+      if (prev.bs_free_shipping === 1) {
+        return { ...prev, bs_free_shipping: 0 };
+      }
+      return { ...prev, bs_free_shipping: 1, bs_buyer_pays_shipping: 0 };
+    });
+  };
+
+  const toggleBuyerPaysShipping = () => {
+    setServiceForm((prev) => {
+      if (prev.bs_buyer_pays_shipping === 1) {
+        return { ...prev, bs_buyer_pays_shipping: 0 };
+      }
+      return { ...prev, bs_buyer_pays_shipping: 1, bs_free_shipping: 0 };
+    });
+  };
+
+  const toggleCcFeePayer = (payer) => {
+    setServiceForm((prev) => ({
+      ...prev,
+      bs_cc_fee_payer: prev.bs_cc_fee_payer === payer ? "" : payer,
+    }));
   };
 
   const handleAddService = () => {
@@ -1149,6 +1201,17 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       ...service,
       bs_uid: service.bs_uid || "",
       bs_tags: service.bs_tags || "",
+      bs_condition_type: service.bs_condition_type || "new",
+      bs_condition_detail: service.bs_condition_detail || "",
+      bs_free_shipping: service.bs_free_shipping === 1 || service.bs_free_shipping === "1" || service.bs_free_shipping === true ? 1 : 0,
+      bs_buyer_pays_shipping:
+        service.bs_buyer_pays_shipping === 1 || service.bs_buyer_pays_shipping === "1" || service.bs_buyer_pays_shipping === true ? 1 : 0,
+      bs_cc_fee_payer:
+        service.bs_cc_fee_payer === "buyer" || String(service.bs_cc_fee_payer || "").toLowerCase() === "buyer"
+          ? "buyer"
+          : service.bs_cc_fee_payer === "seller" || String(service.bs_cc_fee_payer || "").toLowerCase() === "seller"
+            ? "seller"
+            : "",
     });
     setEditingServiceIndex(index);
     setShowServiceForm(true);
@@ -1511,6 +1574,64 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                   <Text style={[styles.bountyTypeBtnText, serviceForm.bs_bounty_type === "total" && styles.bountyTypeBtnTextActive]}>Total (Fixed)</Text>
                 </TouchableOpacity>
               </View>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Condition</Text>
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                <TouchableOpacity
+                  style={[styles.bountyTypeBtn, serviceForm.bs_condition_type !== "used" && styles.bountyTypeBtnActive]}
+                  onPress={() => handleServiceChange("bs_condition_type", "new")}
+                >
+                  <Text style={[styles.bountyTypeBtnText, serviceForm.bs_condition_type !== "used" && styles.bountyTypeBtnTextActive]}>New</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.bountyTypeBtn, serviceForm.bs_condition_type === "used" && styles.bountyTypeBtnActive]}
+                  onPress={() => handleServiceChange("bs_condition_type", "used")}
+                >
+                  <Text style={[styles.bountyTypeBtnText, serviceForm.bs_condition_type === "used" && styles.bountyTypeBtnTextActive]}>Used</Text>
+                </TouchableOpacity>
+              </View>
+              {serviceForm.bs_condition_type === "used" ? (
+                <TextInput
+                  style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
+                  value={serviceForm.bs_condition_detail}
+                  onChangeText={(t) => handleServiceChange("bs_condition_detail", t)}
+                  placeholder='Condition details (e.g. Like new, minor wear)'
+                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                />
+              ) : null}
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Shipping</Text>
+              <TouchableOpacity style={styles.serviceCheckboxRow} onPress={toggleFreeShipping} activeOpacity={0.7}>
+                <Ionicons
+                  name={serviceForm.bs_free_shipping === 1 ? "checkbox" : "square-outline"}
+                  size={22}
+                  color={serviceForm.bs_free_shipping === 1 ? "#9C45F7" : darkMode ? "#aaa" : "#666"}
+                />
+                <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Free shipping</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.serviceCheckboxRow} onPress={toggleBuyerPaysShipping} activeOpacity={0.7}>
+                <Ionicons
+                  name={serviceForm.bs_buyer_pays_shipping === 1 ? "checkbox" : "square-outline"}
+                  size={22}
+                  color={serviceForm.bs_buyer_pays_shipping === 1 ? "#9C45F7" : darkMode ? "#aaa" : "#666"}
+                />
+                <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Buyer pays shipping</Text>
+              </TouchableOpacity>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Card processing fees</Text>
+              <TouchableOpacity style={styles.serviceCheckboxRow} onPress={() => toggleCcFeePayer("buyer")} activeOpacity={0.7}>
+                <Ionicons
+                  name={serviceForm.bs_cc_fee_payer === "buyer" ? "checkbox" : "square-outline"}
+                  size={22}
+                  color={serviceForm.bs_cc_fee_payer === "buyer" ? "#9C45F7" : darkMode ? "#aaa" : "#666"}
+                />
+                <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Buyer pays card fees</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.serviceCheckboxRow, { marginBottom: 10 }]} onPress={() => toggleCcFeePayer("seller")} activeOpacity={0.7}>
+                <Ionicons
+                  name={serviceForm.bs_cc_fee_payer === "seller" ? "checkbox" : "square-outline"}
+                  size={22}
+                  color={serviceForm.bs_cc_fee_payer === "seller" ? "#9C45F7" : darkMode ? "#aaa" : "#666"}
+                />
+                <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Seller pays card fees</Text>
+              </TouchableOpacity>
               <TextInput
                 style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
                 value={serviceForm.bs_tags}
@@ -1769,6 +1890,20 @@ const styles = StyleSheet.create({
   bountyTypeBtnTextActive: {
     color: "#fff",
     fontWeight: "bold",
+  },
+  serviceCheckboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+    gap: 10,
+  },
+  serviceCheckboxLabel: {
+    fontSize: 15,
+    color: "#333",
+    flex: 1,
+  },
+  darkServiceCheckboxLabel: {
+    color: "#e0e0e0",
   },
   businessEditorCard: {
     backgroundColor: "#f9f9f9",

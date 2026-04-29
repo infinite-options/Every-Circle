@@ -1,5 +1,22 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ActivityIndicator, ScrollView, Image, SafeAreaView, TouchableWithoutFeedback, Platform, Pressable, Modal, KeyboardAvoidingView, FlatList } from "react-native";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
+  Image,
+  SafeAreaView,
+  TouchableWithoutFeedback,
+  Platform,
+  Pressable,
+  Modal,
+  KeyboardAvoidingView,
+  FlatList,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 // import axios from 'axios';
 import MiniCard from "../components/MiniCard";
@@ -7,7 +24,17 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_INFO_ENDPOINT, CIRCLES_ENDPOINT, PROFILE_VIEWS_ENDPOINT, BUSINESS_RESULTS_ENDPOINT, BUSINESS_AVG_RATINGS_ENDPOINT, BUSINESS_MAX_BOUNTY_ENDPOINT, BUSINESS_TAG_SEARCH_ENDPOINT } from "../apiConfig";
+import {
+  API_BASE_URL,
+  USER_PROFILE_INFO_ENDPOINT,
+  BUSINESS_INFO_ENDPOINT,
+  CIRCLES_ENDPOINT,
+  PROFILE_VIEWS_ENDPOINT,
+  BUSINESS_RESULTS_ENDPOINT,
+  BUSINESS_AVG_RATINGS_ENDPOINT,
+  BUSINESS_MAX_BOUNTY_ENDPOINT,
+  BUSINESS_TAG_SEARCH_ENDPOINT,
+} from "../apiConfig";
 import config from "../config";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { reinitializeUnreadFromOutside } from "../contexts/UnreadContext";
@@ -22,12 +49,97 @@ import { getHeaderColors } from "../config/headerColors";
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 console.log(`ProfileScreen - Full endpoint: ${ProfileScreenAPI}`);
 
+/**
+ * Unwrap common API shapes so ProfileScreen always sees flat { personal_info, experience_info, ... }.
+ * Backend changes (Lambda proxy body, { data }, { result }) previously left user null: the user_uid
+ * bootstrap required personal_info.profile_personal_uid on the raw JSON top level.
+ */
+function normalizeUserProfileInfoResponse(raw) {
+  if (raw == null || typeof raw !== "object") return raw;
+  let cur = raw;
+
+  if (typeof cur.body === "string") {
+    const trimmed = cur.body.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        const inner = JSON.parse(cur.body);
+        if (inner && typeof inner === "object") cur = inner;
+      } catch (_) {}
+    }
+  }
+
+  const missingPersonalBlock = (o) => o == null || (o.personal_info == null && o.profile_info == null);
+
+  if (cur.data && typeof cur.data === "object" && missingPersonalBlock(cur)) {
+    cur = cur.data;
+  }
+  if (cur.result && typeof cur.result === "object" && missingPersonalBlock(cur)) {
+    cur = cur.result;
+  }
+
+  if (typeof cur.personal_info === "string") {
+    try {
+      const p = JSON.parse(cur.personal_info);
+      if (p && typeof p === "object") cur = { ...cur, personal_info: p };
+    } catch (_) {}
+  }
+
+  // Backend userprofileinfo uses profile_info + email_id; UI expects personal_info + user_email
+  if (cur.personal_info == null && cur.profile_info != null && typeof cur.profile_info === "object") {
+    cur = { ...cur, personal_info: cur.profile_info };
+  }
+  if ((cur.user_email == null || cur.user_email === "") && cur.email_id != null && cur.email_id !== "") {
+    cur = { ...cur, user_email: cur.email_id };
+  }
+
+  if (cur.social_links == null && Array.isArray(cur.links_info) && cur.links_info.length > 0) {
+    const social = {};
+    for (const row of cur.links_info) {
+      if (!row || typeof row !== "object") continue;
+      const name = String(row.social_link_name || row.link_name || row.platform || "").toLowerCase();
+      const url = row.social_link_url || row.url || row.link || "";
+      if (name.includes("facebook")) social.facebook = url;
+      else if (name.includes("twitter") || name === "x") social.twitter = url;
+      else if (name.includes("linkedin")) social.linkedin = url;
+      else if (name.includes("youtube")) social.youtube = url;
+    }
+    if (Object.keys(social).length > 0) cur = { ...cur, social_links: social };
+  }
+
+  return cur;
+}
+
+function getProfilePersonalUid(apiUser) {
+  if (!apiUser || typeof apiUser !== "object") return "";
+  const pi = apiUser.personal_info || apiUser.profile_info;
+  const fromPi = pi && typeof pi === "object" ? pi.profile_personal_uid || pi.profile_uid : "";
+  if (fromPi != null && String(fromPi).trim() !== "") return String(fromPi).trim();
+  const top = apiUser.profile_personal_uid || apiUser.profile_uid;
+  return top != null ? String(top).trim() : "";
+}
+
+/** API may return a JSON string, an array, or a single object; .map must not throw. */
+function parseProfileJsonArray(val) {
+  if (val == null || val === "") return [];
+  let v = val;
+  if (typeof val === "string") {
+    try {
+      v = JSON.parse(val);
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(v)) return v;
+  if (v && typeof v === "object") return [v];
+  return [];
+}
+
 /** Matches SearchScreen: 💰 with a slash overlay for "no bounty" */
 function NoBountyIcon({ darkMode }) {
   return (
-    <View style={profileStyles.noBountyIconWrap} accessibilitylabel="No bounty">
+    <View style={profileStyles.noBountyIconWrap} accessibilitylabel='No bounty'>
       <Text style={profileStyles.noBountyEmoji}>💰</Text>
-      <View pointerEvents="none" style={[profileStyles.noBountySlash, darkMode && profileStyles.darkNoBountySlash]} />
+      <View pointerEvents='none' style={[profileStyles.noBountySlash, darkMode && profileStyles.darkNoBountySlash]} />
     </View>
   );
 }
@@ -94,7 +206,10 @@ const ProfileScreen = ({ route, navigation }) => {
 
   const fetchPlacesSuggestions = (text) => {
     if (placesDebounceRef.current) clearTimeout(placesDebounceRef.current);
-    if (!text.trim()) { setPlaceSuggestions([]); return; }
+    if (!text.trim()) {
+      setPlaceSuggestions([]);
+      return;
+    }
     placesDebounceRef.current = setTimeout(async () => {
       const results = await fetchGooglePlaces(text);
       setPlaceSuggestions(results);
@@ -114,16 +229,16 @@ const ProfileScreen = ({ route, navigation }) => {
       formData.append("user_uid", uid);
       formData.append("business_name", place.structured_formatting?.main_text || place.description);
       formData.append("business_google_id", place.place_id);
-      formData.append("business_role", "unclaimed");  // reviewer-saved; owner can claim later
-      if (pd.address_line_1)    formData.append("business_address_line_1", pd.address_line_1);
-      if (pd.city)              formData.append("business_city", pd.city);
-      if (pd.state)             formData.append("business_state", pd.state);
-      if (pd.country)           formData.append("business_country", pd.country);
-      if (pd.zip)               formData.append("business_zip_code", pd.zip);
-      if (pd.lat != null)       formData.append("business_latitude", String(pd.lat));
-      if (pd.lng != null)       formData.append("business_longitude", String(pd.lng));
-      if (pd.phone)             formData.append("business_phone_number", pd.phone);
-      if (pd.website)           formData.append("business_website", pd.website);
+      formData.append("business_role", "unclaimed"); // reviewer-saved; owner can claim later
+      if (pd.address_line_1) formData.append("business_address_line_1", pd.address_line_1);
+      if (pd.city) formData.append("business_city", pd.city);
+      if (pd.state) formData.append("business_state", pd.state);
+      if (pd.country) formData.append("business_country", pd.country);
+      if (pd.zip) formData.append("business_zip_code", pd.zip);
+      if (pd.lat != null) formData.append("business_latitude", String(pd.lat));
+      if (pd.lng != null) formData.append("business_longitude", String(pd.lng));
+      if (pd.phone) formData.append("business_phone_number", pd.phone);
+      if (pd.website) formData.append("business_website", pd.website);
 
       const saveRes = await fetch(BUSINESS_INFO_ENDPOINT, { method: "POST", body: formData });
       const saveJson = await saveRes.json();
@@ -174,7 +289,11 @@ const ProfileScreen = ({ route, navigation }) => {
       const json = JSON.parse(text);
       // SearchScreen checks Array.isArray first — the API may return an array directly
       const arr = Array.isArray(json) ? json : json.results || json.result || [];
-      const sanitize = (t) => { if (!t) return ""; const s = String(t).trim(); return s === "." ? "" : s; };
+      const sanitize = (t) => {
+        if (!t) return "";
+        const s = String(t).trim();
+        return s === "." ? "" : s;
+      };
       let list = arr.map((b) => ({
         id: String(b.business_uid || ""),
         company: sanitize(b.business_name || b.company) || "Unknown Business",
@@ -217,8 +336,7 @@ const ProfileScreen = ({ route, navigation }) => {
         if (ratingsJson.result) {
           list = list.map((b) => ({
             ...b,
-            rating: ratingsJson.result[b.id] && Number.isFinite(parseFloat(ratingsJson.result[b.id].avg_rating))
-              ? parseFloat(ratingsJson.result[b.id].avg_rating) : null,
+            rating: ratingsJson.result[b.id] && Number.isFinite(parseFloat(ratingsJson.result[b.id].avg_rating)) ? parseFloat(ratingsJson.result[b.id].avg_rating) : null,
             ratingCount: ratingsJson.result[b.id] ? ratingsJson.result[b.id].rating_count : 0,
             connection_degree: ratingsJson.result[b.id]?.nearest_connection ?? null,
           }));
@@ -298,7 +416,7 @@ const ProfileScreen = ({ route, navigation }) => {
         if (userId) {
           try {
             const response = await fetch(`${ProfileScreenAPI}/${userId}`);
-            const apiUser = await response.json();
+            const apiUser = normalizeUserProfileInfoResponse(await response.json());
 
             // Handle case where profile is not found (404 error)
             if ((!response.ok && response.status === 404) || apiUser.message === "Profile not found for this user" || (apiUser.code === 404 && apiUser.message === "Profile not found for this user")) {
@@ -311,14 +429,16 @@ const ProfileScreen = ({ route, navigation }) => {
               return;
             }
 
-            if (apiUser && apiUser.personal_info?.profile_personal_uid) {
-              profileId = apiUser.personal_info.profile_personal_uid;
+            const resolvedProfileUid = getProfilePersonalUid(apiUser);
+            if (apiUser && resolvedProfileUid) {
+              profileId = resolvedProfileUid;
               setProfileUID(profileId);
               // This is the logged-in user's own profile (fetched via user_uid)
               setIsCurrentUserProfile(true);
               await AsyncStorage.setItem("profile_uid", profileId);
               reinitializeUnreadFromOutside().catch(() => {});
-              await fetchUserData(profileId);
+              // Same payload as GET by profile id — hydrate from this response (avoid duplicate GET)
+              await processProfileApiUser(apiUser, profileId, response);
               return;
             }
           } catch (err) {
@@ -326,7 +446,7 @@ const ProfileScreen = ({ route, navigation }) => {
           }
         }
 
-        // If still not found, show error
+        // // If still not found, show error
         setLoading(false);
         Alert.alert("Error", "Failed to load profile data. Please log in again.");
       }
@@ -347,51 +467,43 @@ const ProfileScreen = ({ route, navigation }) => {
     }
   }
 
-  async function fetchUserData(profileUID) {
-    try {
-      // console.log("Fetching user data for profile UID:", profileUID);
-      const response = await fetch(`${ProfileScreenAPI}/${profileUID}`);
-      const apiUser = await response.json();
-      // console.log("ProfileScreen.js - Profile API Response:", JSON.stringify(apiUser, null, 2));
+  /**
+   * Maps GET /userprofileinfo/:id JSON into screen state. Call with the parsed body from a single fetch;
+   * :id may be profile_personal_uid or user_uid if the API resolves both to the same document shape.
+   */
+  async function processProfileApiUser(apiUser, profileUID, response) {
+    apiUser = normalizeUserProfileInfoResponse(apiUser);
 
-      // console.log("ProfileScreen - personal_info object:", JSON.stringify(apiUser.personal_info, null, 2));
+    // Handle case where profile is not found (404 error)
+    if (
+      (!response.ok && response.status === 404) ||
+      !apiUser ||
+      apiUser.message === "Profile not found for this user" ||
+      (apiUser.code === 404 && apiUser.message === "Profile not found for this user")
+    ) {
+      const currentUserUid = await AsyncStorage.getItem("user_uid");
+      const currentProfileUid = await AsyncStorage.getItem("profile_uid");
 
-      // Handle case where profile is not found (404 error)
-      if (
-        (!response.ok && response.status === 404) ||
-        !apiUser ||
-        apiUser.message === "Profile not found for this user" ||
-        (apiUser.code === 404 && apiUser.message === "Profile not found for this user")
-      ) {
-        // console.log("ProfileScreen - Profile not found for profile UID:", profileUID);
-
-        // Check if this is the current user's profile
-        const currentUserUid = await AsyncStorage.getItem("user_uid");
-        const currentProfileUid = await AsyncStorage.getItem("profile_uid");
-
-        // If the profileUID matches user_uid or is the current user's profile, route to UserInfo
-        if (isCurrentUserProfile || profileUID === currentUserUid || profileUID === currentProfileUid) {
-          // console.log("ProfileScreen - Current user's profile not found, routing to UserInfo");
-          setLoading(false);
-          // Clear any existing profile data but keep user credentials
-          await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
-          navigation.navigate("UserInfo");
-          return;
-        }
-
-        // If viewing another user's profile that doesn't exist, just show empty state
-        console.log("No profile data found for user (viewing other user's profile)");
-        setUser(null);
+      if (isCurrentUserProfile || profileUID === currentUserUid || profileUID === currentProfileUid) {
         setLoading(false);
+        await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+        navigation.navigate("UserInfo");
         return;
       }
 
-      const storedProfileUid = await AsyncStorage.getItem("profile_uid");
-      if (storedProfileUid && profileUID === storedProfileUid) {
-        const bizListChanged = await persistMyBusinessUidsFromProfile(apiUser);
-        if (bizListChanged) reinitializeUnreadFromOutside().catch(() => {});
-      }
+      console.log("No profile data found for user (viewing other user's profile)");
+      setUser(null);
+      setLoading(false);
+      return;
+    }
 
+    const storedProfileUid = await AsyncStorage.getItem("profile_uid");
+    if (storedProfileUid && profileUID === storedProfileUid) {
+      const bizListChanged = await persistMyBusinessUidsFromProfile(apiUser);
+      if (bizListChanged) reinitializeUnreadFromOutside().catch(() => {});
+    }
+
+    try {
       const userData = {
         profile_uid: profileUID,
         email: apiUser?.user_email || "",
@@ -415,74 +527,75 @@ const ProfileScreen = ({ route, navigation }) => {
         businessIsPublic: apiUser.personal_info?.profile_personal_business_is_public === 1,
         profileImage: apiUser.personal_info?.profile_personal_image ? String(apiUser.personal_info.profile_personal_image) : "",
       };
-      userData.experience = apiUser.experience_info
-        ? (typeof apiUser.experience_info === "string" ? JSON.parse(apiUser.experience_info) : apiUser.experience_info).map((exp) => ({
-            profile_experience_uid: exp.profile_experience_uid || "",
-            company: exp.profile_experience_company_name || "",
-            title: exp.profile_experience_position || "",
-            description: exp.profile_experience_description || "",
-            startDate: exp.profile_experience_start_date || "",
-            endDate: exp.profile_experience_end_date || "",
-            isPublic: exp.profile_experience_is_public === 1 || exp.isPublic === true,
-          }))
-        : [];
-      userData.education = apiUser.education_info
-        ? (typeof apiUser.education_info === "string" ? JSON.parse(apiUser.education_info) : apiUser.education_info).map((edu) => ({
-            profile_education_uid: edu.profile_education_uid || "",
-            school: edu.profile_education_school_name || "",
-            degree: edu.profile_education_degree || "",
-            startDate: edu.profile_education_start_date || "",
-            endDate: edu.profile_education_end_date || "",
-            isPublic: edu.profile_education_is_public === 1 || edu.isPublic === true,
-          }))
-        : [];
+      userData.experience = parseProfileJsonArray(apiUser.experience_info).map((exp) => ({
+        profile_experience_uid: exp.profile_experience_uid || "",
+        company: exp.profile_experience_company_name || "",
+        title: exp.profile_experience_position || "",
+        description: exp.profile_experience_description || "",
+        startDate: exp.profile_experience_start_date || "",
+        endDate: exp.profile_experience_end_date || "",
+        isPublic: exp.profile_experience_is_public === 1 || exp.isPublic === true,
+      }));
+      userData.education = parseProfileJsonArray(apiUser.education_info).map((edu) => ({
+        profile_education_uid: edu.profile_education_uid || "",
+        school: edu.profile_education_school_name || "",
+        degree: edu.profile_education_degree || "",
+        startDate: edu.profile_education_start_date || "",
+        endDate: edu.profile_education_end_date || "",
+        isPublic: edu.profile_education_is_public === 1 || edu.isPublic === true,
+      }));
       // Log business_info from API
       // console.log("ProfileScreen - apiUser.business_info (raw):", apiUser.business_info);
       // console.log("ProfileScreen - apiUser.business_info type:", typeof apiUser.business_info);
 
       // Map business_info to userData.businesses
       // Ensure business_info is parsed correctly
-      userData.businesses = apiUser.business_info
-        ? (typeof apiUser.business_info === "string" ? JSON.parse(apiUser.business_info) : apiUser.business_info).map((bus) => ({
-            profile_business_uid: bus.business_uid || bus.profile_business_uid || "",
-            name: bus.business_name || bus.profile_business_name || "",
-            role: bus.profile_business_role || bus.role || bus.bu_role || "",
-            isApproved: bus.profile_business_approved === "1" || bus.profile_business_approved === 1 || bus.isApproved === true || bus.isApproved === "1",
-            isPublic: bus.profile_business_is_visible === "1" || bus.profile_business_is_visible === 1 || bus.isPublic === true || bus.isPublic === "1",
-            bu_individual_business_is_public: bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === true,
-            individualIsPublic: bus.bu_individual_business_is_public === true || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1",
-          }))
-        : [];
+      userData.businesses = parseProfileJsonArray(apiUser.business_info).map((bus) => ({
+        profile_business_uid: bus.business_uid || bus.profile_business_uid || "",
+        name: bus.business_name || bus.profile_business_name || "",
+        role: bus.profile_business_role || bus.role || bus.bu_role || "",
+        isApproved: bus.profile_business_approved === "1" || bus.profile_business_approved === 1 || bus.isApproved === true || bus.isApproved === "1",
+        isPublic: bus.profile_business_is_visible === "1" || bus.profile_business_is_visible === 1 || bus.isPublic === true || bus.isPublic === "1",
+        bu_individual_business_is_public: bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === true,
+        individualIsPublic: bus.bu_individual_business_is_public === true || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1",
+      }));
 
       // console.log("ProfileScreen - userData.businesses (after mapping):", JSON.stringify(userData.businesses, null, 2));
       // console.log("ProfileScreen - userData.businesses.length:", userData.businesses.length);
 
-      userData.expertise = apiUser.expertise_info
-        ? (typeof apiUser.expertise_info === "string" ? JSON.parse(apiUser.expertise_info) : apiUser.expertise_info).map((exp) => ({
-            profile_expertise_uid: exp.profile_expertise_uid || "",
-            name: exp.profile_expertise_title || "",
-            description: exp.profile_expertise_description || "",
-            cost: exp.profile_expertise_cost || "",
-            bounty: exp.profile_expertise_bounty || "",
-            isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
-          }))
-        : [];
-      userData.wishes = apiUser.wishes_info
-        ? (typeof apiUser.wishes_info === "string" ? JSON.parse(apiUser.wishes_info) : apiUser.wishes_info).map((wish) => ({
-            profile_wish_uid: wish.profile_wish_uid || "",
-            helpNeeds: wish.profile_wish_title || "",
-            details: wish.profile_wish_description || "",
-            amount: wish.profile_wish_bounty || "",
-            cost: wish.profile_wish_cost != null && wish.profile_wish_cost !== "" ? wish.profile_wish_cost : "0",
-            profile_wish_start: wish.profile_wish_start || "",
-            profile_wish_end: wish.profile_wish_end || "",
-            profile_wish_location: wish.profile_wish_location || "",
-            profile_wish_mode: wish.profile_wish_mode || "",
-            isPublic: wish.profile_wish_is_public === 1 || wish.isPublic === true,
-            wish_responses: wish.wish_responses || 0,
-          }))
-        : [];
-      const socialLinks = apiUser.social_links && typeof apiUser.social_links === "string" ? JSON.parse(apiUser.social_links) : {};
+      userData.expertise = parseProfileJsonArray(apiUser.expertise_info).map((exp) => ({
+        profile_expertise_uid: exp.profile_expertise_uid || "",
+        name: exp.profile_expertise_title || "",
+        description: exp.profile_expertise_description || "",
+        cost: exp.profile_expertise_cost || "",
+        bounty: exp.profile_expertise_bounty || "",
+        isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
+      }));
+      userData.wishes = parseProfileJsonArray(apiUser.wishes_info).map((wish) => ({
+        profile_wish_uid: wish.profile_wish_uid || "",
+        helpNeeds: wish.profile_wish_title || "",
+        details: wish.profile_wish_description || "",
+        amount: wish.profile_wish_bounty || "",
+        cost: wish.profile_wish_cost != null && wish.profile_wish_cost !== "" ? wish.profile_wish_cost : "0",
+        profile_wish_start: wish.profile_wish_start || "",
+        profile_wish_end: wish.profile_wish_end || "",
+        profile_wish_location: wish.profile_wish_location || "",
+        profile_wish_mode: wish.profile_wish_mode || "",
+        isPublic: wish.profile_wish_is_public === 1 || wish.isPublic === true,
+        wish_responses: wish.wish_responses || 0,
+      }));
+      const socialLinks =
+        typeof apiUser.social_links === "string"
+          ? (() => {
+              try {
+                return JSON.parse(apiUser.social_links);
+              } catch {
+                return {};
+              }
+            })()
+          : apiUser.social_links && typeof apiUser.social_links === "object"
+            ? apiUser.social_links
+            : {};
       userData.facebook = socialLinks.facebook || "";
       userData.twitter = socialLinks.twitter || "";
       userData.linkedin = socialLinks.linkedin || "";
@@ -496,18 +609,8 @@ const ProfileScreen = ({ route, navigation }) => {
       // console.log("ProfileScreen - API business_is_public value:", apiUser.personal_info?.profile_personal_business_is_public);
       // console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
 
-      const rawBusinessInfo = Array.isArray(apiUser.business_info)
-        ? apiUser.business_info
-        : typeof apiUser.business_info === "string"
-          ? (() => {
-              try {
-                return JSON.parse(apiUser.business_info);
-              } catch (e) {
-                return [];
-              }
-            })()
-          : [];
-      const mappedBusinesses = (rawBusinessInfo || []).map((bus, index) => {
+      const rawBusinessInfo = parseProfileJsonArray(apiUser.business_info);
+      const mappedBusinesses = rawBusinessInfo.map((bus, index) => {
         const businessProfileImg = bus.business_profile_img && String(bus.business_profile_img).trim() !== "" ? String(bus.business_profile_img).trim() : null;
         const imageIsPublic = bus.business_profile_img_is_public === 1 || bus.business_profile_img_is_public === "1" || bus.business_image_is_public === 1 || bus.business_image_is_public === "1";
         return {
@@ -537,6 +640,19 @@ const ProfileScreen = ({ route, navigation }) => {
       setBusinessesData(mappedBusinesses);
       setLoading(false);
     } catch (error) {
+      console.error("ProfileScreen - processProfileApiUser:", error);
+      setUser(null);
+      setLoading(false);
+    }
+  }
+
+  async function fetchUserData(profileUID) {
+    try {
+      const response = await fetch(`${ProfileScreenAPI}/${profileUID}`);
+      const apiUser = normalizeUserProfileInfoResponse(await response.json());
+      await processProfileApiUser(apiUser, profileUID, response);
+    } catch (error) {
+      console.error("ProfileScreen - fetchUserData:", error);
       setUser(null);
       setLoading(false);
     }
@@ -1859,206 +1975,231 @@ const ProfileScreen = ({ route, navigation }) => {
 
           {/* Reviews — collapsible section */}
           <View style={styles.fieldContainer}>
-              <View style={[styles.sectionHeader, { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }]}>
-                <TouchableOpacity style={{ flex: 1 }} onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
-                  <Text style={styles.sectionHeaderText}>REVIEWS</Text>
-                </TouchableOpacity>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  {isCurrentUserProfile && (
-                    <TouchableOpacity onPress={() => { setReviewSearchQuery(""); setReviewSearchResults([]); setReviewSearchDone(false); setReviewSearchVisible(!reviewSearchVisible); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Text style={[styles.sectionHeaderText, { fontSize: 28, lineHeight: 28 }]}>+</Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
-                    <Ionicons name={showReviews ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+            <View style={[styles.sectionHeader, { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }]}>
+              <TouchableOpacity style={{ flex: 1 }} onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
+                <Text style={styles.sectionHeaderText}>REVIEWS</Text>
+              </TouchableOpacity>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                {isCurrentUserProfile && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setReviewSearchQuery("");
+                      setReviewSearchResults([]);
+                      setReviewSearchDone(false);
+                      setReviewSearchVisible(!reviewSearchVisible);
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={[styles.sectionHeaderText, { fontSize: 28, lineHeight: 28 }]}>+</Text>
                   </TouchableOpacity>
-                </View>
+                )}
+                <TouchableOpacity onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
+                  <Ionicons name={showReviews ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+                </TouchableOpacity>
               </View>
-              {/* Review search overlay modal */}
-              <Modal
-                visible={reviewSearchVisible}
-                transparent
-                animationType="fade"
-                onRequestClose={() => { setReviewSearchVisible(false); setPlaceSuggestions([]); }}
+            </View>
+            {/* Review search overlay modal */}
+            <Modal
+              visible={reviewSearchVisible}
+              transparent
+              animationType='fade'
+              onRequestClose={() => {
+                setReviewSearchVisible(false);
+                setPlaceSuggestions([]);
+              }}
+            >
+              <TouchableWithoutFeedback
+                onPress={() => {
+                  setReviewSearchVisible(false);
+                  setPlaceSuggestions([]);
+                }}
               >
-                <TouchableWithoutFeedback onPress={() => { setReviewSearchVisible(false); setPlaceSuggestions([]); }}>
-                  <View style={profileStyles.overlayBackdrop} />
-                </TouchableWithoutFeedback>
-                <KeyboardAvoidingView
-                  behavior={Platform.OS === "ios" ? "padding" : "height"}
-                  style={profileStyles.overlayContainer}
-                  pointerEvents="box-none"
-                >
-                  <View style={[profileStyles.overlayCard, darkMode && profileStyles.darkOverlayCard]}>
-                    {/* Header */}
-                    <View style={profileStyles.overlayHeader}>
-                      <Text style={[profileStyles.overlayTitle, darkMode && { color: "#fff" }]}>Add a Review</Text>
-                      <TouchableOpacity onPress={() => { setReviewSearchVisible(false); setPlaceSuggestions([]); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <Ionicons name="close" size={22} color={darkMode ? "#fff" : "#333"} />
-                      </TouchableOpacity>
-                    </View>
-                    {/* Search row — matches SearchScreen layout */}
-                    <View style={profileStyles.overlaySearchRow}>
-                      <TextInput
-                        style={[profileStyles.inlineSearchInput, darkMode && profileStyles.darkInlineSearchInput]}
-                        placeholder="What are you looking for?"
-                        placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                        value={reviewSearchQuery}
-                        onChangeText={setReviewSearchQuery}
-                        onSubmitEditing={() => searchBusinessesForReview(reviewSearchQuery)}
-                        returnKeyType="search"
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        autoFocus={true}
-                      />
-                      <TouchableOpacity
-                        style={[profileStyles.inlineSearchBtn, darkMode && profileStyles.darkInlineSearchBtn]}
-                        onPress={() => searchBusinessesForReview(reviewSearchQuery)}
-                        disabled={reviewSearchLoading}
-                      >
-                        {reviewSearchLoading
-                          ? <ActivityIndicator size="small" color={darkMode ? "#fff" : "#000"} />
-                          : <Ionicons name="search" size={22} color={darkMode ? "#ffffff" : "#000000"} />}
-                      </TouchableOpacity>
-                    </View>
-                    {/* Results — identical to SearchScreen renderResultItem */}
-                    <FlatList
-                      data={reviewSearchResults}
-                      keyExtractor={(item) => item.id}
-                      keyboardShouldPersistTaps="handled"
-                      style={{ maxHeight: 340 }}
-                      renderItem={({ item }) => (
-                        <TouchableOpacity
-                          style={[profileStyles.inlineResultCard, darkMode && profileStyles.darkInlineResultCard]}
-                          onPress={() => {
-                            setReviewSearchVisible(false);
-                            navigation.navigate("ReviewBusiness", { business_uid: item.id, business_name: item.company });
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          {/* Left: image + name/tagline — same as SearchScreen resultContent */}
-                          <View style={profileStyles.resultContent}>
-                            <View style={{ flexDirection: "row", alignItems: "center" }}>
-                              <Image
-                                source={item.business_profile_img ? { uri: encodeURI(item.business_profile_img.trim()) } : require("../assets/profile.png")}
-                                style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10 }}
-                                defaultSource={require("../assets/profile.png")}
-                              />
-                              <View style={{ flex: 1 }}>
-                                <Text style={[profileStyles.companyName, darkMode && profileStyles.darkCompanyName]} numberOfLines={1}>
-                                  {item.company ? String(item.company).trim() : ""}
-                                </Text>
-                                {(() => {
-                                  const tagLine = item.business_tag_line ? String(item.business_tag_line).trim() : "";
-                                  if (tagLine && tagLine !== "." && tagLine.length > 0) {
-                                    return <Text style={[profileStyles.businessTagLine, darkMode && profileStyles.darkBusinessTagLine]} numberOfLines={1}>{tagLine}</Text>;
-                                  }
-                                  return null;
-                                })()}
-                              </View>
-                            </View>
-                          </View>
-                          {/* Right: Rating | Bounty | Level — same as SearchScreen businessResultActions */}
-                          <View style={profileStyles.businessResultActions}>
-                            <View style={profileStyles.businessTableRatingCol}>
-                              {Number.isFinite(item.rating) ? (
-                                <View style={profileStyles.ratingContainer}>
-                                  <Ionicons name="star" size={16} color="#FFCD3C" />
-                                  <Text style={[profileStyles.ratingText, darkMode && profileStyles.darkRatingText]}>
-                                    {item.rating.toFixed(1)}{item.ratingCount > 0 ? ` (${item.ratingCount})` : ""}
-                                  </Text>
-                                </View>
-                              ) : (
-                                <Text style={[profileStyles.metricPlaceholder, darkMode && profileStyles.darkMetricPlaceholder]}>—</Text>
-                              )}
-                            </View>
-                            <View style={profileStyles.businessTableBountyCol}>
-                              {item.max_bounty != null
-                                ? <Text style={[profileStyles.bountyEmojiIcon, profileStyles.bountyEmojiIconCompact]}>💰</Text>
-                                : <NoBountyIcon darkMode={darkMode} />}
-                            </View>
-                            <View style={profileStyles.businessTableLevelCol}>
-                              <View style={profileStyles.levelButton}>
-                                <View style={{ position: "relative" }}>
-                                  <Image source={require("../assets/connect.png")} style={{ width: 22, height: 22, tintColor: darkMode ? "#ffffff" : "#000000" }} />
-                                  {item.connection_degree != null && (
-                                    <View style={profileStyles.connectionBadge}>
-                                      <Text style={profileStyles.connectionBadgeText}>{item.connection_degree}</Text>
-                                    </View>
-                                  )}
-                                </View>
-                              </View>
-                            </View>
-                          </View>
-                        </TouchableOpacity>
-                      )}
-                      ListEmptyComponent={
-                        reviewSearchDone && !reviewSearchLoading && reviewSearchResults.length === 0 && placeSuggestions.length === 0 ? (
-                          <Text style={[profileStyles.inlineEmptyText, darkMode && { color: "#aaa" }]}>No results found for "{reviewSearchQuery}"</Text>
-                        ) : null
-                      }
-                    />
-                    {/* Google Places — always shown below DB results when search has been done */}
-                    {reviewSearchDone && placeSuggestions.length > 0 && (
-                      <>
-                        <View style={profileStyles.placesSeparator}>
-                          <View style={profileStyles.placesSeparatorLine} />
-                          <Text style={[profileStyles.placesSeparatorLabel, darkMode && { color: "#aaa" }]}>Also on Google</Text>
-                          <View style={profileStyles.placesSeparatorLine} />
-                        </View>
-                        <FlatList
-                          data={placeSuggestions}
-                          keyExtractor={(item) => item.place_id}
-                          keyboardShouldPersistTaps="handled"
-                          style={{ maxHeight: 260 }}
-                          renderItem={({ item }) => (
-                            <TouchableOpacity
-                              style={[profileStyles.inlineResultCard, darkMode && profileStyles.darkInlineResultCard]}
-                              onPress={() => handleGooglePlaceSelect(item)}
-                              activeOpacity={0.7}
-                            >
-                              {/* Left: pin icon + name + address — same layout as DB card */}
-                              <View style={profileStyles.resultContent}>
-                                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                                  <View style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10, backgroundColor: darkMode ? "#404040" : "#f0f0f0", justifyContent: "center", alignItems: "center" }}>
-                                    <Ionicons name="location-outline" size={22} color={darkMode ? "#aaa" : "#666"} />
-                                  </View>
-                                  <View style={{ flex: 1 }}>
-                                    <Text style={[profileStyles.companyName, darkMode && profileStyles.darkCompanyName]} numberOfLines={1}>
-                                      {item.structured_formatting?.main_text || item.description}
-                                    </Text>
-                                    {item.structured_formatting?.secondary_text ? (
-                                      <Text style={[profileStyles.businessTagLine, darkMode && profileStyles.darkBusinessTagLine]} numberOfLines={1}>
-                                        📍 {item.structured_formatting.secondary_text}
-                                      </Text>
-                                    ) : null}
-                                  </View>
-                                </View>
-                              </View>
-                              {/* Right: same 3-column layout as DB card */}
-                              <View style={profileStyles.businessResultActions}>
-                                <View style={profileStyles.businessTableRatingCol}>
-                                  <Text style={[profileStyles.metricPlaceholder, darkMode && profileStyles.darkMetricPlaceholder, { fontSize: 10, textAlign: "center" }]}>No{"\n"}reviews</Text>
-                                </View>
-                                <View style={profileStyles.businessTableBountyCol}>
-                                  <NoBountyIcon darkMode={darkMode} />
-                                </View>
-                                <View style={profileStyles.businessTableLevelCol}>
-                                  <View style={profileStyles.levelButton}>
-                                    <Image source={require("../assets/connect.png")} style={{ width: 22, height: 22, tintColor: darkMode ? "#ffffff" : "#000000" }} />
-                                  </View>
-                                </View>
-                              </View>
-                            </TouchableOpacity>
-                          )}
-                        />
-                      </>
-                    )}
+                <View style={profileStyles.overlayBackdrop} />
+              </TouchableWithoutFeedback>
+              <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={profileStyles.overlayContainer} pointerEvents='box-none'>
+                <View style={[profileStyles.overlayCard, darkMode && profileStyles.darkOverlayCard]}>
+                  {/* Header */}
+                  <View style={profileStyles.overlayHeader}>
+                    <Text style={[profileStyles.overlayTitle, darkMode && { color: "#fff" }]}>Add a Review</Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setReviewSearchVisible(false);
+                        setPlaceSuggestions([]);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name='close' size={22} color={darkMode ? "#fff" : "#333"} />
+                    </TouchableOpacity>
                   </View>
-                </KeyboardAvoidingView>
-              </Modal>
-              {showReviews && (
-                user.ratings && user.ratings.length > 0 ? (
+                  {/* Search row — matches SearchScreen layout */}
+                  <View style={profileStyles.overlaySearchRow}>
+                    <TextInput
+                      style={[profileStyles.inlineSearchInput, darkMode && profileStyles.darkInlineSearchInput]}
+                      placeholder='What are you looking for?'
+                      placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                      value={reviewSearchQuery}
+                      onChangeText={setReviewSearchQuery}
+                      onSubmitEditing={() => searchBusinessesForReview(reviewSearchQuery)}
+                      returnKeyType='search'
+                      autoCapitalize='none'
+                      autoCorrect={false}
+                      autoFocus={true}
+                    />
+                    <TouchableOpacity
+                      style={[profileStyles.inlineSearchBtn, darkMode && profileStyles.darkInlineSearchBtn]}
+                      onPress={() => searchBusinessesForReview(reviewSearchQuery)}
+                      disabled={reviewSearchLoading}
+                    >
+                      {reviewSearchLoading ? <ActivityIndicator size='small' color={darkMode ? "#fff" : "#000"} /> : <Ionicons name='search' size={22} color={darkMode ? "#ffffff" : "#000000"} />}
+                    </TouchableOpacity>
+                  </View>
+                  {/* Results — identical to SearchScreen renderResultItem */}
+                  <FlatList
+                    data={reviewSearchResults}
+                    keyExtractor={(item) => item.id}
+                    keyboardShouldPersistTaps='handled'
+                    style={{ maxHeight: 340 }}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity
+                        style={[profileStyles.inlineResultCard, darkMode && profileStyles.darkInlineResultCard]}
+                        onPress={() => {
+                          setReviewSearchVisible(false);
+                          navigation.navigate("ReviewBusiness", { business_uid: item.id, business_name: item.company });
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        {/* Left: image + name/tagline — same as SearchScreen resultContent */}
+                        <View style={profileStyles.resultContent}>
+                          <View style={{ flexDirection: "row", alignItems: "center" }}>
+                            <Image
+                              source={item.business_profile_img ? { uri: encodeURI(item.business_profile_img.trim()) } : require("../assets/profile.png")}
+                              style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10 }}
+                              defaultSource={require("../assets/profile.png")}
+                            />
+                            <View style={{ flex: 1 }}>
+                              <Text style={[profileStyles.companyName, darkMode && profileStyles.darkCompanyName]} numberOfLines={1}>
+                                {item.company ? String(item.company).trim() : ""}
+                              </Text>
+                              {(() => {
+                                const tagLine = item.business_tag_line ? String(item.business_tag_line).trim() : "";
+                                if (tagLine && tagLine !== "." && tagLine.length > 0) {
+                                  return (
+                                    <Text style={[profileStyles.businessTagLine, darkMode && profileStyles.darkBusinessTagLine]} numberOfLines={1}>
+                                      {tagLine}
+                                    </Text>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </View>
+                          </View>
+                        </View>
+                        {/* Right: Rating | Bounty | Level — same as SearchScreen businessResultActions */}
+                        <View style={profileStyles.businessResultActions}>
+                          <View style={profileStyles.businessTableRatingCol}>
+                            {Number.isFinite(item.rating) ? (
+                              <View style={profileStyles.ratingContainer}>
+                                <Ionicons name='star' size={16} color='#FFCD3C' />
+                                <Text style={[profileStyles.ratingText, darkMode && profileStyles.darkRatingText]}>
+                                  {item.rating.toFixed(1)}
+                                  {item.ratingCount > 0 ? ` (${item.ratingCount})` : ""}
+                                </Text>
+                              </View>
+                            ) : (
+                              <Text style={[profileStyles.metricPlaceholder, darkMode && profileStyles.darkMetricPlaceholder]}>—</Text>
+                            )}
+                          </View>
+                          <View style={profileStyles.businessTableBountyCol}>
+                            {item.max_bounty != null ? <Text style={[profileStyles.bountyEmojiIcon, profileStyles.bountyEmojiIconCompact]}>💰</Text> : <NoBountyIcon darkMode={darkMode} />}
+                          </View>
+                          <View style={profileStyles.businessTableLevelCol}>
+                            <View style={profileStyles.levelButton}>
+                              <View style={{ position: "relative" }}>
+                                <Image source={require("../assets/connect.png")} style={{ width: 22, height: 22, tintColor: darkMode ? "#ffffff" : "#000000" }} />
+                                {item.connection_degree != null && (
+                                  <View style={profileStyles.connectionBadge}>
+                                    <Text style={profileStyles.connectionBadgeText}>{item.connection_degree}</Text>
+                                  </View>
+                                )}
+                              </View>
+                            </View>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                    ListEmptyComponent={
+                      reviewSearchDone && !reviewSearchLoading && reviewSearchResults.length === 0 && placeSuggestions.length === 0 ? (
+                        <Text style={[profileStyles.inlineEmptyText, darkMode && { color: "#aaa" }]}>No results found for "{reviewSearchQuery}"</Text>
+                      ) : null
+                    }
+                  />
+                  {/* Google Places — always shown below DB results when search has been done */}
+                  {reviewSearchDone && placeSuggestions.length > 0 && (
+                    <>
+                      <View style={profileStyles.placesSeparator}>
+                        <View style={profileStyles.placesSeparatorLine} />
+                        <Text style={[profileStyles.placesSeparatorLabel, darkMode && { color: "#aaa" }]}>Also on Google</Text>
+                        <View style={profileStyles.placesSeparatorLine} />
+                      </View>
+                      <FlatList
+                        data={placeSuggestions}
+                        keyExtractor={(item) => item.place_id}
+                        keyboardShouldPersistTaps='handled'
+                        style={{ maxHeight: 260 }}
+                        renderItem={({ item }) => (
+                          <TouchableOpacity style={[profileStyles.inlineResultCard, darkMode && profileStyles.darkInlineResultCard]} onPress={() => handleGooglePlaceSelect(item)} activeOpacity={0.7}>
+                            {/* Left: pin icon + name + address — same layout as DB card */}
+                            <View style={profileStyles.resultContent}>
+                              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                                <View
+                                  style={{
+                                    width: 40,
+                                    height: 40,
+                                    borderRadius: 20,
+                                    marginRight: 10,
+                                    backgroundColor: darkMode ? "#404040" : "#f0f0f0",
+                                    justifyContent: "center",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  <Ionicons name='location-outline' size={22} color={darkMode ? "#aaa" : "#666"} />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={[profileStyles.companyName, darkMode && profileStyles.darkCompanyName]} numberOfLines={1}>
+                                    {item.structured_formatting?.main_text || item.description}
+                                  </Text>
+                                  {item.structured_formatting?.secondary_text ? (
+                                    <Text style={[profileStyles.businessTagLine, darkMode && profileStyles.darkBusinessTagLine]} numberOfLines={1}>
+                                      📍 {item.structured_formatting.secondary_text}
+                                    </Text>
+                                  ) : null}
+                                </View>
+                              </View>
+                            </View>
+                            {/* Right: same 3-column layout as DB card */}
+                            <View style={profileStyles.businessResultActions}>
+                              <View style={profileStyles.businessTableRatingCol}>
+                                <Text style={[profileStyles.metricPlaceholder, darkMode && profileStyles.darkMetricPlaceholder, { fontSize: 10, textAlign: "center" }]}>No{"\n"}reviews</Text>
+                              </View>
+                              <View style={profileStyles.businessTableBountyCol}>
+                                <NoBountyIcon darkMode={darkMode} />
+                              </View>
+                              <View style={profileStyles.businessTableLevelCol}>
+                                <View style={profileStyles.levelButton}>
+                                  <Image source={require("../assets/connect.png")} style={{ width: 22, height: 22, tintColor: darkMode ? "#ffffff" : "#000000" }} />
+                                </View>
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+                        )}
+                      />
+                    </>
+                  )}
+                </View>
+              </KeyboardAvoidingView>
+            </Modal>
+            {showReviews &&
+              (user.ratings && user.ratings.length > 0 ? (
                 user.ratings.map((review, index) => (
                   <TouchableOpacity
                     key={review.rating_uid || index}
@@ -2080,12 +2221,10 @@ const ProfileScreen = ({ route, navigation }) => {
                     {review.rating_description ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{review.rating_description}</Text> : null}
                   </TouchableOpacity>
                 ))
-                ) : (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No reviews yet</Text>
-                )
-              )}
-            </View>
-
+              ) : (
+                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No reviews yet</Text>
+              ))}
+          </View>
         </ScrollView>
 
         <BottomNavBar navigation={navigation} />
@@ -2111,7 +2250,7 @@ const ProfileScreen = ({ route, navigation }) => {
       {savingGooglePlace && (
         <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "center", alignItems: "center", zIndex: 9999 }}>
           <View style={{ backgroundColor: "#fff", borderRadius: 12, padding: 24, alignItems: "center", gap: 12 }}>
-            <ActivityIndicator size="large" color="#9C45F7" />
+            <ActivityIndicator size='large' color='#9C45F7' />
             <Text style={{ fontSize: 14, color: "#333", fontWeight: "500" }}>Setting up business…</Text>
           </View>
         </View>
@@ -2536,4 +2675,3 @@ const profileStyles = StyleSheet.create({
 });
 
 export default ProfileScreen;
-
