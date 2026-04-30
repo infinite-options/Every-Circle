@@ -317,11 +317,16 @@ export default function AccountScreen({ navigation }) {
     try {
       const keys = await AsyncStorage.getAllKeys();
       const returnKeys = keys.filter((k) => k.startsWith("return_request_"));
+      console.log("=== STORED RETURN KEYS ===", returnKeys);
       const loaded = {};
       for (const key of returnKeys) {
         const uid = key.replace("return_request_", "");
         const val = await AsyncStorage.getItem(key);
-        loaded[uid] = val ? JSON.parse(val) : { items: [], notes: [] };
+        //loaded[uid] = val ? JSON.parse(val) : { items: [], notes: [] };
+        if (val) {
+          loaded[uid] = JSON.parse(val);
+        }
+        // skip entirely if no stored value — don't create empty entries
       }
       setReturnRequests(loaded);
     } catch (e) {
@@ -879,8 +884,10 @@ export default function AccountScreen({ navigation }) {
       setBusinessBountyLoading(false);
     }
   };
+  
 
   useFocusEffect(
+    
     useCallback(() => {
       checkAuth();
       loadAutoPaidIds();
@@ -1867,14 +1874,16 @@ export default function AccountScreen({ navigation }) {
                               <Text style={styles.businessTransactionCell}>{transaction.transaction_profile_id?.substring(0, 10) || "N/A"}</Text>
                               <Text style={styles.businessTransactionCell}>${transaction.transaction_total.toFixed(2)}</Text>
                               <Text style={styles.businessTransactionCell}>${transaction.bounty_paid.toFixed(2)}</Text>
-                              <Text style={styles.businessTransactionCell}>${transaction.transaction_taxes.toFixed(2)}</Text>
-                              <Text style={[styles.businessTransactionCell, { width: 55, flex: 0, textAlign: "right",
+                              <Text style={[styles.businessTransactionCell, {
                                   color: (returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted") ? "#B71C1C" : "#333"
                                 }]}>
-                                  {(returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted")
-                                    ? `-$${transaction.net_earning.toFixed(2)}`
-                                    : `$${transaction.net_earning.toFixed(2)}`
-                                  }
+                                {(returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted")
+                                  ? `-$${transaction.transaction_taxes.toFixed(2)}`
+                                  : `$${transaction.transaction_taxes.toFixed(2)}`
+                                }
+                              </Text>
+                              <Text style={[styles.businessTransactionCell, { width: 55, flex: 0, textAlign: "right" }]}>
+                                ${transaction.net_earning.toFixed(2)}
                               </Text>
                             </TouchableOpacity>
 
@@ -1931,7 +1940,7 @@ export default function AccountScreen({ navigation }) {
                                       }}
                                     >
                                     <Ionicons name="return-down-back-outline" size={14} color="#B71C1C" style={{ marginRight: 6 }} />
-                                    <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>Return Requested by Customer — Tap to view note</Text>
+                                    <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>Return Requested by Customer — Tap to view details</Text>
                                   </TouchableOpacity>
                                 )}
                                 {(returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted") && (
@@ -1952,7 +1961,7 @@ export default function AccountScreen({ navigation }) {
                                   <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
                                   <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
                                   <Text style={{ width: 55, flex: 0, fontSize: 11, color: "#B71C1C", textAlign: "right" }}>
-                                    -${transaction.net_earning.toFixed(2)}
+                                    -${transaction.transaction_taxes.toFixed(2)}
                                   </Text>
                                 </View>
                               )}
@@ -2011,12 +2020,20 @@ export default function AccountScreen({ navigation }) {
               </Text>
             )}
 
+          
             {(() => {
-              const returnedItems = returnRequests[receiptTransaction?.transaction_uid]?.items || [];
+              const uid = receiptTransaction?.transaction_uid;
+              const storedItems = returnRequests[uid]?.items || [];
               const totalItems = receiptData.length;
-              const allItemsReturned = totalItems > 0 &&
-                Array.from({ length: totalItems }, (_, i) => String(i))
-                  .every(id => returnedItems.includes(id));
+
+              // Only count indices that are actually valid for this receipt
+              const validIndices = Array.from({ length: totalItems }, (_, i) => String(i));
+              const returnedValidIndices = validIndices.filter(id => storedItems.includes(id));
+
+              // Must have receipt items AND every valid index must be returned
+              const allItemsReturned = totalItems > 0 && 
+                storedItems.length > 0 &&
+                returnedValidIndices.length >= totalItems;
 
               return (
                 <TouchableOpacity
@@ -2246,9 +2263,14 @@ export default function AccountScreen({ navigation }) {
                       <TouchableOpacity
                         style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", backgroundColor: "#B71C1C" }}
                         onPress={async () => {
-                          setReturnStatuses(prev => ({ ...prev, [`${viewingReturnTransactionUid}_${idx}`]: "declined" }));
+                          await handleReturnDecline(viewingReturnTransactionUid);
+                          setReturnStatuses(prev => ({ 
+                            ...prev, 
+                            [`${viewingReturnTransactionUid}_${idx}`]: "declined",
+                            [viewingReturnTransactionUid]: "declined",
+                          }));
                           await AsyncStorage.setItem(`return_status_${viewingReturnTransactionUid}_${idx}`, "declined");
-                          setShowReturnNoteViewModal(false);
+                          await AsyncStorage.setItem(`return_status_${viewingReturnTransactionUid}`, "declined");
                         }}
                       >
                         <Text style={{ color: "#fff", fontWeight: "bold" }}>Decline</Text>
