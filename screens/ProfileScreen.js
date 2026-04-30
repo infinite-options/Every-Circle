@@ -1258,25 +1258,6 @@ const ProfileScreen = ({ route, navigation }) => {
 
   const isWeb = Platform.OS === "web";
 
-  //for user.businessIsPublic true show all businesses else filter by individualIsPublic
-  console.log("Raw businessesData:", businessesData);
-  console.log("user.businessIsPublic:", user.businessIsPublic);
-
-  const publicBusinesses = Array.isArray(businessesData)
-    ? businessesData.filter((business) => {
-        console.log("Checking business:", {
-          name: business.name,
-          individualIsPublic: business.individualIsPublic,
-          rawFlag: business.bu_individual_business_is_public,
-        });
-
-        return business.individualIsPublic === true;
-      })
-    : [];
-
-  console.log("Filtered publicBusinesses:", publicBusinesses);
-  console.log("publicBusinesses.length:", publicBusinesses.length);
-
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Close dropdown when clicking outside */}
@@ -1949,39 +1930,44 @@ const ProfileScreen = ({ route, navigation }) => {
                 <Ionicons name={showBusiness ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showBusiness &&
-                (publicBusinesses.length > 0 ? (
-                  publicBusinesses.map((business, index) => (
-                    <View
-                      key={business.profile_business_uid || business.business_uid || index}
-                      style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}
-                    >
-                      <TouchableOpacity
-                        onPress={() => {
-                          const uid = business.business_uid || business.profile_business_uid;
-                          if (uid) {
-                            navigation.navigate("BusinessProfile", { business_uid: uid });
-                          }
-                        }}
-                        activeOpacity={0.7}
+                (() => {
+                  const businessesToShow = Array.isArray(businessesData)
+                    ? businessesData.filter((b) => b.individualIsPublic === true)
+                    : [];
+                  return businessesToShow.length > 0 ? (
+                    businessesToShow.map((business, index) => (
+                      <View
+                        key={business.profile_business_uid || business.business_uid || index}
+                        style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}
                       >
-                        <MiniCard
-                          business={{
-                            ...business,
-                            tagline: business.tagline || business.business_tag_line || "",
-                            taglineIsPublic: business.taglineIsPublic !== false,
+                        <TouchableOpacity
+                          onPress={() => {
+                            const uid = business.business_uid || business.profile_business_uid;
+                            if (uid) {
+                              navigation.navigate("BusinessProfile", { business_uid: uid });
+                            }
                           }}
-                        />
-                      </TouchableOpacity>
-                      {business.role ? (
-                        <View style={styles.roleContainer}>
-                          <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {sanitizeText(business.role)}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  ))
-                ) : (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No businesses added yet</Text>
-                ))}
+                          activeOpacity={0.7}
+                        >
+                          <MiniCard
+                            business={{
+                              ...business,
+                              tagline: business.tagline || business.business_tag_line || "",
+                              taglineIsPublic: business.taglineIsPublic !== false,
+                            }}
+                          />
+                        </TouchableOpacity>
+                        {business.role ? (
+                          <View style={styles.roleContainer}>
+                            <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {sanitizeText(business.role)}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No businesses added yet</Text>
+                  );
+                })()}
             </View>
           )}
 
