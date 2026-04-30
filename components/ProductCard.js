@@ -17,44 +17,76 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
   const tags = useMemo(() => parseTags(service.bs_tags), [service.bs_tags]);
 
   const productImageUri = useMemo(() => {
-    const k = service.bs_image_key;
+    const pending = service._svcNewImageUri;
+    if (pending != null && String(pending).trim() !== "") {
+      const p = String(pending).trim();
+      if (
+        p.startsWith("http://") ||
+        p.startsWith("https://") ||
+        p.startsWith("file:") ||
+        p.startsWith("content:") ||
+        p.startsWith("data:") ||
+        p.startsWith("blob:")
+      ) {
+        return p;
+      }
+    }
+    const k = service.bs_image_key || service.bs_image_url;
     if (!k || String(k).trim() === "") return null;
     const s = String(k).trim();
     if (s.startsWith("http://") || s.startsWith("https://")) return s;
     if (businessUid) return `https://s3-us-west-1.amazonaws.com/every-circle/business_personal/${businessUid}/${s}`;
     return null;
-  }, [service.bs_image_key, businessUid]);
+  }, [service._svcNewImageUri, service.bs_image_key, service.bs_image_url, businessUid]);
 
   const quantityLine = useMemo(() => {
     const unlimited = service.bs_qty_unlimited === 1 || service.bs_qty_unlimited === "1" || service.bs_qty_unlimited === true;
-    if (unlimited || service.bs_qty_unlimited === undefined || service.bs_qty_unlimited === null || service.bs_qty_unlimited === "") {
+    if (unlimited) {
       return "Available quantity: No limit";
     }
-    const n = service.bs_available_quantity;
-    if (n !== undefined && n !== null && String(n).trim() !== "") {
-      return `Available quantity: ${String(n).trim()}`;
+    const n =
+      service.bs_available_quantity != null && String(service.bs_available_quantity).trim() !== ""
+        ? String(service.bs_available_quantity).trim()
+        : service.bs_quantity != null && String(service.bs_quantity).trim() !== ""
+          ? String(service.bs_quantity).trim()
+          : "";
+    if (n !== "") {
+      return `Available quantity: ${n}`;
     }
-    return "Available quantity: Limited";
-  }, [service.bs_qty_unlimited, service.bs_available_quantity]);
+    if (service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0") {
+      return "Available quantity: Limited";
+    }
+    return "Available quantity: No limit";
+  }, [service.bs_qty_unlimited, service.bs_available_quantity, service.bs_quantity]);
 
   const conditionLine = useMemo(() => {
     const c = service.bs_condition_type;
-    if (c === undefined || c === null || String(c).trim() === "") return null;
-    const isUsed = String(c).toLowerCase() === "used";
-    const detail = (service.bs_condition_detail || "").trim();
-    if (isUsed) {
-      return detail ? `Used — ${detail}` : "Used";
+    if (c !== undefined && c !== null && String(c).trim() !== "") {
+      const isUsed = String(c).toLowerCase() === "used";
+      const detail = (service.bs_condition_detail || "").trim();
+      if (isUsed) {
+        return detail ? `Condition: Used — ${detail}` : "Condition: Used";
+      }
+      return "Condition: New";
     }
-    return "New";
-  }, [service.bs_condition_type, service.bs_condition_detail]);
+    const legacy = service.bs_condition;
+    if (legacy != null && String(legacy).trim() !== "") {
+      return `Condition: ${String(legacy).trim()}`;
+    }
+    return null;
+  }, [service.bs_condition_type, service.bs_condition_detail, service.bs_condition]);
 
   const shippingLine = useMemo(() => {
     const free = service.bs_free_shipping === 1 || service.bs_free_shipping === "1" || service.bs_free_shipping === true;
     const buyer = service.bs_buyer_pays_shipping === 1 || service.bs_buyer_pays_shipping === "1" || service.bs_buyer_pays_shipping === true;
-    if (free) return "Free shipping";
-    if (buyer) return "Buyer pays shipping";
+    if (free) return "Shipping: Free shipping";
+    if (buyer) return "Shipping: Buyer pays shipping";
+    const legacy = service.bs_shipping;
+    if (legacy != null && String(legacy).trim() !== "") {
+      return `Shipping: ${String(legacy).trim()}`;
+    }
     return null;
-  }, [service.bs_free_shipping, service.bs_buyer_pays_shipping]);
+  }, [service.bs_free_shipping, service.bs_buyer_pays_shipping, service.bs_shipping]);
 
   const ccLine = useMemo(() => {
     const p = service.bs_cc_fee_payer;
@@ -68,23 +100,31 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
   const metaTextStyle = darkMode ? styles.metaTextDark : styles.metaText;
   const tagChipTextStyle = darkMode ? styles.tagChipTextDark : styles.tagChipText;
 
+  const thumbSource = productImageUri ? { uri: productImageUri } : DEFAULT_PRODUCT_IMAGE;
+
   return (
     <TouchableOpacity style={[styles.cardContainer, darkMode && styles.cardContainerDark]} onPress={onPress} activeOpacity={onPress ? 0.7 : 1}>
-      {productImageUri ? (
-        <Image source={{ uri: productImageUri }} style={[styles.productThumb, darkMode && styles.productThumbDark]} resizeMode='cover' />
-      ) : (
-        <Image source={DEFAULT_PRODUCT_IMAGE} style={[styles.productThumb, darkMode && styles.productThumbDark]} resizeMode='cover' />
-      )}
-      <View style={styles.header}>
-        <Text style={[styles.name, darkMode && styles.nameDark]}>{service.bs_service_name}</Text>
-        {showEditButton && onEdit && (
-          <TouchableOpacity onPress={() => onEdit(service)} style={styles.editButton}>
-            <Ionicons name='pencil' size={20} color='#007AFF' />
-          </TouchableOpacity>
-        )}
+      <View style={styles.cardTopRow}>
+        <Image source={thumbSource} style={[styles.productThumbInline, darkMode && styles.productThumbInlineDark]} resizeMode='cover' />
+        <View style={styles.cardRightColumn}>
+          <View style={styles.header}>
+            <Text style={[styles.name, darkMode && styles.nameDark]} numberOfLines={2}>
+              {service.bs_service_name}
+            </Text>
+            {showEditButton && onEdit && (
+              <TouchableOpacity onPress={() => onEdit(service)} style={styles.editButton}>
+                <Ionicons name='pencil' size={20} color='#007AFF' />
+              </TouchableOpacity>
+            )}
+          </View>
+          {service.bs_service_desc ? (
+            <Text style={[styles.desc, darkMode && styles.descDark]} numberOfLines={4}>
+              {service.bs_service_desc}
+            </Text>
+          ) : null}
+        </View>
       </View>
       <View style={styles.textContainer}>
-        {service.bs_service_desc ? <Text style={[styles.desc, darkMode && styles.descDark]}>{service.bs_service_desc}</Text> : null}
         <View style={styles.pricingContainer}>
           {service.bs_cost ? (
             <View style={styles.costContainer}>
@@ -127,15 +167,25 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
 };
 
 const styles = StyleSheet.create({
-  productThumb: {
-    width: "100%",
-    height: 120,
-    borderRadius: 8,
+  cardTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
     marginBottom: 10,
-    backgroundColor: "#eee",
   },
-  productThumbDark: {
+  productThumbInline: {
+    width: 64,
+    height: 64,
+    borderRadius: 8,
+    backgroundColor: "#eee",
+    flexShrink: 0,
+  },
+  productThumbInlineDark: {
     backgroundColor: "#3a3a3c",
+  },
+  cardRightColumn: {
+    flex: 1,
+    minWidth: 0,
   },
   cardContainer: {
     flexDirection: "column",
@@ -154,14 +204,17 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 5,
+    alignItems: "flex-start",
+    marginBottom: 4,
+    gap: 8,
   },
   name: {
     fontSize: 16,
     fontWeight: "bold",
-    marginBottom: 4,
+    marginBottom: 0,
     color: "#333",
+    flex: 1,
+    minWidth: 0,
   },
   nameDark: {
     color: "#f2f2f7",

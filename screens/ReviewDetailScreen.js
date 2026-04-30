@@ -9,6 +9,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { normalizeBusinessServiceFromApi } from "../utils/normalizeBusinessServiceFromApi";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { parsePrice } from "../utils/priceUtils";
@@ -174,23 +175,24 @@ export default function ReviewDetailScreen({ route, navigation }) {
         shortBioIsPublic:
           rawBusiness.business_short_bio_is_public === "1" || rawBusiness.business_short_bio_is_public === 1 || rawBusiness.short_bio_is_public === "1" || rawBusiness.short_bio_is_public === 1,
         business_services: (() => {
+          let list = [];
           if (rawBusiness.business_services) {
             if (typeof rawBusiness.business_services === "string") {
               try {
-                return JSON.parse(rawBusiness.business_services);
+                list = JSON.parse(rawBusiness.business_services);
               } catch (e) {
                 console.log("Failed to parse business_services as JSON");
-                return [];
+                list = [];
               }
             } else if (Array.isArray(rawBusiness.business_services)) {
-              return rawBusiness.business_services;
+              list = rawBusiness.business_services;
             }
           }
-          // Fallback: use result.services if present
-          if (Array.isArray(result.services)) {
-            return result.services;
+          if ((!Array.isArray(list) || list.length === 0) && Array.isArray(result.services)) {
+            list = result.services;
           }
-          return [];
+          if (!Array.isArray(list)) return [];
+          return list.map((svc) => normalizeBusinessServiceFromApi(svc));
         })(),
       });
     } catch (err) {

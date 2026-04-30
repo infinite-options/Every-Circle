@@ -16,6 +16,7 @@ import { Dropdown } from "react-native-element-dropdown";
 import { Ionicons } from "@expo/vector-icons";
 import ProductCard from "../components/ProductCard";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
+import { normalizeBusinessServiceFromApi as normalizeBusinessServiceRow } from "../utils/normalizeBusinessServiceFromApi";
 
 const BusinessProfileAPI = BUSINESS_INFO_ENDPOINT;
 const DEFAULT_BUSINESS_IMAGE = require("../assets/profile.png");
@@ -151,7 +152,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     }
   }, [subSubCategories, business?.business_category_id]);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState(() => ({
     // BUSINESS-SPECIFIC: Different field names - uses business_* instead of profile_personal_*
     name: business?.business_name || "",
     location: business?.business_location || "",
@@ -172,45 +173,25 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     customTags: (() => {
       // Handle custom_tags - could be array, string, or already parsed as customTags
       // Also check for 'tags' field from backend API
-      console.log("EditBusinessProfileScreen - Loading custom tags from business object:", {
-        customTags: business?.customTags,
-        custom_tags: business?.custom_tags,
-        tags: business?.tags,
-        businessKeys: business ? Object.keys(business) : "business is null/undefined",
-      });
-
-      // First check if already parsed as customTags (from BusinessProfileScreen)
       if (business?.customTags && Array.isArray(business.customTags)) {
-        console.log("EditBusinessProfileScreen - Using customTags array:", business.customTags);
         return business.customTags;
       }
-
-      // Check for 'tags' field (from backend API response)
       if (business?.tags && Array.isArray(business.tags)) {
-        console.log("EditBusinessProfileScreen - Using tags array:", business.tags);
         return business.tags;
       }
-
-      // Check for custom_tags as array
       if (business?.custom_tags && Array.isArray(business.custom_tags)) {
-        console.log("EditBusinessProfileScreen - Using custom_tags array:", business.custom_tags);
         return business.custom_tags;
       }
-
-      // Check for custom_tags as string (JSON)
       if (business?.custom_tags && typeof business.custom_tags === "string") {
         try {
           const parsed = JSON.parse(business.custom_tags);
           if (Array.isArray(parsed)) {
-            console.log("EditBusinessProfileScreen - Parsed custom_tags string:", parsed);
             return parsed;
           }
         } catch (e) {
-          console.log("EditBusinessProfileScreen - Failed to parse custom_tags as JSON:", e);
+          /* ignore invalid JSON */
         }
       }
-
-      console.log("EditBusinessProfileScreen - No custom tags found, returning empty array");
       return [];
     })(),
     // Business image is now handled separately in state (like EditProfileScreen)
@@ -238,7 +219,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     // Note: Business profile doesn't have these sections, so these flags are not needed
     // MISSING: Arrays for experience, education, expertise, wishes, businesses (EditProfileScreen has these)
     // Note: Business profile uses services array instead (handled separately below)
-  });
+  }));
 
   // BUSINESS-SPECIFIC: deletedItems structure is different - tracks deleted business users instead of experience/education/etc.
   // MISSING: deletedItems state object with arrays for experiences, educations, expertises, wishes, businesses (EditProfileScreen has this)
@@ -755,13 +736,13 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           bs_status: service.bs_status || "active",
           bs_image_key: service.bs_image_key || "",
           bs_qty_unlimited: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? 0 : 1,
-          bs_available_quantity:
-            service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? String(service.bs_available_quantity || "").trim() : "",
+          bs_available_quantity: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? String(service.bs_available_quantity || "").trim() : "",
           bs_condition_type: condType,
           bs_condition_detail: condType === "used" ? (service.bs_condition_detail || "").trim() : "",
           bs_free_shipping: norm01(service.bs_free_shipping),
           bs_buyer_pays_shipping: norm01(service.bs_buyer_pays_shipping),
           bs_cc_fee_payer: service.bs_cc_fee_payer === "buyer" || service.bs_cc_fee_payer === "seller" ? service.bs_cc_fee_payer : "",
+          bs_service_image_is_public: norm01(service.bs_service_image_is_public),
         };
 
         if (service.bs_uid && service.bs_uid.trim() !== "") {
@@ -801,9 +782,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         } else if (newUri && (newUri.startsWith("file:") || newUri.startsWith("content:"))) {
           const uriParts = newUri.split(".");
           const fileType = uriParts.length > 1 ? uriParts[uriParts.length - 1].split(/[?#]/)[0] : "jpg";
-          const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase())
-            ? `image/${fileType === "jpg" ? "jpeg" : fileType}`
-            : "image/jpeg";
+          const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase()) ? `image/${fileType === "jpg" ? "jpeg" : fileType}` : "image/jpeg";
           fileToAppend = { uri: newUri, type: mimeType, name: `bs_service_image_${index}.${fileType}` };
         } else if (newUri && newUri.startsWith("data:")) {
           try {
@@ -818,6 +797,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         if (fileToAppend) {
           payload.append(`bs_service_image_${index}`, fileToAppend);
         }
+      }
+
+      for (let index = 0; index < services.length; index++) {
+        const svc = services[index];
+        const imgPublic = svc.bs_service_image_is_public === 1 || svc.bs_service_image_is_public === "1" || svc.bs_service_image_is_public === true;
+        payload.append(`bs_service_image_${index}_is_public`, imgPublic ? "1" : "0");
       }
 
       // BUSINESS-SPECIFIC: Business users handling (EditProfileScreen doesn't have this)
@@ -1213,24 +1198,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   // Note: Business profile doesn't have single profile image visibility toggle
 
   // BUSINESS-SPECIFIC: Services state and management (EditProfileScreen uses formData.experience, formData.education, etc.)
-  const normalizeServiceFromApi = (service) => {
-    const rawCond = service.bs_condition_type;
-    const next = {
-      ...service,
-      bs_uid: service.bs_uid || "",
-      bs_tags: service.bs_tags || "",
-      bs_condition_detail: service.bs_condition_detail || service.bs_used_condition || "",
-      bs_free_shipping: service.bs_free_shipping === 1 || service.bs_free_shipping === "1" || service.bs_free_shipping === true ? 1 : 0,
-      bs_buyer_pays_shipping: service.bs_buyer_pays_shipping === 1 || service.bs_buyer_pays_shipping === "1" || service.bs_buyer_pays_shipping === true ? 1 : 0,
-      bs_cc_fee_payer: String(service.bs_cc_fee_payer || "").toLowerCase() === "buyer" ? "buyer" : String(service.bs_cc_fee_payer || "").toLowerCase() === "seller" ? "seller" : "",
-      bs_qty_unlimited: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? 0 : 1,
-      bs_available_quantity: service.bs_available_quantity != null ? String(service.bs_available_quantity) : "",
-    };
-    if (rawCond !== undefined && rawCond !== null && String(rawCond).trim() !== "") {
-      next.bs_condition_type = String(rawCond).toLowerCase() === "used" ? "used" : "new";
-    }
-    return next;
-  };
+  const normalizeServiceFromApi = (service) => normalizeBusinessServiceRow(service);
 
   const [services, setServices] = useState(() => {
     const initialServices = business?.business_services || business?.services || [];
@@ -1264,6 +1232,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_image_key: "",
     bs_qty_unlimited: 1,
     bs_available_quantity: "",
+    bs_service_image_is_public: 1,
   };
 
   const [serviceForm, setServiceForm] = useState({ ...defaultService });
@@ -1322,8 +1291,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         nextBsImageKey = "";
       }
     } else if (cur !== orig) {
-      const isLocal =
-        cur.startsWith("file:") || cur.startsWith("content:") || cur.startsWith("data:") || cur.startsWith("blob:");
+      const isLocal = cur.startsWith("file:") || cur.startsWith("content:") || cur.startsWith("data:") || cur.startsWith("blob:");
       if (isLocal || (Platform.OS === "web" && serviceProductWebFile)) {
         _svcNewImageUri = cur;
         _svcWebImageFile = Platform.OS === "web" ? serviceProductWebFile : null;
@@ -1396,11 +1364,14 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             : "",
       bs_qty_unlimited: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? 0 : 1,
       bs_available_quantity: service.bs_available_quantity != null ? String(service.bs_available_quantity) : "",
+      bs_service_image_is_public: service.bs_service_image_is_public === 0 || service.bs_service_image_is_public === "0" ? 0 : 1,
     });
-    const disp = resolveServiceImageDisplayUri(service.bs_image_key);
+    const remoteDisplay = resolveServiceImageDisplayUri(service.bs_image_key);
+    const pendingUri = service._svcNewImageUri && String(service._svcNewImageUri).trim() !== "" ? String(service._svcNewImageUri).trim() : "";
+    const disp = pendingUri || remoteDisplay;
     setServiceProductImageUri(disp);
-    setOriginalServiceProductImage(disp);
-    setServiceProductWebFile(null);
+    setOriginalServiceProductImage(remoteDisplay);
+    setServiceProductWebFile(service._svcWebFile || null);
     setServiceProductImageError(false);
     setServiceImageToolsVisible(false);
     setEditingServiceIndex(index);
@@ -1498,6 +1469,323 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       keyboardDidShowListener.remove();
     };
   }, []);
+
+  const renderProductsServicesForm = () => (
+            <View style={[styles.serviceFormContainer, darkMode && styles.darkServiceFormContainer]}>
+              <Text style={[styles.formTitle, darkMode && styles.darkFormTitle]}>{editingServiceIndex !== null ? "Edit Product/Service" : "Add New Product/Service"}</Text>
+
+              <View style={[styles.serviceFormMiniCard, darkMode && styles.darkServiceFormMiniCard]}>
+                <View style={styles.serviceFormMiniCardLeft}>
+                  <Image
+                    source={serviceProductImageUri && !serviceProductImageError ? { uri: serviceProductImageUri } : DEFAULT_BUSINESS_IMAGE}
+                    style={[styles.serviceFormMiniCardImage, darkMode && styles.serviceFormMiniCardImageDark]}
+                    onError={handleServiceProductImageError}
+                  />
+                  <View style={styles.serviceImageShowHideRow}>
+                    <TouchableOpacity
+                      onPress={() => setServiceImageToolsVisible(true)}
+                      style={[
+                        styles.serviceImageTogglePill,
+                        serviceImageToolsVisible && styles.serviceImageTogglePillActive,
+                        darkMode && !serviceImageToolsVisible && styles.serviceImageTogglePillDark,
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.serviceImageTogglePillText,
+                          serviceImageToolsVisible && styles.serviceImageTogglePillTextActive,
+                          !serviceImageToolsVisible && darkMode && styles.serviceImageTogglePillTextMutedDark,
+                        ]}
+                      >
+                        Show
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setServiceImageToolsVisible(false)}
+                      style={[
+                        styles.serviceImageTogglePill,
+                        !serviceImageToolsVisible && styles.serviceImageTogglePillActive,
+                        darkMode && serviceImageToolsVisible && styles.serviceImageTogglePillDark,
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.serviceImageTogglePillText,
+                          !serviceImageToolsVisible && styles.serviceImageTogglePillTextActive,
+                          serviceImageToolsVisible && darkMode && styles.serviceImageTogglePillTextMutedDark,
+                        ]}
+                      >
+                        Hide
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity style={[styles.serviceUploadButton, darkMode && styles.darkServiceUploadButton]} onPress={handlePickServiceProductImage} activeOpacity={0.8}>
+                    <Text style={styles.serviceUploadButtonText}>Upload</Text>
+                  </TouchableOpacity>
+                  {serviceImageToolsVisible && serviceProductImageUri ? (
+                    <TouchableOpacity onPress={handleRemoveServiceProductImage} style={styles.serviceRemoveImageBtn}>
+                      <Text style={[styles.serviceRemoveImageText, darkMode && styles.darkServiceRemoveImageText]}>Remove image</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  {Platform.OS === "web" &&
+                    React.createElement("input", {
+                      ref: serviceImageFileInputRef,
+                      type: "file",
+                      accept: "image/*",
+                      style: { display: "none" },
+                      onChange: handleWebServiceProductImagePick,
+                    })}
+                </View>
+                <View style={styles.serviceFormMiniCardFields}>
+                  <TextInput
+                    style={[styles.input, styles.serviceFormMiniFieldInput, styles.serviceFormCompactInput, darkMode && styles.darkInput]}
+                    value={serviceForm.bs_service_name}
+                    onChangeText={(t) => handleServiceChange("bs_service_name", t)}
+                    placeholder='Product or Service Name'
+                    placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                  />
+                  <TextInput
+                    style={[styles.input, styles.serviceFormDescInput, styles.serviceFormCompactDesc, darkMode && styles.darkInput]}
+                    value={serviceForm.bs_service_desc}
+                    onChangeText={(t) => handleServiceChange("bs_service_desc", t)}
+                    placeholder='Description'
+                    placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical='top'
+                  />
+                </View>
+              </View>
+
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Product image visibility</Text>
+              <View style={{ flexDirection: "row", gap: 6, marginBottom: 12 }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    handleServiceChange("bs_service_image_is_public", 1);
+                    setIsChanged(true);
+                  }}
+                  style={[
+                    styles.togglePill,
+                    (serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && styles.togglePillActiveGreen,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.togglePillText,
+                      (serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && styles.togglePillTextActive,
+                      darkMode && !(serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && { color: "#ccc" },
+                    ]}
+                  >
+                    Visible
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    handleServiceChange("bs_service_image_is_public", 0);
+                    setIsChanged(true);
+                  }}
+                  style={[
+                    styles.togglePill,
+                    !(serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && styles.togglePillActiveRed,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.togglePillText,
+                      !(serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && styles.togglePillTextActive,
+                      darkMode && (serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && { color: "#ccc" },
+                    ]}
+                  >
+                    Hide
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Cost</Text>
+              <View style={styles.serviceAmountRow}>
+                <Dropdown
+                  style={[styles.serviceCurrencyDropdown, styles.serviceCurrencyDropdownGreen, darkMode && styles.darkServiceCurrencyDropdown, darkMode && styles.darkServiceCurrencyDropdownGreen]}
+                  data={SERVICE_CURRENCY_OPTIONS}
+                  labelField='label'
+                  valueField='value'
+                  placeholder='USD'
+                  placeholderTextColor={darkMode ? "#999" : "#666"}
+                  value={serviceForm.bs_cost_currency || "USD"}
+                  onChange={(item) => {
+                    handleServiceChange("bs_cost_currency", item.value);
+                    setIsChanged(true);
+                  }}
+                  containerStyle={[{ borderRadius: 12, width: 96, borderWidth: 2, borderColor: "#00C721" }, darkMode && { backgroundColor: "#1a2e1f", borderColor: "#4ade80" }]}
+                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 15 }}
+                  selectedTextStyle={{ color: darkMode ? "#86efac" : "#166534", fontSize: 15, fontWeight: "600" }}
+                  activeColor={darkMode ? "#14532d" : "#dcfce7"}
+                  maxHeight={220}
+                  renderItem={(item) => (
+                    <View style={{ paddingVertical: 0, paddingHorizontal: 12 }}>
+                      <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 15 }}>{item.label}</Text>
+                    </View>
+                  )}
+                  flatListProps={{ nestedScrollEnabled: true }}
+                />
+                <TextInput
+                  style={[styles.input, styles.serviceAmountInput, darkMode && styles.darkInput]}
+                  value={serviceForm.bs_cost}
+                  onChangeText={(t) => handleServiceChange("bs_cost", t)}
+                  placeholder='0.00'
+                  keyboardType='decimal-pad'
+                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                />
+              </View>
+
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Bounty Type</Text>
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                <TouchableOpacity
+                  style={[styles.bountyTypeBtn, serviceForm.bs_bounty_type === "per_item" && styles.bountyTypeBtnActive]}
+                  onPress={() => handleServiceChange("bs_bounty_type", "per_item")}
+                >
+                  <Text style={[styles.bountyTypeBtnText, serviceForm.bs_bounty_type === "per_item" && styles.bountyTypeBtnTextActive]}>Per Item</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.bountyTypeBtn, serviceForm.bs_bounty_type === "total" && styles.bountyTypeBtnActive]} onPress={() => handleServiceChange("bs_bounty_type", "total")}>
+                  <Text style={[styles.bountyTypeBtnText, serviceForm.bs_bounty_type === "total" && styles.bountyTypeBtnTextActive]}>Total (Fixed)</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Bounty</Text>
+              <View style={styles.serviceAmountRow}>
+                <Dropdown
+                  style={[styles.serviceCurrencyDropdown, styles.serviceCurrencyDropdownGreen, darkMode && styles.darkServiceCurrencyDropdown, darkMode && styles.darkServiceCurrencyDropdownGreen]}
+                  data={SERVICE_CURRENCY_OPTIONS}
+                  labelField='label'
+                  valueField='value'
+                  placeholder='USD'
+                  placeholderTextColor={darkMode ? "#999" : "#666"}
+                  value={serviceForm.bs_bounty_currency || "USD1"}
+                  onChange={(item) => {
+                    handleServiceChange("bs_bounty_currency", item.value);
+                    setIsChanged(true);
+                  }}
+                  containerStyle={[{ borderRadius: 12, width: 96, borderWidth: 2, borderColor: "#00C721" }, darkMode && { backgroundColor: "#1a2e1f", borderColor: "#4ade80" }]}
+                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 15 }}
+                  selectedTextStyle={{ color: darkMode ? "#86efac" : "#166534", fontSize: 15, fontWeight: "600" }}
+                  activeColor={darkMode ? "#14532d" : "#dcfce7"}
+                  maxHeight={220}
+                  renderItem={(item) => (
+                    <View style={{ paddingVertical: 8, paddingHorizontal: 12 }}>
+                      <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 15 }}>{item.label}</Text>
+                    </View>
+                  )}
+                  flatListProps={{ nestedScrollEnabled: true }}
+                />
+                <TextInput
+                  style={[styles.input, styles.serviceAmountInput, darkMode && styles.darkInput]}
+                  value={serviceForm.bs_bounty}
+                  onChangeText={(t) => handleServiceChange("bs_bounty", t)}
+                  placeholder='0.00'
+                  keyboardType='decimal-pad'
+                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                />
+              </View>
+
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Condition</Text>
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                <TouchableOpacity
+                  style={[styles.bountyTypeBtn, serviceForm.bs_condition_type !== "used" && styles.bountyTypeBtnActive]}
+                  onPress={() => handleServiceChange("bs_condition_type", "new")}
+                >
+                  <Text style={[styles.bountyTypeBtnText, serviceForm.bs_condition_type !== "used" && styles.bountyTypeBtnTextActive]}>New</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.bountyTypeBtn, serviceForm.bs_condition_type === "used" && styles.bountyTypeBtnActive]}
+                  onPress={() => handleServiceChange("bs_condition_type", "used")}
+                >
+                  <Text style={[styles.bountyTypeBtnText, serviceForm.bs_condition_type === "used" && styles.bountyTypeBtnTextActive]}>Used</Text>
+                </TouchableOpacity>
+              </View>
+              {serviceForm.bs_condition_type === "used" ? (
+                <TextInput
+                  style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
+                  value={serviceForm.bs_condition_detail}
+                  onChangeText={(t) => handleServiceChange("bs_condition_detail", t)}
+                  placeholder='Condition details (e.g. Like new, minor wear)'
+                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                />
+              ) : null}
+
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Available quantity</Text>
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                <TouchableOpacity
+                  style={[styles.bountyTypeBtn, (serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnActive]}
+                  onPress={() => handleServiceChange("bs_qty_unlimited", 1)}
+                >
+                  <Text style={[styles.bountyTypeBtnText, (serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnTextActive]}>No limit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.bountyTypeBtn, !(serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnActive]}
+                  onPress={() => handleServiceChange("bs_qty_unlimited", 0)}
+                >
+                  <Text style={[styles.bountyTypeBtnText, !(serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnTextActive]}>Limited quantity</Text>
+                </TouchableOpacity>
+              </View>
+              {!(serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") ? (
+                <TextInput
+                  style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
+                  value={serviceForm.bs_available_quantity}
+                  onChangeText={(t) => handleServiceChange("bs_available_quantity", t.replace(/\D/g, ""))}
+                  placeholder='Quantity available'
+                  keyboardType='number-pad'
+                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                />
+              ) : null}
+
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Shipping (if applicable)</Text>
+              <TouchableOpacity style={styles.serviceCheckboxRow} onPress={toggleFreeShipping} activeOpacity={0.7}>
+                <Ionicons name={serviceForm.bs_free_shipping === 1 ? "checkbox" : "square-outline"} size={22} color={serviceForm.bs_free_shipping === 1 ? "#9C45F7" : darkMode ? "#aaa" : "#666"} />
+                <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Free shipping</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.serviceCheckboxRow} onPress={toggleBuyerPaysShipping} activeOpacity={0.7}>
+                <Ionicons
+                  name={serviceForm.bs_buyer_pays_shipping === 1 ? "checkbox" : "square-outline"}
+                  size={22}
+                  color={serviceForm.bs_buyer_pays_shipping === 1 ? "#9C45F7" : darkMode ? "#aaa" : "#666"}
+                />
+                <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Buyer pays shipping</Text>
+              </TouchableOpacity>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Card processing fees</Text>
+              <TouchableOpacity style={styles.serviceCheckboxRow} onPress={() => toggleCcFeePayer("buyer")} activeOpacity={0.7}>
+                <Ionicons
+                  name={serviceForm.bs_cc_fee_payer === "buyer" ? "checkbox" : "square-outline"}
+                  size={22}
+                  color={serviceForm.bs_cc_fee_payer === "buyer" ? "#9C45F7" : darkMode ? "#aaa" : "#666"}
+                />
+                <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Buyer pays card fees (credit card fees displayed on buyer's receipt)</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.serviceCheckboxRow, { marginBottom: 10 }]} onPress={() => toggleCcFeePayer("seller")} activeOpacity={0.7}>
+                <Ionicons
+                  name={serviceForm.bs_cc_fee_payer === "seller" ? "checkbox" : "square-outline"}
+                  size={22}
+                  color={serviceForm.bs_cc_fee_payer === "seller" ? "#9C45F7" : darkMode ? "#aaa" : "#666"}
+                />
+                <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Seller pays card fees (deducted from gross receipts)</Text>
+              </TouchableOpacity>
+              <TextInput
+                style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
+                value={serviceForm.bs_tags}
+                onChangeText={(t) => handleServiceChange("bs_tags", t)}
+                placeholder='Tags (comma separated, e.g. Suit, Men)'
+                placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+              />
+              <View style={styles.formButtons}>
+                <TouchableOpacity style={[styles.formButton, styles.cancelButton, darkMode && styles.darkCancelButton]} onPress={handleCancelEdit}>
+                  <Text style={[styles.cancelButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.formButton, styles.addButton]} onPress={handleAddService}>
+                  <Text style={styles.addButtonText}>{editingServiceIndex !== null ? "Update" : "Add"} Product/Service</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}>
@@ -1693,310 +1981,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           </View>
           {services.length === 0 && <Text style={[styles.noServicesText, darkMode && styles.darkNoServicesText]}>No products or services added yet.</Text>}
           {services.map((service, idx) => (
-            <ProductCard key={idx} service={service} businessUid={businessUID} onEdit={() => handleEditService(service, idx)} showEditButton={true} darkMode={darkMode} />
+            <React.Fragment key={idx}>
+              <ProductCard service={service} businessUid={businessUID} onEdit={() => handleEditService(service, idx)} showEditButton={true} darkMode={darkMode} />
+              {showServiceForm && editingServiceIndex === idx ? renderProductsServicesForm() : null}
+            </React.Fragment>
           ))}
-          {showServiceForm && (
-            <View style={[styles.serviceFormContainer, darkMode && styles.darkServiceFormContainer]}>
-              <Text style={[styles.formTitle, darkMode && styles.darkFormTitle]}>{editingServiceIndex !== null ? "Edit Product/Service" : "Add New Product/Service"}</Text>
-
-              <View style={[styles.serviceFormMiniCard, darkMode && styles.darkServiceFormMiniCard]}>
-                <View style={styles.serviceFormMiniCardLeft}>
-                  <Image
-                    source={serviceProductImageUri && !serviceProductImageError ? { uri: serviceProductImageUri } : DEFAULT_BUSINESS_IMAGE}
-                    style={[styles.serviceFormMiniCardImage, darkMode && styles.serviceFormMiniCardImageDark]}
-                    onError={handleServiceProductImageError}
-                  />
-                  <View style={styles.serviceImageShowHideRow}>
-                    <TouchableOpacity
-                      onPress={() => setServiceImageToolsVisible(true)}
-                      style={[
-                        styles.serviceImageTogglePill,
-                        serviceImageToolsVisible && styles.serviceImageTogglePillActive,
-                        darkMode && !serviceImageToolsVisible && styles.serviceImageTogglePillDark,
-                      ]}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[
-                          styles.serviceImageTogglePillText,
-                          serviceImageToolsVisible && styles.serviceImageTogglePillTextActive,
-                          !serviceImageToolsVisible && darkMode && styles.serviceImageTogglePillTextMutedDark,
-                        ]}
-                      >
-                        Show
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => setServiceImageToolsVisible(false)}
-                      style={[
-                        styles.serviceImageTogglePill,
-                        !serviceImageToolsVisible && styles.serviceImageTogglePillActive,
-                        darkMode && serviceImageToolsVisible && styles.serviceImageTogglePillDark,
-                      ]}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[
-                          styles.serviceImageTogglePillText,
-                          !serviceImageToolsVisible && styles.serviceImageTogglePillTextActive,
-                          serviceImageToolsVisible && darkMode && styles.serviceImageTogglePillTextMutedDark,
-                        ]}
-                      >
-                        Hide
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                  <TouchableOpacity style={[styles.serviceUploadButton, darkMode && styles.darkServiceUploadButton]} onPress={handlePickServiceProductImage} activeOpacity={0.8}>
-                    <Text style={styles.serviceUploadButtonText}>Upload</Text>
-                  </TouchableOpacity>
-                  {serviceImageToolsVisible && serviceProductImageUri ? (
-                    <TouchableOpacity onPress={handleRemoveServiceProductImage} style={styles.serviceRemoveImageBtn}>
-                      <Text style={[styles.serviceRemoveImageText, darkMode && styles.darkServiceRemoveImageText]}>Remove image</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                  {Platform.OS === "web" &&
-                    React.createElement("input", {
-                      ref: serviceImageFileInputRef,
-                      type: "file",
-                      accept: "image/*",
-                      style: { display: "none" },
-                      onChange: handleWebServiceProductImagePick,
-                    })}
-                </View>
-                <View style={styles.serviceFormMiniCardFields}>
-                  <TextInput
-                    style={[styles.input, styles.serviceFormMiniFieldInput, styles.serviceFormCompactInput, darkMode && styles.darkInput]}
-                    value={serviceForm.bs_service_name}
-                    onChangeText={(t) => handleServiceChange("bs_service_name", t)}
-                    placeholder='Product or Service Name'
-                    placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                  />
-                  <TextInput
-                    style={[styles.input, styles.serviceFormDescInput, styles.serviceFormCompactDesc, darkMode && styles.darkInput]}
-                    value={serviceForm.bs_service_desc}
-                    onChangeText={(t) => handleServiceChange("bs_service_desc", t)}
-                    placeholder='Description'
-                    placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                    multiline
-                    numberOfLines={3}
-                    textAlignVertical='top'
-                  />
-                </View>
-              </View>
-
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Cost</Text>
-              <View style={styles.serviceAmountRow}>
-                <Dropdown
-                  style={[
-                    styles.serviceCurrencyDropdown,
-                    styles.serviceCurrencyDropdownGreen,
-                    darkMode && styles.darkServiceCurrencyDropdown,
-                    darkMode && styles.darkServiceCurrencyDropdownGreen,
-                  ]}
-                  data={SERVICE_CURRENCY_OPTIONS}
-                  labelField='label'
-                  valueField='value'
-                  placeholder='USD'
-                  placeholderTextColor={darkMode ? "#999" : "#666"}
-                  value={serviceForm.bs_cost_currency || "USD"}
-                  onChange={(item) => {
-                    handleServiceChange("bs_cost_currency", item.value);
-                    setIsChanged(true);
-                  }}
-                  containerStyle={[
-                    { borderRadius: 12, width: 96, borderWidth: 2, borderColor: "#00C721" },
-                    darkMode && { backgroundColor: "#1a2e1f", borderColor: "#4ade80" },
-                  ]}
-                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 15 }}
-                  selectedTextStyle={{ color: darkMode ? "#86efac" : "#166534", fontSize: 15, fontWeight: "600" }}
-                  activeColor={darkMode ? "#14532d" : "#dcfce7"}
-                  maxHeight={220}
-                  renderItem={(item) => (
-                    <View style={{ paddingVertical: 8, paddingHorizontal: 12 }}>
-                      <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 15 }}>{item.label}</Text>
-                    </View>
-                  )}
-                  flatListProps={{ nestedScrollEnabled: true }}
-                />
-                <TextInput
-                  style={[styles.input, styles.serviceAmountInput, darkMode && styles.darkInput]}
-                  value={serviceForm.bs_cost}
-                  onChangeText={(t) => handleServiceChange("bs_cost", t)}
-                  placeholder='0.00'
-                  keyboardType='decimal-pad'
-                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                />
-              </View>
-
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Bounty Type</Text>
-              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-                <TouchableOpacity
-                  style={[styles.bountyTypeBtn, serviceForm.bs_bounty_type === "per_item" && styles.bountyTypeBtnActive]}
-                  onPress={() => handleServiceChange("bs_bounty_type", "per_item")}
-                >
-                  <Text style={[styles.bountyTypeBtnText, serviceForm.bs_bounty_type === "per_item" && styles.bountyTypeBtnTextActive]}>Per Item</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.bountyTypeBtn, serviceForm.bs_bounty_type === "total" && styles.bountyTypeBtnActive]} onPress={() => handleServiceChange("bs_bounty_type", "total")}>
-                  <Text style={[styles.bountyTypeBtnText, serviceForm.bs_bounty_type === "total" && styles.bountyTypeBtnTextActive]}>Total (Fixed)</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Bounty</Text>
-              <View style={styles.serviceAmountRow}>
-                <Dropdown
-                  style={[
-                    styles.serviceCurrencyDropdown,
-                    styles.serviceCurrencyDropdownGreen,
-                    darkMode && styles.darkServiceCurrencyDropdown,
-                    darkMode && styles.darkServiceCurrencyDropdownGreen,
-                  ]}
-                  data={SERVICE_CURRENCY_OPTIONS}
-                  labelField='label'
-                  valueField='value'
-                  placeholder='USD'
-                  placeholderTextColor={darkMode ? "#999" : "#666"}
-                  value={serviceForm.bs_bounty_currency || "USD"}
-                  onChange={(item) => {
-                    handleServiceChange("bs_bounty_currency", item.value);
-                    setIsChanged(true);
-                  }}
-                  containerStyle={[
-                    { borderRadius: 12, width: 96, borderWidth: 2, borderColor: "#00C721" },
-                    darkMode && { backgroundColor: "#1a2e1f", borderColor: "#4ade80" },
-                  ]}
-                  itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 15 }}
-                  selectedTextStyle={{ color: darkMode ? "#86efac" : "#166534", fontSize: 15, fontWeight: "600" }}
-                  activeColor={darkMode ? "#14532d" : "#dcfce7"}
-                  maxHeight={220}
-                  renderItem={(item) => (
-                    <View style={{ paddingVertical: 8, paddingHorizontal: 12 }}>
-                      <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 15 }}>{item.label}</Text>
-                    </View>
-                  )}
-                  flatListProps={{ nestedScrollEnabled: true }}
-                />
-                <TextInput
-                  style={[styles.input, styles.serviceAmountInput, darkMode && styles.darkInput]}
-                  value={serviceForm.bs_bounty}
-                  onChangeText={(t) => handleServiceChange("bs_bounty", t)}
-                  placeholder='0.00'
-                  keyboardType='decimal-pad'
-                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                />
-              </View>
-
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Condition</Text>
-              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-                <TouchableOpacity
-                  style={[styles.bountyTypeBtn, serviceForm.bs_condition_type !== "used" && styles.bountyTypeBtnActive]}
-                  onPress={() => handleServiceChange("bs_condition_type", "new")}
-                >
-                  <Text style={[styles.bountyTypeBtnText, serviceForm.bs_condition_type !== "used" && styles.bountyTypeBtnTextActive]}>New</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.bountyTypeBtn, serviceForm.bs_condition_type === "used" && styles.bountyTypeBtnActive]}
-                  onPress={() => handleServiceChange("bs_condition_type", "used")}
-                >
-                  <Text style={[styles.bountyTypeBtnText, serviceForm.bs_condition_type === "used" && styles.bountyTypeBtnTextActive]}>Used</Text>
-                </TouchableOpacity>
-              </View>
-              {serviceForm.bs_condition_type === "used" ? (
-                <TextInput
-                  style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
-                  value={serviceForm.bs_condition_detail}
-                  onChangeText={(t) => handleServiceChange("bs_condition_detail", t)}
-                  placeholder='Condition details (e.g. Like new, minor wear)'
-                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                />
-              ) : null}
-
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Available quantity</Text>
-              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-                <TouchableOpacity
-                  style={[styles.bountyTypeBtn, (serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnActive]}
-                  onPress={() => handleServiceChange("bs_qty_unlimited", 1)}
-                >
-                  <Text
-                    style={[
-                      styles.bountyTypeBtnText,
-                      (serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnTextActive,
-                    ]}
-                  >
-                    No limit
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.bountyTypeBtn, !(serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnActive]}
-                  onPress={() => handleServiceChange("bs_qty_unlimited", 0)}
-                >
-                  <Text
-                    style={[
-                      styles.bountyTypeBtnText,
-                      !(serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnTextActive,
-                    ]}
-                  >
-                    Limited quantity
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              {!(serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") ? (
-                <TextInput
-                  style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
-                  value={serviceForm.bs_available_quantity}
-                  onChangeText={(t) => handleServiceChange("bs_available_quantity", t.replace(/\D/g, ""))}
-                  placeholder='Quantity available'
-                  keyboardType='number-pad'
-                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                />
-              ) : null}
-
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Shipping (if applicable)</Text>
-              <TouchableOpacity style={styles.serviceCheckboxRow} onPress={toggleFreeShipping} activeOpacity={0.7}>
-                <Ionicons name={serviceForm.bs_free_shipping === 1 ? "checkbox" : "square-outline"} size={22} color={serviceForm.bs_free_shipping === 1 ? "#9C45F7" : darkMode ? "#aaa" : "#666"} />
-                <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Free shipping</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.serviceCheckboxRow} onPress={toggleBuyerPaysShipping} activeOpacity={0.7}>
-                <Ionicons
-                  name={serviceForm.bs_buyer_pays_shipping === 1 ? "checkbox" : "square-outline"}
-                  size={22}
-                  color={serviceForm.bs_buyer_pays_shipping === 1 ? "#9C45F7" : darkMode ? "#aaa" : "#666"}
-                />
-                <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Buyer pays shipping</Text>
-              </TouchableOpacity>
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Card processing fees</Text>
-              <TouchableOpacity style={styles.serviceCheckboxRow} onPress={() => toggleCcFeePayer("buyer")} activeOpacity={0.7}>
-                <Ionicons
-                  name={serviceForm.bs_cc_fee_payer === "buyer" ? "checkbox" : "square-outline"}
-                  size={22}
-                  color={serviceForm.bs_cc_fee_payer === "buyer" ? "#9C45F7" : darkMode ? "#aaa" : "#666"}
-                />
-                <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Buyer pays card fees (credit card fees displayed on buyer's receipt)</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.serviceCheckboxRow, { marginBottom: 10 }]} onPress={() => toggleCcFeePayer("seller")} activeOpacity={0.7}>
-                <Ionicons
-                  name={serviceForm.bs_cc_fee_payer === "seller" ? "checkbox" : "square-outline"}
-                  size={22}
-                  color={serviceForm.bs_cc_fee_payer === "seller" ? "#9C45F7" : darkMode ? "#aaa" : "#666"}
-                />
-                <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Seller pays card fees (deducted from gross receipts)</Text>
-              </TouchableOpacity>
-              <TextInput
-                style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
-                value={serviceForm.bs_tags}
-                onChangeText={(t) => handleServiceChange("bs_tags", t)}
-                placeholder='Tags (comma separated, e.g. Suit, Men)'
-                placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-              />
-              <View style={styles.formButtons}>
-                <TouchableOpacity style={[styles.formButton, styles.cancelButton, darkMode && styles.darkCancelButton]} onPress={handleCancelEdit}>
-                  <Text style={[styles.cancelButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.formButton, styles.addButton]} onPress={handleAddService}>
-                  <Text style={styles.addButtonText}>{editingServiceIndex !== null ? "Update" : "Add"} Product/Service</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
+          {showServiceForm && editingServiceIndex === null ? renderProductsServicesForm() : null}
         </View>
 
         <TouchableOpacity
@@ -2101,16 +2091,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#2d2d2d",
   },
   serviceFormMiniCardImage: {
-    width: 96,
-    height: 96,
-    borderRadius: 10,
+    width: 64,
+    height: 64,
+    borderRadius: 8,
     backgroundColor: "#eee",
   },
   serviceFormMiniCardImageDark: {
     backgroundColor: "#404040",
   },
   serviceFormMiniCardLeft: {
-    width: 118,
+    width: 100,
     alignItems: "center",
   },
   serviceImageShowHideRow: {

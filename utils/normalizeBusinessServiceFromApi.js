@@ -1,0 +1,94 @@
+/**
+ * Normalizes a business service row from GET /businessinfo (and related) so the app
+ * can use one shape in UI and forms. Maps alternate/legacy API fields:
+ * - bs_image_url → bs_image_key (when key empty)
+ * - bs_quantity → bs_available_quantity / bs_qty_unlimited
+ * - bs_condition → bs_condition_type / bs_condition_detail
+ * - bs_shipping → bs_free_shipping / bs_buyer_pays_shipping when flags are absent
+ */
+
+export function normalizeBusinessServiceFromApi(service) {
+  if (!service || typeof service !== "object") return service;
+
+  const imgKey =
+    service.bs_image_key != null && String(service.bs_image_key).trim() !== ""
+      ? String(service.bs_image_key).trim()
+      : service.bs_image_url != null && String(service.bs_image_url).trim() !== ""
+        ? String(service.bs_image_url).trim()
+        : "";
+
+  const pubRaw = service.bs_service_image_is_public ?? service.bs_image_url_is_public;
+  const imgIsPublic = pubRaw === 0 || pubRaw === "0" || pubRaw === false ? 0 : 1;
+
+  let bs_available_quantity =
+    service.bs_available_quantity != null && String(service.bs_available_quantity).trim() !== ""
+      ? String(service.bs_available_quantity).trim()
+      : "";
+  if (bs_available_quantity === "" && service.bs_quantity != null && String(service.bs_quantity).trim() !== "") {
+    bs_available_quantity = String(service.bs_quantity).trim();
+  }
+
+  let bs_qty_unlimited = service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? 0 : 1;
+  if (
+    (service.bs_qty_unlimited === undefined || service.bs_qty_unlimited === null || service.bs_qty_unlimited === "") &&
+    service.bs_quantity != null &&
+    String(service.bs_quantity).trim() !== ""
+  ) {
+    bs_qty_unlimited = 0;
+  }
+
+  let bs_condition_type = service.bs_condition_type;
+  let bs_condition_detail = service.bs_condition_detail || service.bs_used_condition || "";
+  if (
+    (bs_condition_type === undefined || bs_condition_type === null || String(bs_condition_type).trim() === "") &&
+    service.bs_condition != null &&
+    String(service.bs_condition).trim() !== ""
+  ) {
+    const bc = String(service.bs_condition).trim();
+    const low = bc.toLowerCase();
+    if (low === "new" || low === "used") {
+      bs_condition_type = low;
+    } else {
+      bs_condition_type = "used";
+      bs_condition_detail = (bs_condition_detail || bc).trim();
+    }
+  }
+
+  let bs_free_shipping = service.bs_free_shipping === 1 || service.bs_free_shipping === "1" || service.bs_free_shipping === true ? 1 : 0;
+  let bs_buyer_pays_shipping =
+    service.bs_buyer_pays_shipping === 1 || service.bs_buyer_pays_shipping === "1" || service.bs_buyer_pays_shipping === true ? 1 : 0;
+
+  if (bs_free_shipping === 0 && bs_buyer_pays_shipping === 0 && service.bs_shipping != null && String(service.bs_shipping).trim() !== "") {
+    const sh = String(service.bs_shipping).trim().toLowerCase();
+    if (sh === "free" || sh === "1" || sh === "yes" || sh.includes("free")) {
+      bs_free_shipping = 1;
+    } else if (sh.includes("buyer") || sh.includes("buyer pays") || sh === "buyer_pays") {
+      bs_buyer_pays_shipping = 1;
+    }
+  }
+
+  const next = {
+    ...service,
+    bs_uid: service.bs_uid || "",
+    bs_tags: service.bs_tags || "",
+    bs_image_key: imgKey,
+    bs_condition_detail,
+    bs_free_shipping,
+    bs_buyer_pays_shipping,
+    bs_cc_fee_payer:
+      String(service.bs_cc_fee_payer || "").toLowerCase() === "buyer"
+        ? "buyer"
+        : String(service.bs_cc_fee_payer || "").toLowerCase() === "seller"
+          ? "seller"
+          : "",
+    bs_qty_unlimited,
+    bs_available_quantity,
+    bs_service_image_is_public: imgIsPublic,
+  };
+
+  if (bs_condition_type !== undefined && bs_condition_type !== null && String(bs_condition_type).trim() !== "") {
+    next.bs_condition_type = String(bs_condition_type).toLowerCase() === "used" ? "used" : "new";
+  }
+
+  return next;
+}

@@ -15,6 +15,7 @@ import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { parsePrice } from "../utils/priceUtils";
 import { getHeaderColors } from "../config/headerColors";
 import FeedbackPopup from "../components/FeedbackPopup";
+import { normalizeBusinessServiceFromApi } from "../utils/normalizeBusinessServiceFromApi";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -351,21 +352,23 @@ export default function BusinessProfileScreen({ route, navigation }) {
         business_profile_img: businessProfileImgUrl,
         business_profile_img_is_public: rawBusiness.business_profile_img_is_public === "1" || rawBusiness.business_profile_img_is_public === 1,
         business_services: (() => {
+          let list = [];
           if (rawBusiness.business_services) {
             if (typeof rawBusiness.business_services === "string") {
               try {
-                return JSON.parse(rawBusiness.business_services);
+                list = JSON.parse(rawBusiness.business_services);
               } catch (e) {
-                return [];
+                list = [];
               }
             } else if (Array.isArray(rawBusiness.business_services)) {
-              return rawBusiness.business_services;
+              list = rawBusiness.business_services;
             }
           }
-          if (Array.isArray(result.services)) {
-            return result.services;
+          if ((!Array.isArray(list) || list.length === 0) && Array.isArray(result.services)) {
+            list = result.services;
           }
-          return [];
+          if (!Array.isArray(list)) return [];
+          return list.map((svc) => normalizeBusinessServiceFromApi(svc));
         })(),
       };
 
