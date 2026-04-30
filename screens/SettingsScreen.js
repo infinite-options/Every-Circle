@@ -1,3 +1,4 @@
+//SettingsScreen.js 
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, Switch, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, Image, FlatList, Platform } from "react-native";
 import * as Location from "expo-location";
@@ -6,12 +7,12 @@ import { useNavigation } from "@react-navigation/native";
 import { useRoute } from "@react-navigation/native";
 import { CommonActions } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { clearAppAsyncStorage } from "../utils/clearAppAsyncStorage";
 import FeedbackPopup from "../components/FeedbackPopup";
 import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
+import { API_BASE_URL } from "../apiConfig";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -167,6 +168,19 @@ export default function SettingsScreen() {
 
   // Define custom questions for the Account page
   const settingsFeedbackQuestions = ["Settings - Question 1?", "Settings - Question 2?", "Settings - Question 3?"];
+
+  //for declined refunds - only show to admins
+  const ADMIN_EMAILS = [
+    "shrutitest20@gmail.com",
+    "admin@everycircle.com",
+    "pmarathay@gmail.com",
+    "cplata@everycircle.com",
+  ];
+
+  const [showAdminSection, setShowAdminSection] = useState(false);
+  const [adminReturns, setAdminReturns] = useState([]);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminError, setAdminError] = useState(null);
 
   console.log("In SettingsScreen");
 
@@ -342,8 +356,53 @@ export default function SettingsScreen() {
         console.log("SettingsScreen.js - Web platform: Skipping Google Sign Out");
       }
 
-      await clearAppAsyncStorage();
-      console.log("SettingsScreen.js - AsyncStorage cleared successfully (full storage reset; terms/cookies prefs preserved)");
+      // Get all keys to clear Apple authentication data
+      const allKeys = await AsyncStorage.getAllKeys();
+      const appleKeys = allKeys.filter((key) => key.startsWith("apple_"));
+
+      // Clear all stored data - comprehensive cleanup
+      const keysToRemove = [
+        // User authentication data
+        "user_uid",
+        "user_email_id",
+        "profile_uid",
+        "user_id",
+        "user_name",
+
+        // User profile data
+        "user_email",
+        "user_first_name",
+        "user_last_name",
+        "user_phone_number",
+
+        // Settings
+        "displayEmail",
+        "displayPhone",
+        "darkMode",
+
+        // Business data
+        "businessFormData",
+        "my_business_uids",
+
+        // Cart data (all cart keys)
+        ...allKeys.filter((key) => key.startsWith("cart_")),
+
+        // Ratings data
+        "user_ratings_info",
+
+        // Live location session
+        "shareLiveLocationUntil",
+        // Auto-cleanup of ignore list disabled — uncomment to clear on logout
+        // NEARBY_IGNORED_KEY,
+
+        // Apple authentication data
+        ...appleKeys,
+      ];
+
+      console.log("SettingsScreen.js - Clearing AsyncStorage keys:", keysToRemove);
+      console.log("SettingsScreen.js - Total keys to remove:", keysToRemove.length);
+      await AsyncStorage.multiRemove(keysToRemove);
+      console.log("SettingsScreen.js - AsyncStorage cleared successfully");
 
       // Clear shared Ably client so next login reauths cleanly with new client_id.
       resetSharedAblyClient();
@@ -867,6 +926,26 @@ export default function SettingsScreen() {
     }
   };
 
+  const fetchAdminReturns = async () => {
+    setAdminLoading(true);
+    setAdminError(null);
+    try {
+      const url = `${API_BASE_URL}/api/v1/transactions/returns/declined`;
+      console.log("Fetching admin returns from:", url);
+      const response = await fetch(url);
+      console.log("Response status:", response.status);
+      const result = await response.json();
+      console.log("Admin returns result:", JSON.stringify(result));
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setAdminReturns(Array.isArray(result?.data) ? result.data : []);
+    } catch (e) {
+      console.error("Admin returns fetch error:", e);
+      setAdminError("Failed to load declined returns.");
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Nearby alert banner — floats above everything */}
@@ -1143,6 +1222,88 @@ export default function SettingsScreen() {
               PM {versionData.pm_version} Version {versionData.major}.{versionData.build} - Last Change: {versionData.last_change}
             </Text>
           </View>
+
+          {/* ADMIN Section — only visible to authorized emails */}
+          {console.log("Admin check email:", personalProfileData?.email, "in list:", ADMIN_EMAILS.includes(personalProfileData?.email))}
+          {ADMIN_EMAILS.includes(personalProfileData?.email) && (
+            <>
+              <TouchableOpacity
+                style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.15)", marginTop: 8 }]}
+                onPress={() => {
+                  setShowAdminSection(!showAdminSection);
+                  if (!showAdminSection && adminReturns.length === 0) {
+                    fetchAdminReturns();
+                  }
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <MaterialIcons name="admin-panel-settings" size={16} color="#B71C1C" />
+                  <Text style={[styles.informationSectionHeaderText, { color: "#B71C1C" }]}>ADMIN</Text>
+                </View>
+                <Ionicons name={showAdminSection ? "chevron-up" : "chevron-down"} size={20} color="#B71C1C" />
+              </TouchableOpacity>
+
+              {showAdminSection && (
+                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#B71C1C" }]}>
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: "#B71C1C", padding: 12, paddingBottom: 4 }}>
+                    Declined Returns
+                  </Text>
+
+                  {adminLoading ? (
+                    <ActivityIndicator size="small" color="#B71C1C" style={{ margin: 16 }} />
+                  ) : adminError ? (
+                    <Text style={{ color: "#B71C1C", padding: 12, fontSize: 13 }}>{adminError}</Text>
+                  ) : adminReturns.length === 0 ? (
+                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No declined returns found.</Text>
+                  ) : (
+                    <>
+                      {/* Table Header */}
+                      <View style={{
+                        flexDirection: "row",
+                        backgroundColor: "#B71C1C",
+                        paddingVertical: 6,
+                        paddingHorizontal: 8,
+                      }}>
+                        <Text style={{ flex: 1.2, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Buyer</Text>
+                        <Text style={{ flex: 1.2, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Seller</Text>
+                        <Text style={{ flex: 1.5, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Note</Text>
+                        <Text style={{ flex: 1, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Txn ID</Text>
+                      </View>
+                      {adminReturns.map((item, idx) => (
+                        <View key={item.transaction_uid || idx} style={{
+                          flexDirection: "row",
+                          paddingVertical: 8,
+                          paddingHorizontal: 8,
+                          borderBottomWidth: 1,
+                          borderBottomColor: darkMode ? "#444" : "#eee",
+                          backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#fff5f5") : "transparent",
+                        }}>
+                          <Text style={{ flex: 1.2, fontSize: 11, color: darkMode ? "#fff" : "#333" }} numberOfLines={2}>
+                            {item.buyer_name || item.transaction_profile_id || "N/A"}
+                          </Text>
+                          <Text style={{ flex: 1.2, fontSize: 11, color: darkMode ? "#fff" : "#333" }} numberOfLines={2}>
+                            {item.seller_name || item.transaction_business_id || "N/A"}
+                          </Text>
+                          <Text style={{ flex: 1.5, fontSize: 11, color: darkMode ? "#ccc" : "#555" }} numberOfLines={3}>
+                            {item.transaction_return_note || "No note"}
+                          </Text>
+                          <Text style={{ flex: 1, fontSize: 10, color: "#B71C1C" }} numberOfLines={2}>
+                            {item.transaction_uid || "N/A"}
+                          </Text>
+                        </View>
+                      ))}
+                      <TouchableOpacity
+                        style={{ padding: 10, alignItems: "center" }}
+                        onPress={fetchAdminReturns}
+                      >
+                        <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
+              )}
+            </>
+          )}
 
           {/* Bottom Logout Button - Styled like Submit button */}
           <TouchableOpacity style={[styles.bottomLogoutButton, darkMode && styles.darkBottomLogoutButton]} onPress={handleLogout}>

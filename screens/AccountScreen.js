@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity, Platform, Modal, Alert } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity, Platform, Modal, Alert, TextInput } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
@@ -65,6 +65,28 @@ export default function AccountScreen({ navigation }) {
 
   const [autoPaidTransactionIds, setAutoPaidTransactionIds] = useState(new Set());
 
+  //for returns
+  const [returnRequests, setReturnRequests] = useState({});
+  const [receiptTransaction, setReceiptTransaction] = useState(null);
+
+  //for return message
+  const [returnNote, setReturnNote] = useState("");
+  const [showReturnNoteModal, setShowReturnNoteModal] = useState(false);
+
+  //seller can see return note in transaction details if return requested
+  const [showReturnNoteViewModal, setShowReturnNoteViewModal] = useState(false);
+  const [viewingReturnNote, setViewingReturnNote] = useState("");
+
+  //Accept/Decline
+  const [returnStatuses, setReturnStatuses] = useState({});
+  const [viewingReturnTransactionUid, setViewingReturnTransactionUid] = useState(null);
+
+  //select item to return 
+  const [selectedReturnItems, setSelectedReturnItems] = useState([]);
+  const [returnModalReceiptData, setReturnModalReceiptData] = useState([]);
+
+  const [businessReceiptCache, setBusinessReceiptCache] = useState({});
+
   // above your effect or focus logic
   const checkAuth = async () => {
     try {
@@ -122,7 +144,29 @@ export default function AccountScreen({ navigation }) {
         // Extract transactions from response.data
         const transactions = result && result.code === 200 && Array.isArray(result.data) ? result.data : [];
         console.log("Final transactions array length:", transactions.length);
-        setTransactionData(transactions);
+
+        // Pre-fetch seller totals for all transactions in parallel
+        const withTotals = await Promise.all(
+          transactions.map(async (t) => {
+            try {
+              const r = await fetch(`${TRANSACTION_RECEIPT_ENDPOINT}/${t.transaction_profile_id}/${t.transaction_uid}`, {
+                method: "GET",
+                headers: { "Content-Type": "application/json" },
+              });
+              if (!r.ok) return t;
+              const data = await r.json();
+              const items = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+              const sellerTotal = items.reduce((sum, item) => {
+                return sum + parseFloat(item.ti_bs_cost || 0) * (parseInt(item.ti_bs_qty) || 1);
+              }, 0);
+              return { ...t, seller_total: sellerTotal };
+            } catch {
+              return t;
+            }
+          })
+        );
+
+        setTransactionData(withTotals);
       } else {
         console.log("No profile ID found, skipping transaction data fetch");
         setTransactionData([]);
@@ -147,6 +191,14 @@ export default function AccountScreen({ navigation }) {
       setReceiptLoading(true);
       setReceiptData([]);
       setShowReceiptModal(true);
+      // setReceiptTransaction(transaction);
+      const storedReturn = await AsyncStorage.getItem(`return_request_${transaction.transaction_uid}`);
+      const parsedReturn = storedReturn ? JSON.parse(storedReturn) : null;
+      setReceiptTransaction({
+        ...transaction,
+        transaction_return_note: transaction.transaction_return_note || parsedReturn?.note || "",
+        transaction_return_requested: transaction.transaction_return_requested || (parsedReturn?.requested ? 1 : 0),
+      });
       const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${profileId}/${transactionUid}`;
       const response = await fetch(url, { method: "GET", headers: { "Content-Type": "application/json" } });
       if (!response.ok) {
@@ -164,12 +216,89 @@ export default function AccountScreen({ navigation }) {
         items = [result.data];
       }
       setReceiptData(items);
-    } catch (error) {
-      console.error("Error fetching receipt:", error);
+      // const sellerTotal = items.reduce((sum, item) => {
+      //   return sum + parseFloat(item.ti_bs_cost || 0) * (parseInt(item.ti_bs_qty) || 1);
+      // }, 0);
+      // setTransactionData(prev =>
+      //   prev.map(t =>
+      //     t.transaction_uid === transaction.transaction_uid
+      //       ? { ...t, seller_total: sellerTotal }
+      //       : t
+      //   )
+      // );
+      } catch (error) {
+        console.error("Error fetching receipt:", error);
       Alert.alert("Error", error.message || "Failed to load receipt.");
       setShowReceiptModal(false);
     } finally {
       setReceiptLoading(false);
+    }
+  };
+
+  const handleReturnRequest = async (transaction, note) => {
+    const uid = transaction?.transaction_uid;
+    if (!uid) return;
+    try {
+      const existingNote = returnRequests[uid]?.notes?.map(n => n.note).join("\n\n---RETURN---\n\n") || "";
+      const allNotes = existingNote ? `${existingNote}\n\n---RETURN---\n\n${note}` : note;
+      await fetch(`${API_BASE_URL}/api/v1/transactions`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transaction_uid: uid,
+          transaction_return_requested: 1,
+          transaction_return_note: allNotes,
+        }),
+      });
+      const existing = returnRequests[uid] || { items: [], notes: [] };
+      const updated = {
+        items: [...(existing.items || []), ...selectedReturnItems],
+        notes: [...(existing.notes || []), { items: selectedReturnItems, note: note || "", date: new Date().toISOString() }],
+      };
+      setReturnRequests((prev) => ({ ...prev, [uid]: updated }));
+      await AsyncStorage.setItem(`return_request_${uid}`, JSON.stringify(updated));
+      setReturnNote("");
+    } catch (error) {
+      console.error("Error requesting return:", error);
+      Alert.alert("Error", "Failed to submit return request. Please try again.");
+    }
+  };
+
+  const handleReturnAccept = async (transactionUid) => {
+    try {
+      await fetch(`${API_BASE_URL}/api/v1/transactions`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transaction_uid: transactionUid,
+          transaction_return_status: "accepted",
+        }),
+      });
+      setReturnStatuses((prev) => ({ ...prev, [transactionUid]: "accepted" }));
+      await AsyncStorage.setItem(`return_status_${transactionUid}`, "accepted");
+      setShowReturnNoteViewModal(false);
+    } catch (error) {
+      console.error("Error accepting return:", error);
+      Alert.alert("Error", "Failed to accept return. Please try again.");
+    }
+  };
+
+  const handleReturnDecline = async (transactionUid) => {
+    try {
+      await fetch(`${API_BASE_URL}/api/v1/transactions`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transaction_uid: transactionUid,
+          transaction_return_status: "declined",
+        }),
+      });
+      setReturnStatuses((prev) => ({ ...prev, [transactionUid]: "declined" }));
+      await AsyncStorage.setItem(`return_status_${transactionUid}`, "declined");
+      setShowReturnNoteViewModal(false);
+    } catch (error) {
+      console.error("Error declining return:", error);
+      Alert.alert("Error", "Failed to decline return. Please try again.");
     }
   };
 
@@ -181,6 +310,43 @@ export default function AccountScreen({ navigation }) {
       }
     } catch (e) {
       console.error("Failed to load auto-paid IDs:", e);
+    }
+  };
+
+  const loadReturnRequests = async () => {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const returnKeys = keys.filter((k) => k.startsWith("return_request_"));
+      console.log("=== STORED RETURN KEYS ===", returnKeys);
+      const loaded = {};
+      for (const key of returnKeys) {
+        const uid = key.replace("return_request_", "");
+        const val = await AsyncStorage.getItem(key);
+        //loaded[uid] = val ? JSON.parse(val) : { items: [], notes: [] };
+        if (val) {
+          loaded[uid] = JSON.parse(val);
+        }
+        // skip entirely if no stored value — don't create empty entries
+      }
+      setReturnRequests(loaded);
+    } catch (e) {
+      console.error("Failed to load return requests:", e);
+    }
+  };
+
+  const loadReturnStatuses = async () => {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const statusKeys = keys.filter((k) => k.startsWith("return_status_"));
+      const loaded = {};
+      for (const key of statusKeys) {
+        const uid = key.replace("return_status_", "");
+        const val = await AsyncStorage.getItem(key);
+        loaded[uid] = val || "";
+      }
+      setReturnStatuses(loaded);
+    } catch (e) {
+      console.error("Failed to load return statuses:", e);
     }
   };
 
@@ -618,6 +784,9 @@ export default function AccountScreen({ navigation }) {
               bounty_paid: bounty,
               net_earning: netEarning,
               business_name: item.business_name,
+              transaction_return_requested: item.transaction_return_requested || 0,
+              transaction_return_note: item.transaction_return_note || "",
+              transaction_return_status: item.transaction_return_status || "",
             };
           }
         });
@@ -631,6 +800,22 @@ export default function AccountScreen({ navigation }) {
 
         // console.log(`Total business transactions found: ${filteredTransactions.length}`);
         // console.log("Sample transaction with bounty:", filteredTransactions[0]);
+
+        // Pre-fetch receipt items for all transactions
+        const receiptCache = {};
+        await Promise.all(filteredTransactions.map(async (t) => {
+          try {
+            const r = await fetch(`${TRANSACTION_RECEIPT_ENDPOINT}/${t.transaction_profile_id}/${t.transaction_uid}`, {
+              method: "GET",
+              headers: { "Content-Type": "application/json" },
+            });
+            if (!r.ok) return;
+            const data = await r.json();
+            receiptCache[t.transaction_uid] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+          } catch { /* skip */ }
+        }));
+        setBusinessReceiptCache(receiptCache);
+
         setBusinessTransactionData(filteredTransactions);
       }
     } catch (error) {
@@ -699,11 +884,15 @@ export default function AccountScreen({ navigation }) {
       setBusinessBountyLoading(false);
     }
   };
+  
 
   useFocusEffect(
+    
     useCallback(() => {
       checkAuth();
       loadAutoPaidIds();
+      loadReturnRequests();
+      loadReturnStatuses();
       refreshBountyData();
       refreshTransactionData();
       refreshExpertiseData();
@@ -1464,7 +1653,7 @@ export default function AccountScreen({ navigation }) {
                                 <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Received"}</Text>
                               )}
                             </View>
-                            <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
+                              <Text style={styles.transactionAmount}>${parseFloat(transaction.seller_total || transaction.transaction_total || 0).toFixed(2)}</Text>
                           </View>
                         );
                       })}
@@ -1527,10 +1716,16 @@ export default function AccountScreen({ navigation }) {
                             return `${month}/${day}`;
                           };
                           const paidLabel =
-                            item.in_escrow === 1 && (new Date() - new Date(item.transaction_datetime)) / (1000 * 60 * 60 * 24) >= 30 ? "Paid" : item.in_escrow === 1 ? "Pending" : "Paid";
+                            item.in_escrow === 1 && (new Date() - new Date(item.transaction_datetime)) / (1000 * 60 * 60 * 24) >= 30
+                              ? "Paid"
+                              : item.in_escrow === 1
+                                ? "Pending"
+                                : "Paid";
                           return (
                             <View key={item.tb_uid || item.ti_transaction_id || index} style={styles.transactionRow}>
-                              {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionId}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text>}
+                              {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && (
+                                <Text style={styles.transactionId}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text>
+                              )}
                               <Text style={styles.transactionDate}>{formatDate(item.transaction_datetime)}</Text>
                               <Text style={styles.transactionBusiness} numberOfLines={4}>
                                 {item.purchaser_name || item.transaction_profile_id || "N/A"}
@@ -1646,27 +1841,50 @@ export default function AccountScreen({ navigation }) {
                         const isExpanded = expandedTransactionId === transaction.transaction_uid;
 
                         // Get services for this transaction from businessBountyData
-                        const transactionServices = businessBountyData?.data?.filter((item) => item.transaction_uid === transaction.transaction_uid) || [];
+                        //const transactionServices = businessBountyData?.data?.filter((item) => item.transaction_uid === transaction.transaction_uid) || [];
+
+                        const transactionServices = businessReceiptCache[transaction.transaction_uid] || 
+                          businessBountyData?.data?.filter((item) => item.transaction_uid === transaction.transaction_uid) || [];
 
                         return (
                           <View key={transaction.transaction_uid || i}>
                             {/* Main Transaction Row */}
                             <TouchableOpacity
-                              style={styles.businessTransactionRow}
+                              style={[
+                                styles.businessTransactionRow,
+                                (transaction.transaction_return_requested === 1 || 
+                                  (returnRequests[transaction.transaction_uid]?.items?.length > 0)) &&
+                                returnStatuses[transaction.transaction_uid] !== "accepted" &&
+                                transaction.transaction_return_status !== "accepted" && {
+                                  backgroundColor: "#FDECEA",
+                                  borderLeftWidth: 4,
+                                  borderLeftColor: "#b35454",
+                                }
+                              ]}
                               onPress={() => {
                                 setExpandedTransactionId(isExpanded ? null : transaction.transaction_uid);
                               }}
                               activeOpacity={0.7}
                             >
+                              <Text style={styles.businessTransactionCell}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
                               <Text style={styles.businessTransactionCell}>
                                 {transaction.transaction_uid || "N/A"} {isExpanded ? "▲" : "▼"}
                               </Text>
-                              <Text style={styles.businessTransactionCell}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                              
                               <Text style={styles.businessTransactionCell}>{transaction.transaction_profile_id?.substring(0, 10) || "N/A"}</Text>
                               <Text style={styles.businessTransactionCell}>${transaction.transaction_total.toFixed(2)}</Text>
                               <Text style={styles.businessTransactionCell}>${transaction.bounty_paid.toFixed(2)}</Text>
-                              <Text style={styles.businessTransactionCell}>${transaction.transaction_taxes.toFixed(2)}</Text>
-                              <Text style={styles.businessTransactionCell}>${transaction.net_earning.toFixed(2)}</Text>
+                              <Text style={[styles.businessTransactionCell, {
+                                  color: (returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted") ? "#B71C1C" : "#333"
+                                }]}>
+                                {(returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted")
+                                  ? `-$${transaction.transaction_taxes.toFixed(2)}`
+                                  : `$${transaction.transaction_taxes.toFixed(2)}`
+                                }
+                              </Text>
+                              <Text style={[styles.businessTransactionCell, { width: 55, flex: 0, textAlign: "right" }]}>
+                                ${transaction.net_earning.toFixed(2)}
+                              </Text>
                             </TouchableOpacity>
 
                             {/* Expanded Services Details */}
@@ -1686,18 +1904,67 @@ export default function AccountScreen({ navigation }) {
                                     {/* Services Rows */}
                                     {transactionServices.map((service, idx) => (
                                       <View key={idx} style={styles.servicesRow}>
-                                        <Text style={styles.servicesCell}>{service.bs_uid || "N/A"}</Text>
+                                        <Text style={styles.servicesCell}>{service.ti_bs_id || service.bs_uid || "N/A"}</Text>
                                         <Text style={styles.servicesCell}>{service.bs_service_name || "N/A"}</Text>
-                                        <Text style={styles.servicesCell}>${parseFloat(service.bs_cost || 0).toFixed(2)}</Text>
-                                        <Text style={styles.servicesCell}>${parseFloat(service.bs_bounty || 0).toFixed(2)}</Text>
+                                        <Text style={styles.servicesCell}>${parseFloat(service.ti_bs_cost || service.bs_cost || 0).toFixed(2)}</Text>
                                         <Text style={styles.servicesCell}>{service.ti_bs_qty || 0}</Text>
-                                        <Text style={styles.servicesCell}>${parseFloat(service.bounty_paid || 0).toFixed(2)}</Text>
                                       </View>
                                     ))}
                                   </>
                                 ) : (
                                   <Text style={styles.noServicesText}>No services data available</Text>
                                 )}
+                                {/* Return request indicator */}
+                                {(transaction.transaction_return_requested === 1 || 
+                                  (returnRequests[transaction.transaction_uid]?.items?.length > 0)) && (
+                                  <TouchableOpacity
+                                    style={{
+                                      marginTop: 8,
+                                      padding: 8,
+                                      backgroundColor: "#FDECEA",
+                                      borderRadius: 6,
+                                      borderWidth: 1,
+                                      borderColor: "#B71C1C",
+                                      flexDirection: "row",
+                                      alignItems: "center",
+                                    }}
+                                     onPress={() => {
+                                        // Show all notes, not just the backend one
+                                        const localNotes = returnRequests[transaction.transaction_uid]?.notes || [];
+                                        const noteText = localNotes.length > 0
+                                          ? localNotes.map(n => `[${new Date(n.date).toLocaleDateString()}]\n${n.note}`).join("\n\n---\n\n")
+                                          : transaction.transaction_return_note || "No note provided.";
+                                        setViewingReturnNote(noteText);
+                                        setViewingReturnTransactionUid(transaction.transaction_uid);
+                                        setShowReturnNoteViewModal(true);
+                                      }}
+                                    >
+                                    <Ionicons name="return-down-back-outline" size={14} color="#B71C1C" style={{ marginRight: 6 }} />
+                                    <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>Return Requested by Customer — Tap to view details</Text>
+                                  </TouchableOpacity>
+                                )}
+                                {(returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted") && (
+                                <View style={{
+                                  flexDirection: "row",
+                                  paddingVertical: 8,
+                                  paddingHorizontal: 4,
+                                  backgroundColor: "#FDECEA",
+                                  borderLeftWidth: 4,
+                                  borderLeftColor: "#B71C1C",
+                                  marginTop: 4,
+                                  borderRadius: 4,
+                                }}>
+                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>RETURN</Text>
+                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>Refund</Text>
+                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
+                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
+                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
+                                  <Text style={{ width: 55, flex: 0, fontSize: 11, color: "#B71C1C", textAlign: "right" }}>
+                                    -${transaction.transaction_taxes.toFixed(2)}
+                                  </Text>
+                                </View>
+                              )}
                               </View>
                             )}
                           </View>
@@ -1722,14 +1989,14 @@ export default function AccountScreen({ navigation }) {
       <Modal animationType='fade' transparent={true} visible={showReceiptModal} onRequestClose={() => setShowReceiptModal(false)}>
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiptModalContent, darkMode && styles.darkModalContent]}>
-            <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle]}>Transaction Receipt</Text>
+            <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle, { textAlign: "center" }]}>Transaction Receipt</Text>
             {receiptLoading ? (
               <ActivityIndicator size='large' color='#18884A' style={{ marginVertical: 24 }} />
             ) : receiptData.length > 0 ? (
               <ScrollView style={styles.receiptScrollView} horizontal>
                 <View>
                   <View style={styles.receiptTableHeader}>
-                    <Text style={styles.receiptHeaderCell}>Item Name </Text>
+                    <Text style={styles.receiptHeaderCell}>Item Name</Text>
                     <Text style={styles.receiptHeaderCell}>Qty</Text>
                     <Text style={styles.receiptHeaderCell}>Cost</Text>
                   </View>
@@ -1745,8 +2012,280 @@ export default function AccountScreen({ navigation }) {
             ) : (
               <Text style={[styles.noDataText, { marginVertical: 24 }]}>No receipt data available.</Text>
             )}
-            <TouchableOpacity style={[styles.receiptCloseButton, darkMode && styles.darkCancelButton]} onPress={() => setShowReceiptModal(false)}>
+
+            {/* Return requested confirmation message */}
+            {(returnRequests[receiptTransaction?.transaction_uid]?.requested || receiptTransaction?.transaction_return_requested === 1) && (
+              <Text style={{ color: "#B71C1C", textAlign: "center", marginTop: 12, fontWeight: "600", fontSize: 14 }}>
+                ✓ Return has been requested
+              </Text>
+            )}
+
+          
+            {(() => {
+              const uid = receiptTransaction?.transaction_uid;
+              const storedItems = returnRequests[uid]?.items || [];
+              const totalItems = receiptData.length;
+
+              // Only count indices that are actually valid for this receipt
+              const validIndices = Array.from({ length: totalItems }, (_, i) => String(i));
+              const returnedValidIndices = validIndices.filter(id => storedItems.includes(id));
+
+              // Must have receipt items AND every valid index must be returned
+              const allItemsReturned = totalItems > 0 && 
+                storedItems.length > 0 &&
+                returnedValidIndices.length >= totalItems;
+
+              return (
+                <TouchableOpacity
+                  style={[
+                    styles.receiptCloseButton,
+                    { borderColor: "#B71C1C", marginTop: 12 },
+                    allItemsReturned && { opacity: 0.4 },
+                  ]}
+                  disabled={allItemsReturned}
+                  onPress={() => {
+                    if (!allItemsReturned) {
+                      setReturnModalReceiptData(receiptData);
+                      setShowReceiptModal(false);
+                      setTimeout(() => setShowReturnNoteModal(true), 300);
+                    }
+                  }}
+                >
+                  <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>
+                    {allItemsReturned ? "All Items Returned" : "Request Return"}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })()}
+
+            {/* Request Return button */}
+            {/* <TouchableOpacity
+              style={[
+                styles.receiptCloseButton,
+                { borderColor: "#B71C1C", marginTop: 12 },
+                returnRequests[receiptTransaction?.transaction_uid] && { opacity: 0.4 },
+              ]}
+              onPress={() => {
+                if (!returnRequests[receiptTransaction?.transaction_uid]) {
+                  handleReturnRequest(receiptTransaction);
+                }
+              }}
+              disabled={!!(returnRequests[receiptTransaction?.transaction_uid] || receiptTransaction?.transaction_return_requested === 1)}
+            >
+              <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>
+                {returnRequests[receiptTransaction?.transaction_uid] ? "Return Requested" : "Request Return"}
+              </Text>
+            </TouchableOpacity> */}
+
+            <TouchableOpacity
+              style={[styles.receiptCloseButton, darkMode && styles.darkCancelButton]}
+              onPress={() => setShowReceiptModal(false)}
+            >
               <Text style={[styles.receiptCloseButtonText, darkMode && styles.darkCancelButtonText]}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Return Note Input Modal */}
+      <Modal animationType="fade" transparent={true} visible={showReturnNoteModal} onRequestClose={() => setShowReturnNoteModal(false)}>
+        <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
+          <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent, { maxHeight: "80%" }]}>
+            <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>
+              Request Return
+            </Text>
+
+            {/* Item selection */}
+            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>
+              Select item(s) to return:
+            </Text>
+            <ScrollView style={{ maxHeight: 160, marginBottom: 12 }}>
+              {returnModalReceiptData.map((item, index) => {
+                const itemId = String(index);
+                const isSelected = selectedReturnItems.includes(itemId);
+                const alreadyReturned = (returnRequests[receiptTransaction?.transaction_uid]?.items || []).includes(itemId);
+                return (
+                  <TouchableOpacity
+                    key={itemId}
+                    disabled={alreadyReturned}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingVertical: 8,
+                      paddingHorizontal: 4,
+                      borderBottomWidth: 1,
+                      borderBottomColor: darkMode ? "#444" : "#eee",
+                      opacity: alreadyReturned ? 0.4 : 1,
+                    }}
+                    onPress={() => {
+                      if (!alreadyReturned) {
+                        setSelectedReturnItems(prev =>
+                          isSelected ? prev.filter(id => id !== itemId) : [...prev, itemId]
+                        );
+                      }
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={isSelected ? "checkbox" : "square-outline"}
+                      size={18}
+                      color={isSelected ? "#B71C1C" : "#555"}
+                      style={{ marginRight: 8 }}
+                    />
+                    <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", flex: 1 }}>
+                      {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {item.ti_bs_qty || 1}
+                    </Text>
+                    {alreadyReturned && (
+                      <Text style={{ fontSize: 11, color: "#B71C1C", marginLeft: 4 }}>Already returned</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Note input */}
+            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>
+              Reason for return:
+            </Text>
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: "#ddd",
+                borderRadius: 8,
+                padding: 12,
+                fontSize: 14,
+                minHeight: 80,
+                textAlignVertical: "top",
+                backgroundColor: darkMode ? "#3a3a3a" : "#f9f9f9",
+                color: darkMode ? "#fff" : "#333",
+                marginBottom: 16,
+              }}
+              placeholder="Enter return reason..."
+              placeholderTextColor={darkMode ? "#888" : "#aaa"}
+              multiline
+              value={returnNote}
+              onChangeText={setReturnNote}
+            />
+
+            {selectedReturnItems.length === 0 && (
+              <Text style={{ color: "#B71C1C", fontSize: 12, marginBottom: 8, textAlign: "center" }}>
+                Please select at least one item to return.
+              </Text>
+            )}
+
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <TouchableOpacity
+                style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
+                onPress={() => {
+                  setShowReturnNoteModal(false);
+                  setReturnNote("");
+                  setSelectedReturnItems([]);
+                }}
+              >
+                <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.receiveItemModalButton, { backgroundColor: selectedReturnItems.length === 0 ? "#ccc" : "#B71C1C" }]}
+                disabled={selectedReturnItems.length === 0}
+                onPress={async () => {
+                  const selectedNames = returnModalReceiptData
+                    .filter((item, index) => selectedReturnItems.includes(String(index)))
+                    .map(item => item.bs_service_name || "Item")
+                    .join(", ");
+                  const fullNote = `Items: ${selectedNames}\n\nReason: ${returnNote}`;
+                  await handleReturnRequest(receiptTransaction, fullNote);
+                  setShowReturnNoteModal(false);
+                  setReturnNote("");
+                  setSelectedReturnItems([]);
+                }}
+              >
+                <Text style={styles.receiveItemModalButtonText}>Submit</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Return Note Modal */}
+      <Modal animationType="fade" transparent={true} visible={showReturnNoteViewModal} onRequestClose={() => setShowReturnNoteViewModal(false)}>
+        <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
+          <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent, { maxHeight: "85%" }]}>
+            <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>
+              Return Requests
+            </Text>
+
+            <ScrollView style={{ maxHeight: 400 }}>
+              {/* Local return requests (most accurate) */}
+              {(returnRequests[viewingReturnTransactionUid]?.notes?.length > 0
+                ? returnRequests[viewingReturnTransactionUid].notes
+                : [{ note: viewingReturnNote, date: null, items: [] }]
+              ).map((entry, idx) => (
+                <View key={idx} style={{
+                  borderWidth: 1,
+                  borderColor: "#B71C1C",
+                  borderRadius: 8,
+                  padding: 12,
+                  marginBottom: 12,
+                  backgroundColor: darkMode ? "#3a3a3a" : "#fff5f5",
+                }}>
+                  {entry.date && (
+                    <Text style={{ fontSize: 11, color: "#888", marginBottom: 6 }}>
+                      {new Date(entry.date).toLocaleDateString()}
+                    </Text>
+                  )}
+                  <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", lineHeight: 20, marginBottom: 8 }}>
+                    {entry.note || "No reason provided."}
+                  </Text>
+
+                  {/* Per-return Accept/Decline */}
+                  {returnStatuses[`${viewingReturnTransactionUid}_${idx}`] ? (
+                    <Text style={{
+                      fontWeight: "600",
+                      fontSize: 13,
+                      color: returnStatuses[`${viewingReturnTransactionUid}_${idx}`] === "accepted" ? "#18884A" : "#B71C1C"
+                    }}>
+                      {returnStatuses[`${viewingReturnTransactionUid}_${idx}`] === "accepted" ? "✓ Accepted" : "✗ Declined"}
+                    </Text>
+                  ) : (
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <TouchableOpacity
+                        style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", backgroundColor: "#18884A" }}
+                        onPress={async () => {
+                          await handleReturnAccept(viewingReturnTransactionUid);
+                          setReturnStatuses(prev => ({ ...prev, [`${viewingReturnTransactionUid}_${idx}`]: "accepted" }));
+                          await AsyncStorage.setItem(`return_status_${viewingReturnTransactionUid}_${idx}`, "accepted");
+                        }}
+                      >
+                        <Text style={{ color: "#fff", fontWeight: "bold" }}>Accept</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", backgroundColor: "#B71C1C" }}
+                        onPress={async () => {
+                          await handleReturnDecline(viewingReturnTransactionUid);
+                          setReturnStatuses(prev => ({ 
+                            ...prev, 
+                            [`${viewingReturnTransactionUid}_${idx}`]: "declined",
+                            [viewingReturnTransactionUid]: "declined",
+                          }));
+                          await AsyncStorage.setItem(`return_status_${viewingReturnTransactionUid}_${idx}`, "declined");
+                          await AsyncStorage.setItem(`return_status_${viewingReturnTransactionUid}`, "declined");
+                        }}
+                      >
+                        <Text style={{ color: "#fff", fontWeight: "bold" }}>Decline</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.receiptCloseButton, { borderColor: "#B71C1C" }]}
+              onPress={() => setShowReturnNoteViewModal(false)}
+            >
+              <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
