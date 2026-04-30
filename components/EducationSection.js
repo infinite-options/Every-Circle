@@ -1,7 +1,11 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from "react-native";
 
-const EducationSection = ({ education, setEducation, toggleVisibility, isPublic, handleDelete }) => {
+const EducationSection = ({ education, setEducation, toggleVisibility, isPublic, handleDelete, onInputFocus }) => {
+  // Stores each rendered card's ref by index so parent can scroll to the new one.
+  const cardRefs = useRef({});
+  // Tracks which index was just added via "+".
+  const pendingNewIndexRef = useRef(null);
   // Helper function to format date input
   const formatDateInput = (text) => {
     // If the user manually entered a slash after 2 digits, preserve it
@@ -53,9 +57,23 @@ const EducationSection = ({ education, setEducation, toggleVisibility, isPublic,
   };
 
   const addEducation = () => {
+    // Mark the next card index before state update, then notify parent after render.
+    pendingNewIndexRef.current = education.length;
     const newEntry = { school: "", degree: "", startDate: "", endDate: "", isPublic: true };
     setEducation([...education, newEntry]);
   };
+
+  useEffect(() => {
+    // After add + render, pass the new card ref up so parent can auto-scroll.
+    const index = pendingNewIndexRef.current;
+    if (index === null || index === undefined) return;
+    const newCardRef = cardRefs.current[index];
+    if (!newCardRef) return;
+    setTimeout(() => {
+      onInputFocus?.(newCardRef);
+      pendingNewIndexRef.current = null;
+    }, 100);
+  }, [education.length, onInputFocus]);
 
   const deleteEducation = (index) => {
     handleDelete(index);
@@ -98,7 +116,14 @@ const EducationSection = ({ education, setEducation, toggleVisibility, isPublic,
       </View>
 
       {education.map((item, index) => (
-        <View key={index} style={[styles.card, index > 0 && styles.cardSpacing]}>
+        <View
+          key={index}
+          ref={(ref) => {
+            // Capture each card ref for new-card scroll targeting.
+            if (ref) cardRefs.current[index] = ref;
+          }}
+          style={[styles.card, index > 0 && styles.cardSpacing]}
+        >
           <View style={styles.rowHeader}>
             <Text style={styles.label}>Entry #{index + 1}</Text>
 

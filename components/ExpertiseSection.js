@@ -1,8 +1,12 @@
-import React, { useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
 
 const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic, handleDelete, onInputFocus }) => {
+  // Stores each rendered card's ref by index so parent can scroll to the new one.
+  const cardRefs = useRef({});
+  // Tracks which index was just added via "+".
+  const pendingNewIndexRef = useRef(null);
   const costInputRefs = useRef({});
   // Cost unit options for dropdown
   const costUnitOptions = [
@@ -17,6 +21,8 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
   ];
 
   const addExpertise = () => {
+    // Mark the next card index before state update, then notify parent after render.
+    pendingNewIndexRef.current = expertise.length;
     const newEntry = {
       name: "",
       description: "",
@@ -27,6 +33,18 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
     };
     setExpertise([...expertise, newEntry]);
   };
+
+  useEffect(() => {
+    // After add + render, pass the new card ref up so parent can auto-scroll.
+    const index = pendingNewIndexRef.current;
+    if (index === null || index === undefined) return;
+    const newCardRef = cardRefs.current[index];
+    if (!newCardRef) return;
+    setTimeout(() => {
+      onInputFocus?.(newCardRef);
+      pendingNewIndexRef.current = null;
+    }, 100);
+  }, [expertise.length, onInputFocus]);
 
   const deleteExpertise = (index) => {
     handleDelete(index);
@@ -158,7 +176,14 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
       </View>
 
       {expertise.map((item, index) => (
-        <View key={index} style={[styles.card, index > 0 && styles.cardSpacing]}>
+        <View
+          key={index}
+          ref={(ref) => {
+            // Capture each card ref for new-card scroll targeting.
+            if (ref) cardRefs.current[index] = ref;
+          }}
+          style={[styles.card, index > 0 && styles.cardSpacing]}
+        >
           <View style={styles.rowHeader}>
             <Text style={styles.label}>Offering #{index + 1}</Text>
             <View style={styles.toggleContainer}>

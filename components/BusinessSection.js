@@ -1,11 +1,15 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Modal, ScrollView, ActivityIndicator } from "react-native";
 import { BUSINESSES_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import MiniCard from "./MiniCard";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
-const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic, navigation, handleDelete, preFetchedBusinessesData }) => {
+const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic, navigation, handleDelete, preFetchedBusinessesData, onInputFocus }) => {
   const { darkMode } = useDarkMode();
+  // Stores each rendered card's ref by index so parent can scroll to the new one.
+  const cardRefs = useRef({});
+  // Tracks which index was just added via "+".
+  const pendingNewIndexRef = useRef(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [businessList, setBusinessList] = useState([]);
   const [activeBusinessIndex, setActiveBusinessIndex] = useState(null);
@@ -23,10 +27,24 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
       navigation.navigate("BusinessSetup");
     } else {
       // Fallback: add entry if navigation not provided
+      // Mark the next card index before state update, then notify parent after render.
+      pendingNewIndexRef.current = businesses.length;
       const newEntry = { name: "", role: "", isPublic: false, isNew: false };
       setBusinesses([...businesses, newEntry]);
     }
   };
+
+  useEffect(() => {
+    // After add + render, pass the new card ref up so parent can auto-scroll.
+    const index = pendingNewIndexRef.current;
+    if (index === null || index === undefined) return;
+    const newCardRef = cardRefs.current[index];
+    if (!newCardRef) return;
+    setTimeout(() => {
+      onInputFocus?.(newCardRef);
+      pendingNewIndexRef.current = null;
+    }, 100);
+  }, [businesses.length, onInputFocus]);
 
   const fetchBusinesses = async (index) => {
     try {
@@ -292,7 +310,14 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
           .map((item, index) => {
             const actualIndex = businesses.indexOf(item);
             return (
-              <View key={index} style={[styles.card, darkMode && styles.darkCard]}>
+              <View
+                key={index}
+                ref={(ref) => {
+                  // Capture each card ref for new-card scroll targeting.
+                  if (ref) cardRefs.current[actualIndex] = ref;
+                }}
+                style={[styles.card, darkMode && styles.darkCard]}
+              >
                 <View style={styles.rowHeader}>
                   <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{actualIndex + 1}</Text>
                   <View style={styles.toggleContainer}>

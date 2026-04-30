@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
 
@@ -103,6 +103,10 @@ const combineDateTime = (date, time) => {
 };
 
 const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus }) => {
+  // Stores each rendered card's ref by index so parent can scroll to the new one.
+  const cardRefs = useRef({});
+  // Tracks which index was just added via "+".
+  const pendingNewIndexRef = useRef(null);
   const bountyInputRefs = useRef({});
   const [activePicker, setActivePicker] = useState(null); // { index, field: 'start'|'end', mode: 'date'|'time' }
   // Bounty unit options for dropdown
@@ -118,6 +122,8 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
   ];
 
   const addWish = () => {
+    // Mark the next card index before state update, then notify parent after render.
+    pendingNewIndexRef.current = wishes.length;
     const newEntry = {
       helpNeeds: "",
       details: "",
@@ -131,6 +137,18 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     };
     setWishes([...wishes, newEntry]);
   };
+
+  useEffect(() => {
+    // After add + render, pass the new card ref up so parent can auto-scroll.
+    const index = pendingNewIndexRef.current;
+    if (index === null || index === undefined) return;
+    const newCardRef = cardRefs.current[index];
+    if (!newCardRef) return;
+    setTimeout(() => {
+      onInputFocus?.(newCardRef);
+      pendingNewIndexRef.current = null;
+    }, 100);
+  }, [wishes.length, onInputFocus]);
 
   const deleteWish = (index) => {
     handleDelete(index);
@@ -408,7 +426,14 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       </View>
 
       {wishes.map((item, index) => (
-        <View key={index} style={[styles.card, index > 0 && styles.cardSpacing]}>
+        <View
+          key={index}
+          ref={(ref) => {
+            // Capture each card ref for new-card scroll targeting.
+            if (ref) cardRefs.current[index] = ref;
+          }}
+          style={[styles.card, index > 0 && styles.cardSpacing]}
+        >
           <View style={styles.rowHeader}>
             <Text style={styles.label}>Seeking #{index + 1}</Text>
             <View style={styles.toggleContainer}>

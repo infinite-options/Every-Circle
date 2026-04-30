@@ -26,6 +26,10 @@ const EditProfileScreen = ({ route, navigation }) => {
   const { user, profile_uid: routeProfileUID, businessesData: preFetchedBusinessesData } = route.params || {};
   const [profileUID, setProfileUID] = useState(routeProfileUID || user?.profile_uid || "");
   const scrollViewRef = useRef(null);
+  // Tracks current ScrollView Y offset to compute relative scroll targets.
+  const scrollOffsetYRef = useRef(0);
+  // Tracks visible viewport height of ScrollView to center new cards.
+  const scrollViewportHeightRef = useRef(0);
 
   // Always initialize profileImageUri with the current profile image from the user object
   const initialProfileImage = user?.profile_personal_image || user?.profileImage || "";
@@ -815,6 +819,41 @@ const EditProfileScreen = ({ route, navigation }) => {
     }, 200);
   };
 
+  // Center a newly added section card if it appears below current viewport.
+  const scrollNewCardToMiddleIfNeeded = (targetRef) => {
+    // targetRef is the newly added card view passed up from child sections.
+    if (!targetRef || !scrollViewRef.current) return;
+
+    setTimeout(() => {
+      try {
+        const targetHandle = findNodeHandle(targetRef);
+        const scrollHandle = findNodeHandle(scrollViewRef.current);
+        if (!targetHandle || !scrollHandle) return;
+
+        UIManager.measureLayout(
+          targetHandle,
+          scrollHandle,
+          () => {},
+          (x, y, width, height) => {
+            // y/height are relative to current viewport origin (current scroll position).
+            const viewportHeight = scrollViewportHeightRef.current;
+            const currentScrollY = scrollOffsetYRef.current;
+            if (!viewportHeight) return;
+
+            // If card is already in viewport, do not scroll.
+            const elementBottomInViewport = y + height;
+            if (elementBottomInViewport <= viewportHeight) return;
+
+            // Scroll just enough to place the new card near viewport center.
+            const centerOffset = viewportHeight / 2 - height / 2;
+            const targetScrollY = Math.max(0, currentScrollY + (y - centerOffset));
+            scrollViewRef.current?.scrollTo({ y: targetScrollY, animated: true });
+          },
+        );
+      } catch (error) {}
+    }, 100);
+  };
+
   // Handle keyboard show/hide to scroll to focused input
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener("keyboardDidShow", (e) => {
@@ -868,6 +907,15 @@ const EditProfileScreen = ({ route, navigation }) => {
       />
       <ScrollView
         ref={scrollViewRef}
+        onLayout={(e) => {
+          // Keep viewport height updated for center calculations.
+          scrollViewportHeightRef.current = e.nativeEvent.layout.height;
+        }}
+        onScroll={(e) => {
+          // Keep current scroll position updated for center calculations.
+          scrollOffsetYRef.current = e.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
         style={{ flex: 1, padding: 20, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}
         contentContainerStyle={{ paddingBottom: 100 }}
         keyboardShouldPersistTaps='handled'
@@ -956,8 +1004,8 @@ const EditProfileScreen = ({ route, navigation }) => {
           isPublic={formData.expertiseIsPublic}
           handleDelete={handleDeleteExpertise}
           onInputFocus={(inputRef) => {
-            focusedInputRef.current = inputRef;
-            scrollToFocusedInput();
+            // Called by child after "+" render with new card ref.
+            scrollNewCardToMiddleIfNeeded(inputRef);
           }}
         />
 
@@ -975,8 +1023,8 @@ const EditProfileScreen = ({ route, navigation }) => {
           isPublic={formData.wishesIsPublic}
           handleDelete={handleDeleteWish}
           onInputFocus={(inputRef) => {
-            focusedInputRef.current = inputRef;
-            scrollToFocusedInput();
+            // Called by child after "+" render with new card ref.
+            scrollNewCardToMiddleIfNeeded(inputRef);
           }}
         />
 
@@ -993,6 +1041,10 @@ const EditProfileScreen = ({ route, navigation }) => {
           toggleVisibility={() => handleToggleVisibility("experienceIsPublic")}
           isPublic={formData.experienceIsPublic}
           handleDelete={handleDeleteExperience}
+          onInputFocus={(inputRef) => {
+            // Called by child after "+" render with new card ref.
+            scrollNewCardToMiddleIfNeeded(inputRef);
+          }}
         />
 
         {/* EDUCATION Section */}
@@ -1008,6 +1060,10 @@ const EditProfileScreen = ({ route, navigation }) => {
           toggleVisibility={() => handleToggleVisibility("educationIsPublic")}
           isPublic={formData.educationIsPublic}
           handleDelete={handleDeleteEducation}
+          onInputFocus={(inputRef) => {
+            // Called by child after "+" render with new card ref.
+            scrollNewCardToMiddleIfNeeded(inputRef);
+          }}
         />
 
         {/* BUSINESSES / ORGANIZATIONS Section */}
@@ -1025,6 +1081,10 @@ const EditProfileScreen = ({ route, navigation }) => {
           handleDelete={handleDeleteBusiness}
           navigation={navigation}
           preFetchedBusinessesData={preFetchedBusinessesData}
+          onInputFocus={(inputRef) => {
+            // Called by child after "+" render with new card ref.
+            scrollNewCardToMiddleIfNeeded(inputRef);
+          }}
         />
 
         <TouchableOpacity

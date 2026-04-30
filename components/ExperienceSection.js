@@ -1,7 +1,11 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from "react-native";
 
-const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPublic, handleDelete }) => {
+const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPublic, handleDelete, onInputFocus }) => {
+  // Stores each rendered card's ref by index so parent can scroll to the new one.
+  const cardRefs = useRef({});
+  // Tracks which index was just added via "+".
+  const pendingNewIndexRef = useRef(null);
   // Helper function to format date input
   const formatDateInput = (text) => {
     // If the user manually entered a slash after 2 digits, preserve it
@@ -53,6 +57,8 @@ const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPubl
   };
 
   const addExperience = () => {
+    // Mark the next card index before state update, then notify parent after render.
+    pendingNewIndexRef.current = experience.length;
     const newEntry = {
       company: "",
       title: "",
@@ -63,6 +69,18 @@ const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPubl
     };
     setExperience([...experience, newEntry]);
   };
+
+  useEffect(() => {
+    // After add + render, pass the new card ref up so parent can auto-scroll.
+    const index = pendingNewIndexRef.current;
+    if (index === null || index === undefined) return;
+    const newCardRef = cardRefs.current[index];
+    if (!newCardRef) return;
+    setTimeout(() => {
+      onInputFocus?.(newCardRef);
+      pendingNewIndexRef.current = null;
+    }, 100);
+  }, [experience.length, onInputFocus]);
 
   const deleteExperience = (index) => {
     handleDelete(index);
@@ -105,7 +123,14 @@ const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPubl
 
       {/* Experience List */}
       {experience.map((item, index) => (
-        <View key={index} style={[styles.experienceCard, index > 0 && styles.cardSpacing]}>
+        <View
+          key={index}
+          ref={(ref) => {
+            // Capture each card ref for new-card scroll targeting.
+            if (ref) cardRefs.current[index] = ref;
+          }}
+          style={[styles.experienceCard, index > 0 && styles.cardSpacing]}
+        >
           <View style={styles.expHeaderRow}>
             <Text style={styles.label}>Experience #{index + 1}</Text>
             {/* Individual public/private toggle */}
