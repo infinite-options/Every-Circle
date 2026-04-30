@@ -1,6 +1,8 @@
 import React, { useMemo } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+
+const DEFAULT_PRODUCT_IMAGE = require("../assets/profile.png");
 
 const parseTags = (raw) => {
   if (raw == null || raw === "") return [];
@@ -11,8 +13,29 @@ const parseTags = (raw) => {
     .filter(Boolean);
 };
 
-const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, darkMode }) => {
+const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, darkMode, businessUid }) => {
   const tags = useMemo(() => parseTags(service.bs_tags), [service.bs_tags]);
+
+  const productImageUri = useMemo(() => {
+    const k = service.bs_image_key;
+    if (!k || String(k).trim() === "") return null;
+    const s = String(k).trim();
+    if (s.startsWith("http://") || s.startsWith("https://")) return s;
+    if (businessUid) return `https://s3-us-west-1.amazonaws.com/every-circle/business_personal/${businessUid}/${s}`;
+    return null;
+  }, [service.bs_image_key, businessUid]);
+
+  const quantityLine = useMemo(() => {
+    const unlimited = service.bs_qty_unlimited === 1 || service.bs_qty_unlimited === "1" || service.bs_qty_unlimited === true;
+    if (unlimited || service.bs_qty_unlimited === undefined || service.bs_qty_unlimited === null || service.bs_qty_unlimited === "") {
+      return "Available quantity: No limit";
+    }
+    const n = service.bs_available_quantity;
+    if (n !== undefined && n !== null && String(n).trim() !== "") {
+      return `Available quantity: ${String(n).trim()}`;
+    }
+    return "Available quantity: Limited";
+  }, [service.bs_qty_unlimited, service.bs_available_quantity]);
 
   const conditionLine = useMemo(() => {
     const c = service.bs_condition_type;
@@ -47,6 +70,11 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
 
   return (
     <TouchableOpacity style={[styles.cardContainer, darkMode && styles.cardContainerDark]} onPress={onPress} activeOpacity={onPress ? 0.7 : 1}>
+      {productImageUri ? (
+        <Image source={{ uri: productImageUri }} style={[styles.productThumb, darkMode && styles.productThumbDark]} resizeMode='cover' />
+      ) : (
+        <Image source={DEFAULT_PRODUCT_IMAGE} style={[styles.productThumb, darkMode && styles.productThumbDark]} resizeMode='cover' />
+      )}
       <View style={styles.header}>
         <Text style={[styles.name, darkMode && styles.nameDark]}>{service.bs_service_name}</Text>
         {showEditButton && onEdit && (
@@ -80,6 +108,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
             </View>
           ) : null}
         </View>
+        <Text style={metaTextStyle}>{quantityLine}</Text>
         {conditionLine ? <Text style={metaTextStyle}>{conditionLine}</Text> : null}
         {shippingLine ? <Text style={metaTextStyle}>{shippingLine}</Text> : null}
         {ccLine ? <Text style={metaTextStyle}>{ccLine}</Text> : null}
@@ -98,6 +127,16 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
 };
 
 const styles = StyleSheet.create({
+  productThumb: {
+    width: "100%",
+    height: 120,
+    borderRadius: 8,
+    marginBottom: 10,
+    backgroundColor: "#eee",
+  },
+  productThumbDark: {
+    backgroundColor: "#3a3a3c",
+  },
   cardContainer: {
     flexDirection: "column",
     padding: 15,

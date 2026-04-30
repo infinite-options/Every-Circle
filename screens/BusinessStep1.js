@@ -13,7 +13,6 @@ const { width } = Dimensions.get("window");
 
 export default function BusinessStep1({ formData, setFormData, navigation }) {
   const { darkMode } = useDarkMode();
-  console.log("BusinessStep1 - darkMode value:", darkMode);
   const [loading, setLoading] = useState(false);
   const googlePlacesRef = useRef();
 
@@ -75,6 +74,7 @@ export default function BusinessStep1({ formData, setFormData, navigation }) {
 
   useEffect(() => {
     console.log("In BusinessStep1");
+    console.log("BusinessStep1 - darkMode value:", darkMode);
     // Don't load saved form data - start fresh for new business
     // const loadSavedForm = async () => {
     //   try {
@@ -224,13 +224,9 @@ export default function BusinessStep1({ formData, setFormData, navigation }) {
               </Text>
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Location (Optional)</Text>
-              <TextInput
-                style={[styles.input, darkMode && styles.darkInput]}
-                value={formData.location || ""}
-                placeholder='Enter location'
-                placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                onChangeText={(text) => updateFormData("location", text)}
-              />
+              <Text style={[styles.businessNameDisplay, darkMode && styles.darkBusinessNameDisplay]} accessibilityRole='text'>
+                {(formData.location || formData.addressLine1 || "").trim() || "No location entered"}
+              </Text>
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Role</Text>
               <Dropdown

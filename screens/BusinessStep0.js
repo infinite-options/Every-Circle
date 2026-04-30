@@ -11,12 +11,14 @@ const { width } = Dimensions.get("window");
 
 export default function BusinessStep0({ formData, setFormData, navigation }) {
   const { darkMode } = useDarkMode();
-  console.log("BusinessStep0 - darkMode value:", darkMode);
+  // console.log("BusinessStep0 - darkMode value:", darkMode);
   const [loading, setLoading] = useState(false);
   const googlePlacesRef = useRef();
 
   useEffect(() => {
     console.log("In BusinessStep0");
+    const apiKey = config.googleMapsApiKey;
+    console.log("BusinessStep0 - Google Maps API Key being used:", apiKey ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}` : "NOT SET");
     // Don't load saved form data - start fresh for new business
     // const loadSavedForm = async () => {
     //   try {
@@ -159,12 +161,6 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Search for Google Maps Business or Organization</Text>
               <View style={{ width: "100%", marginBottom: 20, zIndex: 1000 }}>
-                {(() => {
-                  const apiKey = config.googleMapsApiKey;
-                  console.log("BusinessStep0 - Google Maps API Key being used:", apiKey ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}` : "NOT SET");
-                  console.log("BusinessStep0 - API Key length:", apiKey ? apiKey.length : 0);
-                  return null;
-                })()}
                 <GooglePlacesAutocomplete
                   ref={googlePlacesRef}
                   placeholder='Enter a Business or Organization name'
@@ -247,6 +243,35 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                 accessibilityHint='Enter your street address'
                 aria-label='Street address'
               />
+
+              <View style={{ flexDirection: "row", width: "100%", gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Suite or Unit</Text>
+                  <TextInput
+                    style={[styles.input, darkMode && styles.darkInput]}
+                    value={formData.addressLine2 || ""}
+                    placeholder='Suite, unit, etc.'
+                    placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                    onChangeText={(text) => updateFormData("addressLine2", text)}
+                    accessibilitylabel='Suite or unit'
+                    accessibilityHint='Optional suite or unit number'
+                    aria-label='Suite or unit'
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Location</Text>
+                  <TextInput
+                    style={[styles.input, darkMode && styles.darkInput]}
+                    value={formData.location || ""}
+                    placeholder='Neighborhood, area, or landmark'
+                    placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                    onChangeText={(text) => updateFormData("location", text)}
+                    accessibilitylabel='Location'
+                    accessibilityHint='Optional area or location description'
+                    aria-label='Location'
+                  />
+                </View>
+              </View>
 
               <View style={{ flexDirection: "row", width: "100%", gap: 10 }}>
                 <View style={{ flex: 1 }}>

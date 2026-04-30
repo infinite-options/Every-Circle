@@ -1327,6 +1327,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                   <ProductCard
                     key={idx}
                     service={service}
+                    businessUid={business_uid}
                     showEditButton={isOwner}
                     showOwnerTags={isOwner}
                     darkMode={darkMode}
