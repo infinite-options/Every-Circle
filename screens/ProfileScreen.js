@@ -176,6 +176,16 @@ const ProfileScreen = ({ route, navigation }) => {
   // Allows opening a specific user's profile when navigating from the Network screen
   const { profile_uid: routeProfileUID, returnTo, searchState } = route.params || {};
 
+  /** Forward Google/Apple prefill when routing incomplete profiles to UserInfo (OAuth skips App.js profile fetch). */
+  const getOauthUserInfoNavigateParams = () => {
+    const op = route.params?.oauthPrefill;
+    if (!op) return {};
+    return {
+      ...(op.googleUserInfo ? { googleUserInfo: op.googleUserInfo } : {}),
+      ...(op.appleUserInfo ? { appleUserInfo: op.appleUserInfo } : {}),
+    };
+  };
+
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [profileUID, setProfileUID] = useState("");
@@ -415,6 +425,7 @@ const ProfileScreen = ({ route, navigation }) => {
         // console.log("ProfileScreen - userId:", userId);
         if (userId) {
           try {
+            console.log("ProfileScreen - Profile Endpoint call loadProfile: ", `${ProfileScreenAPI}/${userId}`);
             const response = await fetch(`${ProfileScreenAPI}/${userId}`);
             const apiUser = normalizeUserProfileInfoResponse(await response.json());
 
@@ -425,7 +436,7 @@ const ProfileScreen = ({ route, navigation }) => {
               // Clear any existing profile data but keep user credentials
               await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
               reinitializeUnreadFromOutside().catch(() => {});
-              navigation.navigate("UserInfo");
+              navigation.navigate("UserInfo", getOauthUserInfoNavigateParams());
               return;
             }
 
@@ -451,7 +462,7 @@ const ProfileScreen = ({ route, navigation }) => {
         Alert.alert("Error", "Failed to load profile data. Please log in again.");
       }
       loadProfile();
-    }, [routeProfileUID]), // modified on 11/08 - dependency added
+    }, [routeProfileUID, JSON.stringify(route.params?.oauthPrefill ?? null)]), // oauthPrefill: OAuth → Profile → UserInfo prefill
   );
 
   async function recordProfileView(viewedProfileId, viewerProfileId) {
@@ -487,7 +498,7 @@ const ProfileScreen = ({ route, navigation }) => {
       if (isCurrentUserProfile || profileUID === currentUserUid || profileUID === currentProfileUid) {
         setLoading(false);
         await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
-        navigation.navigate("UserInfo");
+        navigation.navigate("UserInfo", getOauthUserInfoNavigateParams());
         return;
       }
 
@@ -648,6 +659,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
   async function fetchUserData(profileUID) {
     try {
+      console.log("ProfileScreen - Profile Endpoint call fetchUserData: ", `${ProfileScreenAPI}/${profileUID}`);
       const response = await fetch(`${ProfileScreenAPI}/${profileUID}`);
       const apiUser = normalizeUserProfileInfoResponse(await response.json());
       await processProfileApiUser(apiUser, profileUID, response);

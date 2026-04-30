@@ -40,7 +40,7 @@ import config from "./config";
 import { GOOGLE_SOCIAL_AUTH_ENDPOINT, APPLE_AUTH_ENDPOINT, API_BASE_URL } from "./apiConfig";
 import versionData from "./version.json";
 import { DarkModeProvider } from "./contexts/DarkModeContext";
-import { UnreadProvider, reinitializeUnreadFromOutside } from "./contexts/UnreadContext";
+import { UnreadProvider } from "./contexts/UnreadContext";
 import MessageNotificationBanner from "./components/MessageNotificationBanner";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
 import LoginScreen from "./screens/LoginScreen";
@@ -77,7 +77,6 @@ import QRScannerScreen from "./screens/QRScannerScreen";
 import InboxScreen from "./screens/InboxScreen";
 import ChatScreen from "./screens/ChatScreen";
 import AddReviewSearchScreen from "./screens/AddReviewSearchScreen";
-import { persistMyBusinessUidsFromProfile } from "./utils/myBusinessUids";
 import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFromEnv } from "./utils/clearAppAsyncStorage";
 
 const Stack = createNativeStackNavigator();
@@ -98,11 +97,6 @@ const ConnectScreenWrapper = (props) => {
   // Otherwise use the original Connect screen
   return Platform.OS === "web" ? <ConnectWebScreen {...props} /> : <ConnectScreen {...props} />;
 };
-
-/** Persist owned business UIDs from OAuth/profile payloads (shared with UnreadContext via AsyncStorage). */
-async function _storeMyBusinessUids(fullUser) {
-  await persistMyBusinessUidsFromProfile(fullUser);
-}
 
 /** Body for POST `api/v2/AppleAuth/EVERY-CIRCLE` (snake_case keys for the API). */
 function buildAppleAuthRequestBody(userInfo) {
@@ -211,28 +205,11 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
       throw new Error("Apple auth did not return a user id");
     }
     await AsyncStorage.setItem("user_uid", String(userUid));
+    await AsyncStorage.setItem("user_email_id", userEmail || "");
+    await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
 
-    const baseURI = API_BASE_URL;
-    const endpointPath = `/api/v1/userprofileinfo/${userUid}`;
-    const endpoint = baseURI + endpointPath;
-    console.log(`App.js - Apple - profile: ${endpoint}`);
-
-    const profileResponse = await fetch(endpoint);
-    const fullUser = await profileResponse.json();
-    console.log("App.js - Full user (Apple):", JSON.stringify(fullUser, null, 2).slice(0, 2000));
-
-    const is404 = !profileResponse.ok && profileResponse.status === 404;
-    const isProfileNotFound = fullUser.message === "Profile not found for this user";
-    const is404Code = fullUser.code === 404;
-
-    if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
-      console.log("App.js - Profile not found, routing to UserInfo");
-      await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
-      reinitializeUnreadFromOutside().catch(() => {});
-      await AsyncStorage.setItem("user_uid", String(userUid));
-      await AsyncStorage.setItem("user_email_id", userEmail);
-
-      navigation.navigate("UserInfo", {
+    navigation.navigate("Profile", {
+      oauthPrefill: {
         appleUserInfo: {
           email: userEmail,
           firstName: user.name?.split(" ")[0] || userInfo.firstName || "",
@@ -240,21 +217,7 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
           appleId: user.id,
           idToken: idToken,
         },
-      });
-      return;
-    }
-
-    await AsyncStorage.setItem("profile_uid", fullUser.personal_info?.profile_personal_uid || "");
-    await AsyncStorage.setItem("user_email_id", fullUser.user_email || "");
-    await _storeMyBusinessUids(fullUser);
-    reinitializeUnreadFromOutside().catch(() => {});
-
-    navigation.navigate("Profile", {
-      user: {
-        ...fullUser,
-        user_email: userEmail,
       },
-      profile_uid: fullUser.personal_info?.profile_personal_uid || "",
     });
   } catch (err) {
     setError?.(err.message);
@@ -310,22 +273,10 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
 
   await AsyncStorage.setItem("user_uid", String(userUid));
   await AsyncStorage.setItem("user_email_id", userInfo.user.email);
+  await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
 
-  const baseURI = API_BASE_URL;
-  const profileUrl = `${baseURI}/api/v1/userprofileinfo/${userUid}`;
-  const profileResponse = await fetch(profileUrl);
-  const fullUser = await profileResponse.json();
-  console.log("App.js - Profile after Google auth:", profileUrl, JSON.stringify(fullUser, null, 2).slice(0, 2000));
-
-  const is404 = !profileResponse.ok && profileResponse.status === 404;
-  const isProfileNotFound = fullUser.message === "Profile not found for this user";
-  const is404Code = fullUser.code === 404;
-  const noProfile = is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info) || !fullUser.personal_info?.profile_personal_uid;
-
-  if (noProfile) {
-    await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
-    reinitializeUnreadFromOutside().catch(() => {});
-    navigation.navigate("UserInfo", {
+  navigation.navigate("Profile", {
+    oauthPrefill: {
       googleUserInfo: {
         email: userInfo.user.email,
         firstName: userInfo.user.givenName,
@@ -334,20 +285,7 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
         googleId: userInfo.user.id,
         accessToken: googleAuthToken,
       },
-    });
-    return;
-  }
-
-  await AsyncStorage.setItem("profile_uid", fullUser.personal_info.profile_personal_uid);
-  await _storeMyBusinessUids(fullUser);
-  reinitializeUnreadFromOutside().catch(() => {});
-
-  navigation.navigate("Profile", {
-    user: {
-      ...fullUser,
-      user_email: userInfo.user.email,
     },
-    profile_uid: fullUser.personal_info.profile_personal_uid,
   });
 }
 

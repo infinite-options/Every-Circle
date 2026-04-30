@@ -12,11 +12,9 @@ import axios from "axios";
 import Constants from "expo-constants";
 import config from "../config";
 import { Ionicons } from "@expo/vector-icons";
-import { ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
+import { ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
-import { useUnread } from "../contexts/UnreadContext";
-import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 // import SignUpScreen from "./screens/SignUpScreen";
 
 // Helper function to extract the last two digits before .apps.googleusercontent.com
@@ -57,7 +55,6 @@ const getFirstFourDigits = (clientId) => {
 
 // Accept navigation from props
 export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn, onError }) {
-  const { reinitialize } = useUnread();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isValid, setIsValid] = useState(false);
@@ -189,64 +186,13 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
         return;
       }
 
-      // 4. Fetch user profile
-      // console.log("user_uid", user_uid);
-      // console.log("PROFILE_ENDPOINT", PROFILE_ENDPOINT);
-      console.log("LoginScreen - Profile Endpoint call: ", `${USER_PROFILE_INFO_ENDPOINT}/${user_uid}`);
-
-      const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${user_uid}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      // console.log("profileResponse", profileResponse);
-
-      const fullUser = await profileResponse.json();
-      console.log("LoginScreen - user profile info", fullUser);
-
-      // Handle case where profile is not found (404 error)
-      // Check response status, response body message, and code
-      const is404 = !profileResponse.ok && profileResponse.status === 404;
-      const isProfileNotFound = fullUser.message === "Profile not found for this user";
-      const is404Code = fullUser.code === 404;
-
-      if (is404 || isProfileNotFound || (is404Code && isProfileNotFound) || (is404Code && !fullUser.personal_info)) {
-        console.log("LoginScreen - Profile not found for existing user, redirecting to UserInfo");
-
-        // Clear any existing profile data but keep the new user credentials
-        await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
-        console.log("LoginScreen - Cleared profile data from AsyncStorage for incomplete profile case");
-
-        // Store the user_uid so UserInfo screen can use it
-        await AsyncStorage.setItem("user_uid", user_uid);
-        await AsyncStorage.setItem("user_email_id", user_email);
-
-        setShowSpinner(false);
-        // Navigate directly to UserInfo without showing alert (consistent with SignUpScreen)
-        navigation.navigate("UserInfo");
-        return;
-      }
-
-      // Store both user_uid and profile_uid in AsyncStorage
-      await AsyncStorage.setItem("user_uid", user_uid);
-      await AsyncStorage.setItem("user_email_id", user_email);
-      await AsyncStorage.setItem("profile_uid", fullUser.personal_info?.profile_personal_uid || "");
-      await persistMyBusinessUidsFromProfile(fullUser);
-
-      // Subscribe Ably to personal + owned-business chat channels (business UIDs from profile payload above)
-      reinitialize().catch(() => {});
+      // Profile and Ably business channels load in ProfileScreen (single GET /userprofileinfo by user_uid).
+      // Clear stale profile keys from any previous session so we never fetch the wrong profile_uid.
+      await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
 
       console.log("LoginScreen - user_uid", user_uid);
-      // console.log("LoginScreen - User Email", user_email);
 
-      // 5. Navigate to Profile screen
-      navigation.navigate("Profile", {
-        user: {
-          ...fullUser,
-          user_email: user_email,
-        },
-        profile_uid: fullUser.personal_info?.profile_personal_uid || "",
-      });
+      navigation.navigate("Profile");
     } catch (error) {
       console.error("Login error:", error);
       Alert.alert("Error", "Something went wrong. Please try again.");
