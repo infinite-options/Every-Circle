@@ -20,7 +20,10 @@ const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 
 export default function BusinessSetupController({ navigation, route }) {
   const { darkMode } = useDarkMode();
-  console.log("BusinessSetupController - darkMode value:", darkMode);
+
+  useEffect(() => {
+    console.log("BusinessSetupController - darkMode value:", darkMode);
+  }, []);
 
   // Initialize empty form data
   const getInitialFormData = () => ({
@@ -105,7 +108,7 @@ export default function BusinessSetupController({ navigation, route }) {
       };
 
       resetForm();
-    }, [])
+    }, []),
   );
 
   useEffect(() => {
@@ -343,9 +346,7 @@ export default function BusinessSetupController({ navigation, route }) {
           data.append(`business_img_${index}`, fileToAppend);
           if (index === 0) {
             const profileFileName = `business_profile_img.${fileType}`;
-            const profileFile = fileToAppend instanceof File
-              ? new File([fileToAppend], profileFileName, { type: mimeType })
-              : { uri: imageUri, type: mimeType, name: profileFileName };
+            const profileFile = fileToAppend instanceof File ? new File([fileToAppend], profileFileName, { type: mimeType }) : { uri: imageUri, type: mimeType, name: profileFileName };
             data.append("business_profile_img", profileFile);
           }
         }

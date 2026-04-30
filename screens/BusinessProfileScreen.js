@@ -1322,7 +1322,18 @@ export default function BusinessProfileScreen({ route, navigation }) {
                   <Ionicons name={showServices ? "chevron-up" : "chevron-down"} size={20} color='#000' />
                 </View>
               </TouchableOpacity>
-              {showServices && business.business_services.map((service, idx) => <ProductCard key={idx} service={service} showEditButton={isOwner} onPress={() => handleProductPress(service)} />)}
+              {showServices &&
+                business.business_services.map((service, idx) => (
+                  <ProductCard
+                    key={idx}
+                    service={service}
+                    businessUid={business_uid}
+                    showEditButton={isOwner}
+                    showOwnerTags={isOwner}
+                    darkMode={darkMode}
+                    onPress={() => handleProductPress(service)}
+                  />
+                ))}
             </View>
           )}
 

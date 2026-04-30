@@ -62,6 +62,40 @@ function getJwtExpUnixSeconds(maybeJwt) {
  * @param {unknown} tokenDetails - Ably TokenDetails, TokenRequest, or API wrapper object
  * @returns {string|null} raw string to fingerprint (JWT, mac, or other long secret)
  */
+/**
+ * Backend must return an Ably TokenRequest or TokenDetails. This app historically expected
+ * `{ result: <object> }`. After API changes, the same payload may appear under `data`,
+ * inside a string `body`, or at the top level.
+ * @param {unknown} json
+ * @returns {object|string|null}
+ */
+function extractAblyAuthPayloadFromResponse(json) {
+  if (json == null) return null;
+  if (typeof json === "string") {
+    try {
+      const inner = JSON.parse(json);
+      return extractAblyAuthPayloadFromResponse(inner);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof json !== "object") return null;
+
+  if (json.result != null) return json.result;
+  if (json.data != null) return json.data;
+
+  if (typeof json.body === "string") {
+    const inner = extractAblyAuthPayloadFromResponse(json.body);
+    if (inner != null) return inner;
+  }
+
+  const o = json;
+  if (typeof o.token === "string" && o.token.length > 0) return o;
+  if (o.keyName && (o.mac || o.nonce || o.capability != null || o.ttl != null)) return o;
+
+  return null;
+}
+
 function extractTokenString(tokenDetails) {
   if (!tokenDetails) {
     return null;
@@ -212,14 +246,16 @@ export function createAblyRealtimeClient(clientId, options = {}) {
       try {
         const res = await fetch(tokenUrl);
         const json = await res.json();
-        if (!res.ok || !json?.result) {
+        const tokenPayload = extractAblyAuthPayloadFromResponse(json);
+        if (!res.ok || tokenPayload == null) {
           emitTokenObscured(null);
-          callback(new Error(json?.message || "Failed to fetch Ably token request"), null);
+          const msg = json?.message || json?.error || json?.Message || "Failed to fetch Ably token request";
+          callback(new Error(typeof msg === "string" ? msg : "Failed to fetch Ably token request"), null);
           return;
         }
-        const raw = extractTokenString(json.result);
+        const raw = extractTokenString(tokenPayload);
         emitTokenObscured(raw);
-        callback(null, json.result);
+        callback(null, tokenPayload);
       } catch (e) {
         emitTokenObscured(null);
         callback(e, null);

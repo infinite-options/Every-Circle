@@ -12,8 +12,8 @@ const { width } = Dimensions.get("window");
 
 export default function BusinessStep2({ formData, setFormData, navigation }) {
   const { darkMode } = useDarkMode();
-  console.log("BusinessStep2 - darkMode value:", darkMode);
   useEffect(() => {
+    console.log("BusinessStep2 - darkMode value:", darkMode);
     console.log("\nIn BusinessStep2", formData);
   }, []);
   const [allCategories, setAllCategories] = useState([]);

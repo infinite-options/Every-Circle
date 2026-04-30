@@ -721,7 +721,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
                 )}
               </View>
               {business.business_services.map((service, idx) => (
-                <ProductCard key={idx} service={service} showEditButton={false} onPress={() => handleProductPress(service)} />
+                <ProductCard key={idx} service={service} businessUid={business_uid} showEditButton={false} onPress={() => handleProductPress(service)} />
               ))}
             </View>
           )}
