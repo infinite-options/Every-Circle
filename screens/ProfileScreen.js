@@ -421,6 +421,7 @@ const ProfileScreen = ({ route, navigation }) => {
             company: exp.profile_experience_company_name || "",
             title: exp.profile_experience_position || "",
             description: exp.profile_experience_description || "",
+            quantity: exp.profile_experience_quantity || "",
             startDate: exp.profile_experience_start_date || "",
             endDate: exp.profile_experience_end_date || "",
             isPublic: exp.profile_experience_is_public === 1 || exp.isPublic === true,
@@ -1546,7 +1547,7 @@ const ProfileScreen = ({ route, navigation }) => {
                             key={index}
                             activeOpacity={0.7}
                             onPress={() => {
-                              const expertiseData = { expertise_uid: exp.profile_expertise_uid, title: exp.name, description: exp.description, cost: exp.cost, bounty: exp.bounty };
+                              const expertiseData = { expertise_uid: exp.profile_expertise_uid, title: exp.name, description: exp.description, quantity: exp.quantity, cost: exp.cost, bounty: exp.bounty };
                               const profileData = {
                                 firstName: user.firstName,
                                 lastName: user.lastName,

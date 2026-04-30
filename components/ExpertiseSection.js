@@ -20,6 +20,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
     const newEntry = {
       name: "",
       description: "",
+      quantity: "",
       cost: "",
       bounty: "",
       isPublic: true,
@@ -243,6 +244,13 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
       handleBountyAmountChange(index, cleanedText);
     }}
   />
+  <TextInput
+    style={styles.bountyInput}
+    placeholder="Qty"
+    keyboardType="numeric"
+    value={item.quantity || ""}
+    onChangeText={(text) => handleInputChange(index, "quantity", text)}
+  />
   <TouchableOpacity onPress={() => deleteExpertise(index)}>
     <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
   </TouchableOpacity>
@@ -368,6 +376,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: "#fff",
     width: "20%",
+    marginRight: 5,
   },
   dollar: { fontSize: 20, marginHorizontal: 5 },
   deleteIcon: { width: 20, height: 20 },

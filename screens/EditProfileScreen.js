@@ -106,10 +106,11 @@ const EditProfileScreen = ({ route, navigation }) => {
       profile_expertise_uid: e.profile_expertise_uid || "",
       name: e.name || e.profile_expertise_title || "",
       description: e.description || e.profile_expertise_description || "",
+      quantity: e.quantity || e.profile_expertise_quantity || "",
       cost: e.cost || e.profile_expertise_cost || "",
       bounty: e.bounty || e.profile_expertise_bounty || "",
       isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_expertise_is_public === 1,
-    })) || [{ name: "", description: "", cost: "", bounty: "", isPublic: true }],
+    })) || [{ name: "", description: "", quantity: "", cost: "", bounty: "", isPublic: true }],
     wishes: user?.wishes?.map((e) => ({
       profile_wish_uid: e.profile_wish_uid || "",
       helpNeeds: e.helpNeeds || e.profile_wish_title || "",

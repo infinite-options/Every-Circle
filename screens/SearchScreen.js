@@ -628,6 +628,7 @@ export default function SearchScreen({ route }) {
             details: item.profile_expertise_details,
             bounty: item.profile_expertise_bounty,
             cost: item.profile_expertise_cost,
+            quantity: item.profile_expertise_quantity || item.quantity, 
             expertise_uid: item.profile_expertise_uid,
           },
           // Store profile data for MiniCard-like display (all public info for Add to Cart modal)
