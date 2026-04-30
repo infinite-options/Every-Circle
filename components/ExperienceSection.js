@@ -81,6 +81,15 @@ const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPubl
       pendingNewIndexRef.current = null;
     }, 100);
   }, [experience.length, onInputFocus]);
+// Because right after pressing +, the new card is not guaranteed to be laid out yet.
+
+// setTimeout gives React Native one tick to:
+
+// apply state update
+// render the new card
+// attach its ref
+// compute layout
+// Without that delay, measureLayout often runs too early and returns wrong/empty measurements, so scrolling is unreliable.
 
   const deleteExperience = (index) => {
     handleDelete(index);
@@ -131,6 +140,12 @@ const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPubl
           }}
           style={[styles.experienceCard, index > 0 && styles.cardSpacing]}
         >
+          {/* That ref stores the rendered card’s native view reference so parent scroll logic can target it. */}
+          {/* Specifically:
+          When + adds a new card, we need that exact card’s ref.
+          Parent uses the ref in measureLayout to find where it is.
+          Then parent scrolls to center it if needed.
+          Without this ref, we can’t reliably scroll to the newly added card. */}
           <View style={styles.expHeaderRow}>
             <Text style={styles.label}>Experience #{index + 1}</Text>
             {/* Individual public/private toggle */}

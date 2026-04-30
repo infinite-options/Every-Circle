@@ -854,6 +854,14 @@ const EditProfileScreen = ({ route, navigation }) => {
     }, 100);
   };
 
+
+// To get the new card’s exact on-screen position relative to the ScrollView.
+
+// We need that y + height to decide:
+
+// Is the card already visible?
+// If not, how far should we scroll so it lands near center?
+// Without UIManager.measureLayout, scrollTo would be guesswork.
   // Handle keyboard show/hide to scroll to focused input
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener("keyboardDidShow", (e) => {
