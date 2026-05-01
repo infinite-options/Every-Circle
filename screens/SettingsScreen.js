@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, Switch, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, Image, FlatList, Platform } from "react-native";
+import { View, Text, StyleSheet, Switch, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, Platform } from "react-native";
 import * as Location from "expo-location";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -80,7 +80,6 @@ const COLORS = {
 };
 
 // --- Nearby POC: configurable constants (mirror the backend values) ---
-const LOCATION_EXPIRY_HOURS = 1; // how long a manually-set location stays fresh
 
 // AsyncStorage key for ignored nearby UIDs (cleared when the sharing session ends)
 const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
@@ -135,11 +134,7 @@ export default function SettingsScreen() {
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [locationUpdating, setLocationUpdating] = useState(null); // key of option being saved
   const [storedCoords, setStoredCoords] = useState({ lat: null, lng: null, updatedAt: null });
-  const [nearbyResultsVisible, setNearbyResultsVisible] = useState(false);
   const [nearbyPrivacyModalVisible, setNearbyPrivacyModalVisible] = useState(false);
-  const [nearbyLoading, setNearbyLoading] = useState(false);
-  const [nearbyUsers, setNearbyUsers] = useState([]);
-  const [nearbyError, setNearbyError] = useState(null);
 
   // Live location sharing refs (stable across renders — no state needed)
   const locationWatcherRef = useRef(null); // expo-location subscription
@@ -154,7 +149,6 @@ export default function SettingsScreen() {
 
   // Ignored nearby UIDs — persisted in AsyncStorage for the duration of the sharing session
   const ignoredNearbyRef = useRef(new Set()); // ref for use inside callbacks
-  const [ignoredNearbyUids, setIgnoredNearbyUids] = useState(new Set()); // state for reactive rendering
 
   // Nearby share / receive settings — ref for callbacks, state for rendering
   const nearbySettingsRef = useRef(DEFAULT_NEARBY_SETTINGS);
@@ -189,7 +183,6 @@ export default function SettingsScreen() {
           const uids = JSON.parse(storedIgnored);
           const s = new Set(uids);
           ignoredNearbyRef.current = s;
-          setIgnoredNearbyUids(new Set(s));
         }
       } catch (_) {}
 
@@ -595,19 +588,6 @@ export default function SettingsScreen() {
     const next = new Set(ignoredNearbyRef.current);
     next.add(uid);
     ignoredNearbyRef.current = next;
-    setIgnoredNearbyUids(new Set(next));
-    try {
-      await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next]));
-    } catch (_) {}
-  };
-
-  // Remove a UID from the ignore list
-  const unignoreNearbyUser = async (uid) => {
-    if (!uid) return;
-    const next = new Set(ignoredNearbyRef.current);
-    next.delete(uid);
-    ignoredNearbyRef.current = next;
-    setIgnoredNearbyUids(new Set(next));
     try {
       await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next]));
     } catch (_) {}
@@ -660,7 +640,6 @@ export default function SettingsScreen() {
     // Auto-cleanup of ignore list disabled — ignored users persist across sessions
     // await AsyncStorage.removeItem(NEARBY_IGNORED_KEY);
     // ignoredNearbyRef.current = new Set();
-    // setIgnoredNearbyUids(new Set());
     setShareLocationActive(false);
     setShareLocationUntil(null);
     setNearbyAlert(null);
@@ -825,45 +804,6 @@ export default function SettingsScreen() {
       Alert.alert("Error", "Could not update location. Please try again.");
     } finally {
       setLocationUpdating(null);
-    }
-  };
-
-  const fetchNearbyUsers = async () => {
-    const { NEARBY_USERS_ENDPOINT } = require("../apiConfig");
-    const profileId = await AsyncStorage.getItem("profile_uid");
-    if (!profileId) {
-      Alert.alert("Error", "No profile found. Please log in again.");
-      return;
-    }
-
-    const settings = nearbySettingsRef.current;
-    let nearbyUrl = `${NEARBY_USERS_ENDPOINT}/${profileId}?mode=${settings.receiveFrom}`;
-    if (settings.receiveFrom === "specific") {
-      const types = Object.keys(settings.receiveFromTypes).filter((k) => settings.receiveFromTypes[k]);
-      if (types.length > 0) nearbyUrl += `&types=${types.join(",")}`;
-    }
-
-    setNearbyLoading(true);
-    setNearbyError(null);
-    setNearbyUsers([]);
-    setNearbyResultsVisible(true);
-
-    try {
-      const response = await fetch(nearbyUrl);
-      const result = await response.json();
-
-      if (result.code === 200) {
-        setNearbyUsers(result.result || []);
-      } else if (result.code === 410) {
-        setNearbyError(`Your location has expired (>${LOCATION_EXPIRY_HOURS}h old). Tap "Update My Location" to refresh.`);
-      } else {
-        setNearbyError(result.message || "Could not fetch nearby users.");
-      }
-    } catch (err) {
-      console.error("fetchNearbyUsers error:", err);
-      setNearbyError("Network error. Please try again.");
-    } finally {
-      setNearbyLoading(false);
     }
   };
 
@@ -1061,34 +1001,27 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
                 );
               })()}
+
+              <TouchableOpacity
+                style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]}
+                onPress={() => setLocationPickerVisible(true)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
+                  <MaterialIcons name='my-location' size={20} style={styles.icon} color={COLORS.primary} />
+                  <View>
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Update My Location</Text>
+                    </Text>
+                    <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
+                      {storedCoords.lat != null ? `${parseFloat(storedCoords.lat).toFixed(5)}, ${parseFloat(storedCoords.lng).toFixed(5)}` : "No location set"}
+                    </Text>
+                  </View>
+                </View>
+                <MaterialIcons name='chevron-right' size={22} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+              </TouchableOpacity>
             </View>
           )}
-
-          {/* NEARBY POC Section */}
-          <View style={styles.nearbySectionHeader}>
-            <MaterialIcons name='location-on' size={16} color='#000' />
-            <Text style={styles.nearbySectionHeaderText}>NEARBY NETWORK (POC)</Text>
-          </View>
-          <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { marginBottom: 16 }]}>
-            {/* Update Location button */}
-            <TouchableOpacity style={[styles.nearbyActionButton, styles.nearbyActionButtonWithHelp, darkMode && styles.darkNearbyActionButton]} onPress={() => setLocationPickerVisible(true)}>
-              <MaterialIcons name='my-location' size={20} color={COLORS.primary} style={styles.icon} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.nearbyActionText, darkMode && styles.darkNearbyActionText]}>Update My Location</Text>
-                <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
-                  {storedCoords.lat != null ? `${parseFloat(storedCoords.lat).toFixed(5)}, ${parseFloat(storedCoords.lng).toFixed(5)}` : "No location set"}
-                </Text>
-              </View>
-              <MaterialIcons name='chevron-right' size={22} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
-            </TouchableOpacity>
-
-            {/* Who's Nearby button */}
-            <TouchableOpacity style={[styles.nearbyActionButton, styles.nearbyActionButtonWithHelp, darkMode && styles.darkNearbyActionButton]} onPress={fetchNearbyUsers}>
-              <MaterialIcons name='people' size={20} color={COLORS.primary} style={styles.icon} />
-              <Text style={[styles.nearbyActionText, darkMode && styles.darkNearbyActionText]}>Who's Nearby?</Text>
-              <MaterialIcons name='chevron-right' size={22} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
-            </TouchableOpacity>
-          </View>
 
           {/* INFORMATION Section Header - Outside Box */}
           <TouchableOpacity style={styles.informationSectionHeader} onPress={() => setShowInformation(!showInformation)}>
@@ -1262,134 +1195,6 @@ export default function SettingsScreen() {
 
             <TouchableOpacity onPress={() => setNearbyPrivacyModalVisible(false)} style={[styles.closeModalButton, { marginTop: 20, alignSelf: "stretch" }]}>
               <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Nearby Results Modal */}
-      <Modal visible={nearbyResultsVisible} transparent={true} animationType='slide' onRequestClose={() => setNearbyResultsVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox, { maxHeight: "70%" }]}>
-            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Who's Nearby?</Text>
-            <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>Circle members within 1 mile with a fresh location</Text>
-
-            {nearbyLoading ? (
-              <ActivityIndicator size='large' color={COLORS.primary} style={{ marginVertical: 30 }} />
-            ) : nearbyError ? (
-              <View style={styles.nearbyEmptyContainer}>
-                <MaterialIcons name='location-off' size={40} color={darkMode ? COLORS.darkTertiaryText : COLORS.lightQuaternaryText} />
-                <Text style={[styles.nearbyEmptyText, darkMode && styles.darkNearbySubText]}>{nearbyError}</Text>
-              </View>
-            ) : nearbyUsers.length === 0 ? (
-              <View style={styles.nearbyEmptyContainer}>
-                <MaterialIcons name='people-outline' size={40} color={darkMode ? COLORS.darkTertiaryText : COLORS.lightQuaternaryText} />
-                <Text style={[styles.nearbyEmptyText, darkMode && styles.darkNearbySubText]}>No one from your circles is nearby right now.</Text>
-              </View>
-            ) : (
-              <FlatList
-                data={nearbyUsers.filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))}
-                keyExtractor={(item) => item.profile_personal_uid}
-                style={{ width: "100%", marginTop: 8 }}
-                renderItem={({ item }) => {
-                  const distMiles = item.distance_meters != null ? (item.distance_meters / 1609).toFixed(1) : "?";
-                  const initials = `${(item.profile_personal_first_name || "?")[0]}${(item.profile_personal_last_name || "?")[0]}`.toUpperCase();
-                  const fullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
-                  return (
-                    <View style={[styles.nearbyUserRow, darkMode && styles.darkLocationOptionRow]}>
-                      {item.profile_personal_image ? (
-                        <Image source={{ uri: item.profile_personal_image }} style={styles.nearbyAvatar} />
-                      ) : (
-                        <View style={[styles.nearbyAvatar, styles.nearbyAvatarFallback]}>
-                          <Text style={styles.nearbyAvatarInitials}>{initials}</Text>
-                        </View>
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.nearbyUserName, darkMode && styles.darkItemText]}>{fullName}</Text>
-                        <Text style={[styles.nearbyDistanceText, darkMode && styles.darkNearbySubText]}>
-                          <MaterialIcons name='location-on' size={12} color={COLORS.primary} /> {distMiles} mi away
-                        </Text>
-                      </View>
-                      {/* View profile */}
-                      <TouchableOpacity
-                        style={styles.nearbyActionBtn}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        onPress={() => {
-                          setNearbyResultsVisible(false);
-                          navigation.navigate("Profile", { profile_uid: item.profile_personal_uid });
-                        }}
-                      >
-                        <Ionicons name='person-outline' size={17} color={COLORS.primary} />
-                      </TouchableOpacity>
-                      {/* Message */}
-                      <TouchableOpacity
-                        style={[styles.nearbyActionBtn, styles.nearbyMessageBtn]}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        onPress={() => {
-                          setNearbyResultsVisible(false);
-                          navigation.navigate("Chat", {
-                            other_uid: item.profile_personal_uid,
-                            other_name: fullName || "Chat",
-                            other_image: item.profile_personal_image || null,
-                          });
-                        }}
-                      >
-                        <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' />
-                      </TouchableOpacity>
-                      {/* Ignore */}
-                      <TouchableOpacity
-                        style={[styles.nearbyActionBtn, styles.nearbyIgnoreBtn]}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        onPress={() => ignoreNearbyUser(item.profile_personal_uid)}
-                      >
-                        <Ionicons name='eye-off-outline' size={17} color='#fff' />
-                      </TouchableOpacity>
-                    </View>
-                  );
-                }}
-              />
-            )}
-
-            {/* Ignored section — only shown when there are ignored users who were also nearby */}
-            {nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length > 0 && (
-              <>
-                <View style={styles.ignoredSectionHeader}>
-                  <Ionicons name='eye-off-outline' size={14} color={darkMode ? "#888" : "#aaa"} style={{ marginRight: 6 }} />
-                  <Text style={[styles.ignoredSectionTitle, darkMode && styles.darkNearbySubText]}>Ignored ({nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length})</Text>
-                </View>
-                {nearbyUsers
-                  .filter((u) => ignoredNearbyUids.has(u.profile_personal_uid))
-                  .map((item) => {
-                    const iName = `${(item.profile_personal_first_name || "?")[0]}${(item.profile_personal_last_name || "?")[0]}`.toUpperCase();
-                    const iFullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
-                    return (
-                      <View key={item.profile_personal_uid} style={[styles.nearbyUserRow, styles.ignoredRow, darkMode && styles.darkLocationOptionRow]}>
-                        {item.profile_personal_image ? (
-                          <Image source={{ uri: item.profile_personal_image }} style={[styles.nearbyAvatar, styles.ignoredAvatar]} />
-                        ) : (
-                          <View style={[styles.nearbyAvatar, styles.nearbyAvatarFallback, styles.ignoredAvatar]}>
-                            <Text style={styles.nearbyAvatarInitials}>{iName}</Text>
-                          </View>
-                        )}
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.nearbyUserName, styles.ignoredName, darkMode && styles.darkNearbySubText]}>{iFullName}</Text>
-                        </View>
-                        {/* Unignore */}
-                        <TouchableOpacity
-                          style={[styles.nearbyActionBtn, styles.nearbyUnignoreBtn]}
-                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                          onPress={() => unignoreNearbyUser(item.profile_personal_uid)}
-                        >
-                          <Ionicons name='eye-outline' size={17} color='#fff' />
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  })}
-              </>
-            )}
-
-            <TouchableOpacity onPress={() => setNearbyResultsVisible(false)} style={[styles.closeModalButton, { marginTop: 16, alignSelf: "stretch" }]}>
-              <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>

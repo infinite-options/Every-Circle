@@ -225,31 +225,136 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
-  const fetchPersonalProfileData = async () => {
+  const applyPersonalProfileFromApiResult = (result) => {
+    if (result && result.personal_info) {
+      setPersonalProfileData({
+        firstName: result.personal_info.profile_personal_first_name || "",
+        lastName: result.personal_info.profile_personal_last_name || "",
+        email: result.user_email || "",
+        phoneNumber: result.personal_info.profile_personal_phone_number || "",
+        tagLine: result.personal_info.profile_personal_tag_line || "",
+        city: result.personal_info.profile_personal_city || "",
+        state: result.personal_info.profile_personal_state || "",
+        profileImage: result.personal_info.profile_personal_image || "",
+        emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
+        phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
+        tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
+        locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
+        imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
+      });
+    }
+  };
+
+  /** Expertise rows from one profile payload + seller transactions (no second profile GET). */
+  const buildExpertiseDataFromProfileResult = async (profileResult, profileId) => {
+    const expertiseList = profileResult.expertise_info
+      ? typeof profileResult.expertise_info === "string"
+        ? JSON.parse(profileResult.expertise_info)
+        : profileResult.expertise_info
+      : [];
+
+    const sellerTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${profileId}`;
+    let sellerTransactions = [];
+
     try {
-      const profileId = await AsyncStorage.getItem("profile_uid");
-      if (!profileId) return;
-      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-      const result = await response.json();
-      if (result && result.personal_info) {
-        setPersonalProfileData({
-          firstName: result.personal_info.profile_personal_first_name || "",
-          lastName: result.personal_info.profile_personal_last_name || "",
-          email: result.user_email || "",
-          phoneNumber: result.personal_info.profile_personal_phone_number || "",
-          tagLine: result.personal_info.profile_personal_tag_line || "",
-          city: result.personal_info.profile_personal_city || "",
-          state: result.personal_info.profile_personal_state || "",
-          profileImage: result.personal_info.profile_personal_image || "",
-          emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
-          phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
-          tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
-          locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
-          imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
-        });
+      console.log("Fetching seller transactions from:", sellerTransactionsUrl);
+      const transactionsResponse = await fetch(sellerTransactionsUrl, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (transactionsResponse.ok) {
+        const transactionsResult = await transactionsResponse.json();
+        console.log("Seller transactions result:", transactionsResult);
+
+        if (transactionsResult && transactionsResult.code === 200 && Array.isArray(transactionsResult.data)) {
+          sellerTransactions = transactionsResult.data;
+        }
+      } else if (transactionsResponse.status === 400) {
+        console.log("No seller transactions found (400 status)");
+        sellerTransactions = [];
       }
     } catch (error) {
-      console.error("Error fetching personal profile data:", error);
+      console.error("Error fetching seller transactions for expertise quantities:", error);
+    }
+
+    return expertiseList.map((exp) => {
+      const expertiseUid = exp.profile_expertise_uid;
+      const costString = exp.profile_expertise_cost || "";
+
+      let cost = "";
+      let unit = "";
+      if (costString) {
+        const match = costString.match(/\$?(\d+(?:\.\d+)?)\s*(\/\w+|\w+)?/);
+        if (match) {
+          cost = match[1] || "";
+          unit = match[2] || "";
+        } else {
+          cost = costString;
+        }
+      }
+
+      let totalQty = 0;
+      sellerTransactions.forEach((transaction) => {
+        if (transaction.ti_bs_id === expertiseUid) {
+          const qty = parseInt(transaction.ti_bs_qty) || 0;
+          totalQty += qty;
+        }
+      });
+
+      return {
+        name: exp.profile_expertise_title || "",
+        cost: cost,
+        unit: unit,
+        bounty: exp.profile_expertise_bounty || "",
+        quantity: totalQty,
+        isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
+      };
+    });
+  };
+
+  const applyBusinessListFromApiResult = (result) => {
+    console.log("User businesses:", result.business_info);
+    const businessList = result.business_info ? (typeof result.business_info === "string" ? JSON.parse(result.business_info) : result.business_info) : [];
+    setBusinesses(businessList);
+    if (businessList.length > 0) {
+      const firstBusiness = businessList[0];
+      const businessId = firstBusiness.business_uid || firstBusiness.profile_business_uid;
+      console.log("Setting business UID:", businessId);
+      setBusinessUID(businessId);
+      return businessId;
+    }
+    console.log("No businesses found for user");
+    return null;
+  };
+
+  /** Single GET to USER_PROFILE_INFO — replaces three parallel calls on focus. */
+  const loadUserProfileInfoBundle = async () => {
+    try {
+      setExpertiseLoading(true);
+      const profileId = await AsyncStorage.getItem("profile_uid");
+      if (!profileId) {
+        setExpertiseData([]);
+        return;
+      }
+
+      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const profileResult = await response.json();
+      applyPersonalProfileFromApiResult(profileResult);
+      const expertise = await buildExpertiseDataFromProfileResult(profileResult, profileId);
+      setExpertiseData(expertise);
+      applyBusinessListFromApiResult(profileResult);
+    } catch (error) {
+      console.error("Error loading user profile bundle:", error);
+      setExpertiseData([]);
+    } finally {
+      setExpertiseLoading(false);
     }
   };
 
@@ -283,150 +388,6 @@ export default function AccountScreen({ navigation }) {
       setBountyData({ error: error.message });
     } finally {
       setBountyLoading(false);
-    }
-  };
-
-  // Expertise data
-  const refreshExpertiseData = async () => {
-    try {
-      setExpertiseLoading(true);
-      const profileId = await AsyncStorage.getItem("profile_uid");
-      if (profileId) {
-        // First, fetch profile expertise data
-        const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-
-        if (!profileResponse.ok) {
-          throw new Error(`HTTP error! status: ${profileResponse.status}`);
-        }
-
-        const profileResult = await profileResponse.json();
-        // console.log("Expertise API response:", profileResult);
-
-        // Parse expertise_info
-        const expertiseList = profileResult.expertise_info ? (typeof profileResult.expertise_info === "string" ? JSON.parse(profileResult.expertise_info) : profileResult.expertise_info) : [];
-
-        // Fetch transactions where I am the SELLER
-        const sellerTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${profileId}`;
-        let sellerTransactions = [];
-
-        try {
-          console.log("Fetching seller transactions from:", sellerTransactionsUrl);
-          const transactionsResponse = await fetch(sellerTransactionsUrl, {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-            },
-          });
-
-          if (transactionsResponse.ok) {
-            const transactionsResult = await transactionsResponse.json();
-            console.log("Seller transactions result:", transactionsResult);
-
-            if (transactionsResult && transactionsResult.code === 200 && Array.isArray(transactionsResult.data)) {
-              sellerTransactions = transactionsResult.data;
-            }
-          } else if (transactionsResponse.status === 400) {
-            console.log("No seller transactions found (400 status)");
-            sellerTransactions = [];
-          }
-        } catch (error) {
-          console.error("Error fetching seller transactions for expertise quantities:", error);
-        }
-
-        // Map expertise with quantities from seller transactions
-        const expertise = expertiseList.map((exp) => {
-          const expertiseUid = exp.profile_expertise_uid;
-          const costString = exp.profile_expertise_cost || "";
-
-          // Parse cost to separate amount and unit
-          let cost = "";
-          let unit = "";
-          if (costString) {
-            const match = costString.match(/\$?(\d+(?:\.\d+)?)\s*(\/\w+|\w+)?/);
-            if (match) {
-              cost = match[1] || "";
-              unit = match[2] || "";
-            } else {
-              cost = costString;
-            }
-          }
-
-          // Calculate total quantity sold for this expertise
-          let totalQty = 0;
-          // console.log(`Checking seller transactions for expertise: ${exp.profile_expertise_title} (UID: ${expertiseUid})`);
-          // console.log(`Total seller transaction items to check: ${sellerTransactions.length}`);
-
-          sellerTransactions.forEach((transaction) => {
-            // console.log(`Seller transaction item ti_bs_id: ${transaction.ti_bs_id}, ti_bs_qty: ${transaction.ti_bs_qty}`);
-
-            if (transaction.ti_bs_id === expertiseUid) {
-              // console.log(`✓ MATCH found for ${exp.profile_expertise_title}!`);
-              const qty = parseInt(transaction.ti_bs_qty) || 0;
-              totalQty += qty;
-              // console.log(`Added quantity: ${qty}, New total: ${totalQty}`);
-            }
-          });
-
-          // console.log(`Final quantity for ${exp.profile_expertise_title}: ${totalQty}`);
-
-          return {
-            name: exp.profile_expertise_title || "",
-            cost: cost,
-            unit: unit,
-            bounty: exp.profile_expertise_bounty || "",
-            quantity: totalQty,
-            isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
-          };
-        });
-
-        setExpertiseData(expertise);
-      }
-    } catch (error) {
-      console.error("Error loading expertise data:", error);
-      setExpertiseData([]);
-    } finally {
-      setExpertiseLoading(false);
-    }
-  };
-
-  // Fetch user's businesses to get business_uid
-  const fetchUserBusinesses = async () => {
-    try {
-      const profileId = await AsyncStorage.getItem("profile_uid");
-      if (!profileId) {
-        console.log("No profile ID found");
-        return null;
-      }
-
-      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-      if (!response.ok) {
-        console.log("Failed to fetch user profile");
-        return null;
-      }
-
-      const result = await response.json();
-      console.log("User businesses:", result.business_info);
-
-      // Parse business_info to get business UIDs
-      const businessList = result.business_info ? (typeof result.business_info === "string" ? JSON.parse(result.business_info) : result.business_info) : [];
-
-      // Store all businesses in state
-      setBusinesses(businessList);
-
-      // Get the first business UID
-      if (businessList.length > 0) {
-        const firstBusiness = businessList[0];
-        const businessId = firstBusiness.business_uid || firstBusiness.profile_business_uid;
-        console.log("Setting business UID:", businessId);
-        setBusinessUID(businessId);
-        return businessId;
-      }
-
-      console.log("No businesses found for user");
-      return null;
-    } catch (error) {
-      console.error("Error fetching user businesses:", error);
-      return null;
     }
   };
 
@@ -706,16 +667,13 @@ export default function AccountScreen({ navigation }) {
       loadAutoPaidIds();
       refreshBountyData();
       refreshTransactionData();
-      refreshExpertiseData();
-      fetchPersonalProfileData();
 
-      // Fetch businesses first, then business transactions and bounties
-      const loadBusinessData = async () => {
-        await fetchUserBusinesses();
+      const loadAccountData = async () => {
+        await loadUserProfileInfoBundle();
         await refreshBusinessTransactionData();
-        await refreshBusinessBountyData(); // ← ADD THIS LINE
+        await refreshBusinessBountyData();
       };
-      loadBusinessData();
+      loadAccountData();
     }, []),
   );
 

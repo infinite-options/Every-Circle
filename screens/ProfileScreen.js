@@ -1609,7 +1609,7 @@ const ProfileScreen = ({ route, navigation }) => {
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(user.shortBio)}</Text>
                 </View>
               ) : (
-                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: darkMode ? "#999" : "#666" }]}>No bio added yet</Text>
+                <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: darkMode ? "#999" : "#666" }]}>No bio added yet</Text>
               )}
             </View>
           )}
@@ -1692,7 +1692,7 @@ const ProfileScreen = ({ route, navigation }) => {
                       return expertiseItem;
                     })
                 ) : (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No expertise added yet</Text>
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No expertise added yet</Text>
                 ))}
             </View>
           )}
@@ -1861,7 +1861,7 @@ const ProfileScreen = ({ route, navigation }) => {
                       return wishItem;
                     })
                 ) : (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No seeking added yet</Text>
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No seeking added yet</Text>
                 ))}
             </View>
           )}
@@ -1891,7 +1891,7 @@ const ProfileScreen = ({ route, navigation }) => {
                       </View>
                     ))
                 ) : (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No experience added yet</Text>
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No experience added yet</Text>
                 ))}
             </View>
           )}
@@ -1920,7 +1920,7 @@ const ProfileScreen = ({ route, navigation }) => {
                       </View>
                     ))
                 ) : (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No education added yet</Text>
+                  <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No education added yet</Text>
                 ))}
             </View>
           )}
@@ -1970,7 +1970,7 @@ const ProfileScreen = ({ route, navigation }) => {
                       </View>
                     ))
                   ) : (
-                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No businesses added yet</Text>
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No businesses added yet</Text>
                   );
                 })()}
             </View>
@@ -1979,10 +1979,10 @@ const ProfileScreen = ({ route, navigation }) => {
           {/* Reviews — collapsible section */}
           <View style={styles.fieldContainer}>
             <View style={[styles.sectionHeader, { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }]}>
-              <TouchableOpacity style={{ flex: 1 }} onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
-                <Text style={styles.sectionHeaderText}>REVIEWS</Text>
-              </TouchableOpacity>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <TouchableOpacity onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
+                  <Text style={styles.sectionHeaderText}>REVIEWS</Text>
+                </TouchableOpacity>
                 {isCurrentUserProfile && (
                   <TouchableOpacity
                     onPress={() => {
@@ -1996,10 +1996,10 @@ const ProfileScreen = ({ route, navigation }) => {
                     <Text style={[styles.sectionHeaderText, { fontSize: 28, lineHeight: 28 }]}>+</Text>
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
-                  <Ionicons name={showReviews ? "chevron-up" : "chevron-down"} size={20} color='#000' />
-                </TouchableOpacity>
               </View>
+              <TouchableOpacity onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
+                <Ionicons name={showReviews ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
             </View>
             {/* Review search overlay modal */}
             <Modal
@@ -2225,7 +2225,7 @@ const ProfileScreen = ({ route, navigation }) => {
                   </TouchableOpacity>
                 ))
               ) : (
-                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666" }]}>No reviews yet</Text>
+                <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No reviews yet</Text>
               ))}
           </View>
         </ScrollView>
@@ -2565,6 +2565,10 @@ const styles = StyleSheet.create({
   darkSectionItemContainer: {
     backgroundColor: "#2d2d2d",
     borderColor: "#404040",
+  },
+  /** Empty-state lines: "No bio added yet", etc. */
+  emptySectionPlaceholder: {
+    marginLeft: 5,
   },
 });
 
