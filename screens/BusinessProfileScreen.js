@@ -9,16 +9,14 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT, RATINGS_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
+import { BUSINESS_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT, RATINGS_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { parsePrice } from "../utils/priceUtils";
 import { getHeaderColors } from "../config/headerColors";
 import FeedbackPopup from "../components/FeedbackPopup";
-import { normalizeBusinessServiceFromApi } from "../utils/normalizeBusinessServiceFromApi";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
-const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 
 export default function BusinessProfileScreen({ route, navigation }) {
   const { darkMode } = useDarkMode();
@@ -34,7 +32,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [allReviews, setAllReviews] = useState([]);
   const [currentUserProfileId, setCurrentUserProfileId] = useState(null);
   const [businessUsers, setBusinessUsers] = useState([]);
-  const [reviewerProfiles, setReviewerProfiles] = useState({});
   const [viewportWidth, setViewportWidth] = useState(null);
 
   const [showAbout, setShowAbout] = useState(true);
@@ -110,48 +107,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
     loadCartItems();
   }, [business_uid]);
 
-  // Get current user's profile ID
-  useEffect(() => {
-    const getCurrentUserProfileId = async () => {
-      try {
-        const profileId = await AsyncStorage.getItem("profile_uid");
-        setCurrentUserProfileId(profileId);
-      } catch (error) {
-        console.error("Error getting current user profile ID:", error);
-      }
-    };
-    getCurrentUserProfileId();
-  }, []);
-
-  // Fetch reviewer profile data
-  const fetchReviewerProfile = async (profileId) => {
-    if (!profileId || reviewerProfiles[profileId]) {
-      return;
-    }
-
-    try {
-      console.log("BusinessProfileScreen - Fetching reviewer profile for:", profileId);
-      const response = await fetch(`${ProfileScreenAPI}/${profileId}`);
-      const result = await response.json();
-
-      if (result && result.personal_info) {
-        const personalInfo = result.personal_info;
-        const reviewerData = {
-          firstName: sanitizeText(personalInfo.profile_personal_first_name),
-          lastName: sanitizeText(personalInfo.profile_personal_last_name),
-          profileImage: personalInfo.profile_personal_image ? sanitizeText(String(personalInfo.profile_personal_image)) : "",
-        };
-        setReviewerProfiles((prev) => ({
-          ...prev,
-          [profileId]: reviewerData,
-        }));
-        console.log("BusinessProfileScreen - Reviewer profile loaded for:", profileId, reviewerData);
-      }
-    } catch (error) {
-      console.error("BusinessProfileScreen - Error fetching reviewer profile:", profileId, error);
-    }
-  };
-
   // Process reviews when currentUserProfileId becomes available
   // Update the process reviews useEffect:
   useEffect(() => {
@@ -186,7 +141,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
       console.log("[BusinessProfileScreen] fetchBusinessInfo - business_uid from route params:", business_uid);
       // Read viewer UID directly so it's available for the ratings call
       const viewerUid = (await AsyncStorage.getItem("profile_uid")) || "";
-      const endpoint = `${BusinessProfileApi}/${business_uid}`;
+      setCurrentUserProfileId(viewerUid || null);
+      const endpoint = `${BusinessProfileApi}/${business_uid}${viewerUid ? `?viewer_uid=${viewerUid}` : ``}`;
       console.log("BusinessProfileScreen GET endpoint:", endpoint);
       const response = await fetch(endpoint);
       const result = await response.json();
@@ -352,82 +308,29 @@ export default function BusinessProfileScreen({ route, navigation }) {
         business_profile_img: businessProfileImgUrl,
         business_profile_img_is_public: rawBusiness.business_profile_img_is_public === "1" || rawBusiness.business_profile_img_is_public === 1,
         business_services: (() => {
-          let list = [];
           if (rawBusiness.business_services) {
             if (typeof rawBusiness.business_services === "string") {
               try {
-                list = JSON.parse(rawBusiness.business_services);
+                return JSON.parse(rawBusiness.business_services);
               } catch (e) {
-                list = [];
+                return [];
               }
             } else if (Array.isArray(rawBusiness.business_services)) {
-              list = rawBusiness.business_services;
+              return rawBusiness.business_services;
             }
           }
-          if ((!Array.isArray(list) || list.length === 0) && Array.isArray(result.services)) {
-            list = result.services;
+          if (Array.isArray(result.services)) {
+            return result.services;
           }
-          if (!Array.isArray(list)) return [];
-          return list.map((svc) => normalizeBusinessServiceFromApi(svc));
+          return [];
         })(),
       };
 
       setBusiness(businessWithRatings);
-
-      // Fetch is_verified flags from Ratings endpoint
-      try {
-        // const ratingsRes = await fetch(`${RATINGS_ENDPOINT}/${business_uid}`);
-        const ratingsRes = await fetch(`${RATINGS_ENDPOINT}/${business_uid}?viewer_uid=${viewerUid}`);
-        const ratingsData = await ratingsRes.json();
-        if (ratingsData?.result) {
-          const ratingsMap = {};
-          ratingsData.result.forEach((r) => {
-            ratingsMap[r.rating_uid] = {
-              is_verified: r.is_verified,
-              circle_num_nodes: r.circle_num_nodes ?? null,
-            };
-          });
-          setBusiness((prev) => ({
-            ...prev,
-            ratings: (prev.ratings || []).map((r) => ({
-              ...r,
-              is_verified: ratingsMap[r.rating_uid]?.is_verified || false,
-              circle_num_nodes: ratingsMap[r.rating_uid]?.circle_num_nodes ?? null,
-            })),
-          }));
-        }
-      } catch (e) {
-        console.log("Could not fetch verified ratings:", e);
-      }
+      setBusinessViewers(result.viewers || []);
 
       if (result.business_users && Array.isArray(result.business_users)) {
         setBusinessUsers(result.business_users);
-
-        // Record profile view for each business owner — skip if viewer is an owner
-        try {
-          const viewerProfileId = await AsyncStorage.getItem("profile_uid");
-          if (viewerProfileId) {
-            const ownerProfileIds = result.business_users
-              .map((bu) => bu.profile_id)
-              .filter(Boolean);
-            const viewerIsOwner = ownerProfileIds.includes(viewerProfileId);
-            if (!viewerIsOwner) {
-              // Record view against the business_uid so business owners can see who visited
-              const viewPayload = {
-                profile_view_profile_id: business_uid,
-                profile_view_viewer_id: viewerProfileId,
-              };
-              console.log("BusinessProfileScreen - Recording view payload:", viewPayload);
-              fetch(PROFILE_VIEWS_ENDPOINT, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(viewPayload),
-              }).catch((e) => console.warn("BusinessProfileScreen - failed to record view:", e));
-            }
-          }
-        } catch (e) {
-          console.warn("BusinessProfileScreen - error recording profile view:", e);
-        }
       } else {
         setBusinessUsers([]);
       }
@@ -462,19 +365,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
           setIsOwner(true);
           return;
         }
-        // Fallback: profile screen shows "my businesses" from profile API business_info. If this business
-        // appears there, treat as owner (handles APIs that link business→user by profile, not user_uid).
-        if (profileUid) {
-          const response = await fetch(`${ProfileScreenAPI}/${profileUid}`);
-          const userData = await response.json();
-          if (userData && userData.business_info) {
-            const businessInfo = typeof userData.business_info === "string" ? JSON.parse(userData.business_info) : userData.business_info;
-            const isInProfileBusinesses =
-              Array.isArray(businessInfo) && businessInfo.some((biz) => (biz.business_uid || biz.profile_business_uid || biz.profile_business_business_id) === business_uid);
-            setIsOwner(isInProfileBusinesses);
-            return;
-          }
-        }
         setIsOwner(false);
       } catch (error) {
         console.error("Error checking business ownership:", error);
@@ -486,25 +376,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
       checkBusinessOwnership();
     }
   }, [business_uid, business, businessUsers]);
-
-  const fetchBusinessViewers = async () => {
-    try {
-      const response = await fetch(`${PROFILE_VIEWS_ENDPOINT}/${business_uid}`);
-      if (response.ok) {
-        const data = await response.json();
-        setBusinessViewers(data.viewers || []);
-      }
-    } catch (e) {
-      console.warn("BusinessProfileScreen - Failed to fetch business viewers:", e);
-    }
-  };
-
-  // Fetch viewers whenever this screen is focused and user is the owner
-  useEffect(() => {
-    if (isOwner) {
-      fetchBusinessViewers();
-    }
-  }, [isOwner, business_uid]);
 
   // Use useFocusEffect like ProfileScreen
   useFocusEffect(
@@ -1069,7 +940,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                       />
                       {viewer.view_timestamp ? (
                         <Text style={{ fontSize: 11, color: "#999", paddingHorizontal: 12, paddingBottom: 6 }}>
-                          Viewed: {new Date(viewer.view_timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          Viewed: {new Date(String(viewer.view_timestamp).replace(" ", "T")).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                         </Text>
                       ) : null}
                     </TouchableOpacity>
@@ -1325,18 +1196,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                   <Ionicons name={showServices ? "chevron-up" : "chevron-down"} size={20} color='#000' />
                 </View>
               </TouchableOpacity>
-              {showServices &&
-                business.business_services.map((service, idx) => (
-                  <ProductCard
-                    key={idx}
-                    service={service}
-                    businessUid={business_uid}
-                    showEditButton={isOwner}
-                    showOwnerTags={isOwner}
-                    darkMode={darkMode}
-                    onPress={() => handleProductPress(service)}
-                  />
-                ))}
+              {showServices && business.business_services.map((service, idx) => <ProductCard key={idx} service={service} showEditButton={isOwner} onPress={() => handleProductPress(service)} />)}
             </View>
           )}
 
