@@ -87,6 +87,10 @@ export default function AccountScreen({ navigation }) {
 
   const [businessReceiptCache, setBusinessReceiptCache] = useState({});
 
+  const [showDeclineNoteModal, setShowDeclineNoteModal] = useState(false);
+  const [declineNote, setDeclineNote] = useState("");
+  const [pendingDeclineIdx, setPendingDeclineIdx] = useState(null);
+
   // above your effect or focus logic
   const checkAuth = async () => {
     try {
@@ -283,14 +287,18 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
-  const handleReturnDecline = async (transactionUid) => {
+  const handleReturnDecline = async (transactionUid, note = "") => {
+    console.log("=== handleReturnDecline ===");
+    console.log("URL:", `${API_BASE_URL}/api/v1/transactions/returns/declined`);
+    console.log("uid:", transactionUid, "note:", note);
     try {
-      await fetch(`${API_BASE_URL}/api/v1/transactions`, {
+      console.log("handleReturnDecline called, uid:", transactionUid, "note:", note);
+      await fetch(`${API_BASE_URL}/api/v1/transactions/returns/declined`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           transaction_uid: transactionUid,
-          transaction_return_status: "declined",
+          transaction_return_seller_note: note,
         }),
       });
       setReturnStatuses((prev) => ({ ...prev, [transactionUid]: "declined" }));
@@ -2262,15 +2270,10 @@ export default function AccountScreen({ navigation }) {
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", backgroundColor: "#B71C1C" }}
-                        onPress={async () => {
-                          await handleReturnDecline(viewingReturnTransactionUid);
-                          setReturnStatuses(prev => ({ 
-                            ...prev, 
-                            [`${viewingReturnTransactionUid}_${idx}`]: "declined",
-                            [viewingReturnTransactionUid]: "declined",
-                          }));
-                          await AsyncStorage.setItem(`return_status_${viewingReturnTransactionUid}_${idx}`, "declined");
-                          await AsyncStorage.setItem(`return_status_${viewingReturnTransactionUid}`, "declined");
+                        onPress={() => {
+                          setPendingDeclineIdx(idx);
+                          setDeclineNote("");
+                          setShowDeclineNoteModal(true);
                         }}
                       >
                         <Text style={{ color: "#fff", fontWeight: "bold" }}>Decline</Text>
@@ -2287,6 +2290,72 @@ export default function AccountScreen({ navigation }) {
             >
               <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>Close</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Decline Note Modal */}
+      <Modal animationType="fade" transparent={true} visible={showDeclineNoteModal} onRequestClose={() => setShowDeclineNoteModal(false)}>
+        <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
+          <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent]}>
+            <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>
+              Decline Reason
+            </Text>
+            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>
+              Provide a reason for declining this return (optional):
+            </Text>
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: "#ddd",
+                borderRadius: 8,
+                padding: 12,
+                fontSize: 14,
+                minHeight: 80,
+                textAlignVertical: "top",
+                backgroundColor: darkMode ? "#3a3a3a" : "#f9f9f9",
+                color: darkMode ? "#fff" : "#333",
+                marginBottom: 16,
+              }}
+              placeholder="Enter decline reason..."
+              placeholderTextColor={darkMode ? "#888" : "#aaa"}
+              multiline
+              value={declineNote}
+              onChangeText={setDeclineNote}
+            />
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <TouchableOpacity
+                style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
+                onPress={() => {
+                  setShowDeclineNoteModal(false);
+                  setDeclineNote("");
+                  setPendingDeclineIdx(null);
+                }}
+              >
+                <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.receiveItemModalButton, { backgroundColor: "#B71C1C" }]}
+                onPress={async () => {
+                  const idx = pendingDeclineIdx;
+                  await handleReturnDecline(viewingReturnTransactionUid, declineNote);
+                  setReturnStatuses(prev => ({
+                    ...prev,
+                    [`${viewingReturnTransactionUid}_${idx}`]: "declined",
+                    [viewingReturnTransactionUid]: "declined",
+                  }));
+                  await AsyncStorage.setItem(`return_status_${viewingReturnTransactionUid}_${idx}`, "declined");
+                  await AsyncStorage.setItem(`return_status_${viewingReturnTransactionUid}`, "declined");
+                  setShowDeclineNoteModal(false);
+                  setDeclineNote("");
+                  setPendingDeclineIdx(null);
+                }}
+              >
+                <Text style={styles.receiveItemModalButtonText}>Confirm Decline</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

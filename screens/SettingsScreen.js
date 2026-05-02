@@ -1258,46 +1258,68 @@ export default function SettingsScreen() {
                   ) : (
                     <>
                       {/* Table Header */}
-                      <View style={{
-                        flexDirection: "row",
-                        backgroundColor: "#B71C1C",
-                        paddingVertical: 6,
-                        paddingHorizontal: 8,
-                      }}>
-                        <Text style={{ flex: 1.2, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Buyer</Text>
-                        <Text style={{ flex: 1.2, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Seller</Text>
-                        <Text style={{ flex: 1.5, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Note</Text>
-                        <Text style={{ flex: 1, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Txn ID</Text>
-                      </View>
-                      {adminReturns.map((item, idx) => (
-                        <View key={item.transaction_uid || idx} style={{
+                        <View style={{
                           flexDirection: "row",
-                          paddingVertical: 8,
+                          backgroundColor: "#B71C1C",
+                          paddingVertical: 6,
                           paddingHorizontal: 8,
-                          borderBottomWidth: 1,
-                          borderBottomColor: darkMode ? "#444" : "#eee",
-                          backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#fff5f5") : "transparent",
                         }}>
-                          <Text style={{ flex: 1.2, fontSize: 11, color: darkMode ? "#fff" : "#333" }} numberOfLines={2}>
-                            {item.buyer_name || item.transaction_profile_id || "N/A"}
-                          </Text>
-                          <Text style={{ flex: 1.2, fontSize: 11, color: darkMode ? "#fff" : "#333" }} numberOfLines={2}>
-                            {item.seller_name || item.transaction_business_id || "N/A"}
-                          </Text>
-                          <Text style={{ flex: 1.5, fontSize: 11, color: darkMode ? "#ccc" : "#555" }} numberOfLines={3}>
-                            {item.transaction_return_note || "No note"}
-                          </Text>
-                          <Text style={{ flex: 1, fontSize: 10, color: "#B71C1C" }} numberOfLines={2}>
-                            {item.transaction_uid || "N/A"}
-                          </Text>
+                          <Text style={{ flex: 1.2, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Buyer</Text>
+                          <Text style={{ flex: 1.2, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Seller</Text>
+                          <Text style={{ flex: 1.5, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Notes</Text>
+                          <Text style={{ flex: 1, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Txn ID</Text>
                         </View>
-                      ))}
-                      <TouchableOpacity
-                        style={{ padding: 10, alignItems: "center" }}
-                        onPress={fetchAdminReturns}
-                      >
-                        <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
-                      </TouchableOpacity>
+
+                        {adminReturns.map((item, idx) => {
+                          const buyerNote = (item.transaction_return_note || "")
+                            .replace(/---RETURN---/g, " | ")
+                            .replace(/---SELLER DECLINE REASON---[\s\S]*/g, "") // strip any old concatenated seller notes
+                            .trim() || "No note";
+                          const sellerNote = (item.transaction_return_seller_note || "").trim();
+
+                          return (
+                            <View key={item.transaction_uid || idx} style={{
+                              paddingVertical: 8,
+                              paddingHorizontal: 8,
+                              borderBottomWidth: 1,
+                              borderBottomColor: darkMode ? "#444" : "#eee",
+                              backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#fff5f5") : "transparent",
+                            }}>
+                              {/* Top row: Buyer | Seller | Txn ID */}
+                              <View style={{ flexDirection: "row", marginBottom: 4 }}>
+                                <Text style={{ flex: 1.2, fontSize: 11, color: darkMode ? "#fff" : "#333", fontWeight: "600" }} numberOfLines={2}>
+                                  {item.buyer_name || item.transaction_profile_id || "N/A"}
+                                </Text>
+                                <View style={{ flex: 1.2 }}>
+                                  <Text style={{ fontSize: 11, color: darkMode ? "#fff" : "#333", fontWeight: "600" }} numberOfLines={1}>
+                                    {item.seller_name || item.transaction_business_id || "N/A"}
+                                  </Text>
+                                  {sellerNote ? (
+                                    <Text style={{ fontSize: 10, color: "#B71C1C", marginTop: 2 }} numberOfLines={3}>
+                                      Seller Note: {sellerNote}
+                                    </Text>
+                                  ) : (
+                                    <Text style={{ fontSize: 9, color: "#aaa", marginTop: 2 }}>No decline reason</Text>
+                                  )}
+                                </View>
+                                <Text style={{ flex: 1, fontSize: 10, color: "#B71C1C" }} numberOfLines={2}>
+                                  {item.transaction_uid || "N/A"}
+                                </Text>
+                              </View>
+                              {/* Buyer note full width below */}
+                              <Text style={{ fontSize: 10, color: darkMode ? "#ccc" : "#555", lineHeight: 14 }} numberOfLines={4}>
+                                📝 {buyerNote}
+                              </Text>
+                            </View>
+                          );
+                        })}
+
+                        <TouchableOpacity
+                          style={{ padding: 10, alignItems: "center" }}
+                          onPress={fetchAdminReturns}
+                        >
+                          <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
+                        </TouchableOpacity>
                     </>
                   )}
                 </View>
