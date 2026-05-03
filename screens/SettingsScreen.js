@@ -1263,18 +1263,18 @@ export default function SettingsScreen() {
                           backgroundColor: "#B71C1C",
                           paddingVertical: 6,
                           paddingHorizontal: 8,
+                          alignItems: "center",
                         }}>
-                          <Text style={{ flex: 1.2, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Buyer</Text>
-                          <Text style={{ flex: 1.2, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Seller</Text>
+                          <Text style={{ flex: 1, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Buyer</Text>
+                          <Text style={{ flex: 1, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Seller</Text>
+                          <Text style={{ flex: 1.2, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Txn ID</Text>
                           <Text style={{ flex: 1.5, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Notes</Text>
-                          <Text style={{ flex: 1, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Txn ID</Text>
+                          <Text style={{ flex: 1, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Decline</Text>
+                          <Text style={{ flex: 0.6, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Action</Text>
                         </View>
 
                         {adminReturns.map((item, idx) => {
-                          const buyerNote = (item.transaction_return_note || "")
-                            .replace(/---RETURN---/g, " | ")
-                            .replace(/---SELLER DECLINE REASON---[\s\S]*/g, "") // strip any old concatenated seller notes
-                            .trim() || "No note";
+                          const buyerNote = (item.transaction_return_note || "").trim() || "No note";
                           const sellerNote = (item.transaction_return_seller_note || "").trim();
 
                           return (
@@ -1285,32 +1285,58 @@ export default function SettingsScreen() {
                               borderBottomColor: darkMode ? "#444" : "#eee",
                               backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#fff5f5") : "transparent",
                             }}>
-                              {/* Top row: Buyer | Seller | Txn ID */}
-                              <View style={{ flexDirection: "row", marginBottom: 4 }}>
-                                <Text style={{ flex: 1.2, fontSize: 11, color: darkMode ? "#fff" : "#333", fontWeight: "600" }} numberOfLines={2}>
+                              {/* Row 1: Buyer | Seller | Txn ID */}
+                              {/* Single row matching header columns */}
+                              <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 6 }}>
+                                <Text style={{ flex: 1, fontSize: 10, color: darkMode ? "#fff" : "#333", fontWeight: "600" }} numberOfLines={2}>
                                   {item.buyer_name || item.transaction_profile_id || "N/A"}
                                 </Text>
-                                <View style={{ flex: 1.2 }}>
-                                  <Text style={{ fontSize: 11, color: darkMode ? "#fff" : "#333", fontWeight: "600" }} numberOfLines={1}>
-                                    {item.seller_name || item.transaction_business_id || "N/A"}
-                                  </Text>
-                                  {sellerNote ? (
-                                    <Text style={{ fontSize: 10, color: "#B71C1C", marginTop: 2 }} numberOfLines={3}>
-                                      Seller Note: {sellerNote}
-                                    </Text>
-                                  ) : (
-                                    <Text style={{ fontSize: 9, color: "#aaa", marginTop: 2 }}>No decline reason</Text>
-                                  )}
-                                </View>
-                                <Text style={{ flex: 1, fontSize: 10, color: "#B71C1C" }} numberOfLines={2}>
+                                <Text style={{ flex: 1, fontSize: 10, color: darkMode ? "#fff" : "#333", fontWeight: "600" }} numberOfLines={2}>
+                                  {item.seller_name || item.transaction_business_id || "N/A"}
+                                </Text>
+                                <Text style={{ flex: 1.2, fontSize: 10, color: "#B71C1C" }} numberOfLines={2}>
                                   {item.transaction_uid || "N/A"}
                                 </Text>
-                              </View>
-                              {/* Buyer note full width below */}
-                              <Text style={{ fontSize: 10, color: darkMode ? "#ccc" : "#555", lineHeight: 14 }} numberOfLines={4}>
-                                📝 {buyerNote}
-                              </Text>
+                                <Text style={{ flex: 1.5, fontSize: 10, color: darkMode ? "#ccc" : "#555", lineHeight: 14 }} numberOfLines={4}>
+                                  {buyerNote}
+                                </Text>
+                                <Text style={{ flex: 1, fontSize: 10, color: sellerNote ? "#B71C1C" : "#aaa", lineHeight: 14 }} numberOfLines={3}>
+                                  {sellerNote || "None"}
+                                </Text>
+                                {/* Resolve button inline */}
+                              <TouchableOpacity
+                                style={{
+                                  alignSelf: "flex-start",
+                                  backgroundColor: "#18884A",
+                                  paddingVertical: 4,
+                                  paddingHorizontal: 12,
+                                  borderRadius: 6,
+                                }}
+                                onPress={async () => {
+                                  try {
+                                    const res = await fetch(`${API_BASE_URL}/api/v1/transactions/returns/declined`, {
+                                      method: "PUT",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({
+                                        transaction_uid: item.transaction_uid,
+                                        action: "resolve",
+                                      }),
+                                    });
+                                    const result = await res.json();
+                                    console.log("Resolve result:", result);
+                                    if (result.code === 200) {
+                                      setAdminReturns(prev => prev.filter(r => r.transaction_uid !== item.transaction_uid));
+                                      await AsyncStorage.setItem(`return_status_${item.transaction_uid}`, "resolved");
+                                    }
+                                  } catch (e) {
+                                    console.error("Resolve error:", e);
+                                  }
+                                }}
+                              >
+                                <Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>✓ Resolve</Text>
+                              </TouchableOpacity>
                             </View>
+                          </View>
                           );
                         })}
 

@@ -288,22 +288,26 @@ export default function AccountScreen({ navigation }) {
   };
 
   const handleReturnDecline = async (transactionUid, note = "") => {
-    console.log("=== handleReturnDecline ===");
-    console.log("URL:", `${API_BASE_URL}/api/v1/transactions/returns/declined`);
-    console.log("uid:", transactionUid, "note:", note);
     try {
-      console.log("handleReturnDecline called, uid:", transactionUid, "note:", note);
-      await fetch(`${API_BASE_URL}/api/v1/transactions/returns/declined`, {
+      const body = JSON.stringify({
+        transaction_uid: transactionUid,
+        action: "decline",
+        transaction_return_seller_note: note,
+      });
+      console.log("=== DECLINE BODY BEING SENT:", body);
+      const response = await fetch(`${API_BASE_URL}/api/v1/transactions/returns/declined`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transaction_uid: transactionUid,
-          transaction_return_seller_note: note,
-        }),
+        body,
       });
-      setReturnStatuses((prev) => ({ ...prev, [transactionUid]: "declined" }));
-      await AsyncStorage.setItem(`return_status_${transactionUid}`, "declined");
-      setShowReturnNoteViewModal(false);
+      console.log("=== DECLINE RESPONSE STATUS:", response.status);
+      const result = await response.json();
+      console.log("=== DECLINE RESULT:", result);
+      if (result.code === 200) {
+        setReturnStatuses((prev) => ({ ...prev, [transactionUid]: "declined" }));
+        await AsyncStorage.setItem(`return_status_${transactionUid}`, "declined");
+        setShowReturnNoteViewModal(false);
+      }
     } catch (error) {
       console.error("Error declining return:", error);
       Alert.alert("Error", "Failed to decline return. Please try again.");
@@ -1863,7 +1867,9 @@ export default function AccountScreen({ navigation }) {
                                 (transaction.transaction_return_requested === 1 || 
                                   (returnRequests[transaction.transaction_uid]?.items?.length > 0)) &&
                                 returnStatuses[transaction.transaction_uid] !== "accepted" &&
-                                transaction.transaction_return_status !== "accepted" && {
+                                returnStatuses[transaction.transaction_uid] !== "resolved" &&
+                                transaction.transaction_return_status !== "accepted" &&
+                                transaction.transaction_return_status !== "resolved" && {
                                   backgroundColor: "#FDECEA",
                                   borderLeftWidth: 4,
                                   borderLeftColor: "#b35454",
@@ -2200,7 +2206,7 @@ export default function AccountScreen({ navigation }) {
                 onPress={async () => {
                   const selectedNames = returnModalReceiptData
                     .filter((item, index) => selectedReturnItems.includes(String(index)))
-                    .map(item => item.bs_service_name || "Item")
+                    .map(item => `${item.bs_service_name || "Item"} x${item.ti_bs_qty || 1}`)
                     .join(", ");
                   const fullNote = `Items: ${selectedNames}\n\nReason: ${returnNote}`;
                   await handleReturnRequest(receiptTransaction, fullNote);
