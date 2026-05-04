@@ -181,6 +181,9 @@ export default function SettingsScreen() {
   const [adminReturns, setAdminReturns] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState(null);
+  const [resolveModalVisible, setResolveModalVisible] = useState(false);
+  const [resolvingItem, setResolvingItem] = useState(null);
+  const [resolvedInFavorOf, setResolvedInFavorOf] = useState({}); // uid -> 'buyer' | 'seller'
 
   console.log("In SettingsScreen");
 
@@ -1312,25 +1315,9 @@ export default function SettingsScreen() {
                                   paddingHorizontal: 12,
                                   borderRadius: 6,
                                 }}
-                                onPress={async () => {
-                                  try {
-                                    const res = await fetch(`${API_BASE_URL}/api/v1/transactions/returns/declined`, {
-                                      method: "PUT",
-                                      headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify({
-                                        transaction_uid: item.transaction_uid,
-                                        action: "resolve",
-                                      }),
-                                    });
-                                    const result = await res.json();
-                                    console.log("Resolve result:", result);
-                                    if (result.code === 200) {
-                                      setAdminReturns(prev => prev.filter(r => r.transaction_uid !== item.transaction_uid));
-                                      await AsyncStorage.setItem(`return_status_${item.transaction_uid}`, "resolved");
-                                    }
-                                  } catch (e) {
-                                    console.error("Resolve error:", e);
-                                  }
+                                onPress={() => {
+                                  setResolvingItem(item);
+                                  setResolveModalVisible(true);
                                 }}
                               >
                                 <Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>✓ Resolve</Text>
@@ -1665,6 +1652,89 @@ export default function SettingsScreen() {
                 <Text style={styles.confirmButtonText}>I Understand</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Resolve Modal */}
+      <Modal visible={resolveModalVisible} transparent={true} animationType="fade" onRequestClose={() => setResolveModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, darkMode && styles.darkModalBox, { width: "85%", padding: 24 }]}>
+            <MaterialIcons name="gavel" size={32} color="#B71C1C" style={{ marginBottom: 12 }} />
+            <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle, { fontSize: 16 }]}>
+              Resolve in favor of...
+            </Text>
+            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666", textAlign: "center", marginBottom: 20 }}>
+              {resolvingItem?.buyer_name} vs {resolvingItem?.seller_name}
+            </Text>
+            <View style={{ flexDirection: "row", gap: 12, width: "100%" }}>
+              {/* Buyer wins — red highlight stays, taxes go negative */}
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: "#B71C1C", padding: 14, borderRadius: 10, alignItems: "center" }}
+                onPress={async () => {
+                  try {
+                    const res = await fetch(`${API_BASE_URL}/api/v1/transactions/returns/declined`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        transaction_uid: resolvingItem.transaction_uid,
+                        action: "resolve",
+                        resolved_in_favor_of: "buyer",
+                      }),
+                    });
+                    const result = await res.json();
+                    if (result.code === 200) {
+                      setResolvedInFavorOf(prev => ({ ...prev, [resolvingItem.transaction_uid]: "buyer" }));
+                      setAdminReturns(prev => prev.filter(r => r.transaction_uid !== resolvingItem.transaction_uid));
+                      await AsyncStorage.setItem(`return_status_${resolvingItem.transaction_uid}`, "accepted");
+                      setResolveModalVisible(false);
+                      setResolvingItem(null);
+                    }
+                  } catch (e) {
+                    console.error("Resolve buyer error:", e);
+                  }
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 15 }}>Buyer</Text>
+                <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 10, marginTop: 2 }}>Refund issued</Text>
+              </TouchableOpacity>
+              {/* Seller wins — row clears red */}
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: "#18884A", padding: 14, borderRadius: 10, alignItems: "center" }}
+                onPress={async () => {
+                  try {
+                    const res = await fetch(`${API_BASE_URL}/api/v1/transactions/returns/declined`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        transaction_uid: resolvingItem.transaction_uid,
+                        action: "resolve",
+                        resolved_in_favor_of: "seller",
+                      }),
+                    });
+                    const result = await res.json();
+                    if (result.code === 200) {
+                      setResolvedInFavorOf(prev => ({ ...prev, [resolvingItem.transaction_uid]: "seller" }));
+                      setAdminReturns(prev => prev.filter(r => r.transaction_uid !== resolvingItem.transaction_uid));
+                      await AsyncStorage.setItem(`return_status_${resolvingItem.transaction_uid}`, "resolved");
+                      setResolveModalVisible(false);
+                      setResolvingItem(null);
+                    }
+                  } catch (e) {
+                    console.error("Resolve seller error:", e);
+                  }
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 15 }}>Seller</Text>
+                <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 10, marginTop: 2 }}>Return denied</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={{ marginTop: 16 }}
+              onPress={() => { setResolveModalVisible(false); setResolvingItem(null); }}
+            >
+              <Text style={{ color: darkMode ? "#aaa" : "#666", fontSize: 13 }}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
