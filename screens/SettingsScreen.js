@@ -1667,6 +1667,7 @@ export default function SettingsScreen() {
             <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666", textAlign: "center", marginBottom: 20 }}>
               {resolvingItem?.buyer_name} vs {resolvingItem?.seller_name}
             </Text>
+            
             <View style={{ flexDirection: "row", gap: 12, width: "100%" }}>
               {/* Buyer wins — red highlight stays, taxes go negative */}
               <TouchableOpacity
