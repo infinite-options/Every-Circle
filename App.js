@@ -208,22 +208,39 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
     await AsyncStorage.setItem("user_email_id", userEmail || "");
     await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
 
-    navigation.navigate("Profile", {
-      oauthPrefill: {
-        appleUserInfo: {
-          email: userEmail,
-          firstName: user.name?.split(" ")[0] || userInfo.firstName || "",
-          lastName: user.name?.split(" ").slice(1).join(" ") || userInfo.lastName || "",
-          appleId: user.id,
-          idToken: idToken,
+    const appleUserInfoPayload = {
+      email: userEmail,
+      firstName: user.name?.split(" ")[0] || userInfo.firstName || "",
+      lastName: user.name?.split(" ").slice(1).join(" ") || userInfo.lastName || "",
+      appleId: user.id,
+      idToken: idToken,
+    };
+
+    const existingAccount = isExistingSocialAccountApiResult(result);
+
+    if (existingAccount) {
+      navigation.navigate("Profile", {
+        oauthPrefill: {
+          appleUserInfo: appleUserInfoPayload,
         },
-      },
-    });
+      });
+    } else {
+      navigation.navigate("SignUp", {
+        pendingReferralAfterOAuth: true,
+        appleUserInfo: appleUserInfoPayload,
+      });
+    }
   } catch (err) {
     setError?.(err.message);
     console.log("Fail");
     Alert.alert(`${failureAlertTitle} Failed`, err.message);
   }
+}
+
+/** Backend signals an existing account (login); new registrations should collect referrer first. */
+function isExistingSocialAccountApiResult(result) {
+  const msg = String(result?.message ?? "").toLowerCase();
+  return msg.includes("user already exists") || msg.includes("already exists");
 }
 
 /**
@@ -271,22 +288,33 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     throw new Error("Failed to create account");
   }
 
+  const existingAccount = isExistingSocialAccountApiResult(result);
+
   await AsyncStorage.setItem("user_uid", String(userUid));
   await AsyncStorage.setItem("user_email_id", userInfo.user.email);
   await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
 
-  navigation.navigate("Profile", {
-    oauthPrefill: {
-      googleUserInfo: {
-        email: userInfo.user.email,
-        firstName: userInfo.user.givenName,
-        lastName: userInfo.user.familyName,
-        profilePicture: userInfo.user.photo,
-        googleId: userInfo.user.id,
-        accessToken: googleAuthToken,
+  const googleUserInfo = {
+    email: userInfo.user.email,
+    firstName: userInfo.user.givenName,
+    lastName: userInfo.user.familyName,
+    profilePicture: userInfo.user.photo,
+    googleId: userInfo.user.id,
+    accessToken: googleAuthToken,
+  };
+
+  if (existingAccount) {
+    navigation.navigate("Profile", {
+      oauthPrefill: {
+        googleUserInfo,
       },
-    },
-  });
+    });
+  } else {
+    navigation.navigate("SignUp", {
+      pendingReferralAfterOAuth: true,
+      googleUserInfo,
+    });
+  }
 }
 
 export default function App() {
