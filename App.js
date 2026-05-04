@@ -521,11 +521,14 @@ export default function App() {
       };
 
       // Initialize Google Identity Services
+      // use_fedcm_for_prompt: false — avoids Chrome FedCM when user/site disabled it (otherwise
+      // console: "FedCM was disabled..." / GSI_LOGGER NetworkError retrieving a token).
       window.google.accounts.id.initialize({
         client_id: webClientId,
         callback: handleCredentialResponse,
         auto_select: false,
         cancel_on_tap_outside: true,
+        use_fedcm_for_prompt: false,
       });
 
       // Trigger the Google Sign-In prompt (One Tap or popup)
