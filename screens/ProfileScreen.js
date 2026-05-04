@@ -583,6 +583,7 @@ const ProfileScreen = ({ route, navigation }) => {
         profile_expertise_uid: exp.profile_expertise_uid || "",
         name: exp.profile_expertise_title || "",
         description: exp.profile_expertise_description || "",
+        quantity: exp.profile_expertise_quantity || exp.quantity || "",
         cost: exp.profile_expertise_cost || "",
         bounty: exp.profile_expertise_bounty || "",
         isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
