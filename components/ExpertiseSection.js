@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
+import { formatCostValue } from "../utils/priceUtils";
 
 const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic, handleDelete, onInputFocus }) => {
   // Stores each rendered card's ref by index so parent can scroll to the new one.
@@ -107,7 +108,6 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
     if (newAmount.toLowerCase() === "free") {
       updated[index].cost = "Free";
     } else {
-      // Combine amount and unit
       if (parsed.unit === "total") {
         updated[index].cost = newAmount ? `${newAmount} total` : "total";
       } else if (parsed.unit) {
@@ -119,10 +119,40 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
     setExpertise(updated);
   };
 
-  // Handle bounty change
+  // Apply final formatting when the cost amount input loses focus.
+  // This keeps typing fluid while only normalizing the value after edit.
+  const handleCostAmountBlur = (index) => {
+    const updated = [...expertise];
+    const currentCost = updated[index].cost || "";
+    const parsed = parseCost(currentCost);
+    if (parsed.amount.toLowerCase() === "free") {
+      return;
+    }
+    const formattedAmount = formatCostValue(parsed.amount);
+    if (parsed.unit === "total") {
+      updated[index].cost = formattedAmount ? `${formattedAmount} total` : "total";
+    } else if (parsed.unit) {
+      updated[index].cost = `${formattedAmount}/${parsed.unit}`;
+    } else {
+      updated[index].cost = formattedAmount;
+    }
+    setExpertise(updated);
+  };
+
   const handleBountyAmountChange = (index, value) => {
     const updated = [...expertise];
-    updated[index].bounty = value;
+    const cleanedValue = value.replace(/\$/g, "");
+    updated[index].bounty = cleanedValue;
+    setExpertise(updated);
+  };
+
+  // Apply final formatting when the bounty input loses focus.
+  // This preserves intermediate typing like "0." and only formats after edit.
+  const handleBountyAmountBlur = (index) => {
+    const updated = [...expertise];
+    const currentBounty = updated[index].bounty || "";
+    const formattedBounty = formatCostValue(currentBounty);
+    updated[index].bounty = formattedBounty;
     setExpertise(updated);
   };
 
@@ -224,7 +254,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
     keyboardType={(() => {
       const parsed = parseCost(item.cost);
       const amount = parsed.amount;
-      return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "numeric";
+      return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "decimal-pad";
     })()}
     value={(() => {
       const parsed = parseCost(item.cost);
@@ -237,6 +267,8 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
       const cleanedText = text.replace(/\$/g, "");
       handleCostAmountChange(index, cleanedText);
     }}
+    // Format cost only after editing is finished. This allows fluid typing of decimals without forcing formatting mid-edit.
+    onBlur={() => handleCostAmountBlur(index)}
   />
   <Dropdown
     style={[styles.costUnitDropdown, !parseCost(item.cost).unit && styles.requiredDropdown]}
@@ -256,7 +288,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
   <TextInput
     style={styles.bountyInput}
     placeholder='Bounty'
-    keyboardType='numeric'
+    keyboardType='decimal-pad'
     value={(() => {
       const parsed = parseBounty(item.bounty);
       const amount = parsed.amount;
@@ -268,6 +300,8 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
       const cleanedText = text.replace(/\$/g, "");
       handleBountyAmountChange(index, cleanedText);
     }}
+    // Format bounty only after editing is finished
+    onBlur={() => handleBountyAmountBlur(index)}
   />
   <TextInput
     style={styles.bountyInput}

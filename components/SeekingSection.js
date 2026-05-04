@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
+import { formatCostValue } from "../utils/priceUtils";
 
 // DateTimePicker only works on native (not web)
 let DateTimePicker = null;
@@ -251,7 +252,6 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     if (newAmount.toLowerCase() === "free") {
       updated[index].cost = "Free";
     } else {
-      // Combine amount and unit
       if (parsed.unit === "total") {
         updated[index].cost = newAmount ? `${newAmount} total` : "total";
       } else if (parsed.unit) {
@@ -259,6 +259,26 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       } else {
         updated[index].cost = newAmount;
       }
+    }
+    setWishes(updated);
+  };
+
+  // Apply final formatting when the cost input loses focus.
+  // Allows the user to type partial decimal values before normalization.
+  const handleCostAmountBlur = (index) => {
+    const updated = [...wishes];
+    const currentCost = updated[index].cost || "";
+    const parsed = parseCost(currentCost);
+    if (parsed.amount.toLowerCase() === "free") {
+      return;
+    }
+    const formattedAmount = formatCostValue(parsed.amount);
+    if (parsed.unit === "total") {
+      updated[index].cost = formattedAmount ? `${formattedAmount} total` : "total";
+    } else if (parsed.unit) {
+      updated[index].cost = `${formattedAmount}/${parsed.unit}`;
+    } else {
+      updated[index].cost = formattedAmount;
     }
     setWishes(updated);
   };
@@ -298,7 +318,6 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     if (newAmount.toLowerCase() === "free") {
       updated[index].amount = "Free";
     } else {
-      // Combine amount and unit
       if (parsed.unit === "total") {
         updated[index].amount = newAmount ? `${newAmount} total` : "total";
       } else if (parsed.unit) {
@@ -306,6 +325,26 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       } else {
         updated[index].amount = newAmount;
       }
+    }
+    setWishes(updated);
+  };
+
+  // Apply final formatting when the bounty amount input loses focus.
+  // Keeps typing responsive and formats only after the user moves away.
+  const handleBountyAmountBlur = (index) => {
+    const updated = [...wishes];
+    const currentBounty = updated[index].amount || "";
+    const parsed = parseBounty(currentBounty);
+    if (parsed.amount.toLowerCase() === "free") {
+      return;
+    }
+    const formattedAmount = formatCostValue(parsed.amount);
+    if (parsed.unit === "total") {
+      updated[index].amount = formattedAmount ? `${formattedAmount} total` : "total";
+    } else if (parsed.unit) {
+      updated[index].amount = `${formattedAmount}/${parsed.unit}`;
+    } else {
+      updated[index].amount = formattedAmount;
     }
     setWishes(updated);
   };
@@ -621,7 +660,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     keyboardType={(() => {
       const parsed = parseCost(item.cost);
       const amount = parsed.amount;
-      return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "numeric";
+      return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "decimal-pad";
     })()}
     value={(() => {
       const parsed = parseCost(item.cost);
@@ -634,6 +673,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       const cleanedText = text.replace(/\$/g, "");
       handleCostAmountChange(index, cleanedText);
     }}
+    onBlur={() => handleCostAmountBlur(index)}
   />
   <Dropdown
     style={[styles.costUnitDropdown, !parseCost(item.cost).unit && styles.requiredDropdown]}
@@ -653,7 +693,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
   <TextInput
     style={styles.bountyInput}
     placeholder='Bounty'
-    keyboardType='numeric'
+    keyboardType='decimal-pad'
     value={(() => {
       const parsed = parseBounty(item.amount);
       const amount = parsed.amount;
@@ -665,6 +705,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       const cleanedText = text.replace(/\$/g, "");
       handleBountyAmountChange(index, cleanedText);
     }}
+    onBlur={() => handleBountyAmountBlur(index)}
   />
   <TouchableOpacity onPress={() => deleteWish(index)}>
     <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
