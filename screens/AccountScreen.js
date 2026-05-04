@@ -2208,7 +2208,8 @@ export default function AccountScreen({ navigation }) {
                     .filter((item, index) => selectedReturnItems.includes(String(index)))
                     .map(item => `${item.bs_service_name || "Item"} x${item.ti_bs_qty || 1}`)
                     .join(", ");
-                  const fullNote = `Items: ${selectedNames}\n\nReason: ${returnNote}`;
+                  // const fullNote = `Items: ${selectedNames}\n\nReason: ${returnNote}`;
+                  const fullNote = `Buyer Note: ${returnNote}`;
                   await handleReturnRequest(receiptTransaction, fullNote);
                   setShowReturnNoteModal(false);
                   setReturnNote("");
