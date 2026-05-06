@@ -477,14 +477,17 @@ const WishDetailScreenContent = ({ route, navigation }) => {
             </>
           )}
         </View>
-      </ScrollView>
 
-      {/* Submit Button */}
-      <View style={[styles.acceptContainer, darkMode && styles.darkAcceptContainer]}>
-        <TouchableOpacity style={[styles.acceptButton, darkMode && styles.darkAcceptButton, (loading || !helpType) && styles.disabledButton]} onPress={handleAccept} disabled={loading || !helpType}>
-          <Text style={styles.acceptButtonText}>{loading ? "Submitting..." : "Submit"}</Text>
-        </TouchableOpacity>
-      </View>
+        <View style={styles.submitAtEnd}>
+          <TouchableOpacity
+            style={[styles.acceptButton, darkMode && styles.darkAcceptButton, (loading || !helpType) && styles.disabledButton]}
+            onPress={handleAccept}
+            disabled={loading || !helpType}
+          >
+            <Text style={styles.acceptButtonText}>{loading ? "Submitting..." : "Submit"}</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
 
       <BottomNavBar navigation={navigation} />
     </SafeAreaView>
@@ -506,7 +509,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
-    paddingBottom: 150, // Extra padding to ensure content is visible above BottomNavBar
+    paddingBottom: 100,
   },
   card: {
     backgroundColor: "#fff",
@@ -594,13 +597,10 @@ const styles = StyleSheet.create({
     color: "#666",
     lineHeight: 20,
   },
-  acceptContainer: {
-    padding: 20,
-    paddingBottom: 30,
-    marginBottom: 80, // Space for BottomNavBar so Submit button stays visible above it
-    backgroundColor: "#F5F5F5",
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
+  submitAtEnd: {
+    marginTop: 4,
+    marginBottom: 20,
+    alignItems: "center",
   },
   acceptButton: {
     backgroundColor: "#4F8A8B",
@@ -641,10 +641,6 @@ const styles = StyleSheet.create({
   },
   darkDetailsText: {
     color: "#cccccc",
-  },
-  darkAcceptContainer: {
-    backgroundColor: "#1a1a1a",
-    borderTopColor: "#404040",
   },
   darkAcceptButton: {
     backgroundColor: "#3D6B6C",
