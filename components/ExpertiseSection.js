@@ -1,7 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
 import { formatCostValue } from "../utils/priceUtils";
+import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
+import ProfileItemImageColumn from "./ProfileItemImageColumn";
 import {
   toDateTimeLocalValue,
   fromDateTimeLocalValue,
@@ -23,7 +27,7 @@ if (Platform.OS !== "web") {
   }
 }
 
-const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic, handleDelete, onInputFocus }) => {
+const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic, handleDelete, onInputFocus, profileUid = "", darkMode = false }) => {
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
   // Tracks which index was just added via "+".
@@ -51,11 +55,18 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
       quantity: "",
       cost: "",
       bounty: "",
+      profile_expertise_image: "",
+      profile_expertise_image_is_public: 1,
       profile_expertise_start: "",
       profile_expertise_end: "",
       profile_expertise_location: "",
       profile_expertise_mode: "",
       isPublic: true,
+      _expNewImageUri: "",
+      _expWebImageFile: null,
+      _expOriginalImage: "",
+      _expDeleteImageUrl: "",
+      _expImageError: false,
     };
     setExpertise([...expertise, newEntry]);
   };
@@ -79,6 +90,96 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
   const handleInputChange = (index, field, value) => {
     const updated = [...expertise];
     updated[index][field] = value;
+    setExpertise(updated);
+  };
+
+  const getExpertiseDisplayUri = (item) => {
+    const pending = item._expNewImageUri;
+    if (pending != null && String(pending).trim() !== "") return String(pending).trim();
+    return resolveProfileItemImageUri(item.profile_expertise_image, profileUid);
+  };
+
+  const pickExpertiseImage = async (index) => {
+    if (Platform.OS === "web") return;
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission required", "Permission to access media library is required!");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: "images",
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        let fileSize = asset.fileSize;
+        if (!fileSize && asset.uri) {
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+            fileSize = fileInfo.size;
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        if (fileSize && fileSize > 2 * 1024 * 1024) {
+          Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
+          return;
+        }
+        const updated = [...expertise];
+        const prev = updated[index];
+        const orig = prev._expOriginalImage || resolveProfileItemImageUri(prev.profile_expertise_image, profileUid);
+        updated[index]._expDeleteImageUrl = isRemoteHttpUrl(orig) ? orig : "";
+        updated[index]._expNewImageUri = asset.uri;
+        updated[index]._expWebImageFile = null;
+        updated[index]._expImageError = false;
+        setExpertise(updated);
+      }
+    } catch (error) {
+      console.error("Expertise image pick error:", error);
+      Alert.alert("Error", "Failed to pick image.");
+    }
+  };
+
+  const handleExpertiseWebImagePick = (index, event) => {
+    const file = event.target?.files?.[0];
+    if (event?.target) event.target.value = "";
+    if (!file) return;
+    if (!file.type?.startsWith?.("image/")) {
+      Alert.alert("Invalid file type", "Please select an image file.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const imageUri = reader.result;
+      const updated = [...expertise];
+      const prev = updated[index];
+      const orig = prev._expOriginalImage || resolveProfileItemImageUri(prev.profile_expertise_image, profileUid);
+      updated[index]._expDeleteImageUrl = isRemoteHttpUrl(orig) ? orig : "";
+      updated[index]._expNewImageUri = imageUri;
+      updated[index]._expWebImageFile = file;
+      updated[index]._expImageError = false;
+      setExpertise(updated);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeExpertiseImage = (index) => {
+    const updated = [...expertise];
+    const prev = updated[index];
+    const orig = prev._expOriginalImage || resolveProfileItemImageUri(prev.profile_expertise_image, profileUid);
+    updated[index]._expDeleteImageUrl = isRemoteHttpUrl(orig) ? orig : "";
+    updated[index]._expNewImageUri = "";
+    updated[index]._expWebImageFile = null;
+    updated[index].profile_expertise_image = "";
+    updated[index]._expOriginalImage = "";
+    updated[index]._expImageError = false;
     setExpertise(updated);
   };
 
@@ -354,16 +455,37 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
                         </View>
           </View>
 
-          <TextInput style={styles.input} placeholder='Expertise Name' value={item.name} onChangeText={(text) => handleInputChange(index, "name", text)} />
-          <TextInput
-            style={styles.descriptionInput}
-            placeholder='Description'
-            value={item.description}
-            onChangeText={(text) => handleInputChange(index, "description", text)}
-            multiline={true}
-            textAlignVertical='top'
-            scrollEnabled={false}
-          />
+          <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
+            <ProfileItemImageColumn
+              darkMode={darkMode}
+              displayUri={getExpertiseDisplayUri(item)}
+              imageError={!!item._expImageError}
+              onImageError={() => handleInputChange(index, "_expImageError", true)}
+              toolsVisible={
+                item.profile_expertise_image_is_public === 1 ||
+                item.profile_expertise_image_is_public === "1" ||
+                item.profile_expertise_image_is_public === true
+              }
+              onShowTools={() => handleInputChange(index, "profile_expertise_image_is_public", 1)}
+              onHideTools={() => handleInputChange(index, "profile_expertise_image_is_public", 0)}
+              onUploadNative={() => pickExpertiseImage(index)}
+              onWebFileChange={(e) => handleExpertiseWebImagePick(index, e)}
+              onRemoveImage={() => removeExpertiseImage(index)}
+              showRemove={!!getExpertiseDisplayUri(item)}
+            />
+            <View style={styles.miniCardFields}>
+              <TextInput style={styles.input} placeholder='Expertise Name' value={item.name} onChangeText={(text) => handleInputChange(index, "name", text)} />
+              <TextInput
+                style={styles.descriptionInput}
+                placeholder='Description'
+                value={item.description}
+                onChangeText={(text) => handleInputChange(index, "description", text)}
+                multiline={true}
+                textAlignVertical='top'
+                scrollEnabled={false}
+              />
+            </View>
+          </View>
 
           <View style={styles.dateTimeSection}>
             <View style={styles.dateTimeRow}>
@@ -611,6 +733,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 8,
+  },
+  miniCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    backgroundColor: "#fff",
+  },
+  miniCardDark: {
+    borderColor: "#404040",
+    backgroundColor: "#2d2d2d",
+  },
+  miniCardFields: {
+    flex: 1,
+    minWidth: 0,
   },
   input: {
     borderWidth: 1,

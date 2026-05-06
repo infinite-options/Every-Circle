@@ -1,6 +1,6 @@
 // WishDetailScreen.js
 import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
@@ -11,6 +11,7 @@ import AppHeader from "../components/AppHeader";
 import { getHeaderColors, getHeaderColor, getDarkModeHeaderColor } from "../config/headerColors";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { TRANSACTIONS_ENDPOINT, PROFILE_WISH_INFO_ENDPOINT } from "../apiConfig";
+import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 
 const WishDetailScreenContent = ({ route, navigation }) => {
   const { wishData, profileData, profile_uid, searchState, returnTo, profileState } = route.params;
@@ -272,6 +273,18 @@ const WishDetailScreenContent = ({ route, navigation }) => {
         <View style={[styles.card, darkMode && styles.darkCard]}>
           <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Seeking Description</Text>
 
+          {wishData?.profile_wish_image &&
+          String(wishData.profile_wish_image).trim() &&
+          (wishData?.profile_wish_image_is_public === 1 ||
+            wishData?.profile_wish_image_is_public === "1" ||
+            wishData?.profile_wish_image_is_public === undefined) ? (
+            <Image
+              source={{ uri: resolveProfileItemImageUri(wishData.profile_wish_image, profile_uid) }}
+              style={[styles.wishHeroImage, { backgroundColor: darkMode ? "#333" : "#eee" }]}
+              resizeMode='cover'
+            />
+          ) : null}
+
           {wishData?.title && <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wishData.title}</Text>}
 
           {wishData?.description && <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{wishData.description}</Text>}
@@ -508,6 +521,12 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 15,
     color: "#333",
+  },
+  wishHeroImage: {
+    width: "100%",
+    height: 180,
+    borderRadius: 8,
+    marginBottom: 12,
   },
   wishTitle: {
     fontSize: 24,

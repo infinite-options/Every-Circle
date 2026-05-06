@@ -1,6 +1,6 @@
 // ExpertiseDetailScreen.js
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
@@ -27,6 +27,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CREATE_PAYMENT_INTENT_ENDPOINT, TRANSACTIONS_ENDPOINT, GET_STRIPE_PUBLIC_KEY_ENDPOINT } from "../apiConfig";
 import { formatWholeDollars } from "../utils/priceUtils";
 import { formatDateTimeForDisplay } from "../utils/profileDateTime";
+import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 
 // Web Stripe imports (only load on web)
 let loadStripe = null;
@@ -738,6 +739,21 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
           <View style={[styles.card, darkMode && styles.darkCard]}>
             <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Expertise Description</Text>
 
+            {expertiseData?.profile_expertise_image &&
+            String(expertiseData.profile_expertise_image).trim() &&
+            (expertiseData?.profile_expertise_image_is_public === 1 ||
+              expertiseData?.profile_expertise_image_is_public === "1" ||
+              expertiseData?.profile_expertise_image_is_public === undefined) ? (
+              <Image
+                source={{ uri: resolveProfileItemImageUri(expertiseData.profile_expertise_image, profile_uid) }}
+                style={[
+                  styles.expertiseHeroImage,
+                  { backgroundColor: darkMode ? "#333" : "#eee" },
+                ]}
+                resizeMode='cover'
+              />
+            ) : null}
+
             {expertiseData?.title && <Text style={[styles.expertiseTitle, darkMode && styles.darkExpertiseTitle]}>{expertiseData.title}</Text>}
 
             {expertiseData?.description && <Text style={[styles.expertiseDescription, darkMode && styles.darkExpertiseDescription]}>{expertiseData.description}</Text>}
@@ -913,6 +929,12 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 15,
     color: "#333",
+  },
+  expertiseHeroImage: {
+    width: "100%",
+    height: 180,
+    borderRadius: 8,
+    marginBottom: 12,
   },
   expertiseTitle: {
     fontSize: 24,

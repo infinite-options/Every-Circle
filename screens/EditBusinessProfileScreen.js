@@ -868,7 +868,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       console.log("============================================");
       console.log("Custom tags being sent:", JSON.stringify(formData.customTags));
       const response = await axios.put(`${BusinessProfileAPI}`, payload, {
-        headers: { "Content-Type": "multipart/form-data" },
+        headers: { Accept: "application/json" },
       });
 
       if (response.status === 200) {

@@ -42,6 +42,7 @@ import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 import { sanitizeText } from "../utils/textSanitizer";
 import { getBusinessSuggestions as fetchGooglePlaces, getPlaceDetails } from "../utils/googlePlaces";
 import { isWishEnded } from "../utils/wishUtils";
+import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors } from "../config/headerColors";
@@ -586,6 +587,8 @@ const ProfileScreen = ({ route, navigation }) => {
         quantity: exp.profile_expertise_quantity || exp.quantity || "",
         cost: exp.profile_expertise_cost || "",
         bounty: exp.profile_expertise_bounty || "",
+        profile_expertise_image: exp.profile_expertise_image || "",
+        profile_expertise_image_is_public: exp.profile_expertise_image_is_public === 0 || exp.profile_expertise_image_is_public === "0" ? 0 : 1,
         profile_expertise_start: exp.profile_expertise_start || "",
         profile_expertise_end: exp.profile_expertise_end || "",
         profile_expertise_location: exp.profile_expertise_location || "",
@@ -599,6 +602,8 @@ const ProfileScreen = ({ route, navigation }) => {
         amount: wish.profile_wish_bounty || "",
         cost: wish.profile_wish_cost != null && wish.profile_wish_cost !== "" ? wish.profile_wish_cost : "0",
         profile_wish_quantity: wish.profile_wish_quantity != null ? String(wish.profile_wish_quantity) : "",
+        profile_wish_image: wish.profile_wish_image || "",
+        profile_wish_image_is_public: wish.profile_wish_image_is_public === 0 || wish.profile_wish_image_is_public === "0" ? 0 : 1,
         profile_wish_start: wish.profile_wish_start || "",
         profile_wish_end: wish.profile_wish_end || "",
         profile_wish_location: wish.profile_wish_location || "",
@@ -1633,10 +1638,39 @@ const ProfileScreen = ({ route, navigation }) => {
                   user.expertise
                     .filter((exp) => exp.isPublic)
                     .map((exp, index) => {
+                      const expImageUri = resolveProfileItemImageUri(exp.profile_expertise_image, profileUID);
+                      const showExpImage =
+                        exp.profile_expertise_image &&
+                        String(exp.profile_expertise_image).trim() !== "" &&
+                        (isCurrentUserProfile ||
+                          exp.profile_expertise_image_is_public === 1 ||
+                          exp.profile_expertise_image_is_public === "1");
                       const expertiseItem = (
                         <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
-                          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-                            {sanitizeText(exp.name) ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{sanitizeText(exp.name)}</Text> : null}
+                          <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 8, gap: 10 }}>
+                            {showExpImage ? (
+                              <Image
+                                source={{ uri: expImageUri }}
+                                style={{
+                                  width: 56,
+                                  height: 56,
+                                  borderRadius: 8,
+                                  backgroundColor: darkMode ? "#333" : "#eee",
+                                }}
+                              />
+                            ) : null}
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
+                                {sanitizeText(exp.name) ? (
+                                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{sanitizeText(exp.name)}</Text>
+                                ) : null}
+                              </View>
+                              {sanitizeText(exp.description) ? (
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>
+                                  {sanitizeText(exp.description)}
+                                </Text>
+                              ) : null}
+                            </View>
                           </View>
                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0 }}>
                             {exp.cost ? (
@@ -1660,9 +1694,6 @@ const ProfileScreen = ({ route, navigation }) => {
                               ) : null}
                             </View>
                           </View>
-                          {sanitizeText(exp.description) ? (
-                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{sanitizeText(exp.description)}</Text>
-                          ) : null}
                           {exp.profile_expertise_start || exp.profile_expertise_end || exp.profile_expertise_location || exp.profile_expertise_mode ? (
                             <View style={[styles.seekingMetaRow, { marginTop: 6 }]}>
                               {exp.profile_expertise_start || exp.profile_expertise_end ? (
@@ -1719,6 +1750,8 @@ const ProfileScreen = ({ route, navigation }) => {
                                 profile_expertise_end: exp.profile_expertise_end,
                                 profile_expertise_location: exp.profile_expertise_location,
                                 profile_expertise_mode: exp.profile_expertise_mode,
+                                profile_expertise_image: exp.profile_expertise_image,
+                                profile_expertise_image_is_public: exp.profile_expertise_image_is_public,
                               };
                               const profileData = {
                                 firstName: user.firstName,
@@ -1769,25 +1802,47 @@ const ProfileScreen = ({ route, navigation }) => {
                   user.wishes
                     .filter((wish) => wish.isPublic && !isWishEnded(wish))
                     .map((wish, index) => {
+                      const wishImageUri = resolveProfileItemImageUri(wish.profile_wish_image, profileUID);
+                      const showWishImage =
+                        wish.profile_wish_image &&
+                        String(wish.profile_wish_image).trim() !== "" &&
+                        (isCurrentUserProfile ||
+                          wish.profile_wish_image_is_public === 1 ||
+                          wish.profile_wish_image_is_public === "1");
                       const wishItem = (
                         <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
-                          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
-                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500", flex: 1 }]}>{wish.helpNeeds || ""}</Text>
-                            {isCurrentUserProfile && wish.wish_responses !== undefined && wish.wish_responses > 0 && (
-                              <TouchableOpacity
-                                onPress={() => {
-                                  const wishDataForNavigation = {
-                                    wish_uid: wish.profile_wish_uid,
-                                    title: wish.helpNeeds,
-                                    description: wish.details,
-                                    bounty: wish.amount,
-                                    cost: wish.cost,
-                                    profile_wish_quantity: wish.profile_wish_quantity,
-                                    profile_wish_start: wish.profile_wish_start,
-                                    profile_wish_end: wish.profile_wish_end,
-                                    profile_wish_location: wish.profile_wish_location,
-                                    profile_wish_mode: wish.profile_wish_mode,
-                                  };
+                          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 2 }}>
+                            {showWishImage ? (
+                              <Image
+                                source={{ uri: wishImageUri }}
+                                style={{
+                                  width: 56,
+                                  height: 56,
+                                  borderRadius: 8,
+                                  backgroundColor: darkMode ? "#333" : "#eee",
+                                }}
+                              />
+                            ) : null}
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500", flex: 1 }]}>{wish.helpNeeds || ""}</Text>
+                                {isCurrentUserProfile && wish.wish_responses !== undefined && wish.wish_responses > 0 && (
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      const wishDataForNavigation = {
+                                        wish_uid: wish.profile_wish_uid,
+                                        title: wish.helpNeeds,
+                                        description: wish.details,
+                                        bounty: wish.amount,
+                                        cost: wish.cost,
+                                        profile_wish_quantity: wish.profile_wish_quantity,
+                                        profile_wish_image: wish.profile_wish_image,
+                                        profile_wish_image_is_public: wish.profile_wish_image_is_public,
+                                        profile_wish_start: wish.profile_wish_start,
+                                        profile_wish_end: wish.profile_wish_end,
+                                        profile_wish_location: wish.profile_wish_location,
+                                        profile_wish_mode: wish.profile_wish_mode,
+                                      };
                                   const profileDataForNavigation = {
                                     firstName: user.firstName,
                                     lastName: user.lastName,
@@ -1815,6 +1870,11 @@ const ProfileScreen = ({ route, navigation }) => {
                                 <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Responses: {wish.wish_responses || 0}</Text>
                               </TouchableOpacity>
                             )}
+                              </View>
+                              {wish.details ? (
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{wish.details}</Text>
+                              ) : null}
+                            </View>
                           </View>
                           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0 }}>
                             {wish.cost ? (
@@ -1838,7 +1898,6 @@ const ProfileScreen = ({ route, navigation }) => {
                               ) : null}
                             </View>
                           </View>
-                          {wish.details ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{wish.details}</Text> : null}
                           {wish.profile_wish_start || wish.profile_wish_end || wish.profile_wish_location || wish.profile_wish_mode ? (
                             <View style={[styles.seekingMetaRow, { marginTop: 6 }]}>
                               {wish.profile_wish_start || wish.profile_wish_end ? (
@@ -1891,6 +1950,8 @@ const ProfileScreen = ({ route, navigation }) => {
                                 bounty: wish.amount,
                                 cost: wish.cost,
                                 profile_wish_quantity: wish.profile_wish_quantity,
+                                profile_wish_image: wish.profile_wish_image,
+                                profile_wish_image_is_public: wish.profile_wish_image_is_public,
                                 profile_wish_start: wish.profile_wish_start,
                                 profile_wish_end: wish.profile_wish_end,
                                 profile_wish_location: wish.profile_wish_location,

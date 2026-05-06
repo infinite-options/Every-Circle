@@ -558,6 +558,8 @@ export default function SearchScreen({ route }) {
               cost: item.profile_wish_cost,
               wish_uid: item.profile_wish_uid,
               profile_wish_quantity: item.profile_wish_quantity || "",
+              profile_wish_image: item.profile_wish_image || "",
+              profile_wish_image_is_public: item.profile_wish_image_is_public,
               profile_wish_start: item.profile_wish_start || "",
               profile_wish_end: item.profile_wish_end || "",
               profile_wish_location: item.profile_wish_location || "",
@@ -637,6 +639,8 @@ export default function SearchScreen({ route }) {
             profile_expertise_end: item.profile_expertise_end || "",
             profile_expertise_location: item.profile_expertise_location || "",
             profile_expertise_mode: item.profile_expertise_mode || "",
+            profile_expertise_image: item.profile_expertise_image || "",
+            profile_expertise_image_is_public: item.profile_expertise_image_is_public,
           },
           // Store profile data for MiniCard-like display (all public info for Add to Cart modal)
           profileData: {
