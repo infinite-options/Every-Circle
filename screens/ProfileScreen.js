@@ -549,6 +549,9 @@ const ProfileScreen = ({ route, navigation }) => {
             startDate: exp.profile_experience_start_date || "",
             endDate: exp.profile_experience_end_date || "",
             isPublic: exp.profile_experience_is_public === 1 || exp.isPublic === true,
+            profile_experience_image: exp.profile_experience_image || "",
+            profile_experience_image_is_public:
+              exp.profile_experience_image_is_public === 0 || exp.profile_experience_image_is_public === "0" ? 0 : 1,
           }))
         : [];
       userData.education = apiUser.education_info
@@ -559,6 +562,9 @@ const ProfileScreen = ({ route, navigation }) => {
             startDate: edu.profile_education_start_date || "",
             endDate: edu.profile_education_end_date || "",
             isPublic: edu.profile_education_is_public === 1 || edu.isPublic === true,
+            profile_education_image: edu.profile_education_image || "",
+            profile_education_image_is_public:
+              edu.profile_education_image_is_public === 0 || edu.profile_education_image_is_public === "0" ? 0 : 1,
           }))
         : [];
       // Log business_info from API
@@ -2010,18 +2016,48 @@ const ProfileScreen = ({ route, navigation }) => {
                 (user.experience && user.experience.filter((exp) => exp.isPublic).length > 0 ? (
                   user.experience
                     .filter((exp) => exp.isPublic)
-                    .map((exp, index) => (
-                      <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
-                        {exp.title ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.title}</Text> : null}
-                        {exp.company ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.company}</Text> : null}
-                        {exp.description ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{exp.description}</Text> : null}
-                        {exp.startDate || exp.endDate ? (
-                          <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666" }]}>
-                            {(exp.startDate || "") + (exp.startDate && exp.endDate ? " - " : "") + (exp.endDate || "")}
-                          </Text>
-                        ) : null}
-                      </View>
-                    ))
+                    .map((exp, index) => {
+                      const expImageUri = resolveProfileItemImageUri(exp.profile_experience_image, profileUID);
+                      const experienceImageIsHidden =
+                        exp.profile_experience_image_is_public === 0 ||
+                        exp.profile_experience_image_is_public === "0" ||
+                        exp.profile_experience_image_is_public === false;
+                      const showExpCardImage =
+                        exp.profile_experience_image &&
+                        String(exp.profile_experience_image).trim() !== "" &&
+                        !experienceImageIsHidden;
+                      return (
+                        <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
+                          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+                            {showExpCardImage ? (
+                              <Image
+                                source={{ uri: expImageUri }}
+                                style={{
+                                  width: 56,
+                                  height: 56,
+                                  borderRadius: 8,
+                                  backgroundColor: darkMode ? "#333" : "#eee",
+                                }}
+                              />
+                            ) : null}
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              {exp.title ? (
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.title}</Text>
+                              ) : null}
+                              {exp.company ? (
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.company}</Text>
+                              ) : null}
+                            </View>
+                          </View>
+                          {exp.description ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{exp.description}</Text> : null}
+                          {exp.startDate || exp.endDate ? (
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666" }]}>
+                              {(exp.startDate || "") + (exp.startDate && exp.endDate ? " - " : "") + (exp.endDate || "")}
+                            </Text>
+                          ) : null}
+                        </View>
+                      );
+                    })
                 ) : (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No experience added yet</Text>
                 ))}
@@ -2040,17 +2076,47 @@ const ProfileScreen = ({ route, navigation }) => {
                 (user.education && user.education.filter((edu) => edu.isPublic).length > 0 ? (
                   user.education
                     .filter((edu) => edu.isPublic)
-                    .map((edu, index) => (
-                      <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
-                        {edu.degree ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{edu.degree}</Text> : null}
-                        {edu.school ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{edu.school}</Text> : null}
-                        {edu.startDate || edu.endDate ? (
-                          <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666" }]}>
-                            {(edu.startDate || "") + (edu.startDate && edu.endDate ? "  to  " : "") + (edu.endDate || "")}
-                          </Text>
-                        ) : null}
-                      </View>
-                    ))
+                    .map((edu, index) => {
+                      const eduImageUri = resolveProfileItemImageUri(edu.profile_education_image, profileUID);
+                      const educationImageIsHidden =
+                        edu.profile_education_image_is_public === 0 ||
+                        edu.profile_education_image_is_public === "0" ||
+                        edu.profile_education_image_is_public === false;
+                      const showEduCardImage =
+                        edu.profile_education_image &&
+                        String(edu.profile_education_image).trim() !== "" &&
+                        !educationImageIsHidden;
+                      return (
+                        <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
+                          <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+                            {showEduCardImage ? (
+                              <Image
+                                source={{ uri: eduImageUri }}
+                                style={{
+                                  width: 56,
+                                  height: 56,
+                                  borderRadius: 8,
+                                  backgroundColor: darkMode ? "#333" : "#eee",
+                                }}
+                              />
+                            ) : null}
+                            <View style={{ flex: 1, minWidth: 0 }}>
+                              {edu.degree ? (
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{edu.degree}</Text>
+                              ) : null}
+                              {edu.school ? (
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{edu.school}</Text>
+                              ) : null}
+                            </View>
+                          </View>
+                          {edu.startDate || edu.endDate ? (
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: "#666" }]}>
+                              {(edu.startDate || "") + (edu.startDate && edu.endDate ? "  to  " : "") + (edu.endDate || "")}
+                            </Text>
+                          ) : null}
+                        </View>
+                      );
+                    })
                 ) : (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No education added yet</Text>
                 ))}
