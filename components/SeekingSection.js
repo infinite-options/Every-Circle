@@ -2,6 +2,17 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
 import { formatCostValue } from "../utils/priceUtils";
+import {
+  toDateTimeLocalValue,
+  fromDateTimeLocalValue,
+  formatDateForDisplay,
+  formatTimeForDisplay,
+  formatDateTimeForDisplay,
+  parseDateTime,
+  combineDateTime,
+  isStartDateValid,
+  isEndDateValid,
+} from "../utils/profileDateTime";
 
 // DateTimePicker only works on native (not web)
 let DateTimePicker = null;
@@ -12,96 +23,6 @@ if (Platform.OS !== "web") {
     console.warn("DateTimePicker not available:", e.message);
   }
 }
-
-// Convert our format "YYYY-MM-DD HH:mm" to HTML5 datetime-local format "YYYY-MM-DDTHH:mm"
-const toDateTimeLocalValue = (value) => {
-  if (!value || typeof value !== "string" || value.trim() === "") return "";
-  return value.trim().replace(" ", "T").substring(0, 16); // Ensure we have at most YYYY-MM-DDTHH:mm
-};
-
-// Convert HTML5 datetime-local format to our format
-const fromDateTimeLocalValue = (value) => {
-  if (!value || typeof value !== "string" || value.trim() === "") return "";
-  return value.trim().replace("T", " ").substring(0, 16);
-};
-
-const formatDateForDisplay = (date) => {
-  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return "";
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${m}-${d}-${y}`;
-};
-
-const formatTimeForDisplay = (date) => {
-  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return "";
-  const h = String(date.getHours()).padStart(2, "0");
-  const min = String(date.getMinutes()).padStart(2, "0");
-  return `${h}:${min}`;
-};
-
-// Display stored "YYYY-MM-DD HH:mm" as "mm-dd-yyyy hh:mm"
-const formatDateTimeForDisplay = (value) => {
-  if (!value || typeof value !== "string" || value.trim() === "") return "";
-  const { date, time } = parseDateTime(value);
-  if (!date || !time) return value;
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const y = date.getFullYear();
-  const h = String(time.getHours()).padStart(2, "0");
-  const min = String(time.getMinutes()).padStart(2, "0");
-  return `${m}-${d}-${y} ${h}:${min}`;
-};
-
-// Validation: start date must be today or after (if today, time must not be in the past)
-const isStartDateValid = (date) => {
-  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return false;
-  const now = new Date();
-  return date.getTime() >= now.getTime();
-};
-
-// Validation: end date must be after start date
-const isEndDateValid = (endDateTime, startValue) => {
-  if (!endDateTime || !(endDateTime instanceof Date) || isNaN(endDateTime.getTime())) return false;
-  if (!startValue || typeof startValue !== "string" || startValue.trim() === "") return true; // No start set, allow any end
-  const { date: startDate, time: startTime } = parseDateTime(startValue);
-  if (!startDate || !startTime) return true;
-  const startDateTime = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), startTime.getHours(), startTime.getMinutes());
-  return endDateTime.getTime() > startDateTime.getTime();
-};
-
-const parseDateTime = (value) => {
-  if (!value || typeof value !== "string" || value.trim() === "") return { date: null, time: null };
-  const trimmed = value.trim();
-  // Try "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" (ISO)
-  const spaceMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})/);
-  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{1,2}):(\d{2})/);
-  const match = spaceMatch || isoMatch;
-  if (match) {
-    const [, y, m, d, h, min] = match;
-    const date = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
-    const time = new Date(2000, 0, 1, parseInt(h, 10), parseInt(min, 10));
-    return { date, time };
-  }
-  // Try date only "YYYY-MM-DD"
-  const dateOnlyMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (dateOnlyMatch) {
-    const [, y, m, d] = dateOnlyMatch;
-    const date = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
-    return { date, time: new Date(2000, 0, 1, 9, 0) }; // default 09:00
-  }
-  return { date: null, time: null };
-};
-
-const combineDateTime = (date, time) => {
-  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return "";
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const h = time && time instanceof Date && !isNaN(time.getTime()) ? String(time.getHours()).padStart(2, "0") : "00";
-  const min = time && time instanceof Date && !isNaN(time.getTime()) ? String(time.getMinutes()).padStart(2, "0") : "00";
-  return `${y}-${m}-${d} ${h}:${min}`;
-};
 
 const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus }) => {
   // Stores each rendered card's ref by index so parent can scroll to the new one.
@@ -130,6 +51,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       details: "",
       amount: "",
       cost: "",
+      profile_wish_quantity: "",
       profile_wish_start: "",
       profile_wish_end: "",
       profile_wish_location: "",
@@ -706,6 +628,13 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       handleBountyAmountChange(index, cleanedText);
     }}
     onBlur={() => handleBountyAmountBlur(index)}
+  />
+  <TextInput
+    style={styles.bountyInput}
+    placeholder="Qty"
+    keyboardType="numeric"
+    value={item.profile_wish_quantity || ""}
+    onChangeText={(text) => handleInputChange(index, "profile_wish_quantity", text)}
   />
   <TouchableOpacity onPress={() => deleteWish(index)}>
     <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />

@@ -557,8 +557,11 @@ export default function SearchScreen({ route }) {
               bounty: item.profile_wish_bounty,
               cost: item.profile_wish_cost,
               wish_uid: item.profile_wish_uid,
+              profile_wish_quantity: item.profile_wish_quantity || "",
               profile_wish_start: item.profile_wish_start || "",
               profile_wish_end: item.profile_wish_end || "",
+              profile_wish_location: item.profile_wish_location || "",
+              profile_wish_mode: item.profile_wish_mode || "",
             },
             // Store profile data for MiniCard-like display
             profileData: {
@@ -628,8 +631,12 @@ export default function SearchScreen({ route }) {
             details: item.profile_expertise_details,
             bounty: item.profile_expertise_bounty,
             cost: item.profile_expertise_cost,
-            quantity: item.profile_expertise_quantity || item.quantity, 
+            quantity: item.profile_expertise_quantity || item.quantity,
             expertise_uid: item.profile_expertise_uid,
+            profile_expertise_start: item.profile_expertise_start || "",
+            profile_expertise_end: item.profile_expertise_end || "",
+            profile_expertise_location: item.profile_expertise_location || "",
+            profile_expertise_mode: item.profile_expertise_mode || "",
           },
           // Store profile data for MiniCard-like display (all public info for Add to Cart modal)
           profileData: {

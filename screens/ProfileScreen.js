@@ -586,6 +586,10 @@ const ProfileScreen = ({ route, navigation }) => {
         quantity: exp.profile_expertise_quantity || exp.quantity || "",
         cost: exp.profile_expertise_cost || "",
         bounty: exp.profile_expertise_bounty || "",
+        profile_expertise_start: exp.profile_expertise_start || "",
+        profile_expertise_end: exp.profile_expertise_end || "",
+        profile_expertise_location: exp.profile_expertise_location || "",
+        profile_expertise_mode: exp.profile_expertise_mode || "",
         isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
       }));
       userData.wishes = parseProfileJsonArray(apiUser.wishes_info).map((wish) => ({
@@ -594,6 +598,7 @@ const ProfileScreen = ({ route, navigation }) => {
         details: wish.profile_wish_description || "",
         amount: wish.profile_wish_bounty || "",
         cost: wish.profile_wish_cost != null && wish.profile_wish_cost !== "" ? wish.profile_wish_cost : "0",
+        profile_wish_quantity: wish.profile_wish_quantity != null ? String(wish.profile_wish_quantity) : "",
         profile_wish_start: wish.profile_wish_start || "",
         profile_wish_end: wish.profile_wish_end || "",
         profile_wish_location: wish.profile_wish_location || "",
@@ -1644,14 +1649,56 @@ const ProfileScreen = ({ route, navigation }) => {
                                 </Text>
                               </View>
                             ) : null}
-                            {exp.bounty ? (
-                              <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
-                                {exp.bounty.toLowerCase() !== "free" ? `💰 $${exp.bounty.replace(/^\$/, "")}` : `💰 ${exp.bounty}`}
-                              </Text>
-                            ) : null}
+                            <View style={{ flexDirection: "row", alignItems: "center", flex: 1, justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
+                              {exp.quantity ? (
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(exp.quantity).trim()}</Text>
+                              ) : null}
+                              {exp.bounty ? (
+                                <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
+                                  {exp.bounty.toLowerCase() !== "free" ? `💰 $${exp.bounty.replace(/^\$/, "")}` : `💰 ${exp.bounty}`}
+                                </Text>
+                              ) : null}
+                            </View>
                           </View>
                           {sanitizeText(exp.description) ? (
                             <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{sanitizeText(exp.description)}</Text>
+                          ) : null}
+                          {exp.profile_expertise_start || exp.profile_expertise_end || exp.profile_expertise_location || exp.profile_expertise_mode ? (
+                            <View style={[styles.seekingMetaRow, { marginTop: 6 }]}>
+                              {exp.profile_expertise_start || exp.profile_expertise_end ? (
+                                <View style={styles.seekingMetaLine}>
+                                  <Ionicons name='calendar-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
+                                  <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
+                                    {exp.profile_expertise_start ? formatDateTimeForDisplay(exp.profile_expertise_start) : "—"}
+                                    {exp.profile_expertise_start && exp.profile_expertise_end ? " → " : ""}
+                                    {exp.profile_expertise_end ? formatDateTimeForDisplay(exp.profile_expertise_end) : ""}
+                                  </Text>
+                                </View>
+                              ) : null}
+                              {exp.profile_expertise_location || exp.profile_expertise_mode ? (
+                                <View style={[styles.seekingMetaLine, styles.seekingMetaLineSpaceBetween, (exp.profile_expertise_start || exp.profile_expertise_end) && { marginTop: 4 }]}>
+                                  {exp.profile_expertise_location ? (
+                                    <View style={styles.seekingMetaLine}>
+                                      <Ionicons name='location-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
+                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{exp.profile_expertise_location}</Text>
+                                    </View>
+                                  ) : (
+                                    <View style={styles.seekingMetaSpacer} />
+                                  )}
+                                  {exp.profile_expertise_mode ? (
+                                    <View style={styles.seekingMetaLine}>
+                                      <Ionicons
+                                        name={String(exp.profile_expertise_mode).toLowerCase() === "virtual" ? "videocam-outline" : "people-outline"}
+                                        size={14}
+                                        color={darkMode ? "#999" : "#666"}
+                                        style={{ marginRight: 6 }}
+                                      />
+                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{exp.profile_expertise_mode}</Text>
+                                    </View>
+                                  ) : null}
+                                </View>
+                              ) : null}
+                            </View>
                           ) : null}
                         </View>
                       );
@@ -1661,7 +1708,18 @@ const ProfileScreen = ({ route, navigation }) => {
                             key={index}
                             activeOpacity={0.7}
                             onPress={() => {
-                              const expertiseData = { expertise_uid: exp.profile_expertise_uid, title: exp.name, description: exp.description, quantity: exp.quantity, cost: exp.cost, bounty: exp.bounty };
+                              const expertiseData = {
+                                expertise_uid: exp.profile_expertise_uid,
+                                title: exp.name,
+                                description: exp.description,
+                                quantity: exp.quantity,
+                                cost: exp.cost,
+                                bounty: exp.bounty,
+                                profile_expertise_start: exp.profile_expertise_start,
+                                profile_expertise_end: exp.profile_expertise_end,
+                                profile_expertise_location: exp.profile_expertise_location,
+                                profile_expertise_mode: exp.profile_expertise_mode,
+                              };
                               const profileData = {
                                 firstName: user.firstName,
                                 lastName: user.lastName,
@@ -1724,6 +1782,7 @@ const ProfileScreen = ({ route, navigation }) => {
                                     description: wish.details,
                                     bounty: wish.amount,
                                     cost: wish.cost,
+                                    profile_wish_quantity: wish.profile_wish_quantity,
                                     profile_wish_start: wish.profile_wish_start,
                                     profile_wish_end: wish.profile_wish_end,
                                     profile_wish_location: wish.profile_wish_location,
@@ -1768,11 +1827,16 @@ const ProfileScreen = ({ route, navigation }) => {
                                 </Text>
                               </View>
                             ) : null}
-                            {wish.amount ? (
-                              <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
-                                {wish.amount.toLowerCase() !== "free" ? `💰 $${wish.amount.replace(/^\$/, "")}` : `💰 ${wish.amount}`}
-                              </Text>
-                            ) : null}
+                            <View style={{ flexDirection: "row", alignItems: "center", flex: 1, justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
+                              {wish.profile_wish_quantity ? (
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(wish.profile_wish_quantity).trim()}</Text>
+                              ) : null}
+                              {wish.amount ? (
+                                <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
+                                  {wish.amount.toLowerCase() !== "free" ? `💰 $${wish.amount.replace(/^\$/, "")}` : `💰 ${wish.amount}`}
+                                </Text>
+                              ) : null}
+                            </View>
                           </View>
                           {wish.details ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{wish.details}</Text> : null}
                           {wish.profile_wish_start || wish.profile_wish_end || wish.profile_wish_location || wish.profile_wish_mode ? (
@@ -1826,6 +1890,7 @@ const ProfileScreen = ({ route, navigation }) => {
                                 description: wish.details,
                                 bounty: wish.amount,
                                 cost: wish.cost,
+                                profile_wish_quantity: wish.profile_wish_quantity,
                                 profile_wish_start: wish.profile_wish_start,
                                 profile_wish_end: wish.profile_wish_end,
                                 profile_wish_location: wish.profile_wish_location,

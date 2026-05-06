@@ -1,7 +1,27 @@
-import React, { useEffect, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
 import { formatCostValue } from "../utils/priceUtils";
+import {
+  toDateTimeLocalValue,
+  fromDateTimeLocalValue,
+  formatDateForDisplay,
+  formatTimeForDisplay,
+  formatDateTimeForDisplay,
+  parseDateTime,
+  combineDateTime,
+  isStartDateValid,
+  isEndDateValid,
+} from "../utils/profileDateTime";
+
+let DateTimePicker = null;
+if (Platform.OS !== "web") {
+  try {
+    DateTimePicker = require("@react-native-community/datetimepicker").default;
+  } catch (e) {
+    console.warn("DateTimePicker not available:", e.message);
+  }
+}
 
 const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic, handleDelete, onInputFocus }) => {
   // Stores each rendered card's ref by index so parent can scroll to the new one.
@@ -9,6 +29,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
   // Tracks which index was just added via "+".
   const pendingNewIndexRef = useRef(null);
   const costInputRefs = useRef({});
+  const [activePicker, setActivePicker] = useState(null); // { index, field: 'start'|'end', mode: 'date'|'time' }
   // Cost unit options for dropdown
   const costUnitOptions = [
     { label: "total", value: "total" },
@@ -30,6 +51,10 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
       quantity: "",
       cost: "",
       bounty: "",
+      profile_expertise_start: "",
+      profile_expertise_end: "",
+      profile_expertise_location: "",
+      profile_expertise_mode: "",
       isPublic: true,
     };
     setExpertise([...expertise, newEntry]);
@@ -186,6 +211,103 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
     setExpertise(updated);
   };
 
+  const handleDateTimeInputChange = (index, field, value) => {
+    const startKey = "profile_expertise_start";
+    const endKey = "profile_expertise_end";
+    if (!value || value.trim() === "") {
+      handleInputChange(index, field === "start" ? startKey : endKey, value);
+      return;
+    }
+    const { date, time } = parseDateTime(value);
+    if (!date || !time) {
+      handleInputChange(index, field === "start" ? startKey : endKey, value);
+      return;
+    }
+    const combinedDateTime = new Date(date.getFullYear(), date.getMonth(), date.getDate(), time.getHours(), time.getMinutes());
+    const startValue = expertise[index]?.profile_expertise_start || "";
+    if (field === "start") {
+      if (!isStartDateValid(combinedDateTime)) {
+        Alert.alert("Invalid Date", "Start date must be today or a future date/time.");
+        return;
+      }
+    } else {
+      if (!isEndDateValid(combinedDateTime, startValue)) {
+        Alert.alert("Invalid Date", "End date must be after the start date.");
+        return;
+      }
+    }
+    handleInputChange(index, field === "start" ? startKey : endKey, value);
+  };
+
+  const handleDateTimeChange = (index, field, mode, selectedDate) => {
+    if (!selectedDate) {
+      setActivePicker(null);
+      return;
+    }
+    const updated = [...expertise];
+    const startKey = "profile_expertise_start";
+    const endKey = "profile_expertise_end";
+    const currentValue = updated[index][field === "start" ? startKey : endKey] || "";
+    const startValue = updated[index][startKey] || "";
+    const { date: currentDate, time: currentTime } = parseDateTime(currentValue);
+    const defaultDate = new Date();
+    const defaultTime = new Date(2000, 0, 1, 9, 0);
+
+    if (mode === "date") {
+      if (field === "start") {
+        if (!isStartDateValid(selectedDate)) {
+          Alert.alert("Invalid Date", "Start date must be today or a future date.");
+          setActivePicker(null);
+          return;
+        }
+      } else {
+        if (!isEndDateValid(selectedDate, startValue)) {
+          Alert.alert("Invalid Date", "End date must be after the start date.");
+          setActivePicker(null);
+          return;
+        }
+      }
+      const newTime = currentTime || defaultTime;
+      const combined = combineDateTime(selectedDate, newTime);
+      updated[index][field === "start" ? startKey : endKey] = combined;
+      setExpertise(updated);
+      setActivePicker({ index, field, mode: "time" });
+    } else {
+      const newDate = currentDate || defaultDate;
+      const combinedDateTime = new Date(newDate.getFullYear(), newDate.getMonth(), newDate.getDate(), selectedDate.getHours(), selectedDate.getMinutes());
+      if (field === "start") {
+        if (!isStartDateValid(combinedDateTime)) {
+          Alert.alert("Invalid Date", "Start date and time must be today or a future date/time.");
+          setActivePicker(null);
+          return;
+        }
+      } else {
+        if (!isEndDateValid(combinedDateTime, startValue)) {
+          Alert.alert("Invalid Date", "End date and time must be after the start date and time.");
+          setActivePicker(null);
+          return;
+        }
+      }
+      const combined = combineDateTime(newDate, selectedDate);
+      updated[index][field === "start" ? startKey : endKey] = combined;
+      setExpertise(updated);
+      setActivePicker(null);
+    }
+  };
+
+  const getPickerValue = (index, field) => {
+    const startKey = "profile_expertise_start";
+    const endKey = "profile_expertise_end";
+    const value = expertise[index]?.[field === "start" ? startKey : endKey] || "";
+    const { date, time } = parseDateTime(value);
+    const defaultDate = new Date();
+    const defaultTime = new Date(2000, 0, 1, 9, 0);
+    if (activePicker?.mode === "date") return date || defaultDate;
+    const d = date || defaultDate;
+    const t = time || defaultTime;
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), t.getHours(), t.getMinutes());
+  };
+
   return (
     <View style={styles.sectionContainer}>
       <View style={styles.headerRow}>
@@ -242,6 +364,146 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
             textAlignVertical='top'
             scrollEnabled={false}
           />
+
+          <View style={styles.dateTimeSection}>
+            <View style={styles.dateTimeRow}>
+              <Text style={styles.dateTimeLabel}>Start Date and Time</Text>
+              {DateTimePicker ? (
+                <>
+                  <TouchableOpacity style={styles.dateTimeButton} onPress={() => setActivePicker({ index, field: "start", mode: "date" })}>
+                    <Text style={styles.dateTimeButtonText}>
+                      {(() => {
+                        const { date } = parseDateTime(item.profile_expertise_start || "");
+                        return date ? formatDateForDisplay(date) : "Date";
+                      })()}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.dateTimeButton}
+                    onPress={() => {
+                      const { date, time } = parseDateTime(item.profile_expertise_start || "");
+                      if (!date) setActivePicker({ index, field: "start", mode: "date" });
+                      else setActivePicker({ index, field: "start", mode: "time" });
+                    }}
+                  >
+                    <Text style={styles.dateTimeButtonText}>
+                      {(() => {
+                        const { time } = parseDateTime(item.profile_expertise_start || "");
+                        return time ? formatTimeForDisplay(time) : "Time";
+                      })()}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : Platform.OS === "web" ? (
+                <View style={styles.webDateTimeInputWrapper}>
+                  <input
+                    type="datetime-local"
+                    style={styles.webDateTimeInput}
+                    value={toDateTimeLocalValue(item.profile_expertise_start || "")}
+                    onChange={(e) => handleDateTimeInputChange(index, "start", fromDateTimeLocalValue(e.target.value))}
+                  />
+                </View>
+              ) : (
+                <TextInput
+                  style={styles.dateTimeTextInput}
+                  placeholder="mm-dd-yyyy hh:mm"
+                  value={item.profile_expertise_start ? formatDateTimeForDisplay(item.profile_expertise_start) : ""}
+                  onChangeText={(text) => handleInputChange(index, "profile_expertise_start", text)}
+                />
+              )}
+            </View>
+            <View style={styles.dateTimeRow}>
+              <Text style={styles.dateTimeLabel}>End Date and Time</Text>
+              {DateTimePicker ? (
+                <>
+                  <TouchableOpacity style={styles.dateTimeButton} onPress={() => setActivePicker({ index, field: "end", mode: "date" })}>
+                    <Text style={styles.dateTimeButtonText}>
+                      {(() => {
+                        const { date } = parseDateTime(item.profile_expertise_end || "");
+                        return date ? formatDateForDisplay(date) : "Date";
+                      })()}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.dateTimeButton}
+                    onPress={() => {
+                      const { date, time } = parseDateTime(item.profile_expertise_end || "");
+                      if (!date) setActivePicker({ index, field: "end", mode: "date" });
+                      else setActivePicker({ index, field: "end", mode: "time" });
+                    }}
+                  >
+                    <Text style={styles.dateTimeButtonText}>
+                      {(() => {
+                        const { time } = parseDateTime(item.profile_expertise_end || "");
+                        return time ? formatTimeForDisplay(time) : "Time";
+                      })()}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : Platform.OS === "web" ? (
+                <View style={styles.webDateTimeInputWrapper}>
+                  <input
+                    type="datetime-local"
+                    style={styles.webDateTimeInput}
+                    value={toDateTimeLocalValue(item.profile_expertise_end || "")}
+                    onChange={(e) => handleDateTimeInputChange(index, "end", fromDateTimeLocalValue(e.target.value))}
+                  />
+                </View>
+              ) : (
+                <TextInput
+                  style={styles.dateTimeTextInput}
+                  placeholder="mm-dd-yyyy hh:mm"
+                  value={item.profile_expertise_end ? formatDateTimeForDisplay(item.profile_expertise_end) : ""}
+                  onChangeText={(text) => handleInputChange(index, "profile_expertise_end", text)}
+                />
+              )}
+            </View>
+            <View style={styles.dateTimeRow}>
+              <Text style={styles.dateTimeLabel}>Location</Text>
+              <TextInput
+                style={styles.locationInput}
+                placeholder="Location"
+                value={item.profile_expertise_location || ""}
+                onChangeText={(text) => handleInputChange(index, "profile_expertise_location", text)}
+              />
+            </View>
+            <View style={styles.dateTimeRow}>
+              <Text style={styles.dateTimeLabel}>Mode</Text>
+              <View style={styles.modeCheckboxRow}>
+                <TouchableOpacity
+                  style={[styles.modeCheckbox, (item.profile_expertise_mode || "").toLowerCase() === "virtual" && styles.modeCheckboxSelected]}
+                  onPress={() => handleInputChange(index, "profile_expertise_mode", item.profile_expertise_mode === "Virtual" ? "" : "Virtual")}
+                >
+                  <Text style={[styles.modeCheckboxText, (item.profile_expertise_mode || "").toLowerCase() === "virtual" && styles.modeCheckboxTextSelected]}>
+                    Virtual
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modeCheckbox, (item.profile_expertise_mode || "").toLowerCase() === "in-person" && styles.modeCheckboxSelected]}
+                  onPress={() => handleInputChange(index, "profile_expertise_mode", item.profile_expertise_mode === "In-Person" ? "" : "In-Person")}
+                >
+                  <Text style={[styles.modeCheckboxText, (item.profile_expertise_mode || "").toLowerCase() === "in-person" && styles.modeCheckboxTextSelected]}>
+                    In-Person
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          {DateTimePicker && activePicker && activePicker.index === index && (
+            <DateTimePicker
+              value={getPickerValue(activePicker.index, activePicker.field)}
+              mode={activePicker.mode}
+              display={Platform.OS === "ios" ? "spinner" : "default"}
+              onChange={(_, selectedDate) => {
+                if (selectedDate) {
+                  handleDateTimeChange(activePicker.index, activePicker.field, activePicker.mode, selectedDate);
+                } else {
+                  setActivePicker(null);
+                }
+              }}
+            />
+          )}
 
           {/* Cost Row */}
           <View style={styles.amountRow}>
@@ -368,6 +630,102 @@ const styles = StyleSheet.create({
     minHeight: 40,
     maxHeight: 120,
   },
+  dateTimeSection: {
+    marginBottom: 10,
+  },
+  dateTimeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+    gap: 8,
+  },
+  dateTimeLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    width: 140,
+    minWidth: 140,
+  },
+  dateTimeButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    minHeight: 40,
+    justifyContent: "center",
+  },
+  dateTimeButtonText: {
+    fontSize: 14,
+    color: "#333",
+  },
+  dateTimeTextInput: {
+    flex: 2,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    minHeight: 40,
+    fontSize: 14,
+  },
+  webDateTimeInputWrapper: {
+    flex: 2,
+    minWidth: 0,
+  },
+  webDateTimeInput: {
+    width: "100%",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    minHeight: 40,
+    fontSize: 14,
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+    boxSizing: "border-box",
+  },
+  locationInput: {
+    flex: 2,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    minHeight: 40,
+    fontSize: 14,
+  },
+  modeCheckboxRow: {
+    flex: 2,
+    flexDirection: "row",
+    gap: 12,
+  },
+  modeCheckbox: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 10,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modeCheckboxSelected: {
+    borderColor: "#007AFF",
+    backgroundColor: "#E8F4FD",
+  },
+  modeCheckboxText: {
+    fontSize: 14,
+    color: "#666",
+  },
+  modeCheckboxTextSelected: {
+    color: "#007AFF",
+    fontWeight: "600",
+  },
+  requiredDropdown: {
+    borderColor: "#f44336",
+  },
   amountRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -419,6 +777,11 @@ const styles = StyleSheet.create({
   dropdownContainer: {
     borderRadius: 5,
     marginTop: 5,
+    ...(Platform.OS === "web"
+      ? {
+          boxShadow: "0px 2px 4px 0px rgba(0, 0, 0, 0.1)",
+        }
+      : {}),
   },
   dropdownItemText: {
     color: "#000",

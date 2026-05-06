@@ -26,6 +26,7 @@ import { REACT_APP_STRIPE_PUBLIC_KEY } from "@env";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CREATE_PAYMENT_INTENT_ENDPOINT, TRANSACTIONS_ENDPOINT, GET_STRIPE_PUBLIC_KEY_ENDPOINT } from "../apiConfig";
 import { formatWholeDollars } from "../utils/priceUtils";
+import { formatDateTimeForDisplay } from "../utils/profileDateTime";
 
 // Web Stripe imports (only load on web)
 let loadStripe = null;
@@ -769,6 +770,38 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
                   </Text>
                 </View>
               )}
+              {expertiseData?.quantity ? (
+                <View style={styles.pricingRow}>
+                  <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>Qty: {String(expertiseData.quantity).trim()}</Text>
+                </View>
+              ) : null}
+              {(expertiseData?.profile_expertise_start || expertiseData?.profile_expertise_end) && (
+                <View style={styles.pricingRow}>
+                  <Ionicons name="calendar-outline" size={16} color={darkMode ? "#999" : "#666"} style={{ marginRight: 8 }} />
+                  <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>
+                    {expertiseData.profile_expertise_start ? formatDateTimeForDisplay(expertiseData.profile_expertise_start) : "—"}
+                    {expertiseData.profile_expertise_start && expertiseData.profile_expertise_end ? " → " : ""}
+                    {expertiseData.profile_expertise_end ? formatDateTimeForDisplay(expertiseData.profile_expertise_end) : ""}
+                  </Text>
+                </View>
+              )}
+              {expertiseData?.profile_expertise_location ? (
+                <View style={styles.pricingRow}>
+                  <Ionicons name="location-outline" size={16} color={darkMode ? "#999" : "#666"} style={{ marginRight: 8 }} />
+                  <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>{expertiseData.profile_expertise_location}</Text>
+                </View>
+              ) : null}
+              {expertiseData?.profile_expertise_mode ? (
+                <View style={styles.pricingRow}>
+                  <Ionicons
+                    name={String(expertiseData.profile_expertise_mode).toLowerCase() === "virtual" ? "videocam-outline" : "people-outline"}
+                    size={16}
+                    color={darkMode ? "#999" : "#666"}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>{expertiseData.profile_expertise_mode}</Text>
+                </View>
+              ) : null}
             </View>
           </View>
         </ScrollView>

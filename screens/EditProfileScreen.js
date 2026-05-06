@@ -113,20 +113,51 @@ const EditProfileScreen = ({ route, navigation }) => {
       quantity: e.quantity || e.profile_expertise_quantity || "",
       cost: e.cost || e.profile_expertise_cost || "",
       bounty: e.bounty || e.profile_expertise_bounty || "",
+      profile_expertise_start: e.profile_expertise_start || "",
+      profile_expertise_end: e.profile_expertise_end || "",
+      profile_expertise_location: e.profile_expertise_location || "",
+      profile_expertise_mode: e.profile_expertise_mode || "",
       isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_expertise_is_public === 1,
-    })) || [{ name: "", description: "", quantity: "", cost: "", bounty: "", isPublic: true }],
+    })) || [
+      {
+        name: "",
+        description: "",
+        quantity: "",
+        cost: "",
+        bounty: "",
+        profile_expertise_start: "",
+        profile_expertise_end: "",
+        profile_expertise_location: "",
+        profile_expertise_mode: "",
+        isPublic: true,
+      },
+    ],
     wishes: user?.wishes?.map((e) => ({
       profile_wish_uid: e.profile_wish_uid || "",
       helpNeeds: e.helpNeeds || e.profile_wish_title || "",
       details: e.details || e.profile_wish_description || "",
       amount: e.amount || e.profile_wish_bounty || "",
       cost: e.cost || e.profile_wish_cost || "",
+      profile_wish_quantity: e.profile_wish_quantity != null ? String(e.profile_wish_quantity) : "",
       profile_wish_start: e.profile_wish_start || "",
       profile_wish_end: e.profile_wish_end || "",
       profile_wish_location: e.profile_wish_location || "",
       profile_wish_mode: e.profile_wish_mode || "",
       isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_wish_is_public === 1,
-    })) || [{ helpNeeds: "", details: "", amount: "", cost: "", profile_wish_start: "", profile_wish_end: "", profile_wish_location: "", profile_wish_mode: "", isPublic: true }],
+    })) || [
+      {
+        helpNeeds: "",
+        details: "",
+        amount: "",
+        cost: "",
+        profile_wish_quantity: "",
+        profile_wish_start: "",
+        profile_wish_end: "",
+        profile_wish_location: "",
+        profile_wish_mode: "",
+        isPublic: true,
+      },
+    ],
     facebook: user?.facebook || "",
     twitter: user?.twitter || "",
     linkedin: user?.linkedin || "",
@@ -431,7 +462,26 @@ const EditProfileScreen = ({ route, navigation }) => {
       console.log("EditProfileScreen - Sending businessIsPublic:", formData.businessIsPublic);
       console.log("EditProfileScreen - As value:", formData.businessIsPublic ? 1 : 0);
       payload.append("profile_personal_image_is_public", formData.imageIsPublic ? 1 : 0);
-      payload.append("wishes_info", JSON.stringify(formData.wishes || []));
+
+      const wishesPayload = (formData.wishes || []).map((w) => ({
+        profile_wish_uid: w.profile_wish_uid || "",
+        profile_wish_title: w.helpNeeds || "",
+        profile_wish_description: w.details || "",
+        profile_wish_cost: w.cost || "",
+        profile_wish_quantity: w.profile_wish_quantity != null && w.profile_wish_quantity !== "" ? String(w.profile_wish_quantity) : "",
+        profile_wish_bounty: w.amount || "",
+        profile_wish_is_public: w.isPublic ? 1 : 0,
+        profile_wish_start: w.profile_wish_start || "",
+        profile_wish_end: w.profile_wish_end || "",
+        profile_wish_location: w.profile_wish_location || "",
+        profile_wish_mode: w.profile_wish_mode || "",
+        helpNeeds: w.helpNeeds || "",
+        details: w.details || "",
+        amount: w.amount || "",
+        cost: w.cost || "",
+        isPublic: w.isPublic,
+      }));
+      payload.append("wishes_info", JSON.stringify(wishesPayload));
 
       // Map experience data to backend field names - using frontend field names for consistency
       const experiencePayload = (formData.experience || [])
@@ -467,7 +517,27 @@ const EditProfileScreen = ({ route, navigation }) => {
       console.log("Experience payload being sent:", experiencePayload);
       payload.append("experience_info", JSON.stringify(experiencePayload));
       payload.append("education_info", JSON.stringify(formData.education || []));
-      payload.append("expertise_info", JSON.stringify(formData.expertise || []));
+
+      const expertisePayload = (formData.expertise || []).map((e) => ({
+        profile_expertise_uid: e.profile_expertise_uid || "",
+        profile_expertise_title: e.name || "",
+        profile_expertise_description: e.description || "",
+        profile_expertise_quantity: e.quantity != null && e.quantity !== "" ? String(e.quantity) : "",
+        profile_expertise_cost: e.cost || "",
+        profile_expertise_bounty: e.bounty || "",
+        profile_expertise_is_public: e.isPublic ? 1 : 0,
+        profile_expertise_start: e.profile_expertise_start || "",
+        profile_expertise_end: e.profile_expertise_end || "",
+        profile_expertise_location: e.profile_expertise_location || "",
+        profile_expertise_mode: e.profile_expertise_mode || "",
+        name: e.name || "",
+        description: e.description || "",
+        quantity: e.quantity || "",
+        cost: e.cost || "",
+        bounty: e.bounty || "",
+        isPublic: e.isPublic,
+      }));
+      payload.append("expertise_info", JSON.stringify(expertisePayload));
       //payload.append("business_info", JSON.stringify(formData.businesses || []));
 
       // Add businesses to payload (for each business, add the correct fields)
