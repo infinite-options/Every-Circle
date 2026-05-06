@@ -1639,12 +1639,15 @@ const ProfileScreen = ({ route, navigation }) => {
                     .filter((exp) => exp.isPublic)
                     .map((exp, index) => {
                       const expImageUri = resolveProfileItemImageUri(exp.profile_expertise_image, profileUID);
+                      // Same rule as detail screens: explicit 0/"0"/false hides; 1, "1", true, or undefined (legacy) shows.
+                      const expertiseImageIsHidden =
+                        exp.profile_expertise_image_is_public === 0 ||
+                        exp.profile_expertise_image_is_public === "0" ||
+                        exp.profile_expertise_image_is_public === false;
                       const showExpImage =
                         exp.profile_expertise_image &&
                         String(exp.profile_expertise_image).trim() !== "" &&
-                        (isCurrentUserProfile ||
-                          exp.profile_expertise_image_is_public === 1 ||
-                          exp.profile_expertise_image_is_public === "1");
+                        !expertiseImageIsHidden;
                       const expertiseItem = (
                         <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
                           <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 8, gap: 10 }}>
@@ -1803,12 +1806,14 @@ const ProfileScreen = ({ route, navigation }) => {
                     .filter((wish) => wish.isPublic && !isWishEnded(wish))
                     .map((wish, index) => {
                       const wishImageUri = resolveProfileItemImageUri(wish.profile_wish_image, profileUID);
+                      const wishImageIsHidden =
+                        wish.profile_wish_image_is_public === 0 ||
+                        wish.profile_wish_image_is_public === "0" ||
+                        wish.profile_wish_image_is_public === false;
                       const showWishImage =
                         wish.profile_wish_image &&
                         String(wish.profile_wish_image).trim() !== "" &&
-                        (isCurrentUserProfile ||
-                          wish.profile_wish_image_is_public === 1 ||
-                          wish.profile_wish_image_is_public === "1");
+                        !wishImageIsHidden;
                       const wishItem = (
                         <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
                           <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 2 }}>
