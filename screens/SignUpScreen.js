@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, Platform, Modal, ActivityIndicator, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -34,6 +34,9 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
   const [userExistsError, setUserExistsError] = useState("");
   const [isAttemptingLogin, setIsAttemptingLogin] = useState(false);
+  /** OAuth account already created in App.js; only referrer collection remains — hide signup form to avoid duplicate POSTs. */
+  const [blockingOAuthReferral, setBlockingOAuthReferral] = useState(false);
+  const oauthReferralHandledRef = useRef(false);
 
   // Handle pre-populated Google user info
   useEffect(() => {
@@ -46,8 +49,40 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     }
   }, [route.params?.googleUserInfo]);
 
+  // Google / Apple account created in App.js — collect referrer before UserInfo (same as email signup modal).
+  useEffect(() => {
+    if (!route.params?.pendingReferralAfterOAuth || oauthReferralHandledRef.current) return;
+    oauthReferralHandledRef.current = true;
+
+    const { googleUserInfo: gInfo, appleUserInfo: aInfo, referralProfileUid: refUid, returnToNewConnection, profile_uid } = route.params || {};
+
+    if (refUid) {
+      (async () => {
+        await AsyncStorage.setItem("referral_uid", refUid);
+        navigation.navigate("UserInfo", {
+          ...(gInfo ? { googleUserInfo: gInfo } : {}),
+          ...(aInfo ? { appleUserInfo: aInfo } : {}),
+          referralId: refUid,
+          returnToNewConnection,
+          profile_uid,
+        });
+      })();
+      return;
+    }
+
+    setBlockingOAuthReferral(true);
+    if (gInfo?.email) {
+      setEmail(gInfo.email);
+      setIsGoogleSignUp(true);
+    }
+    if (gInfo) setPendingGoogleUserInfo(gInfo);
+    if (aInfo) setPendingAppleUserInfo(aInfo);
+    setShowReferralModal(true);
+  }, [navigation, route.params]);
+
   // Listen for Apple sign up completion (if passed via route)
   useEffect(() => {
+    if (route.params?.pendingReferralAfterOAuth) return;
     if (route.params?.appleUserInfo) {
       setPendingAppleUserInfo(route.params.appleUserInfo);
       // Skip referral modal if referralProfileUid is provided
@@ -468,9 +503,12 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         <ScrollView contentContainerStyle={styles.contentContainer}>
           <View style={styles.header}>
             <Text style={styles.title}>Welcome to everyCircle!</Text>
-            <Text style={styles.subtitle}>{isGoogleSignUp ? "Complete your sign up" : "Please create your account to continue."}</Text>
+            <Text style={styles.subtitle}>
+              {blockingOAuthReferral ? "Who referred you? Finish this step to complete your sign up." : isGoogleSignUp ? "Complete your sign up" : "Please create your account to continue."}
+            </Text>
           </View>
 
+          {!blockingOAuthReferral && (
           <View style={styles.inputContainer}>
             <View style={styles.fieldContainer}>
               <Text style={styles.label}>Email</Text>
@@ -503,7 +541,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                     />
                     <TouchableOpacity
                       style={styles.passwordVisibilityToggle}
-                      onPress={() => setIsPasswordVisib(!isPasswordVisible)}
+                      onPress={() => setIsPasswordVisible(!isPasswordVisible)}
                       accessibilityRole='button'
                       accessibilitylabel={isPasswordVisible ? "Hide password" : "Show password"}
                       accessibilityHint='Toggles password visibility'
@@ -540,7 +578,9 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               </>
             )}
           </View>
+          )}
 
+          {!blockingOAuthReferral && (
           <View style={styles.buttonContainer}>
             <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]} onPress={handleContinue} disabled={!isValid || isAttemptingLogin}>
               {isAttemptingLogin ? (
@@ -550,8 +590,9 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               )}
             </TouchableOpacity>
           </View>
+          )}
 
-          {!isGoogleSignUp && (
+          {!blockingOAuthReferral && !isGoogleSignUp && (
             <>
               <View style={styles.dividerContainer}>
                 <View style={styles.divider} />
@@ -566,6 +607,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             </>
           )}
 
+          {!blockingOAuthReferral && (
           <View style={styles.footer}>
             <Text style={styles.footerText}>
               Already have an account?{" "}
@@ -574,6 +616,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               </Text>
             </Text>
           </View>
+          )}
 
           {/* Referral Modal */}
           <Modal visible={showReferralModal} transparent animationType='fade'>
@@ -615,7 +658,13 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                 </View>
 
                 {/* Search Section - Embed ReferralSearch content here */}
-                <ReferralSearch visible={true} onSelect={handleReferralSelect} onNewUser={handleNewUserReferral} onClose={() => setShowReferralModal(false)} embedded={true} />
+                <ReferralSearch
+                  visible={true}
+                  onSelect={handleReferralSelect}
+                  onNewUser={handleNewUserReferral}
+                  onClose={blockingOAuthReferral ? () => {} : () => setShowReferralModal(false)}
+                  embedded={true}
+                />
               </View>
             </View>
           </Modal>
