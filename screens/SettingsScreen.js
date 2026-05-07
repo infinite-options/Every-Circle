@@ -1288,15 +1288,34 @@ export default function SettingsScreen() {
                               borderBottomColor: darkMode ? "#444" : "#eee",
                               backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#fff5f5") : "transparent",
                             }}>
-                              {/* Row 1: Buyer | Seller | Txn ID */}
-                              {/* Single row matching header columns */}
                               <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 6 }}>
-                                <Text style={{ flex: 1, fontSize: 10, color: darkMode ? "#fff" : "#333", fontWeight: "600" }} numberOfLines={2}>
-                                  {item.buyer_name || item.transaction_profile_id || "N/A"}
-                                </Text>
-                                <Text style={{ flex: 1, fontSize: 10, color: darkMode ? "#fff" : "#333", fontWeight: "600" }} numberOfLines={2}>
-                                  {item.seller_name || item.transaction_business_id || "N/A"}
-                                </Text>
+
+                                {/* Buyer — tappable */}
+                                <TouchableOpacity
+                                  style={{ flex: 1 }}
+                                  onPress={() => {
+                                    setResolveModalVisible(false);
+                                    navigation.navigate("Profile", { profile_uid: item.transaction_profile_id });
+                                  }}
+                                >
+                                  <Text style={{ fontSize: 10, color: "#007AFF", fontWeight: "600", textDecorationLine: "underline" }} numberOfLines={2}>
+                                    {item.buyer_name || item.transaction_profile_id || "N/A"}
+                                  </Text>
+                                </TouchableOpacity>
+
+                                {/* Seller — tappable */}
+                                <TouchableOpacity
+                                  style={{ flex: 1 }}
+                                  onPress={() => {
+                                    setResolveModalVisible(false);
+                                    navigation.navigate("Profile", { profile_uid: item.transaction_business_id });
+                                  }}
+                                >
+                                  <Text style={{ fontSize: 10, color: "#007AFF", fontWeight: "600", textDecorationLine: "underline" }} numberOfLines={2}>
+                                    {item.seller_name || item.transaction_business_id || "N/A"}
+                                  </Text>
+                                </TouchableOpacity>
+
                                 <Text style={{ flex: 1.2, fontSize: 10, color: "#B71C1C" }} numberOfLines={2}>
                                   {item.transaction_uid || "N/A"}
                                 </Text>
@@ -1306,24 +1325,25 @@ export default function SettingsScreen() {
                                 <Text style={{ flex: 1, fontSize: 10, color: sellerNote ? "#B71C1C" : "#aaa", lineHeight: 14 }} numberOfLines={3}>
                                   {sellerNote || "None"}
                                 </Text>
-                                {/* Resolve button inline */}
-                              <TouchableOpacity
-                                style={{
-                                  alignSelf: "flex-start",
-                                  backgroundColor: "#18884A",
-                                  paddingVertical: 4,
-                                  paddingHorizontal: 12,
-                                  borderRadius: 6,
-                                }}
-                                onPress={() => {
-                                  setResolvingItem(item);
-                                  setResolveModalVisible(true);
-                                }}
-                              >
-                                <Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>✓ Resolve</Text>
-                              </TouchableOpacity>
+
+                                {/* Resolve button */}
+                                <TouchableOpacity
+                                  style={{
+                                    alignSelf: "flex-start",
+                                    backgroundColor: "#18884A",
+                                    paddingVertical: 4,
+                                    paddingHorizontal: 12,
+                                    borderRadius: 6,
+                                  }}
+                                  onPress={() => {
+                                    setResolvingItem(item);
+                                    setResolveModalVisible(true);
+                                  }}
+                                >
+                                  <Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>✓ Resolve</Text>
+                                </TouchableOpacity>
+                              </View>
                             </View>
-                          </View>
                           );
                         })}
 

@@ -153,7 +153,9 @@ export default function AccountScreen({ navigation }) {
         const withTotals = await Promise.all(
           transactions.map(async (t) => {
             try {
-              const r = await fetch(`${TRANSACTION_RECEIPT_ENDPOINT}/${t.transaction_profile_id}/${t.transaction_uid}`, {
+              const sellerId = t.seller_id || "";
+              const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${t.transaction_profile_id}/${t.transaction_uid}${sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : ""}`;
+              const r = await fetch(url, {
                 method: "GET",
                 headers: { "Content-Type": "application/json" },
               });
@@ -195,7 +197,6 @@ export default function AccountScreen({ navigation }) {
       setReceiptLoading(true);
       setReceiptData([]);
       setShowReceiptModal(true);
-      // setReceiptTransaction(transaction);
       const storedReturn = await AsyncStorage.getItem(`return_request_${transaction.transaction_uid}`);
       const parsedReturn = storedReturn ? JSON.parse(storedReturn) : null;
       setReceiptTransaction({
@@ -203,7 +204,11 @@ export default function AccountScreen({ navigation }) {
         transaction_return_note: transaction.transaction_return_note || parsedReturn?.note || "",
         transaction_return_requested: transaction.transaction_return_requested || (parsedReturn?.requested ? 1 : 0),
       });
-      const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${profileId}/${transactionUid}`;
+
+      // Pass seller_id so backend filters to only this seller's items
+      const sellerId = transaction.seller_id || "";
+      const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${profileId}/${transactionUid}${sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : ""}`;
+
       const response = await fetch(url, { method: "GET", headers: { "Content-Type": "application/json" } });
       if (!response.ok) {
         throw new Error(`Failed to load receipt: ${response.status}`);
@@ -219,19 +224,11 @@ export default function AccountScreen({ navigation }) {
       } else if (result?.data) {
         items = [result.data];
       }
+
+      // No client-side filtering needed — backend handles it via seller_id param
       setReceiptData(items);
-      // const sellerTotal = items.reduce((sum, item) => {
-      //   return sum + parseFloat(item.ti_bs_cost || 0) * (parseInt(item.ti_bs_qty) || 1);
-      // }, 0);
-      // setTransactionData(prev =>
-      //   prev.map(t =>
-      //     t.transaction_uid === transaction.transaction_uid
-      //       ? { ...t, seller_total: sellerTotal }
-      //       : t
-      //   )
-      // );
-      } catch (error) {
-        console.error("Error fetching receipt:", error);
+    } catch (error) {
+      console.error("Error fetching receipt:", error);
       Alert.alert("Error", error.message || "Failed to load receipt.");
       setShowReceiptModal(false);
     } finally {
