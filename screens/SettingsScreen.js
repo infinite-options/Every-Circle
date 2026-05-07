@@ -115,7 +115,7 @@ function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMo
   const rightTextActiveStyle = rightOn ? styles.togglePillTextActive : null;
 
   return (
-    <View style={styles.settingsToggleRow}>
+    <View style={[styles.settingsToggleRow, Platform.OS === "web" && styles.settingsToggleRowWeb]}>
       <TouchableOpacity
         onPress={() => value !== false && onValueChange(false)}
         style={[styles.togglePill, leftBgStyle]}
@@ -1619,6 +1619,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 2,
     flexShrink: 0,
+  },
+  settingsToggleRowWeb: {
+    gap: 14,
   },
   togglePill: {
     paddingHorizontal: 8,
