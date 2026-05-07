@@ -151,18 +151,18 @@ export default function HowItWorksScreen({ navigation, route }) {
             <Text>Create an </Text>
             <Text style={styles.italicWord}>Individual</Text>
             <Text> Profile to showcase your experience, education, skills, and interests</Text>
+          </Bullet>
 
-            <Bullet>
-              <Text>Use </Text>
-              <Text style={styles.italicWord}>Offering</Text>
-              <Text> to showcase your products, services, and expertise</Text>
-            </Bullet>
+          <Bullet indented>
+            <Text>Use </Text>
+            <Text style={styles.italicWord}>Offering</Text>
+            <Text> to showcase your products, services, and expertise</Text>
+          </Bullet>
 
-            <Bullet>
-              <Text>Use </Text>
-              <Text style={styles.italicWord}>Seeking</Text>
-              <Text> to let your connections know what you're looking for</Text>
-            </Bullet>
+          <Bullet indented>
+            <Text>Use </Text>
+            <Text style={styles.italicWord}>Seeking</Text>
+            <Text> to let your connections know what you're looking for</Text>
           </Bullet>
 
           <Bullet>
@@ -175,7 +175,7 @@ export default function HowItWorksScreen({ navigation, route }) {
 
         <View style={styles.card}>
           <Text style={styles.secTitle}>
-            2. Connect with People in a <Text style={styles.boldWord}>meaningful</Text> way
+            2. Connect in a <Text style={styles.boldWord}>Meaningful</Text> way
           </Text>
 
           <Bullet>
@@ -195,10 +195,10 @@ export default function HowItWorksScreen({ navigation, route }) {
         <HeaderPill title='ACCOUNT' bg={getHeaderColor("account")} iconSource={require("../assets/pillar.png")} />
 
         <View style={styles.card}>
-          <Text style={styles.secTitle}>3. Manage your Purchases, Sales and Revenue</Text>
+          <Text style={styles.secTitle}>3. Manage your Purchases and Balance</Text>
 
           <Bullet>
-            <Text>Quickly see what you bough and sold</Text>
+            <Text>Quickly see what you bought and sold</Text>
           </Bullet>
 
           <Bullet>
@@ -214,9 +214,7 @@ export default function HowItWorksScreen({ navigation, route }) {
         <HeaderPill title='SETTINGS' bg={getHeaderColor("settings")} iconSource={require("../assets/setting.png")} />
 
         <View style={styles.card}>
-          <Text style={styles.secTitle}>
-            4. Control and Manage <Text style={styles.boldWord}>YOUR</Text> Platform
-          </Text>
+          <Text style={styles.secTitle}>4. Easily Control and Manage Your Platform</Text>
 
           <Bullet>
             <Text>Manage your settings and preferences in one place</Text>
@@ -235,7 +233,7 @@ export default function HowItWorksScreen({ navigation, route }) {
         <HeaderPill title='SEARCH' bg={getHeaderColor("search")} iconSource={require("../assets/search.png")} />
 
         <View style={styles.card}>
-          <Text style={styles.secTitle}>5. Find what you are Searching for</Text>
+          <Text style={styles.secTitle}>5. Find what You are Searching for</Text>
           <Bullet>
             <Text>Search for people, businesses, and organizations by name, location, and keywords</Text>
           </Bullet>
@@ -290,9 +288,9 @@ function HeaderPill({ title, bg, iconSource }) {
   );
 }
 
-function Bullet({ children }) {
+function Bullet({ children, indented }) {
   return (
-    <View style={styles.bulletRow}>
+    <View style={[styles.bulletRow, indented && styles.bulletRowIndented]}>
       <Text style={styles.bulletDot}>•</Text>
       <Text style={styles.bulletText}>{children}</Text>
     </View>
@@ -577,6 +575,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     marginTop: 2,
     marginBottom: 2,
+  },
+  bulletRowIndented: {
+    marginLeft: 14,
   },
   bulletDot: {
     width: isMobile ? 18 : 20,

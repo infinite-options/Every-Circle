@@ -1,6 +1,6 @@
 //SettingsScreen.js 
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, Switch, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, Platform } from "react-native";
 import * as Location from "expo-location";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -32,13 +32,14 @@ import QRCode from "react-native-qrcode-svg";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { getHeaderColors } from "../config/headerColors";
+import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import versionData from "../version.json";
 
 // Color constants for Settings screen
 const COLORS = {
   // Primary colors
   primary: "#4B2E83", // Settings header purple
-  primaryTransparent: "rgba(75, 46, 131, 0.5)", // 50% opacity purple for switch track
+  primaryTransparent: "rgba(75, 46, 131, 0.5)", // 50% opacity purple (headers / toggles)
 
   // Light mode colors
   lightBackground: "#fff",
@@ -63,12 +64,6 @@ const COLORS = {
   darkGroupBackground: "#2d2d2d",
   darkBorderColor: "#444",
   darkModalBackground: "#333",
-
-  // Switch colors
-  switchTrackInactive: "#ccc",
-  switchThumbInactive: "#f4f3f4",
-  switchThumbActive: "#4B2E83", // Explicit active thumb color
-  switchTrackActive: "rgba(75, 46, 131, 0.5)", // Explicit active track color
 
   // Warning/Alert colors
   warningRed: "#FF6B6B",
@@ -107,6 +102,40 @@ const DUMMY_LOCATIONS = [
   { name: "Dummy C — Golden Gate Park, SF", lat: 37.7694, lng: -122.4862 }, // ~5.1 mi from A ✗
 ];
 
+/** Two tappable labels (Edit Profile–style) instead of a Switch. */
+function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMode, variant = "yesNo" }) {
+  const leftOn = !value;
+  const rightOn = value;
+  const leftBgStyle =
+    variant === "background" ? (leftOn ? styles.togglePillThemeLight : null) : leftOn ? styles.togglePillActiveRed : null;
+  const rightBgStyle =
+    variant === "background" ? (rightOn ? styles.togglePillThemeDark : null) : rightOn ? styles.togglePillActiveGreen : null;
+  const leftTextActiveStyle =
+    variant === "background" && leftOn ? styles.togglePillTextDarkEmphasis : leftOn ? styles.togglePillTextActive : null;
+  const rightTextActiveStyle = rightOn ? styles.togglePillTextActive : null;
+
+  return (
+    <View style={styles.settingsToggleRow}>
+      <TouchableOpacity
+        onPress={() => value !== false && onValueChange(false)}
+        style={[styles.togglePill, leftBgStyle]}
+        accessibilityRole='button'
+        accessibilityState={{ selected: leftOn }}
+      >
+        <Text style={[styles.togglePillText, darkMode && !leftOn && styles.darkTogglePillText, leftTextActiveStyle]}>{leftLabel}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={() => value !== true && onValueChange(true)}
+        style={[styles.togglePill, rightBgStyle]}
+        accessibilityRole='button'
+        accessibilityState={{ selected: rightOn }}
+      >
+        <Text style={[styles.togglePillText, darkMode && !rightOn && styles.darkTogglePillText, rightTextActiveStyle]}>{rightLabel}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export default function SettingsScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -115,6 +144,8 @@ export default function SettingsScreen() {
   const [shareLocationActive, setShareLocationActive] = useState(false);
   const [shareLocationUntil, setShareLocationUntil] = useState(null); // Date | null
   const { darkMode, toggleDarkMode } = useDarkMode();
+  /** Light gray in light mode, white in dark — avoids icons staying dark on dark backgrounds */
+  const settingsMenuIconColor = darkMode ? "#ffffff" : COLORS.lightIconColor;
   const { reinitialize } = useUnread();
   const [allowCookies, setAllowCookies] = useState(true);
   const [termsAccepted, setTermsAccepted] = useState(true);
@@ -126,6 +157,7 @@ export default function SettingsScreen() {
   const [cookiesWarningVisible, setCookiesWarningVisible] = useState(false);
   const [showInformation, setShowInformation] = useState(true);
   const [showSettings, setShowSettings] = useState(true);
+  const [networkDebugMode, setNetworkDebugMode] = useState(false);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -190,6 +222,13 @@ export default function SettingsScreen() {
       if (p !== null) setDisplayPhoneNumber(JSON.parse(p));
       if (t !== null) setTermsAccepted(JSON.parse(t));
       if (c !== null) setAllowCookies(JSON.parse(c));
+
+      try {
+        const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
+        if (nd !== null) setNetworkDebugMode(JSON.parse(nd) === true);
+      } catch (_) {
+        setNetworkDebugMode(false);
+      }
 
       // Restore ignored nearby UIDs (survives page refresh within a session)
       try {
@@ -288,6 +327,15 @@ export default function SettingsScreen() {
   const cancelCookiesRejection = () => {
     setCookiesWarningVisible(false);
     // Keep the switch in the "Yes" position
+  };
+
+  const handleNetworkDebugMode = async (value) => {
+    setNetworkDebugMode(value);
+    try {
+      await AsyncStorage.setItem(SETTINGS_NETWORK_DEBUG_MODE_KEY, JSON.stringify(value));
+    } catch (e) {
+      console.warn("Settings: failed to persist network debug mode", e);
+    }
   };
 
   const handleLogout = async () => {
@@ -926,7 +974,7 @@ export default function SettingsScreen() {
           {/* SETTINGS Section Header - Outside Box */}
           <TouchableOpacity style={styles.settingsSectionHeader} onPress={() => setShowSettings(!showSettings)}>
             <Text style={styles.settingsSectionHeaderText}>SETTINGS (* Required)</Text>
-            <Ionicons name={showSettings ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? COLORS.darkText : COLORS.lightText} />
+            <Ionicons name={showSettings ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : COLORS.lightText} />
           </TouchableOpacity>
 
           {/* Settings/Toggles Container */}
@@ -934,108 +982,80 @@ export default function SettingsScreen() {
             <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer]}>
               {/* Allow Cookies */}
               <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-                <View style={styles.itemLabel}>
-                  <MaterialIcons name='cookie' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
+                  <MaterialIcons name='cookie' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Cookies * </Text>
-                    <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>No / Yes</Text>
+                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Cookies*</Text>
                   </Text>
                 </View>
-                <Switch
-                  value={allowCookies}
-                  onValueChange={handleCookiesToggle}
-                  trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }}
-                  thumbColor={allowCookies ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
-                  ios_backgroundColor={COLORS.switchTrackInactive}
-                  activeThumbColor={COLORS.switchThumbActive}
-                  activeTrackColor={COLORS.switchTrackActive}
-                  accessibilityRole='switch'
-                  accessibilitylabel='Allow cookies'
-                  accessibilityHint='Turns cookies on or off'
-                  accessibilityState={{ checked: allowCookies }}
-                />
+                <SettingsBoolPills value={allowCookies} onValueChange={handleCookiesToggle} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
               </View>
 
               {/* Terms and Conditions */}
               <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-                <TouchableOpacity style={styles.itemLabel} onPress={() => navigation.navigate("TermsAndConditions")} activeOpacity={0.7}>
-                  <MaterialIcons name='description' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <TouchableOpacity style={[styles.itemLabel, styles.itemLabelWithToggle]} onPress={() => navigation.navigate("TermsAndConditions")} activeOpacity={0.7}>
+                  <MaterialIcons name='description' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Terms & Conditions * </Text>
-                    <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>Disagree / Agree</Text>
+                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Terms & Conditions*</Text>
                   </Text>
                 </TouchableOpacity>
-                <Switch
-                  value={termsAccepted}
-                  onValueChange={handleTermsToggle}
-                  trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }}
-                  thumbColor={termsAccepted ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
-                  ios_backgroundColor={COLORS.switchTrackInactive}
-                  activeThumbColor={COLORS.switchThumbActive}
-                  activeTrackColor={COLORS.switchTrackActive}
-                  accessibilityRole='switch'
-                  accessibilitylabel='Accept terms and conditions'
-                  accessibilityHint='Turns acceptance of the terms and conditions on or off'
-                  accessibilityState={{ checked: termsAccepted }}
-                />
+                <SettingsBoolPills value={termsAccepted} onValueChange={handleTermsToggle} leftLabel='Disagree' rightLabel='Agree' darkMode={darkMode} />
               </View>
 
               {/* Dark Mode */}
               <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-                <View style={styles.itemLabel}>
-                  <MaterialIcons name='brightness-2' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
+                  <MaterialIcons name='brightness-2' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Background </Text>
-                    <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>Light / Dark</Text>
+                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Background</Text>
                   </Text>
                 </View>
-                <Switch
+                <SettingsBoolPills
                   value={darkMode}
-                  onValueChange={toggleDarkMode}
-                  trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }}
-                  thumbColor={darkMode ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
-                  ios_backgroundColor={COLORS.switchTrackInactive}
-                  activeThumbColor={COLORS.switchThumbActive}
-                  activeTrackColor={COLORS.switchTrackActive}
-                  accessibilityRole='switch'
-                  accessibilitylabel='Dark mode'
-                  accessibilityHint='Changes the background appearance between light and dark'
-                  accessibilityState={{ checked: darkMode }}
+                  onValueChange={(v) => toggleDarkMode(v)}
+                  leftLabel='Light'
+                  rightLabel='Dark'
+                  darkMode={darkMode}
+                  variant='background'
                 />
               </View>
 
+              {SHOW_NETWORK_DEBUG_UI !== 0 && (
+                <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+                  <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
+                    <MaterialIcons name='bug-report' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Debug Mode</Text>
+                    </Text>
+                  </View>
+                  <SettingsBoolPills
+                    value={networkDebugMode}
+                    onValueChange={handleNetworkDebugMode}
+                    leftLabel='No'
+                    rightLabel='Yes'
+                    darkMode={darkMode}
+                  />
+                </View>
+              )}
+
               {/* Allow Notifications */}
               <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-                <View style={styles.itemLabel}>
-                  <MaterialIcons name='notifications' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
+                  <MaterialIcons name='notifications' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Notifications </Text>
-                    <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>No / Yes</Text>
+                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Notifications</Text>
                   </Text>
                 </View>
-                <Switch
-                  value={allowNotifications}
-                  onValueChange={setAllowNotifications}
-                  trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }}
-                  thumbColor={allowNotifications ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
-                  ios_backgroundColor={COLORS.switchTrackInactive}
-                  activeThumbColor={COLORS.switchThumbActive}
-                  activeTrackColor={COLORS.switchTrackActive}
-                  accessibilityRole='switch'
-                  accessibilitylabel='Allow notifications'
-                  accessibilityHint='Turns notifications on or off'
-                  accessibilityState={{ checked: allowNotifications }}
-                />
+                <SettingsBoolPills value={allowNotifications} onValueChange={setAllowNotifications} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
               </View>
 
               {/* Share Live Location */}
               <View style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]}>
                 <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
-                  <MaterialIcons name='location-on' size={20} style={styles.icon} color={shareLocationActive ? COLORS.primary : darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                  <MaterialIcons name='location-on' size={20} style={styles.icon} color={shareLocationActive ? COLORS.primary : settingsMenuIconColor} />
                   <View>
                     <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Share Live Location </Text>
-                      <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>Off / On</Text>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Share Live Location</Text>
                     </Text>
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
                       {shareLocationActive && shareLocationUntil
@@ -1044,18 +1064,12 @@ export default function SettingsScreen() {
                     </Text>
                   </View>
                 </View>
-                <Switch
+                <SettingsBoolPills
                   value={shareLocationActive}
-                  onValueChange={(value) => (value ? startLiveLocationSharing() : stopLiveLocationSharing())}
-                  trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }}
-                  thumbColor={shareLocationActive ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
-                  ios_backgroundColor={COLORS.switchTrackInactive}
-                  activeThumbColor={COLORS.switchThumbActive}
-                  activeTrackColor={COLORS.switchTrackActive}
-                  accessibilityRole='switch'
-                  accessibilitylabel='Share live location'
-                  accessibilityHint='Turns live location sharing on or off'
-                  accessibilityState={{ checked: shareLocationActive }}
+                  onValueChange={(v) => (v ? startLiveLocationSharing() : stopLiveLocationSharing())}
+                  leftLabel='Off'
+                  rightLabel='On'
+                  darkMode={darkMode}
                 />
               </View>
 
@@ -1067,7 +1081,7 @@ export default function SettingsScreen() {
                 return (
                   <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setNearbyPrivacyModalVisible(true)} activeOpacity={0.8}>
                     <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
-                      <Ionicons name='shield-checkmark' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                      <Ionicons name='shield-checkmark' size={20} style={styles.icon} color={settingsMenuIconColor} />
                       <View>
                         <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
                           <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Location Privacy</Text>
@@ -1077,7 +1091,7 @@ export default function SettingsScreen() {
                         </Text>
                       </View>
                     </View>
-                    <MaterialIcons name='chevron-right' size={22} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                    <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
                   </TouchableOpacity>
                 );
               })()}
@@ -1098,7 +1112,7 @@ export default function SettingsScreen() {
                     </Text>
                   </View>
                 </View>
-                <MaterialIcons name='chevron-right' size={22} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
               </TouchableOpacity>
             </View>
           )}
@@ -1106,7 +1120,7 @@ export default function SettingsScreen() {
           {/* INFORMATION Section Header - Outside Box */}
           <TouchableOpacity style={styles.informationSectionHeader} onPress={() => setShowInformation(!showInformation)}>
             <Text style={styles.informationSectionHeaderText}>INFORMATION</Text>
-            <Ionicons name={showInformation ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? COLORS.darkText : COLORS.lightText} />
+            <Ionicons name={showInformation ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : COLORS.lightText} />
           </TouchableOpacity>
 
           {/* Information & Links Container */}
@@ -1115,37 +1129,37 @@ export default function SettingsScreen() {
               {/* Terms and Conditions */}
               <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("TermsAndConditions")}>
                 <View style={styles.itemLabel}>
-                  <MaterialIcons name='description' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                  <MaterialIcons name='description' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Terms & Conditions</Text>
                 </View>
-                <MaterialIcons name='chevron-right' size={24} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>
 
               {/* Privacy Policy */}
               <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("PrivacyPolicy")}>
                 <View style={styles.itemLabel}>
-                  <MaterialIcons name='privacy-tip' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                  <MaterialIcons name='privacy-tip' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Privacy Policy</Text>
                 </View>
-                <MaterialIcons name='chevron-right' size={24} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>
 
               {/* Change Password */}
               <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
                 <View style={styles.itemLabel}>
-                  <MaterialIcons name='lock' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                  <MaterialIcons name='lock' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
                 </View>
-                <MaterialIcons name='chevron-right' size={24} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>
 
               {/* How It Works */}
               <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("HowItWorksScreen")}>
                 <View style={styles.itemLabel}>
-                  <MaterialIcons name='help' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                  <MaterialIcons name='help' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How It Works</Text>
                 </View>
-                <MaterialIcons name='chevron-right' size={24} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>
             </View>
           )}
@@ -1585,6 +1599,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  itemLabelWithToggle: {
+    flex: 1,
+    marginRight: 8,
+    minWidth: 0,
+  },
   icon: {
     marginRight: 10,
   },
@@ -1594,6 +1613,46 @@ const styles = StyleSheet.create({
   },
   darkItemText: {
     color: COLORS.darkText,
+  },
+  settingsToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    flexShrink: 0,
+  },
+  togglePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: "transparent",
+  },
+  togglePillActiveRed: {
+    backgroundColor: "#ef9a9a",
+  },
+  togglePillActiveGreen: {
+    backgroundColor: "#4CAF50",
+  },
+  togglePillThemeLight: {
+    backgroundColor: "#FFE082",
+  },
+  togglePillThemeDark: {
+    backgroundColor: COLORS.primary,
+  },
+  togglePillText: {
+    fontSize: 13,
+    color: "#4e4e4e",
+    fontWeight: "500",
+  },
+  togglePillTextActive: {
+    color: "#fff",
+    fontWeight: "bold",
+  },
+  togglePillTextDarkEmphasis: {
+    color: "#333",
+    fontWeight: "bold",
+  },
+  darkTogglePillText: {
+    color: "#bdbdbd",
   },
   modalOverlay: {
     flex: 1,

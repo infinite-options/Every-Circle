@@ -14,8 +14,10 @@ import WebTextInput from "../components/WebTextInput";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 
 import FeedbackPopup from "../components/FeedbackPopup";
+import ReferralSearch from "../components/ReferralSearch";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors, getHeaderColor } from "../config/headerColors";
+import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTokenNoLongerActive } from "../utils/ablyClient";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
@@ -38,9 +40,6 @@ if (Platform.OS !== "web") {
     console.warn("WebView not available on native platform");
   }
 }
-
-/** 0 = hide QR/Ably debug + AsyncStorage inspector on Connect; 1 = show (dropdowns work as today). */
-const SHOW_NETWORK_DEBUG_UI = 1;
 
 // ─── FilterPopup component ────────────────────────────────────────────────────
 const FilterPopup = ({
@@ -312,6 +311,7 @@ const NetworkScreen = ({ navigation }) => {
   const [formSwitchEnabled, setFormSwitchEnabled] = useState(false); // Form Switch: show form when others scan your QR code
   const formSwitchEnabledRef = React.useRef(false); // Ref to track current value for Ably callback
   const [showDebugBlocks, setShowDebugBlocks] = useState(false); // Toggle visibility of QR Code Contains and Ably Messages Received blocks
+  const [settingsDebugModeEnabled, setSettingsDebugModeEnabled] = useState(false); // Settings → Debug Mode (requires SHOW_NETWORK_DEBUG_UI)
   const [showAsyncStorage, setShowAsyncStorage] = useState(false);
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All, Colleagues, Friends, Family
   const [dateFilter, setDateFilter] = useState("All"); // All, This Week, This Month, This Year
@@ -353,6 +353,7 @@ const NetworkScreen = ({ navigation }) => {
   const [viewersSelectedAccount, setViewersSelectedAccount] = useState("personal");
   const [viewerBusinesses, setViewerBusinesses] = useState([]);
   const [showViewersAccountDropdown, setShowViewersAccountDropdown] = useState(false);
+  const [connectDirectlyVisible, setConnectDirectlyVisible] = useState(false);
 
   const fetchProfileViewers = async (accountId) => {
     try {
@@ -394,6 +395,7 @@ const NetworkScreen = ({ navigation }) => {
         dateFilterValue,
         locationFilterValue,
         eventFilterValue,
+        settingsDebugModeValue,
       ] = await Promise.all([
         AsyncStorage.getItem("network_showAsyncStorage"),
         AsyncStorage.getItem("network_degree"),
@@ -405,6 +407,7 @@ const NetworkScreen = ({ navigation }) => {
         AsyncStorage.getItem("network_dateFilter"),
         AsyncStorage.getItem("network_locationFilter"),
         AsyncStorage.getItem("network_eventFilter"),
+        AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY),
       ]);
 
       console.log("📥 Loaded values:", {
@@ -494,6 +497,16 @@ const NetworkScreen = ({ navigation }) => {
         } catch (e) {
           /* keep state */
         }
+      }
+
+      if (settingsDebugModeValue !== null) {
+        try {
+          setSettingsDebugModeEnabled(JSON.parse(settingsDebugModeValue) === true);
+        } catch (e) {
+          setSettingsDebugModeEnabled(false);
+        }
+      } else {
+        setSettingsDebugModeEnabled(false);
       }
 
       // Mark settings as loaded so we can start saving changes
@@ -2288,6 +2301,17 @@ const NetworkScreen = ({ navigation }) => {
                       </View>
                       <Ionicons name='camera-outline' size={28} color={darkMode ? "#ffffff" : "#000000"} />
                     </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.formSwitchContainer, darkMode && styles.darkFormSwitchContainer]}
+                      onPress={() => setConnectDirectlyVisible(true)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.formSwitchTextContainer}>
+                        <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>Connect Directly</Text>
+                      </View>
+                      <Ionicons name='person-add-outline' size={28} color={darkMode ? "#ffffff" : "#000000"} />
+                    </TouchableOpacity>
                   </View>
                 </View>
               );
@@ -2976,7 +3000,7 @@ const NetworkScreen = ({ navigation }) => {
             </View>
           )}
 
-          {SHOW_NETWORK_DEBUG_UI !== 0 && (
+          {SHOW_NETWORK_DEBUG_UI !== 0 && settingsDebugModeEnabled && (
             <>
               {/* QR / ABLY DEBUG Dropdown */}
               <TouchableOpacity style={[styles.debugDropdownHeader, darkMode && styles.darkDebugDropdownHeader]} onPress={() => setShowDebugBlocks((prev) => !prev)} activeOpacity={0.7}>
@@ -3104,6 +3128,23 @@ const NetworkScreen = ({ navigation }) => {
         <BottomNavBar navigation={navigation} />
       </SafeAreaView>
       <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Network' instructions={networkFeedbackInstructions} questions={networkFeedbackQuestions} />
+      <ReferralSearch
+        visible={connectDirectlyVisible}
+        onClose={() => setConnectDirectlyVisible(false)}
+        onSelectUser={(user) => {
+          const uid = user.profile_personal_uid || user.profile_uid;
+          if (uid) {
+            setConnectDirectlyVisible(false);
+            navigation.navigate("Profile", { profile_uid: uid, returnTo: "Network" });
+          }
+        }}
+        showNewUserButton={false}
+        modalTitle='Connect Directly'
+        instructionText='Search by email, city, state, or name, then choose someone to open their profile.'
+        searchPlaceholder='Email, location, or name'
+        noResultsSubtext='Try another spelling, city, or email.'
+        searchButtonColor={getHeaderColor("network")}
+      />
       <ScannedProfilePopup
         visible={showScannedProfilePopup}
         profileData={scannedProfileData}
@@ -3813,9 +3854,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 15,
     paddingVertical: 0,
-    height: 64,
-    marginTop: 15,
-    marginBottom: 10,
+    height: 56,
+    marginTop: 6,
+    marginBottom: 4,
     borderWidth: 1,
     borderColor: "#e0e0e0",
     alignSelf: "center",
