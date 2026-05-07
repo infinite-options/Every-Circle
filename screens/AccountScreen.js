@@ -814,10 +814,13 @@ export default function AccountScreen({ navigation }) {
         const receiptCache = {};
         await Promise.all(filteredTransactions.map(async (t) => {
           try {
-            const r = await fetch(`${TRANSACTION_RECEIPT_ENDPOINT}/${t.transaction_profile_id}/${t.transaction_uid}`, {
-              method: "GET",
-              headers: { "Content-Type": "application/json" },
-            });
+            const r = await fetch(
+              `${TRANSACTION_RECEIPT_ENDPOINT}/${t.transaction_profile_id}/${t.transaction_uid}?seller_id=${encodeURIComponent(targetBusinessUID)}`,
+              {
+                method: "GET",
+                headers: { "Content-Type": "application/json" },
+              }
+            );
             if (!r.ok) return;
             const data = await r.json();
             receiptCache[t.transaction_uid] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
@@ -2229,63 +2232,101 @@ export default function AccountScreen({ navigation }) {
             </Text>
 
             <ScrollView style={{ maxHeight: 400 }}>
-              {/* Local return requests (most accurate) */}
               {(returnRequests[viewingReturnTransactionUid]?.notes?.length > 0
                 ? returnRequests[viewingReturnTransactionUid].notes
                 : [{ note: viewingReturnNote, date: null, items: [] }]
-              ).map((entry, idx) => (
-                <View key={idx} style={{
-                  borderWidth: 1,
-                  borderColor: "#B71C1C",
-                  borderRadius: 8,
-                  padding: 12,
-                  marginBottom: 12,
-                  backgroundColor: darkMode ? "#3a3a3a" : "#fff5f5",
-                }}>
-                  {entry.date && (
-                    <Text style={{ fontSize: 11, color: "#888", marginBottom: 6 }}>
-                      {new Date(entry.date).toLocaleDateString()}
-                    </Text>
-                  )}
-                  <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", lineHeight: 20, marginBottom: 8 }}>
-                    {entry.note || "No reason provided."}
-                  </Text>
+              ).map((entry, idx) => {
+                // Look up the receipt items for this transaction from the cache
+                const cachedReceipt = businessReceiptCache[viewingReturnTransactionUid] || [];
+                const returnedItems = (entry.items || [])
+                  .map((itemId) => cachedReceipt[parseInt(itemId)])
+                  .filter(Boolean);
 
-                  {/* Per-return Accept/Decline */}
-                  {returnStatuses[`${viewingReturnTransactionUid}_${idx}`] ? (
-                    <Text style={{
-                      fontWeight: "600",
-                      fontSize: 13,
-                      color: returnStatuses[`${viewingReturnTransactionUid}_${idx}`] === "accepted" ? "#18884A" : "#B71C1C"
-                    }}>
-                      {returnStatuses[`${viewingReturnTransactionUid}_${idx}`] === "accepted" ? "✓ Accepted" : "✗ Declined"}
+                return (
+                  <View key={idx} style={{
+                    borderWidth: 1,
+                    borderColor: "#B71C1C",
+                    borderRadius: 8,
+                    padding: 12,
+                    marginBottom: 12,
+                    backgroundColor: darkMode ? "#3a3a3a" : "#fff5f5",
+                  }}>
+                    {entry.date && (
+                      <Text style={{ fontSize: 11, color: "#888", marginBottom: 6 }}>
+                        {new Date(entry.date).toLocaleDateString()}
+                      </Text>
+                    )}
+
+                    {/* Show returned items */}
+                    {returnedItems.length > 0 && (
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>
+                          Items to Return:
+                        </Text>
+                        {returnedItems.map((item, itemIdx) => (
+                          <View key={itemIdx} style={{
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            paddingVertical: 4,
+                            paddingHorizontal: 8,
+                            backgroundColor: darkMode ? "#4a2a2a" : "#ffe8e8",
+                            borderRadius: 4,
+                            marginBottom: 4,
+                          }}>
+                            <Text style={{ fontSize: 12, color: darkMode ? "#fff" : "#333", flex: 1 }}>
+                              {item.bs_service_name || "Item"}
+                            </Text>
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666", marginHorizontal: 8 }}>
+                              x{item.ti_bs_qty || 1}
+                            </Text>
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666" }}>
+                              ${parseFloat(item.ti_bs_cost || 0).toFixed(2)}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", lineHeight: 20, marginBottom: 8 }}>
+                      {entry.note || "No reason provided."}
                     </Text>
-                  ) : (
-                    <View style={{ flexDirection: "row", gap: 8 }}>
-                      <TouchableOpacity
-                        style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", backgroundColor: "#18884A" }}
-                        onPress={async () => {
-                          await handleReturnAccept(viewingReturnTransactionUid);
-                          setReturnStatuses(prev => ({ ...prev, [`${viewingReturnTransactionUid}_${idx}`]: "accepted" }));
-                          await AsyncStorage.setItem(`return_status_${viewingReturnTransactionUid}_${idx}`, "accepted");
-                        }}
-                      >
-                        <Text style={{ color: "#fff", fontWeight: "bold" }}>Accept</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", backgroundColor: "#B71C1C" }}
-                        onPress={() => {
-                          setPendingDeclineIdx(idx);
-                          setDeclineNote("");
-                          setShowDeclineNoteModal(true);
-                        }}
-                      >
-                        <Text style={{ color: "#fff", fontWeight: "bold" }}>Decline</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              ))}
+
+                    {/* Per-return Accept/Decline */}
+                    {returnStatuses[`${viewingReturnTransactionUid}_${idx}`] ? (
+                      <Text style={{
+                        fontWeight: "600",
+                        fontSize: 13,
+                        color: returnStatuses[`${viewingReturnTransactionUid}_${idx}`] === "accepted" ? "#18884A" : "#B71C1C"
+                      }}>
+                        {returnStatuses[`${viewingReturnTransactionUid}_${idx}`] === "accepted" ? "✓ Accepted" : "✗ Declined"}
+                      </Text>
+                    ) : (
+                      <View style={{ flexDirection: "row", gap: 8 }}>
+                        <TouchableOpacity
+                          style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", backgroundColor: "#18884A" }}
+                          onPress={async () => {
+                            await handleReturnAccept(viewingReturnTransactionUid);
+                            setReturnStatuses(prev => ({ ...prev, [`${viewingReturnTransactionUid}_${idx}`]: "accepted" }));
+                            await AsyncStorage.setItem(`return_status_${viewingReturnTransactionUid}_${idx}`, "accepted");
+                          }}
+                        >
+                          <Text style={{ color: "#fff", fontWeight: "bold" }}>Accept</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", backgroundColor: "#B71C1C" }}
+                          onPress={() => {
+                            setPendingDeclineIdx(idx);
+                            setDeclineNote("");
+                            setShowDeclineNoteModal(true);
+                          }}
+                        >
+                          <Text style={{ color: "#fff", fontWeight: "bold" }}>Decline</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
             </ScrollView>
 
             <TouchableOpacity
