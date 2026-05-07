@@ -1,6 +1,6 @@
 // WishDetailScreen.js
 import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
@@ -11,6 +11,7 @@ import AppHeader from "../components/AppHeader";
 import { getHeaderColors, getHeaderColor, getDarkModeHeaderColor } from "../config/headerColors";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { TRANSACTIONS_ENDPOINT, PROFILE_WISH_INFO_ENDPOINT } from "../apiConfig";
+import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 
 const WishDetailScreenContent = ({ route, navigation }) => {
   const { wishData, profileData, profile_uid, searchState, returnTo, profileState } = route.params;
@@ -272,6 +273,18 @@ const WishDetailScreenContent = ({ route, navigation }) => {
         <View style={[styles.card, darkMode && styles.darkCard]}>
           <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Seeking Description</Text>
 
+          {wishData?.profile_wish_image &&
+          String(wishData.profile_wish_image).trim() &&
+          (wishData?.profile_wish_image_is_public === 1 ||
+            wishData?.profile_wish_image_is_public === "1" ||
+            wishData?.profile_wish_image_is_public === undefined) ? (
+            <Image
+              source={{ uri: resolveProfileItemImageUri(wishData.profile_wish_image, profile_uid) }}
+              style={[styles.wishHeroImage, { backgroundColor: darkMode ? "#333" : "#eee" }]}
+              resizeMode='cover'
+            />
+          ) : null}
+
           {wishData?.title && <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wishData.title}</Text>}
 
           {wishData?.description && <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{wishData.description}</Text>}
@@ -464,14 +477,17 @@ const WishDetailScreenContent = ({ route, navigation }) => {
             </>
           )}
         </View>
-      </ScrollView>
 
-      {/* Submit Button */}
-      <View style={[styles.acceptContainer, darkMode && styles.darkAcceptContainer]}>
-        <TouchableOpacity style={[styles.acceptButton, darkMode && styles.darkAcceptButton, (loading || !helpType) && styles.disabledButton]} onPress={handleAccept} disabled={loading || !helpType}>
-          <Text style={styles.acceptButtonText}>{loading ? "Submitting..." : "Submit"}</Text>
-        </TouchableOpacity>
-      </View>
+        <View style={styles.submitAtEnd}>
+          <TouchableOpacity
+            style={[styles.acceptButton, darkMode && styles.darkAcceptButton, (loading || !helpType) && styles.disabledButton]}
+            onPress={handleAccept}
+            disabled={loading || !helpType}
+          >
+            <Text style={styles.acceptButtonText}>{loading ? "Submitting..." : "Submit"}</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
 
       <BottomNavBar navigation={navigation} />
     </SafeAreaView>
@@ -493,7 +509,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
-    paddingBottom: 150, // Extra padding to ensure content is visible above BottomNavBar
+    paddingBottom: 100,
   },
   card: {
     backgroundColor: "#fff",
@@ -508,6 +524,12 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 15,
     color: "#333",
+  },
+  wishHeroImage: {
+    width: "100%",
+    height: 180,
+    borderRadius: 8,
+    marginBottom: 12,
   },
   wishTitle: {
     fontSize: 24,
@@ -575,13 +597,10 @@ const styles = StyleSheet.create({
     color: "#666",
     lineHeight: 20,
   },
-  acceptContainer: {
-    padding: 20,
-    paddingBottom: 30,
-    marginBottom: 80, // Space for BottomNavBar so Submit button stays visible above it
-    backgroundColor: "#F5F5F5",
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
+  submitAtEnd: {
+    marginTop: 4,
+    marginBottom: 20,
+    alignItems: "center",
   },
   acceptButton: {
     backgroundColor: "#4F8A8B",
@@ -622,10 +641,6 @@ const styles = StyleSheet.create({
   },
   darkDetailsText: {
     color: "#cccccc",
-  },
-  darkAcceptContainer: {
-    backgroundColor: "#1a1a1a",
-    borderTopColor: "#404040",
   },
   darkAcceptButton: {
     backgroundColor: "#3D6B6C",

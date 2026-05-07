@@ -15,6 +15,9 @@ const ReferralSearch = ({
   instructionText = "Search for the person who referred you",
   hideEmptyState = false,
   searchButtonColor,
+  modalTitle = "Who referred you?",
+  searchPlaceholder = "Search by name or city",
+  noResultsSubtext = "Try a different name or location",
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -98,13 +101,13 @@ const ReferralSearch = ({
         />
         <TextInput
           style={styles.searchInput}
-          placeholder='Search by name or city'
+          placeholder={searchPlaceholder}
           value={searchQuery}
           onChangeText={setSearchQuery}
           onSubmitEditing={handleSearch}
           autoCapitalize='words'
-          accessibilitylabel='Search by name or city'
-          accessibilityHint='Enter a name or city to search'
+          accessibilityLabel={searchPlaceholder}
+          accessibilityHint='Enter search terms'
           accessibilityRole='search'
         />
         <TouchableOpacity
@@ -129,7 +132,7 @@ const ReferralSearch = ({
           <View style={styles.centerContainer}>
             <Ionicons name='search' size={48} color='#ccc' />
             <Text style={styles.noResultsText}>No users found</Text>
-            <Text style={styles.noResultsSubtext}>Try a different name or location</Text>
+            <Text style={styles.noResultsSubtext}>{noResultsSubtext}</Text>
           </View>
         ) : searchResults.length > 0 ? (
           <FlatList data={searchResults} renderItem={renderUserItem} keyExtractor={(item) => item.profile_personal_uid} style={styles.resultsList} />
@@ -150,12 +153,12 @@ const ReferralSearch = ({
     </>
   ) : (
     // Original standalone modal version
-    <Modal visible={visible} transparent animationType='fade'>
+    <Modal visible={visible} transparent animationType='fade' onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Who referred you?</Text>
+            <Text style={styles.title}>{modalTitle}</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name='close' size={24} color='#333' />
             </TouchableOpacity>
@@ -164,7 +167,14 @@ const ReferralSearch = ({
           {/* Search Input */}
           <View style={styles.searchContainer}>
             <Ionicons name='search' size={20} color='#666' style={styles.searchIcon} />
-            <TextInput style={styles.searchInput} placeholder='Search by name or city' value={searchQuery} onChangeText={setSearchQuery} onSubmitEditing={handleSearch} autoCapitalize='words' />
+            <TextInput
+              style={styles.searchInput}
+              placeholder={searchPlaceholder}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onSubmitEditing={handleSearch}
+              autoCapitalize='none'
+            />
             <TouchableOpacity onPress={handleSearch} style={[styles.searchButton, searchButtonColor && { backgroundColor: searchButtonColor }]}>
               <Text style={styles.searchButtonText}>Search</Text>
             </TouchableOpacity>
@@ -181,7 +191,7 @@ const ReferralSearch = ({
               <View style={styles.centerContainer}>
                 <Ionicons name='search' size={48} color='#ccc' />
                 <Text style={styles.noResultsText}>No users found</Text>
-                <Text style={styles.noResultsSubtext}>Try a different name or location</Text>
+                <Text style={styles.noResultsSubtext}>{noResultsSubtext}</Text>
               </View>
             ) : searchResults.length > 0 ? (
               <FlatList data={searchResults} renderItem={renderUserItem} keyExtractor={(item) => item.profile_personal_uid} style={styles.resultsList} />
@@ -211,14 +221,15 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: 12,
   },
   modalContainer: {
     backgroundColor: "#fff",
     borderRadius: 12,
     width: "100%",
-    maxWidth: 500,
-    maxHeight: "80%",
+    maxWidth: 720,
+    maxHeight: "92%",
+    minHeight: 420,
     padding: 20,
   },
   header: {
@@ -263,10 +274,16 @@ const styles = StyleSheet.create({
   },
   resultsContainer: {
     flex: 1,
-    minHeight: 200,
+    minHeight: 280,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#e8e8e8",
+    overflow: "hidden",
   },
   resultsList: {
     flex: 1,
+    backgroundColor: "#fff",
   },
   userItem: {
     flexDirection: "row",
@@ -274,6 +291,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#f0f0f0",
+    backgroundColor: "#fff",
   },
   userImage: {
     width: 50,

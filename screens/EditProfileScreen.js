@@ -17,6 +17,7 @@ import ExpertiseSection, { validateExpertise } from "../components/ExpertiseSect
 import SeekingSection, { validateSeeking } from "../components/SeekingSection";
 import BusinessSection from "../components/BusinessSection";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 const DEFAULT_PROFILE_IMAGE = require("../assets/profile.png");
@@ -24,6 +25,7 @@ const DEFAULT_PROFILE_IMAGE = require("../assets/profile.png");
 const EditProfileScreen = ({ route, navigation }) => {
   const { darkMode } = useDarkMode();
   const { user, profile_uid: routeProfileUID, businessesData: preFetchedBusinessesData } = route.params || {};
+  const initialFormProfileUid = (routeProfileUID || user?.profile_uid || "").trim();
   const [profileUID, setProfileUID] = useState(routeProfileUID || user?.profile_uid || "");
   const scrollViewRef = useRef(null);
   // Tracks current ScrollView Y offset to compute relative scroll targets.
@@ -88,45 +90,191 @@ const EditProfileScreen = ({ route, navigation }) => {
           ? biz.individualIsPublic
           : biz.bu_individual_business_is_public === true || biz.bu_individual_business_is_public === 1 || biz.bu_individual_business_is_public === "1",
       isNew: biz.isNew || false,
+      business_updated_at: biz.business_updated_at ?? biz.updated_at,
     })) || [{ name: "", role: "", isPublic: 0, isApproved: 0, isNew: false }],
-    experience: user?.experience?.map((e) => ({
-      profile_experience_uid: e.profile_experience_uid || "",
-      company: e.company || e.profile_experience_company_name || "",
-      title: e.title || e.profile_experience_position || "",
-      description: e.description || e.profile_experience_description || "",
-      startDate: e.startDate || e.profile_experience_start_date || "",
-      endDate: e.endDate || e.profile_experience_end_date || "",
-      isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_experience_is_public === 1,
-    })) || [{ company: "", title: "", description: "", startDate: "", endDate: "", isPublic: true }],
-    education: user?.education?.map((e) => ({
-      profile_education_uid: e.profile_education_uid || "",
-      school: e.school || e.profile_education_school_name || "",
-      degree: e.degree || e.profile_education_degree || "",
-      startDate: e.startDate || e.profile_education_start_date || "",
-      endDate: e.endDate || e.profile_education_end_date || "",
-      isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_education_is_public === 1,
-    })) || [{ school: "", degree: "", startDate: "", endDate: "", isPublic: true }],
-    expertise: user?.expertise?.map((e) => ({
-      profile_expertise_uid: e.profile_expertise_uid || "",
-      name: e.name || e.profile_expertise_title || "",
-      description: e.description || e.profile_expertise_description || "",
-      quantity: e.quantity || e.profile_expertise_quantity || "",
-      cost: e.cost || e.profile_expertise_cost || "",
-      bounty: e.bounty || e.profile_expertise_bounty || "",
-      isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_expertise_is_public === 1,
-    })) || [{ name: "", description: "", quantity: "", cost: "", bounty: "", isPublic: true }],
-    wishes: user?.wishes?.map((e) => ({
-      profile_wish_uid: e.profile_wish_uid || "",
-      helpNeeds: e.helpNeeds || e.profile_wish_title || "",
-      details: e.details || e.profile_wish_description || "",
-      amount: e.amount || e.profile_wish_bounty || "",
-      cost: e.cost || e.profile_wish_cost || "",
-      profile_wish_start: e.profile_wish_start || "",
-      profile_wish_end: e.profile_wish_end || "",
-      profile_wish_location: e.profile_wish_location || "",
-      profile_wish_mode: e.profile_wish_mode || "",
-      isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_wish_is_public === 1,
-    })) || [{ helpNeeds: "", details: "", amount: "", cost: "", profile_wish_start: "", profile_wish_end: "", profile_wish_location: "", profile_wish_mode: "", isPublic: true }],
+    experience: (() => {
+      const uid = initialFormProfileUid;
+      return (
+        user?.experience?.map((e) => {
+          const rawImg = e.profile_experience_image || "";
+          const resolved = resolveProfileItemImageUri(rawImg, uid);
+          return {
+            profile_experience_uid: e.profile_experience_uid || "",
+            company: e.company || e.profile_experience_company_name || "",
+            title: e.title || e.profile_experience_position || "",
+            description: e.description || e.profile_experience_description || "",
+            startDate: e.startDate || e.profile_experience_start_date || "",
+            endDate: e.endDate || e.profile_experience_end_date || "",
+            isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_experience_is_public === 1,
+            profile_experience_image: rawImg,
+            profile_experience_image_is_public:
+              e.profile_experience_image_is_public === 0 || e.profile_experience_image_is_public === "0" ? 0 : 1,
+            _jobNewImageUri: "",
+            _jobWebImageFile: null,
+            _jobOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
+            _jobDeleteImageUrl: "",
+            _jobImageError: false,
+          };
+        }) || [
+          {
+            company: "",
+            title: "",
+            description: "",
+            startDate: "",
+            endDate: "",
+            isPublic: true,
+            profile_experience_image: "",
+            profile_experience_image_is_public: 1,
+            _jobNewImageUri: "",
+            _jobWebImageFile: null,
+            _jobOriginalImage: "",
+            _jobDeleteImageUrl: "",
+            _jobImageError: false,
+          },
+        ]
+      );
+    })(),
+    education: (() => {
+      const uid = initialFormProfileUid;
+      return (
+        user?.education?.map((e) => {
+          const rawImg = e.profile_education_image || "";
+          const resolved = resolveProfileItemImageUri(rawImg, uid);
+          return {
+            profile_education_uid: e.profile_education_uid || "",
+            school: e.school || e.profile_education_school_name || "",
+            degree: e.degree || e.profile_education_degree || "",
+            startDate: e.startDate || e.profile_education_start_date || "",
+            endDate: e.endDate || e.profile_education_end_date || "",
+            isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_education_is_public === 1,
+            profile_education_image: rawImg,
+            profile_education_image_is_public:
+              e.profile_education_image_is_public === 0 || e.profile_education_image_is_public === "0" ? 0 : 1,
+            _eduNewImageUri: "",
+            _eduWebImageFile: null,
+            _eduOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
+            _eduDeleteImageUrl: "",
+            _eduImageError: false,
+          };
+        }) || [
+          {
+            school: "",
+            degree: "",
+            startDate: "",
+            endDate: "",
+            isPublic: true,
+            profile_education_image: "",
+            profile_education_image_is_public: 1,
+            _eduNewImageUri: "",
+            _eduWebImageFile: null,
+            _eduOriginalImage: "",
+            _eduDeleteImageUrl: "",
+            _eduImageError: false,
+          },
+        ]
+      );
+    })(),
+    expertise: (() => {
+      const uid = initialFormProfileUid;
+      return (
+        user?.expertise?.map((e) => {
+          const rawImg = e.profile_expertise_image || "";
+          const resolved = resolveProfileItemImageUri(rawImg, uid);
+          return {
+            profile_expertise_uid: e.profile_expertise_uid || "",
+            name: e.name || e.profile_expertise_title || "",
+            description: e.description || e.profile_expertise_description || "",
+            quantity: e.quantity || e.profile_expertise_quantity || "",
+            cost: e.cost || e.profile_expertise_cost || "",
+            bounty: e.bounty || e.profile_expertise_bounty || "",
+            profile_expertise_image: rawImg,
+            profile_expertise_image_is_public:
+              e.profile_expertise_image_is_public === 0 || e.profile_expertise_image_is_public === "0" ? 0 : 1,
+            profile_expertise_start: e.profile_expertise_start || "",
+            profile_expertise_end: e.profile_expertise_end || "",
+            profile_expertise_location: e.profile_expertise_location || "",
+            profile_expertise_mode: e.profile_expertise_mode || "",
+            profile_expertise_updated_at: e.profile_expertise_updated_at ?? e.updated_at,
+            isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_expertise_is_public === 1,
+            _expNewImageUri: "",
+            _expWebImageFile: null,
+            _expOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
+            _expDeleteImageUrl: "",
+            _expImageError: false,
+          };
+        }) || [
+          {
+            name: "",
+            description: "",
+            quantity: "",
+            cost: "",
+            bounty: "",
+            profile_expertise_image: "",
+            profile_expertise_image_is_public: 1,
+            profile_expertise_start: "",
+            profile_expertise_end: "",
+            profile_expertise_location: "",
+            profile_expertise_mode: "",
+            isPublic: true,
+            _expNewImageUri: "",
+            _expWebImageFile: null,
+            _expOriginalImage: "",
+            _expDeleteImageUrl: "",
+            _expImageError: false,
+          },
+        ]
+      );
+    })(),
+    wishes: (() => {
+      const uid = initialFormProfileUid;
+      return (
+        user?.wishes?.map((e) => {
+          const rawImg = e.profile_wish_image || "";
+          const resolved = resolveProfileItemImageUri(rawImg, uid);
+          return {
+            profile_wish_uid: e.profile_wish_uid || "",
+            helpNeeds: e.helpNeeds || e.profile_wish_title || "",
+            details: e.details || e.profile_wish_description || "",
+            amount: e.amount || e.profile_wish_bounty || "",
+            cost: e.cost || e.profile_wish_cost || "",
+            profile_wish_quantity: e.profile_wish_quantity != null ? String(e.profile_wish_quantity) : "",
+            profile_wish_image: rawImg,
+            profile_wish_image_is_public: e.profile_wish_image_is_public === 0 || e.profile_wish_image_is_public === "0" ? 0 : 1,
+            profile_wish_start: e.profile_wish_start || "",
+            profile_wish_end: e.profile_wish_end || "",
+            profile_wish_location: e.profile_wish_location || "",
+            profile_wish_mode: e.profile_wish_mode || "",
+            profile_wish_updated_at: e.profile_wish_updated_at ?? e.updated_at,
+            isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_wish_is_public === 1,
+            _wishNewImageUri: "",
+            _wishWebImageFile: null,
+            _wishOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
+            _wishDeleteImageUrl: "",
+            _wishImageError: false,
+          };
+        }) || [
+          {
+            helpNeeds: "",
+            details: "",
+            amount: "",
+            cost: "",
+            profile_wish_quantity: "",
+            profile_wish_image: "",
+            profile_wish_image_is_public: 1,
+            profile_wish_start: "",
+            profile_wish_end: "",
+            profile_wish_location: "",
+            profile_wish_mode: "",
+            isPublic: true,
+            _wishNewImageUri: "",
+            _wishWebImageFile: null,
+            _wishOriginalImage: "",
+            _wishDeleteImageUrl: "",
+            _wishImageError: false,
+          },
+        ]
+      );
+    })(),
     facebook: user?.facebook || "",
     twitter: user?.twitter || "",
     linkedin: user?.linkedin || "",
@@ -431,43 +579,101 @@ const EditProfileScreen = ({ route, navigation }) => {
       console.log("EditProfileScreen - Sending businessIsPublic:", formData.businessIsPublic);
       console.log("EditProfileScreen - As value:", formData.businessIsPublic ? 1 : 0);
       payload.append("profile_personal_image_is_public", formData.imageIsPublic ? 1 : 0);
-      payload.append("wishes_info", JSON.stringify(formData.wishes || []));
 
-      // Map experience data to backend field names - using frontend field names for consistency
-      const experiencePayload = (formData.experience || [])
-        .map((exp) => {
-          // Only process if company or title is present
-          if (!exp.company && !exp.title) return null;
+      const wishesPayload = (formData.wishes || []).map((w) => ({
+        profile_wish_uid: w.profile_wish_uid || "",
+        profile_wish_title: w.helpNeeds || "",
+        profile_wish_description: w.details || "",
+        profile_wish_cost: w.cost || "",
+        profile_wish_quantity: w.profile_wish_quantity != null && w.profile_wish_quantity !== "" ? String(w.profile_wish_quantity) : "",
+        profile_wish_bounty: w.amount || "",
+        profile_wish_is_public: w.isPublic ? 1 : 0,
+        profile_wish_image: w.profile_wish_image || "",
+        profile_wish_image_is_public: w.profile_wish_image_is_public === 0 || w.profile_wish_image_is_public === "0" ? 0 : 1,
+        profile_wish_start: w.profile_wish_start || "",
+        profile_wish_end: w.profile_wish_end || "",
+        profile_wish_location: w.profile_wish_location || "",
+        profile_wish_mode: w.profile_wish_mode || "",
+        ...(w.profile_wish_uid && (w.profile_wish_updated_at != null || w.updated_at != null)
+          ? { profile_wish_updated_at: w.profile_wish_updated_at ?? w.updated_at }
+          : {}),
+        helpNeeds: w.helpNeeds || "",
+        details: w.details || "",
+        amount: w.amount || "",
+        cost: w.cost || "",
+        isPublic: w.isPublic,
+      }));
+      payload.append("wishes_info", JSON.stringify(wishesPayload));
 
-          // If it's an existing experience (has profile_experience_uid)
-          if (exp.profile_experience_uid) {
-            return {
-              profile_experience_uid: exp.profile_experience_uid,
-              company: exp.company || "",
-              title: exp.title || "",
-              description: exp.description || "",
-              startDate: exp.startDate || "",
-              endDate: exp.endDate || "",
-              isPublic: exp.isPublic ? 1 : 0,
-            };
-          }
-
-          // If it's a new experience, don't include profile_experience_uid
-          return {
-            company: exp.company || "",
-            title: exp.title || "",
-            description: exp.description || "",
-            startDate: exp.startDate || "",
-            endDate: exp.endDate || "",
-            isPublic: exp.isPublic ? 1 : 0,
-          };
-        })
-        .filter(Boolean);
+      const experiencePayload = (formData.experience || []).map((exp) => {
+        const base = {
+          company: exp.company || "",
+          title: exp.title || "",
+          description: exp.description || "",
+          startDate: exp.startDate || "",
+          endDate: exp.endDate || "",
+          isPublic: exp.isPublic ? 1 : 0,
+          profile_experience_image: exp.profile_experience_image || "",
+          profile_experience_image_is_public:
+            exp.profile_experience_image_is_public === 0 || exp.profile_experience_image_is_public === "0" ? 0 : 1,
+        };
+        if (exp.profile_experience_uid) {
+          return { profile_experience_uid: exp.profile_experience_uid, ...base };
+        }
+        return base;
+      });
 
       console.log("Experience payload being sent:", experiencePayload);
       payload.append("experience_info", JSON.stringify(experiencePayload));
-      payload.append("education_info", JSON.stringify(formData.education || []));
-      payload.append("expertise_info", JSON.stringify(formData.expertise || []));
+
+      const educationPayload = (formData.education || []).map((edu) => {
+        const base = {
+          school: edu.school || "",
+          degree: edu.degree || "",
+          startDate: edu.startDate || "",
+          endDate: edu.endDate || "",
+          isPublic: edu.isPublic ? 1 : 0,
+          profile_education_image: edu.profile_education_image || "",
+          profile_education_image_is_public:
+            edu.profile_education_image_is_public === 0 || edu.profile_education_image_is_public === "0" ? 0 : 1,
+          profile_education_school_name: edu.school || "",
+          profile_education_degree: edu.degree || "",
+          profile_education_start_date: edu.startDate || "",
+          profile_education_end_date: edu.endDate || "",
+          profile_education_is_public: edu.isPublic ? 1 : 0,
+        };
+        if (edu.profile_education_uid) {
+          return { profile_education_uid: edu.profile_education_uid, ...base };
+        }
+        return base;
+      });
+      payload.append("education_info", JSON.stringify(educationPayload));
+
+      const expertisePayload = (formData.expertise || []).map((e) => ({
+        profile_expertise_uid: e.profile_expertise_uid || "",
+        profile_expertise_title: e.name || "",
+        profile_expertise_description: e.description || "",
+        profile_expertise_quantity: e.quantity != null && e.quantity !== "" ? String(e.quantity) : "",
+        profile_expertise_cost: e.cost || "",
+        profile_expertise_bounty: e.bounty || "",
+        profile_expertise_is_public: e.isPublic ? 1 : 0,
+        profile_expertise_image: e.profile_expertise_image || "",
+        profile_expertise_image_is_public: e.profile_expertise_image_is_public === 0 || e.profile_expertise_image_is_public === "0" ? 0 : 1,
+        profile_expertise_start: e.profile_expertise_start || "",
+        profile_expertise_end: e.profile_expertise_end || "",
+        profile_expertise_location: e.profile_expertise_location || "",
+        profile_expertise_mode: e.profile_expertise_mode || "",
+        ...(e.profile_expertise_uid && (e.profile_expertise_updated_at != null || e.updated_at != null)
+          ? { profile_expertise_updated_at: e.profile_expertise_updated_at ?? e.updated_at }
+          : {}),
+        name: e.name || "",
+        description: e.description || "",
+        quantity: e.quantity || "",
+        cost: e.cost || "",
+        bounty: e.bounty || "",
+        isPublic: e.isPublic,
+      }));
+      payload.append("expertise_info", JSON.stringify(expertisePayload));
       //payload.append("business_info", JSON.stringify(formData.businesses || []));
 
       // Add businesses to payload (for each business, add the correct fields)
@@ -486,6 +692,9 @@ const EditProfileScreen = ({ route, navigation }) => {
               isApproved: biz.isApproved ? 1 : 0,
               // individualIsPublic: biz.individualIsPublic ? 1 : 0,
               individualIsPublic: biz.isPublic ? 1 : 0,
+              ...(biz.business_updated_at != null || biz.updated_at != null
+                ? { business_updated_at: biz.business_updated_at ?? biz.updated_at }
+                : {}),
             };
           }
 
@@ -559,6 +768,203 @@ const EditProfileScreen = ({ route, navigation }) => {
         payload.append("delete_profile_image", deleteProfileImage);
       }
 
+      const isBlobOrDataUri = (uri) => uri && (uri.startsWith("blob:") || uri.startsWith("data:"));
+
+      for (let index = 0; index < (formData.expertise || []).length; index++) {
+        const e = formData.expertise[index];
+        if (e._expDeleteImageUrl) {
+          payload.append(`delete_profile_expertise_image_${index}`, e._expDeleteImageUrl);
+        }
+        const newUri = e._expNewImageUri;
+        const webFile = e._expWebImageFile;
+        if (!newUri && !(Platform.OS === "web" && webFile)) continue;
+
+        let fileToAppend = null;
+        if (Platform.OS === "web" && webFile) {
+          fileToAppend = webFile;
+        } else if (Platform.OS === "web" && newUri && isBlobOrDataUri(newUri)) {
+          try {
+            const response = await fetch(newUri);
+            const blob = await response.blob();
+            fileToAppend = new File([blob], `profile_expertise_image_${index}.jpg`, { type: blob.type || "image/jpeg" });
+          } catch (err) {
+            console.error("Failed to prepare offering image (web):", err);
+          }
+        } else if (newUri && (newUri.startsWith("file:") || newUri.startsWith("content:"))) {
+          const uriParts = newUri.split(".");
+          const fileType = uriParts.length > 1 ? uriParts[uriParts.length - 1].split(/[?#]/)[0] : "jpg";
+          const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase()) ? `image/${fileType === "jpg" ? "jpeg" : fileType}` : "image/jpeg";
+          fileToAppend = { uri: newUri, type: mimeType, name: `profile_expertise_image_${index}.${fileType}` };
+        } else if (newUri && newUri.startsWith("data:")) {
+          try {
+            const response = await fetch(newUri);
+            const blob = await response.blob();
+            fileToAppend = new File([blob], `profile_expertise_image_${index}.jpg`, { type: blob.type || "image/jpeg" });
+          } catch (err) {
+            console.error("Failed to prepare offering image:", err);
+          }
+        }
+
+        if (fileToAppend) {
+          payload.append(`profile_expertise_image_${index}`, fileToAppend);
+        }
+      }
+
+      for (let index = 0; index < (formData.expertise || []).length; index++) {
+        const e = formData.expertise[index];
+        const imgPublic =
+          e.profile_expertise_image_is_public === 1 || e.profile_expertise_image_is_public === "1" || e.profile_expertise_image_is_public === true;
+        payload.append(`profile_expertise_image_${index}_is_public`, imgPublic ? "1" : "0");
+      }
+
+      for (let index = 0; index < (formData.wishes || []).length; index++) {
+        const w = formData.wishes[index];
+        if (w._wishDeleteImageUrl) {
+          payload.append(`delete_profile_wish_image_${index}`, w._wishDeleteImageUrl);
+        }
+        const newUri = w._wishNewImageUri;
+        const webFile = w._wishWebImageFile;
+        if (!newUri && !(Platform.OS === "web" && webFile)) continue;
+
+        let fileToAppend = null;
+        if (Platform.OS === "web" && webFile) {
+          fileToAppend = webFile;
+        } else if (Platform.OS === "web" && newUri && isBlobOrDataUri(newUri)) {
+          try {
+            const response = await fetch(newUri);
+            const blob = await response.blob();
+            fileToAppend = new File([blob], `profile_wish_image_${index}.jpg`, { type: blob.type || "image/jpeg" });
+          } catch (err) {
+            console.error("Failed to prepare seeking image (web):", err);
+          }
+        } else if (newUri && (newUri.startsWith("file:") || newUri.startsWith("content:"))) {
+          const uriParts = newUri.split(".");
+          const fileType = uriParts.length > 1 ? uriParts[uriParts.length - 1].split(/[?#]/)[0] : "jpg";
+          const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase()) ? `image/${fileType === "jpg" ? "jpeg" : fileType}` : "image/jpeg";
+          fileToAppend = { uri: newUri, type: mimeType, name: `profile_wish_image_${index}.${fileType}` };
+        } else if (newUri && newUri.startsWith("data:")) {
+          try {
+            const response = await fetch(newUri);
+            const blob = await response.blob();
+            fileToAppend = new File([blob], `profile_wish_image_${index}.jpg`, { type: blob.type || "image/jpeg" });
+          } catch (err) {
+            console.error("Failed to prepare seeking image:", err);
+          }
+        }
+
+        if (fileToAppend) {
+          payload.append(`profile_wish_image_${index}`, fileToAppend);
+        }
+      }
+
+      for (let index = 0; index < (formData.wishes || []).length; index++) {
+        const w = formData.wishes[index];
+        const imgPublic = w.profile_wish_image_is_public === 1 || w.profile_wish_image_is_public === "1" || w.profile_wish_image_is_public === true;
+        payload.append(`profile_wish_image_${index}_is_public`, imgPublic ? "1" : "0");
+      }
+
+      for (let index = 0; index < (formData.experience || []).length; index++) {
+        const exp = formData.experience[index];
+        if (exp._jobDeleteImageUrl) {
+          payload.append(`delete_profile_experience_image_${index}`, exp._jobDeleteImageUrl);
+        }
+        const newUri = exp._jobNewImageUri;
+        const webFile = exp._jobWebImageFile;
+        if (!newUri && !(Platform.OS === "web" && webFile)) continue;
+
+        let fileToAppend = null;
+        if (Platform.OS === "web" && webFile) {
+          fileToAppend = webFile;
+        } else if (Platform.OS === "web" && newUri && isBlobOrDataUri(newUri)) {
+          try {
+            const response = await fetch(newUri);
+            const blob = await response.blob();
+            fileToAppend = new File([blob], `profile_experience_image_${index}.jpg`, { type: blob.type || "image/jpeg" });
+          } catch (err) {
+            console.error("Failed to prepare experience image (web):", err);
+          }
+        } else if (newUri && (newUri.startsWith("file:") || newUri.startsWith("content:"))) {
+          const uriParts = newUri.split(".");
+          const fileType = uriParts.length > 1 ? uriParts[uriParts.length - 1].split(/[?#]/)[0] : "jpg";
+          const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase())
+            ? `image/${fileType === "jpg" ? "jpeg" : fileType}`
+            : "image/jpeg";
+          fileToAppend = { uri: newUri, type: mimeType, name: `profile_experience_image_${index}.${fileType}` };
+        } else if (newUri && newUri.startsWith("data:")) {
+          try {
+            const response = await fetch(newUri);
+            const blob = await response.blob();
+            fileToAppend = new File([blob], `profile_experience_image_${index}.jpg`, { type: blob.type || "image/jpeg" });
+          } catch (err) {
+            console.error("Failed to prepare experience image:", err);
+          }
+        }
+
+        if (fileToAppend) {
+          payload.append(`profile_experience_image_${index}`, fileToAppend);
+        }
+      }
+
+      for (let index = 0; index < (formData.experience || []).length; index++) {
+        const exp = formData.experience[index];
+        const imgPublic =
+          exp.profile_experience_image_is_public === 1 ||
+          exp.profile_experience_image_is_public === "1" ||
+          exp.profile_experience_image_is_public === true;
+        payload.append(`profile_experience_image_${index}_is_public`, imgPublic ? "1" : "0");
+      }
+
+      for (let index = 0; index < (formData.education || []).length; index++) {
+        const edu = formData.education[index];
+        if (edu._eduDeleteImageUrl) {
+          payload.append(`delete_profile_education_image_${index}`, edu._eduDeleteImageUrl);
+        }
+        const newUri = edu._eduNewImageUri;
+        const webFile = edu._eduWebImageFile;
+        if (!newUri && !(Platform.OS === "web" && webFile)) continue;
+
+        let fileToAppend = null;
+        if (Platform.OS === "web" && webFile) {
+          fileToAppend = webFile;
+        } else if (Platform.OS === "web" && newUri && isBlobOrDataUri(newUri)) {
+          try {
+            const response = await fetch(newUri);
+            const blob = await response.blob();
+            fileToAppend = new File([blob], `profile_education_image_${index}.jpg`, { type: blob.type || "image/jpeg" });
+          } catch (err) {
+            console.error("Failed to prepare education image (web):", err);
+          }
+        } else if (newUri && (newUri.startsWith("file:") || newUri.startsWith("content:"))) {
+          const uriParts = newUri.split(".");
+          const fileType = uriParts.length > 1 ? uriParts[uriParts.length - 1].split(/[?#]/)[0] : "jpg";
+          const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase())
+            ? `image/${fileType === "jpg" ? "jpeg" : fileType}`
+            : "image/jpeg";
+          fileToAppend = { uri: newUri, type: mimeType, name: `profile_education_image_${index}.${fileType}` };
+        } else if (newUri && newUri.startsWith("data:")) {
+          try {
+            const response = await fetch(newUri);
+            const blob = await response.blob();
+            fileToAppend = new File([blob], `profile_education_image_${index}.jpg`, { type: blob.type || "image/jpeg" });
+          } catch (err) {
+            console.error("Failed to prepare education image:", err);
+          }
+        }
+
+        if (fileToAppend) {
+          payload.append(`profile_education_image_${index}`, fileToAppend);
+        }
+      }
+
+      for (let index = 0; index < (formData.education || []).length; index++) {
+        const edu = formData.education[index];
+        const imgPublic =
+          edu.profile_education_image_is_public === 1 ||
+          edu.profile_education_image_is_public === "1" ||
+          edu.profile_education_image_is_public === true;
+        payload.append(`profile_education_image_${index}_is_public`, imgPublic ? "1" : "0");
+      }
+
       // Add deleted items to payload
       if (deletedItems.experiences.length > 0) {
         payload.append("delete_experiences", JSON.stringify(deletedItems.experiences));
@@ -596,12 +1002,12 @@ const EditProfileScreen = ({ route, navigation }) => {
 
       console.log("Deleted items being sent:", deletedItems);
       await new Promise((res) => setTimeout(res, 2000)); // Simulate 2s delay
+      // Do not set Content-Type for FormData — axios / RN must attach the multipart boundary.
       const response = await axios({
         method: "put",
         url: `${ProfileScreenAPI}?profile_uid=${trimmedProfileUID}`,
         data: payload,
         headers: {
-          "Content-Type": "multipart/form-data",
           Accept: "application/json",
         },
       });
@@ -1005,12 +1411,14 @@ const EditProfileScreen = ({ route, navigation }) => {
         <ExpertiseSection
           expertise={formData.expertise}
           setExpertise={(e) => {
-            setFormData({ ...formData, expertise: e });
+            setFormData((prev) => ({ ...prev, expertise: e }));
             setIsChanged(true);
           }}
           toggleVisibility={() => handleToggleVisibility("expertiseIsPublic")}
           isPublic={formData.expertiseIsPublic}
           handleDelete={handleDeleteExpertise}
+          profileUid={profileUID.trim()}
+          darkMode={darkMode}
           onInputFocus={(inputRef) => {
             // Called by child after "+" render with new card ref.
             scrollNewCardToMiddleIfNeeded(inputRef);
@@ -1024,12 +1432,14 @@ const EditProfileScreen = ({ route, navigation }) => {
         <SeekingSection
           wishes={formData.wishes}
           setWishes={(e) => {
-            setFormData({ ...formData, wishes: e });
+            setFormData((prev) => ({ ...prev, wishes: e }));
             setIsChanged(true);
           }}
           toggleVisibility={() => handleToggleVisibility("wishesIsPublic")}
           isPublic={formData.wishesIsPublic}
           handleDelete={handleDeleteWish}
+          profileUid={profileUID.trim()}
+          darkMode={darkMode}
           onInputFocus={(inputRef) => {
             // Called by child after "+" render with new card ref.
             scrollNewCardToMiddleIfNeeded(inputRef);
@@ -1043,12 +1453,14 @@ const EditProfileScreen = ({ route, navigation }) => {
         <ExperienceSection
           experience={formData.experience}
           setExperience={(e) => {
-            setFormData({ ...formData, experience: e });
+            setFormData((prev) => ({ ...prev, experience: e }));
             setIsChanged(true);
           }}
           toggleVisibility={() => handleToggleVisibility("experienceIsPublic")}
           isPublic={formData.experienceIsPublic}
           handleDelete={handleDeleteExperience}
+          profileUid={profileUID.trim()}
+          darkMode={darkMode}
           onInputFocus={(inputRef) => {
             // Called by child after "+" render with new card ref.
             scrollNewCardToMiddleIfNeeded(inputRef);
@@ -1062,12 +1474,14 @@ const EditProfileScreen = ({ route, navigation }) => {
         <EducationSection
           education={formData.education}
           setEducation={(e) => {
-            setFormData({ ...formData, education: e });
+            setFormData((prev) => ({ ...prev, education: e }));
             setIsChanged(true);
           }}
           toggleVisibility={() => handleToggleVisibility("educationIsPublic")}
           isPublic={formData.educationIsPublic}
           handleDelete={handleDeleteEducation}
+          profileUid={profileUID.trim()}
+          darkMode={darkMode}
           onInputFocus={(inputRef) => {
             // Called by child after "+" render with new card ref.
             scrollNewCardToMiddleIfNeeded(inputRef);
@@ -1081,7 +1495,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         <BusinessSection
           businesses={formData.businesses}
           setBusinesses={(e) => {
-            setFormData({ ...formData, businesses: e });
+            setFormData((prev) => ({ ...prev, businesses: e }));
             setIsChanged(true);
           }}
           toggleVisibility={() => handleToggleVisibility("businessIsPublic")}

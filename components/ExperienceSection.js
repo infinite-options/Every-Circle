@@ -1,7 +1,20 @@
 import React, { useEffect, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
+import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
+import ProfileItemImageColumn from "./ProfileItemImageColumn";
 
-const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPublic, handleDelete, onInputFocus }) => {
+const ExperienceSection = ({
+  experience,
+  setExperience,
+  toggleVisibility,
+  isPublic,
+  handleDelete,
+  onInputFocus,
+  profileUid = "",
+  darkMode = false,
+}) => {
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
   // Tracks which index was just added via "+".
@@ -66,6 +79,13 @@ const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPubl
       startDate: "",
       endDate: "",
       isPublic: true,
+      profile_experience_image: "",
+      profile_experience_image_is_public: 1,
+      _jobNewImageUri: "",
+      _jobWebImageFile: null,
+      _jobOriginalImage: "",
+      _jobDeleteImageUrl: "",
+      _jobImageError: false,
     };
     setExperience([...experience, newEntry]);
   };
@@ -104,6 +124,96 @@ const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPubl
   const handleDateChange = (index, field, value) => {
     const formattedValue = formatDateInput(value);
     handleInputChange(index, field, formattedValue);
+  };
+
+  const getExperienceDisplayUri = (item) => {
+    const pending = item._jobNewImageUri;
+    if (pending != null && String(pending).trim() !== "") return String(pending).trim();
+    return resolveProfileItemImageUri(item.profile_experience_image, profileUid);
+  };
+
+  const pickExperienceImage = async (index) => {
+    if (Platform.OS === "web") return;
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission required", "Permission to access media library is required!");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: "images",
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        let fileSize = asset.fileSize;
+        if (!fileSize && asset.uri) {
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+            fileSize = fileInfo.size;
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        if (fileSize && fileSize > 2 * 1024 * 1024) {
+          Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
+          return;
+        }
+        const updated = [...experience];
+        const prev = updated[index];
+        const orig = prev._jobOriginalImage || resolveProfileItemImageUri(prev.profile_experience_image, profileUid);
+        updated[index]._jobDeleteImageUrl = isRemoteHttpUrl(orig) ? orig : "";
+        updated[index]._jobNewImageUri = asset.uri;
+        updated[index]._jobWebImageFile = null;
+        updated[index]._jobImageError = false;
+        setExperience(updated);
+      }
+    } catch (error) {
+      console.error("Experience image pick error:", error);
+      Alert.alert("Error", "Failed to pick image.");
+    }
+  };
+
+  const handleExperienceWebImagePick = (index, event) => {
+    const file = event.target?.files?.[0];
+    if (event?.target) event.target.value = "";
+    if (!file) return;
+    if (!file.type?.startsWith?.("image/")) {
+      Alert.alert("Invalid file type", "Please select an image file.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const imageUri = reader.result;
+      const updated = [...experience];
+      const prev = updated[index];
+      const orig = prev._jobOriginalImage || resolveProfileItemImageUri(prev.profile_experience_image, profileUid);
+      updated[index]._jobDeleteImageUrl = isRemoteHttpUrl(orig) ? orig : "";
+      updated[index]._jobNewImageUri = imageUri;
+      updated[index]._jobWebImageFile = file;
+      updated[index]._jobImageError = false;
+      setExperience(updated);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeExperienceImage = (index) => {
+    const updated = [...experience];
+    const prev = updated[index];
+    const orig = prev._jobOriginalImage || resolveProfileItemImageUri(prev.profile_experience_image, profileUid);
+    updated[index]._jobDeleteImageUrl = isRemoteHttpUrl(orig) ? orig : "";
+    updated[index]._jobNewImageUri = "";
+    updated[index]._jobWebImageFile = null;
+    updated[index].profile_experience_image = "";
+    updated[index]._jobOriginalImage = "";
+    updated[index]._jobImageError = false;
+    setExperience(updated);
   };
 
   return (
@@ -165,19 +275,38 @@ const ExperienceSection = ({ experience, setExperience, toggleVisibility, isPubl
             </View>
           </View>
 
-          <TextInput style={styles.input} placeholder='Company' value={item.company} onChangeText={(text) => handleInputChange(index, "company", text)} />
-
-          <TextInput style={styles.input} placeholder='Job Title' value={item.title} onChangeText={(text) => handleInputChange(index, "title", text)} />
-
-          <TextInput 
-            style={styles.descriptionInput} 
-            placeholder='Description' 
-            value={item.description} 
-            onChangeText={(text) => handleInputChange(index, "description", text)}
-            multiline={true}
-            textAlignVertical="top"
-            scrollEnabled={false}
-          />
+          <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
+            <ProfileItemImageColumn
+              darkMode={darkMode}
+              displayUri={getExperienceDisplayUri(item)}
+              imageError={!!item._jobImageError}
+              onImageError={() => handleInputChange(index, "_jobImageError", true)}
+              toolsVisible={
+                item.profile_experience_image_is_public === 1 ||
+                item.profile_experience_image_is_public === "1" ||
+                item.profile_experience_image_is_public === true
+              }
+              onShowTools={() => handleInputChange(index, "profile_experience_image_is_public", 1)}
+              onHideTools={() => handleInputChange(index, "profile_experience_image_is_public", 0)}
+              onUploadNative={() => pickExperienceImage(index)}
+              onWebFileChange={(e) => handleExperienceWebImagePick(index, e)}
+              onRemoveImage={() => removeExperienceImage(index)}
+              showRemove={!!getExperienceDisplayUri(item)}
+            />
+            <View style={styles.miniCardFields}>
+              <TextInput style={styles.input} placeholder='Company' value={item.company} onChangeText={(text) => handleInputChange(index, "company", text)} />
+              <TextInput style={styles.input} placeholder='Job Title' value={item.title} onChangeText={(text) => handleInputChange(index, "title", text)} />
+              <TextInput
+                style={styles.descriptionInput}
+                placeholder='Description'
+                value={item.description}
+                onChangeText={(text) => handleInputChange(index, "description", text)}
+                multiline={true}
+                textAlignVertical='top'
+                scrollEnabled={false}
+              />
+            </View>
+          </View>
 
           <View style={styles.dateContainer}>
             <TextInput style={styles.dateInput} placeholder='MM/YYYY' value={item.startDate} onChangeText={(text) => handleDateChange(index, "startDate", text)} />
@@ -262,6 +391,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 8,
+  },
+  miniCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    backgroundColor: "#fff",
+  },
+  miniCardDark: {
+    borderColor: "#404040",
+    backgroundColor: "#2d2d2d",
+  },
+  miniCardFields: {
+    flex: 1,
+    minWidth: 0,
   },
   cardSpacing: {
     marginTop: 16,

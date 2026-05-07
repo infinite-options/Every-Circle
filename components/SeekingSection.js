@@ -1,7 +1,22 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
 import { formatCostValue } from "../utils/priceUtils";
+import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
+import ProfileItemImageColumn from "./ProfileItemImageColumn";
+import {
+  toDateTimeLocalValue,
+  fromDateTimeLocalValue,
+  formatDateForDisplay,
+  formatTimeForDisplay,
+  formatDateTimeForDisplay,
+  parseDateTime,
+  combineDateTime,
+  isStartDateValid,
+  isEndDateValid,
+} from "../utils/profileDateTime";
 
 // DateTimePicker only works on native (not web)
 let DateTimePicker = null;
@@ -13,97 +28,7 @@ if (Platform.OS !== "web") {
   }
 }
 
-// Convert our format "YYYY-MM-DD HH:mm" to HTML5 datetime-local format "YYYY-MM-DDTHH:mm"
-const toDateTimeLocalValue = (value) => {
-  if (!value || typeof value !== "string" || value.trim() === "") return "";
-  return value.trim().replace(" ", "T").substring(0, 16); // Ensure we have at most YYYY-MM-DDTHH:mm
-};
-
-// Convert HTML5 datetime-local format to our format
-const fromDateTimeLocalValue = (value) => {
-  if (!value || typeof value !== "string" || value.trim() === "") return "";
-  return value.trim().replace("T", " ").substring(0, 16);
-};
-
-const formatDateForDisplay = (date) => {
-  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return "";
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${m}-${d}-${y}`;
-};
-
-const formatTimeForDisplay = (date) => {
-  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return "";
-  const h = String(date.getHours()).padStart(2, "0");
-  const min = String(date.getMinutes()).padStart(2, "0");
-  return `${h}:${min}`;
-};
-
-// Display stored "YYYY-MM-DD HH:mm" as "mm-dd-yyyy hh:mm"
-const formatDateTimeForDisplay = (value) => {
-  if (!value || typeof value !== "string" || value.trim() === "") return "";
-  const { date, time } = parseDateTime(value);
-  if (!date || !time) return value;
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const y = date.getFullYear();
-  const h = String(time.getHours()).padStart(2, "0");
-  const min = String(time.getMinutes()).padStart(2, "0");
-  return `${m}-${d}-${y} ${h}:${min}`;
-};
-
-// Validation: start date must be today or after (if today, time must not be in the past)
-const isStartDateValid = (date) => {
-  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return false;
-  const now = new Date();
-  return date.getTime() >= now.getTime();
-};
-
-// Validation: end date must be after start date
-const isEndDateValid = (endDateTime, startValue) => {
-  if (!endDateTime || !(endDateTime instanceof Date) || isNaN(endDateTime.getTime())) return false;
-  if (!startValue || typeof startValue !== "string" || startValue.trim() === "") return true; // No start set, allow any end
-  const { date: startDate, time: startTime } = parseDateTime(startValue);
-  if (!startDate || !startTime) return true;
-  const startDateTime = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), startTime.getHours(), startTime.getMinutes());
-  return endDateTime.getTime() > startDateTime.getTime();
-};
-
-const parseDateTime = (value) => {
-  if (!value || typeof value !== "string" || value.trim() === "") return { date: null, time: null };
-  const trimmed = value.trim();
-  // Try "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" (ISO)
-  const spaceMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})/);
-  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{1,2}):(\d{2})/);
-  const match = spaceMatch || isoMatch;
-  if (match) {
-    const [, y, m, d, h, min] = match;
-    const date = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
-    const time = new Date(2000, 0, 1, parseInt(h, 10), parseInt(min, 10));
-    return { date, time };
-  }
-  // Try date only "YYYY-MM-DD"
-  const dateOnlyMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (dateOnlyMatch) {
-    const [, y, m, d] = dateOnlyMatch;
-    const date = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
-    return { date, time: new Date(2000, 0, 1, 9, 0) }; // default 09:00
-  }
-  return { date: null, time: null };
-};
-
-const combineDateTime = (date, time) => {
-  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return "";
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const h = time && time instanceof Date && !isNaN(time.getTime()) ? String(time.getHours()).padStart(2, "0") : "00";
-  const min = time && time instanceof Date && !isNaN(time.getTime()) ? String(time.getMinutes()).padStart(2, "0") : "00";
-  return `${y}-${m}-${d} ${h}:${min}`;
-};
-
-const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus }) => {
+const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleDelete, onInputFocus, profileUid = "", darkMode = false }) => {
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
   // Tracks which index was just added via "+".
@@ -130,11 +55,19 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       details: "",
       amount: "",
       cost: "",
+      profile_wish_quantity: "",
+      profile_wish_image: "",
+      profile_wish_image_is_public: 1,
       profile_wish_start: "",
       profile_wish_end: "",
       profile_wish_location: "",
       profile_wish_mode: "",
       isPublic: true,
+      _wishNewImageUri: "",
+      _wishWebImageFile: null,
+      _wishOriginalImage: "",
+      _wishDeleteImageUrl: "",
+      _wishImageError: false,
     };
     setWishes([...wishes, newEntry]);
   };
@@ -158,6 +91,96 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
   const handleInputChange = (index, field, value) => {
     const updated = [...wishes];
     updated[index][field] = value;
+    setWishes(updated);
+  };
+
+  const getWishDisplayUri = (item) => {
+    const pending = item._wishNewImageUri;
+    if (pending != null && String(pending).trim() !== "") return String(pending).trim();
+    return resolveProfileItemImageUri(item.profile_wish_image, profileUid);
+  };
+
+  const pickWishImage = async (index) => {
+    if (Platform.OS === "web") return;
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission required", "Permission to access media library is required!");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: "images",
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        let fileSize = asset.fileSize;
+        if (!fileSize && asset.uri) {
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+            fileSize = fileInfo.size;
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        if (fileSize && fileSize > 2 * 1024 * 1024) {
+          Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
+          return;
+        }
+        const updated = [...wishes];
+        const prev = updated[index];
+        const orig = prev._wishOriginalImage || resolveProfileItemImageUri(prev.profile_wish_image, profileUid);
+        updated[index]._wishDeleteImageUrl = isRemoteHttpUrl(orig) ? orig : "";
+        updated[index]._wishNewImageUri = asset.uri;
+        updated[index]._wishWebImageFile = null;
+        updated[index]._wishImageError = false;
+        setWishes(updated);
+      }
+    } catch (error) {
+      console.error("Wish image pick error:", error);
+      Alert.alert("Error", "Failed to pick image.");
+    }
+  };
+
+  const handleWishWebImagePick = (index, event) => {
+    const file = event.target?.files?.[0];
+    if (event?.target) event.target.value = "";
+    if (!file) return;
+    if (!file.type?.startsWith?.("image/")) {
+      Alert.alert("Invalid file type", "Please select an image file.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const imageUri = reader.result;
+      const updated = [...wishes];
+      const prev = updated[index];
+      const orig = prev._wishOriginalImage || resolveProfileItemImageUri(prev.profile_wish_image, profileUid);
+      updated[index]._wishDeleteImageUrl = isRemoteHttpUrl(orig) ? orig : "";
+      updated[index]._wishNewImageUri = imageUri;
+      updated[index]._wishWebImageFile = file;
+      updated[index]._wishImageError = false;
+      setWishes(updated);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeWishImage = (index) => {
+    const updated = [...wishes];
+    const prev = updated[index];
+    const orig = prev._wishOriginalImage || resolveProfileItemImageUri(prev.profile_wish_image, profileUid);
+    updated[index]._wishDeleteImageUrl = isRemoteHttpUrl(orig) ? orig : "";
+    updated[index]._wishNewImageUri = "";
+    updated[index]._wishWebImageFile = null;
+    updated[index].profile_wish_image = "";
+    updated[index]._wishOriginalImage = "";
+    updated[index]._wishImageError = false;
     setWishes(updated);
   };
 
@@ -491,16 +514,37 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
                         </View>
           </View>
 
-          <TextInput style={styles.input} placeholder='Seeking Title' value={item.helpNeeds} onChangeText={(text) => handleInputChange(index, "helpNeeds", text)} />
-          <TextInput
-            style={styles.descriptionInput}
-            placeholder='Description'
-            value={item.details}
-            onChangeText={(text) => handleInputChange(index, "details", text)}
-            multiline={true}
-            textAlignVertical='top'
-            scrollEnabled={false}
-          />
+          <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
+            <ProfileItemImageColumn
+              darkMode={darkMode}
+              displayUri={getWishDisplayUri(item)}
+              imageError={!!item._wishImageError}
+              onImageError={() => handleInputChange(index, "_wishImageError", true)}
+              toolsVisible={
+                item.profile_wish_image_is_public === 1 ||
+                item.profile_wish_image_is_public === "1" ||
+                item.profile_wish_image_is_public === true
+              }
+              onShowTools={() => handleInputChange(index, "profile_wish_image_is_public", 1)}
+              onHideTools={() => handleInputChange(index, "profile_wish_image_is_public", 0)}
+              onUploadNative={() => pickWishImage(index)}
+              onWebFileChange={(e) => handleWishWebImagePick(index, e)}
+              onRemoveImage={() => removeWishImage(index)}
+              showRemove={!!getWishDisplayUri(item)}
+            />
+            <View style={styles.miniCardFields}>
+              <TextInput style={styles.input} placeholder='Seeking Title' value={item.helpNeeds} onChangeText={(text) => handleInputChange(index, "helpNeeds", text)} />
+              <TextInput
+                style={styles.descriptionInput}
+                placeholder='Description'
+                value={item.details}
+                onChangeText={(text) => handleInputChange(index, "details", text)}
+                multiline={true}
+                textAlignVertical='top'
+                scrollEnabled={false}
+              />
+            </View>
+          </View>
 
           {/* Start Date/Time, End Date/Time, Location */}
           <View style={styles.dateTimeSection}>
@@ -707,6 +751,13 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     }}
     onBlur={() => handleBountyAmountBlur(index)}
   />
+  <TextInput
+    style={styles.bountyInput}
+    placeholder="Qty"
+    keyboardType="numeric"
+    value={item.profile_wish_quantity || ""}
+    onChangeText={(text) => handleInputChange(index, "profile_wish_quantity", text)}
+  />
   <TouchableOpacity onPress={() => deleteWish(index)}>
     <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
   </TouchableOpacity>
@@ -746,6 +797,25 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 8,
+  },
+  miniCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    backgroundColor: "#fff",
+  },
+  miniCardDark: {
+    borderColor: "#404040",
+    backgroundColor: "#2d2d2d",
+  },
+  miniCardFields: {
+    flex: 1,
+    minWidth: 0,
   },
   input: {
     borderWidth: 1,
