@@ -581,6 +581,7 @@ const ProfileScreen = ({ route, navigation }) => {
         isPublic: bus.profile_business_is_visible === "1" || bus.profile_business_is_visible === 1 || bus.isPublic === true || bus.isPublic === "1",
         bu_individual_business_is_public: bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === true,
         individualIsPublic: bus.bu_individual_business_is_public === true || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1",
+        business_updated_at: bus.business_updated_at ?? bus.updated_at,
       }));
 
       // console.log("ProfileScreen - userData.businesses (after mapping):", JSON.stringify(userData.businesses, null, 2));
@@ -599,6 +600,7 @@ const ProfileScreen = ({ route, navigation }) => {
         profile_expertise_end: exp.profile_expertise_end || "",
         profile_expertise_location: exp.profile_expertise_location || "",
         profile_expertise_mode: exp.profile_expertise_mode || "",
+        profile_expertise_updated_at: exp.profile_expertise_updated_at ?? exp.updated_at,
         isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
       }));
       userData.wishes = parseProfileJsonArray(apiUser.wishes_info).map((wish) => ({
@@ -614,6 +616,7 @@ const ProfileScreen = ({ route, navigation }) => {
         profile_wish_end: wish.profile_wish_end || "",
         profile_wish_location: wish.profile_wish_location || "",
         profile_wish_mode: wish.profile_wish_mode || "",
+        profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
         isPublic: wish.profile_wish_is_public === 1 || wish.isPublic === true,
         wish_responses: wish.wish_responses || 0,
       }));
@@ -667,6 +670,7 @@ const ProfileScreen = ({ route, navigation }) => {
           business_profile_img: businessProfileImg,
           imageIsPublic: !!imageIsPublic,
           index,
+          business_updated_at: bus.business_updated_at ?? bus.updated_at,
         };
       });
       // console.log("mappedBusinesses result:", JSON.stringify(mappedBusinesses, null, 2));
@@ -1853,6 +1857,7 @@ const ProfileScreen = ({ route, navigation }) => {
                                         profile_wish_end: wish.profile_wish_end,
                                         profile_wish_location: wish.profile_wish_location,
                                         profile_wish_mode: wish.profile_wish_mode,
+                                        profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
                                       };
                                   const profileDataForNavigation = {
                                     firstName: user.firstName,
@@ -1967,6 +1972,7 @@ const ProfileScreen = ({ route, navigation }) => {
                                 profile_wish_end: wish.profile_wish_end,
                                 profile_wish_location: wish.profile_wish_location,
                                 profile_wish_mode: wish.profile_wish_mode,
+                                profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
                               };
                               const profileData = {
                                 firstName: user.firstName,

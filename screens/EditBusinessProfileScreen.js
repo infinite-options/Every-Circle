@@ -215,6 +215,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       business?.imageIsPublic === true ||
       false,
     locationIsPublic: business?.business_location_is_public === "1" || business?.business_location_is_public === 1 || false,
+    business_updated_at: business?.business_updated_at ?? business?.updated_at ?? "",
     // MISSING: Section visibility flags (EditProfileScreen has: experienceIsPublic, educationIsPublic, expertiseIsPublic, wishesIsPublic, businessIsPublic)
     // Note: Business profile doesn't have these sections, so these flags are not needed
     // MISSING: Arrays for experience, education, expertise, wishes, businesses (EditProfileScreen has these)
@@ -634,6 +635,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       // BUSINESS-SPECIFIC: Uses user_uid and business_uid (EditProfileScreen uses profile_uid)
       payload.append("user_uid", userUid);
       payload.append("business_uid", businessUID);
+      if (formData.business_updated_at) {
+        payload.append("business_updated_at", String(formData.business_updated_at));
+      }
       // BUSINESS-SPECIFIC: Uses business_* field names instead of profile_personal_*
       payload.append("business_name", formData.name);
       payload.append("business_location_is_public", formData.locationIsPublic ? "1" : "0");

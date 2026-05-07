@@ -564,6 +564,7 @@ export default function SearchScreen({ route }) {
               profile_wish_end: item.profile_wish_end || "",
               profile_wish_location: item.profile_wish_location || "",
               profile_wish_mode: item.profile_wish_mode || "",
+              profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
             },
             // Store profile data for MiniCard-like display
             profileData: {
@@ -641,6 +642,7 @@ export default function SearchScreen({ route }) {
             profile_expertise_mode: item.profile_expertise_mode || "",
             profile_expertise_image: item.profile_expertise_image || "",
             profile_expertise_image_is_public: item.profile_expertise_image_is_public,
+            profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
           },
           // Store profile data for MiniCard-like display (all public info for Add to Cart modal)
           profileData: {

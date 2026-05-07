@@ -90,6 +90,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           ? biz.individualIsPublic
           : biz.bu_individual_business_is_public === true || biz.bu_individual_business_is_public === 1 || biz.bu_individual_business_is_public === "1",
       isNew: biz.isNew || false,
+      business_updated_at: biz.business_updated_at ?? biz.updated_at,
     })) || [{ name: "", role: "", isPublic: 0, isApproved: 0, isNew: false }],
     experience: (() => {
       const uid = initialFormProfileUid;
@@ -193,6 +194,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             profile_expertise_end: e.profile_expertise_end || "",
             profile_expertise_location: e.profile_expertise_location || "",
             profile_expertise_mode: e.profile_expertise_mode || "",
+            profile_expertise_updated_at: e.profile_expertise_updated_at ?? e.updated_at,
             isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_expertise_is_public === 1,
             _expNewImageUri: "",
             _expWebImageFile: null,
@@ -242,6 +244,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             profile_wish_end: e.profile_wish_end || "",
             profile_wish_location: e.profile_wish_location || "",
             profile_wish_mode: e.profile_wish_mode || "",
+            profile_wish_updated_at: e.profile_wish_updated_at ?? e.updated_at,
             isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_wish_is_public === 1,
             _wishNewImageUri: "",
             _wishWebImageFile: null,
@@ -591,6 +594,9 @@ const EditProfileScreen = ({ route, navigation }) => {
         profile_wish_end: w.profile_wish_end || "",
         profile_wish_location: w.profile_wish_location || "",
         profile_wish_mode: w.profile_wish_mode || "",
+        ...(w.profile_wish_uid && (w.profile_wish_updated_at != null || w.updated_at != null)
+          ? { profile_wish_updated_at: w.profile_wish_updated_at ?? w.updated_at }
+          : {}),
         helpNeeds: w.helpNeeds || "",
         details: w.details || "",
         amount: w.amount || "",
@@ -657,6 +663,9 @@ const EditProfileScreen = ({ route, navigation }) => {
         profile_expertise_end: e.profile_expertise_end || "",
         profile_expertise_location: e.profile_expertise_location || "",
         profile_expertise_mode: e.profile_expertise_mode || "",
+        ...(e.profile_expertise_uid && (e.profile_expertise_updated_at != null || e.updated_at != null)
+          ? { profile_expertise_updated_at: e.profile_expertise_updated_at ?? e.updated_at }
+          : {}),
         name: e.name || "",
         description: e.description || "",
         quantity: e.quantity || "",
@@ -683,6 +692,9 @@ const EditProfileScreen = ({ route, navigation }) => {
               isApproved: biz.isApproved ? 1 : 0,
               // individualIsPublic: biz.individualIsPublic ? 1 : 0,
               individualIsPublic: biz.isPublic ? 1 : 0,
+              ...(biz.business_updated_at != null || biz.updated_at != null
+                ? { business_updated_at: biz.business_updated_at ?? biz.updated_at }
+                : {}),
             };
           }
 

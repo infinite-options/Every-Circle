@@ -370,6 +370,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           if (!Array.isArray(list)) return [];
           return list.map((svc) => normalizeBusinessServiceFromApi(svc));
         })(),
+        business_updated_at: rawBusiness.business_updated_at ?? rawBusiness.updated_at,
       };
 
       setBusiness(businessWithRatings);
