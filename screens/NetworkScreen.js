@@ -19,6 +19,7 @@ import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors, getHeaderColor } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTokenNoLongerActive } from "../utils/ablyClient";
+import { getSessionProfile } from "../utils/sessionProfile";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -2142,17 +2143,13 @@ const NetworkScreen = ({ navigation }) => {
   };
 
   const fetchConversations = async () => {
-    const uid = profileUid || (await AsyncStorage.getItem("profile_uid"));
+    const session = await getSessionProfile();
+    const uid = profileUid || session?.profileUid || (await AsyncStorage.getItem("profile_uid"));
     if (!uid) return;
     setConversationsLoading(true);
     try {
-      // Fetch business UIDs from profile API (110- path always returns business_info)
-      let bizUids = [];
-      try {
-        const profRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${uid}`);
-        const profJson = await profRes.json();
-        bizUids = (profJson.business_info || []).map((b) => b.business_uid).filter(Boolean);
-      } catch (_) {}
+      // Prefer shared session cache to avoid repeated profile API calls.
+      const bizUids = session?.profileUid === uid ? (session.businessUids || []) : [];
 
       // Fetch conversations for personal UID + all owned business UIDs
       const uidsToFetch = [uid, ...bizUids];

@@ -14,6 +14,7 @@ import {
   TAG_SEARCH_DISTINCT_ENDPOINT,
   TAG_CATEGORY_DISTINCT_ENDPOINT,
   SEARCH_BASE_URL,
+  SEARCH_GLOBAL_ENDPOINT,
   BUSINESS_AVG_RATINGS_ENDPOINT,
   BUSINESS_MAX_BOUNTY_ENDPOINT,
   BUSINESS_TAG_SEARCH_ENDPOINT,
@@ -85,8 +86,8 @@ export default function SearchScreen({ route }) {
   const [bounty, setBounty] = useState(null);
   const [rating, setRating] = useState(null);
 
-  // Search type state: 'businesses', 'expertise', 'seeking'
-  const [searchType, setSearchType] = useState("businesses");
+  // Search type state: 'global', 'businesses', 'expertise', 'seeking'
+  const [searchType, setSearchType] = useState("global");
 
   const [currentProfileUid, setCurrentProfileUid] = useState(null);
   const [connectionDegreeMap, setConnectionDegreeMap] = useState({});
@@ -249,7 +250,7 @@ export default function SearchScreen({ route }) {
           setHasLoadedInitialSearch(true);
           // Trigger the search after a brief delay to ensure state is set
           setTimeout(() => {
-            performSearch("Chinese", "businesses");
+            performSearch("Chinese", "global");
           }, 100);
         }
       } catch (error) {
@@ -258,7 +259,7 @@ export default function SearchScreen({ route }) {
         setSearchQuery("Chinese");
         setHasLoadedInitialSearch(true);
         setTimeout(() => {
-          performSearch("Chinese", "businesses");
+          performSearch("Chinese", "global");
         }, 100);
       }
     };
@@ -362,12 +363,52 @@ export default function SearchScreen({ route }) {
   const [bountyModalVisible, setBountyModalVisible] = useState(false);
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showGlobalBusinesses, setShowGlobalBusinesses] = useState(true);
+  const [showGlobalOffering, setShowGlobalOffering] = useState(true);
 
   // Filter options (same as FilterScreen)
   const distanceOptions = [5, 10, 15, 25, 50, 100];
   const networkOptions = [1, 2, 3, 4, 5];
   const bountyOptions = ["Ascending", "Descending"];
   const ratingOptions = ["> 1", "> 2", "> 3", "> 4", "> 4.5", "> 4.6", "> 4.8"];
+
+  const globalBusinessResults = searchType === "global" ? results.filter((item) => (item?.itemType || "businesses") === "businesses") : [];
+  const globalOfferingResults = searchType === "global" ? results.filter((item) => item?.itemType === "expertise") : [];
+
+  const fetchSearchJson = async (endpoint, q, applyRatingFilter = false) => {
+    let apiUrl = `${endpoint}?q=${encodeURIComponent(q)}`;
+    if (applyRatingFilter && rating !== null) {
+      apiUrl += `&min_rating=${rating}`;
+    }
+
+    const fetchOptions =
+      Platform.OS === "web"
+        ? {
+            method: "GET",
+            mode: "cors",
+            credentials: "omit",
+            headers: { Accept: "application/json" },
+            cache: "no-cache",
+          }
+        : {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+            },
+          };
+
+    const res = await fetch(apiUrl, fetchOptions);
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`HTTP error! status: ${res.status}, message: ${errorText}`);
+    }
+    const responseText = await res.text();
+    if (!responseText.trim().startsWith("{") && !responseText.trim().startsWith("[")) {
+      throw new Error(`API returned non-JSON response: ${responseText.substring(0, 200)}`);
+    }
+    return JSON.parse(responseText);
+  };
 
   // Extracted search function that can be called programmatically
   const performSearch = async (query, type = searchType) => {
@@ -382,6 +423,96 @@ export default function SearchScreen({ route }) {
 
     setLoading(true);
     try {
+      if (type === "global") {
+        const globalJsonRaw = await fetchSearchJson(SEARCH_GLOBAL_ENDPOINT, q, true);
+        const globalJson = sanitizeEmptyStrings(globalJsonRaw);
+        const globalResults = Array.isArray(globalJson) ? globalJson : globalJson.results || globalJson.result || [];
+        const businessResults = globalResults.filter((item) => item.itemType === "businesses");
+        const expertiseResults = globalResults.filter((item) => item.itemType === "expertise");
+
+        const sanitizeText = (text) => {
+          if (!text) return "";
+          const str = String(text).trim();
+          return str === "." ? "" : str;
+        };
+
+        const mappedBusinesses = businessResults.map((b, i) => ({
+          id: `${b.business_uid || i}`,
+          company: sanitizeText(b.business_name || b.company) || "Unknown Business",
+          business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
+          rating: typeof b.rating_star === "number" ? b.rating_star : null,
+          hasPriceTag: b.has_price_tag || false,
+          hasX: b.has_x || false,
+          hasDollar: b.has_dollar_sign || false,
+          max_bounty: b.max_bounty || b.business_max_bounty || null,
+          business_short_bio: sanitizeText(b.business_short_bio),
+          business_tag_line: sanitizeText(b.business_tag_line),
+          tags: b.tags || [],
+          score: b.score || 0,
+          score_breakdown: b.score_breakdown || null,
+          itemType: "businesses",
+          profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
+        }));
+
+        const mappedExpertise = expertiseResults
+          .filter((item) => item.profile_expertise_is_public !== 0 && item.profile_expertise_is_public !== "0")
+          .map((item, i) => ({
+            id: `${item.profile_expertise_uid || i}`,
+            company: item.profile_expertise_title || "Untitled Expertise",
+            rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
+            hasPriceTag: false,
+            hasX: false,
+            hasDollar: false,
+            business_short_bio: item.profile_expertise_description || "",
+            business_tag_line: item.profile_expertise_title || "",
+            tags: [],
+            score: item.score || 0,
+            score_breakdown: item.score_breakdown || null,
+            itemType: "expertise",
+            profile_uid:
+              item.profile_expertise_profile_personal_id ||
+              item.profile_personal_uid ||
+              item.expertise_owner_profile_uid ||
+              null,
+            expertiseData: {
+              title: item.profile_expertise_title,
+              description: item.profile_expertise_description,
+              details: item.profile_expertise_details,
+              bounty: item.profile_expertise_bounty,
+              cost: item.profile_expertise_cost,
+              expertise_uid: item.profile_expertise_uid,
+            },
+            profileData: {
+              firstName: item.profile_personal_first_name || "",
+              lastName: item.profile_personal_last_name || "",
+              email: item.user_email_id || "",
+              phone: item.profile_personal_phone_number || "",
+              image: item.profile_personal_image || "",
+              tagLine: item.profile_personal_tag_line || "",
+              city: item.profile_personal_city || "",
+              state: item.profile_personal_state || "",
+              emailIsPublic: item.profile_personal_email_is_public == 1,
+              phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
+              imageIsPublic: item.profile_personal_image_is_public == 1,
+              tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
+              locationIsPublic: item.profile_personal_location_is_public == 1,
+            },
+          }));
+
+        const normalizeByType = (items) => {
+          if (!items.length) return [];
+          const maxScore = Math.max(...items.map((x) => Number(x.score) || 0), 0.000001);
+          return items.map((x) => ({ ...x, globalScore: (Number(x.score) || 0) / maxScore }));
+        };
+
+        const list = [...normalizeByType(mappedBusinesses), ...normalizeByType(mappedExpertise)].sort((a, b) => b.globalScore - a.globalScore);
+        rawResultsRef.current = [...list];
+        setResults(list);
+        setHasLoadedInitialSearch(true);
+        setLoading(false);
+        return;
+      }
+
       // Select the appropriate endpoint based on search type
       let baseEndpoint;
       switch (type) {
@@ -547,6 +678,7 @@ export default function SearchScreen({ route }) {
             business_tag_line: item.profile_wish_title || "",
             tags: [],
             score: item.score || 0,
+            score_breakdown: item.score_breakdown || null,
             itemType: "seeking",
             profile_uid: item.profile_wish_profile_personal_id,
             profile_wish_end: item.profile_wish_end || "",
@@ -626,8 +758,13 @@ export default function SearchScreen({ route }) {
           business_tag_line: item.profile_expertise_title || "",
           tags: [],
           score: item.score || 0,
+          score_breakdown: item.score_breakdown || null,
           itemType: "expertise",
-          profile_uid: item.profile_expertise_profile_personal_id,
+          profile_uid:
+            item.profile_expertise_profile_personal_id ||
+            item.profile_personal_uid ||
+            item.expertise_owner_profile_uid ||
+            null,
           expertiseData: {
             title: item.profile_expertise_title,
             description: item.profile_expertise_description,
@@ -685,6 +822,7 @@ export default function SearchScreen({ route }) {
             business_tag_line: sanitizeText(b.business_tag_line),
             tags: b.tags || [],
             score: b.score || 0,
+            score_breakdown: b.score_breakdown || null,
             itemType: "businesses",
             profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
           };
@@ -717,6 +855,7 @@ export default function SearchScreen({ route }) {
                 business_tag_line: sanitizeText(b.business_tag_line),
                 tags: b.tags || [], // ← now includes tags
                 score: 0,
+                score_breakdown: null,
                 itemType: "businesses",
               }));
             list = [...list, ...tagList];
@@ -879,6 +1018,7 @@ export default function SearchScreen({ route }) {
               business_tag_line: sanitizeText(b.business_tag_line),
               tags: b.tags || [],
               score: b.score || 0,
+              score_breakdown: b.score_breakdown || null,
             }));
 
             console.log("✅ Processed results from alternative endpoint:", list);
@@ -935,6 +1075,50 @@ export default function SearchScreen({ route }) {
         ))}
       </View>
     );
+  };
+
+  const renderScoreBreakdown = (item) => {
+    const breakdown = item?.score_breakdown;
+    if (!breakdown || typeof breakdown !== "object") return null;
+    const sem = Number.isFinite(breakdown.semantic_score) ? Number(breakdown.semantic_score).toFixed(3) : null;
+    const lex = Number.isFinite(breakdown.total_lexical_boost) ? Number(breakdown.total_lexical_boost).toFixed(3) : null;
+    const g = Number.isFinite(item?.global_score) ? Number(item.global_score).toFixed(3) : null;
+    const parts = [];
+    if (sem !== null) parts.push(`Sem: ${sem}`);
+    if (lex !== null) parts.push(`Lex: ${lex}`);
+    if (g !== null) parts.push(`Global: ${g}`);
+
+    const detailKeyToLabel = {
+      name_score: "Business Name",
+      tagline_score: "Tagline",
+      bio_score: "Bio",
+      service_name_score: "Product/Service Name",
+      service_tag_score: "Service Tags",
+      custom_tag_score: "Business Tags",
+      title_score: "Title",
+      description_score: "Description",
+      details_score: "Details",
+      token_name: "Name Token",
+      token_tagline: "Tagline Token",
+      token_bio: "Bio Token",
+      token_tag: "Tag Token",
+      phrase_name: "Name Phrase",
+      phrase_tag: "Tag Phrase",
+    };
+
+    const ignoredKeys = new Set(["semantic_score", "total_lexical_boost", "final_score"]);
+    const detailParts = Object.entries(breakdown)
+      .filter(([key, value]) => detailKeyToLabel[key] && !ignoredKeys.has(key) && Number.isFinite(value) && Number(value) > 0)
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .map(([key, value]) => `${detailKeyToLabel[key]}: ${Number(value).toFixed(3)}`);
+
+    if (!parts.length && !detailParts.length) return null;
+
+    const text = detailParts.length
+      ? `${parts.join(" | ")}\n${detailParts.join(" | ")}`
+      : parts.join(" | ");
+
+    return <Text style={[styles.scoreBreakdownText, darkMode && styles.darkScoreBreakdownText]}>{text}</Text>;
   };
 
   const renderWishItem = (item, idx) => {
@@ -1028,6 +1212,8 @@ export default function SearchScreen({ route }) {
         {/* Wish Information */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
           <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
+          {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
+          {renderScoreBreakdown(item)}
           {(wish.profile_wish_start || wish.profile_wish_end) && (
             <Text style={[styles.wishDateTime, darkMode && styles.darkWishDateTime]}>
               {wish.profile_wish_start ? formatDateTimeForDisplay(wish.profile_wish_start) : "—"}
@@ -1136,6 +1322,8 @@ export default function SearchScreen({ route }) {
         {/* Expertise Information */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
           <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
+          {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
+          {renderScoreBreakdown(item)}
           {expertise.description && String(expertise.description).trim() && String(expertise.description).trim() !== "." && (
             <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{String(expertise.description).trim()}</Text>
           )}
@@ -1230,6 +1418,13 @@ export default function SearchScreen({ route }) {
             />
             <View style={{ flex: 1 }}>
               <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
+              {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
+              {renderScoreBreakdown(item)}
+              {/* Badge approach (kept commented until finalized)
+              <Text style={[styles.resultTypeBadge, darkMode && styles.darkResultTypeBadge]}>
+                {item.itemType === "businesses" ? "Business" : item.itemType === "expertise" ? "Offering" : "Seeking"}
+              </Text>
+              */}
               {(() => {
                 const tagLine = item.business_tag_line ? String(item.business_tag_line).trim() : "";
                 if (tagLine && tagLine !== "." && tagLine.length > 0) {
@@ -1364,6 +1559,29 @@ export default function SearchScreen({ route }) {
         <View style={styles.contentContainer}>
           {/* Search type buttons - ALWAYS VISIBLE ABOVE SEARCH BAR */}
           <View style={[styles.filterButtonsContainer, { marginBottom: 10 }]}>
+            <TouchableOpacity
+              style={[
+                styles.filterButtonOption,
+                darkMode && styles.darkFilterButtonOption,
+                searchType === "global" && styles.searchTypeButtonGlobal,
+                darkMode && searchType === "global" && styles.darkSearchTypeButtonGlobal,
+              ]}
+              onPress={() => {
+                setSearchType("global");
+                performSearch(searchQuery, "global");
+              }}
+            >
+              <Text
+                style={[
+                  styles.filterButtonText,
+                  darkMode && styles.darkFilterButtonText,
+                  searchType === "global" && styles.searchTypeButtonTextGlobal,
+                  darkMode && searchType === "global" && styles.darkSearchTypeButtonTextGlobal,
+                ]}
+              >
+                Global
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={[
                 styles.filterButtonOption,
@@ -1562,7 +1780,25 @@ export default function SearchScreen({ route }) {
           )}
 
           <ScrollView style={styles.resultsContainer}>
-            {loading ? <Text style={[styles.loadingText, darkMode && styles.darkLoadingText]}>Loading…</Text> : results.map((item, idx) => renderResultItem(item, idx))}
+            {loading ? (
+              <Text style={[styles.loadingText, darkMode && styles.darkLoadingText]}>Loading…</Text>
+            ) : searchType === "global" ? (
+              <>
+                <TouchableOpacity style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]} onPress={() => setShowGlobalBusinesses((prev) => !prev)} activeOpacity={0.8}>
+                  <Text style={[styles.globalSectionHeaderText, darkMode && styles.darkGlobalSectionHeaderText]}>Businesses ({globalBusinessResults.length})</Text>
+                  <Ionicons name={showGlobalBusinesses ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
+                </TouchableOpacity>
+                {showGlobalBusinesses && globalBusinessResults.map((item, idx) => renderResultItem(item, idx))}
+
+                <TouchableOpacity style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]} onPress={() => setShowGlobalOffering((prev) => !prev)} activeOpacity={0.8}>
+                  <Text style={[styles.globalSectionHeaderText, darkMode && styles.darkGlobalSectionHeaderText]}>Offering ({globalOfferingResults.length})</Text>
+                  <Ionicons name={showGlobalOffering ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
+                </TouchableOpacity>
+                {showGlobalOffering && globalOfferingResults.map((item, idx) => renderResultItem(item, idx))}
+              </>
+            ) : (
+              results.map((item, idx) => renderResultItem(item, idx))
+            )}
           </ScrollView>
 
           <View style={[styles.bannerAd, darkMode && styles.darkBannerAd]}>
@@ -2304,6 +2540,9 @@ const styles = StyleSheet.create({
   searchTypeButtonBusinesses: {
     backgroundColor: "#4F8A8B",
   },
+  searchTypeButtonGlobal: {
+    backgroundColor: "#4F8A8B",
+  },
   searchTypeButtonExpertise: {
     backgroundColor: "#4F8A8B",
   },
@@ -2311,6 +2550,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#4F8A8B",
   },
   searchTypeButtonTextBusinesses: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+  searchTypeButtonTextGlobal: {
     color: "#fff",
     fontWeight: "600",
   },
@@ -2326,6 +2569,9 @@ const styles = StyleSheet.create({
   darkSearchTypeButtonBusinesses: {
     backgroundColor: "#AF52DE",
   },
+  darkSearchTypeButtonGlobal: {
+    backgroundColor: "#6A5ACD",
+  },
   darkSearchTypeButtonExpertise: {
     backgroundColor: "#FFCD3C",
   },
@@ -2336,6 +2582,10 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
   },
+  darkSearchTypeButtonTextGlobal: {
+    color: "#fff",
+    fontWeight: "600",
+  },
   darkSearchTypeButtonTextExpertise: {
     color: "#000",
     fontWeight: "600",
@@ -2343,6 +2593,43 @@ const styles = StyleSheet.create({
   darkSearchTypeButtonTextSeeking: {
     color: "#fff",
     fontWeight: "600",
+  },
+  globalSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(79, 138, 139, 0.5)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 6,
+  },
+  globalSectionHeaderText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#ffffff",
+  },
+  darkGlobalSectionHeader: {
+    backgroundColor: "rgba(61, 107, 108, 0.5)",
+  },
+  darkGlobalSectionHeaderText: {
+    color: "#fff",
+  },
+  scoreText: {
+    fontSize: 11,
+    color: "#666",
+    marginTop: 2,
+  },
+  scoreBreakdownText: {
+    fontSize: 10,
+    color: "#7a7a7a",
+    marginTop: 1,
+  },
+  darkScoreText: {
+    color: "#cccccc",
+  },
+  darkScoreBreakdownText: {
+    color: "#aaaaaa",
   },
   offeringStatement: {
     fontSize: 16,

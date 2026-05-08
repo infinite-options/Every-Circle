@@ -4,13 +4,14 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
-import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, BUSINESS_BOUNTY_RESULTS_ENDPOINT, BUSINESS_INFO_ENDPOINT, TRANSACTION_RECEIPT_ENDPOINT } from "../apiConfig";
+import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL, BUSINESS_BOUNTY_RESULTS_ENDPOINT, BUSINESS_INFO_ENDPOINT, TRANSACTION_RECEIPT_ENDPOINT } from "../apiConfig";
 import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
 import { useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
+import { getSessionProfile } from "../utils/sessionProfile";
 // import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
 
@@ -406,10 +407,10 @@ export default function AccountScreen({ navigation }) {
 
   const fetchPersonalProfileData = async () => {
     try {
-      const profileId = await AsyncStorage.getItem("profile_uid");
+      const session = await getSessionProfile();
+      const profileId = session?.profileUid || (await AsyncStorage.getItem("profile_uid"));
       if (!profileId) return;
-      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-      const result = await response.json();
+      const result = session?.rawProfile || (await getSessionProfile({ forceRefresh: true }))?.rawProfile;
       if (result && result.personal_info) {
         setPersonalProfileData({
           firstName: result.personal_info.profile_personal_first_name || "",
@@ -469,16 +470,14 @@ export default function AccountScreen({ navigation }) {
   const refreshExpertiseData = async () => {
     try {
       setExpertiseLoading(true);
-      const profileId = await AsyncStorage.getItem("profile_uid");
+      const session = await getSessionProfile();
+      const profileId = session?.profileUid || (await AsyncStorage.getItem("profile_uid"));
       if (profileId) {
-        // First, fetch profile expertise data
-        const profileResponse = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-
-        if (!profileResponse.ok) {
-          throw new Error(`HTTP error! status: ${profileResponse.status}`);
+        // Reuse cached profile payload to avoid duplicate USER_PROFILE_INFO requests.
+        const profileResult = session?.rawProfile || (await getSessionProfile({ forceRefresh: true }))?.rawProfile;
+        if (!profileResult) {
+          throw new Error("Failed to load profile expertise data");
         }
-
-        const profileResult = await profileResponse.json();
         // console.log("Expertise API response:", profileResult);
 
         // Parse expertise_info
@@ -571,19 +570,18 @@ export default function AccountScreen({ navigation }) {
   // Fetch user's businesses to get business_uid
   const fetchUserBusinesses = async () => {
     try {
-      const profileId = await AsyncStorage.getItem("profile_uid");
+      const session = await getSessionProfile();
+      const profileId = session?.profileUid || (await AsyncStorage.getItem("profile_uid"));
       if (!profileId) {
         console.log("No profile ID found");
         return null;
       }
 
-      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-      if (!response.ok) {
-        console.log("Failed to fetch user profile");
+      const result = session?.rawProfile || (await getSessionProfile({ forceRefresh: true }))?.rawProfile;
+      if (!result) {
+        console.log("Failed to load user profile");
         return null;
       }
-
-      const result = await response.json();
       console.log("User businesses:", result.business_info);
 
       // Parse business_info to get business UIDs

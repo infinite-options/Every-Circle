@@ -74,6 +74,7 @@ export default function ChatScreen() {
     other_name: paramOtherName,
     other_image: paramOtherImage,
     my_uid_override,
+    reply_context,
   } = route.params || {};
 
   const [myUid, setMyUid] = useState(null);
@@ -86,6 +87,7 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
+  const [pendingReplyContext, setPendingReplyContext] = useState(reply_context || null);
 
   const flatListRef = useRef(null);
   const ablyClientRef = useRef(null);
@@ -103,7 +105,19 @@ export default function ChatScreen() {
       setMyUid(uid);
       myUidRef.current = uid;
     })();
-  }, []);
+  }, [my_uid_override]);
+
+  // Keep local chat state in sync if this screen instance is reused
+  // with new navigation params (prevents stale conversation routing).
+  useEffect(() => {
+    setConvUid(initialConvUid || null);
+    setOtherName(paramOtherName || "Chat");
+    setOtherImage(paramOtherImage || null);
+    setPendingReplyContext(reply_context || null);
+    setMessages([]);
+    setError(null);
+    setLoading(true);
+  }, [initialConvUid, other_uid, paramOtherName, paramOtherImage, reply_context]);
 
   // Once we have myUid, ensure a conversation exists
   useEffect(() => {
@@ -120,7 +134,7 @@ export default function ChatScreen() {
       // Need to create / fetch conversation first
       createOrGetConversation();
     }
-  }, [myUid]);
+  }, [myUid, other_uid, convUid]);
 
   const createOrGetConversation = async () => {
     try {
@@ -259,15 +273,32 @@ export default function ChatScreen() {
 
   // ─── send ────────────────────────────────────────────────────────────────
 
+  const buildReplyBody = (text, context) => {
+    if (!context?.label) return text;
+    return `↪ ${context.label}\n${text}`;
+  };
+
+  const parseReplyBody = (rawBody) => {
+    const body = typeof rawBody === "string" ? rawBody : String(rawBody || "");
+    const match = body.match(/^↪\s+([^\n]+)\n([\s\S]*)$/);
+    if (!match) return { isReply: false, contextLabel: null, text: body };
+    return {
+      isReply: true,
+      contextLabel: match[1]?.trim() || null,
+      text: match[2] ?? "",
+    };
+  };
+
   const sendMessage = async () => {
     const text = inputText.trim();
     if (!text || !convUid || !myUid || sending) return;
+    const bodyToSend = buildReplyBody(text, pendingReplyContext);
 
     const optimistic = {
       message_uid: `optimistic-${Date.now()}`,
       conversation_uid: convUid,
       sender_uid: myUid,
-      body: text,
+      body: bodyToSend,
       sent_at: new Date().toISOString().replace("T", " ").slice(0, 19),
     };
 
@@ -282,7 +313,7 @@ export default function ChatScreen() {
         body: JSON.stringify({
           conversation_uid: convUid,
           sender_uid: myUid,
-          body: text,
+          body: bodyToSend,
         }),
       });
       const json = await res.json();
@@ -294,6 +325,9 @@ export default function ChatScreen() {
         );
         return [...without, confirmed];
       });
+      if (pendingReplyContext) {
+        setPendingReplyContext(null);
+      }
     } catch (e) {
       // Remove optimistic on failure
       setMessages((prev) => prev.filter((m) => m.message_uid !== optimistic.message_uid));
@@ -307,6 +341,7 @@ export default function ChatScreen() {
 
   const renderMessage = ({ item, index }) => {
     const isMine = item.sender_uid === myUid;
+    const parsedBody = parseReplyBody(item.body);
     const showDayLabel =
       index === 0 ||
       !sameDay(messages[index - 1].sent_at, item.sent_at);
@@ -324,13 +359,34 @@ export default function ChatScreen() {
           <View
             style={[
               styles.bubble,
+              parsedBody.isReply && styles.bubbleReply,
               isMine
                 ? styles.bubbleMine
                 : [styles.bubbleTheirs, darkMode && styles.bubbleTheirsDark],
             ]}
           >
+            {parsedBody.isReply && parsedBody.contextLabel ? (
+              <View
+                style={[
+                  styles.replyHeader,
+                  isMine ? styles.replyHeaderMine : styles.replyHeaderTheirs,
+                  !isMine && darkMode && styles.replyHeaderTheirsDark,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.replyHeaderText,
+                    isMine ? styles.replyHeaderTextMine : styles.replyHeaderTextTheirs,
+                    !isMine && darkMode && styles.replyHeaderTextTheirsDark,
+                  ]}
+                  numberOfLines={2}
+                >
+                  {parsedBody.contextLabel}
+                </Text>
+              </View>
+            ) : null}
             <Text style={[styles.bubbleText, isMine ? styles.bubbleTextMine : darkMode && styles.bubbleTextDark]}>
-              {item.body}
+              {parsedBody.text}
             </Text>
           </View>
           <Text style={[styles.msgTime, isMine ? styles.msgTimeMine : darkMode && styles.msgTimeDark]}>
@@ -416,6 +472,16 @@ export default function ChatScreen() {
         )}
 
         <View style={[styles.inputBar, darkMode && styles.inputBarDark]}>
+          {pendingReplyContext?.label ? (
+            <View style={[styles.pendingReplyChip, darkMode && styles.pendingReplyChipDark]}>
+              <Text style={[styles.pendingReplyChipText, darkMode && styles.pendingReplyChipTextDark]} numberOfLines={2}>
+                Replying to {pendingReplyContext.label}
+              </Text>
+              <TouchableOpacity onPress={() => setPendingReplyContext(null)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                <Ionicons name="close" size={16} color={darkMode ? "#ddd" : "#666"} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
           <TextInput
             style={[styles.input, darkMode && styles.inputDark]}
             placeholder="Type a message..."
@@ -480,6 +546,7 @@ const styles = StyleSheet.create({
 
   // Bubbles
   bubble: { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 18 },
+  bubbleReply: { borderWidth: 1, borderColor: "#d5b5e6" },
   bubbleMine: {
     backgroundColor: PURPLE,
     borderBottomRightRadius: 4,
@@ -493,6 +560,18 @@ const styles = StyleSheet.create({
   bubbleText: { fontSize: 15, color: "#222", lineHeight: 20 },
   bubbleTextMine: { color: "#fff" },
   bubbleTextDark: { color: "#eee" },
+  replyHeader: {
+    marginBottom: 6,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+  },
+  replyHeaderMine: { borderBottomColor: "rgba(255,255,255,0.35)" },
+  replyHeaderTheirs: { borderBottomColor: "rgba(0,0,0,0.16)" },
+  replyHeaderTheirsDark: { borderBottomColor: "rgba(255,255,255,0.18)" },
+  replyHeaderText: { fontSize: 11, fontWeight: "600" },
+  replyHeaderTextMine: { color: "#f6eefe" },
+  replyHeaderTextTheirs: { color: "#4d2f63" },
+  replyHeaderTextTheirsDark: { color: "#d9c4ea" },
 
   // Time stamps
   msgTime: { fontSize: 10, color: "#bbb", marginTop: 2, marginHorizontal: 4 },
@@ -521,6 +600,24 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   inputBarDark: { backgroundColor: "#1e1e1e", borderTopColor: "#2a2a2a" },
+  pendingReplyChip: {
+    position: "absolute",
+    top: -34,
+    left: 12,
+    right: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#f3e8fb",
+    borderColor: "#d8b7eb",
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  pendingReplyChipDark: { backgroundColor: "#2f2240", borderColor: "#6a4f80" },
+  pendingReplyChipText: { flex: 1, fontSize: 12, color: "#5a2e79", marginRight: 8 },
+  pendingReplyChipTextDark: { color: "#e8d9f7" },
 
   input: {
     flex: 1,

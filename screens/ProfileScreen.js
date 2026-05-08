@@ -1610,7 +1610,7 @@ const ProfileScreen = ({ route, navigation }) => {
               activeOpacity={0.8}
               onPress={() =>
                 navigation.navigate("Chat", {
-                  other_uid: profileUID,
+                  other_uid: routeProfileUID || profileUID,
                   other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
                   other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
                 })
@@ -1743,6 +1743,25 @@ const ProfileScreen = ({ route, navigation }) => {
                                 </View>
                               ) : null}
                             </View>
+                          ) : null}
+                          {routeProfileUID && !isCurrentUserProfile ? (
+                            <TouchableOpacity
+                              style={[styles.contextChatButton, darkMode && styles.darkContextChatButton]}
+                              activeOpacity={0.8}
+                              onPress={() =>
+                                navigation.navigate("Chat", {
+                                  other_uid: routeProfileUID || profileUID,
+                                  other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
+                                  other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
+                                  reply_context: {
+                                    label: `Offering: ${sanitizeText(exp.name) || "Offering"}`,
+                                  },
+                                })
+                              }
+                            >
+                              <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
+                              <Text style={styles.contextChatButtonText}>Message about this offering</Text>
+                            </TouchableOpacity>
                           ) : null}
                         </View>
                       );
@@ -2171,7 +2190,26 @@ const ProfileScreen = ({ route, navigation }) => {
                             <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {sanitizeText(business.role)}</Text>
                           </View>
                         ) : null}
-                      </View>
+                        {routeProfileUID && !isCurrentUserProfile && (business.business_uid || business.profile_business_uid) ? (
+                        <TouchableOpacity
+                          style={[styles.contextChatButton, darkMode && styles.darkContextChatButton, { marginTop: 8 }]}
+                          activeOpacity={0.8}
+                          onPress={() =>
+                            navigation.navigate("Chat", {
+                              other_uid: business.business_uid || business.profile_business_uid,
+                              other_name: business.business_name || "Business",
+                              other_image: business.business_profile_img || null,
+                              reply_context: {
+                                label: `Business: ${sanitizeText(business.business_name || "Business")}`,
+                              },
+                            })
+                          }
+                        >
+                          <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
+                          <Text style={styles.contextChatButtonText}>Message this business</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
                     ))
                   ) : (
                     <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No businesses added yet</Text>
@@ -2742,6 +2780,24 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 15,
+  },
+  contextChatButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#AF52DE",
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    marginTop: 8,
+  },
+  darkContextChatButton: {
+    backgroundColor: "#8f47b5",
+  },
+  contextChatButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 12,
   },
   sectionHeader: {
     flexDirection: "row",

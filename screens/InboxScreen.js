@@ -17,7 +17,8 @@ import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
-import { CHAT_CONVERSATIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { CHAT_CONVERSATIONS_ENDPOINT } from "../apiConfig";
+import { getSessionProfile } from "../utils/sessionProfile";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -60,19 +61,12 @@ export default function InboxScreen() {
   // directly from the profile API (the 110- path always returns business_info correctly)
   useEffect(() => {
     let cancelled = false;
-    AsyncStorage.getItem("profile_uid").then(async (uid) => {
-      if (cancelled || !uid) return;
-      setMyUid(uid);
-      try {
-        const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${uid}`);
-        const json = await res.json();
-        const bizList = json.business_info || [];
-        const uids = bizList.map((b) => b.business_uid).filter(Boolean);
-        if (!cancelled) setMyBusinessUids(uids);
-      } catch (_) {
-        if (!cancelled) setMyBusinessUids([]);
-      }
-    });
+    (async () => {
+      const session = await getSessionProfile();
+      if (cancelled || !session?.profileUid) return;
+      setMyUid(session.profileUid);
+      setMyBusinessUids(session.businessUids || []);
+    })();
     return () => { cancelled = true; };
   }, []);
 

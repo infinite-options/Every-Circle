@@ -12,6 +12,7 @@ import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
+import { clearSessionProfileCache } from "../utils/sessionProfile";
 import { API_BASE_URL } from "../apiConfig";
 
 // Only import GoogleSignin on native platforms (not web)
@@ -448,6 +449,7 @@ export default function SettingsScreen() {
 
       // Clear shared Ably client so next login reauths cleanly with new client_id.
       resetSharedAblyClient();
+      clearSessionProfileCache();
       reinitialize().catch(() => {});
 
       // Reset dark mode to light mode when logging out
