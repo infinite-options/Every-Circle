@@ -1644,26 +1644,47 @@ export default function AccountScreen({ navigation }) {
                             )}
                             {!compactTx && <Text style={styles.transactionQty}>{transaction.ti_bs_qty || 1}</Text>}
                             <View style={styles.transactionPaidCell}>
-                              {showAutoPaid ? (
-                                <Text style={styles.transactionPaidText}>Auto</Text>
-                              ) : showPendingLink && isOlderThan5Days ? (
-                                (() => {
+                              {(() => {
+                                const uid = transaction.transaction_uid;
+                                const returnStatus = returnStatuses[uid] || transaction.transaction_return_status || "";
+                                const returnRequested = returnRequests[uid]?.items?.length > 0 || transaction.transaction_return_requested === 1;
+
+                                // 1. Return accepted → Returned (final state)
+                                if (returnStatus === "accepted") {
+                                  return <Text style={[styles.transactionPaidText, { color: "#B71C1C", fontWeight: "600" }]}>Returned</Text>;
+                                }
+                                // 2. Return requested but not yet resolved → Returning
+                                if (returnRequested && returnStatus !== "declined" && returnStatus !== "resolved") {
+                                  return <Text style={[styles.transactionPaidText, { color: "#E65100", fontWeight: "600" }]}>Returning</Text>;
+                                }
+                                // 3. Auto-paid (older than 5 days, already released from escrow)
+                                if (showAutoPaid) {
+                                  return <Text style={styles.transactionPaidText}>Auto</Text>;
+                                }
+                                // 4. Pending but older than 5 days → trigger auto-pay
+                                if (showPendingLink && isOlderThan5Days) {
                                   triggerAutoPay(transaction.transaction_uid);
-                                  return null;
-                                })() || <Text style={styles.transactionPaidText}>Auto</Text>
-                              ) : showPendingLink ? (
-                                <TouchableOpacity
-                                  onPress={() => {
-                                    setPendingTransactionForConfirm(transaction);
-                                    setShowReceiveItemModal(true);
-                                  }}
-                                  activeOpacity={0.7}
-                                >
-                                  <Text style={styles.pendingLink}>Pending</Text>
-                                </TouchableOpacity>
-                              ) : (
-                                <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Received"}</Text>
-                              )}
+                                  return <Text style={styles.transactionPaidText}>Auto</Text>;
+                                }
+                                // 5. Pending and within 5 days → show Pending link
+                                if (showPendingLink) {
+                                  return (
+                                    <TouchableOpacity
+                                      onPress={() => {
+                                        setPendingTransactionForConfirm(transaction);
+                                        setShowReceiveItemModal(true);
+                                      }}
+                                      activeOpacity={0.7}
+                                    >
+                                      <Text style={styles.pendingLink}>Pending</Text>
+                                    </TouchableOpacity>
+                                  );
+                                }
+                                // 6. Default → Pending or Received
+                                return (
+                                  <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Received"}</Text>
+                                );
+                              })()}
                             </View>
                               <Text style={styles.transactionAmount}>${parseFloat(transaction.seller_total || transaction.transaction_total || 0).toFixed(2)}</Text>
                           </View>
