@@ -1,6 +1,6 @@
 //SettingsScreen.js 
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, Switch, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, Image, FlatList, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, Platform } from "react-native";
 import * as Location from "expo-location";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -32,13 +32,14 @@ import QRCode from "react-native-qrcode-svg";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { getHeaderColors } from "../config/headerColors";
+import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import versionData from "../version.json";
 
 // Color constants for Settings screen
 const COLORS = {
   // Primary colors
   primary: "#4B2E83", // Settings header purple
-  primaryTransparent: "rgba(75, 46, 131, 0.5)", // 50% opacity purple for switch track
+  primaryTransparent: "rgba(75, 46, 131, 0.5)", // 50% opacity purple (headers / toggles)
 
   // Light mode colors
   lightBackground: "#fff",
@@ -64,12 +65,6 @@ const COLORS = {
   darkBorderColor: "#444",
   darkModalBackground: "#333",
 
-  // Switch colors
-  switchTrackInactive: "#ccc",
-  switchThumbInactive: "#f4f3f4",
-  switchThumbActive: "#4B2E83", // Explicit active thumb color
-  switchTrackActive: "rgba(75, 46, 131, 0.5)", // Explicit active track color
-
   // Warning/Alert colors
   warningRed: "#FF6B6B",
 
@@ -79,9 +74,6 @@ const COLORS = {
   // Cancel button
   cancelButtonBackground: "#ccc",
 };
-
-// --- Nearby POC: configurable constants (mirror the backend values) ---
-const LOCATION_EXPIRY_HOURS = 1; // how long a manually-set location stays fresh
 
 // AsyncStorage key for ignored nearby UIDs (cleared when the sharing session ends)
 const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
@@ -110,6 +102,40 @@ const DUMMY_LOCATIONS = [
   { name: "Dummy C — Golden Gate Park, SF", lat: 37.7694, lng: -122.4862 }, // ~5.1 mi from A ✗
 ];
 
+/** Two tappable labels (Edit Profile–style) instead of a Switch. */
+function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMode, variant = "yesNo" }) {
+  const leftOn = !value;
+  const rightOn = value;
+  const leftBgStyle =
+    variant === "background" ? (leftOn ? styles.togglePillThemeLight : null) : leftOn ? styles.togglePillActiveRed : null;
+  const rightBgStyle =
+    variant === "background" ? (rightOn ? styles.togglePillThemeDark : null) : rightOn ? styles.togglePillActiveGreen : null;
+  const leftTextActiveStyle =
+    variant === "background" && leftOn ? styles.togglePillTextDarkEmphasis : leftOn ? styles.togglePillTextActive : null;
+  const rightTextActiveStyle = rightOn ? styles.togglePillTextActive : null;
+
+  return (
+    <View style={[styles.settingsToggleRow, Platform.OS === "web" && styles.settingsToggleRowWeb]}>
+      <TouchableOpacity
+        onPress={() => value !== false && onValueChange(false)}
+        style={[styles.togglePill, leftBgStyle]}
+        accessibilityRole='button'
+        accessibilityState={{ selected: leftOn }}
+      >
+        <Text style={[styles.togglePillText, darkMode && !leftOn && styles.darkTogglePillText, leftTextActiveStyle]}>{leftLabel}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={() => value !== true && onValueChange(true)}
+        style={[styles.togglePill, rightBgStyle]}
+        accessibilityRole='button'
+        accessibilityState={{ selected: rightOn }}
+      >
+        <Text style={[styles.togglePillText, darkMode && !rightOn && styles.darkTogglePillText, rightTextActiveStyle]}>{rightLabel}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export default function SettingsScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -118,6 +144,8 @@ export default function SettingsScreen() {
   const [shareLocationActive, setShareLocationActive] = useState(false);
   const [shareLocationUntil, setShareLocationUntil] = useState(null); // Date | null
   const { darkMode, toggleDarkMode } = useDarkMode();
+  /** Light gray in light mode, white in dark — avoids icons staying dark on dark backgrounds */
+  const settingsMenuIconColor = darkMode ? "#ffffff" : COLORS.lightIconColor;
   const { reinitialize } = useUnread();
   const [allowCookies, setAllowCookies] = useState(true);
   const [termsAccepted, setTermsAccepted] = useState(true);
@@ -129,6 +157,7 @@ export default function SettingsScreen() {
   const [cookiesWarningVisible, setCookiesWarningVisible] = useState(false);
   const [showInformation, setShowInformation] = useState(true);
   const [showSettings, setShowSettings] = useState(true);
+  const [networkDebugMode, setNetworkDebugMode] = useState(false);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -136,11 +165,7 @@ export default function SettingsScreen() {
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [locationUpdating, setLocationUpdating] = useState(null); // key of option being saved
   const [storedCoords, setStoredCoords] = useState({ lat: null, lng: null, updatedAt: null });
-  const [nearbyResultsVisible, setNearbyResultsVisible] = useState(false);
   const [nearbyPrivacyModalVisible, setNearbyPrivacyModalVisible] = useState(false);
-  const [nearbyLoading, setNearbyLoading] = useState(false);
-  const [nearbyUsers, setNearbyUsers] = useState([]);
-  const [nearbyError, setNearbyError] = useState(null);
 
   // Live location sharing refs (stable across renders — no state needed)
   const locationWatcherRef = useRef(null); // expo-location subscription
@@ -155,7 +180,6 @@ export default function SettingsScreen() {
 
   // Ignored nearby UIDs — persisted in AsyncStorage for the duration of the sharing session
   const ignoredNearbyRef = useRef(new Set()); // ref for use inside callbacks
-  const [ignoredNearbyUids, setIgnoredNearbyUids] = useState(new Set()); // state for reactive rendering
 
   // Nearby share / receive settings — ref for callbacks, state for rendering
   const nearbySettingsRef = useRef(DEFAULT_NEARBY_SETTINGS);
@@ -199,6 +223,13 @@ export default function SettingsScreen() {
       if (t !== null) setTermsAccepted(JSON.parse(t));
       if (c !== null) setAllowCookies(JSON.parse(c));
 
+      try {
+        const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
+        if (nd !== null) setNetworkDebugMode(JSON.parse(nd) === true);
+      } catch (_) {
+        setNetworkDebugMode(false);
+      }
+
       // Restore ignored nearby UIDs (survives page refresh within a session)
       try {
         const storedIgnored = await AsyncStorage.getItem(NEARBY_IGNORED_KEY);
@@ -206,7 +237,6 @@ export default function SettingsScreen() {
           const uids = JSON.parse(storedIgnored);
           const s = new Set(uids);
           ignoredNearbyRef.current = s;
-          setIgnoredNearbyUids(new Set(s));
         }
       } catch (_) {}
 
@@ -297,6 +327,15 @@ export default function SettingsScreen() {
   const cancelCookiesRejection = () => {
     setCookiesWarningVisible(false);
     // Keep the switch in the "Yes" position
+  };
+
+  const handleNetworkDebugMode = async (value) => {
+    setNetworkDebugMode(value);
+    try {
+      await AsyncStorage.setItem(SETTINGS_NETWORK_DEBUG_MODE_KEY, JSON.stringify(value));
+    } catch (e) {
+      console.warn("Settings: failed to persist network debug mode", e);
+    }
   };
 
   const handleLogout = async () => {
@@ -657,19 +696,6 @@ export default function SettingsScreen() {
     const next = new Set(ignoredNearbyRef.current);
     next.add(uid);
     ignoredNearbyRef.current = next;
-    setIgnoredNearbyUids(new Set(next));
-    try {
-      await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next]));
-    } catch (_) {}
-  };
-
-  // Remove a UID from the ignore list
-  const unignoreNearbyUser = async (uid) => {
-    if (!uid) return;
-    const next = new Set(ignoredNearbyRef.current);
-    next.delete(uid);
-    ignoredNearbyRef.current = next;
-    setIgnoredNearbyUids(new Set(next));
     try {
       await AsyncStorage.setItem(NEARBY_IGNORED_KEY, JSON.stringify([...next]));
     } catch (_) {}
@@ -722,7 +748,6 @@ export default function SettingsScreen() {
     // Auto-cleanup of ignore list disabled — ignored users persist across sessions
     // await AsyncStorage.removeItem(NEARBY_IGNORED_KEY);
     // ignoredNearbyRef.current = new Set();
-    // setIgnoredNearbyUids(new Set());
     setShareLocationActive(false);
     setShareLocationUntil(null);
     setNearbyAlert(null);
@@ -890,45 +915,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const fetchNearbyUsers = async () => {
-    const { NEARBY_USERS_ENDPOINT } = require("../apiConfig");
-    const profileId = await AsyncStorage.getItem("profile_uid");
-    if (!profileId) {
-      Alert.alert("Error", "No profile found. Please log in again.");
-      return;
-    }
-
-    const settings = nearbySettingsRef.current;
-    let nearbyUrl = `${NEARBY_USERS_ENDPOINT}/${profileId}?mode=${settings.receiveFrom}`;
-    if (settings.receiveFrom === "specific") {
-      const types = Object.keys(settings.receiveFromTypes).filter((k) => settings.receiveFromTypes[k]);
-      if (types.length > 0) nearbyUrl += `&types=${types.join(",")}`;
-    }
-
-    setNearbyLoading(true);
-    setNearbyError(null);
-    setNearbyUsers([]);
-    setNearbyResultsVisible(true);
-
-    try {
-      const response = await fetch(nearbyUrl);
-      const result = await response.json();
-
-      if (result.code === 200) {
-        setNearbyUsers(result.result || []);
-      } else if (result.code === 410) {
-        setNearbyError(`Your location has expired (>${LOCATION_EXPIRY_HOURS}h old). Tap "Update My Location" to refresh.`);
-      } else {
-        setNearbyError(result.message || "Could not fetch nearby users.");
-      }
-    } catch (err) {
-      console.error("fetchNearbyUsers error:", err);
-      setNearbyError("Network error. Please try again.");
-    } finally {
-      setNearbyLoading(false);
-    }
-  };
-
   const fetchAdminReturns = async () => {
     setAdminLoading(true);
     setAdminError(null);
@@ -988,7 +974,7 @@ export default function SettingsScreen() {
           {/* SETTINGS Section Header - Outside Box */}
           <TouchableOpacity style={styles.settingsSectionHeader} onPress={() => setShowSettings(!showSettings)}>
             <Text style={styles.settingsSectionHeaderText}>SETTINGS (* Required)</Text>
-            <Ionicons name={showSettings ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? COLORS.darkText : COLORS.lightText} />
+            <Ionicons name={showSettings ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : COLORS.lightText} />
           </TouchableOpacity>
 
           {/* Settings/Toggles Container */}
@@ -996,108 +982,80 @@ export default function SettingsScreen() {
             <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer]}>
               {/* Allow Cookies */}
               <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-                <View style={styles.itemLabel}>
-                  <MaterialIcons name='cookie' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
+                  <MaterialIcons name='cookie' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Cookies * </Text>
-                    <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>No / Yes</Text>
+                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Cookies*</Text>
                   </Text>
                 </View>
-                <Switch
-                  value={allowCookies}
-                  onValueChange={handleCookiesToggle}
-                  trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }}
-                  thumbColor={allowCookies ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
-                  ios_backgroundColor={COLORS.switchTrackInactive}
-                  activeThumbColor={COLORS.switchThumbActive}
-                  activeTrackColor={COLORS.switchTrackActive}
-                  accessibilityRole='switch'
-                  accessibilitylabel='Allow cookies'
-                  accessibilityHint='Turns cookies on or off'
-                  accessibilityState={{ checked: allowCookies }}
-                />
+                <SettingsBoolPills value={allowCookies} onValueChange={handleCookiesToggle} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
               </View>
 
               {/* Terms and Conditions */}
               <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-                <TouchableOpacity style={styles.itemLabel} onPress={() => navigation.navigate("TermsAndConditions")} activeOpacity={0.7}>
-                  <MaterialIcons name='description' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <TouchableOpacity style={[styles.itemLabel, styles.itemLabelWithToggle]} onPress={() => navigation.navigate("TermsAndConditions")} activeOpacity={0.7}>
+                  <MaterialIcons name='description' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Terms & Conditions * </Text>
-                    <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>Disagree / Agree</Text>
+                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Terms & Conditions*</Text>
                   </Text>
                 </TouchableOpacity>
-                <Switch
-                  value={termsAccepted}
-                  onValueChange={handleTermsToggle}
-                  trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }}
-                  thumbColor={termsAccepted ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
-                  ios_backgroundColor={COLORS.switchTrackInactive}
-                  activeThumbColor={COLORS.switchThumbActive}
-                  activeTrackColor={COLORS.switchTrackActive}
-                  accessibilityRole='switch'
-                  accessibilitylabel='Accept terms and conditions'
-                  accessibilityHint='Turns acceptance of the terms and conditions on or off'
-                  accessibilityState={{ checked: termsAccepted }}
-                />
+                <SettingsBoolPills value={termsAccepted} onValueChange={handleTermsToggle} leftLabel='Disagree' rightLabel='Agree' darkMode={darkMode} />
               </View>
 
               {/* Dark Mode */}
               <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-                <View style={styles.itemLabel}>
-                  <MaterialIcons name='brightness-2' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
+                  <MaterialIcons name='brightness-2' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Background </Text>
-                    <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>Light / Dark</Text>
+                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Background</Text>
                   </Text>
                 </View>
-                <Switch
+                <SettingsBoolPills
                   value={darkMode}
-                  onValueChange={toggleDarkMode}
-                  trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }}
-                  thumbColor={darkMode ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
-                  ios_backgroundColor={COLORS.switchTrackInactive}
-                  activeThumbColor={COLORS.switchThumbActive}
-                  activeTrackColor={COLORS.switchTrackActive}
-                  accessibilityRole='switch'
-                  accessibilitylabel='Dark mode'
-                  accessibilityHint='Changes the background appearance between light and dark'
-                  accessibilityState={{ checked: darkMode }}
+                  onValueChange={(v) => toggleDarkMode(v)}
+                  leftLabel='Light'
+                  rightLabel='Dark'
+                  darkMode={darkMode}
+                  variant='background'
                 />
               </View>
 
+              {SHOW_NETWORK_DEBUG_UI !== 0 && (
+                <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+                  <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
+                    <MaterialIcons name='bug-report' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Debug Mode</Text>
+                    </Text>
+                  </View>
+                  <SettingsBoolPills
+                    value={networkDebugMode}
+                    onValueChange={handleNetworkDebugMode}
+                    leftLabel='No'
+                    rightLabel='Yes'
+                    darkMode={darkMode}
+                  />
+                </View>
+              )}
+
               {/* Allow Notifications */}
               <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
-                <View style={styles.itemLabel}>
-                  <MaterialIcons name='notifications' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
+                  <MaterialIcons name='notifications' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Notifications </Text>
-                    <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>No / Yes</Text>
+                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Notifications</Text>
                   </Text>
                 </View>
-                <Switch
-                  value={allowNotifications}
-                  onValueChange={setAllowNotifications}
-                  trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }}
-                  thumbColor={allowNotifications ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
-                  ios_backgroundColor={COLORS.switchTrackInactive}
-                  activeThumbColor={COLORS.switchThumbActive}
-                  activeTrackColor={COLORS.switchTrackActive}
-                  accessibilityRole='switch'
-                  accessibilitylabel='Allow notifications'
-                  accessibilityHint='Turns notifications on or off'
-                  accessibilityState={{ checked: allowNotifications }}
-                />
+                <SettingsBoolPills value={allowNotifications} onValueChange={setAllowNotifications} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
               </View>
 
               {/* Share Live Location */}
               <View style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]}>
                 <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
-                  <MaterialIcons name='location-on' size={20} style={styles.icon} color={shareLocationActive ? COLORS.primary : darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                  <MaterialIcons name='location-on' size={20} style={styles.icon} color={shareLocationActive ? COLORS.primary : settingsMenuIconColor} />
                   <View>
                     <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Share Live Location </Text>
-                      <Text style={{ color: darkMode ? COLORS.darkText : COLORS.lightText }}>Off / On</Text>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Share Live Location</Text>
                     </Text>
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
                       {shareLocationActive && shareLocationUntil
@@ -1106,18 +1064,12 @@ export default function SettingsScreen() {
                     </Text>
                   </View>
                 </View>
-                <Switch
+                <SettingsBoolPills
                   value={shareLocationActive}
-                  onValueChange={(value) => (value ? startLiveLocationSharing() : stopLiveLocationSharing())}
-                  trackColor={{ false: COLORS.switchTrackInactive, true: COLORS.switchTrackActive }}
-                  thumbColor={shareLocationActive ? COLORS.switchThumbActive : COLORS.switchThumbInactive}
-                  ios_backgroundColor={COLORS.switchTrackInactive}
-                  activeThumbColor={COLORS.switchThumbActive}
-                  activeTrackColor={COLORS.switchTrackActive}
-                  accessibilityRole='switch'
-                  accessibilitylabel='Share live location'
-                  accessibilityHint='Turns live location sharing on or off'
-                  accessibilityState={{ checked: shareLocationActive }}
+                  onValueChange={(v) => (v ? startLiveLocationSharing() : stopLiveLocationSharing())}
+                  leftLabel='Off'
+                  rightLabel='On'
+                  darkMode={darkMode}
                 />
               </View>
 
@@ -1129,7 +1081,7 @@ export default function SettingsScreen() {
                 return (
                   <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setNearbyPrivacyModalVisible(true)} activeOpacity={0.8}>
                     <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
-                      <Ionicons name='shield-checkmark' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                      <Ionicons name='shield-checkmark' size={20} style={styles.icon} color={settingsMenuIconColor} />
                       <View>
                         <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
                           <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Location Privacy</Text>
@@ -1139,43 +1091,36 @@ export default function SettingsScreen() {
                         </Text>
                       </View>
                     </View>
-                    <MaterialIcons name='chevron-right' size={22} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                    <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
                   </TouchableOpacity>
                 );
               })()}
+
+              <TouchableOpacity
+                style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]}
+                onPress={() => setLocationPickerVisible(true)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
+                  <MaterialIcons name='my-location' size={20} style={styles.icon} color={COLORS.primary} />
+                  <View>
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Update My Location</Text>
+                    </Text>
+                    <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
+                      {storedCoords.lat != null ? `${parseFloat(storedCoords.lat).toFixed(5)}, ${parseFloat(storedCoords.lng).toFixed(5)}` : "No location set"}
+                    </Text>
+                  </View>
+                </View>
+                <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
+              </TouchableOpacity>
             </View>
           )}
-
-          {/* NEARBY POC Section */}
-          <View style={styles.nearbySectionHeader}>
-            <MaterialIcons name='location-on' size={16} color='#000' />
-            <Text style={styles.nearbySectionHeaderText}>NEARBY NETWORK (POC)</Text>
-          </View>
-          <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { marginBottom: 16 }]}>
-            {/* Update Location button */}
-            <TouchableOpacity style={[styles.nearbyActionButton, styles.nearbyActionButtonWithHelp, darkMode && styles.darkNearbyActionButton]} onPress={() => setLocationPickerVisible(true)}>
-              <MaterialIcons name='my-location' size={20} color={COLORS.primary} style={styles.icon} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.nearbyActionText, darkMode && styles.darkNearbyActionText]}>Update My Location</Text>
-                <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
-                  {storedCoords.lat != null ? `${parseFloat(storedCoords.lat).toFixed(5)}, ${parseFloat(storedCoords.lng).toFixed(5)}` : "No location set"}
-                </Text>
-              </View>
-              <MaterialIcons name='chevron-right' size={22} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
-            </TouchableOpacity>
-
-            {/* Who's Nearby button */}
-            <TouchableOpacity style={[styles.nearbyActionButton, styles.nearbyActionButtonWithHelp, darkMode && styles.darkNearbyActionButton]} onPress={fetchNearbyUsers}>
-              <MaterialIcons name='people' size={20} color={COLORS.primary} style={styles.icon} />
-              <Text style={[styles.nearbyActionText, darkMode && styles.darkNearbyActionText]}>Who's Nearby?</Text>
-              <MaterialIcons name='chevron-right' size={22} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
-            </TouchableOpacity>
-          </View>
 
           {/* INFORMATION Section Header - Outside Box */}
           <TouchableOpacity style={styles.informationSectionHeader} onPress={() => setShowInformation(!showInformation)}>
             <Text style={styles.informationSectionHeaderText}>INFORMATION</Text>
-            <Ionicons name={showInformation ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? COLORS.darkText : COLORS.lightText} />
+            <Ionicons name={showInformation ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : COLORS.lightText} />
           </TouchableOpacity>
 
           {/* Information & Links Container */}
@@ -1184,37 +1129,37 @@ export default function SettingsScreen() {
               {/* Terms and Conditions */}
               <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("TermsAndConditions")}>
                 <View style={styles.itemLabel}>
-                  <MaterialIcons name='description' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                  <MaterialIcons name='description' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Terms & Conditions</Text>
                 </View>
-                <MaterialIcons name='chevron-right' size={24} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>
 
               {/* Privacy Policy */}
               <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("PrivacyPolicy")}>
                 <View style={styles.itemLabel}>
-                  <MaterialIcons name='privacy-tip' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                  <MaterialIcons name='privacy-tip' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Privacy Policy</Text>
                 </View>
-                <MaterialIcons name='chevron-right' size={24} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>
 
               {/* Change Password */}
               <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
                 <View style={styles.itemLabel}>
-                  <MaterialIcons name='lock' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                  <MaterialIcons name='lock' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
                 </View>
-                <MaterialIcons name='chevron-right' size={24} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>
 
               {/* How It Works */}
               <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("HowItWorksScreen")}>
                 <View style={styles.itemLabel}>
-                  <MaterialIcons name='help' size={20} style={styles.icon} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                  <MaterialIcons name='help' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How It Works</Text>
                 </View>
-                <MaterialIcons name='chevron-right' size={24} color={darkMode ? COLORS.darkText : COLORS.lightIconColor} />
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>
             </View>
           )}
@@ -1483,134 +1428,6 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Nearby Results Modal */}
-      <Modal visible={nearbyResultsVisible} transparent={true} animationType='slide' onRequestClose={() => setNearbyResultsVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox, { maxHeight: "70%" }]}>
-            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Who's Nearby?</Text>
-            <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>Circle members within 1 mile with a fresh location</Text>
-
-            {nearbyLoading ? (
-              <ActivityIndicator size='large' color={COLORS.primary} style={{ marginVertical: 30 }} />
-            ) : nearbyError ? (
-              <View style={styles.nearbyEmptyContainer}>
-                <MaterialIcons name='location-off' size={40} color={darkMode ? COLORS.darkTertiaryText : COLORS.lightQuaternaryText} />
-                <Text style={[styles.nearbyEmptyText, darkMode && styles.darkNearbySubText]}>{nearbyError}</Text>
-              </View>
-            ) : nearbyUsers.length === 0 ? (
-              <View style={styles.nearbyEmptyContainer}>
-                <MaterialIcons name='people-outline' size={40} color={darkMode ? COLORS.darkTertiaryText : COLORS.lightQuaternaryText} />
-                <Text style={[styles.nearbyEmptyText, darkMode && styles.darkNearbySubText]}>No one from your circles is nearby right now.</Text>
-              </View>
-            ) : (
-              <FlatList
-                data={nearbyUsers.filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))}
-                keyExtractor={(item) => item.profile_personal_uid}
-                style={{ width: "100%", marginTop: 8 }}
-                renderItem={({ item }) => {
-                  const distMiles = item.distance_meters != null ? (item.distance_meters / 1609).toFixed(1) : "?";
-                  const initials = `${(item.profile_personal_first_name || "?")[0]}${(item.profile_personal_last_name || "?")[0]}`.toUpperCase();
-                  const fullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
-                  return (
-                    <View style={[styles.nearbyUserRow, darkMode && styles.darkLocationOptionRow]}>
-                      {item.profile_personal_image ? (
-                        <Image source={{ uri: item.profile_personal_image }} style={styles.nearbyAvatar} />
-                      ) : (
-                        <View style={[styles.nearbyAvatar, styles.nearbyAvatarFallback]}>
-                          <Text style={styles.nearbyAvatarInitials}>{initials}</Text>
-                        </View>
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.nearbyUserName, darkMode && styles.darkItemText]}>{fullName}</Text>
-                        <Text style={[styles.nearbyDistanceText, darkMode && styles.darkNearbySubText]}>
-                          <MaterialIcons name='location-on' size={12} color={COLORS.primary} /> {distMiles} mi away
-                        </Text>
-                      </View>
-                      {/* View profile */}
-                      <TouchableOpacity
-                        style={styles.nearbyActionBtn}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        onPress={() => {
-                          setNearbyResultsVisible(false);
-                          navigation.navigate("Profile", { profile_uid: item.profile_personal_uid });
-                        }}
-                      >
-                        <Ionicons name='person-outline' size={17} color={COLORS.primary} />
-                      </TouchableOpacity>
-                      {/* Message */}
-                      <TouchableOpacity
-                        style={[styles.nearbyActionBtn, styles.nearbyMessageBtn]}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        onPress={() => {
-                          setNearbyResultsVisible(false);
-                          navigation.navigate("Chat", {
-                            other_uid: item.profile_personal_uid,
-                            other_name: fullName || "Chat",
-                            other_image: item.profile_personal_image || null,
-                          });
-                        }}
-                      >
-                        <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' />
-                      </TouchableOpacity>
-                      {/* Ignore */}
-                      <TouchableOpacity
-                        style={[styles.nearbyActionBtn, styles.nearbyIgnoreBtn]}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        onPress={() => ignoreNearbyUser(item.profile_personal_uid)}
-                      >
-                        <Ionicons name='eye-off-outline' size={17} color='#fff' />
-                      </TouchableOpacity>
-                    </View>
-                  );
-                }}
-              />
-            )}
-
-            {/* Ignored section — only shown when there are ignored users who were also nearby */}
-            {nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length > 0 && (
-              <>
-                <View style={styles.ignoredSectionHeader}>
-                  <Ionicons name='eye-off-outline' size={14} color={darkMode ? "#888" : "#aaa"} style={{ marginRight: 6 }} />
-                  <Text style={[styles.ignoredSectionTitle, darkMode && styles.darkNearbySubText]}>Ignored ({nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length})</Text>
-                </View>
-                {nearbyUsers
-                  .filter((u) => ignoredNearbyUids.has(u.profile_personal_uid))
-                  .map((item) => {
-                    const iName = `${(item.profile_personal_first_name || "?")[0]}${(item.profile_personal_last_name || "?")[0]}`.toUpperCase();
-                    const iFullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
-                    return (
-                      <View key={item.profile_personal_uid} style={[styles.nearbyUserRow, styles.ignoredRow, darkMode && styles.darkLocationOptionRow]}>
-                        {item.profile_personal_image ? (
-                          <Image source={{ uri: item.profile_personal_image }} style={[styles.nearbyAvatar, styles.ignoredAvatar]} />
-                        ) : (
-                          <View style={[styles.nearbyAvatar, styles.nearbyAvatarFallback, styles.ignoredAvatar]}>
-                            <Text style={styles.nearbyAvatarInitials}>{iName}</Text>
-                          </View>
-                        )}
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.nearbyUserName, styles.ignoredName, darkMode && styles.darkNearbySubText]}>{iFullName}</Text>
-                        </View>
-                        {/* Unignore */}
-                        <TouchableOpacity
-                          style={[styles.nearbyActionBtn, styles.nearbyUnignoreBtn]}
-                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                          onPress={() => unignoreNearbyUser(item.profile_personal_uid)}
-                        >
-                          <Ionicons name='eye-outline' size={17} color='#fff' />
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  })}
-              </>
-            )}
-
-            <TouchableOpacity onPress={() => setNearbyResultsVisible(false)} style={[styles.closeModalButton, { marginTop: 16, alignSelf: "stretch" }]}>
-              <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
       {/* Modals unchanged */}
       <Modal visible={qrModalVisible} transparent={true} animationType='fade'>
         <View style={styles.modalOverlay}>
@@ -1802,6 +1619,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  itemLabelWithToggle: {
+    flex: 1,
+    marginRight: 8,
+    minWidth: 0,
+  },
   icon: {
     marginRight: 10,
   },
@@ -1811,6 +1633,49 @@ const styles = StyleSheet.create({
   },
   darkItemText: {
     color: COLORS.darkText,
+  },
+  settingsToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    flexShrink: 0,
+  },
+  settingsToggleRowWeb: {
+    gap: 14,
+  },
+  togglePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: "transparent",
+  },
+  togglePillActiveRed: {
+    backgroundColor: "#ef9a9a",
+  },
+  togglePillActiveGreen: {
+    backgroundColor: "#4CAF50",
+  },
+  togglePillThemeLight: {
+    backgroundColor: "#FFE082",
+  },
+  togglePillThemeDark: {
+    backgroundColor: COLORS.primary,
+  },
+  togglePillText: {
+    fontSize: 13,
+    color: "#4e4e4e",
+    fontWeight: "500",
+  },
+  togglePillTextActive: {
+    color: "#fff",
+    fontWeight: "bold",
+  },
+  togglePillTextDarkEmphasis: {
+    color: "#333",
+    fontWeight: "bold",
+  },
+  darkTogglePillText: {
+    color: "#bdbdbd",
   },
   modalOverlay: {
     flex: 1,

@@ -1,16 +1,26 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Platform, Dimensions } from "react-native";
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Platform, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getHeaderColor } from "../config/headerColors";
+import { getHeaderColor, getHeaderColors } from "../config/headerColors";
+import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const { width } = Dimensions.get("window");
 const isMobile = Platform.OS !== "web";
+
+const HIW_GRAPHIC = require("../assets/EC_How_it_Works.png");
+/** EC_How_it_Works.png intrinsic size (1536×1024). RN Web does not support Image.resolveAssetSource. */
+const HIW_ASPECT_RATIO = 1536 / 1024;
 
 export default function HowItWorksScreen({ navigation, route }) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { width: windowWidth } = useWindowDimensions();
+  /** Matches page paddingHorizontal 16 × 2 */
+  const contentWidth = Math.max(0, windowWidth - 32);
+  const hiwGraphicWidth = isMobile ? contentWidth : Math.round(Math.min(contentWidth * 1.5, windowWidth - 16));
+  const hiwGraphicMarginH = isMobile ? 0 : (contentWidth - hiwGraphicWidth) / 2;
+  const hiwGraphicHeight = hiwGraphicWidth / HIW_ASPECT_RATIO;
 
   useEffect(() => {
     const checkLoginStatus = async () => {
@@ -28,17 +38,7 @@ export default function HowItWorksScreen({ navigation, route }) {
   }, []);
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* TOP MAROON HEADER */}
-      <View style={styles.topHeader}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name='chevron-back' size={18} color='#fff' />
-        </TouchableOpacity>
-
-        <Text style={styles.topHeaderTitle}>HOW IT WORKS</Text>
-
-        {/* spacer */}
-        <View style={{ width: 38 }} />
-      </View>
+      <AppHeader title='HOW IT WORKS' {...getHeaderColors("profileView")} onBackPress={() => navigation.goBack()} />
 
       <ScrollView contentContainerStyle={styles.page}>
         {/* SMALL LOGO CARD */}
@@ -51,7 +51,8 @@ export default function HowItWorksScreen({ navigation, route }) {
                 <Text style={styles.smallMaroon}>Circle</Text>
                 <Text style={styles.smallBlack}>.com</Text>
               </Text>
-              <Text style={styles.smallSubtitle}>Connecting Circles of Influence</Text>
+              <Text style={styles.smallSubtitle}>It Pays to be Connected</Text>
+              {/* <Text style={styles.smallSubtitle}>Connecting Circles of Influence</Text> */}
             </View>
           </View>
         </View>
@@ -60,26 +61,39 @@ export default function HowItWorksScreen({ navigation, route }) {
         <View style={styles.card}>
           <Text style={styles.gbTitle}>For the Individual</Text>
 
-          <Text style={styles.gbHeading}>Create a Meaningful and Profitable Circle of Influence</Text>
+          <Text style={styles.gbHeading}>Create Meaningful and Profitable Circles of Influence</Text>
 
           <View style={styles.gbBodyContainer}>
             <Bullet>
-              <Text style={styles.gbItalic}>Curate a select group of friends and colleagues you know and trust</Text>
+              <Text style={styles.gbItalic}>Create groups of friends and colleagues you know and trust</Text>
             </Bullet>
             <Bullet>
-              <Text style={styles.gbItalic}>Rely on your network's connections and expertise</Text>
+              <Text style={styles.gbItalic}>Rely on your network's recommendations and expertise</Text>
             </Bullet>
             <Bullet>
-              <Text style={styles.gbItalic}>Help your friends and get rewarded for your recommendations</Text>
+              <Text style={styles.gbItalic}>Help your friends and get rewarded for connecting with others</Text>
             </Bullet>
-            <Text style={[styles.gbBold, styles.gbBoldText]}>{"\n"}Make Money every time you make a purchase or make a recommendation they can use</Text>
+            <Text style={[styles.gbBold, styles.gbBoldText]}>Make Money when you make a purchase or make a recommendation your network can use</Text>
           </View>
 
-          <Text style={styles.gbTitle}>{"\n"}For a Business</Text>
+          <Text style={styles.gbTitle}>{"\n"}For Businesses</Text>
 
           <Text style={styles.gbHeading}>Grow your Business with Results-Based Marketing</Text>
 
           <View style={styles.gbBodyContainer}>
+            <Bullet>
+              <Text style={styles.gbItalic}>Encourage the network to promote your products and services by offering bounties</Text>
+            </Bullet>
+            <Bullet>
+              <Text style={styles.gbItalic}>Spending markerting dollars only when you make a sale</Text>
+            </Bullet>
+            <Bullet>
+              <Text style={styles.gbItalic}>Track your marketing effectivenesss</Text>
+            </Bullet>
+            <Text style={[styles.gbBold, styles.gbBoldText]}>Reward people for recommending your business</Text>
+          </View>
+
+          {/* <View style={styles.gbBodyContainer}>
             <Bullet>
               <Text style={styles.gbItalic}>Target your ad spend on people who are looking to buy your products and services</Text>
             </Bullet>
@@ -89,8 +103,8 @@ export default function HowItWorksScreen({ navigation, route }) {
             <Bullet>
               <Text style={styles.gbItalic}>Encourage people to try your products and services</Text>
             </Bullet>
-            <Text style={[styles.gbBold, styles.gbBoldText]}>{"\n"}Reward people for recommending your business</Text>
-          </View>
+            <Text style={[styles.gbBold, styles.gbBoldText]}>Reward people for recommending your business</Text>
+          </View> */}
 
           {/* <Text style={styles.gbMaroonHeading}>Save Time, Money, ...</Text>
           <Text style={styles.gbLine}>
@@ -110,6 +124,23 @@ export default function HowItWorksScreen({ navigation, route }) {
           </Text> */}
         </View>
 
+        <View style={[styles.hiwGraphicWrap, Platform.OS === "web" && styles.hiwGraphicWrapWeb]}>
+          <Image
+            source={HIW_GRAPHIC}
+            resizeMode='contain'
+            accessibilityLabel='How everyCircle works overview'
+            style={[
+              styles.hiwGraphic,
+              Platform.OS === "web" && styles.hiwGraphicWeb,
+              {
+                width: hiwGraphicWidth,
+                height: hiwGraphicHeight,
+                marginHorizontal: hiwGraphicMarginH,
+              },
+            ]}
+          />
+        </View>
+
         {/* PROFILE HEADER PILL */}
         <HeaderPill title='PROFILE' bg={getHeaderColor("profile")} iconSource={require("../assets/profile.png")} />
 
@@ -117,37 +148,26 @@ export default function HowItWorksScreen({ navigation, route }) {
           <Text style={styles.secTitle}>1. Create Your Profile(s)</Text>
 
           <Bullet>
-            <Text>Profile </Text>
+            <Text>Create an </Text>
             <Text style={styles.italicWord}>Individual</Text>
+            <Text> Profile to showcase your experience, education, skills, and interests</Text>
+          </Bullet>
+
+          <Bullet indented>
+            <Text>Use </Text>
+            <Text style={styles.italicWord}>Offering</Text>
+            <Text> to showcase your products, services, and expertise</Text>
+          </Bullet>
+
+          <Bullet indented>
+            <Text>Use </Text>
+            <Text style={styles.italicWord}>Seeking</Text>
+            <Text> to let your connections know what you're looking for</Text>
           </Bullet>
 
           <Bullet>
-            <Text>Profile for EACH Business, Organization</Text>
+            <Text>Create a Profile for EACH Business or Organization highlighting its products and services</Text>
           </Bullet>
-
-          <Bullet>
-            <Text>For each profile, submit:</Text>
-          </Bullet>
-
-          <Text style={styles.indentLine}>
-            <Text style={styles.boldWord}>SEEKING, OFFERING{"\n"}</Text>
-            <Text>including Other Vendor’s items{"\n"}</Text>
-            <Text>Store </Text>
-            <Text style={styles.italicWord}>Items</Text>
-          </Text>
-
-          <Bullet>
-            <Text>Create Circles of Influence{"\n"}Join other users’ Circles of Influence</Text>
-          </Bullet>
-
-          <Bullet>
-            <Text>MARKETING: Add Multiple Features</Text>
-          </Bullet>
-
-          <Text style={styles.noteLine}>
-            <Text style={styles.noteLabel}>Note:</Text>
-            <Text> You manage the narrative here{"\n"}Submit as little or as much as you desire</Text>
-          </Text>
         </View>
 
         {/* CONNECT HEADER PILL */}
@@ -155,23 +175,19 @@ export default function HowItWorksScreen({ navigation, route }) {
 
         <View style={styles.card}>
           <Text style={styles.secTitle}>
-            2. Generate <Text style={styles.boldWord}>SPECIFIC</Text> Connections
+            2. Connect in a <Text style={styles.boldWord}>Meaningful</Text> way
           </Text>
 
           <Bullet>
-            <Text>Meet prospects in-person and online{"\n"}matching your criteria, geographical radius</Text>
+            <Text>Share contact information using QR codes</Text>
           </Bullet>
 
           <Bullet>
-            <Text>View heat maps of your Circles of Influence</Text>
+            <Text>Visualize your connections by level and relationship </Text>
           </Bullet>
 
           <Bullet>
-            <Text>
-              Grow your personal / professional networks{"\n"}
-              Invite others with your custom QR code and{"\n"}
-              marketing collateral to create their profiles
-            </Text>
+            <Text>Quickly find your connections by geography, relationship, and distance</Text>
           </Bullet>
         </View>
 
@@ -179,39 +195,18 @@ export default function HowItWorksScreen({ navigation, route }) {
         <HeaderPill title='ACCOUNT' bg={getHeaderColor("account")} iconSource={require("../assets/pillar.png")} />
 
         <View style={styles.card}>
-          <Text style={styles.secTitle}>3. Manage Multiple Revenue Streams</Text>
+          <Text style={styles.secTitle}>3. Manage your Purchases and Balance</Text>
 
           <Bullet>
-            <Text>Select attributes for advertisers</Text>
+            <Text>Quickly see what you bought and sold</Text>
           </Bullet>
 
           <Bullet>
-            <Text>Assign Bounties for Advertising</Text>
+            <Text>Track your rewards and see your account balance</Text>
           </Bullet>
 
-          <Text style={styles.indentLine}>
-            <Text style={[styles.italicWord, styles.boldWord]}>Innovative</Text>
-            <Text> Results-Based Marketing{"\n"}</Text>
-
-            <Text style={styles.italicWord}>
-              A bounty is money paid as a reward per{"\n"}
-              transaction: Impression, Click, Action, Sale{"\n"}
-            </Text>
-
-            <Text>
-              Bounties are deducted and shared,{"\n"}
-              by different percentages, <Text style={[styles.boldWord, styles.italicWord]}>ONLY</Text> after{"\n"}
-              completed transactions
-            </Text>
-          </Text>
-
           <Bullet>
-            <Text>
-              Review your Dashboards{"\n"}
-              Revenue, Expenses (Shopping Cart){"\n"}
-              Bounty Revenue Distribution Table{"\n"}
-              Revenue Guide and Projections
-            </Text>
+            <Text>Visualize you revenue over time</Text>
           </Bullet>
         </View>
 
@@ -219,16 +214,18 @@ export default function HowItWorksScreen({ navigation, route }) {
         <HeaderPill title='SETTINGS' bg={getHeaderColor("settings")} iconSource={require("../assets/setting.png")} />
 
         <View style={styles.card}>
-          <Text style={styles.secTitle}>
-            4. Control and Manage <Text style={styles.boldWord}>YOUR</Text> Platform
-          </Text>
+          <Text style={styles.secTitle}>4. Easily Control and Manage Your Platform</Text>
 
           <Bullet>
-            <Text>
-              Manage Settings{"\n"}
-              Display / Hide profiles and features{"\n"}
-              Select specific notification criteria
-            </Text>
+            <Text>Manage your settings and preferences in one place</Text>
+          </Bullet>
+
+          <Bullet>
+            <Text>Enable Locaton Based Services to find and connect with people nearby</Text>
+          </Bullet>
+
+          <Bullet>
+            <Text>Change your password</Text>
           </Bullet>
         </View>
 
@@ -236,13 +233,17 @@ export default function HowItWorksScreen({ navigation, route }) {
         <HeaderPill title='SEARCH' bg={getHeaderColor("search")} iconSource={require("../assets/search.png")} />
 
         <View style={styles.card}>
-          <Text style={styles.secTitle}>5. Advanced Search</Text>
+          <Text style={styles.secTitle}>5. Find what You are Searching for</Text>
           <Bullet>
-            <Text>
-              Concepts, keywords{"\n"}
-              Within a specific profile{"\n"}
-              All profiles in the platform
-            </Text>
+            <Text>Search for people, businesses, and organizations by name, location, and keywords</Text>
+          </Bullet>
+
+          <Bullet>
+            <Text>Find experts in your own network</Text>
+          </Bullet>
+
+          <Bullet>
+            <Text>Help others find what they are looking for</Text>
           </Bullet>
         </View>
 
@@ -287,9 +288,9 @@ function HeaderPill({ title, bg, iconSource }) {
   );
 }
 
-function Bullet({ children }) {
+function Bullet({ children, indented }) {
   return (
-    <View style={styles.bulletRow}>
+    <View style={[styles.bulletRow, indented && styles.bulletRowIndented]}>
       <Text style={styles.bulletDot}>•</Text>
       <Text style={styles.bulletText}>{children}</Text>
     </View>
@@ -327,43 +328,36 @@ const BORDER = "#2a2a2a";
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff" },
 
-  topHeader: {
-    backgroundColor: "#FF9500",
-    paddingTop: 14,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
-    borderBottomLeftRadius: 60,
-    borderBottomRightRadius: 60,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  backBtn: {
-    width: 36,
-    height: 26,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  topHeaderTitle: {
-    color: "#fff",
-    fontWeight: "900",
-    fontSize: 18,
-    letterSpacing: 1,
-  },
-
   page: {
     paddingHorizontal: 16,
     paddingTop: 14,
     alignItems: "center",
   },
 
+  hiwGraphicWrap: {
+    width: "100%",
+    alignSelf: "stretch",
+    alignItems: "center",
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  /** Web: remove inline-image baseline gap (most noticeable in narrow widths). */
+  hiwGraphicWrapWeb: {
+    lineHeight: 0,
+  },
+  hiwGraphic: {},
+  hiwGraphicWeb: {
+    display: "block",
+    verticalAlign: "top",
+  },
+
   everyItalic: {
     fontStyle: "italic",
-    fontWeight: "900", // keep it bold
+    fontWeight: "700",
   },
   circleNormal: {
     fontStyle: "normal",
-    fontWeight: "900",
+    fontWeight: "700",
   },
 
   /* Pills */
@@ -378,7 +372,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   pillInner: { alignItems: "center", justifyContent: "center" },
-  pillCenterText: { fontSize: 28, fontWeight: "900", color: "#111" },
+  pillCenterText: { fontSize: 16, fontWeight: "700", color: "#111" },
   pillRightCircle: {
     position: "absolute",
     right: 14,
@@ -399,8 +393,8 @@ const styles = StyleSheet.create({
     borderColor: "rgba(0,0,0,0.15)",
   },
   hiwHighlightText: {
-    fontSize: 22,
-    fontWeight: "900",
+    fontSize: 16,
+    fontWeight: "700",
     color: "#111",
   },
 
@@ -459,7 +453,7 @@ const styles = StyleSheet.create({
   videoCaption: {
     marginTop: 10,
     textAlign: "center",
-    fontSize: 18,
+    fontSize: 15,
     fontStyle: "italic",
     color: "#111",
   },
@@ -477,76 +471,76 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   smallTitle: {
-    fontSize: isMobile ? 20 : 26,
-    fontWeight: "900",
+    fontSize: 18,
+    fontWeight: "700",
     color: "#111",
   },
-  smallItalic: { fontStyle: "italic", fontWeight: "900" },
-  smallMaroon: { color: MAROON, fontWeight: "900" },
-  smallBlack: { color: "#111", fontWeight: "900" },
+  smallItalic: { fontStyle: "italic", fontWeight: "700" },
+  smallMaroon: { color: MAROON, fontWeight: "700" },
+  smallBlack: { color: "#111", fontWeight: "700" },
   smallSubtitle: {
-    fontSize: isMobile ? 14 : 18,
+    fontSize: 14,
     color: "#111",
     marginTop: 2,
   },
 
   /* Got Business card text */
   gbTitle: {
-    fontSize: isMobile ? 24 : 34,
-    fontWeight: "900",
+    fontSize: 20,
+    fontWeight: "700",
     color: MAROON,
     fontStyle: "italic",
     marginTop: 8,
   },
   gbHeading: {
-    fontSize: isMobile ? 18 : 28,
-    fontWeight: "900",
+    fontSize: 16,
+    fontWeight: "700",
     color: "#111",
     marginTop: 10,
-    lineHeight: isMobile ? 24 : 32,
+    lineHeight: 22,
   },
   gbBodyContainer: {
     marginTop: 8,
   },
   gbBody: {
-    fontSize: isMobile ? 16 : 18,
+    fontSize: 16,
     color: "#111",
     marginTop: 6,
-    lineHeight: isMobile ? 22 : 26,
+    lineHeight: 22,
   },
   gbItalic: {
     fontStyle: "italic",
-    fontSize: isMobile ? 16 : 18,
-    lineHeight: isMobile ? 22 : 26,
+    fontSize: 16,
+    lineHeight: 18,
   },
   gbBold: {
-    fontWeight: "900",
+    fontWeight: "700",
   },
   gbBoldText: {
-    fontSize: isMobile ? 16 : 18,
+    fontSize: 16,
     color: "#111",
     lineHeight: isMobile ? 22 : 26,
-    marginTop: 8,
+    marginTop: 2,
   },
 
   gbMaroonHeading: {
-    fontSize: 26,
-    fontWeight: "900",
+    fontSize: 18,
+    fontWeight: "700",
     color: MAROON,
     marginTop: 14,
   },
-  gbLine: { fontSize: 18, color: "#111", marginTop: 4, lineHeight: 26 },
-  gbHeading2: { fontSize: 24, fontWeight: "900", color: MAROON, marginTop: 18 },
+  gbLine: { fontSize: 16, color: "#111", marginTop: 4, lineHeight: 22 },
+  gbHeading2: { fontSize: 17, fontWeight: "700", color: MAROON, marginTop: 18 },
 
   /* Section header pills */
   headerPill: {
     width: "100%",
     borderRadius: 26,
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 6,
+    marginTop: 2,
     marginBottom: 12,
   },
   headerIcon: {
@@ -561,59 +555,61 @@ const styles = StyleSheet.create({
   headerPillText: {
     flex: 1,
     textAlign: "center",
-    fontSize: isMobile ? 22 : 30,
-    fontWeight: "900",
+    fontSize: 20,
+    fontWeight: "bold",
     color: "#fff",
-    letterSpacing: 1,
     marginRight: 18,
   },
 
   /* Section body text */
   secTitle: {
-    fontSize: isMobile ? 20 : 28,
-    fontWeight: "900",
+    fontSize: 16,
+    fontWeight: "700",
     color: "#111",
     marginBottom: 6,
-    lineHeight: isMobile ? 26 : 32,
+    lineHeight: 22,
   },
 
   bulletRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginTop: isMobile ? 8 : 10,
-    marginBottom: isMobile ? 4 : 6,
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  bulletRowIndented: {
+    marginLeft: 14,
   },
   bulletDot: {
-    width: isMobile ? 18 : 22,
-    fontSize: isMobile ? 18 : 24,
+    width: isMobile ? 18 : 20,
+    fontSize: 16,
     color: "#111",
-    lineHeight: isMobile ? 20 : 26,
+    lineHeight: 22,
     marginRight: 8,
   },
   bulletText: {
     flex: 1,
-    fontSize: isMobile ? 16 : 22,
+    fontSize: 16,
     color: "#111",
-    lineHeight: isMobile ? 22 : 30,
+    lineHeight: 22,
   },
 
   indentLine: {
     marginLeft: isMobile ? 18 : 22,
     marginTop: 10,
-    fontSize: isMobile ? 16 : 22,
+    fontSize: 16,
     color: "#111",
-    lineHeight: isMobile ? 22 : 30,
+    lineHeight: 22,
   },
 
   italicWord: { fontStyle: "italic" },
-  boldWord: { fontWeight: "900" },
+  boldWord: { fontWeight: "700" },
 
   noteLine: {
     marginTop: 14,
-    fontSize: isMobile ? 16 : 22,
-    lineHeight: isMobile ? 22 : 30,
+    fontSize: 16,
+    lineHeight: 22,
   },
-  noteLabel: { color: MAROON, fontWeight: "900" },
+  noteLabel: { color: MAROON, fontWeight: "700" },
 
   /* Continue button */
   continueBtn: {
@@ -644,14 +640,14 @@ const styles = StyleSheet.create({
     borderColor: "rgba(0,0,0,0.15)",
   },
   feedbackTitle: {
-    fontSize: 26,
-    fontWeight: "900",
+    fontSize: 16,
+    fontWeight: "700",
     color: "#1f3bbf",
     textAlign: "center",
   },
   feedbackSub: {
     marginTop: 6,
-    fontSize: 18,
+    fontSize: 14,
     fontStyle: "italic",
     color: "#111",
     textAlign: "center",
@@ -665,12 +661,12 @@ const styles = StyleSheet.create({
 
   /* Dropdown pills at bottom */
   pillBig: {
-    fontSize: 32,
-    fontWeight: "900",
+    fontSize: 18,
+    fontWeight: "700",
     color: "#111",
     textAlign: "center",
   },
-  pillItalic: { fontStyle: "italic", fontWeight: "900" },
+  pillItalic: { fontStyle: "italic", fontWeight: "700" },
 
   /* bottom icons */
   bottomIconsRow: {

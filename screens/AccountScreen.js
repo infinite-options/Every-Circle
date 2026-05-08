@@ -14,7 +14,7 @@ import { getHeaderColors } from "../config/headerColors";
 // import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
 
-/** 1 = compact: Transaction History (Date, Type, Seller, Paid, Amount) + Bounty Results (hide ID); 0 = full tables */
+/** 1 = compact: Purchases (Date, Type, Seller, Paid, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
 
 export default function AccountScreen({ navigation }) {
@@ -49,6 +49,7 @@ export default function AccountScreen({ navigation }) {
   const [showProductResults, setShowProductResults] = useState(true);
   const [showBusinessNetEarning, setShowBusinessNetEarning] = useState(true);
   const [showBusinessTransactionHistory, setShowBusinessTransactionHistory] = useState(true);
+  const [showBalance, setShowBalance] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [showReceiveItemModal, setShowReceiveItemModal] = useState(false);
@@ -1029,7 +1030,7 @@ export default function AccountScreen({ navigation }) {
 
   const screenWidth = Dimensions.get("window").width - 40;
 
-  // Process bounty data for Net Earnings chart with dual axes
+  // Process bounty data for Bounties chart with dual axes
   const processBountyDataForChart = () => {
     if (!bountyData || !bountyData.data || !Array.isArray(bountyData.data) || bountyData.data.length === 0) {
       return {
@@ -1085,7 +1086,7 @@ export default function AccountScreen({ navigation }) {
     };
   };
 
-  // Process business transaction data for  business Net Earnings chart
+  // Process business transaction data for business Bounties chart
   const processBusinessTransactionDataForChart = () => {
     if (!businessTransactionData || !Array.isArray(businessTransactionData) || businessTransactionData.length === 0) {
       return {
@@ -1466,6 +1467,13 @@ export default function AccountScreen({ navigation }) {
     );
   };
 
+  const personalPendingEscrowBounty =
+    bountyData?.data && Array.isArray(bountyData.data)
+      ? bountyData.data.filter((i) => i.in_escrow === 1).reduce((s, i) => s + parseFloat(i.bounty_earned || 0), 0)
+      : 0;
+
+  const businessNetEarningsTotal = businessTransactionData.reduce((s, t) => s + parseFloat(t.net_earning || 0), 0);
+
   if (isLoading) {
     return (
       <View style={styles.centeredContainer}>
@@ -1548,20 +1556,20 @@ export default function AccountScreen({ navigation }) {
 
         {accountType === "personal" ? (
           <>
-            {/* Expertise */}
+            {/* Sales (profile offerings / seller activity) */}
             <View style={styles.sectionContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowExpertise(!showExpertise)}>
-                <Text style={styles.sectionHeaderText}>EXPERTISE</Text>
+                <Text style={styles.sectionHeaderText}>SALES</Text>
                 <Ionicons name={showExpertise ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showExpertise && (
                 <>
                   {expertiseLoading ? (
-                    <Text style={styles.loadingText}>Loading expertise data...</Text>
+                    <Text style={styles.loadingText}>Loading sales data...</Text>
                   ) : expertiseData.length > 0 ? (
                     <View style={styles.tableContainer}>
                       <View style={styles.transactionHeaderRow}>
-                        <Text style={[styles.transactionHeaderBusiness, { flex: 1.5 }]}>Expertise</Text>
+                        <Text style={[styles.transactionHeaderBusiness, { flex: 1.5 }]}>Item</Text>
                         <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Cost</Text>
                         <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Unit</Text>
                         <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Qty</Text>
@@ -1578,16 +1586,16 @@ export default function AccountScreen({ navigation }) {
                       ))}
                     </View>
                   ) : (
-                    <Text style={styles.noDataText}>No expertise transactions available.</Text>
+                    <Text style={styles.noDataText}>No sales data available.</Text>
                   )}
                 </>
               )}
             </View>
 
-            {/* Transaction History */}
+            {/* Purchases */}
             <View style={styles.sectionContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowTransactionHistory(!showTransactionHistory)}>
-                <Text style={styles.sectionHeaderText}>TRANSACTION HISTORY</Text>
+                <Text style={styles.sectionHeaderText}>PURCHASES</Text>
                 <Ionicons name={showTransactionHistory ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showTransactionHistory && (
@@ -1702,13 +1710,47 @@ export default function AccountScreen({ navigation }) {
               )}
             </View>
 
-            {/* Net Earning */}
+            {/* Bounties (earnings chart) */}
             <View style={styles.sectionContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowNetEarning(!showNetEarning)}>
-                <Text style={styles.sectionHeaderText}>NET EARNINGS</Text>
+                <Text style={styles.sectionHeaderText}>BOUNTIES</Text>
                 <Ionicons name={showNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showNetEarning && <NetEarningChart />}
+            </View>
+
+            {/* Balance summary */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBalance(!showBalance)}>
+                <Text style={styles.sectionHeaderText}>BALANCE</Text>
+                <Ionicons name={showBalance ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showBalance && (
+                <>
+                  {bountyLoading ? (
+                    <Text style={styles.loadingText}>Loading balance...</Text>
+                  ) : bountyData?.error ? (
+                    <Text style={styles.errorText}>Unable to load balance.</Text>
+                  ) : (
+                    <View style={styles.balanceSectionBody}>
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>
+                          ${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}
+                        </Text>
+                      </View>
+                      {personalPendingEscrowBounty > 0 ? (
+                        <View style={styles.balanceContainer}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending (escrow)</Text>
+                          <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>
+                            ${personalPendingEscrowBounty.toFixed(2)}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  )}
+                </>
+              )}
             </View>
 
             {/* Bounty Results */}
@@ -1837,19 +1879,41 @@ export default function AccountScreen({ navigation }) {
               )}
             </View>
 
-            {/* Business Net Earning */}
+            {/* Bounties (business net earnings chart) */}
             <View style={styles.sectionContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBusinessNetEarning(!showBusinessNetEarning)}>
-                <Text style={styles.sectionHeaderText}>NET EARNINGS</Text>
+                <Text style={styles.sectionHeaderText}>BOUNTIES</Text>
                 <Ionicons name={showBusinessNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showBusinessNetEarning && <BusinessNetEarningChart />}
             </View>
 
-            {/* Business Transaction History */}
+            {/* Balance summary */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBalance(!showBalance)}>
+                <Text style={styles.sectionHeaderText}>BALANCE</Text>
+                <Ionicons name={showBalance ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showBalance && (
+                <>
+                  {businessTransactionLoading ? (
+                    <Text style={styles.loadingText}>Loading balance...</Text>
+                  ) : (
+                    <View style={styles.balanceSectionBody}>
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total net earnings</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>${businessNetEarningsTotal.toFixed(2)}</Text>
+                      </View>
+                    </View>
+                  )}
+                </>
+              )}
+            </View>
+
+            {/* Business purchases */}
             <View style={styles.sectionContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBusinessTransactionHistory(!showBusinessTransactionHistory)}>
-                <Text style={styles.sectionHeaderText}>BUSINESS TRANSACTION HISTORY</Text>
+                <Text style={styles.sectionHeaderText}>BUSINESS PURCHASES</Text>
                 <Ionicons name={showBusinessTransactionHistory ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showBusinessTransactionHistory && (
@@ -2483,6 +2547,10 @@ const styles = StyleSheet.create({
   },
   sectionLabel: { fontSize: 16, fontWeight: "600" },
   balanceAmount: { fontSize: 16, fontWeight: "600" },
+  balanceSectionBody: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
   sectionContainer: { marginBottom: 24 },
   sectionTitle: { fontSize: 16, fontWeight: "600", marginBottom: 8 },
   sectionTitleRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },

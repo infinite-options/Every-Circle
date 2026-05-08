@@ -1,7 +1,20 @@
 import React, { useEffect, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
+import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
+import ProfileItemImageColumn from "./ProfileItemImageColumn";
 
-const EducationSection = ({ education, setEducation, toggleVisibility, isPublic, handleDelete, onInputFocus }) => {
+const EducationSection = ({
+  education,
+  setEducation,
+  toggleVisibility,
+  isPublic,
+  handleDelete,
+  onInputFocus,
+  profileUid = "",
+  darkMode = false,
+}) => {
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
   // Tracks which index was just added via "+".
@@ -59,7 +72,20 @@ const EducationSection = ({ education, setEducation, toggleVisibility, isPublic,
   const addEducation = () => {
     // Mark the next card index before state update, then notify parent after render.
     pendingNewIndexRef.current = education.length;
-    const newEntry = { school: "", degree: "", startDate: "", endDate: "", isPublic: true };
+    const newEntry = {
+      school: "",
+      degree: "",
+      startDate: "",
+      endDate: "",
+      isPublic: true,
+      profile_education_image: "",
+      profile_education_image_is_public: 1,
+      _eduNewImageUri: "",
+      _eduWebImageFile: null,
+      _eduOriginalImage: "",
+      _eduDeleteImageUrl: "",
+      _eduImageError: false,
+    };
     setEducation([...education, newEntry]);
   };
 
@@ -93,6 +119,96 @@ const EducationSection = ({ education, setEducation, toggleVisibility, isPublic,
   const toggleEntryVisibility = (index) => {
     const updated = [...education];
     updated[index].isPublic = !updated[index].isPublic;
+    setEducation(updated);
+  };
+
+  const getEducationDisplayUri = (item) => {
+    const pending = item._eduNewImageUri;
+    if (pending != null && String(pending).trim() !== "") return String(pending).trim();
+    return resolveProfileItemImageUri(item.profile_education_image, profileUid);
+  };
+
+  const pickEducationImage = async (index) => {
+    if (Platform.OS === "web") return;
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission required", "Permission to access media library is required!");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: "images",
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        let fileSize = asset.fileSize;
+        if (!fileSize && asset.uri) {
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+            fileSize = fileInfo.size;
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        if (fileSize && fileSize > 2 * 1024 * 1024) {
+          Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
+          return;
+        }
+        const updated = [...education];
+        const prev = updated[index];
+        const orig = prev._eduOriginalImage || resolveProfileItemImageUri(prev.profile_education_image, profileUid);
+        updated[index]._eduDeleteImageUrl = isRemoteHttpUrl(orig) ? orig : "";
+        updated[index]._eduNewImageUri = asset.uri;
+        updated[index]._eduWebImageFile = null;
+        updated[index]._eduImageError = false;
+        setEducation(updated);
+      }
+    } catch (error) {
+      console.error("Education image pick error:", error);
+      Alert.alert("Error", "Failed to pick image.");
+    }
+  };
+
+  const handleEducationWebImagePick = (index, event) => {
+    const file = event.target?.files?.[0];
+    if (event?.target) event.target.value = "";
+    if (!file) return;
+    if (!file.type?.startsWith?.("image/")) {
+      Alert.alert("Invalid file type", "Please select an image file.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const imageUri = reader.result;
+      const updated = [...education];
+      const prev = updated[index];
+      const orig = prev._eduOriginalImage || resolveProfileItemImageUri(prev.profile_education_image, profileUid);
+      updated[index]._eduDeleteImageUrl = isRemoteHttpUrl(orig) ? orig : "";
+      updated[index]._eduNewImageUri = imageUri;
+      updated[index]._eduWebImageFile = file;
+      updated[index]._eduImageError = false;
+      setEducation(updated);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeEducationImage = (index) => {
+    const updated = [...education];
+    const prev = updated[index];
+    const orig = prev._eduOriginalImage || resolveProfileItemImageUri(prev.profile_education_image, profileUid);
+    updated[index]._eduDeleteImageUrl = isRemoteHttpUrl(orig) ? orig : "";
+    updated[index]._eduNewImageUri = "";
+    updated[index]._eduWebImageFile = null;
+    updated[index].profile_education_image = "";
+    updated[index]._eduOriginalImage = "";
+    updated[index]._eduImageError = false;
     setEducation(updated);
   };
 
@@ -143,8 +259,29 @@ const EducationSection = ({ education, setEducation, toggleVisibility, isPublic,
                           </TouchableOpacity>
                         </View>
           </View>
-          <TextInput style={styles.input} placeholder='School' value={item.school} onChangeText={(text) => handleInputChange(index, "school", text)} />
-          <TextInput style={styles.input} placeholder='Degree' value={item.degree} onChangeText={(text) => handleInputChange(index, "degree", text)} />
+          <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
+            <ProfileItemImageColumn
+              darkMode={darkMode}
+              displayUri={getEducationDisplayUri(item)}
+              imageError={!!item._eduImageError}
+              onImageError={() => handleInputChange(index, "_eduImageError", true)}
+              toolsVisible={
+                item.profile_education_image_is_public === 1 ||
+                item.profile_education_image_is_public === "1" ||
+                item.profile_education_image_is_public === true
+              }
+              onShowTools={() => handleInputChange(index, "profile_education_image_is_public", 1)}
+              onHideTools={() => handleInputChange(index, "profile_education_image_is_public", 0)}
+              onUploadNative={() => pickEducationImage(index)}
+              onWebFileChange={(e) => handleEducationWebImagePick(index, e)}
+              onRemoveImage={() => removeEducationImage(index)}
+              showRemove={!!getEducationDisplayUri(item)}
+            />
+            <View style={styles.miniCardFields}>
+              <TextInput style={styles.input} placeholder='School' value={item.school} onChangeText={(text) => handleInputChange(index, "school", text)} />
+              <TextInput style={styles.input} placeholder='Degree' value={item.degree} onChangeText={(text) => handleInputChange(index, "degree", text)} />
+            </View>
+          </View>
           <View style={styles.dateRow}>
             <TextInput style={styles.dateInput} placeholder='MM/YYYY' value={item.startDate} onChangeText={(text) => handleDateChange(index, "startDate", text)} />
             <Text style={styles.dash}> - </Text>
@@ -188,6 +325,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 8,
+  },
+  miniCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    backgroundColor: "#fff",
+  },
+  miniCardDark: {
+    borderColor: "#404040",
+    backgroundColor: "#2d2d2d",
+  },
+  miniCardFields: {
+    flex: 1,
+    minWidth: 0,
   },
   input: {
     borderWidth: 1,
