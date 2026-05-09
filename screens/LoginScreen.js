@@ -9,50 +9,12 @@ import GoogleBrandedSignInButton from "../components/GoogleBrandedSignInButton";
 import * as Crypto from "expo-crypto";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
-import Constants from "expo-constants";
-import config from "../config";
 import { Ionicons } from "@expo/vector-icons";
 import { ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 // import SignUpScreen from "./screens/SignUpScreen";
-
-// Helper function to extract the last two digits before .apps.googleusercontent.com
-const getLastTwoDigits = (clientId) => {
-  if (!clientId) return "Not set";
-
-  // Extract the part before .apps.googleusercontent.com
-  const match = clientId.match(/(.+)\.apps\.googleusercontent\.com$/);
-  if (match) {
-    const idPart = match[1];
-    // Get the last two digits of the ID part
-    return "..." + idPart.slice(-2);
-  }
-
-  // Fallback if the pattern doesn't match
-  return "..." + clientId.slice(-2);
-};
-
-// Helper function to extract the first four digits/letters of the unique part before .apps.googleusercontent.com
-const getFirstFourDigits = (clientId) => {
-  if (!clientId) return "Not set";
-
-  // Extract the part before .apps.googleusercontent.com
-  const match = clientId.match(/([\w-]+)-([\w]+)\.apps\.googleusercontent\.com$/);
-  if (match) {
-    const uniquePart = match[2];
-    return uniquePart.slice(0, 4);
-  }
-
-  // Fallback: try to extract the part after the first hyphen
-  const fallback = clientId.split("-")[1];
-  if (fallback) {
-    return fallback.slice(0, 4);
-  }
-
-  return "Not found";
-};
 
 // Accept navigation from props
 export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn, onError }) {
@@ -332,20 +294,6 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
             </Text>
           </View>
 
-          {/* API Keys Info - For debugging */}
-          {__DEV__ && (
-            <View style={styles.apiKeysContainer}>
-              <Text style={styles.apiKeysTitle}>API Keys (First 4 Digits):</Text>
-              <Text style={styles.apiKeysText}>iOS: {getFirstFourDigits(config.googleClientIds.ios)}</Text>
-              <Text style={styles.apiKeysText}>Android: {getFirstFourDigits(config.googleClientIds.android)}</Text>
-              <Text style={styles.apiKeysText}>Web: {getFirstFourDigits(config.googleClientIds.web)}</Text>
-              <Text style={styles.apiKeysText}>URL Scheme: {config.googleURLScheme ? config.googleURLScheme.split("-").pop().slice(0, 4) : "Not set"}</Text>
-              <Text style={styles.apiKeysText}>Maps API: {getLastTwoDigits(config.googleMapsApiKey)}</Text>
-              <Text style={styles.apiKeysText}>Environment: {__DEV__ ? "Development" : "Production"}</Text>
-              <Text style={styles.apiKeysText}>iOS Build: {Constants.expoConfig?.ios?.buildNumber || "Not set"}</Text>
-            </View>
-          )}
-
           {/* Forgot Password Modal */}
           <Modal visible={showForgotPasswordModal} transparent animationType='fade'>
             <View style={styles.modalOverlay}>
@@ -471,27 +419,6 @@ const styles = StyleSheet.create({
   footer: { alignItems: "center" },
   footerText: { fontSize: 16, color: "#666" },
   signUpText: { color: "#FF9500", fontWeight: "bold" },
-  apiKeysContainer: {
-    backgroundColor: "rgba(255, 255, 255, 0.8)",
-    padding: 10,
-    borderRadius: 5,
-    marginTop: 20,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    width: "90%",
-    alignSelf: "center",
-  },
-  apiKeysTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    marginBottom: 8,
-    color: "#333",
-  },
-  apiKeysText: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 4,
-  },
   forgotPasswordLink: {
     alignSelf: "flex-end",
     marginTop: -10,

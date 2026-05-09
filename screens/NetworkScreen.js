@@ -1,6 +1,6 @@
 // NetworkScreen.js - Web-compatible version
-import React, { useEffect, useState, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image } from "react-native";
+import React, { useEffect, useState, useRef, useMemo } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
@@ -42,246 +42,97 @@ if (Platform.OS !== "web") {
   }
 }
 
-// ─── FilterPopup component ────────────────────────────────────────────────────
-const FilterPopup = ({
-  visible,
-  onClose,
-  dateFilter,
-  setDateFilter,
-  locationFilter,
-  setLocationFilter,
-  eventFilter,
-  setEventFilter,
-  relationshipFilter,
-  setRelationshipFilter,
-  availableCities,
-  availableEvents,
-  darkMode,
-}) => {
-  if (!visible) return null;
+/** Short label for filter dropdown button when value is long (e.g. notes). */
+function formatFilterButtonLabel(value) {
+  if (value == null || value === "All") return "All";
+  const s = String(value);
+  return s.length > 28 ? `${s.slice(0, 28)}…` : s;
+}
 
-  const dateOptions = ["All", "This Week", "This Month", "This Year"];
-  const locationOptions = ["All", ...availableCities];
-  const eventOptions = ["All", ...availableEvents];
-  const relationshipOptions = ["All", "Colleagues", "Friends", "Family"];
-
+/** One filter field: opens its own list (replaces multi-column “Filter Connections” popup). */
+function ConnectionFilterModal({ visible, title, options, selected, onSelect, onClose, darkMode }) {
   const accent = "#535db7";
   const bg = darkMode ? "#1e1e2e" : "#ffffff";
-  const colBg = darkMode ? "#2a2a3c" : "#f7f8ff";
   const borderColor = darkMode ? "#3a3a5c" : "#e0e4f7";
   const labelColor = darkMode ? "#a0a8d0" : "#5060a0";
   const textColor = darkMode ? "#e8eaf6" : "#1a1a2e";
 
-  const ColumnHeader = ({ title, icon }) => (
-    <View
-      style={{
-        paddingBottom: 10,
-        borderBottomWidth: 2,
-        borderBottomColor: accent,
-        marginBottom: 8,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 6,
-      }}
-    >
-      <Text style={{ fontSize: 16 }}>{icon}</Text>
-      <Text
-        style={{
-          fontSize: 12,
-          fontWeight: "700",
-          color: labelColor,
-          textTransform: "uppercase",
-          letterSpacing: 1.2,
-        }}
-      >
-        {title}
-      </Text>
-    </View>
-  );
-
-  const FilterItem = ({ label, isActive, onPress }) => (
-    <TouchableOpacity
-      onPress={onPress}
-      style={{
-        paddingVertical: 9,
-        paddingHorizontal: 10,
-        borderRadius: 8,
-        marginBottom: 4,
-        backgroundColor: isActive ? accent : "transparent",
-      }}
-      activeOpacity={0.7}
-    >
-      <Text
-        style={{
-          fontSize: 13,
-          color: isActive ? "#ffffff" : textColor,
-          fontWeight: isActive ? "700" : "400",
-        }}
-        numberOfLines={2}
-      >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-
   return (
-    <View
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: "rgba(0,0,0,0.55)",
-        justifyContent: "center",
-        alignItems: "center",
-        zIndex: 99999,
-      }}
-    >
-      <View
-        style={{
-          backgroundColor: bg,
-          borderRadius: 20,
-          width: "92%",
-          maxWidth: 500,
-          maxHeight: "80%",
-          boxShadow: "0px 8px 20px 0px rgba(0,0,0,0.25)",
-          elevation: 20,
-          overflow: "hidden",
-        }}
-      >
-        {/* Header */}
-        <View
-          style={{
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-            paddingHorizontal: 20,
-            paddingVertical: 16,
-            borderBottomWidth: 1,
-            borderBottomColor: borderColor,
-            backgroundColor: darkMode ? "#252538" : "#f0f2ff",
-          }}
-        >
-          <Text style={{ fontSize: 17, fontWeight: "800", color: textColor, letterSpacing: 0.3 }}>Filter Connections</Text>
-          <TouchableOpacity onPress={onClose} style={{ padding: 4 }}>
-            <Ionicons name='close-circle' size={26} color={darkMode ? "#7880c0" : "#8890c8"} />
-          </TouchableOpacity>
-        </View>
-
-        {/* 4-column body */}
-        <View style={{ flexDirection: "row", flex: 1 }}>
-          {/* Relationship Column */}
-          <View style={{ flex: 1, padding: 14, backgroundColor: colBg, borderRightWidth: 1, borderRightColor: borderColor }}>
-            <ColumnHeader title='Relation' icon='🤝' />
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {relationshipOptions.map((opt) => (
-                <FilterItem
-                  key={opt}
-                  label={opt}
-                  isActive={relationshipFilter === opt}
+    <Modal visible={visible} transparent animationType='fade' onRequestClose={onClose}>
+      <TouchableOpacity style={connectionFilterModalStyles.overlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()} style={[connectionFilterModalStyles.sheet, { backgroundColor: bg, borderColor }]}>
+          <View style={[connectionFilterModalStyles.header, { borderBottomColor: borderColor, backgroundColor: darkMode ? "#252538" : "#f0f2ff" }]}>
+            <Text style={[connectionFilterModalStyles.headerTitle, { color: textColor }]}>{title}</Text>
+            <TouchableOpacity onPress={onClose} style={{ padding: 4 }} accessibilityRole='button' accessibilityLabel='Close'>
+              <Ionicons name='close-circle' size={26} color={darkMode ? "#7880c0" : "#8890c8"} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps='handled'>
+            {options.map((opt, idx) => {
+              const isActive = selected === opt;
+              const rowLabel = opt === "All" ? "All" : opt.length > 120 ? `${opt.slice(0, 120)}…` : opt;
+              return (
+                <TouchableOpacity
+                  key={`conn-filter-${idx}-${opt.length}`}
                   onPress={() => {
-                    setRelationshipFilter(opt);
+                    onSelect(opt);
                     onClose();
                   }}
-                />
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Date Column */}
-          <View style={{ flex: 1, padding: 14, backgroundColor: colBg, borderRightWidth: 1, borderRightColor: borderColor }}>
-            <ColumnHeader title='Date' icon='📅' />
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {dateOptions.map((opt) => (
-                <FilterItem
-                  key={opt}
-                  label={opt}
-                  isActive={dateFilter === opt}
-                  onPress={() => {
-                    setDateFilter(opt);
-                    onClose();
+                  style={{
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    borderBottomWidth: 1,
+                    borderBottomColor: borderColor,
+                    backgroundColor: isActive ? accent : "transparent",
                   }}
-                />
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* Event Column */}
-          <View style={{ flex: 1, padding: 14, backgroundColor: colBg, borderRightWidth: 1, borderRightColor: borderColor }}>
-            <ColumnHeader title='Event' icon='🎪' />
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {eventOptions.length > 1 ? (
-                eventOptions.map((opt) => (
-                  <FilterItem
-                    key={opt}
-                    label={opt}
-                    isActive={eventFilter === opt}
-                    onPress={() => {
-                      setEventFilter(opt);
-                      onClose();
-                    }}
-                  />
-                ))
-              ) : (
-                <Text style={{ fontSize: 12, color: labelColor, fontStyle: "italic", marginTop: 4 }}>No events yet</Text>
-              )}
-            </ScrollView>
-          </View>
-
-          {/* Location Column */}
-          <View style={{ flex: 1, padding: 14, backgroundColor: colBg }}>
-            <ColumnHeader title='Location' icon='📍' />
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {locationOptions.length > 1 ? (
-                locationOptions.map((opt) => (
-                  <FilterItem
-                    key={opt}
-                    label={opt}
-                    isActive={locationFilter === opt}
-                    onPress={() => {
-                      setLocationFilter(opt);
-                      onClose();
-                    }}
-                  />
-                ))
-              ) : (
-                <Text style={{ fontSize: 12, color: labelColor, fontStyle: "italic", marginTop: 4 }}>No locations yet</Text>
-              )}
-            </ScrollView>
-          </View>
-        </View>
-
-        {/* Footer */}
-        <View
-          style={{
-            padding: 14,
-            borderTopWidth: 1,
-            borderTopColor: borderColor,
-            backgroundColor: darkMode ? "#252538" : "#f0f2ff",
-            flexDirection: "row",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <TouchableOpacity
-            onPress={() => {
-              setDateFilter("All");
-              setLocationFilter("All");
-              setEventFilter("All");
-              setRelationshipFilter("All");
-              onClose();
-            }}
-            style={{ paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: accent }}
-          >
-            <Text style={{ color: accent, fontWeight: "600", fontSize: 13 }}>Reset All</Text>
-          </TouchableOpacity>
-          <Text style={{ fontSize: 12, color: labelColor }}>Tap a value to apply</Text>
-        </View>
-      </View>
-    </View>
+                >
+                  <Text style={{ fontSize: 14, color: isActive ? "#fff" : textColor, fontWeight: isActive ? "700" : "400" }} numberOfLines={opt === "All" ? 1 : 4}>
+                    {rowLabel}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          <Text style={{ fontSize: 12, color: labelColor, padding: 12, textAlign: "center" }}>Tap a row to apply</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
   );
-};
+}
+
+const RELATIONSHIP_FILTER_OPTIONS = ["All", "Colleagues", "Friends", "Family"];
+const DATE_FILTER_OPTIONS = ["All", "This Week", "This Month", "This Year"];
+
+const connectionFilterModalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  sheet: {
+    borderRadius: 16,
+    width: "100%",
+    maxWidth: 420,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    flex: 1,
+    paddingRight: 8,
+  },
+});
 
 const NetworkScreen = ({ navigation }) => {
   const { darkMode } = useDarkMode();
@@ -319,9 +170,13 @@ const NetworkScreen = ({ navigation }) => {
   const [locationFilter, setLocationFilter] = useState("All");
   const [eventFilter, setEventFilter] = useState("All");
   const [availableEvents, setAvailableEvents] = useState([]);
-  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
-  const [showEventDropdown, setShowEventDropdown] = useState(false);
   const [availableCities, setAvailableCities] = useState([]);
+  const [notesFilter, setNotesFilter] = useState("All");
+  const [introducedByFilter, setIntroducedByFilter] = useState("All");
+  const [availableNotes, setAvailableNotes] = useState([]);
+  const [availableIntroducedBy, setAvailableIntroducedBy] = useState([]);
+  /** Which single filter list is open: relationship | date | location | event | notes | introduced */
+  const [filterModalKind, setFilterModalKind] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [graphHtml, setGraphHtml] = useState(""); // For web iframe
   const iframeContainerRef = React.useRef(null); // Ref for web iframe container
@@ -335,7 +190,6 @@ const NetworkScreen = ({ navigation }) => {
   const [showViewMyNetwork, setShowViewMyNetwork] = useState(true);
   /** Bumped on each screen focus so debounced fetch runs once per visit (avoids duplicate immediate refetch). */
   const [focusTick, setFocusTick] = useState(0);
-  const [showFilterPopup, setShowFilterPopup] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
   const [conversations, setConversations] = useState([]);
   const [conversationsLoading, setConversationsLoading] = useState(false);
@@ -396,6 +250,8 @@ const NetworkScreen = ({ navigation }) => {
         dateFilterValue,
         locationFilterValue,
         eventFilterValue,
+        notesFilterValue,
+        introducedByFilterValue,
         settingsDebugModeValue,
       ] = await Promise.all([
         AsyncStorage.getItem("network_showAsyncStorage"),
@@ -408,6 +264,8 @@ const NetworkScreen = ({ navigation }) => {
         AsyncStorage.getItem("network_dateFilter"),
         AsyncStorage.getItem("network_locationFilter"),
         AsyncStorage.getItem("network_eventFilter"),
+        AsyncStorage.getItem("network_notesFilter"),
+        AsyncStorage.getItem("network_introducedByFilter"),
         AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY),
       ]);
 
@@ -458,6 +316,13 @@ const NetworkScreen = ({ navigation }) => {
         setEventFilter(eventFilterValue);
       } else {
         console.log("📥 No persisted eventFilter value, using default: All");
+      }
+
+      if (notesFilterValue !== null) {
+        setNotesFilter(notesFilterValue);
+      }
+      if (introducedByFilterValue !== null) {
+        setIntroducedByFilter(introducedByFilterValue);
       }
 
       // Load network data if available
@@ -543,6 +408,8 @@ const NetworkScreen = ({ navigation }) => {
           AsyncStorage.setItem("network_dateFilter", dateFilter),
           AsyncStorage.setItem("network_locationFilter", locationFilter),
           AsyncStorage.setItem("network_eventFilter", eventFilter),
+          AsyncStorage.setItem("network_notesFilter", notesFilter),
+          AsyncStorage.setItem("network_introducedByFilter", introducedByFilter),
         ]);
         console.log("✅ Network screen settings saved successfully");
       } catch (e) {
@@ -550,7 +417,7 @@ const NetworkScreen = ({ navigation }) => {
       }
     };
     saveSettings();
-  }, [showAsyncStorage, degree, viewMode, showViewMyNetwork, dateFilter, locationFilter, eventFilter, settingsLoaded]);
+  }, [showAsyncStorage, degree, viewMode, showViewMyNetwork, dateFilter, locationFilter, eventFilter, notesFilter, introducedByFilter, settingsLoaded]);
 
   // Debounced GET /api/network: settings ready, panel open, connections view, and on focus (focusTick) or degree change.
   // useFocusEffect no longer calls fetchNetwork — avoids duplicate with this effect. activeView via ref so Circles→Connections does not schedule twice.
@@ -608,6 +475,37 @@ const NetworkScreen = ({ navigation }) => {
       setAvailableCities([]);
     }
   }, [networkData]);
+
+  // Unique circle_note / circle_introduced_by values for filters 7–8
+  useEffect(() => {
+    if (networkData && networkData.length > 0) {
+      const notes = new Set();
+      const intros = new Set();
+      networkData.forEach((node) => {
+        const n = (node.circle_note || "").trim();
+        if (n) notes.add(n);
+        const i = (node.circle_introduced_by || "").trim();
+        if (i) intros.add(i);
+      });
+      setAvailableNotes(Array.from(notes).sort());
+      setAvailableIntroducedBy(Array.from(intros).sort());
+    } else {
+      setAvailableNotes([]);
+      setAvailableIntroducedBy([]);
+    }
+  }, [networkData]);
+
+  const noteOptionsForModal = useMemo(() => {
+    const s = new Set(availableNotes);
+    if (notesFilter !== "All") s.add(notesFilter);
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
+  }, [availableNotes, notesFilter]);
+
+  const introducedOptionsForModal = useMemo(() => {
+    const s = new Set(availableIntroducedBy);
+    if (introducedByFilter !== "All") s.add(introducedByFilter);
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
+  }, [availableIntroducedBy, introducedByFilter]);
 
   useEffect(() => {
     const loadAsyncStorage = async () => {
@@ -1270,6 +1168,14 @@ const NetworkScreen = ({ navigation }) => {
         });
       }
 
+      if (notesFilter !== "All") {
+        filtered = filtered.filter((node) => (node.circle_note || "").trim() === notesFilter);
+      }
+
+      if (introducedByFilter !== "All") {
+        filtered = filtered.filter((node) => (node.circle_introduced_by || "").trim() === introducedByFilter);
+      }
+
       // SEARCH FILTER RIGHT HERE
       if (searchQuery.trim() !== "") {
         const query = searchQuery.toLowerCase();
@@ -1283,6 +1189,7 @@ const NetworkScreen = ({ navigation }) => {
             node.__mc?.phoneNumber || "",
             node.circle_event || "",
             node.circle_note || "",
+            node.circle_introduced_by || "",
             node.circle_relationship || "",
             node.network_profile_personal_uid || "",
           ]
@@ -1296,7 +1203,7 @@ const NetworkScreen = ({ navigation }) => {
       const html = generateVisHTML(filtered, profileUid || "YOU");
       setGraphHtml(html);
     }
-  }, [viewMode, networkData, profileUid, relationshipFilter, dateFilter, locationFilter, eventFilter, searchQuery]);
+  }, [viewMode, networkData, profileUid, relationshipFilter, dateFilter, locationFilter, eventFilter, notesFilter, introducedByFilter, searchQuery]);
 
   // Create/update iframe element for web
   useEffect(() => {
@@ -1387,9 +1294,8 @@ const NetworkScreen = ({ navigation }) => {
     setDateFilter("All");
     setLocationFilter("All");
     setEventFilter("All");
-    setDateFilter("All");
-    setLocationFilter("All");
-    setEventFilter("All");
+    setNotesFilter("All");
+    setIntroducedByFilter("All");
     setLoading(true);
     setError(null);
 
@@ -2062,25 +1968,13 @@ const NetworkScreen = ({ navigation }) => {
     });
   }
 
-  // Close dropdowns when clicking outside
-  useEffect(() => {
-    if (Platform.OS === "web" && (showLocationDropdown || showEventDropdown)) {
-      const handleClickOutside = () => {
-        setShowLocationDropdown(false);
-        setShowEventDropdown(false);
-      };
+  if (notesFilter !== "All") {
+    filteredNetworkData = filteredNetworkData.filter((node) => (node.circle_note || "").trim() === notesFilter);
+  }
 
-      // Small delay to prevent immediate closure
-      const timer = setTimeout(() => {
-        document.addEventListener("click", handleClickOutside);
-      }, 100);
-
-      return () => {
-        clearTimeout(timer);
-        document.removeEventListener("click", handleClickOutside);
-      };
-    }
-  }, [showLocationDropdown, showEventDropdown]);
+  if (introducedByFilter !== "All") {
+    filteredNetworkData = filteredNetworkData.filter((node) => (node.circle_introduced_by || "").trim() === introducedByFilter);
+  }
 
   const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
   const NEARBY_SETTINGS_KEY = "nearby_share_settings";
@@ -2411,7 +2305,7 @@ const NetworkScreen = ({ navigation }) => {
                       {/* Row 3: Relationship */}
                       <View style={styles.controlRow}>
                         <Text style={styles.controlRowLabel}>3. Relationship</Text>
-                        <TouchableOpacity style={[styles.pullDownButton, relationshipFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setShowFilterPopup(true)}>
+                        <TouchableOpacity style={[styles.pullDownButton, relationshipFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("relationship")}>
                           <Text style={[styles.pullDownButtonText, relationshipFilter !== "All" && styles.pullDownButtonTextActive]}>{relationshipFilter === "All" ? "All" : relationshipFilter}</Text>
                         </TouchableOpacity>
                       </View>
@@ -2419,7 +2313,7 @@ const NetworkScreen = ({ navigation }) => {
                       {/* Row 4: Date(s) */}
                       <View style={styles.controlRow}>
                         <Text style={styles.controlRowLabel}>4. Date(s)</Text>
-                        <TouchableOpacity style={[styles.pullDownButton, dateFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setShowFilterPopup(true)}>
+                        <TouchableOpacity style={[styles.pullDownButton, dateFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("date")}>
                           <Text style={[styles.pullDownButtonText, dateFilter !== "All" && styles.pullDownButtonTextActive]}>{dateFilter === "All" ? "All" : dateFilter}</Text>
                         </TouchableOpacity>
                       </View>
@@ -2427,7 +2321,7 @@ const NetworkScreen = ({ navigation }) => {
                       {/* Row 5: Location(s) */}
                       <View style={styles.controlRow}>
                         <Text style={styles.controlRowLabel}>5. Location(s)</Text>
-                        <TouchableOpacity style={[styles.pullDownButton, locationFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setShowFilterPopup(true)}>
+                        <TouchableOpacity style={[styles.pullDownButton, locationFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("location")}>
                           <Text style={[styles.pullDownButtonText, locationFilter !== "All" && styles.pullDownButtonTextActive]}>{locationFilter === "All" ? "All" : locationFilter}</Text>
                         </TouchableOpacity>
                       </View>
@@ -2435,10 +2329,41 @@ const NetworkScreen = ({ navigation }) => {
                       {/* Row 6: Event(s) */}
                       <View style={styles.controlRow}>
                         <Text style={styles.controlRowLabel}>6. Event(s)</Text>
-                        <TouchableOpacity style={[styles.pullDownButton, eventFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setShowFilterPopup(true)}>
+                        <TouchableOpacity style={[styles.pullDownButton, eventFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("event")}>
                           <Text style={[styles.pullDownButtonText, eventFilter !== "All" && styles.pullDownButtonTextActive]}>{eventFilter === "All" ? "All" : eventFilter}</Text>
                         </TouchableOpacity>
                       </View>
+
+                      {/* Row 7: Notes */}
+                      <View style={styles.controlRow}>
+                        <Text style={styles.controlRowLabel}>7. Notes</Text>
+                        <TouchableOpacity style={[styles.pullDownButton, notesFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("notes")}>
+                          <Text style={[styles.pullDownButtonText, notesFilter !== "All" && styles.pullDownButtonTextActive]}>{formatFilterButtonLabel(notesFilter)}</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* Row 8: Introduced by */}
+                      <View style={styles.controlRow}>
+                        <Text style={styles.controlRowLabel}>8. Introduced by</Text>
+                        <TouchableOpacity style={[styles.pullDownButton, introducedByFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("introduced")}>
+                          <Text style={[styles.pullDownButtonText, introducedByFilter !== "All" && styles.pullDownButtonTextActive]}>{formatFilterButtonLabel(introducedByFilter)}</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <TouchableOpacity
+                        onPress={() => {
+                          setRelationshipFilter("All");
+                          setDateFilter("All");
+                          setLocationFilter("All");
+                          setEventFilter("All");
+                          setNotesFilter("All");
+                          setIntroducedByFilter("All");
+                          setFilterModalKind(null);
+                        }}
+                        style={{ alignSelf: "center", marginTop: 8, paddingVertical: 8, paddingHorizontal: 14 }}
+                      >
+                        <Text style={{ color: "#535db7", fontWeight: "600", fontSize: 13 }}>Reset filters (3–8)</Text>
+                      </TouchableOpacity>
                     </View>
 
                     {loading && <ActivityIndicator size='large' color='#AF52DE' />}
@@ -2591,6 +2516,14 @@ const NetworkScreen = ({ navigation }) => {
                                       });
                                     }
 
+                                    if (notesFilter !== "All") {
+                                      list = list.filter((node) => (node.circle_note || "").trim() === notesFilter);
+                                    }
+
+                                    if (introducedByFilter !== "All") {
+                                      list = list.filter((node) => (node.circle_introduced_by || "").trim() === introducedByFilter);
+                                    }
+
                                     // Apply search filter
                                     if (searchQuery.trim() !== "") {
                                       const query = searchQuery.toLowerCase();
@@ -2604,6 +2537,7 @@ const NetworkScreen = ({ navigation }) => {
                                           node.__mc?.phoneNumber || "",
                                           node.circle_event || "",
                                           node.circle_note || "",
+                                          node.circle_introduced_by || "",
                                           node.circle_relationship || "",
                                           node.network_profile_personal_uid || "",
                                         ]
@@ -3152,21 +3086,72 @@ const NetworkScreen = ({ navigation }) => {
         onAddConnection={(relationship) => handleAddScannedConnection(relationship)}
       />
 
-      <FilterPopup
-        visible={showFilterPopup}
-        onClose={() => setShowFilterPopup(false)}
-        dateFilter={dateFilter}
-        setDateFilter={setDateFilter}
-        locationFilter={locationFilter}
-        setLocationFilter={setLocationFilter}
-        eventFilter={eventFilter}
-        setEventFilter={setEventFilter}
-        relationshipFilter={relationshipFilter}
-        setRelationshipFilter={setRelationshipFilter}
-        availableCities={availableCities}
-        availableEvents={availableEvents}
-        darkMode={darkMode}
-      />
+      {filterModalKind === "relationship" && (
+        <ConnectionFilterModal
+          visible
+          title='3. Relationship'
+          options={RELATIONSHIP_FILTER_OPTIONS}
+          selected={relationshipFilter}
+          onSelect={setRelationshipFilter}
+          onClose={() => setFilterModalKind(null)}
+          darkMode={darkMode}
+        />
+      )}
+      {filterModalKind === "date" && (
+        <ConnectionFilterModal
+          visible
+          title='4. Date(s)'
+          options={DATE_FILTER_OPTIONS}
+          selected={dateFilter}
+          onSelect={setDateFilter}
+          onClose={() => setFilterModalKind(null)}
+          darkMode={darkMode}
+        />
+      )}
+      {filterModalKind === "location" && (
+        <ConnectionFilterModal
+          visible
+          title='5. Location(s)'
+          options={["All", ...availableCities]}
+          selected={locationFilter}
+          onSelect={setLocationFilter}
+          onClose={() => setFilterModalKind(null)}
+          darkMode={darkMode}
+        />
+      )}
+      {filterModalKind === "event" && (
+        <ConnectionFilterModal
+          visible
+          title='6. Event(s)'
+          options={["All", ...availableEvents]}
+          selected={eventFilter}
+          onSelect={setEventFilter}
+          onClose={() => setFilterModalKind(null)}
+          darkMode={darkMode}
+        />
+      )}
+      {filterModalKind === "notes" && (
+        <ConnectionFilterModal
+          visible
+          title='7. Notes'
+          options={noteOptionsForModal}
+          selected={notesFilter}
+          onSelect={setNotesFilter}
+          onClose={() => setFilterModalKind(null)}
+          darkMode={darkMode}
+        />
+      )}
+      {filterModalKind === "introduced" && (
+        <ConnectionFilterModal
+          visible
+          title='8. Introduced by'
+          options={introducedOptionsForModal}
+          selected={introducedByFilter}
+          onSelect={setIntroducedByFilter}
+          onClose={() => setFilterModalKind(null)}
+          darkMode={darkMode}
+        />
+      )}
     </View>
   );
 };

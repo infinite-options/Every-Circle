@@ -1760,7 +1760,7 @@ export default function AccountScreen({ navigation }) {
             {/* Bounties (earnings chart) */}
             <View style={styles.sectionContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowNetEarning(!showNetEarning)}>
-                <Text style={styles.sectionHeaderText}>BOUNTIES</Text>
+                <Text style={styles.sectionHeaderText}>EARNINGS</Text>
                 <Ionicons name={showNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showNetEarning && <NetEarningChart />}

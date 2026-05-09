@@ -35,6 +35,24 @@ import { useUnread } from "../contexts/UnreadContext";
 import { getHeaderColors } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import versionData from "../version.json";
+import Constants from "expo-constants";
+import appConfig from "../config";
+
+/** LoginScreen-style helpers for dev API key fingerprint (partial, for debugging). */
+function getApiKeyLastTwoDigits(clientId) {
+  if (!clientId) return "Not set";
+  const match = clientId.match(/(.+)\.apps\.googleusercontent\.com$/);
+  if (match) return "..." + match[1].slice(-2);
+  return "..." + clientId.slice(-2);
+}
+
+function getApiKeyFirstFourDigits(clientId) {
+  if (!clientId) return "Not set";
+  const match = clientId.match(/([\w-]+)-([\w]+)\.apps\.googleusercontent\.com$/);
+  if (match) return match[2].slice(0, 4);
+  const fallback = clientId.split("-")[1];
+  return fallback ? fallback.slice(0, 4) : "Not found";
+}
 
 // Color constants for Settings screen
 const COLORS = {
@@ -1282,6 +1300,21 @@ export default function SettingsScreen() {
           <TouchableOpacity style={[styles.bottomLogoutButton, darkMode && styles.darkBottomLogoutButton]} onPress={handleLogout}>
             <Text style={[styles.bottomLogoutText, darkMode && styles.darkBottomLogoutText]}>Log out</Text>
           </TouchableOpacity>
+
+          {SHOW_NETWORK_DEBUG_UI !== 0 && networkDebugMode && __DEV__ && (
+            <View style={[styles.apiKeysContainer, darkMode && styles.darkApiKeysContainer]}>
+              <Text style={[styles.apiKeysTitle, darkMode && styles.darkApiKeysTitle]}>API Keys (First 4 Digits):</Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>iOS: {getApiKeyFirstFourDigits(appConfig.googleClientIds.ios)}</Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Android: {getApiKeyFirstFourDigits(appConfig.googleClientIds.android)}</Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Web: {getApiKeyFirstFourDigits(appConfig.googleClientIds.web)}</Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>
+                URL Scheme: {appConfig.googleURLScheme ? appConfig.googleURLScheme.split("-").pop().slice(0, 4) : "Not set"}
+              </Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Maps API: {getApiKeyLastTwoDigits(appConfig.googleMapsApiKey)}</Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Environment: {__DEV__ ? "Development" : "Production"}</Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>iOS Build: {Constants.expoConfig?.ios?.buildNumber || "Not set"}</Text>
+            </View>
+          )}
         </ScrollView>
       </SafeAreaView>
 
@@ -1692,6 +1725,38 @@ const styles = StyleSheet.create({
   closeButtonText: {
     color: COLORS.darkText,
     fontWeight: "bold",
+  },
+  apiKeysContainer: {
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    padding: 10,
+    borderRadius: 5,
+    marginTop: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    width: "90%",
+    alignSelf: "center",
+  },
+  darkApiKeysContainer: {
+    backgroundColor: COLORS.darkItemBackground,
+    borderColor: COLORS.lightQuaternaryText,
+  },
+  apiKeysTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 8,
+    color: "#333",
+  },
+  darkApiKeysTitle: {
+    color: COLORS.darkText,
+  },
+  apiKeysText: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 4,
+  },
+  darkApiKeysText: {
+    color: COLORS.lightQuaternaryText,
   },
   bottomLogoutButton: {
     backgroundColor: "#4B2E83",
