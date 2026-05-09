@@ -13,6 +13,7 @@ import Constants from "expo-constants";
 import config from "../config";
 import { Ionicons } from "@expo/vector-icons";
 import { ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
+import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 // import SignUpScreen from "./screens/SignUpScreen";
@@ -165,6 +166,7 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
 
         // Clear all user-related data from AsyncStorage
         await AsyncStorage.multiRemove(["user_uid", "user_email_id", "profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+        await clearUserProfileCacheStorage();
         console.log("LoginScreen - Cleared AsyncStorage for no user_uid case");
 
         Alert.alert("Account Not Found", "This email is not registered. Please sign up to create an account.", [
@@ -189,6 +191,7 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
       // Profile and Ably business channels load in ProfileScreen (single GET /userprofileinfo by user_uid).
       // Clear stale profile keys from any previous session so we never fetch the wrong profile_uid.
       await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+      await clearUserProfileCacheStorage();
 
       console.log("LoginScreen - user_uid", user_uid);
 

@@ -19,16 +19,34 @@ const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
 
 /**
  * Expected GET /api/v1/account-screen/personal/:profile_id JSON (flexible keys):
- * - data.transactions | purchase_transactions | personal_transactions: buyer transaction rows OR { code, data }
+ * - data.transactions | purchase_transactions | personal_transactions | purchases | purchase: buyer rows as array, or { code, data }, or nested { data | items | rows | transactions | list | results | records }[]
  * - data.bounty | bounty_results | bounty_data: same shape as legacy /api/bountyresults body, or bounty_items[] + totals
  * - data.seller_transactions | seller_tx: line items for seller-side expertise qty OR { code, data } (omit key → legacy fetch)
  * - data.profile | user_profile: optional { user_email, personal_info, expertise_info } for MiniCard + expertise list
  */
+/** Backend may send numeric or string success codes (e.g. 200 vs "200"). */
+function isApiSuccessCode(code) {
+  return code === 200 || code === "200" || Number(code) === 200;
+}
+
+/** Unwrap buyer tx list when API nests rows (e.g. purchases: { code, data: [...] } or { items: [...] }). */
+function extractTransactionArray(raw) {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw !== "object") return [];
+  if (isApiSuccessCode(raw.code) && Array.isArray(raw.data)) return raw.data;
+  if (Array.isArray(raw.data) && (raw.code === undefined || raw.code === null || isApiSuccessCode(raw.code))) return raw.data;
+  for (const key of ["items", "rows", "transactions", "list", "results", "records", "purchase_list"]) {
+    if (Array.isArray(raw[key])) return raw[key];
+  }
+  return [];
+}
+
 function mapAccountScreenPersonalResponse(json) {
   const root = json && typeof json === "object" ? json : {};
   if (Array.isArray(root.data)) {
     return {
-      transactions: root.code === 200 ? root.data : [],
+      transactions: isApiSuccessCode(root.code) ? root.data : [],
       bounty: null,
       sellerTransactions: undefined,
       profile: null,
@@ -37,25 +55,39 @@ function mapAccountScreenPersonalResponse(json) {
   const payload = root.data !== undefined && root.data !== null && typeof root.data === "object" && !Array.isArray(root.data) ? root.data : root;
 
   let transactions = [];
+  /** Purchases often live in data.purchases; some APIs put the same block on the root next to data. */
   const txRaw =
-    payload.transactions ?? payload.purchase_transactions ?? payload.personal_transactions ?? payload.buyer_transactions ?? payload.transaction_list ?? payload.purchases ?? payload.purchase_list;
-  if (Array.isArray(txRaw)) {
-    transactions = txRaw;
-  } else if (txRaw && txRaw.code === 200 && Array.isArray(txRaw.data)) {
-    transactions = txRaw.data;
-  }
+    payload.transactions ??
+    payload.purchase_transactions ??
+    payload.personal_transactions ??
+    payload.buyer_transactions ??
+    payload.transaction_list ??
+    payload.purchases ??
+    payload.purchase ??
+    payload.purchase_list ??
+    root.purchases;
+  transactions = extractTransactionArray(txRaw);
   // Nested legacy shape: { message, code: 200, data: [ rows ] } embedded under payload
   if (!transactions.length && payload && typeof payload === "object") {
     const legacyBlock = payload.transactions_legacy ?? payload.transaction_payload ?? payload.transaction_response ?? payload.buyer_transaction_response;
-    if (legacyBlock && legacyBlock.code === 200 && Array.isArray(legacyBlock.data)) {
+    if (legacyBlock && isApiSuccessCode(legacyBlock.code) && Array.isArray(legacyBlock.data)) {
       transactions = legacyBlock.data;
-    } else if (payload.code === 200 && Array.isArray(payload.data)) {
+    } else if (isApiSuccessCode(payload.code) && Array.isArray(payload.data)) {
       const sample = payload.data[0];
       if (sample && (sample.transaction_uid != null || sample.ti_uid != null)) {
         transactions = payload.data;
       }
     }
   }
+
+  /** Legacy buyer rows use transaction_business_id; aggregate may only send seller_id. */
+  transactions = transactions.map((row) => {
+    if (!row || typeof row !== "object") return row;
+    if (row.transaction_business_id == null && row.seller_id != null) {
+      return { ...row, transaction_business_id: row.seller_id };
+    }
+    return row;
+  });
 
   let bounty = payload.bounty ?? payload.bounty_results ?? payload.bounty_data ?? null;
   if (!bounty && Array.isArray(payload.bounty_items)) {
@@ -72,7 +104,7 @@ function mapAccountScreenPersonalResponse(json) {
     sellerTransactions = undefined;
   } else if (Array.isArray(stRaw)) {
     sellerTransactions = stRaw;
-  } else if (stRaw && stRaw.code === 200 && Array.isArray(stRaw.data)) {
+  } else if (stRaw && isApiSuccessCode(stRaw.code) && Array.isArray(stRaw.data)) {
     sellerTransactions = stRaw.data;
   } else {
     sellerTransactions = [];
@@ -483,7 +515,7 @@ export default function AccountScreen({ navigation }) {
       const session = await getSessionProfile();
       const profileId = session?.profileUid || (await AsyncStorage.getItem("profile_uid"));
       if (!profileId) return;
-      const result = session?.rawProfile || (await getSessionProfile({ forceRefresh: true }))?.rawProfile;
+      const result = session?.rawProfile;
       if (result && result.personal_info) {
         setPersonalProfileData({
           firstName: result.personal_info.profile_personal_first_name || "",
@@ -533,7 +565,7 @@ export default function AccountScreen({ navigation }) {
         setBountyData({ data: [] });
         let sellerTx = await fetchLegacySellerTransactionsForProfile(profileId);
         const session = await getSessionProfile();
-        const profileResult = session?.rawProfile || (await getSessionProfile({ forceRefresh: true }))?.rawProfile;
+        const profileResult = session?.rawProfile;
         const expertiseList = profileResult?.expertise_info ? parseExpertiseInfo(profileResult.expertise_info) : [];
         setExpertiseData(buildExpertiseRows(expertiseList, sellerTx));
         await fetchPersonalProfileData();
@@ -589,7 +621,7 @@ export default function AccountScreen({ navigation }) {
       }
 
       const session = await getSessionProfile();
-      const profileResult = session?.rawProfile || (await getSessionProfile({ forceRefresh: true }))?.rawProfile;
+      const profileResult = session?.rawProfile;
       let expertiseList = [];
       if (mapped.profile?.expertise_info != null) {
         expertiseList = parseExpertiseInfo(mapped.profile.expertise_info);
@@ -656,7 +688,7 @@ export default function AccountScreen({ navigation }) {
         return null;
       }
 
-      const result = session?.rawProfile || (await getSessionProfile({ forceRefresh: true }))?.rawProfile;
+      const result = session?.rawProfile;
       if (!result) {
         console.log("Failed to load user profile");
         return null;

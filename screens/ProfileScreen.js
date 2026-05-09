@@ -39,6 +39,7 @@ import config from "../config";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { reinitializeUnreadFromOutside } from "../contexts/UnreadContext";
 import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
+import { saveSessionProfilePayload, clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { sanitizeText } from "../utils/textSanitizer";
 import { getBusinessSuggestions as fetchGooglePlaces, getPlaceDetails } from "../utils/googlePlaces";
 import { isWishEnded } from "../utils/wishUtils";
@@ -436,6 +437,7 @@ const ProfileScreen = ({ route, navigation }) => {
               setLoading(false);
               // Clear any existing profile data but keep user credentials
               await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+              await clearUserProfileCacheStorage();
               reinitializeUnreadFromOutside().catch(() => {});
               navigation.navigate("UserInfo", getOauthUserInfoNavigateParams());
               return;
@@ -499,6 +501,7 @@ const ProfileScreen = ({ route, navigation }) => {
       if (isCurrentUserProfile || profileUID === currentUserUid || profileUID === currentProfileUid) {
         setLoading(false);
         await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+        await clearUserProfileCacheStorage();
         navigation.navigate("UserInfo", getOauthUserInfoNavigateParams());
         return;
       }
@@ -513,6 +516,9 @@ const ProfileScreen = ({ route, navigation }) => {
     if (storedProfileUid && profileUID === storedProfileUid) {
       const bizListChanged = await persistMyBusinessUidsFromProfile(apiUser);
       if (bizListChanged) reinitializeUnreadFromOutside().catch(() => {});
+      try {
+        await saveSessionProfilePayload(apiUser);
+      } catch (_) {}
     }
 
     try {

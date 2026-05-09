@@ -1,4 +1,4 @@
-//SettingsScreen.js 
+//SettingsScreen.js
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, Platform } from "react-native";
 import * as Location from "expo-location";
@@ -12,7 +12,7 @@ import HowItWorksScreen from "./HowItWorksScreen";
 import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
-import { clearSessionProfileCache } from "../utils/sessionProfile";
+import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { API_BASE_URL } from "../apiConfig";
 
 // Only import GoogleSignin on native platforms (not web)
@@ -107,31 +107,28 @@ const DUMMY_LOCATIONS = [
 function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMode, variant = "yesNo" }) {
   const leftOn = !value;
   const rightOn = value;
-  const leftBgStyle =
-    variant === "background" ? (leftOn ? styles.togglePillThemeLight : null) : leftOn ? styles.togglePillActiveRed : null;
-  const rightBgStyle =
-    variant === "background" ? (rightOn ? styles.togglePillThemeDark : null) : rightOn ? styles.togglePillActiveGreen : null;
-  const leftTextActiveStyle =
-    variant === "background" && leftOn ? styles.togglePillTextDarkEmphasis : leftOn ? styles.togglePillTextActive : null;
+  const leftBgStyle = variant === "background" ? (leftOn ? styles.togglePillThemeLight : null) : leftOn ? styles.togglePillActiveRed : null;
+  const rightBgStyle = variant === "background" ? (rightOn ? styles.togglePillThemeDark : null) : rightOn ? styles.togglePillActiveGreen : null;
+  const leftTextActiveStyle = variant === "background" && leftOn ? styles.togglePillTextDarkEmphasis : leftOn ? styles.togglePillTextActive : null;
   const rightTextActiveStyle = rightOn ? styles.togglePillTextActive : null;
 
   return (
     <View style={[styles.settingsToggleRow, Platform.OS === "web" && styles.settingsToggleRowWeb]}>
       <TouchableOpacity
         onPress={() => value !== false && onValueChange(false)}
-        style={[styles.togglePill, leftBgStyle]}
+        style={[styles.togglePill, Platform.OS === "web" && styles.togglePillWeb, leftBgStyle]}
         accessibilityRole='button'
         accessibilityState={{ selected: leftOn }}
       >
-        <Text style={[styles.togglePillText, darkMode && !leftOn && styles.darkTogglePillText, leftTextActiveStyle]}>{leftLabel}</Text>
+        <Text style={[styles.togglePillText, Platform.OS === "web" && styles.togglePillTextWeb, darkMode && !leftOn && styles.darkTogglePillText, leftTextActiveStyle]}>{leftLabel}</Text>
       </TouchableOpacity>
       <TouchableOpacity
         onPress={() => value !== true && onValueChange(true)}
-        style={[styles.togglePill, rightBgStyle]}
+        style={[styles.togglePill, Platform.OS === "web" && styles.togglePillWeb, rightBgStyle]}
         accessibilityRole='button'
         accessibilityState={{ selected: rightOn }}
       >
-        <Text style={[styles.togglePillText, darkMode && !rightOn && styles.darkTogglePillText, rightTextActiveStyle]}>{rightLabel}</Text>
+        <Text style={[styles.togglePillText, Platform.OS === "web" && styles.togglePillTextWeb, darkMode && !rightOn && styles.darkTogglePillText, rightTextActiveStyle]}>{rightLabel}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -195,12 +192,7 @@ export default function SettingsScreen() {
   const settingsFeedbackQuestions = ["Settings - Question 1?", "Settings - Question 2?", "Settings - Question 3?"];
 
   //for declined refunds - only show to admins
-  const ADMIN_EMAILS = [
-    "shrutitest20@gmail.com",
-    "admin@everycircle.com",
-    "pmarathay@gmail.com",
-    "cplata@everycircle.com",
-  ];
+  const ADMIN_EMAILS = ["shrutitest20@gmail.com", "admin@everycircle.com", "pmarathay@gmail.com", "cplata@everycircle.com"];
 
   const [showAdminSection, setShowAdminSection] = useState(false);
   const [adminReturns, setAdminReturns] = useState([]);
@@ -449,7 +441,7 @@ export default function SettingsScreen() {
 
       // Clear shared Ably client so next login reauths cleanly with new client_id.
       resetSharedAblyClient();
-      clearSessionProfileCache();
+      await clearUserProfileCacheStorage();
       reinitialize().catch(() => {});
 
       // Reset dark mode to light mode when logging out
@@ -531,13 +523,11 @@ export default function SettingsScreen() {
   };
 
   useEffect(() => {
-    const fetchProfile = async () => {
+    const loadProfileFromCache = async () => {
       try {
-        const profileId = await AsyncStorage.getItem("profile_uid");
-        if (!profileId) return;
-        const { USER_PROFILE_INFO_ENDPOINT } = require("../apiConfig");
-        const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileId}`);
-        const result = await response.json();
+        const { getSessionProfile } = require("../utils/sessionProfile");
+        const session = await getSessionProfile({ forceRefresh: true });
+        const result = session?.rawProfile;
         if (result && result.personal_info) {
           setPersonalProfileData({
             firstName: result.personal_info.profile_personal_first_name || "",
@@ -554,7 +544,6 @@ export default function SettingsScreen() {
             locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
             imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
           });
-          // Load persisted nearby coords from DB
           const nearbyLat = result.personal_info.profile_personal_nearby_lat;
           const nearbyLng = result.personal_info.profile_personal_nearby_lng;
           const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
@@ -563,10 +552,10 @@ export default function SettingsScreen() {
           }
         }
       } catch (e) {
-        console.error("Error fetching profile for settings:", e);
+        console.error("Error loading cached profile for settings:", e);
       }
     };
-    fetchProfile();
+    loadProfileFromCache();
   }, []);
 
   // --- Live location sharing ---
@@ -1012,14 +1001,7 @@ export default function SettingsScreen() {
                     <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Background</Text>
                   </Text>
                 </View>
-                <SettingsBoolPills
-                  value={darkMode}
-                  onValueChange={(v) => toggleDarkMode(v)}
-                  leftLabel='Light'
-                  rightLabel='Dark'
-                  darkMode={darkMode}
-                  variant='background'
-                />
+                <SettingsBoolPills value={darkMode} onValueChange={(v) => toggleDarkMode(v)} leftLabel='Light' rightLabel='Dark' darkMode={darkMode} variant='background' />
               </View>
 
               {SHOW_NETWORK_DEBUG_UI !== 0 && (
@@ -1030,13 +1012,7 @@ export default function SettingsScreen() {
                       <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Debug Mode</Text>
                     </Text>
                   </View>
-                  <SettingsBoolPills
-                    value={networkDebugMode}
-                    onValueChange={handleNetworkDebugMode}
-                    leftLabel='No'
-                    rightLabel='Yes'
-                    darkMode={darkMode}
-                  />
+                  <SettingsBoolPills value={networkDebugMode} onValueChange={handleNetworkDebugMode} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
                 </View>
               )}
 
@@ -1098,11 +1074,7 @@ export default function SettingsScreen() {
                 );
               })()}
 
-              <TouchableOpacity
-                style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]}
-                onPress={() => setLocationPickerVisible(true)}
-                activeOpacity={0.8}
-              >
+              <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setLocationPickerVisible(true)} activeOpacity={0.8}>
                 <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
                   <MaterialIcons name='my-location' size={20} style={styles.icon} color={COLORS.primary} />
                   <View>
@@ -1187,20 +1159,18 @@ export default function SettingsScreen() {
                 }}
               >
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <MaterialIcons name="admin-panel-settings" size={16} color="#B71C1C" />
+                  <MaterialIcons name='admin-panel-settings' size={16} color='#B71C1C' />
                   <Text style={[styles.informationSectionHeaderText, { color: "#B71C1C" }]}>ADMIN</Text>
                 </View>
-                <Ionicons name={showAdminSection ? "chevron-up" : "chevron-down"} size={20} color="#B71C1C" />
+                <Ionicons name={showAdminSection ? "chevron-up" : "chevron-down"} size={20} color='#B71C1C' />
               </TouchableOpacity>
 
               {showAdminSection && (
                 <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#B71C1C" }]}>
-                  <Text style={{ fontSize: 13, fontWeight: "700", color: "#B71C1C", padding: 12, paddingBottom: 4 }}>
-                    Declined Returns
-                  </Text>
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: "#B71C1C", padding: 12, paddingBottom: 4 }}>Declined Returns</Text>
 
                   {adminLoading ? (
-                    <ActivityIndicator size="small" color="#B71C1C" style={{ margin: 16 }} />
+                    <ActivityIndicator size='small' color='#B71C1C' style={{ margin: 16 }} />
                   ) : adminError ? (
                     <Text style={{ color: "#B71C1C", padding: 12, fontSize: 13 }}>{adminError}</Text>
                   ) : adminReturns.length === 0 ? (
@@ -1208,98 +1178,99 @@ export default function SettingsScreen() {
                   ) : (
                     <>
                       {/* Table Header */}
-                        <View style={{
+                      <View
+                        style={{
                           flexDirection: "row",
                           backgroundColor: "#B71C1C",
                           paddingVertical: 6,
                           paddingHorizontal: 8,
                           alignItems: "center",
-                        }}>
-                          <Text style={{ flex: 1, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Buyer</Text>
-                          <Text style={{ flex: 1, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Seller</Text>
-                          <Text style={{ flex: 1.2, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Txn ID</Text>
-                          <Text style={{ flex: 1.5, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Notes</Text>
-                          <Text style={{ flex: 1, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Decline</Text>
-                          <Text style={{ flex: 0.6, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Action</Text>
-                        </View>
+                        }}
+                      >
+                        <Text style={{ flex: 1, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Buyer</Text>
+                        <Text style={{ flex: 1, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Seller</Text>
+                        <Text style={{ flex: 1.2, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Txn ID</Text>
+                        <Text style={{ flex: 1.5, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Notes</Text>
+                        <Text style={{ flex: 1, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Decline</Text>
+                        <Text style={{ flex: 0.6, fontSize: 11, color: "#fff", fontWeight: "bold" }}>Action</Text>
+                      </View>
 
-                        {adminReturns.map((item, idx) => {
-                          const buyerNote = (item.transaction_return_note || "").trim() || "No note";
-                          const sellerNote = (item.transaction_return_seller_note || "").trim();
+                      {adminReturns.map((item, idx) => {
+                        const buyerNote = (item.transaction_return_note || "").trim() || "No note";
+                        const sellerNote = (item.transaction_return_seller_note || "").trim();
 
-                          return (
-                            <View key={item.transaction_uid || idx} style={{
+                        return (
+                          <View
+                            key={item.transaction_uid || idx}
+                            style={{
                               paddingVertical: 8,
                               paddingHorizontal: 8,
                               borderBottomWidth: 1,
                               borderBottomColor: darkMode ? "#444" : "#eee",
                               backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#fff5f5") : "transparent",
-                            }}>
-                              <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 6 }}>
-
-                                {/* Buyer — tappable */}
-                                <TouchableOpacity
-                                  style={{ flex: 1 }}
-                                  onPress={() => {
-                                    setResolveModalVisible(false);
-                                    navigation.navigate("Profile", { profile_uid: item.transaction_profile_id });
-                                  }}
-                                >
-                                  <Text style={{ fontSize: 10, color: "#007AFF", fontWeight: "600", textDecorationLine: "underline" }} numberOfLines={2}>
-                                    {item.buyer_name || item.transaction_profile_id || "N/A"}
-                                  </Text>
-                                </TouchableOpacity>
-
-                                {/* Seller — tappable */}
-                                <TouchableOpacity
-                                  style={{ flex: 1 }}
-                                  onPress={() => {
-                                    setResolveModalVisible(false);
-                                    navigation.navigate("Profile", { profile_uid: item.transaction_business_id });
-                                  }}
-                                >
-                                  <Text style={{ fontSize: 10, color: "#007AFF", fontWeight: "600", textDecorationLine: "underline" }} numberOfLines={2}>
-                                    {item.seller_name || item.transaction_business_id || "N/A"}
-                                  </Text>
-                                </TouchableOpacity>
-
-                                <Text style={{ flex: 1.2, fontSize: 10, color: "#B71C1C" }} numberOfLines={2}>
-                                  {item.transaction_uid || "N/A"}
+                            }}
+                          >
+                            <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 6 }}>
+                              {/* Buyer — tappable */}
+                              <TouchableOpacity
+                                style={{ flex: 1 }}
+                                onPress={() => {
+                                  setResolveModalVisible(false);
+                                  navigation.navigate("Profile", { profile_uid: item.transaction_profile_id });
+                                }}
+                              >
+                                <Text style={{ fontSize: 10, color: "#007AFF", fontWeight: "600", textDecorationLine: "underline" }} numberOfLines={2}>
+                                  {item.buyer_name || item.transaction_profile_id || "N/A"}
                                 </Text>
-                                <Text style={{ flex: 1.5, fontSize: 10, color: darkMode ? "#ccc" : "#555", lineHeight: 14 }} numberOfLines={4}>
-                                  {buyerNote}
-                                </Text>
-                                <Text style={{ flex: 1, fontSize: 10, color: sellerNote ? "#B71C1C" : "#aaa", lineHeight: 14 }} numberOfLines={3}>
-                                  {sellerNote || "None"}
-                                </Text>
+                              </TouchableOpacity>
 
-                                {/* Resolve button */}
-                                <TouchableOpacity
-                                  style={{
-                                    alignSelf: "flex-start",
-                                    backgroundColor: "#18884A",
-                                    paddingVertical: 4,
-                                    paddingHorizontal: 12,
-                                    borderRadius: 6,
-                                  }}
-                                  onPress={() => {
-                                    setResolvingItem(item);
-                                    setResolveModalVisible(true);
-                                  }}
-                                >
-                                  <Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>✓ Resolve</Text>
-                                </TouchableOpacity>
-                              </View>
+                              {/* Seller — tappable */}
+                              <TouchableOpacity
+                                style={{ flex: 1 }}
+                                onPress={() => {
+                                  setResolveModalVisible(false);
+                                  navigation.navigate("Profile", { profile_uid: item.transaction_business_id });
+                                }}
+                              >
+                                <Text style={{ fontSize: 10, color: "#007AFF", fontWeight: "600", textDecorationLine: "underline" }} numberOfLines={2}>
+                                  {item.seller_name || item.transaction_business_id || "N/A"}
+                                </Text>
+                              </TouchableOpacity>
+
+                              <Text style={{ flex: 1.2, fontSize: 10, color: "#B71C1C" }} numberOfLines={2}>
+                                {item.transaction_uid || "N/A"}
+                              </Text>
+                              <Text style={{ flex: 1.5, fontSize: 10, color: darkMode ? "#ccc" : "#555", lineHeight: 14 }} numberOfLines={4}>
+                                {buyerNote}
+                              </Text>
+                              <Text style={{ flex: 1, fontSize: 10, color: sellerNote ? "#B71C1C" : "#aaa", lineHeight: 14 }} numberOfLines={3}>
+                                {sellerNote || "None"}
+                              </Text>
+
+                              {/* Resolve button */}
+                              <TouchableOpacity
+                                style={{
+                                  alignSelf: "flex-start",
+                                  backgroundColor: "#18884A",
+                                  paddingVertical: 4,
+                                  paddingHorizontal: 12,
+                                  borderRadius: 6,
+                                }}
+                                onPress={() => {
+                                  setResolvingItem(item);
+                                  setResolveModalVisible(true);
+                                }}
+                              >
+                                <Text style={{ color: "#fff", fontSize: 11, fontWeight: "600" }}>✓ Resolve</Text>
+                              </TouchableOpacity>
                             </View>
-                          );
-                        })}
+                          </View>
+                        );
+                      })}
 
-                        <TouchableOpacity
-                          style={{ padding: 10, alignItems: "center" }}
-                          onPress={fetchAdminReturns}
-                        >
-                          <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
-                        </TouchableOpacity>
+                      <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminReturns}>
+                        <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
+                      </TouchableOpacity>
                     </>
                   )}
                 </View>
@@ -1496,17 +1467,15 @@ export default function SettingsScreen() {
       </Modal>
 
       {/* Resolve Modal */}
-      <Modal visible={resolveModalVisible} transparent={true} animationType="fade" onRequestClose={() => setResolveModalVisible(false)}>
+      <Modal visible={resolveModalVisible} transparent={true} animationType='fade' onRequestClose={() => setResolveModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalBox, darkMode && styles.darkModalBox, { width: "85%", padding: 24 }]}>
-            <MaterialIcons name="gavel" size={32} color="#B71C1C" style={{ marginBottom: 12 }} />
-            <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle, { fontSize: 16 }]}>
-              Resolve in favor of...
-            </Text>
+            <MaterialIcons name='gavel' size={32} color='#B71C1C' style={{ marginBottom: 12 }} />
+            <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle, { fontSize: 16 }]}>Resolve in favor of...</Text>
             <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666", textAlign: "center", marginBottom: 20 }}>
               {resolvingItem?.buyer_name} vs {resolvingItem?.seller_name}
             </Text>
-            
+
             <View style={{ flexDirection: "row", gap: 12, width: "100%" }}>
               {/* Buyer wins — red highlight stays, taxes go negative */}
               <TouchableOpacity
@@ -1524,8 +1493,8 @@ export default function SettingsScreen() {
                     });
                     const result = await res.json();
                     if (result.code === 200) {
-                      setResolvedInFavorOf(prev => ({ ...prev, [resolvingItem.transaction_uid]: "buyer" }));
-                      setAdminReturns(prev => prev.filter(r => r.transaction_uid !== resolvingItem.transaction_uid));
+                      setResolvedInFavorOf((prev) => ({ ...prev, [resolvingItem.transaction_uid]: "buyer" }));
+                      setAdminReturns((prev) => prev.filter((r) => r.transaction_uid !== resolvingItem.transaction_uid));
                       await AsyncStorage.setItem(`return_status_${resolvingItem.transaction_uid}`, "accepted");
                       setResolveModalVisible(false);
                       setResolvingItem(null);
@@ -1554,8 +1523,8 @@ export default function SettingsScreen() {
                     });
                     const result = await res.json();
                     if (result.code === 200) {
-                      setResolvedInFavorOf(prev => ({ ...prev, [resolvingItem.transaction_uid]: "seller" }));
-                      setAdminReturns(prev => prev.filter(r => r.transaction_uid !== resolvingItem.transaction_uid));
+                      setResolvedInFavorOf((prev) => ({ ...prev, [resolvingItem.transaction_uid]: "seller" }));
+                      setAdminReturns((prev) => prev.filter((r) => r.transaction_uid !== resolvingItem.transaction_uid));
                       await AsyncStorage.setItem(`return_status_${resolvingItem.transaction_uid}`, "resolved");
                       setResolveModalVisible(false);
                       setResolvingItem(null);
@@ -1571,7 +1540,10 @@ export default function SettingsScreen() {
             </View>
             <TouchableOpacity
               style={{ marginTop: 16 }}
-              onPress={() => { setResolveModalVisible(false); setResolvingItem(null); }}
+              onPress={() => {
+                setResolveModalVisible(false);
+                setResolvingItem(null);
+              }}
             >
               <Text style={{ color: darkMode ? "#aaa" : "#666", fontSize: 13 }}>Cancel</Text>
             </TouchableOpacity>
@@ -1642,14 +1614,26 @@ const styles = StyleSheet.create({
     gap: 2,
     flexShrink: 0,
   },
+  /** Web: compact pair on same row; extra gap shifts left pill left, right pill stays at row end */
   settingsToggleRowWeb: {
-    gap: 14,
+    gap: 20,
+    flexShrink: 0,
+    alignItems: "center",
   },
   togglePill: {
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderRadius: 20,
     backgroundColor: "transparent",
+  },
+  /** Web: smaller pills, stay inline with row title */
+  togglePillWeb: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    minWidth: 52,
+    alignItems: "center",
+    justifyContent: "center",
   },
   togglePillActiveRed: {
     backgroundColor: "#ef9a9a",
@@ -1667,6 +1651,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#4e4e4e",
     fontWeight: "500",
+  },
+  togglePillTextWeb: {
+    fontSize: 12,
   },
   togglePillTextActive: {
     color: "#fff",

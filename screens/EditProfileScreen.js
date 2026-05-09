@@ -17,6 +17,7 @@ import ExpertiseSection, { validateExpertise } from "../components/ExpertiseSect
 import SeekingSection, { validateSeeking } from "../components/SeekingSection";
 import BusinessSection from "../components/BusinessSection";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -1014,6 +1015,11 @@ const EditProfileScreen = ({ route, navigation }) => {
 
       if (response.status === 200) {
         console.log("Profile update successful");
+        try {
+          await refreshSessionProfileFromNetwork(trimmedProfileUID);
+        } catch (e) {
+          console.warn("EditProfileScreen - refreshSessionProfileFromNetwork failed:", e);
+        }
         Alert.alert("Success", "Profile updated successfully!");
         setOriginalProfileImage(profileImageUri); // Update the original image after successful save
         setWebImageFile(null); // Clear the web file after successful upload

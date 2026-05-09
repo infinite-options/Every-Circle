@@ -15,6 +15,7 @@ import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 import { useUnread } from "../contexts/UnreadContext";
 import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
+import { saveSessionProfilePayload, clearUserProfileCacheStorage } from "../utils/sessionProfile";
 
 export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, navigation, route }) {
   const { reinitialize } = useUnread();
@@ -403,6 +404,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               ) {
                 console.log("SignUpScreen - Profile not found for user, routing to UserInfo");
                 await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+                await clearUserProfileCacheStorage();
                 await AsyncStorage.setItem("user_uid", user_uid);
                 await AsyncStorage.setItem("user_email_id", user_email);
 
@@ -453,6 +455,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                 ) {
                   console.log("SignUpScreen - Profile not found in catch block, routing to UserInfo");
                   await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
+                  await clearUserProfileCacheStorage();
                   await AsyncStorage.setItem("user_uid", createAccountData.user_uid);
                   setIsAttemptingLogin(false);
                   navigation.navigate("UserInfo");
