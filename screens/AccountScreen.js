@@ -1,12 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity, Platform, Modal, Alert, TextInput } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
-import { BOUNTY_RESULTS_ENDPOINT, API_BASE_URL, BUSINESS_BOUNTY_RESULTS_ENDPOINT, BUSINESS_INFO_ENDPOINT, TRANSACTION_RECEIPT_ENDPOINT } from "../apiConfig";
+import { ACCOUNT_SCREEN_PERSONAL_ENDPOINT, ACCOUNT_SCREEN_BUSINESS_ENDPOINT, API_BASE_URL, BUSINESS_INFO_ENDPOINT, TRANSACTION_RECEIPT_ENDPOINT } from "../apiConfig";
 import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
-import { useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
@@ -17,6 +16,190 @@ import MiniCard from "../components/MiniCard";
 
 /** 1 = compact: Purchases (Date, Type, Seller, Paid, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
+
+/**
+ * Expected GET /api/v1/account-screen/personal/:profile_id JSON (flexible keys):
+ * - data.transactions | purchase_transactions | personal_transactions: buyer transaction rows OR { code, data }
+ * - data.bounty | bounty_results | bounty_data: same shape as legacy /api/bountyresults body, or bounty_items[] + totals
+ * - data.seller_transactions | seller_tx: line items for seller-side expertise qty OR { code, data } (omit key → legacy fetch)
+ * - data.profile | user_profile: optional { user_email, personal_info, expertise_info } for MiniCard + expertise list
+ */
+function mapAccountScreenPersonalResponse(json) {
+  const root = json && typeof json === "object" ? json : {};
+  if (Array.isArray(root.data)) {
+    return {
+      transactions: root.code === 200 ? root.data : [],
+      bounty: null,
+      sellerTransactions: undefined,
+      profile: null,
+    };
+  }
+  const payload = root.data !== undefined && root.data !== null && typeof root.data === "object" && !Array.isArray(root.data) ? root.data : root;
+
+  let transactions = [];
+  const txRaw =
+    payload.transactions ?? payload.purchase_transactions ?? payload.personal_transactions ?? payload.buyer_transactions ?? payload.transaction_list ?? payload.purchases ?? payload.purchase_list;
+  if (Array.isArray(txRaw)) {
+    transactions = txRaw;
+  } else if (txRaw && txRaw.code === 200 && Array.isArray(txRaw.data)) {
+    transactions = txRaw.data;
+  }
+  // Nested legacy shape: { message, code: 200, data: [ rows ] } embedded under payload
+  if (!transactions.length && payload && typeof payload === "object") {
+    const legacyBlock = payload.transactions_legacy ?? payload.transaction_payload ?? payload.transaction_response ?? payload.buyer_transaction_response;
+    if (legacyBlock && legacyBlock.code === 200 && Array.isArray(legacyBlock.data)) {
+      transactions = legacyBlock.data;
+    } else if (payload.code === 200 && Array.isArray(payload.data)) {
+      const sample = payload.data[0];
+      if (sample && (sample.transaction_uid != null || sample.ti_uid != null)) {
+        transactions = payload.data;
+      }
+    }
+  }
+
+  let bounty = payload.bounty ?? payload.bounty_results ?? payload.bounty_data ?? null;
+  if (!bounty && Array.isArray(payload.bounty_items)) {
+    bounty = {
+      data: payload.bounty_items,
+      total_bounty_earned: payload.total_bounty_earned,
+      total_bounties: payload.total_bounties,
+    };
+  }
+
+  let sellerTransactions;
+  const stRaw = payload.seller_transactions ?? payload.seller_tx ?? payload.seller_transaction_lines;
+  if (stRaw === undefined) {
+    sellerTransactions = undefined;
+  } else if (Array.isArray(stRaw)) {
+    sellerTransactions = stRaw;
+  } else if (stRaw && stRaw.code === 200 && Array.isArray(stRaw.data)) {
+    sellerTransactions = stRaw.data;
+  } else {
+    sellerTransactions = [];
+  }
+
+  const profile = payload.profile ?? payload.user_profile ?? payload.personal_profile ?? null;
+
+  return { transactions, bounty, sellerTransactions, profile };
+}
+
+/**
+ * Expected GET /api/v1/account-screen/business/:business_uid JSON (flexible keys):
+ * - data.bounty_results | business_bounty | bounty: { data: [...] } (business bounty lines)
+ * - data.seller_transactions | transactions_seller: seller line rows OR { code, data } (same as legacy /transactions/seller/:id)
+ */
+function mapAccountScreenBusinessResponse(json) {
+  const root = json && typeof json === "object" ? json : {};
+  let payload = root;
+  if (root.data !== undefined && typeof root.data === "object" && !Array.isArray(root.data)) {
+    payload = root.data;
+  }
+
+  let bountyResult = payload.bounty_results ?? payload.business_bounty ?? payload.bounty ?? null;
+  if (bountyResult && !bountyResult.data && Array.isArray(payload.bounty_lines)) {
+    bountyResult = { ...bountyResult, data: payload.bounty_lines };
+  }
+
+  let sellerLines = [];
+  const sellerRaw = payload.seller_transactions ?? payload.transactions_seller ?? payload.business_seller_transactions;
+  if (Array.isArray(sellerRaw)) {
+    sellerLines = sellerRaw;
+  } else if (sellerRaw && sellerRaw.code === 200 && Array.isArray(sellerRaw.data)) {
+    sellerLines = sellerRaw.data;
+  } else if (root.code === 200 && Array.isArray(root.data) && !sellerRaw) {
+    sellerLines = root.data;
+  }
+
+  if (!bountyResult) {
+    bountyResult = { data: [] };
+  }
+
+  return { bountyResult, sellerLines };
+}
+
+function parseExpertiseInfo(raw) {
+  if (raw == null) return [];
+  try {
+    return typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch {
+    return [];
+  }
+}
+
+function buildExpertiseRows(expertiseList, sellerTransactions) {
+  const list = Array.isArray(expertiseList) ? expertiseList : [];
+  const sellerTx = Array.isArray(sellerTransactions) ? sellerTransactions : [];
+  return list.map((exp) => {
+    const expertiseUid = exp.profile_expertise_uid;
+    const costString = exp.profile_expertise_cost || "";
+    let cost = "";
+    let unit = "";
+    if (costString) {
+      const match = costString.match(/\$?(\d+(?:\.\d+)?)\s*(\/\w+|\w+)?/);
+      if (match) {
+        cost = match[1] || "";
+        unit = match[2] || "";
+      } else {
+        cost = costString;
+      }
+    }
+    let totalQty = 0;
+    sellerTx.forEach((transaction) => {
+      if (transaction.ti_bs_id === expertiseUid) {
+        const qty = parseInt(transaction.ti_bs_qty) || 0;
+        totalQty += qty;
+      }
+    });
+    return {
+      name: exp.profile_expertise_title || "",
+      cost,
+      unit,
+      bounty: exp.profile_expertise_bounty || "",
+      quantity: totalQty,
+      isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
+    };
+  });
+}
+
+/** Same rows as GET /api/v1/transactions/:profile_id — used when account-screen omits purchases or uses unknown keys. */
+async function fetchLegacyPersonalBuyerTransactions(profileId) {
+  if (!profileId) return [];
+  const transactionsUrl = `${API_BASE_URL}/api/v1/transactions/${profileId}`;
+  try {
+    const response = await fetch(transactionsUrl, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (response.status === 400) return [];
+    if (!response.ok) return [];
+    const result = await response.json();
+    if (result && result.code === 200 && Array.isArray(result.data)) return result.data;
+  } catch (e) {
+    console.error("Legacy buyer transactions fetch failed:", e);
+  }
+  return [];
+}
+
+async function fetchLegacySellerTransactionsForProfile(profileId) {
+  const sellerTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${profileId}`;
+  try {
+    const transactionsResponse = await fetch(sellerTransactionsUrl, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (transactionsResponse.ok) {
+      const transactionsResult = await transactionsResponse.json();
+      if (transactionsResult && transactionsResult.code === 200 && Array.isArray(transactionsResult.data)) {
+        return transactionsResult.data;
+      }
+    } else if (transactionsResponse.status === 400) {
+      return [];
+    }
+  } catch (e) {
+    console.error("Legacy seller transactions fetch failed:", e);
+  }
+  return [];
+}
 
 export default function AccountScreen({ navigation }) {
   const { darkMode } = useDarkMode();
@@ -83,11 +266,13 @@ export default function AccountScreen({ navigation }) {
   const [returnStatuses, setReturnStatuses] = useState({});
   const [viewingReturnTransactionUid, setViewingReturnTransactionUid] = useState(null);
 
-  //select item to return 
+  //select item to return
   const [selectedReturnItems, setSelectedReturnItems] = useState([]);
   const [returnModalReceiptData, setReturnModalReceiptData] = useState([]);
 
   const [businessReceiptCache, setBusinessReceiptCache] = useState({});
+  /** Avoid duplicate receipt GETs when re-expanding the same business transaction */
+  const businessReceiptFetchedRef = useRef(new Set());
 
   const [showDeclineNoteModal, setShowDeclineNoteModal] = useState(false);
   const [declineNote, setDeclineNote] = useState("");
@@ -102,89 +287,6 @@ export default function AccountScreen({ navigation }) {
       setUserUID("");
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // Transaction data loader
-  const refreshTransactionData = async () => {
-    try {
-      // console.log("=== STARTING TRANSACTION DATA LOAD ===");
-      setTransactionLoading(true);
-      const profileId = await AsyncStorage.getItem("profile_uid");
-      // console.log("Profile ID from AsyncStorage:", profileId);
-      if (profileId) {
-        const transactionsUrl = `${API_BASE_URL}/api/v1/transactions/${profileId}`;
-        // console.log("Making GET request to:", transactionsUrl);
-        const response = await fetch(transactionsUrl, {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
-        // console.log("Response status:", response.status);
-        // console.log("Response ok:", response.ok);
-
-        // Handle 400 status as empty transactions (no transactions found)
-        if (response.status === 400) {
-          console.log("No transactions found (400 status), treating as empty result");
-          setTransactionData([]);
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const result = await response.json();
-        // console.log("=== TRANSACTION API RESPONSE ===");
-        // console.log("Full API response:", JSON.stringify(result, null, 2));
-        // console.log("Response code:", result?.code);
-        // console.log("Response message:", result?.message);
-        // console.log("Data array length:", result?.data?.length);
-        // console.log("Count:", result?.count);
-        // if (result?.data && result.data.length > 0) {
-        //   console.log("First transaction:", JSON.stringify(result.data[0], null, 2));
-        // }
-        // console.log("=== END TRANSACTION API RESPONSE ===");
-
-        // Extract transactions from response.data
-        const transactions = result && result.code === 200 && Array.isArray(result.data) ? result.data : [];
-        console.log("Final transactions array length:", transactions.length);
-
-        // Pre-fetch seller totals for all transactions in parallel
-        const withTotals = await Promise.all(
-          transactions.map(async (t) => {
-            try {
-              const sellerId = t.seller_id || "";
-              const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${t.transaction_profile_id}/${t.transaction_uid}${sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : ""}`;
-              const r = await fetch(url, {
-                method: "GET",
-                headers: { "Content-Type": "application/json" },
-              });
-              if (!r.ok) return t;
-              const data = await r.json();
-              const items = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
-              const sellerTotal = items.reduce((sum, item) => {
-                return sum + parseFloat(item.ti_bs_cost || 0) * (parseInt(item.ti_bs_qty) || 1);
-              }, 0);
-              return { ...t, seller_total: sellerTotal };
-            } catch {
-              return t;
-            }
-          })
-        );
-
-        setTransactionData(withTotals);
-      } else {
-        console.log("No profile ID found, skipping transaction data fetch");
-        setTransactionData([]);
-      }
-    } catch (error) {
-      console.error("Error loading transaction data:", error);
-      // Set empty array instead of showing error - no transactions is a valid state
-      setTransactionData([]);
-    } finally {
-      setTransactionLoading(false);
     }
   };
 
@@ -242,7 +344,7 @@ export default function AccountScreen({ navigation }) {
     const uid = transaction?.transaction_uid;
     if (!uid) return;
     try {
-      const existingNote = returnRequests[uid]?.notes?.map(n => n.note).join("\n\n---RETURN---\n\n") || "";
+      const existingNote = returnRequests[uid]?.notes?.map((n) => n.note).join("\n\n---RETURN---\n\n") || "";
       const allNotes = existingNote ? `${existingNote}\n\n---RETURN---\n\n${note}` : note;
       await fetch(`${API_BASE_URL}/api/v1/transactions`, {
         method: "PUT",
@@ -376,32 +478,6 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
-  const updateTransactionEscrow = async (transactionUid) => {
-    try {
-      setUpdatingEscrow(true);
-      const url = `${API_BASE_URL}/api/v1/transactions`;
-      const response = await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transaction_uid: transactionUid,
-          transaction_in_escrow: 0,
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to update: ${response.status}`);
-      }
-      setShowReceiveItemModal(false);
-      setPendingTransactionForConfirm(null);
-      await refreshTransactionData();
-    } catch (error) {
-      console.error("Error updating transaction escrow:", error);
-      Alert.alert("Error", "Failed to update payment status. Please try again.");
-    } finally {
-      setUpdatingEscrow(false);
-    }
-  };
-
   const fetchPersonalProfileData = async () => {
     try {
       const session = await getSessionProfile();
@@ -430,137 +506,143 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
-  // Bounty data loader
-  const refreshBountyData = async () => {
+  /** GET /api/v1/account-screen/personal/:profile_id — maps to purchases, bounties, sales (expertise qty). */
+  const refreshAccountScreenPersonal = async () => {
     try {
+      setTransactionLoading(true);
       setBountyLoading(true);
-      const profileId = await AsyncStorage.getItem("profile_uid");
-      if (profileId) {
-        const response = await fetch(`${BOUNTY_RESULTS_ENDPOINT}/${profileId}`);
-
-        // Check if response is ok before parsing JSON
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        // Check content type to ensure we're getting JSON
-        const contentType = response.headers.get("content-type");
-        if (!contentType || !contentType.includes("application/json")) {
-          const textResponse = await response.text();
-          console.error("Non-JSON response received:", textResponse.substring(0, 200));
-          throw new Error("API returned non-JSON response. Please check the endpoint.");
-        }
-
-        const result = await response.json();
-        // console.log("Bounty results:", result);
-        setBountyData(result);
+      setExpertiseLoading(true);
+      const rawProfileId = await AsyncStorage.getItem("profile_uid");
+      const profileId = rawProfileId ? String(rawProfileId).trim() : "";
+      if (!profileId) {
+        console.log("No profile ID found, skipping account-screen personal fetch");
+        setTransactionData([]);
+        setBountyData(null);
+        setExpertiseData([]);
+        return;
       }
+      const url = `${ACCOUNT_SCREEN_PERSONAL_ENDPOINT}/${profileId}`;
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (response.status === 400) {
+        // Treat as empty aggregate payload but still load purchases/bounties/sales like legacy.
+        const legacyTx = await fetchLegacyPersonalBuyerTransactions(profileId);
+        setTransactionData(legacyTx);
+        setBountyData({ data: [] });
+        let sellerTx = await fetchLegacySellerTransactionsForProfile(profileId);
+        const session = await getSessionProfile();
+        const profileResult = session?.rawProfile || (await getSessionProfile({ forceRefresh: true }))?.rawProfile;
+        const expertiseList = profileResult?.expertise_info ? parseExpertiseInfo(profileResult.expertise_info) : [];
+        setExpertiseData(buildExpertiseRows(expertiseList, sellerTx));
+        await fetchPersonalProfileData();
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(`account-screen personal HTTP ${response.status}`);
+      }
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("account-screen personal returned non-JSON");
+      }
+      const json = await response.json();
+      const mapped = mapAccountScreenPersonalResponse(json);
+
+      let purchaseRows = mapped.transactions;
+      if (!purchaseRows.length) {
+        purchaseRows = await fetchLegacyPersonalBuyerTransactions(profileId);
+      }
+
+      setTransactionData(purchaseRows);
+
+      if (mapped.bounty) {
+        setBountyData(mapped.bounty);
+      } else {
+        setBountyData({ data: [] });
+      }
+
+      if (mapped.profile?.personal_info) {
+        const result = mapped.profile;
+        setPersonalProfileData({
+          firstName: result.personal_info.profile_personal_first_name || "",
+          lastName: result.personal_info.profile_personal_last_name || "",
+          email: result.user_email || "",
+          phoneNumber: result.personal_info.profile_personal_phone_number || "",
+          tagLine: result.personal_info.profile_personal_tag_line || "",
+          city: result.personal_info.profile_personal_city || "",
+          state: result.personal_info.profile_personal_state || "",
+          profileImage: result.personal_info.profile_personal_image || "",
+          emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
+          phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
+          tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
+          locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
+          imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
+        });
+      } else {
+        await fetchPersonalProfileData();
+      }
+
+      let sellerTx = mapped.sellerTransactions;
+      if (sellerTx === undefined) {
+        sellerTx = await fetchLegacySellerTransactionsForProfile(profileId);
+      }
+
+      const session = await getSessionProfile();
+      const profileResult = session?.rawProfile || (await getSessionProfile({ forceRefresh: true }))?.rawProfile;
+      let expertiseList = [];
+      if (mapped.profile?.expertise_info != null) {
+        expertiseList = parseExpertiseInfo(mapped.profile.expertise_info);
+      } else if (profileResult?.expertise_info) {
+        expertiseList = parseExpertiseInfo(profileResult.expertise_info);
+      }
+      setExpertiseData(buildExpertiseRows(expertiseList, sellerTx));
     } catch (error) {
-      console.error("Error loading bounty data:", error);
+      console.error("Error loading account-screen personal:", error);
+      try {
+        const rawPid = await AsyncStorage.getItem("profile_uid");
+        const pid = rawPid ? String(rawPid).trim() : "";
+        if (pid) {
+          const legacy = await fetchLegacyPersonalBuyerTransactions(pid);
+          setTransactionData(legacy);
+        } else {
+          setTransactionData([]);
+        }
+      } catch {
+        setTransactionData([]);
+      }
       setBountyData({ error: error.message });
+      setExpertiseData([]);
     } finally {
+      setTransactionLoading(false);
       setBountyLoading(false);
+      setExpertiseLoading(false);
     }
   };
 
-  // Expertise data
-  const refreshExpertiseData = async () => {
+  const updateTransactionEscrow = async (transactionUid) => {
     try {
-      setExpertiseLoading(true);
-      const session = await getSessionProfile();
-      const profileId = session?.profileUid || (await AsyncStorage.getItem("profile_uid"));
-      if (profileId) {
-        // Reuse cached profile payload to avoid duplicate USER_PROFILE_INFO requests.
-        const profileResult = session?.rawProfile || (await getSessionProfile({ forceRefresh: true }))?.rawProfile;
-        if (!profileResult) {
-          throw new Error("Failed to load profile expertise data");
-        }
-        // console.log("Expertise API response:", profileResult);
-
-        // Parse expertise_info
-        const expertiseList = profileResult.expertise_info ? (typeof profileResult.expertise_info === "string" ? JSON.parse(profileResult.expertise_info) : profileResult.expertise_info) : [];
-
-        // Fetch transactions where I am the SELLER
-        const sellerTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${profileId}`;
-        let sellerTransactions = [];
-
-        try {
-          console.log("Fetching seller transactions from:", sellerTransactionsUrl);
-          const transactionsResponse = await fetch(sellerTransactionsUrl, {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-            },
-          });
-
-          if (transactionsResponse.ok) {
-            const transactionsResult = await transactionsResponse.json();
-            console.log("Seller transactions result:", transactionsResult);
-
-            if (transactionsResult && transactionsResult.code === 200 && Array.isArray(transactionsResult.data)) {
-              sellerTransactions = transactionsResult.data;
-            }
-          } else if (transactionsResponse.status === 400) {
-            console.log("No seller transactions found (400 status)");
-            sellerTransactions = [];
-          }
-        } catch (error) {
-          console.error("Error fetching seller transactions for expertise quantities:", error);
-        }
-
-        // Map expertise with quantities from seller transactions
-        const expertise = expertiseList.map((exp) => {
-          const expertiseUid = exp.profile_expertise_uid;
-          const costString = exp.profile_expertise_cost || "";
-
-          // Parse cost to separate amount and unit
-          let cost = "";
-          let unit = "";
-          if (costString) {
-            const match = costString.match(/\$?(\d+(?:\.\d+)?)\s*(\/\w+|\w+)?/);
-            if (match) {
-              cost = match[1] || "";
-              unit = match[2] || "";
-            } else {
-              cost = costString;
-            }
-          }
-
-          // Calculate total quantity sold for this expertise
-          let totalQty = 0;
-          // console.log(`Checking seller transactions for expertise: ${exp.profile_expertise_title} (UID: ${expertiseUid})`);
-          // console.log(`Total seller transaction items to check: ${sellerTransactions.length}`);
-
-          sellerTransactions.forEach((transaction) => {
-            // console.log(`Seller transaction item ti_bs_id: ${transaction.ti_bs_id}, ti_bs_qty: ${transaction.ti_bs_qty}`);
-
-            if (transaction.ti_bs_id === expertiseUid) {
-              // console.log(`✓ MATCH found for ${exp.profile_expertise_title}!`);
-              const qty = parseInt(transaction.ti_bs_qty) || 0;
-              totalQty += qty;
-              // console.log(`Added quantity: ${qty}, New total: ${totalQty}`);
-            }
-          });
-
-          // console.log(`Final quantity for ${exp.profile_expertise_title}: ${totalQty}`);
-
-          return {
-            name: exp.profile_expertise_title || "",
-            cost: cost,
-            unit: unit,
-            bounty: exp.profile_expertise_bounty || "",
-            quantity: totalQty,
-            isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
-          };
-        });
-
-        setExpertiseData(expertise);
+      setUpdatingEscrow(true);
+      const url = `${API_BASE_URL}/api/v1/transactions`;
+      const response = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transaction_uid: transactionUid,
+          transaction_in_escrow: 0,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to update: ${response.status}`);
       }
+      setShowReceiveItemModal(false);
+      setPendingTransactionForConfirm(null);
+      await refreshAccountScreenPersonal();
     } catch (error) {
-      console.error("Error loading expertise data:", error);
-      setExpertiseData([]);
+      console.error("Error updating transaction escrow:", error);
+      Alert.alert("Error", "Failed to update payment status. Please try again.");
     } finally {
-      setExpertiseLoading(false);
+      setUpdatingEscrow(false);
     }
   };
 
@@ -682,238 +764,182 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
-  const refreshBusinessTransactionData = async () => {
-    try {
-      // console.log("=== STARTING BUSINESS TRANSACTION DATA LOAD ===");
-      setBusinessTransactionLoading(true);
-
-      // If personal account is selected, don't load business data
-      if (selectedAccount === "personal") {
-        setBusinessTransactionData([]);
-        setBusinessTransactionLoading(false);
-        return;
+  /** Loads receipt line items for one business transaction (seller_id = current business). Call only when user expands a row or opens return details. */
+  const prefetchBusinessReceiptForTransaction = useCallback(
+    async (txn) => {
+      const uid = txn?.transaction_uid;
+      const biz = selectedAccount !== "personal" ? selectedAccount : businessUID;
+      if (!uid || !biz || !txn?.transaction_profile_id) return;
+      if (businessReceiptFetchedRef.current.has(uid)) return;
+      businessReceiptFetchedRef.current.add(uid);
+      try {
+        const r = await fetch(`${TRANSACTION_RECEIPT_ENDPOINT}/${txn.transaction_profile_id}/${uid}?seller_id=${encodeURIComponent(biz)}`, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        });
+        let items = [];
+        if (r.ok) {
+          const data = await r.json();
+          items = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+        }
+        setBusinessReceiptCache((prev) => ({ ...prev, [uid]: items }));
+      } catch {
+        businessReceiptFetchedRef.current.delete(uid);
+        setBusinessReceiptCache((prev) => ({ ...prev, [uid]: [] }));
       }
+    },
+    [selectedAccount, businessUID],
+  );
 
-      // Get the selected business UID
-      const targetBusinessUID = selectedAccount;
+  /**
+   * GET /api/v1/account-screen/business/:business_uid — product results + seller lines for grouping/receipts.
+   * @param {string} [primaryBusinessUidOverride] — use right after fetchUserBusinesses() before React state updates.
+   */
+  const refreshAccountScreenBusiness = async (primaryBusinessUidOverride) => {
+    try {
+      setBusinessTransactionLoading(true);
+      setBusinessBountyLoading(true);
+      const targetBusinessUID = selectedAccount !== "personal" ? selectedAccount : (primaryBusinessUidOverride ?? businessUID);
 
       if (!targetBusinessUID) {
         console.log("No business UID available");
         setBusinessTransactionData([]);
-        setBusinessTransactionLoading(false);
+        setBusinessBountyData(null);
+        setBusinessReceiptCache({});
+        businessReceiptFetchedRef.current = new Set();
         return;
       }
 
-      // console.log(`Fetching transactions for business: ${targetBusinessUID}`);
+      businessReceiptFetchedRef.current = new Set();
+      setBusinessReceiptCache({});
 
-      // First, fetch the business bounty data which has bs_bounty and ti_bs_qty
-      let bountyDataByTransaction = {};
-      try {
-        const bountyResponse = await fetch(`${BUSINESS_BOUNTY_RESULTS_ENDPOINT}/${targetBusinessUID}`);
-        if (bountyResponse.ok) {
-          const bountyResult = await bountyResponse.json();
-          // console.log("Business bounty result:", bountyResult);
-
-          if (bountyResult && bountyResult.data && Array.isArray(bountyResult.data)) {
-            // Group by transaction_uid and sum bounty_paid
-            bountyResult.data.forEach((item) => {
-              const txnId = item.transaction_uid;
-              if (!bountyDataByTransaction[txnId]) {
-                bountyDataByTransaction[txnId] = {
-                  total_bounty: 0,
-                  items: [],
-                };
-              }
-              // bounty_paid is already calculated as bs_bounty * ti_bs_qty in the API
-              const bountyPaid = parseFloat(item.bounty_paid) || 0;
-              bountyDataByTransaction[txnId].total_bounty += bountyPaid;
-              bountyDataByTransaction[txnId].items.push(item);
-            });
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching bounty data:", error);
-      }
-
-      // Now fetch transaction data
-      const businessTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${targetBusinessUID}`;
-      const response = await fetch(businessTransactionsUrl, {
+      const response = await fetch(`${ACCOUNT_SCREEN_BUSINESS_ENDPOINT}/${targetBusinessUID}`, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
       });
 
       if (response.status === 400) {
-        console.log(`No transactions found for business ${targetBusinessUID}`);
+        setBusinessBountyData({ data: [] });
         setBusinessTransactionData([]);
-        setBusinessTransactionLoading(false);
+        setBusinessReceiptCache({});
+        businessReceiptFetchedRef.current = new Set();
         return;
       }
 
       if (!response.ok) {
-        console.error(`Error fetching transactions for business ${targetBusinessUID}`);
+        console.error(`account-screen business HTTP ${response.status}`);
         setBusinessTransactionData([]);
-        setBusinessTransactionLoading(false);
+        setBusinessBountyData(null);
+        businessReceiptFetchedRef.current = new Set();
         return;
       }
 
-      const result = await response.json();
+      const json = await response.json();
+      const { bountyResult, sellerLines } = mapAccountScreenBusinessResponse(json);
 
-      if (result && result.code === 200 && Array.isArray(result.data)) {
-        // Filter to only business service transactions (250-)
-        const businessTransactions = result.data.filter((item) => item.ti_bs_id && item.ti_bs_id.startsWith("250-"));
+      const selectedBusiness = businesses.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
 
-        // Add business name
-        const selectedBusiness = businesses.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
-        businessTransactions.forEach((txn) => {
-          txn.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || "Unknown Business";
+      if (bountyResult?.data && Array.isArray(bountyResult.data)) {
+        bountyResult.data.forEach((bounty) => {
+          bounty.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || "Unknown Business";
         });
-
-        // Group by transaction_uid
-        const transactionMap = {};
-        businessTransactions.forEach((item) => {
-          const txnId = item.transaction_uid;
-
-          if (!transactionMap[txnId]) {
-            const total = parseFloat(item.transaction_total || 0);
-            const taxes = parseFloat(item.transaction_taxes || 0);
-            // Get bounty from bountyDataByTransaction
-            const bounty = bountyDataByTransaction[txnId]?.total_bounty || 0;
-            const netEarning = total - bounty - taxes;
-
-            transactionMap[txnId] = {
-              transaction_uid: item.transaction_uid,
-              transaction_datetime: item.transaction_datetime,
-              transaction_profile_id: item.transaction_profile_id,
-              transaction_business_id: item.transaction_business_id,
-              transaction_total: total,
-              transaction_taxes: taxes,
-              bounty_paid: bounty,
-              net_earning: netEarning,
-              business_name: item.business_name,
-              transaction_return_requested: item.transaction_return_requested || 0,
-              transaction_return_note: item.transaction_return_note || "",
-              transaction_return_status: item.transaction_return_status || "",
-            };
-          }
-        });
-
-        // Convert to array and sort by date
-        const filteredTransactions = Object.values(transactionMap).sort((a, b) => {
+        bountyResult.data.sort((a, b) => {
           const dateA = new Date(a.transaction_datetime);
           const dateB = new Date(b.transaction_datetime);
           return dateB - dateA;
         });
-
-        // console.log(`Total business transactions found: ${filteredTransactions.length}`);
-        // console.log("Sample transaction with bounty:", filteredTransactions[0]);
-
-        // Pre-fetch receipt items for all transactions
-        const receiptCache = {};
-        await Promise.all(filteredTransactions.map(async (t) => {
-          try {
-            const r = await fetch(
-              `${TRANSACTION_RECEIPT_ENDPOINT}/${t.transaction_profile_id}/${t.transaction_uid}?seller_id=${encodeURIComponent(targetBusinessUID)}`,
-              {
-                method: "GET",
-                headers: { "Content-Type": "application/json" },
-              }
-            );
-            if (!r.ok) return;
-            const data = await r.json();
-            receiptCache[t.transaction_uid] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
-          } catch { /* skip */ }
-        }));
-        setBusinessReceiptCache(receiptCache);
-
-        setBusinessTransactionData(filteredTransactions);
-      }
-    } catch (error) {
-      console.error("Error loading business transaction data:", error);
-      setBusinessTransactionData([]);
-    } finally {
-      setBusinessTransactionLoading(false);
-    }
-  };
-
-  // Business Bounty data
-  const refreshBusinessBountyData = async () => {
-    try {
-      setBusinessBountyLoading(true);
-
-      // If specific business is selected, only load that business's data
-      const targetBusinessUID = selectedAccount !== "personal" ? selectedAccount : businessUID;
-
-      if (!targetBusinessUID) {
-        console.log("No business UID available");
+        setBusinessBountyData(bountyResult);
+      } else {
         setBusinessBountyData(null);
-        setBusinessBountyLoading(false);
+      }
+
+      if (selectedAccount === "personal") {
+        setBusinessTransactionData([]);
+        setBusinessReceiptCache({});
+        businessReceiptFetchedRef.current = new Set();
         return;
       }
 
-      console.log(`Fetching bounty results for business: ${targetBusinessUID}`);
-
-      try {
-        const response = await fetch(`${BUSINESS_BOUNTY_RESULTS_ENDPOINT}/${targetBusinessUID}`);
-
-        if (!response.ok) {
-          console.error(`Error fetching bounties for business ${targetBusinessUID}`);
-          setBusinessBountyData(null);
-          setBusinessBountyLoading(false);
-          return;
-        }
-
-        const result = await response.json();
-
-        if (result && result.data && Array.isArray(result.data)) {
-          // Add business name to each bounty record
-          const selectedBusiness = businesses.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
-
-          result.data.forEach((bounty) => {
-            bounty.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || "Unknown Business";
-          });
-
-          // Sort by date (most recent first)
-          result.data.sort((a, b) => {
-            const dateA = new Date(a.transaction_datetime);
-            const dateB = new Date(b.transaction_datetime);
-            return dateB - dateA;
-          });
-
-          // console.log("Business Bounty results:", result);
-          setBusinessBountyData(result);
-        }
-      } catch (error) {
-        console.error(`Error fetching bounties for business:`, error);
-        setBusinessBountyData({ error: error.message });
+      const bountyDataByTransaction = {};
+      if (bountyResult?.data && Array.isArray(bountyResult.data)) {
+        bountyResult.data.forEach((item) => {
+          const txnId = item.transaction_uid;
+          if (!bountyDataByTransaction[txnId]) {
+            bountyDataByTransaction[txnId] = { total_bounty: 0, items: [] };
+          }
+          const bountyPaid = parseFloat(item.bounty_paid) || 0;
+          bountyDataByTransaction[txnId].total_bounty += bountyPaid;
+          bountyDataByTransaction[txnId].items.push(item);
+        });
       }
+
+      if (!sellerLines.length) {
+        setBusinessTransactionData([]);
+        setBusinessReceiptCache({});
+        businessReceiptFetchedRef.current = new Set();
+        return;
+      }
+
+      const businessTransactions = sellerLines.filter((item) => item.ti_bs_id && item.ti_bs_id.startsWith("250-"));
+      businessTransactions.forEach((txn) => {
+        txn.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || "Unknown Business";
+      });
+
+      const transactionMap = {};
+      businessTransactions.forEach((item) => {
+        const txnId = item.transaction_uid;
+        if (!transactionMap[txnId]) {
+          const total = parseFloat(item.transaction_total || 0);
+          const taxes = parseFloat(item.transaction_taxes || 0);
+          const bounty = bountyDataByTransaction[txnId]?.total_bounty || 0;
+          const netEarning = total - bounty - taxes;
+          transactionMap[txnId] = {
+            transaction_uid: item.transaction_uid,
+            transaction_datetime: item.transaction_datetime,
+            transaction_profile_id: item.transaction_profile_id,
+            transaction_business_id: item.transaction_business_id,
+            transaction_total: total,
+            transaction_taxes: taxes,
+            bounty_paid: bounty,
+            net_earning: netEarning,
+            business_name: item.business_name,
+            transaction_return_requested: item.transaction_return_requested || 0,
+            transaction_return_note: item.transaction_return_note || "",
+            transaction_return_status: item.transaction_return_status || "",
+          };
+        }
+      });
+
+      const filteredTransactions = Object.values(transactionMap).sort((a, b) => {
+        const dateA = new Date(a.transaction_datetime);
+        const dateB = new Date(b.transaction_datetime);
+        return dateB - dateA;
+      });
+
+      setBusinessTransactionData(filteredTransactions);
     } catch (error) {
-      console.error("Error loading business bounty data:", error);
+      console.error("Error loading account-screen business:", error);
+      setBusinessTransactionData([]);
       setBusinessBountyData({ error: error.message });
+      setBusinessReceiptCache({});
+      businessReceiptFetchedRef.current = new Set();
     } finally {
+      setBusinessTransactionLoading(false);
       setBusinessBountyLoading(false);
     }
   };
-  
 
   useFocusEffect(
-    
     useCallback(() => {
       checkAuth();
       loadAutoPaidIds();
       loadReturnRequests();
       loadReturnStatuses();
-      refreshBountyData();
-      refreshTransactionData();
-      refreshExpertiseData();
-      fetchPersonalProfileData();
+      refreshAccountScreenPersonal();
 
-      // Fetch businesses first, then business transactions and bounties
       const loadBusinessData = async () => {
-        await fetchUserBusinesses();
-        await refreshBusinessTransactionData();
-        await refreshBusinessBountyData(); // ← ADD THIS LINE
+        const primaryBusinessUid = await fetchUserBusinesses();
+        await refreshAccountScreenBusiness(primaryBusinessUid);
       };
       loadBusinessData();
     }, []),
@@ -922,12 +948,7 @@ export default function AccountScreen({ navigation }) {
   // Load business data when switching to business account
   useEffect(() => {
     if (selectedAccount !== "personal") {
-      // console.log("Switched to business account, loading business data for:", selectedAccount);
-      const loadBusinessData = async () => {
-        await refreshBusinessTransactionData();
-        await refreshBusinessBountyData();
-      };
-      loadBusinessData();
+      refreshAccountScreenBusiness();
     }
   }, [selectedAccount, businesses]); // Add 'businesses' as dependency
 
@@ -1009,7 +1030,7 @@ export default function AccountScreen({ navigation }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transaction_uid: transactionUid, transaction_in_escrow: 0 }),
       });
-      await refreshTransactionData();
+      await refreshAccountScreenPersonal();
     } catch (error) {
       console.error("Auto-pay failed for transaction:", transactionUid, error);
       setAutoPaidTransactionIds((prev) => {
@@ -1466,9 +1487,7 @@ export default function AccountScreen({ navigation }) {
   };
 
   const personalPendingEscrowBounty =
-    bountyData?.data && Array.isArray(bountyData.data)
-      ? bountyData.data.filter((i) => i.in_escrow === 1).reduce((s, i) => s + parseFloat(i.bounty_earned || 0), 0)
-      : 0;
+    bountyData?.data && Array.isArray(bountyData.data) ? bountyData.data.filter((i) => i.in_escrow === 1).reduce((s, i) => s + parseFloat(i.bounty_earned || 0), 0) : 0;
 
   const businessNetEarningsTotal = businessTransactionData.reduce((s, t) => s + parseFloat(t.net_earning || 0), 0);
 
@@ -1687,12 +1706,10 @@ export default function AccountScreen({ navigation }) {
                                   );
                                 }
                                 // 6. Default → Pending or Received
-                                return (
-                                  <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Received"}</Text>
-                                );
+                                return <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Received"}</Text>;
                               })()}
                             </View>
-                              <Text style={styles.transactionAmount}>${parseFloat(transaction.seller_total || transaction.transaction_total || 0).toFixed(2)}</Text>
+                            <Text style={styles.transactionAmount}>${parseFloat(transaction.seller_total || transaction.transaction_total || 0).toFixed(2)}</Text>
                           </View>
                         );
                       })}
@@ -1733,16 +1750,12 @@ export default function AccountScreen({ navigation }) {
                     <View style={styles.balanceSectionBody}>
                       <View style={styles.balanceContainer}>
                         <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
-                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>
-                          ${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}
-                        </Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}</Text>
                       </View>
                       {personalPendingEscrowBounty > 0 ? (
                         <View style={styles.balanceContainer}>
                           <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending (escrow)</Text>
-                          <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>
-                            ${personalPendingEscrowBounty.toFixed(2)}
-                          </Text>
+                          <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>${personalPendingEscrowBounty.toFixed(2)}</Text>
                         </View>
                       ) : null}
                     </View>
@@ -1789,16 +1802,10 @@ export default function AccountScreen({ navigation }) {
                             return `${month}/${day}`;
                           };
                           const paidLabel =
-                            item.in_escrow === 1 && (new Date() - new Date(item.transaction_datetime)) / (1000 * 60 * 60 * 24) >= 30
-                              ? "Paid"
-                              : item.in_escrow === 1
-                                ? "Pending"
-                                : "Paid";
+                            item.in_escrow === 1 && (new Date() - new Date(item.transaction_datetime)) / (1000 * 60 * 60 * 24) >= 30 ? "Paid" : item.in_escrow === 1 ? "Pending" : "Paid";
                           return (
                             <View key={item.tb_uid || item.ti_transaction_id || index} style={styles.transactionRow}>
-                              {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && (
-                                <Text style={styles.transactionId}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text>
-                              )}
+                              {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionId}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text>}
                               <Text style={styles.transactionDate}>{formatDate(item.transaction_datetime)}</Text>
                               <Text style={styles.transactionBusiness} numberOfLines={4}>
                                 {item.purchaser_name || item.transaction_profile_id || "N/A"}
@@ -1938,8 +1945,8 @@ export default function AccountScreen({ navigation }) {
                         // Get services for this transaction from businessBountyData
                         //const transactionServices = businessBountyData?.data?.filter((item) => item.transaction_uid === transaction.transaction_uid) || [];
 
-                        const transactionServices = businessReceiptCache[transaction.transaction_uid] || 
-                          businessBountyData?.data?.filter((item) => item.transaction_uid === transaction.transaction_uid) || [];
+                        const transactionServices =
+                          businessReceiptCache[transaction.transaction_uid] || businessBountyData?.data?.filter((item) => item.transaction_uid === transaction.transaction_uid) || [];
 
                         return (
                           <View key={transaction.transaction_uid || i}>
@@ -1947,19 +1954,23 @@ export default function AccountScreen({ navigation }) {
                             <TouchableOpacity
                               style={[
                                 styles.businessTransactionRow,
-                                (transaction.transaction_return_requested === 1 || 
-                                  (returnRequests[transaction.transaction_uid]?.items?.length > 0)) &&
-                                returnStatuses[transaction.transaction_uid] !== "accepted" &&
-                                returnStatuses[transaction.transaction_uid] !== "resolved" &&
-                                transaction.transaction_return_status !== "accepted" &&
-                                transaction.transaction_return_status !== "resolved" && {
-                                  backgroundColor: "#FDECEA",
-                                  borderLeftWidth: 4,
-                                  borderLeftColor: "#b35454",
-                                }
+                                (transaction.transaction_return_requested === 1 || returnRequests[transaction.transaction_uid]?.items?.length > 0) &&
+                                  returnStatuses[transaction.transaction_uid] !== "accepted" &&
+                                  returnStatuses[transaction.transaction_uid] !== "resolved" &&
+                                  transaction.transaction_return_status !== "accepted" &&
+                                  transaction.transaction_return_status !== "resolved" && {
+                                    backgroundColor: "#FDECEA",
+                                    borderLeftWidth: 4,
+                                    borderLeftColor: "#b35454",
+                                  },
                               ]}
-                              onPress={() => {
-                                setExpandedTransactionId(isExpanded ? null : transaction.transaction_uid);
+                              onPress={async () => {
+                                if (isExpanded) {
+                                  setExpandedTransactionId(null);
+                                  return;
+                                }
+                                await prefetchBusinessReceiptForTransaction(transaction);
+                                setExpandedTransactionId(transaction.transaction_uid);
                               }}
                               activeOpacity={0.7}
                             >
@@ -1967,21 +1978,23 @@ export default function AccountScreen({ navigation }) {
                               <Text style={styles.businessTransactionCell}>
                                 {transaction.transaction_uid || "N/A"} {isExpanded ? "▲" : "▼"}
                               </Text>
-                              
+
                               <Text style={styles.businessTransactionCell}>{transaction.transaction_profile_id?.substring(0, 10) || "N/A"}</Text>
                               <Text style={styles.businessTransactionCell}>${transaction.transaction_total.toFixed(2)}</Text>
                               <Text style={styles.businessTransactionCell}>${transaction.bounty_paid.toFixed(2)}</Text>
-                              <Text style={[styles.businessTransactionCell, {
-                                  color: (returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted") ? "#B71C1C" : "#333"
-                                }]}>
-                                {(returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted")
+                              <Text
+                                style={[
+                                  styles.businessTransactionCell,
+                                  {
+                                    color: returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted" ? "#B71C1C" : "#333",
+                                  },
+                                ]}
+                              >
+                                {returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted"
                                   ? `-$${transaction.transaction_taxes.toFixed(2)}`
-                                  : `$${transaction.transaction_taxes.toFixed(2)}`
-                                }
+                                  : `$${transaction.transaction_taxes.toFixed(2)}`}
                               </Text>
-                              <Text style={[styles.businessTransactionCell, { width: 55, flex: 0, textAlign: "right" }]}>
-                                ${transaction.net_earning.toFixed(2)}
-                              </Text>
+                              <Text style={[styles.businessTransactionCell, { width: 55, flex: 0, textAlign: "right" }]}>${transaction.net_earning.toFixed(2)}</Text>
                             </TouchableOpacity>
 
                             {/* Expanded Services Details */}
@@ -2012,8 +2025,7 @@ export default function AccountScreen({ navigation }) {
                                   <Text style={styles.noServicesText}>No services data available</Text>
                                 )}
                                 {/* Return request indicator */}
-                                {(transaction.transaction_return_requested === 1 || 
-                                  (returnRequests[transaction.transaction_uid]?.items?.length > 0)) && (
+                                {(transaction.transaction_return_requested === 1 || returnRequests[transaction.transaction_uid]?.items?.length > 0) && (
                                   <TouchableOpacity
                                     style={{
                                       marginTop: 8,
@@ -2025,43 +2037,44 @@ export default function AccountScreen({ navigation }) {
                                       flexDirection: "row",
                                       alignItems: "center",
                                     }}
-                                     onPress={() => {
-                                        // Show all notes, not just the backend one
-                                        const localNotes = returnRequests[transaction.transaction_uid]?.notes || [];
-                                        const noteText = localNotes.length > 0
-                                          ? localNotes.map(n => `[${new Date(n.date).toLocaleDateString()}]\n${n.note}`).join("\n\n---\n\n")
+                                    onPress={async () => {
+                                      const localNotes = returnRequests[transaction.transaction_uid]?.notes || [];
+                                      const noteText =
+                                        localNotes.length > 0
+                                          ? localNotes.map((n) => `[${new Date(n.date).toLocaleDateString()}]\n${n.note}`).join("\n\n---\n\n")
                                           : transaction.transaction_return_note || "No note provided.";
-                                        setViewingReturnNote(noteText);
-                                        setViewingReturnTransactionUid(transaction.transaction_uid);
-                                        setShowReturnNoteViewModal(true);
-                                      }}
-                                    >
-                                    <Ionicons name="return-down-back-outline" size={14} color="#B71C1C" style={{ marginRight: 6 }} />
+                                      await prefetchBusinessReceiptForTransaction(transaction);
+                                      setViewingReturnNote(noteText);
+                                      setViewingReturnTransactionUid(transaction.transaction_uid);
+                                      setShowReturnNoteViewModal(true);
+                                    }}
+                                  >
+                                    <Ionicons name='return-down-back-outline' size={14} color='#B71C1C' style={{ marginRight: 6 }} />
                                     <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>Return Requested by Customer — Tap to view details</Text>
                                   </TouchableOpacity>
                                 )}
                                 {(returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted") && (
-                                <View style={{
-                                  flexDirection: "row",
-                                  paddingVertical: 8,
-                                  paddingHorizontal: 4,
-                                  backgroundColor: "#FDECEA",
-                                  borderLeftWidth: 4,
-                                  borderLeftColor: "#B71C1C",
-                                  marginTop: 4,
-                                  borderRadius: 4,
-                                }}>
-                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>RETURN</Text>
-                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
-                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>Refund</Text>
-                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
-                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
-                                  <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
-                                  <Text style={{ width: 55, flex: 0, fontSize: 11, color: "#B71C1C", textAlign: "right" }}>
-                                    -${transaction.transaction_taxes.toFixed(2)}
-                                  </Text>
-                                </View>
-                              )}
+                                  <View
+                                    style={{
+                                      flexDirection: "row",
+                                      paddingVertical: 8,
+                                      paddingHorizontal: 4,
+                                      backgroundColor: "#FDECEA",
+                                      borderLeftWidth: 4,
+                                      borderLeftColor: "#B71C1C",
+                                      marginTop: 4,
+                                      borderRadius: 4,
+                                    }}
+                                  >
+                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>RETURN</Text>
+                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>Refund</Text>
+                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
+                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
+                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
+                                    <Text style={{ width: 55, flex: 0, fontSize: 11, color: "#B71C1C", textAlign: "right" }}>-${transaction.transaction_taxes.toFixed(2)}</Text>
+                                  </View>
+                                )}
                               </View>
                             )}
                           </View>
@@ -2112,12 +2125,9 @@ export default function AccountScreen({ navigation }) {
 
             {/* Return requested confirmation message */}
             {(returnRequests[receiptTransaction?.transaction_uid]?.requested || receiptTransaction?.transaction_return_requested === 1) && (
-              <Text style={{ color: "#B71C1C", textAlign: "center", marginTop: 12, fontWeight: "600", fontSize: 14 }}>
-                ✓ Return has been requested
-              </Text>
+              <Text style={{ color: "#B71C1C", textAlign: "center", marginTop: 12, fontWeight: "600", fontSize: 14 }}>✓ Return has been requested</Text>
             )}
 
-          
             {(() => {
               const uid = receiptTransaction?.transaction_uid;
               const storedItems = returnRequests[uid]?.items || [];
@@ -2125,20 +2135,14 @@ export default function AccountScreen({ navigation }) {
 
               // Only count indices that are actually valid for this receipt
               const validIndices = Array.from({ length: totalItems }, (_, i) => String(i));
-              const returnedValidIndices = validIndices.filter(id => storedItems.includes(id));
+              const returnedValidIndices = validIndices.filter((id) => storedItems.includes(id));
 
               // Must have receipt items AND every valid index must be returned
-              const allItemsReturned = totalItems > 0 && 
-                storedItems.length > 0 &&
-                returnedValidIndices.length >= totalItems;
+              const allItemsReturned = totalItems > 0 && storedItems.length > 0 && returnedValidIndices.length >= totalItems;
 
               return (
                 <TouchableOpacity
-                  style={[
-                    styles.receiptCloseButton,
-                    { borderColor: "#B71C1C", marginTop: 12 },
-                    allItemsReturned && { opacity: 0.4 },
-                  ]}
+                  style={[styles.receiptCloseButton, { borderColor: "#B71C1C", marginTop: 12 }, allItemsReturned && { opacity: 0.4 }]}
                   disabled={allItemsReturned}
                   onPress={() => {
                     if (!allItemsReturned) {
@@ -2148,9 +2152,7 @@ export default function AccountScreen({ navigation }) {
                     }
                   }}
                 >
-                  <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>
-                    {allItemsReturned ? "All Items Returned" : "Request Return"}
-                  </Text>
+                  <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>{allItemsReturned ? "All Items Returned" : "Request Return"}</Text>
                 </TouchableOpacity>
               );
             })()}
@@ -2174,10 +2176,7 @@ export default function AccountScreen({ navigation }) {
               </Text>
             </TouchableOpacity> */}
 
-            <TouchableOpacity
-              style={[styles.receiptCloseButton, darkMode && styles.darkCancelButton]}
-              onPress={() => setShowReceiptModal(false)}
-            >
+            <TouchableOpacity style={[styles.receiptCloseButton, darkMode && styles.darkCancelButton]} onPress={() => setShowReceiptModal(false)}>
               <Text style={[styles.receiptCloseButtonText, darkMode && styles.darkCancelButtonText]}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -2185,17 +2184,13 @@ export default function AccountScreen({ navigation }) {
       </Modal>
 
       {/* Return Note Input Modal */}
-      <Modal animationType="fade" transparent={true} visible={showReturnNoteModal} onRequestClose={() => setShowReturnNoteModal(false)}>
+      <Modal animationType='fade' transparent={true} visible={showReturnNoteModal} onRequestClose={() => setShowReturnNoteModal(false)}>
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent, { maxHeight: "80%" }]}>
-            <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>
-              Request Return
-            </Text>
+            <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>Request Return</Text>
 
             {/* Item selection */}
-            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>
-              Select item(s) to return:
-            </Text>
+            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>Select item(s) to return:</Text>
             <ScrollView style={{ maxHeight: 160, marginBottom: 12 }}>
               {returnModalReceiptData.map((item, index) => {
                 const itemId = String(index);
@@ -2216,34 +2211,23 @@ export default function AccountScreen({ navigation }) {
                     }}
                     onPress={() => {
                       if (!alreadyReturned) {
-                        setSelectedReturnItems(prev =>
-                          isSelected ? prev.filter(id => id !== itemId) : [...prev, itemId]
-                        );
+                        setSelectedReturnItems((prev) => (isSelected ? prev.filter((id) => id !== itemId) : [...prev, itemId]));
                       }
                     }}
                     activeOpacity={0.7}
                   >
-                    <Ionicons
-                      name={isSelected ? "checkbox" : "square-outline"}
-                      size={18}
-                      color={isSelected ? "#B71C1C" : "#555"}
-                      style={{ marginRight: 8 }}
-                    />
+                    <Ionicons name={isSelected ? "checkbox" : "square-outline"} size={18} color={isSelected ? "#B71C1C" : "#555"} style={{ marginRight: 8 }} />
                     <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", flex: 1 }}>
                       {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {item.ti_bs_qty || 1}
                     </Text>
-                    {alreadyReturned && (
-                      <Text style={{ fontSize: 11, color: "#B71C1C", marginLeft: 4 }}>Already returned</Text>
-                    )}
+                    {alreadyReturned && <Text style={{ fontSize: 11, color: "#B71C1C", marginLeft: 4 }}>Already returned</Text>}
                   </TouchableOpacity>
                 );
               })}
             </ScrollView>
 
             {/* Note input */}
-            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>
-              Reason for return:
-            </Text>
+            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>Reason for return:</Text>
             <TextInput
               style={{
                 borderWidth: 1,
@@ -2257,18 +2241,14 @@ export default function AccountScreen({ navigation }) {
                 color: darkMode ? "#fff" : "#333",
                 marginBottom: 16,
               }}
-              placeholder="Enter return reason..."
+              placeholder='Enter return reason...'
               placeholderTextColor={darkMode ? "#888" : "#aaa"}
               multiline
               value={returnNote}
               onChangeText={setReturnNote}
             />
 
-            {selectedReturnItems.length === 0 && (
-              <Text style={{ color: "#B71C1C", fontSize: 12, marginBottom: 8, textAlign: "center" }}>
-                Please select at least one item to return.
-              </Text>
-            )}
+            {selectedReturnItems.length === 0 && <Text style={{ color: "#B71C1C", fontSize: 12, marginBottom: 8, textAlign: "center" }}>Please select at least one item to return.</Text>}
 
             <View style={{ flexDirection: "row", gap: 12 }}>
               <TouchableOpacity
@@ -2279,9 +2259,7 @@ export default function AccountScreen({ navigation }) {
                   setSelectedReturnItems([]);
                 }}
               >
-                <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>
-                  Cancel
-                </Text>
+                <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.receiveItemModalButton, { backgroundColor: selectedReturnItems.length === 0 ? "#ccc" : "#B71C1C" }]}
@@ -2289,7 +2267,7 @@ export default function AccountScreen({ navigation }) {
                 onPress={async () => {
                   const selectedNames = returnModalReceiptData
                     .filter((item, index) => selectedReturnItems.includes(String(index)))
-                    .map(item => `${item.bs_service_name || "Item"} x${item.ti_bs_qty || 1}`)
+                    .map((item) => `${item.bs_service_name || "Item"} x${item.ti_bs_qty || 1}`)
                     .join(", ");
                   // const fullNote = `Items: ${selectedNames}\n\nReason: ${returnNote}`;
                   const fullNote = `Buyer Note: ${returnNote}`;
@@ -2307,115 +2285,101 @@ export default function AccountScreen({ navigation }) {
       </Modal>
 
       {/* Return Note Modal */}
-      <Modal animationType="fade" transparent={true} visible={showReturnNoteViewModal} onRequestClose={() => setShowReturnNoteViewModal(false)}>
+      <Modal animationType='fade' transparent={true} visible={showReturnNoteViewModal} onRequestClose={() => setShowReturnNoteViewModal(false)}>
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent, { maxHeight: "85%" }]}>
-            <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>
-              Return Requests
-            </Text>
+            <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>Return Requests</Text>
 
             <ScrollView style={{ maxHeight: 400 }}>
-              {(returnRequests[viewingReturnTransactionUid]?.notes?.length > 0
-                ? returnRequests[viewingReturnTransactionUid].notes
-                : [{ note: viewingReturnNote, date: null, items: [] }]
-              ).map((entry, idx) => {
-                // Look up the receipt items for this transaction from the cache
-                const cachedReceipt = businessReceiptCache[viewingReturnTransactionUid] || [];
-                const returnedItems = (entry.items || [])
-                  .map((itemId) => cachedReceipt[parseInt(itemId)])
-                  .filter(Boolean);
+              {(returnRequests[viewingReturnTransactionUid]?.notes?.length > 0 ? returnRequests[viewingReturnTransactionUid].notes : [{ note: viewingReturnNote, date: null, items: [] }]).map(
+                (entry, idx) => {
+                  // Look up the receipt items for this transaction from the cache
+                  const cachedReceipt = businessReceiptCache[viewingReturnTransactionUid] || [];
+                  const returnedItems = (entry.items || []).map((itemId) => cachedReceipt[parseInt(itemId)]).filter(Boolean);
 
-                return (
-                  <View key={idx} style={{
-                    borderWidth: 1,
-                    borderColor: "#B71C1C",
-                    borderRadius: 8,
-                    padding: 12,
-                    marginBottom: 12,
-                    backgroundColor: darkMode ? "#3a3a3a" : "#fff5f5",
-                  }}>
-                    {entry.date && (
-                      <Text style={{ fontSize: 11, color: "#888", marginBottom: 6 }}>
-                        {new Date(entry.date).toLocaleDateString()}
-                      </Text>
-                    )}
+                  return (
+                    <View
+                      key={idx}
+                      style={{
+                        borderWidth: 1,
+                        borderColor: "#B71C1C",
+                        borderRadius: 8,
+                        padding: 12,
+                        marginBottom: 12,
+                        backgroundColor: darkMode ? "#3a3a3a" : "#fff5f5",
+                      }}
+                    >
+                      {entry.date && <Text style={{ fontSize: 11, color: "#888", marginBottom: 6 }}>{new Date(entry.date).toLocaleDateString()}</Text>}
 
-                    {/* Show returned items */}
-                    {returnedItems.length > 0 && (
-                      <View style={{ marginBottom: 10 }}>
-                        <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>
-                          Items to Return:
+                      {/* Show returned items */}
+                      {returnedItems.length > 0 && (
+                        <View style={{ marginBottom: 10 }}>
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>Items to Return:</Text>
+                          {returnedItems.map((item, itemIdx) => (
+                            <View
+                              key={itemIdx}
+                              style={{
+                                flexDirection: "row",
+                                justifyContent: "space-between",
+                                paddingVertical: 4,
+                                paddingHorizontal: 8,
+                                backgroundColor: darkMode ? "#4a2a2a" : "#ffe8e8",
+                                borderRadius: 4,
+                                marginBottom: 4,
+                              }}
+                            >
+                              <Text style={{ fontSize: 12, color: darkMode ? "#fff" : "#333", flex: 1 }}>{item.bs_service_name || "Item"}</Text>
+                              <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666", marginHorizontal: 8 }}>x{item.ti_bs_qty || 1}</Text>
+                              <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666" }}>${parseFloat(item.ti_bs_cost || 0).toFixed(2)}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+
+                      <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", lineHeight: 20, marginBottom: 8 }}>{entry.note || "No reason provided."}</Text>
+
+                      {/* Per-return Accept/Decline */}
+                      {returnStatuses[`${viewingReturnTransactionUid}_${idx}`] ? (
+                        <Text
+                          style={{
+                            fontWeight: "600",
+                            fontSize: 13,
+                            color: returnStatuses[`${viewingReturnTransactionUid}_${idx}`] === "accepted" ? "#18884A" : "#B71C1C",
+                          }}
+                        >
+                          {returnStatuses[`${viewingReturnTransactionUid}_${idx}`] === "accepted" ? "✓ Accepted" : "✗ Declined"}
                         </Text>
-                        {returnedItems.map((item, itemIdx) => (
-                          <View key={itemIdx} style={{
-                            flexDirection: "row",
-                            justifyContent: "space-between",
-                            paddingVertical: 4,
-                            paddingHorizontal: 8,
-                            backgroundColor: darkMode ? "#4a2a2a" : "#ffe8e8",
-                            borderRadius: 4,
-                            marginBottom: 4,
-                          }}>
-                            <Text style={{ fontSize: 12, color: darkMode ? "#fff" : "#333", flex: 1 }}>
-                              {item.bs_service_name || "Item"}
-                            </Text>
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666", marginHorizontal: 8 }}>
-                              x{item.ti_bs_qty || 1}
-                            </Text>
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666" }}>
-                              ${parseFloat(item.ti_bs_cost || 0).toFixed(2)}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-
-                    <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", lineHeight: 20, marginBottom: 8 }}>
-                      {entry.note || "No reason provided."}
-                    </Text>
-
-                    {/* Per-return Accept/Decline */}
-                    {returnStatuses[`${viewingReturnTransactionUid}_${idx}`] ? (
-                      <Text style={{
-                        fontWeight: "600",
-                        fontSize: 13,
-                        color: returnStatuses[`${viewingReturnTransactionUid}_${idx}`] === "accepted" ? "#18884A" : "#B71C1C"
-                      }}>
-                        {returnStatuses[`${viewingReturnTransactionUid}_${idx}`] === "accepted" ? "✓ Accepted" : "✗ Declined"}
-                      </Text>
-                    ) : (
-                      <View style={{ flexDirection: "row", gap: 8 }}>
-                        <TouchableOpacity
-                          style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", backgroundColor: "#18884A" }}
-                          onPress={async () => {
-                            await handleReturnAccept(viewingReturnTransactionUid);
-                            setReturnStatuses(prev => ({ ...prev, [`${viewingReturnTransactionUid}_${idx}`]: "accepted" }));
-                            await AsyncStorage.setItem(`return_status_${viewingReturnTransactionUid}_${idx}`, "accepted");
-                          }}
-                        >
-                          <Text style={{ color: "#fff", fontWeight: "bold" }}>Accept</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", backgroundColor: "#B71C1C" }}
-                          onPress={() => {
-                            setPendingDeclineIdx(idx);
-                            setDeclineNote("");
-                            setShowDeclineNoteModal(true);
-                          }}
-                        >
-                          <Text style={{ color: "#fff", fontWeight: "bold" }}>Decline</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
+                      ) : (
+                        <View style={{ flexDirection: "row", gap: 8 }}>
+                          <TouchableOpacity
+                            style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", backgroundColor: "#18884A" }}
+                            onPress={async () => {
+                              await handleReturnAccept(viewingReturnTransactionUid);
+                              setReturnStatuses((prev) => ({ ...prev, [`${viewingReturnTransactionUid}_${idx}`]: "accepted" }));
+                              await AsyncStorage.setItem(`return_status_${viewingReturnTransactionUid}_${idx}`, "accepted");
+                            }}
+                          >
+                            <Text style={{ color: "#fff", fontWeight: "bold" }}>Accept</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", backgroundColor: "#B71C1C" }}
+                            onPress={() => {
+                              setPendingDeclineIdx(idx);
+                              setDeclineNote("");
+                              setShowDeclineNoteModal(true);
+                            }}
+                          >
+                            <Text style={{ color: "#fff", fontWeight: "bold" }}>Decline</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  );
+                },
+              )}
             </ScrollView>
 
-            <TouchableOpacity
-              style={[styles.receiptCloseButton, { borderColor: "#B71C1C" }]}
-              onPress={() => setShowReturnNoteViewModal(false)}
-            >
+            <TouchableOpacity style={[styles.receiptCloseButton, { borderColor: "#B71C1C" }]} onPress={() => setShowReturnNoteViewModal(false)}>
               <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -2423,15 +2387,11 @@ export default function AccountScreen({ navigation }) {
       </Modal>
 
       {/* Decline Note Modal */}
-      <Modal animationType="fade" transparent={true} visible={showDeclineNoteModal} onRequestClose={() => setShowDeclineNoteModal(false)}>
+      <Modal animationType='fade' transparent={true} visible={showDeclineNoteModal} onRequestClose={() => setShowDeclineNoteModal(false)}>
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent]}>
-            <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>
-              Decline Reason
-            </Text>
-            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>
-              Provide a reason for declining this return (optional):
-            </Text>
+            <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>Decline Reason</Text>
+            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>Provide a reason for declining this return (optional):</Text>
             <TextInput
               style={{
                 borderWidth: 1,
@@ -2445,7 +2405,7 @@ export default function AccountScreen({ navigation }) {
                 color: darkMode ? "#fff" : "#333",
                 marginBottom: 16,
               }}
-              placeholder="Enter decline reason..."
+              placeholder='Enter decline reason...'
               placeholderTextColor={darkMode ? "#888" : "#aaa"}
               multiline
               value={declineNote}
@@ -2460,16 +2420,14 @@ export default function AccountScreen({ navigation }) {
                   setPendingDeclineIdx(null);
                 }}
               >
-                <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>
-                  Cancel
-                </Text>
+                <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.receiveItemModalButton, { backgroundColor: "#B71C1C" }]}
                 onPress={async () => {
                   const idx = pendingDeclineIdx;
                   await handleReturnDecline(viewingReturnTransactionUid, declineNote);
-                  setReturnStatuses(prev => ({
+                  setReturnStatuses((prev) => ({
                     ...prev,
                     [`${viewingReturnTransactionUid}_${idx}`]: "declined",
                     [viewingReturnTransactionUid]: "declined",

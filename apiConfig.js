@@ -70,6 +70,9 @@ export const SEARCH_REFERRAL_ENDPOINT = `${API_BASE_URL}/api/search_referral`;
 
 // Transaction and Rating Endpoints
 export const TRANSACTIONS_ENDPOINT = `${API_BASE_URL}/api/v1/transactions`;
+/** Aggregated Account screen payloads (Flask: AccountScreenPersonal / AccountScreenBusiness) */
+export const ACCOUNT_SCREEN_PERSONAL_ENDPOINT = `${API_BASE_URL}/api/v1/account-screen/personal`;
+export const ACCOUNT_SCREEN_BUSINESS_ENDPOINT = `${API_BASE_URL}/api/v1/account-screen/business`;
 export const TRANSACTION_RECEIPT_ENDPOINT = `${API_BASE_URL}/api/transactionreceipt`;
 export const RATINGS_ENDPOINT = `${API_BASE_URL}/ratings`;
 
