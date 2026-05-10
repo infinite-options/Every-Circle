@@ -52,7 +52,7 @@ export const BUSINESS_AVG_RATINGS_ENDPOINT = `${API_BASE_URL}/api/v1/businessavg
 export const BUSINESS_MAX_BOUNTY_ENDPOINT = `${API_BASE_URL}/api/v1/businessmaxbounty`;
 export const PROFILE_VIEWS_ENDPOINT = `${API_BASE_URL}/api/v1/profile_views`;
 export const BUSINESS_TAG_SEARCH_ENDPOINT = `${API_BASE_URL}/api/v1/businesstagsearch`;
-export const BUSINESS_SERVICE_PURCHASE_ENDPOINT = `${API_BASE_URL}/api/v1/business/service/purchase`;
+export const BUSINESS_SERVICE_PURCHASE_ENDPOINT = `${API_BASE_URL}/business/service/purchase`;
 
 // Search and Network Endpoints
 // export const BUSINESS_RESULTS_ENDPOINT = `${API_BASE_URL}/api/businessresults`;
