@@ -364,6 +364,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
               list = rawBusiness.business_services;
             }
           }
+          
           if ((!Array.isArray(list) || list.length === 0) && Array.isArray(result.services)) {
             list = result.services;
           }
@@ -371,7 +372,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
           return list.map((svc) => normalizeBusinessServiceFromApi(svc));
         })(),
         business_updated_at: rawBusiness.business_updated_at ?? rawBusiness.updated_at,
+        
       };
+      
 
       setBusiness(businessWithRatings);
 
@@ -441,6 +444,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
   useEffect(() => {
     const checkBusinessOwnership = async () => {
+      console.log("checkBusinessOwnership - businessUsers:", businessUsers.length, "business:", !!business);
       try {
         if (!business) {
           setIsOwner(false);
@@ -524,6 +528,24 @@ export default function BusinessProfileScreen({ route, navigation }) {
   };
 
   const handleQuantityConfirm = async () => {
+    const stock = selectedService?.bs_quantity;
+    const isLimited =
+      stock != null &&
+      String(stock).toLowerCase() !== "unlimited" &&
+      selectedService?.bs_qty_unlimited !== 1 &&
+      selectedService?.bs_qty_unlimited !== "1";
+    if (isLimited) {
+      const max = parseInt(stock, 10);
+      if (!isNaN(max) && max === 0) {
+        Alert.alert("Out of Stock", "This item is no longer available.");
+        setQuantityModalVisible(false);
+        return;
+      }
+      if (!isNaN(max) && quantity > max) {
+        Alert.alert("Stock limit", `Only ${max} available for this item.`);
+        return;
+      }
+    }
     // If there are verified reviews, bounty assignment is mandatory
     const verifiedReviews = allReviews.filter((r) => r.is_verified && r.circle_num_nodes !== null && r.circle_num_nodes !== undefined).slice(0, 5);
 
@@ -1378,6 +1400,36 @@ export default function BusinessProfileScreen({ route, navigation }) {
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ alignItems: "center", width: "100%" }}>
               <Text style={styles.modalTitle}>Add to Cart</Text>
               <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
+              {(() => {
+                const stock = selectedService?.bs_quantity;
+                const isLimited =
+                  stock != null &&
+                  String(stock).toLowerCase() !== "unlimited" &&
+                  selectedService?.bs_qty_unlimited !== 1 &&
+                  selectedService?.bs_qty_unlimited !== "1";
+                if (!isLimited) return null;
+                const num = parseInt(stock, 10);
+                if (isNaN(num)) return null;
+                const isSoldOut = num === 0;
+                const isLow = num > 0 && num <= 5;
+                return (
+                  <View style={{
+                    backgroundColor: isSoldOut ? "#fee2e2" : isLow ? "#fef9c3" : "#dcfce7",
+                    borderRadius: 10,
+                    paddingHorizontal: 12,
+                    paddingVertical: 4,
+                    marginBottom: 12,
+                  }}>
+                    <Text style={{
+                      fontSize: 13,
+                      fontWeight: "600",
+                      color: isSoldOut ? "#dc2626" : isLow ? "#b45309" : "#166534",
+                    }}>
+                      {isSoldOut ? "Out of stock" : `${num} available`}
+                    </Text>
+                  </View>
+                );
+              })()}
 
               {/* Quantity selector */}
               <View style={styles.quantityContainer}>
@@ -1385,7 +1437,25 @@ export default function BusinessProfileScreen({ route, navigation }) {
                   <Ionicons name='remove' size={24} color='#9C45F7' />
                 </TouchableOpacity>
                 <Text style={styles.quantityText}>{quantity}</Text>
-                <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => prev + 1)}>
+                <TouchableOpacity
+                  style={styles.quantityButton}
+                  onPress={() => {
+                    const stock = selectedService?.bs_quantity;
+                    const isLimited =
+                      stock != null &&
+                      String(stock).toLowerCase() !== "unlimited" &&
+                      selectedService?.bs_qty_unlimited !== 1 &&
+                      selectedService?.bs_qty_unlimited !== "1";
+                    if (isLimited) {
+                      const max = parseInt(stock, 10);
+                      if (!isNaN(max) && quantity >= max) {
+                        Alert.alert("Stock limit", `Only ${max} available for this item.`);
+                        return;
+                      }
+                    }
+                    setQuantity((prev) => prev + 1);
+                  }}
+                >
                   <Ionicons name='add' size={24} color='#9C45F7' />
                 </TouchableOpacity>
               </View>

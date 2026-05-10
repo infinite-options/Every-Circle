@@ -7,6 +7,7 @@ import MiniCard from "../components/MiniCard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { recordServicePurchase } from "../utils/purchaseService";
 
 // Only import Stripe on native platforms (not web)
 let StripeProvider = null;
@@ -223,8 +224,25 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const handleQuantityChange = async (index, change) => {
     try {
       const newCartItems = [...cartItems];
-      const currentQuantity = newCartItems[index].quantity || 1;
+      const item = newCartItems[index];
+      const currentQuantity = item.quantity || 1;
       const newQuantity = Math.max(1, currentQuantity + change);
+
+      // ── NEW: cap at available stock for limited-quantity items ──
+      const availableStock = item.bs_quantity;
+      if (
+        change > 0 &&
+        availableStock !== undefined &&
+        availableStock !== null &&
+        String(availableStock).toLowerCase() !== "unlimited"
+      ) {
+        const maxQty = parseInt(availableStock, 10);
+        if (!isNaN(maxQty) && newQuantity > maxQty) {
+          Alert.alert("Stock limit", `Only ${maxQty} available for this item.`);
+          return;
+        }
+      }
+      // ── END NEW ──
 
       if (newCartItems[index].itemType === "expertise") {
         newCartItems[index] = { ...newCartItems[index], quantity: newQuantity };
@@ -246,6 +264,47 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       console.error("Error updating quantity:", error);
       Alert.alert("Error", "Failed to update quantity");
     }
+  };
+
+  // Add this helper alongside the other handlers (e.g. after recordTransactions)
+  const decrementStockForPurchasedItems = async () => {
+  const eligibleItems = cartItems.filter((item) => {
+    if (item.itemType === "expertise") return false;
+    const qty = item.bs_quantity;
+    if (!qty || String(qty).toLowerCase() === "unlimited") return false;
+    return true;
+  });
+
+  const results = await Promise.allSettled(
+    eligibleItems.map((item) => recordServicePurchase(item.bs_uid, item.quantity || 1))
+  );
+
+  // Update local cartItems state with new remaining quantities from backend response
+  setCartItems((prev) =>
+    prev.map((item) => {
+      if (item.itemType === "expertise") return item;
+      const eligibleIndex = eligibleItems.findIndex((e) => e.bs_uid === item.bs_uid);
+      if (eligibleIndex === -1) return item;
+
+      const result = results[eligibleIndex];
+      if (result.status === "fulfilled" && result.value?.success) {
+        const remaining = result.value.remaining;
+        return {
+          ...item,
+          bs_quantity: remaining === null ? "unlimited" : String(remaining),
+        };
+      }
+      return item;
+    })
+  );
+
+  results.forEach((result, i) => {
+    if (result.status === "rejected") {
+      console.error(`Stock decrement failed for item index ${i}:`, result.reason);
+    } else if (!result.value?.success) {
+      console.warn(`Stock decrement returned failure for item index ${i}:`, result.value);
+    }
+  });
   };
 
   const calculateTotal = () => {
@@ -519,6 +578,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
       // Record the transactions with fee included
       await recordTransactions(buyerUid, paymentIntent, totalAmount, processingFee, escrow);
+      await decrementStockForPurchasedItems();
 
       // Clear ALL cart data from AsyncStorage
       try {
@@ -627,6 +687,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
       // Record the transactions
       await recordTransactions(buyerUid, paymentIntent, null, null, escrow);
+      await decrementStockForPurchasedItems();
 
       // Clear ALL cart data from AsyncStorage
       try {
@@ -694,6 +755,33 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                   </TouchableOpacity>
                   <View style={styles.cartItemContent}>
                     <Text style={styles.itemName}>{item.itemType === "expertise" ? item.title : item.bs_service_name}</Text>
+                    {/* Stock badge for limited-quantity items */}
+                    {item.itemType !== "expertise" && (() => {
+                      const qty = item.bs_quantity;
+                      if (!qty || String(qty).toLowerCase() === "unlimited") return null;
+                      const num = parseInt(qty, 10);
+                      if (isNaN(num)) return null;
+                      const isSoldOut = num === 0;
+                      const isLow = num > 0 && num <= 5;
+                      return (
+                        <View style={{
+                          alignSelf: "flex-start",
+                          backgroundColor: isSoldOut ? "#fee2e2" : isLow ? "#fef9c3" : "#dcfce7",
+                          borderRadius: 10,
+                          paddingHorizontal: 8,
+                          paddingVertical: 2,
+                          marginBottom: 6,
+                        }}>
+                          <Text style={{
+                            fontSize: 12,
+                            fontWeight: "600",
+                            color: isSoldOut ? "#dc2626" : isLow ? "#b45309" : "#166534",
+                          }}>
+                            {isSoldOut ? "Out of stock" : isLow ? `Only ${num} left` : `${num} in stock`}
+                          </Text>
+                        </View>
+                      );
+                    })()}
                     {showLineBusiness ? <Text style={styles.itemBusinessName}>{lineBusiness}</Text> : null}
                     <Text style={styles.itemDescription}>{item.itemType === "expertise" ? item.description : item.bs_service_desc}</Text>
                     <View style={styles.priceContainer}>

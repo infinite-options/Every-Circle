@@ -1234,7 +1234,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_is_visible: 1,
     bs_status: "active",
     bs_image_key: "",
-    bs_qty_unlimited: 1,
+    // bs_qty_unlimited: 1,
+    bs_quantity: service.bs_quantity,           
+    bs_qty_unlimited: service.bs_qty_unlimited,
     bs_available_quantity: "",
     bs_service_image_is_public: 1,
   };

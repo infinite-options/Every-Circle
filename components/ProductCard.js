@@ -1,6 +1,8 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback } from "react";
 
 const DEFAULT_PRODUCT_IMAGE = require("../assets/profile.png");
 
@@ -149,6 +151,48 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
           ) : null}
         </View>
         <Text style={metaTextStyle}>{quantityLine}</Text>
+        {/* Stock — only for limited quantity items */}
+        {(() => {
+          const unlimited =
+            service.bs_qty_unlimited === 1 ||
+            service.bs_qty_unlimited === "1" ||
+            service.bs_qty_unlimited === true;
+          if (unlimited) return null;
+
+          const raw =
+            service.bs_quantity != null && String(service.bs_quantity).trim() !== ""
+              ? String(service.bs_quantity).trim()
+              : service.bs_available_quantity != null && String(service.bs_available_quantity).trim() !== ""
+                ? String(service.bs_available_quantity).trim()
+                : null;
+          if (!raw || raw.toLowerCase() === "unlimited") return null;
+
+          const num = parseInt(raw, 10);
+          if (isNaN(num)) return null;
+
+          const isSoldOut = num === 0;
+          const isLow = num > 0 && num <= 5;
+          if (!isSoldOut && !isLow) return null; // only show badge when low or sold out
+
+          return (
+            <View style={{
+              alignSelf: "flex-start",
+              backgroundColor: isSoldOut ? "#fee2e2" : "#fef9c3",
+              borderRadius: 10,
+              paddingHorizontal: 8,
+              paddingVertical: 2,
+              marginTop: 4,
+            }}>
+              <Text style={{
+                fontSize: 12,
+                fontWeight: "600",
+                color: isSoldOut ? "#dc2626" : "#b45309",
+              }}>
+                {isSoldOut ? "Out of stock" : `Only ${num} left`}
+              </Text>
+            </View>
+          );
+        })()}
         {conditionLine ? <Text style={metaTextStyle}>{conditionLine}</Text> : null}
         {shippingLine ? <Text style={metaTextStyle}>{shippingLine}</Text> : null}
         {ccLine ? <Text style={metaTextStyle}>{ccLine}</Text> : null}

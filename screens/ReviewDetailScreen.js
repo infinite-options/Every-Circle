@@ -193,6 +193,16 @@ export default function ReviewDetailScreen({ route, navigation }) {
           }
           if (!Array.isArray(list)) return [];
           return list.map((svc) => normalizeBusinessServiceFromApi(svc));
+
+          const normalized = list.map((svc) => normalizeBusinessServiceFromApi(svc));
+          console.log("DEBUG services after normalize:", normalized.map(s => ({
+            bs_uid: s.bs_uid,
+            bs_quantity: s.bs_quantity,
+            bs_available_quantity: s.bs_available_quantity,
+            bs_qty_unlimited: s.bs_qty_unlimited,
+          })));
+          return normalized;
+
         })(),
       });
     } catch (err) {

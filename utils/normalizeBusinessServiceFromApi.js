@@ -9,6 +9,13 @@
 
 export function normalizeBusinessServiceFromApi(service) {
   if (!service || typeof service !== "object") return service;
+   
+  console.log("DEBUG normalize input:", {
+    bs_uid: service.bs_uid,
+    bs_quantity: service.bs_quantity,
+    bs_available_quantity: service.bs_available_quantity,
+    bs_qty_unlimited: service.bs_qty_unlimited,
+  });
 
   const imgKey =
     service.bs_image_key != null && String(service.bs_image_key).trim() !== ""
@@ -28,7 +35,16 @@ export function normalizeBusinessServiceFromApi(service) {
     bs_available_quantity = String(service.bs_quantity).trim();
   }
 
-  let bs_qty_unlimited = service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? 0 : 1;
+  // let bs_qty_unlimited = service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? 0 : 1;
+  let bs_qty_unlimited =
+  service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? 0
+  : service.bs_qty_unlimited === 1 || service.bs_qty_unlimited === "1" || service.bs_qty_unlimited === true ? 1
+  : // Not explicitly set — infer from bs_quantity
+    service.bs_quantity != null && String(service.bs_quantity).trim() !== "" &&
+    String(service.bs_quantity).trim().toLowerCase() !== "unlimited"
+      ? 0   // has a numeric quantity → limited
+      : 1;  // no quantity at all → treat as unlimited
+      
   if (
     (service.bs_qty_unlimited === undefined || service.bs_qty_unlimited === null || service.bs_qty_unlimited === "") &&
     service.bs_quantity != null &&
@@ -83,6 +99,7 @@ export function normalizeBusinessServiceFromApi(service) {
           : "",
     bs_qty_unlimited,
     bs_available_quantity,
+    bs_quantity: bs_available_quantity,
     bs_service_image_is_public: imgIsPublic,
   };
 
