@@ -1,15 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Image,
-  SafeAreaView,
-  RefreshControl,
-} from "react-native";
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Image, SafeAreaView, RefreshControl } from "react-native";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,6 +9,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { CHAT_CONVERSATIONS_ENDPOINT } from "../apiConfig";
 import { getSessionProfile } from "../utils/sessionProfile";
+import { normalizeConversationsResponse } from "../utils/chatConversations";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -40,7 +31,7 @@ function formatRelativeTime(isoString) {
 function getInitials(firstName, lastName) {
   const f = (firstName || "").charAt(0).toUpperCase();
   const l = (lastName || "").charAt(0).toUpperCase();
-  return (f + l) || "?";
+  return f + l || "?";
 }
 
 // ─── component ───────────────────────────────────────────────────────────────
@@ -51,55 +42,32 @@ export default function InboxScreen() {
   const { clearUnread, enterChatView, leaveChatView } = useUnread();
 
   const [myUid, setMyUid] = useState(null);
-  const [myBusinessUids, setMyBusinessUids] = useState(null); // null = not yet loaded
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
-  // Load the logged-in user's profile UID, then fetch their owned business UIDs
-  // directly from the profile API (the 110- path always returns business_info correctly)
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const session = await getSessionProfile();
       if (cancelled || !session?.profileUid) return;
-      setMyUid(session.profileUid);
-      setMyBusinessUids(session.businessUids || []);
+      setMyUid(String(session.profileUid).trim());
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const fetchConversations = useCallback(
     async (silent = false) => {
-      if (!myUid || myBusinessUids === null) return; // wait until both are ready
+      if (!myUid) return;
       if (!silent) setLoading(true);
       setError(null);
       try {
-        // Fetch personal conversations + one fetch per owned business UID
-        const uidsToFetch = [myUid, ...myBusinessUids];
-        const results = await Promise.all(
-          uidsToFetch.map((uid) =>
-            fetch(`${CHAT_CONVERSATIONS_ENDPOINT}/${uid}`)
-              .then((r) => r.json())
-              .then((j) => j.result || [])
-              .catch(() => [])
-          )
-        );
-        // Merge and deduplicate by conversation_uid
-        const merged = Object.values(
-          results.flat().reduce((acc, conv) => {
-            if (!acc[conv.conversation_uid]) acc[conv.conversation_uid] = conv;
-            return acc;
-          }, {})
-        );
-        // Sort newest-first
-        merged.sort((a, b) => {
-          const ta = new Date(a.last_sent_at || a.last_message_at || 0);
-          const tb = new Date(b.last_sent_at || b.last_message_at || 0);
-          return tb - ta;
-        });
-        setConversations(merged);
+        const res = await fetch(`${CHAT_CONVERSATIONS_ENDPOINT}/${encodeURIComponent(myUid)}`);
+        const json = await res.json();
+        setConversations(normalizeConversationsResponse(json, myUid));
       } catch (e) {
         setError("Could not load conversations.");
       } finally {
@@ -107,16 +75,14 @@ export default function InboxScreen() {
         setRefreshing(false);
       }
     },
-    [myUid, myBusinessUids]
+    [myUid],
   );
 
-  // Re-run fetchConversations once both myUid and myBusinessUids are ready
-  // (handles the case where screen is already focused when they load)
   useEffect(() => {
-    if (myUid && myBusinessUids !== null) {
+    if (myUid) {
       fetchConversations();
     }
-  }, [myUid, myBusinessUids]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [myUid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reload whenever the screen gains focus, clear the dot, and suppress banners
   useFocusEffect(
@@ -125,7 +91,7 @@ export default function InboxScreen() {
       clearUnread();
       enterChatView();
       return () => leaveChatView();
-    }, [fetchConversations, clearUnread, enterChatView, leaveChatView])
+    }, [fetchConversations, clearUnread, enterChatView, leaveChatView]),
   );
 
   const onRefresh = () => {
@@ -134,33 +100,25 @@ export default function InboxScreen() {
   };
 
   const openChat = (conv) => {
-    // Determine which UID the current user is in this conversation
-    // (may be one of their owned business UIDs instead of their personal UID)
-    const senderUid =
-      myBusinessUids.includes(conv.my_uid) ? conv.my_uid : myUid;
+    const name = conv.displayName || `${conv.first_name || ""} ${conv.last_name || ""}`.trim() || "Chat";
     navigation.navigate("Chat", {
       conversation_uid: conv.conversation_uid,
       other_uid: conv.other_uid,
-      other_name: `${conv.first_name || ""} ${conv.last_name || ""}`.trim() || "Chat",
+      other_name: name,
       other_image: conv.image || null,
-      my_uid_override: senderUid !== myUid ? senderUid : undefined,
     });
   };
 
   // ─── render helpers ───────────────────────────────────────────────────────
 
   const renderItem = ({ item }) => {
-    const name = `${item.first_name || ""} ${item.last_name || ""}`.trim() || "Unknown";
+    const name = item.displayName || `${item.first_name || ""} ${item.last_name || ""}`.trim() || "Unknown";
     const initials = getInitials(item.first_name, item.last_name);
     const preview = item.last_message || "No messages yet";
     const time = formatRelativeTime(item.last_sent_at || item.last_message_at);
 
     return (
-      <TouchableOpacity
-        style={[styles.row, darkMode && styles.rowDark]}
-        onPress={() => openChat(item)}
-        activeOpacity={0.7}
-      >
+      <TouchableOpacity style={[styles.row, darkMode && styles.rowDark]} onPress={() => openChat(item)} activeOpacity={0.7}>
         {/* Avatar */}
         <View style={styles.avatarWrap}>
           {item.image ? (
@@ -190,11 +148,9 @@ export default function InboxScreen() {
 
   const EmptyState = () => (
     <View style={styles.empty}>
-      <Ionicons name="chatbubbles-outline" size={56} color={darkMode ? "#555" : "#767676"} />
+      <Ionicons name='chatbubbles-outline' size={56} color={darkMode ? "#555" : "#767676"} />
       <Text style={[styles.emptyText, darkMode && styles.emptyTextDark]}>No conversations yet</Text>
-      <Text style={[styles.emptySubText, darkMode && styles.emptySubTextDark]}>
-        Navigate to someone's profile and start a chat
-      </Text>
+      <Text style={[styles.emptySubText, darkMode && styles.emptySubTextDark]}>Navigate to someone's profile and start a chat</Text>
     </View>
   );
 
@@ -202,15 +158,11 @@ export default function InboxScreen() {
 
   return (
     <SafeAreaView style={[styles.container, darkMode && styles.containerDark]}>
-      <AppHeader
-        title="MESSAGES"
-        backgroundColor="#AF52DE"
-        onBackPress={() => navigation.goBack()}
-      />
+      <AppHeader title='MESSAGES' backgroundColor='#AF52DE' onBackPress={() => navigation.goBack()} />
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#AF52DE" />
+          <ActivityIndicator size='large' color='#AF52DE' />
         </View>
       ) : error ? (
         <View style={styles.center}>
@@ -225,21 +177,9 @@ export default function InboxScreen() {
           keyExtractor={(item) => item.conversation_uid}
           renderItem={renderItem}
           ListEmptyComponent={<EmptyState />}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#AF52DE"
-              colors={["#AF52DE"]}
-            />
-          }
-          contentContainerStyle={[
-            conversations.length === 0 ? styles.emptyContainer : null,
-            styles.listContent,
-          ]}
-          ItemSeparatorComponent={() => (
-            <View style={[styles.separator, darkMode && styles.separatorDark]} />
-          )}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor='#AF52DE' colors={["#AF52DE"]} />}
+          contentContainerStyle={[conversations.length === 0 ? styles.emptyContainer : null, styles.listContent]}
+          ItemSeparatorComponent={() => <View style={[styles.separator, darkMode && styles.separatorDark]} />}
         />
       )}
       <BottomNavBar navigation={navigation} />

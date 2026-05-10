@@ -1,16 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Image,
-  Keyboard,
-  Platform,
-} from "react-native";
+import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Image, Keyboard, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,6 +11,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { CHAT_CONVERSATIONS_ENDPOINT, CHAT_MESSAGES_ENDPOINT } from "../apiConfig";
 import { createAblyRealtimeClient } from "../utils/ablyClient";
+import { normalizeMessageForUi, orderMessagesForChatList } from "../utils/chatConversations";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -32,17 +22,15 @@ function formatTime(isoString) {
 }
 
 function sameDay(a, b) {
-  const da = new Date(a.replace(" ", "T") + "Z");
-  const db = new Date(b.replace(" ", "T") + "Z");
-  return (
-    da.getFullYear() === db.getFullYear() &&
-    da.getMonth() === db.getMonth() &&
-    da.getDate() === db.getDate()
-  );
+  if (!a || !b) return false;
+  const da = new Date(String(a).replace(" ", "T") + "Z");
+  const db = new Date(String(b).replace(" ", "T") + "Z");
+  return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
 }
 
 function formatDayLabel(isoString) {
-  const d = new Date(isoString.replace(" ", "T") + "Z");
+  if (!isoString) return "";
+  const d = new Date(String(isoString).replace(" ", "T") + "Z");
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
@@ -68,14 +56,7 @@ export default function ChatScreen() {
 
   // Params — either pass an existing conversation_uid or just other_uid to create one.
   // my_uid_override is set when a business owner opens a conversation as their business entity.
-  const {
-    conversation_uid: initialConvUid,
-    other_uid,
-    other_name: paramOtherName,
-    other_image: paramOtherImage,
-    my_uid_override,
-    reply_context,
-  } = route.params || {};
+  const { conversation_uid: initialConvUid, other_uid, other_name: paramOtherName, other_image: paramOtherImage, my_uid_override, reply_context } = route.params || {};
 
   const [myUid, setMyUid] = useState(null);
   const [convUid, setConvUid] = useState(initialConvUid || null);
@@ -101,7 +82,7 @@ export default function ChatScreen() {
   useEffect(() => {
     (async () => {
       // If coming from InboxScreen as a business owner, use the override UID
-      const uid = my_uid_override || await AsyncStorage.getItem("profile_uid");
+      const uid = my_uid_override || (await AsyncStorage.getItem("profile_uid"));
       setMyUid(uid);
       myUidRef.current = uid;
     })();
@@ -157,9 +138,11 @@ export default function ChatScreen() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${CHAT_MESSAGES_ENDPOINT}/${cid}`);
+      const res = await fetch(`${CHAT_MESSAGES_ENDPOINT}/${encodeURIComponent(cid)}`);
       const json = await res.json();
-      setMessages(json.result || []);
+      const raw = Array.isArray(json.result) ? json.result : [];
+      const mapped = raw.map(normalizeMessageForUi);
+      setMessages(orderMessagesForChatList(mapped));
     } catch (e) {
       setError("Could not load messages.");
     } finally {
@@ -243,11 +226,12 @@ export default function ChatScreen() {
       ablyChannelRef.current = channel;
       const handler = (msg) => {
         const data = msg.data || {};
-        // Skip messages we sent ourselves — already in state via optimistic UI
-        if (data.sender_uid === myUidRef.current) return;
+        const incoming = normalizeMessageForUi(data);
+        const sid = incoming.message_sender_uid || incoming.sender_uid;
+        if (sid === myUidRef.current) return;
         setMessages((prev) => {
-          if (prev.some((m) => m.message_uid === data.message_uid)) return prev;
-          return [...prev, { ...data }];
+          if (prev.some((m) => m.message_uid === incoming.message_uid)) return prev;
+          return [...prev, incoming];
         });
       };
       ablyMessageHandlerRef.current = handler;
@@ -294,13 +278,15 @@ export default function ChatScreen() {
     if (!text || !convUid || !myUid || sending) return;
     const bodyToSend = buildReplyBody(text, pendingReplyContext);
 
-    const optimistic = {
+    const sentStamp = new Date().toISOString().replace("T", " ").slice(0, 19);
+    const optimistic = normalizeMessageForUi({
       message_uid: `optimistic-${Date.now()}`,
-      conversation_uid: convUid,
-      sender_uid: myUid,
-      body: bodyToSend,
-      sent_at: new Date().toISOString().replace("T", " ").slice(0, 19),
-    };
+      message_conversation_id: convUid,
+      message_sender_uid: myUid,
+      message_body: bodyToSend,
+      message_sent_at: sentStamp,
+      message_read_at: null,
+    });
 
     setInputText("");
     setSending(true);
@@ -317,12 +303,14 @@ export default function ChatScreen() {
         }),
       });
       const json = await res.json();
-      // Replace optimistic with confirmed, removing any duplicate that Ably may have added
       setMessages((prev) => {
-        const confirmed = { ...optimistic, message_uid: json.message_uid, sent_at: json.sent_at };
-        const without = prev.filter(
-          (m) => m.message_uid !== optimistic.message_uid && m.message_uid !== json.message_uid
-        );
+        const confirmed = normalizeMessageForUi({
+          ...optimistic,
+          message_uid: json.message_uid ?? json.message?.message_uid,
+          message_sent_at: json.sent_at ?? json.message_sent_at ?? optimistic.message_sent_at,
+        });
+        const mid = confirmed.message_uid;
+        const without = prev.filter((m) => m.message_uid !== optimistic.message_uid && m.message_uid !== mid);
         return [...without, confirmed];
       });
       if (pendingReplyContext) {
@@ -340,58 +328,33 @@ export default function ChatScreen() {
   // ─── render helpers ───────────────────────────────────────────────────────
 
   const renderMessage = ({ item, index }) => {
-    const isMine = item.sender_uid === myUid;
-    const parsedBody = parseReplyBody(item.body);
-    const showDayLabel =
-      index === 0 ||
-      !sameDay(messages[index - 1].sent_at, item.sent_at);
+    const sender = item.message_sender_uid ?? item.sender_uid;
+    const isMine = sender === myUid;
+    const bodyText = item.message_body ?? item.body ?? "";
+    const sentAt = item.message_sent_at ?? item.sent_at ?? "";
+    const parsedBody = parseReplyBody(bodyText);
+    const prevSent = index > 0 ? messages[index - 1].message_sent_at ?? messages[index - 1].sent_at : null;
+    const showDayLabel = index === 0 || !sameDay(prevSent, sentAt);
 
     return (
       <>
         {showDayLabel && (
           <View style={styles.dayLabelWrap}>
-            <Text style={[styles.dayLabel, darkMode && styles.dayLabelDark]}>
-              {formatDayLabel(item.sent_at)}
-            </Text>
+            <Text style={[styles.dayLabel, darkMode && styles.dayLabelDark]}>{formatDayLabel(sentAt)}</Text>
           </View>
         )}
         <View style={[styles.msgRow, isMine ? styles.msgRowMine : styles.msgRowTheirs]}>
-          <View
-            style={[
-              styles.bubble,
-              parsedBody.isReply && styles.bubbleReply,
-              isMine
-                ? styles.bubbleMine
-                : [styles.bubbleTheirs, darkMode && styles.bubbleTheirsDark],
-            ]}
-          >
+          <View style={[styles.bubble, parsedBody.isReply && styles.bubbleReply, isMine ? styles.bubbleMine : [styles.bubbleTheirs, darkMode && styles.bubbleTheirsDark]]}>
             {parsedBody.isReply && parsedBody.contextLabel ? (
-              <View
-                style={[
-                  styles.replyHeader,
-                  isMine ? styles.replyHeaderMine : styles.replyHeaderTheirs,
-                  !isMine && darkMode && styles.replyHeaderTheirsDark,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.replyHeaderText,
-                    isMine ? styles.replyHeaderTextMine : styles.replyHeaderTextTheirs,
-                    !isMine && darkMode && styles.replyHeaderTextTheirsDark,
-                  ]}
-                  numberOfLines={2}
-                >
+              <View style={[styles.replyHeader, isMine ? styles.replyHeaderMine : styles.replyHeaderTheirs, !isMine && darkMode && styles.replyHeaderTheirsDark]}>
+                <Text style={[styles.replyHeaderText, isMine ? styles.replyHeaderTextMine : styles.replyHeaderTextTheirs, !isMine && darkMode && styles.replyHeaderTextTheirsDark]} numberOfLines={2}>
                   {parsedBody.contextLabel}
                 </Text>
               </View>
             ) : null}
-            <Text style={[styles.bubbleText, isMine ? styles.bubbleTextMine : darkMode && styles.bubbleTextDark]}>
-              {parsedBody.text}
-            </Text>
+            <Text style={[styles.bubbleText, isMine ? styles.bubbleTextMine : darkMode && styles.bubbleTextDark]}>{parsedBody.text}</Text>
           </View>
-          <Text style={[styles.msgTime, isMine ? styles.msgTimeMine : darkMode && styles.msgTimeDark]}>
-            {formatTime(item.sent_at)}
-          </Text>
+          <Text style={[styles.msgTime, isMine ? styles.msgTimeMine : darkMode && styles.msgTimeDark]}>{formatTime(sentAt)}</Text>
         </View>
       </>
     );
@@ -403,7 +366,7 @@ export default function ChatScreen() {
     <SafeAreaView edges={["top"]} style={[styles.container, darkMode && styles.containerDark]}>
       <AppHeader
         title={otherName}
-        backgroundColor="#AF52DE"
+        backgroundColor='#AF52DE'
         onBackPress={() => {
           if (navigation.canGoBack()) {
             navigation.goBack();
@@ -413,11 +376,8 @@ export default function ChatScreen() {
         }}
         rightButton={
           other_uid ? (
-            <TouchableOpacity
-              onPress={() => navigation.navigate("Profile", { profile_uid: other_uid })}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="person-circle-outline" size={26} color="#fff" />
+            <TouchableOpacity onPress={() => navigation.navigate("Profile", { profile_uid: other_uid })} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name='person-circle-outline' size={26} color='#fff' />
             </TouchableOpacity>
           ) : null
         }
@@ -431,13 +391,12 @@ export default function ChatScreen() {
         style={{
           flex: 1,
           minHeight: 0,
-          paddingBottom:
-            keyboardBottomInset > 0 ? keyboardBottomInset + KEYBOARD_COMPOSER_EXTRA_PAD : NAV_BAR_HEIGHT,
+          paddingBottom: keyboardBottomInset > 0 ? keyboardBottomInset + KEYBOARD_COMPOSER_EXTRA_PAD : NAV_BAR_HEIGHT,
         }}
       >
         {loading ? (
           <View style={styles.center}>
-            <ActivityIndicator size="large" color="#AF52DE" />
+            <ActivityIndicator size='large' color='#AF52DE' />
           </View>
         ) : error ? (
           <View style={styles.center}>
@@ -451,23 +410,15 @@ export default function ChatScreen() {
             keyExtractor={(item) => item.message_uid}
             renderItem={renderMessage}
             contentContainerStyle={styles.messageList}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps='handled'
+            keyboardDismissMode='on-drag'
             ListEmptyComponent={
               <View style={styles.emptyMessages}>
-                <Ionicons
-                  name="chatbubble-ellipses-outline"
-                  size={48}
-                  color={darkMode ? "#555" : "#ccc"}
-                />
-                <Text style={[styles.emptyText, darkMode && styles.emptyTextDark]}>
-                  No messages yet. Say hi!
-                </Text>
+                <Ionicons name='chatbubble-ellipses-outline' size={48} color={darkMode ? "#555" : "#ccc"} />
+                <Text style={[styles.emptyText, darkMode && styles.emptyTextDark]}>No messages yet. Say hi!</Text>
               </View>
             }
-            onContentSizeChange={() =>
-              flatListRef.current?.scrollToEnd({ animated: false })
-            }
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
           />
         )}
 
@@ -478,30 +429,22 @@ export default function ChatScreen() {
                 Replying to {pendingReplyContext.label}
               </Text>
               <TouchableOpacity onPress={() => setPendingReplyContext(null)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-                <Ionicons name="close" size={16} color={darkMode ? "#ddd" : "#666"} />
+                <Ionicons name='close' size={16} color={darkMode ? "#ddd" : "#666"} />
               </TouchableOpacity>
             </View>
           ) : null}
           <TextInput
             style={[styles.input, darkMode && styles.inputDark]}
-            placeholder="Type a message..."
+            placeholder='Type a message...'
             placeholderTextColor={darkMode ? "#666" : "#aaa"}
             value={inputText}
             onChangeText={setInputText}
             multiline
             maxLength={1000}
-            returnKeyType="default"
+            returnKeyType='default'
           />
-          <TouchableOpacity
-            style={[styles.sendBtn, (!inputText.trim() || sending) && styles.sendBtnDisabled]}
-            onPress={sendMessage}
-            disabled={!inputText.trim() || sending}
-          >
-            {sending ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Ionicons name="send" size={20} color="#fff" />
-            )}
+          <TouchableOpacity style={[styles.sendBtn, (!inputText.trim() || sending) && styles.sendBtnDisabled]} onPress={sendMessage} disabled={!inputText.trim() || sending}>
+            {sending ? <ActivityIndicator size='small' color='#fff' /> : <Ionicons name='send' size={20} color='#fff' />}
           </TouchableOpacity>
         </View>
       </View>

@@ -20,6 +20,7 @@ import { getHeaderColors, getHeaderColor } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTokenNoLongerActive } from "../utils/ablyClient";
 import { getSessionProfile } from "../utils/sessionProfile";
+import { normalizeConversationsResponse } from "../utils/chatConversations";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -213,7 +214,7 @@ const NetworkScreen = ({ navigation }) => {
   const fetchProfileViewers = async (accountId) => {
     try {
       setViewersLoading(true);
-      const id = accountId || await AsyncStorage.getItem("profile_uid");
+      const id = accountId || (await AsyncStorage.getItem("profile_uid"));
       if (!id) return;
       const response = await fetch(`${PROFILE_VIEWS_ENDPOINT}/${id}`);
       if (response.ok) {
@@ -550,11 +551,7 @@ const NetworkScreen = ({ navigation }) => {
               const profRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${uid}`);
               if (profRes.ok) {
                 const profJson = await profRes.json();
-                const bizList = profJson.business_info
-                  ? typeof profJson.business_info === "string"
-                    ? JSON.parse(profJson.business_info)
-                    : profJson.business_info
-                  : [];
+                const bizList = profJson.business_info ? (typeof profJson.business_info === "string" ? JSON.parse(profJson.business_info) : profJson.business_info) : [];
                 setViewerBusinesses(bizList);
               }
             } catch (e) {
@@ -2038,38 +2035,16 @@ const NetworkScreen = ({ navigation }) => {
 
   const fetchConversations = async () => {
     const session = await getSessionProfile();
-    const uid = profileUid || session?.profileUid || (await AsyncStorage.getItem("profile_uid"));
+    const uid = (profileUid || session?.profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
     if (!uid) return;
     setConversationsLoading(true);
     try {
-      // Prefer shared session cache to avoid repeated profile API calls.
-      const bizUids = session?.profileUid === uid ? (session.businessUids || []) : [];
-
-      // Fetch conversations for personal UID + all owned business UIDs
-      const uidsToFetch = [uid, ...bizUids];
-      const results = await Promise.all(
-        uidsToFetch.map((u) =>
-          fetch(`${CHAT_CONVERSATIONS_ENDPOINT}/${u}`)
-            .then((r) => r.json())
-            .then((j) => j.result || [])
-            .catch(() => []),
-        ),
-      );
-
-      // Merge, deduplicate, and sort newest-first
-      const merged = Object.values(
-        results.flat().reduce((acc, conv) => {
-          if (!acc[conv.conversation_uid]) acc[conv.conversation_uid] = conv;
-          return acc;
-        }, {}),
-      );
-      merged.sort((a, b) => {
-        const ta = new Date((a.last_sent_at || a.last_message_at || "").replace(" ", "T") + "Z");
-        const tb = new Date((b.last_sent_at || b.last_message_at || "").replace(" ", "T") + "Z");
-        return tb - ta;
-      });
-      setConversations(merged);
-    } catch (_) {}
+      const res = await fetch(`${CHAT_CONVERSATIONS_ENDPOINT}/${encodeURIComponent(uid)}`);
+      const json = await res.json();
+      setConversations(normalizeConversationsResponse(json, uid));
+    } catch (_) {
+      setConversations([]);
+    }
     setConversationsLoading(false);
   };
 
@@ -2193,11 +2168,7 @@ const NetworkScreen = ({ navigation }) => {
                       <Ionicons name='camera-outline' size={28} color={darkMode ? "#ffffff" : "#000000"} />
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[styles.formSwitchContainer, darkMode && styles.darkFormSwitchContainer]}
-                      onPress={() => setConnectDirectlyVisible(true)}
-                      activeOpacity={0.7}
-                    >
+                    <TouchableOpacity style={[styles.formSwitchContainer, darkMode && styles.darkFormSwitchContainer]} onPress={() => setConnectDirectlyVisible(true)} activeOpacity={0.7}>
                       <View style={styles.formSwitchTextContainer}>
                         <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>Connect Directly</Text>
                       </View>
@@ -2778,7 +2749,7 @@ const NetworkScreen = ({ navigation }) => {
                 </View>
               ) : (
                 conversations.map((conv, idx) => {
-                  const name = `${conv.first_name || ""} ${conv.last_name || ""}`.trim() || "Unknown";
+                  const name = conv.displayName || `${conv.first_name || ""} ${conv.last_name || ""}`.trim() || "Unknown";
                   const initials = ((conv.first_name || "").charAt(0) + (conv.last_name || "").charAt(0)).toUpperCase() || "?";
                   const preview = conv.last_message || "No messages yet";
                   const time = _convRelTime(conv.last_sent_at || conv.last_message_at);
@@ -2787,14 +2758,11 @@ const NetworkScreen = ({ navigation }) => {
                       key={conv.conversation_uid}
                       style={[styles.messagesRow, darkMode && styles.messagesRowDark, idx > 0 && (darkMode ? styles.messagesRowBorderDark : styles.messagesRowBorder)]}
                       onPress={() => {
-                        const myPersonalUid = profileUid;
                         navigation.navigate("Chat", {
                           conversation_uid: conv.conversation_uid,
                           other_uid: conv.other_uid,
                           other_name: name,
                           other_image: conv.image || null,
-                          // If this conversation belongs to an owned business, send as that business
-                          my_uid_override: conv.my_uid !== myPersonalUid ? conv.my_uid : undefined,
                         });
                       }}
                       activeOpacity={0.7}
@@ -2842,11 +2810,7 @@ const NetworkScreen = ({ navigation }) => {
           {showProfileViewers && (
             <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
               <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 4 }}>
-                <TouchableOpacity
-                  style={styles.viewersDropdownBtn}
-                  onPress={() => setShowViewersAccountDropdown((p) => !p)}
-                  activeOpacity={0.7}
-                >
+                <TouchableOpacity style={styles.viewersDropdownBtn} onPress={() => setShowViewersAccountDropdown((p) => !p)} activeOpacity={0.7}>
                   <Text style={[styles.viewersDropdownBtnText, darkMode && { color: "#e0e0e0" }]}>
                     {viewersSelectedAccount === "personal"
                       ? "Personal"
@@ -2887,7 +2851,7 @@ const NetworkScreen = ({ navigation }) => {
                 )}
               </View>
               {viewersLoading ? (
-                <ActivityIndicator size="small" color="#AF52DE" style={{ paddingVertical: 20 }} />
+                <ActivityIndicator size='small' color='#AF52DE' style={{ paddingVertical: 20 }} />
               ) : profileViewers.length > 0 ? (
                 profileViewers.map((viewer, index) => (
                   <TouchableOpacity
@@ -2914,15 +2878,13 @@ const NetworkScreen = ({ navigation }) => {
                       }}
                     />
                     {viewer.view_timestamp ? (
-                      <Text style={styles.viewedTimestamp}>
-                        Viewed: {new Date(viewer.view_timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                      </Text>
+                      <Text style={styles.viewedTimestamp}>Viewed: {new Date(viewer.view_timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</Text>
                     ) : null}
                   </TouchableOpacity>
                 ))
               ) : (
                 <View style={styles.messagesEmpty}>
-                  <Ionicons name="eye-outline" size={40} color={darkMode ? "#555" : "#ccc"} />
+                  <Ionicons name='eye-outline' size={40} color={darkMode ? "#555" : "#ccc"} />
                   <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark]}>
                     {viewersSelectedAccount === "personal" ? "No profile views yet" : "No business profile views yet"}
                   </Text>
@@ -3098,15 +3060,7 @@ const NetworkScreen = ({ navigation }) => {
         />
       )}
       {filterModalKind === "date" && (
-        <ConnectionFilterModal
-          visible
-          title='4. Date(s)'
-          options={DATE_FILTER_OPTIONS}
-          selected={dateFilter}
-          onSelect={setDateFilter}
-          onClose={() => setFilterModalKind(null)}
-          darkMode={darkMode}
-        />
+        <ConnectionFilterModal visible title='4. Date(s)' options={DATE_FILTER_OPTIONS} selected={dateFilter} onSelect={setDateFilter} onClose={() => setFilterModalKind(null)} darkMode={darkMode} />
       )}
       {filterModalKind === "location" && (
         <ConnectionFilterModal
@@ -3131,15 +3085,7 @@ const NetworkScreen = ({ navigation }) => {
         />
       )}
       {filterModalKind === "notes" && (
-        <ConnectionFilterModal
-          visible
-          title='7. Notes'
-          options={noteOptionsForModal}
-          selected={notesFilter}
-          onSelect={setNotesFilter}
-          onClose={() => setFilterModalKind(null)}
-          darkMode={darkMode}
-        />
+        <ConnectionFilterModal visible title='7. Notes' options={noteOptionsForModal} selected={notesFilter} onSelect={setNotesFilter} onClose={() => setFilterModalKind(null)} darkMode={darkMode} />
       )}
       {filterModalKind === "introduced" && (
         <ConnectionFilterModal
