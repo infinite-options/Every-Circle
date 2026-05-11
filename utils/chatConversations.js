@@ -17,6 +17,29 @@ function participantImageIsPublic(conv, side) {
   return true;
 }
 
+function participantFirstName(conv, side) {
+  if (side === "a") {
+    return conv.partipant_a_first_name ?? conv.participant_a_first_name ?? null;
+  }
+  return conv.partipant_b_first_name ?? conv.participant_b_first_name ?? null;
+}
+
+function participantLastName(conv, side) {
+  if (side === "a") {
+    return conv.partipant_a_last_name ?? conv.participant_a_last_name ?? null;
+  }
+  return conv.partipant_b_last_name ?? conv.participant_b_last_name ?? null;
+}
+
+/** Backend may send `business_name` or dotted alias `bb.business_name`. */
+function conversationBusinessDisplayName(conv) {
+  const direct = conv.business_name;
+  if (direct != null && String(direct).trim() !== "") return String(direct).trim();
+  const dotted = conv["bb.business_name"];
+  if (dotted != null && String(dotted).trim() !== "") return String(dotted).trim();
+  return "";
+}
+
 /**
  * One row from conversations GET → shape used by Inbox / Connect message list.
  * @param {object} conv — raw API row
@@ -28,22 +51,61 @@ export function normalizeConversationListItem(conv, myProfileUid) {
   const b = String(conv.participant_b_uid ?? "").trim();
   const otherUid = a === my ? b : a;
   const imA = a === my;
+  const otherSide = imA ? "b" : "a";
 
   const otherImg = imA ? participantImage(conv, "b") : participantImage(conv, "a");
   const otherPublic = imA ? participantImageIsPublic(conv, "b") : participantImageIsPublic(conv, "a");
-  const image = otherPublic && otherImg ? otherImg : null;
+  let image = otherPublic && otherImg ? otherImg : null;
+
+  const fn = participantFirstName(conv, otherSide);
+  const ln = participantLastName(conv, otherSide);
+  const fullName = [fn, ln].filter((x) => x != null && String(x).trim() !== "").map((x) => String(x).trim()).join(" ");
+  const bizName = conversationBusinessDisplayName(conv);
+
+  /** Human label for Chat header / Inbox row (not the Connect uid line). */
+  let displayName = bizName || fullName || otherUid || "Chat";
+
+  /** If other side has no direct image, try business-profile image fields (bpb_* when participant B is business). */
+  if (!image) {
+    const bpbImg = conv.bpb_partipant_a_image ?? conv.bpb_participant_a_image;
+    const bpbPub = conv.bpb_partipant_a_image_is_public ?? conv.bpb_participant_a_image_is_public;
+    const bpbOk = bpbPub !== 0 && bpbPub !== "0" && bpbPub !== false && bpbImg;
+    if (otherSide === "b" && bpbOk) {
+      image = bpbImg;
+      if (!fullName && !bizName) {
+        const bpbFn = conv.bpb_first_name;
+        const bpbLn = conv.bpb_last_name;
+        const bpbFull = [bpbFn, bpbLn].filter((x) => x != null && String(x).trim() !== "").map((x) => String(x).trim()).join(" ");
+        if (bpbFull) displayName = bpbFull;
+      }
+    }
+  }
+
+  const namePart = bizName || fullName || "";
+  /** Connect list: `Business or First Last (uid)` when we have a name; otherwise uid only. */
+  const connectListTitle = namePart ? `${namePart} (${otherUid})` : otherUid;
+
+  const fnStr = fn != null ? String(fn).trim() : "";
+  const lnStr = ln != null ? String(ln).trim() : "";
+  let connectListInitials = "?";
+  if (fnStr || lnStr) {
+    connectListInitials = `${fnStr.charAt(0)}${lnStr.charAt(0) || ""}`.toUpperCase() || "?";
+  } else if (bizName) {
+    const letters = bizName.replace(/[^a-zA-Z0-9]/g, "");
+    connectListInitials = (letters.slice(0, 2) || bizName.slice(0, 2)).toUpperCase();
+  }
 
   const lastSent = conv.message_sent_at || conv.last_message_at || null;
   const preview = conv.message_body != null ? String(conv.message_body) : "";
 
-  const displayName = otherUid || "Chat";
-
   return {
     conversation_uid: conv.conversation_uid,
     other_uid: otherUid,
-    first_name: displayName,
-    last_name: "",
+    first_name: fnStr,
+    last_name: lnStr,
     displayName,
+    connectListTitle,
+    connectListInitials,
     image,
     last_message: preview,
     last_sent_at: lastSent,

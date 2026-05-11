@@ -2749,10 +2749,11 @@ const NetworkScreen = ({ navigation }) => {
                 </View>
               ) : (
                 conversations.map((conv, idx) => {
-                  const name = conv.displayName || `${conv.first_name || ""} ${conv.last_name || ""}`.trim() || "Unknown";
-                  const initials = ((conv.first_name || "").charAt(0) + (conv.last_name || "").charAt(0)).toUpperCase() || "?";
+                  const listTitle = conv.connectListTitle || conv.displayName || `${conv.first_name || ""} ${conv.last_name || ""}`.trim() || conv.other_uid || "Unknown";
+                  const initials = conv.connectListInitials || ((conv.first_name || "").charAt(0) + (conv.last_name || "").charAt(0)).toUpperCase() || "?";
                   const preview = conv.last_message || "No messages yet";
                   const time = _convRelTime(conv.last_sent_at || conv.last_message_at);
+                  const chatHeaderName = conv.displayName || listTitle;
                   return (
                     <TouchableOpacity
                       key={conv.conversation_uid}
@@ -2761,7 +2762,7 @@ const NetworkScreen = ({ navigation }) => {
                         navigation.navigate("Chat", {
                           conversation_uid: conv.conversation_uid,
                           other_uid: conv.other_uid,
-                          other_name: name,
+                          other_name: chatHeaderName,
                           other_image: conv.image || null,
                         });
                       }}
@@ -2778,8 +2779,8 @@ const NetworkScreen = ({ navigation }) => {
                       </View>
                       <View style={styles.messagesTextBlock}>
                         <View style={styles.messagesNameRow}>
-                          <Text style={[styles.messagesName, darkMode && styles.messagesNameDark]} numberOfLines={1}>
-                            {name}
+                          <Text style={[styles.messagesName, darkMode && styles.messagesNameDark]} numberOfLines={2}>
+                            {listTitle}
                           </Text>
                           <Text style={[styles.messagesTime, darkMode && styles.messagesTimeDark]}>{time}</Text>
                         </View>
