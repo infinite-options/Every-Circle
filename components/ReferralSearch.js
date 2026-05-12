@@ -79,6 +79,8 @@ const ReferralSearch = ({
     );
     const relationship = existingConnection?.circle_relationship;
 
+    const degree = existingConnection?.degree;
+
     return (
       <TouchableOpacity style={styles.userItem} onPress={() => handleSelectUser(item)}>
         <Image
@@ -88,9 +90,12 @@ const ReferralSearch = ({
         <View style={styles.userInfo}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
             <Text style={styles.userName}>{fullName || "Unknown"}</Text>
-            {relationship ? (
+            {(relationship || degree) ? (
               <Text style={{ fontSize: 13, color: "#888", fontStyle: "italic" }}>
-                {relationship.charAt(0).toUpperCase() + relationship.slice(1)}
+                {[
+                  relationship ? relationship.charAt(0).toUpperCase() + relationship.slice(1) : null,
+                  degree ? `Level ${degree}` : null,
+                ].filter(Boolean).join(" · ")}
               </Text>
             ) : null}
           </View>

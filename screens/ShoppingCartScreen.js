@@ -311,6 +311,8 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         return;
       }
 
+      await decrementStockForPurchasedItems();
+
       webCheckoutSessionRef.current = null;
       setWebCheckoutSession(null);
 
@@ -438,6 +440,9 @@ const ShoppingCartScreen = ({ route, navigation }) => {
             },
           },
         ]);
+
+        await decrementStockForPurchasedItems();
+
       } catch (error) {
         console.error("Error clearing cart data:", error);
         Alert.alert("Error", "There was an error clearing your cart. Please try again.");
