@@ -1,5 +1,5 @@
 // NetworkScreen.js - Web-compatible version
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import BottomNavBar from "../components/BottomNavBar";
@@ -21,6 +21,7 @@ import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../confi
 import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTokenNoLongerActive } from "../utils/ablyClient";
 import { getSessionProfile } from "../utils/sessionProfile";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
+import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -2033,7 +2034,7 @@ const NetworkScreen = ({ navigation }) => {
     } catch (_) {}
   };
 
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     const session = await getSessionProfile();
     const uid = (profileUid || session?.profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
     if (!uid) return;
@@ -2046,7 +2047,17 @@ const NetworkScreen = ({ navigation }) => {
       setConversations([]);
     }
     setConversationsLoading(false);
-  };
+  }, [profileUid]);
+
+  // When returning from Chat, refresh the list so the just-sent message appears immediately.
+  useFocusEffect(
+    useCallback(() => {
+      if (showMessages) {
+        fetchConversations();
+        clearUnread();
+      }
+    }, [showMessages, fetchConversations, clearUnread]),
+  );
 
   const _convRelTime = (iso) => {
     if (!iso) return "";
@@ -2749,10 +2760,11 @@ const NetworkScreen = ({ navigation }) => {
                 </View>
               ) : (
                 conversations.map((conv, idx) => {
-                  const name = conv.displayName || `${conv.first_name || ""} ${conv.last_name || ""}`.trim() || "Unknown";
-                  const initials = ((conv.first_name || "").charAt(0) + (conv.last_name || "").charAt(0)).toUpperCase() || "?";
+                  const listTitle = conv.connectListTitle || conv.displayName || `${conv.first_name || ""} ${conv.last_name || ""}`.trim() || conv.other_uid || "Unknown";
+                  const initials = conv.connectListInitials || ((conv.first_name || "").charAt(0) + (conv.last_name || "").charAt(0)).toUpperCase() || "?";
                   const preview = conv.last_message || "No messages yet";
                   const time = _convRelTime(conv.last_sent_at || conv.last_message_at);
+                  const chatHeaderName = conv.displayName || listTitle;
                   return (
                     <TouchableOpacity
                       key={conv.conversation_uid}
@@ -2761,7 +2773,7 @@ const NetworkScreen = ({ navigation }) => {
                         navigation.navigate("Chat", {
                           conversation_uid: conv.conversation_uid,
                           other_uid: conv.other_uid,
-                          other_name: name,
+                          other_name: chatHeaderName,
                           other_image: conv.image || null,
                         });
                       }}
@@ -2778,8 +2790,8 @@ const NetworkScreen = ({ navigation }) => {
                       </View>
                       <View style={styles.messagesTextBlock}>
                         <View style={styles.messagesNameRow}>
-                          <Text style={[styles.messagesName, darkMode && styles.messagesNameDark]} numberOfLines={1}>
-                            {name}
+                          <Text style={[styles.messagesName, darkMode && styles.messagesNameDark]} numberOfLines={2}>
+                            {listTitle}
                           </Text>
                           <Text style={[styles.messagesTime, darkMode && styles.messagesTimeDark]}>{time}</Text>
                         </View>
@@ -2877,8 +2889,8 @@ const NetworkScreen = ({ navigation }) => {
                         locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
                       }}
                     />
-                    {viewer.view_timestamp ? (
-                      <Text style={styles.viewedTimestamp}>Viewed: {new Date(viewer.view_timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</Text>
+                    {getLatestProfileViewTimestamp(viewer.view_timestamp) ? (
+                      <Text style={styles.viewedTimestamp}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text>
                     ) : null}
                   </TouchableOpacity>
                 ))

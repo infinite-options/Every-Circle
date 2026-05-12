@@ -652,6 +652,11 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
     }
   };
 
+  const expertiseWebPayeeName =
+    [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim() ||
+    (expertiseData?.title != null && String(expertiseData.title).trim() !== "" ? String(expertiseData.title).trim() : null) ||
+    null;
+
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header with Back Button + shopping cart */}
@@ -727,6 +732,9 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
                   other_uid: profile_uid,
                   other_name: `${userForMiniCard.firstName} ${userForMiniCard.lastName}`.trim() || "Chat",
                   other_image: userForMiniCard.profileImage && userForMiniCard.imageIsPublic ? userForMiniCard.profileImage : null,
+                  reply_context: {
+                    label: `Offering: ${String(expertiseData?.title || "").trim() || "Offering"}`,
+                  },
                 })
               }
             >
@@ -846,12 +854,14 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
               setShowFeesDialog(false);
               setLoading(false);
             }}
+            payeeBusinessName={expertiseWebPayeeName}
           />
           {stripePromise && customerUid && currentClientSecret && (
             <StripePayment
               message='ECTEST'
               amount={parseFloat(currentClientSecret) * 1.03} // Add 3% fee
               paidBy={customerUid}
+              payeeBusinessName={expertiseWebPayeeName}
               show={showStripePayment}
               setShow={setShowStripePayment}
               submit={handleWebPaymentSubmit}

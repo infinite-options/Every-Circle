@@ -9,7 +9,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
-import { normalizeBusinessServiceFromApi } from "../utils/normalizeBusinessServiceFromApi";
+import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { parsePrice } from "../utils/priceUtils";
@@ -174,6 +174,9 @@ export default function ReviewDetailScreen({ route, navigation }) {
           rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1 || rawBusiness.tagline_is_public === "1" || rawBusiness.tagline_is_public === 1,
         shortBioIsPublic:
           rawBusiness.business_short_bio_is_public === "1" || rawBusiness.business_short_bio_is_public === 1 || rawBusiness.short_bio_is_public === "1" || rawBusiness.short_bio_is_public === 1,
+        business_cc_fee_payer: canonicalBusinessCcFeePayer(
+          rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer,
+        ),
         business_services: (() => {
           let list = [];
           if (rawBusiness.business_services) {
@@ -278,12 +281,14 @@ export default function ReviewDetailScreen({ route, navigation }) {
 
   const handleQuantityConfirm = async () => {
     try {
+      const ccPayer = canonicalBusinessCcFeePayer(business?.business_cc_fee_payer ?? business?.bs_cc_fee_payer);
       const serviceWithQuantity = {
         ...selectedService,
         quantity: quantity,
         totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
         business_uid: business_uid,
         business_name: sanitizeText(business?.business_name || business_name || "") || "",
+        business_cc_fee_payer: ccPayer,
       };
 
       // Check if the item already exists in the cart
@@ -299,6 +304,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
           ...existingItem,
           quantity: newQuantity,
           totalPrice: (parsePrice(existingItem.bs_cost) * newQuantity).toFixed(2),
+          business_cc_fee_payer: ccPayer,
         };
         console.log(`Updated quantity for existing item ${selectedService.bs_service_name} to ${newQuantity}`);
       } else {
@@ -733,7 +739,16 @@ export default function ReviewDetailScreen({ route, navigation }) {
                 )}
               </View>
               {business.business_services.map((service, idx) => (
-                <ProductCard key={idx} service={service} businessUid={business_uid} showEditButton={false} onPress={() => handleProductPress(service)} />
+                <ProductCard
+                  key={idx}
+                  service={service}
+                  businessUid={business_uid}
+                  businessCcFeePayer={canonicalBusinessCcFeePayer(
+                    business?.business_cc_fee_payer ?? business?.bs_cc_fee_payer,
+                  )}
+                  showEditButton={false}
+                  onPress={() => handleProductPress(service)}
+                />
               ))}
             </View>
           )}

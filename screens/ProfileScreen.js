@@ -1664,8 +1664,46 @@ const ProfileScreen = ({ route, navigation }) => {
                         exp.profile_expertise_image &&
                         String(exp.profile_expertise_image).trim() !== "" &&
                         !expertiseImageIsHidden;
-                      const expertiseItem = (
-                        <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
+                      const goOfferingDetail = () => {
+                        const expertiseData = {
+                          expertise_uid: exp.profile_expertise_uid,
+                          title: exp.name,
+                          description: exp.description,
+                          quantity: exp.quantity,
+                          cost: exp.cost,
+                          bounty: exp.bounty,
+                          profile_expertise_start: exp.profile_expertise_start,
+                          profile_expertise_end: exp.profile_expertise_end,
+                          profile_expertise_location: exp.profile_expertise_location,
+                          profile_expertise_mode: exp.profile_expertise_mode,
+                          profile_expertise_image: exp.profile_expertise_image,
+                          profile_expertise_image_is_public: exp.profile_expertise_image_is_public,
+                        };
+                        const profileData = {
+                          firstName: user.firstName,
+                          lastName: user.lastName,
+                          email: user.email,
+                          phone: user.phoneNumber,
+                          image: user.profileImage,
+                          tagLine: user.tagLine,
+                          city: user.city,
+                          state: user.state,
+                          emailIsPublic: user.emailIsPublic,
+                          phoneIsPublic: user.phoneIsPublic,
+                          imageIsPublic: user.imageIsPublic,
+                          tagLineIsPublic: user.tagLineIsPublic,
+                          locationIsPublic: user.locationIsPublic,
+                        };
+                        navigation.navigate("ExpertiseDetail", {
+                          expertiseData,
+                          profileData,
+                          profile_uid: profileUID,
+                          returnTo: "Profile",
+                          profileState: { profile_uid: profileUID, returnTo, searchState },
+                        });
+                      };
+                      const offeringBody = (
+                        <>
                           <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 8, gap: 10 }}>
                             {showExpImage ? (
                               <Image
@@ -1750,76 +1788,45 @@ const ProfileScreen = ({ route, navigation }) => {
                               ) : null}
                             </View>
                           ) : null}
-                          {routeProfileUID && !isCurrentUserProfile ? (
-                            <TouchableOpacity
-                              style={[styles.contextChatButton, darkMode && styles.darkContextChatButton]}
-                              activeOpacity={0.8}
-                              onPress={() =>
-                                navigation.navigate("Chat", {
-                                  other_uid: routeProfileUID || profileUID,
-                                  other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
-                                  other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
-                                  reply_context: {
-                                    label: `Offering: ${sanitizeText(exp.name) || "Offering"}`,
-                                  },
-                                })
-                              }
-                            >
-                              <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
-                              <Text style={styles.contextChatButtonText}>Message about this offering</Text>
-                            </TouchableOpacity>
-                          ) : null}
-                        </View>
+                        </>
                       );
+                      const messageAboutOfferingBtn =
+                        routeProfileUID && !isCurrentUserProfile ? (
+                          <TouchableOpacity
+                            style={[styles.contextChatButton, darkMode && styles.darkContextChatButton]}
+                            activeOpacity={0.8}
+                            onPress={() =>
+                              navigation.navigate("Chat", {
+                                other_uid: routeProfileUID || profileUID,
+                                other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
+                                other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
+                                reply_context: {
+                                  label: `Offering: ${sanitizeText(exp.name) || "Offering"}`,
+                                },
+                              })
+                            }
+                          >
+                            <Ionicons name='chatbubble-ellipses-outline' size={14} color='#fff' style={{ marginRight: 6 }} />
+                            <Text style={styles.contextChatButtonText}>Message about this offering</Text>
+                          </TouchableOpacity>
+                        ) : null;
+                      const cardShellStyle = [styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }];
                       if (routeProfileUID && !isCurrentUserProfile) {
                         return (
-                          <TouchableOpacity
-                            key={index}
-                            activeOpacity={0.7}
-                            onPress={() => {
-                              const expertiseData = {
-                                expertise_uid: exp.profile_expertise_uid,
-                                title: exp.name,
-                                description: exp.description,
-                                quantity: exp.quantity,
-                                cost: exp.cost,
-                                bounty: exp.bounty,
-                                profile_expertise_start: exp.profile_expertise_start,
-                                profile_expertise_end: exp.profile_expertise_end,
-                                profile_expertise_location: exp.profile_expertise_location,
-                                profile_expertise_mode: exp.profile_expertise_mode,
-                                profile_expertise_image: exp.profile_expertise_image,
-                                profile_expertise_image_is_public: exp.profile_expertise_image_is_public,
-                              };
-                              const profileData = {
-                                firstName: user.firstName,
-                                lastName: user.lastName,
-                                email: user.email,
-                                phone: user.phoneNumber,
-                                image: user.profileImage,
-                                tagLine: user.tagLine,
-                                city: user.city,
-                                state: user.state,
-                                emailIsPublic: user.emailIsPublic,
-                                phoneIsPublic: user.phoneIsPublic,
-                                imageIsPublic: user.imageIsPublic,
-                                tagLineIsPublic: user.tagLineIsPublic,
-                                locationIsPublic: user.locationIsPublic,
-                              };
-                              navigation.navigate("ExpertiseDetail", {
-                                expertiseData,
-                                profileData,
-                                profile_uid: profileUID,
-                                returnTo: "Profile",
-                                profileState: { profile_uid: profileUID, returnTo, searchState },
-                              });
-                            }}
-                          >
-                            {expertiseItem}
-                          </TouchableOpacity>
+                          <View key={index} style={cardShellStyle}>
+                            <TouchableOpacity activeOpacity={0.7} onPress={goOfferingDetail}>
+                              <View>{offeringBody}</View>
+                            </TouchableOpacity>
+                            {messageAboutOfferingBtn}
+                          </View>
                         );
                       }
-                      return expertiseItem;
+                      return (
+                        <View key={index} style={cardShellStyle}>
+                          {offeringBody}
+                          {messageAboutOfferingBtn}
+                        </View>
+                      );
                     })
                 ) : (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No expertise added yet</Text>
