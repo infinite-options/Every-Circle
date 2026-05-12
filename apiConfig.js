@@ -48,8 +48,8 @@ export const REFERRAL_API_ENDPOINT = `${API_BASE_URL}/api/v1/userprofileinfo/`;
 export const BUSINESS_INFO_ENDPOINT = `${API_BASE_URL}/api/v1/businessinfo`;
 export const BUSINESSES_ENDPOINT = `${API_BASE_URL}/businesses`;
 export const CATEGORY_LIST_ENDPOINT = `${API_BASE_URL}/category_list/all`;
-export const BUSINESS_AVG_RATINGS_ENDPOINT = `${API_BASE_URL}/api/v1/businessavgratings`;
-export const BUSINESS_MAX_BOUNTY_ENDPOINT = `${API_BASE_URL}/api/v1/businessmaxbounty`;
+/** POST JSON `{ uids, profile_uid }` — same `result` shape as legacy GET businessavgratings */
+export const BUSINESS_DETAILS_ENDPOINT = `${API_BASE_URL}/api/v1/business_details`;
 export const PROFILE_VIEWS_ENDPOINT = `${API_BASE_URL}/api/v1/profile_views`;
 export const BUSINESS_TAG_SEARCH_ENDPOINT = `${API_BASE_URL}/api/v1/businesstagsearch`;
 export const BUSINESS_SERVICE_PURCHASE_ENDPOINT = `${API_BASE_URL}/business/service/purchase`;

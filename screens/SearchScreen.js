@@ -15,8 +15,7 @@ import {
   TAG_CATEGORY_DISTINCT_ENDPOINT,
   SEARCH_BASE_URL,
   SEARCH_GLOBAL_ENDPOINT,
-  BUSINESS_AVG_RATINGS_ENDPOINT,
-  BUSINESS_MAX_BOUNTY_ENDPOINT,
+  BUSINESS_DETAILS_ENDPOINT,
   BUSINESS_TAG_SEARCH_ENDPOINT,
   BUSINESS_INFO_ENDPOINT,
   USER_PROFILE_INFO_ENDPOINT,
@@ -52,7 +51,7 @@ const formatDateTimeForDisplay = (value) => {
 };
 
 /**
- * Fetches `/api/v1/businessavgratings` and `/api/v1/businessmaxbounty` and merges into rows with `itemType === "businesses"`.
+ * POSTs to `/api/v1/business_details` (ratings, connection degree, max bounty fields) and merges into rows with `itemType === "businesses"`.
  * Used for accurate stars, review count, connection degree, and bounty vs search-index guesses.
  */
 async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
@@ -65,7 +64,6 @@ async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
   ];
   if (businessIds.length === 0) return items;
 
-  const uids = businessIds.join(",");
   let profileUid = null;
   try {
     profileUid = await AsyncStorage.getItem("profile_uid");
@@ -76,10 +74,14 @@ async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
   let merged = items;
 
   try {
-    const ratingsUrl = `${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${encodeURIComponent(uids)}${
-      profileUid ? `&viewer_uid=${encodeURIComponent(profileUid)}` : ""
-    }`;
-    const ratingsRes = await fetch(ratingsUrl);
+    const ratingsRes = await fetch(BUSINESS_DETAILS_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        uids: businessIds,
+        profile_uid: profileUid || null,
+      }),
+    });
     const ratingsJson = await ratingsRes.json();
     if (ratingsJson.result) {
       merged = merged.map((b) => {
@@ -90,22 +92,6 @@ async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
           rating: row && Number.isFinite(parseFloat(row.avg_rating)) ? parseFloat(row.avg_rating) : null,
           ratingCount: row ? row.rating_count : 0,
           connection_degree: row?.nearest_connection ?? null,
-        };
-      });
-    }
-  } catch (e) {
-    console.log("Could not fetch avg ratings / connections:", e);
-  }
-
-  try {
-    const bountyRes = await fetch(`${BUSINESS_MAX_BOUNTY_ENDPOINT}?uids=${encodeURIComponent(uids)}`);
-    const bountyJson = await bountyRes.json();
-    if (bountyJson.result) {
-      merged = merged.map((b) => {
-        if (b.itemType !== "businesses") return b;
-        const row = bountyJson.result[b.id];
-        return {
-          ...b,
           max_bounty: row ? parseFloat(row.max_bounty) : null,
           max_per_item_bounty: row ? parseFloat(row.max_per_item_bounty) || null : null,
           max_total_bounty: row ? parseFloat(row.max_total_bounty) || null : null,
@@ -113,7 +99,7 @@ async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
       });
     }
   } catch (e) {
-    console.log("Could not fetch bounty data:", e);
+    console.log("Could not fetch avg ratings / connections:", e);
   }
 
   return merged;

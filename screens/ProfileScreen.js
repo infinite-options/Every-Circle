@@ -31,8 +31,7 @@ import {
   CIRCLES_ENDPOINT,
   PROFILE_VIEWS_ENDPOINT,
   BUSINESS_RESULTS_ENDPOINT,
-  BUSINESS_AVG_RATINGS_ENDPOINT,
-  BUSINESS_MAX_BOUNTY_ENDPOINT,
+  BUSINESS_DETAILS_ENDPOINT,
   BUSINESS_TAG_SEARCH_ENDPOINT,
 } from "../apiConfig";
 import config from "../config";
@@ -338,32 +337,32 @@ const ProfileScreen = ({ route, navigation }) => {
           list = [...list, ...tagList];
         }
       } catch (_) {}
-      // Fetch avg ratings + connection degree (same as SearchScreen)
+      // Fetch business details (ratings, connection, bounty) — same POST as SearchScreen
       try {
         const profileUid = await AsyncStorage.getItem("profile_uid");
-        const uids = list.map((b) => b.id).join(",");
-        const ratingsUrl = `${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${uids}${profileUid ? `&viewer_uid=${profileUid}` : ""}`;
-        const ratingsRes = await fetch(ratingsUrl);
+        const uids = [...new Set(list.map((b) => b.id).filter((id) => id != null && String(id).trim() !== ""))];
+        const ratingsRes = await fetch(BUSINESS_DETAILS_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            uids,
+            profile_uid: profileUid || null,
+          }),
+        });
         const ratingsJson = await ratingsRes.json();
         if (ratingsJson.result) {
-          list = list.map((b) => ({
-            ...b,
-            rating: ratingsJson.result[b.id] && Number.isFinite(parseFloat(ratingsJson.result[b.id].avg_rating)) ? parseFloat(ratingsJson.result[b.id].avg_rating) : null,
-            ratingCount: ratingsJson.result[b.id] ? ratingsJson.result[b.id].rating_count : 0,
-            connection_degree: ratingsJson.result[b.id]?.nearest_connection ?? null,
-          }));
-        }
-      } catch (_) {}
-      // Fetch max bounty (same as SearchScreen)
-      try {
-        const uids = list.map((b) => b.id).join(",");
-        const bountyRes = await fetch(`${BUSINESS_MAX_BOUNTY_ENDPOINT}?uids=${encodeURIComponent(uids)}`);
-        const bountyJson = await bountyRes.json();
-        if (bountyJson.result) {
-          list = list.map((b) => ({
-            ...b,
-            max_bounty: bountyJson.result[b.id] ? parseFloat(bountyJson.result[b.id].max_bounty) : null,
-          }));
+          list = list.map((b) => {
+            const row = ratingsJson.result[b.id];
+            return {
+              ...b,
+              rating: row && Number.isFinite(parseFloat(row.avg_rating)) ? parseFloat(row.avg_rating) : null,
+              ratingCount: row ? row.rating_count : 0,
+              connection_degree: row?.nearest_connection ?? null,
+              max_bounty: row ? parseFloat(row.max_bounty) : null,
+              max_per_item_bounty: row ? parseFloat(row.max_per_item_bounty) || null : null,
+              max_total_bounty: row ? parseFloat(row.max_total_bounty) || null : null,
+            };
+          });
         }
       } catch (_) {}
       setReviewSearchResults(list);

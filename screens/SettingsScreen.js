@@ -1,6 +1,6 @@
 //SettingsScreen.js
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator } from "react-native";
 import * as Location from "expo-location";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -131,22 +131,12 @@ function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMo
   const rightTextActiveStyle = rightOn ? styles.togglePillTextActive : null;
 
   return (
-    <View style={[styles.settingsToggleRow, Platform.OS === "web" && styles.settingsToggleRowWeb]}>
-      <TouchableOpacity
-        onPress={() => value !== false && onValueChange(false)}
-        style={[styles.togglePill, Platform.OS === "web" && styles.togglePillWeb, leftBgStyle]}
-        accessibilityRole='button'
-        accessibilityState={{ selected: leftOn }}
-      >
-        <Text style={[styles.togglePillText, Platform.OS === "web" && styles.togglePillTextWeb, darkMode && !leftOn && styles.darkTogglePillText, leftTextActiveStyle]}>{leftLabel}</Text>
+    <View style={styles.settingsToggleRow}>
+      <TouchableOpacity onPress={() => value !== false && onValueChange(false)} style={[styles.togglePill, leftBgStyle]} accessibilityRole='button' accessibilityState={{ selected: leftOn }}>
+        <Text style={[styles.togglePillText, darkMode && !leftOn && styles.darkTogglePillText, leftTextActiveStyle]}>{leftLabel}</Text>
       </TouchableOpacity>
-      <TouchableOpacity
-        onPress={() => value !== true && onValueChange(true)}
-        style={[styles.togglePill, Platform.OS === "web" && styles.togglePillWeb, rightBgStyle]}
-        accessibilityRole='button'
-        accessibilityState={{ selected: rightOn }}
-      >
-        <Text style={[styles.togglePillText, Platform.OS === "web" && styles.togglePillTextWeb, darkMode && !rightOn && styles.darkTogglePillText, rightTextActiveStyle]}>{rightLabel}</Text>
+      <TouchableOpacity onPress={() => value !== true && onValueChange(true)} style={[styles.togglePill, rightBgStyle]} accessibilityRole='button' accessibilityState={{ selected: rightOn }}>
+        <Text style={[styles.togglePillText, darkMode && !rightOn && styles.darkTogglePillText, rightTextActiveStyle]}>{rightLabel}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -1056,7 +1046,7 @@ export default function SettingsScreen() {
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
                       {shareLocationActive && shareLocationUntil
                         ? `Active · expires at ${shareLocationUntil.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                        : `Shares for ${SHARE_LOCATION_DURATION_HOURS}h · updates every ~${SHARE_LOCATION_MIN_PATCH_MINS} min`}
+                        : `Shares for ${SHARE_LOCATION_DURATION_HOURS}h`}
                     </Text>
                   </View>
                 </View>
@@ -1307,9 +1297,7 @@ export default function SettingsScreen() {
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>iOS: {getApiKeyFirstFourDigits(appConfig.googleClientIds.ios)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Android: {getApiKeyFirstFourDigits(appConfig.googleClientIds.android)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Web: {getApiKeyFirstFourDigits(appConfig.googleClientIds.web)}</Text>
-              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>
-                URL Scheme: {appConfig.googleURLScheme ? appConfig.googleURLScheme.split("-").pop().slice(0, 4) : "Not set"}
-              </Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>URL Scheme: {appConfig.googleURLScheme ? appConfig.googleURLScheme.split("-").pop().slice(0, 4) : "Not set"}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Maps API: {getApiKeyLastTwoDigits(appConfig.googleMapsApiKey)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Environment: {__DEV__ ? "Development" : "Production"}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>iOS Build: {Constants.expoConfig?.ios?.buildNumber || "Not set"}</Text>
@@ -1644,29 +1632,17 @@ const styles = StyleSheet.create({
   settingsToggleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 2,
-    flexShrink: 0,
-  },
-  /** Web: compact pair on same row; extra gap shifts left pill left, right pill stays at row end */
-  settingsToggleRowWeb: {
     gap: 20,
     flexShrink: 0,
-    alignItems: "center",
   },
   togglePill: {
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: "transparent",
-  },
-  /** Web: smaller pills, stay inline with row title */
-  togglePillWeb: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 14,
     minWidth: 52,
-    alignItems: "center",
+    alignItems: "stretch",
     justifyContent: "center",
+    backgroundColor: "transparent",
   },
   togglePillActiveRed: {
     backgroundColor: "#ef9a9a",
@@ -1681,12 +1657,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   togglePillText: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#4e4e4e",
     fontWeight: "500",
-  },
-  togglePillTextWeb: {
-    fontSize: 12,
+    textAlign: "center",
+    width: "100%",
   },
   togglePillTextActive: {
     color: "#fff",

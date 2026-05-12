@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity, Platform, Modal, Alert, TextInput } from "react-native";
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity, Platform, Modal, Alert, TextInput, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
@@ -10,6 +10,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { getHeaderColors } from "../config/headerColors";
+import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import { getSessionProfile } from "../utils/sessionProfile";
 // import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
@@ -235,6 +236,7 @@ async function fetchLegacySellerTransactionsForProfile(profileId) {
 
 export default function AccountScreen({ navigation }) {
   const { darkMode } = useDarkMode();
+  const { width: windowWidth } = useWindowDimensions();
   const [userUID, setUserUID] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [bountyData, setBountyData] = useState(null);
@@ -285,6 +287,8 @@ export default function AccountScreen({ navigation }) {
   //for returns
   const [returnRequests, setReturnRequests] = useState({});
   const [receiptTransaction, setReceiptTransaction] = useState(null);
+  /** Settings → Debug Mode = Yes: show Transaction ID, Type, Purchased Item in PURCHASES; No hides those columns. */
+  const [settingsDebugModeEnabled, setSettingsDebugModeEnabled] = useState(false);
 
   //for return message
   const [returnNote, setReturnNote] = useState("");
@@ -974,6 +978,16 @@ export default function AccountScreen({ navigation }) {
         await refreshAccountScreenBusiness(primaryBusinessUid);
       };
       loadBusinessData();
+
+      (async () => {
+        try {
+          const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
+          if (nd !== null) setSettingsDebugModeEnabled(JSON.parse(nd) === true);
+          else setSettingsDebugModeEnabled(false);
+        } catch {
+          setSettingsDebugModeEnabled(false);
+        }
+      })();
     }, []),
   );
 
@@ -1197,12 +1211,84 @@ export default function AccountScreen({ navigation }) {
     return isFinite(result) ? result : height;
   };
 
-  // Format date for X-axis (MM/DD)
+  // Format date for X-axis (MM/DD) — web and default mobile fallback
   const formatDateLabel = (dateString) => {
     const d = new Date(dateString);
     const month = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
     return `${month}/${day}`;
+  };
+
+  /** Mobile earnings charts: month abbr on calendar day 1 only (e.g. Apr); on 7,14,21,28 show day number only; else no label. */
+  const formatEarningsChartXAxisLabelMobile = (dateString) => {
+    const [y, m, d] = String(dateString).split("-").map(Number);
+    if (!y || !m || !d) return "";
+    const dt = new Date(y, m - 1, d, 12, 0, 0);
+    const day = dt.getDate();
+    if (day === 1) {
+      return dt.toLocaleString("en-US", { month: "short" });
+    }
+    if (day >= 7 && day <= 28 && day % 7 === 0) {
+      return String(day);
+    }
+    return "";
+  };
+
+  /** Milliseconds at local noon for chart YYYY-MM-DD keys (matches label rules). */
+  const dayMsFromChartDateKey = (dateString) => {
+    const [y, m, d] = String(dateString).split("-").map(Number);
+    if (!y || !m || !d) return NaN;
+    return new Date(y, m - 1, d, 12, 0, 0).getTime();
+  };
+
+  /**
+   * Mobile: place month / 7-14-21-28 labels on a **time** scale between sparse data points
+   * (so e.g. Apr 28 and May 1 still appear between Apr 21 and May 7 when those days have no rows).
+   */
+  const buildMobileEarningsXAxisTicksByTime = (dates, xPositions, clipMinX, clipMaxX) => {
+    if (!dates.length) return [];
+    const tKey = dayMsFromChartDateKey;
+
+    const xAtTime = (t) => {
+      const t0 = tKey(dates[0]);
+      const tN = tKey(dates[dates.length - 1]);
+      if (!Number.isFinite(t0) || !Number.isFinite(tN) || !Number.isFinite(t)) return xPositions[0];
+      if (dates.length === 1 || t0 === tN) return xPositions[0];
+      if (t <= t0) return xPositions[0];
+      if (t >= tN) return xPositions[dates.length - 1];
+      for (let i = 0; i < dates.length - 1; i++) {
+        const ta = tKey(dates[i]);
+        const tb = tKey(dates[i + 1]);
+        if (t >= ta && t <= tb) {
+          const denom = Math.max(1, tb - ta);
+          const frac = (t - ta) / denom;
+          return xPositions[i] + frac * (xPositions[i + 1] - xPositions[i]);
+        }
+      }
+      return xPositions[dates.length - 1];
+    };
+
+    const ticks = [];
+    const [y0, mo0, da0] = dates[0].split("-").map(Number);
+    const [y1, mo1, da1] = dates[dates.length - 1].split("-").map(Number);
+    let cur = new Date(y0, mo0 - 1, da0, 12, 0, 0);
+    const end = new Date(y1, mo1 - 1, da1, 12, 0, 0);
+
+    while (cur.getTime() <= end.getTime()) {
+      const y = cur.getFullYear();
+      const mo = cur.getMonth() + 1;
+      const da = cur.getDate();
+      const key = `${y}-${String(mo).padStart(2, "0")}-${String(da).padStart(2, "0")}`;
+      const label = formatEarningsChartXAxisLabelMobile(key);
+      if (label) {
+        const t = new Date(y, mo - 1, da, 12, 0, 0).getTime();
+        const rawX = xAtTime(t);
+        const x = Math.min(clipMaxX, Math.max(clipMinX, rawX));
+        ticks.push({ key: `mob-x-${key}`, x, label });
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+    return ticks;
   };
 
   // Format Y-axis label with 2 decimal places
@@ -1341,15 +1427,21 @@ export default function AccountScreen({ navigation }) {
           {/* X-axis */}
           <Line x1={paddingLeft} y1={paddingTop + plotHeight} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
 
-          {/* X-axis labels (dates) */}
-          {chartData.dates.map((date, index) => {
-            const x = xPositions[index];
-            return (
-              <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
-                {formatDateLabel(date)}
-              </SvgText>
-            );
-          })}
+          {/* X-axis labels (web: per point; mobile: calendar ticks interpolated by time between points) */}
+          {Platform.OS === "web"
+            ? chartData.dates.map((date, index) => {
+                const x = xPositions[index];
+                return (
+                  <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
+                    {formatDateLabel(date)}
+                  </SvgText>
+                );
+              })
+            : buildMobileEarningsXAxisTicksByTime(chartData.dates, xPositions, paddingLeft, paddingLeft + plotWidth).map((tick) => (
+                <SvgText key={tick.key} x={tick.x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
+                  {tick.label}
+                </SvgText>
+              ))}
 
           {/* X-axis title label */}
           <SvgText x={paddingLeft + plotWidth / 2} y={paddingTop + plotHeight + 35} fontSize='12' fill='#333' fontWeight='600' textAnchor='middle'>
@@ -1487,15 +1579,21 @@ export default function AccountScreen({ navigation }) {
           {/* X-axis */}
           <Line x1={paddingLeft} y1={paddingTop + plotHeight} x2={paddingLeft + plotWidth} y2={paddingTop + plotHeight} stroke='#666' strokeWidth='2' />
 
-          {/* X-axis labels */}
-          {chartData.dates.map((date, index) => {
-            const x = xPositions[index];
-            return (
-              <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
-                {formatDateLabel(date)}
-              </SvgText>
-            );
-          })}
+          {/* X-axis labels (web: per point; mobile: calendar ticks by time) */}
+          {Platform.OS === "web"
+            ? chartData.dates.map((date, index) => {
+                const x = xPositions[index];
+                return (
+                  <SvgText key={`x-label-${index}`} x={x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
+                    {formatDateLabel(date)}
+                  </SvgText>
+                );
+              })
+            : buildMobileEarningsXAxisTicksByTime(chartData.dates, xPositions, paddingLeft, paddingLeft + plotWidth).map((tick) => (
+                <SvgText key={tick.key} x={tick.x} y={paddingTop + plotHeight + 15} fontSize='10' fill='#666' textAnchor='middle'>
+                  {tick.label}
+                </SvgText>
+              ))}
 
           {/* X-axis title label */}
           <SvgText x={paddingLeft + plotWidth / 2} y={paddingTop + plotHeight + 35} fontSize='12' fill='#333' fontWeight='600' textAnchor='middle'>
@@ -1522,6 +1620,16 @@ export default function AccountScreen({ navigation }) {
     bountyData?.data && Array.isArray(bountyData.data) ? bountyData.data.filter((i) => i.in_escrow === 1).reduce((s, i) => s + parseFloat(i.bounty_earned || 0), 0) : 0;
 
   const businessNetEarningsTotal = businessTransactionData.reduce((s, t) => s + parseFloat(t.net_earning || 0), 0);
+
+  /** Debug Mode Yes (Settings): show Transaction ID, Type, Purchased Item. Narrow web (<700px) uses the same compact layout as mobile without those columns. */
+  const purchasesShowDebugColumns = SHOW_NETWORK_DEBUG_UI !== 0 && settingsDebugModeEnabled;
+  const narrowWebPurchasesLayout = Platform.OS === "web" && windowWidth < 700;
+  const effectivePurchasesShowDebugColumns = purchasesShowDebugColumns && !narrowWebPurchasesLayout;
+  const compactPurchasesLayout = ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS === 1;
+  /** Purchases: Transaction ID; Bounty Results: ID — same visibility (debug + wide web, not compact dev flag). */
+  const showPurchasesTxnIdColumn = effectivePurchasesShowDebugColumns && !compactPurchasesLayout;
+  const showPurchasesTypeColumn = effectivePurchasesShowDebugColumns;
+  const showPurchasesPurchasedItemColumn = effectivePurchasesShowDebugColumns && !compactPurchasesLayout;
 
   if (isLoading) {
     return (
@@ -1656,10 +1764,10 @@ export default function AccountScreen({ navigation }) {
                       {/* Table Header */}
                       <View style={styles.transactionHeaderRow}>
                         <Text style={styles.transactionHeaderDate}>Date</Text>
-                        {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderId}>Transaction ID</Text>}
-                        <Text style={styles.transactionHeaderPurchaseType}>Type</Text>
+                        {showPurchasesTxnIdColumn ? <Text style={styles.transactionHeaderId}>Transaction ID</Text> : null}
+                        {showPurchasesTypeColumn ? <Text style={styles.transactionHeaderPurchaseType}>Type</Text> : null}
                         <Text style={styles.transactionHeaderBusiness}>Seller</Text>
-                        {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text>}
+                        {showPurchasesPurchasedItemColumn ? <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text> : null}
                         {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderQty}>Qty</Text>}
                         <Text style={styles.transactionHeaderPaid}>Paid</Text>
                         <Text style={styles.transactionHeaderAmount}>Amount</Text>
@@ -1680,13 +1788,13 @@ export default function AccountScreen({ navigation }) {
                         const showPendingLink = (isSeeking || isBusiness) && isPending;
                         const showAutoPaid = (isSeeking || isBusiness) && !isPending && isOlderThan5Days;
 
-                        const compactTx = ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS === 1;
+                        const compactTx = compactPurchasesLayout;
 
                         return (
                           <View key={transaction.ti_uid || i} style={styles.transactionRow}>
                             <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
-                            {!compactTx && <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text>}
-                            <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "N/A"}</Text>
+                            {showPurchasesTxnIdColumn ? <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text> : null}
+                            {showPurchasesTypeColumn ? <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "N/A"}</Text> : null}
                             <View style={{ flex: 1, paddingHorizontal: 4, justifyContent: "center", minWidth: 0 }}>
                               <TouchableOpacity onPress={() => fetchReceipt(transaction)} activeOpacity={0.7}>
                                 <Text style={[styles.transactionBusiness, styles.receiptLink]} numberOfLines={4}>
@@ -1694,11 +1802,11 @@ export default function AccountScreen({ navigation }) {
                                 </Text>
                               </TouchableOpacity>
                             </View>
-                            {!compactTx && (
+                            {showPurchasesPurchasedItemColumn ? (
                               <View style={styles.transactionPurchasedItemCell}>
                                 <Text style={styles.transactionPurchasedItem}>{transaction.purchased_item || "N/A"}</Text>
                               </View>
-                            )}
+                            ) : null}
                             {!compactTx && <Text style={styles.transactionQty}>{transaction.ti_bs_qty || 1}</Text>}
                             <View style={styles.transactionPaidCell}>
                               {(() => {
@@ -1818,7 +1926,7 @@ export default function AccountScreen({ navigation }) {
                       {/* Table — same layout as Transaction History (full-width rows) */}
                       <View style={styles.transactionsContainer}>
                         <View style={styles.transactionHeaderRow}>
-                          {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderId}>ID</Text>}
+                          {showPurchasesTxnIdColumn ? <Text style={styles.transactionHeaderId}>ID</Text> : null}
                           <Text style={styles.transactionHeaderDate}>Date</Text>
                           <Text style={styles.transactionHeaderBusiness}>Purchaser</Text>
                           <Text style={styles.transactionHeaderPurchasedItem}>Business</Text>
@@ -1837,7 +1945,7 @@ export default function AccountScreen({ navigation }) {
                             item.in_escrow === 1 && (new Date() - new Date(item.transaction_datetime)) / (1000 * 60 * 60 * 24) >= 30 ? "Paid" : item.in_escrow === 1 ? "Pending" : "Paid";
                           return (
                             <View key={item.tb_uid || item.ti_transaction_id || index} style={styles.transactionRow}>
-                              {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionId}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text>}
+                              {showPurchasesTxnIdColumn ? <Text style={styles.transactionId}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text> : null}
                               <Text style={styles.transactionDate}>{formatDate(item.transaction_datetime)}</Text>
                               <Text style={styles.transactionBusiness} numberOfLines={4}>
                                 {item.purchaser_name || item.transaction_profile_id || "N/A"}
