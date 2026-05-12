@@ -104,8 +104,34 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
 
   const thumbSource = productImageUri ? { uri: productImageUri } : DEFAULT_PRODUCT_IMAGE;
 
+  const isSoldOut = (() => {
+    const unlimited =
+      service.bs_qty_unlimited === 1 ||
+      service.bs_qty_unlimited === "1" ||
+      service.bs_qty_unlimited === true;
+    if (unlimited) return false;
+    const raw =
+      service.bs_quantity != null && String(service.bs_quantity).trim() !== ""
+        ? String(service.bs_quantity).trim()
+        : service.bs_available_quantity != null && String(service.bs_available_quantity).trim() !== ""
+          ? String(service.bs_available_quantity).trim()
+          : null;
+    if (!raw || raw.toLowerCase() === "unlimited") return false;
+    const num = parseInt(raw, 10);
+    return !isNaN(num) && num === 0;
+  })();
+
   return (
-    <TouchableOpacity style={[styles.cardContainer, darkMode && styles.cardContainerDark]} onPress={onPress} activeOpacity={onPress ? 0.7 : 1}>
+    <TouchableOpacity
+      style={[
+        styles.cardContainer,
+        darkMode && styles.cardContainerDark,
+        isSoldOut && { opacity: 0.5 },
+      ]}
+      onPress={isSoldOut ? null : onPress}
+      activeOpacity={isSoldOut ? 1 : (onPress ? 0.7 : 1)}
+      disabled={isSoldOut}
+    >
       <View style={styles.cardTopRow}>
         <Image source={thumbSource} style={[styles.productThumbInline, darkMode && styles.productThumbInlineDark]} resizeMode='cover' />
         <View style={styles.cardRightColumn}>
@@ -151,6 +177,24 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
           ) : null}
         </View>
         <Text style={metaTextStyle}>{quantityLine}</Text>
+        {isSoldOut && (
+          <View style={{
+            alignSelf: "flex-start",
+            backgroundColor: "#fee2e2",
+            borderRadius: 10,
+            paddingHorizontal: 10,
+            paddingVertical: 3,
+            marginTop: 4,
+          }}>
+            <Text style={{
+              fontSize: 12,
+              fontWeight: "700",
+              color: "#dc2626",
+            }}>
+              Sold Out
+            </Text>
+          </View>
+        )}
         {/* Stock — only for limited quantity items */}
         {(() => {
           const unlimited =
@@ -171,6 +215,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
           if (isNaN(num)) return null;
 
           const isSoldOut = num === 0;
+          
           const isLow = num > 0 && num <= 5;
           if (!isSoldOut && !isLow) return null; // only show badge when low or sold out
 

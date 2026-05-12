@@ -520,13 +520,32 @@ export default function BusinessProfileScreen({ route, navigation }) {
   );
 
   const handleProductPress = (service) => {
+    // Block sold-out items from being added to cart
+    const unlimited =
+      service.bs_qty_unlimited === 1 ||
+      service.bs_qty_unlimited === "1" ||
+      service.bs_qty_unlimited === true;
+    if (!unlimited) {
+      const raw = service.bs_quantity != null && String(service.bs_quantity).trim() !== ""
+        ? String(service.bs_quantity).trim()
+        : service.bs_available_quantity != null && String(service.bs_available_quantity).trim() !== ""
+          ? String(service.bs_available_quantity).trim()
+          : null;
+      if (raw && raw.toLowerCase() !== "unlimited") {
+        const num = parseInt(raw, 10);
+        if (!isNaN(num) && num === 0) {
+          Alert.alert("Sold Out", "This item is no longer available.");
+          return;
+        }
+      }
+    }
+
     setSelectedService(service);
     setQuantity(1);
-    setBountySort("connection"); //reset sort
-    // setSelectedBountyRecipient(null);
+    setBountySort("connection");
     setQuantityModalVisible(true);
   };
-
+  
   const handleQuantityConfirm = async () => {
     const stock = selectedService?.bs_quantity;
     const isLimited =

@@ -3037,6 +3037,7 @@ const NetworkScreen = ({ navigation }) => {
         searchPlaceholder='Email, location, or name'
         noResultsSubtext='Try another spelling, city, or email.'
         searchButtonColor={getHeaderColor("network")}
+        networkData={networkData}
       />
       <ScannedProfilePopup
         visible={showScannedProfilePopup}

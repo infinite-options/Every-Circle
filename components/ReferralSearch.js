@@ -18,6 +18,7 @@ const ReferralSearch = ({
   modalTitle = "Who referred you?",
   searchPlaceholder = "Search by name or city",
   noResultsSubtext = "Try a different name or location",
+  networkData = [],
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -71,14 +72,28 @@ const ReferralSearch = ({
 
   const renderUserItem = ({ item }) => {
     const fullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
-
     const location = [item.profile_personal_city, item.profile_personal_state].filter(Boolean).join(", ");
+
+    const existingConnection = networkData.find(
+      (n) => n.network_profile_personal_uid === item.profile_personal_uid
+    );
+    const relationship = existingConnection?.circle_relationship;
 
     return (
       <TouchableOpacity style={styles.userItem} onPress={() => handleSelectUser(item)}>
-        <Image source={item.profile_personal_image ? { uri: item.profile_personal_image } : require("../assets/profile.png")} style={styles.userImage} />
+        <Image
+          source={item.profile_personal_image ? { uri: item.profile_personal_image } : require("../assets/profile.png")}
+          style={styles.userImage}
+        />
         <View style={styles.userInfo}>
-          <Text style={styles.userName}>{fullName || "Unknown"}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Text style={styles.userName}>{fullName || "Unknown"}</Text>
+            {relationship ? (
+              <Text style={{ fontSize: 13, color: "#888", fontStyle: "italic" }}>
+                {relationship.charAt(0).toUpperCase() + relationship.slice(1)}
+              </Text>
+            ) : null}
+          </View>
           {location ? <Text style={styles.userLocation}>{location}</Text> : null}
         </View>
         <Ionicons name='chevron-forward' size={20} color='#666' />
@@ -352,6 +367,17 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  relationshipBadge: {
+    alignSelf: "flex-start",
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginTop: 4,
+  },
+  relationshipBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
   },
 });
 
