@@ -573,6 +573,14 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
     }
   };
 
+  const wishWebPayeeName = acceptModalResponse
+    ? [acceptModalResponse.responder_first_name, acceptModalResponse.responder_last_name].filter(Boolean).join(" ").trim() ||
+      [acceptModalResponse.profile_personal_first_name, acceptModalResponse.profile_personal_last_name].filter(Boolean).join(" ").trim() ||
+      (wishData?.title != null && String(wishData.title).trim() !== "" ? String(wishData.title).trim() : null)
+    : wishData?.title != null && String(wishData.title).trim() !== ""
+      ? String(wishData.title).trim()
+      : null;
+
   return (
     <SafeAreaView style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header with Back Button */}
@@ -763,6 +771,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
               message='ECTEST'
               amount={pendingAccept.totalWithFee ?? pendingAccept.subtotal * 1.03}
               paidBy={customerUid}
+              payeeBusinessName={wishWebPayeeName}
               show={showStripePayment}
               setShow={(v) => {
                 setShowStripePayment(v);

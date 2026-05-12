@@ -9,6 +9,8 @@ const StripeFeesDialog = ({
   onContinue,
   onCancel,
   subtitle,
+  /** Business or seller name for this payment (e.g. cart checkout step). */
+  payeeBusinessName,
   /** Legacy: single “subtotal” and total including a simple fee line. */
   subtotal,
   totalWithFee,
@@ -31,11 +33,19 @@ const StripeFeesDialog = ({
 
   const legacyFee = hasLegacyBreakdown ? (Number(totalWithFee) - Number(subtotal)).toFixed(2) : null;
 
+  const payeeTrimmed =
+    typeof payeeBusinessName === "string" && payeeBusinessName.trim() !== "" ? payeeBusinessName.trim() : null;
+
   return (
     <Modal animationType='fade' transparent={true} visible={show} onRequestClose={onCancel}>
       <View style={[styles.modalOverlay, darkMode && styles.darkModalOverlay]}>
         <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
           <Text style={[styles.title, darkMode && styles.darkTitle]}>Payment Processing Fees</Text>
+          {payeeTrimmed ? (
+            <Text style={[styles.payeeBusinessName, darkMode && styles.darkPayeeBusinessName]} numberOfLines={2}>
+              Paying: {payeeTrimmed}
+            </Text>
+          ) : null}
           {subtitle ? (
             <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>{subtitle}</Text>
           ) : null}
@@ -143,6 +153,17 @@ const styles = StyleSheet.create({
   },
   darkTitle: {
     color: "#fff",
+  },
+  payeeBusinessName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#9C45F7",
+    marginBottom: 12,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  darkPayeeBusinessName: {
+    color: "#c9a8f5",
   },
   subtitle: {
     fontSize: 14,

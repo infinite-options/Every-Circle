@@ -869,6 +869,11 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index]
       ? webCheckoutSession.groups[webCheckoutSession.index].total
       : 0;
+  const webCheckoutPayeeDisplayName =
+    (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName &&
+      String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
+    (feeDialogFirstGroup?.displayName && String(feeDialogFirstGroup.displayName).trim()) ||
+    null;
 
   const content = (
     <View style={styles.container}>
@@ -1104,6 +1109,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
             buyerPaysCardFee={feeDialogFirstGroup ? feeDialogFirstGroup.buyerPaysCardFee : undefined}
             subtotal={feeDialogFirstGroup ? feeDialogFirstGroup.subtotalAfterTax : null}
             totalWithFee={feeDialogFirstGroup ? feeDialogFirstGroup.total : null}
+            payeeBusinessName={feeDialogFirstGroup?.displayName ?? null}
           />
           {stripePromise && customerUid && (
             <StripePayment
@@ -1111,6 +1117,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
               message='ECTEST'
               amount={webStripeAmount || 0}
               paidBy={customerUid}
+              payeeBusinessName={webCheckoutPayeeDisplayName}
               show={showStripePayment}
               setShow={setShowStripePayment}
               submit={handleWebPaymentSubmit}

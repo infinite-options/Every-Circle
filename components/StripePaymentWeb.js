@@ -6,11 +6,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { CREATE_PAYMENT_INTENT_ENDPOINT } from "../apiConfig";
 
-const StripePaymentWebContent = ({ message, amount, paidBy, show, setShow, submit, onError }) => {
+const StripePaymentWebContent = ({ message, amount, paidBy, payeeBusinessName, show, setShow, submit, onError }) => {
   const { darkMode } = useDarkMode();
   const [showSpinner, setShowSpinner] = useState(false);
   const elements = useElements();
   const stripe = useStripe();
+
+  const payeeTrimmed =
+    typeof payeeBusinessName === "string" && payeeBusinessName.trim() !== "" ? payeeBusinessName.trim() : null;
 
   const handleClose = () => {
     setShow(false);
@@ -192,6 +195,12 @@ const StripePaymentWebContent = ({ message, amount, paidBy, show, setShow, submi
             </TouchableOpacity>
           </View>
 
+          {payeeTrimmed ? (
+            <Text style={[styles.payeeBusinessName, darkMode && styles.darkPayeeBusinessName]} numberOfLines={2}>
+              Paying: {payeeTrimmed}
+            </Text>
+          ) : null}
+
           <Text style={[styles.amountText, darkMode && styles.darkAmountText]}>Amount: ${parseFloat(amount).toFixed(2)}</Text>
 
           <View style={[styles.cardElementContainer, darkMode && styles.darkCardElementContainer]}>
@@ -234,14 +243,23 @@ const StripePaymentWebContent = ({ message, amount, paidBy, show, setShow, submi
 };
 
 // Wrapper component that provides Elements context
-const StripePaymentWeb = ({ message, amount, paidBy, show, setShow, submit, onError, stripePromise }) => {
+const StripePaymentWeb = ({ message, amount, paidBy, payeeBusinessName, show, setShow, submit, onError, stripePromise }) => {
   if (!stripePromise) {
     return null;
   }
 
   return (
     <Elements stripe={stripePromise}>
-      <StripePaymentWebContent message={message} amount={amount} paidBy={paidBy} show={show} setShow={setShow} submit={submit} onError={onError} />
+      <StripePaymentWebContent
+        message={message}
+        amount={amount}
+        paidBy={paidBy}
+        payeeBusinessName={payeeBusinessName}
+        show={show}
+        setShow={setShow}
+        submit={submit}
+        onError={onError}
+      />
     </Elements>
   );
 };
@@ -291,6 +309,18 @@ const styles = StyleSheet.create({
   },
   darkModalTitle: {
     color: "#fff",
+  },
+  payeeBusinessName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#9C45F7",
+    marginBottom: 14,
+    textAlign: "center",
+    lineHeight: 22,
+    paddingHorizontal: 8,
+  },
+  darkPayeeBusinessName: {
+    color: "#c9a8f5",
   },
   closeButton: {
     padding: 4,

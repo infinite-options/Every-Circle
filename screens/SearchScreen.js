@@ -51,6 +51,74 @@ const formatDateTimeForDisplay = (value) => {
   return value;
 };
 
+/**
+ * Fetches `/api/v1/businessavgratings` and `/api/v1/businessmaxbounty` and merges into rows with `itemType === "businesses"`.
+ * Used for accurate stars, review count, connection degree, and bounty vs search-index guesses.
+ */
+async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
+  const businessIds = [
+    ...new Set(
+      items
+        .filter((b) => b.itemType === "businesses" && b.id != null && String(b.id).trim() !== "")
+        .map((b) => String(b.id)),
+    ),
+  ];
+  if (businessIds.length === 0) return items;
+
+  const uids = businessIds.join(",");
+  let profileUid = null;
+  try {
+    profileUid = await AsyncStorage.getItem("profile_uid");
+  } catch (_) {
+    /* ignore */
+  }
+
+  let merged = items;
+
+  try {
+    const ratingsUrl = `${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${encodeURIComponent(uids)}${
+      profileUid ? `&viewer_uid=${encodeURIComponent(profileUid)}` : ""
+    }`;
+    const ratingsRes = await fetch(ratingsUrl);
+    const ratingsJson = await ratingsRes.json();
+    if (ratingsJson.result) {
+      merged = merged.map((b) => {
+        if (b.itemType !== "businesses") return b;
+        const row = ratingsJson.result[b.id];
+        return {
+          ...b,
+          rating: row && Number.isFinite(parseFloat(row.avg_rating)) ? parseFloat(row.avg_rating) : null,
+          ratingCount: row ? row.rating_count : 0,
+          connection_degree: row?.nearest_connection ?? null,
+        };
+      });
+    }
+  } catch (e) {
+    console.log("Could not fetch avg ratings / connections:", e);
+  }
+
+  try {
+    const bountyRes = await fetch(`${BUSINESS_MAX_BOUNTY_ENDPOINT}?uids=${encodeURIComponent(uids)}`);
+    const bountyJson = await bountyRes.json();
+    if (bountyJson.result) {
+      merged = merged.map((b) => {
+        if (b.itemType !== "businesses") return b;
+        const row = bountyJson.result[b.id];
+        return {
+          ...b,
+          max_bounty: row ? parseFloat(row.max_bounty) : null,
+          max_per_item_bounty: row ? parseFloat(row.max_per_item_bounty) || null : null,
+          max_total_bounty: row ? parseFloat(row.max_total_bounty) || null : null,
+        };
+      });
+    }
+  } catch (e) {
+    console.log("Could not fetch bounty data:", e);
+  }
+
+  return merged;
+}
+
 export default function SearchScreen({ route }) {
   const navigation = useNavigation();
   const { darkMode } = useDarkMode();
@@ -199,48 +267,35 @@ export default function SearchScreen({ route }) {
           console.log("📋 Restoring last search for user:", userUid, "Query:", savedSearchQuery);
           setSearchQuery(savedSearchQuery);
           if (savedSearchType) setSearchType(savedSearchType);
-          // Clear stale ratings/connections from cached business items
-          const parsedResults = JSON.parse(savedResults).map((item) => (item.itemType === "businesses" ? { ...item, rating: null, ratingCount: 0, connection_degree: null } : item));
+          const parsedResults = JSON.parse(savedResults).map((item) =>
+            item.itemType === "businesses"
+              ? {
+                  ...item,
+                  rating: null,
+                  ratingCount: 0,
+                  connection_degree: null,
+                  max_bounty: null,
+                  max_per_item_bounty: null,
+                  max_total_bounty: null,
+                }
+              : item,
+          );
           setResults(parsedResults);
           setIsFirstVisit(false);
           setHasLoadedInitialSearch(true);
-          // Re-fetch live ratings + bounty for cached business items, then populate rawResultsRef
           const bizItems = parsedResults.filter((r) => r.itemType === "businesses" && r.id);
           if (bizItems.length > 0) {
-            const uids = bizItems.map((b) => b.id).join(",");
-            AsyncStorage.getItem("profile_uid").then(async (cachedProfileUid) => {
-              try {
-                const safeJson = async (r) => {
-                  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-                  const text = await r.text();
-                  if (!text || text.trimStart().startsWith("<")) throw new Error("Server returned HTML instead of JSON");
-                  return JSON.parse(text);
-                };
-                const [ratingsJson, bountyJson] = await Promise.all([
-                  fetch(`${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${encodeURIComponent(uids)}${cachedProfileUid ? `&viewer_uid=${cachedProfileUid}` : ""}`).then(safeJson),
-                  fetch(`${BUSINESS_MAX_BOUNTY_ENDPOINT}?uids=${encodeURIComponent(uids)}`).then(safeJson),
-                ]);
-                setResults((prev) => {
-                  const updated = prev.map((b) => {
-                    if (b.itemType !== "businesses") return b;
-                    const parsed = parseFloat(ratingsJson.result?.[b.id]?.avg_rating);
-                    return {
-                      ...b,
-                      rating: ratingsJson.result?.[b.id] && Number.isFinite(parsed) ? parsed : null,
-                      ratingCount: ratingsJson.result?.[b.id] ? ratingsJson.result[b.id].rating_count : 0,
-                      connection_degree: ratingsJson.result?.[b.id]?.nearest_connection ?? null,
-                      max_bounty: bountyJson.result?.[b.id] ? parseFloat(bountyJson.result[b.id].max_bounty) : null,
-                      max_per_item_bounty: bountyJson.result?.[b.id] ? parseFloat(bountyJson.result[b.id].max_per_item_bounty) || null : null,
-                      max_total_bounty: bountyJson.result?.[b.id] ? parseFloat(bountyJson.result[b.id].max_total_bounty) || null : null,
-                    };
-                  });
-                  rawResultsRef.current = [...updated];
-                  return updated;
-                });
-              } catch (e) {
+            enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(parsedResults)
+              .then((updated) => {
+                setResults(updated);
+                rawResultsRef.current = [...updated];
+              })
+              .catch((e) => {
                 console.error("Could not fetch ratings/bounty from cache:", e);
-              }
-            });
+                rawResultsRef.current = [...parsedResults];
+              });
+          } else {
+            rawResultsRef.current = [...parsedResults];
           }
         } else {
           // First time user, search for "Chinese"
@@ -440,11 +495,15 @@ export default function SearchScreen({ route }) {
           id: `${b.business_uid || i}`,
           company: sanitizeText(b.business_name || b.company) || "Unknown Business",
           business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
-          rating: typeof b.rating_star === "number" ? b.rating_star : null,
+          rating: null,
+          ratingCount: 0,
+          connection_degree: null,
+          max_bounty: null,
+          max_per_item_bounty: null,
+          max_total_bounty: null,
           hasPriceTag: b.has_price_tag || false,
           hasX: b.has_x || false,
           hasDollar: b.has_dollar_sign || false,
-          max_bounty: b.max_bounty || b.business_max_bounty || null,
           business_short_bio: sanitizeText(b.business_short_bio),
           business_tag_line: sanitizeText(b.business_tag_line),
           tags: b.tags || [],
@@ -506,8 +565,9 @@ export default function SearchScreen({ route }) {
         };
 
         const list = [...normalizeByType(mappedBusinesses), ...normalizeByType(mappedExpertise)].sort((a, b) => b.globalScore - a.globalScore);
-        rawResultsRef.current = [...list];
-        setResults(list);
+        const enriched = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(list);
+        rawResultsRef.current = [...enriched];
+        setResults(enriched);
         setHasLoadedInitialSearch(true);
         setLoading(false);
         return;
@@ -865,42 +925,7 @@ export default function SearchScreen({ route }) {
           console.log("Could not fetch tag search results:", e);
         }
 
-        // Fetch avg ratings + nearest connection from your backend
-        try {
-          const profileUid = await AsyncStorage.getItem("profile_uid");
-          const uids = list.map((b) => b.id).join(",");
-          const ratingsUrl = `${BUSINESS_AVG_RATINGS_ENDPOINT}?uids=${uids}${profileUid ? `&viewer_uid=${profileUid}` : ""}`;
-          const ratingsRes = await fetch(ratingsUrl);
-          const ratingsJson = await ratingsRes.json();
-
-          if (ratingsJson.result) {
-            list = list.map((b) => ({
-              ...b,
-              rating: ratingsJson.result[b.id] && Number.isFinite(parseFloat(ratingsJson.result[b.id].avg_rating)) ? parseFloat(ratingsJson.result[b.id].avg_rating) : null,
-              ratingCount: ratingsJson.result[b.id] ? ratingsJson.result[b.id].rating_count : 0,
-              connection_degree: ratingsJson.result[b.id]?.nearest_connection ?? null,
-            }));
-          }
-        } catch (e) {
-          console.log("Could not fetch avg ratings:", e);
-        }
-
-        // Fetch max bounty per business
-        try {
-          const uids = list.map((b) => b.id).join(",");
-          const bountyRes = await fetch(`${BUSINESS_MAX_BOUNTY_ENDPOINT}?uids=${encodeURIComponent(uids)}`);
-          const bountyJson = await bountyRes.json();
-          if (bountyJson.result) {
-            list = list.map((b) => ({
-              ...b,
-              max_bounty: bountyJson.result[b.id] ? parseFloat(bountyJson.result[b.id].max_bounty) : null,
-              max_per_item_bounty: bountyJson.result[b.id] ? parseFloat(bountyJson.result[b.id].max_per_item_bounty) || null : null,
-              max_total_bounty: bountyJson.result[b.id] ? parseFloat(bountyJson.result[b.id].max_total_bounty) || null : null,
-            }));
-          }
-        } catch (e) {
-          console.log("Could not fetch bounty data:", e);
-        }
+        list = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(list);
 
         // Sort by highest rating if rating filter is active
         if (rating !== null) {
