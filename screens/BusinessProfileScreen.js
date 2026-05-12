@@ -15,7 +15,8 @@ import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { parsePrice } from "../utils/priceUtils";
 import { getHeaderColors } from "../config/headerColors";
 import FeedbackPopup from "../components/FeedbackPopup";
-import { normalizeBusinessServiceFromApi } from "../utils/normalizeBusinessServiceFromApi";
+import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
+import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -351,6 +352,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
           rawBusiness.image_is_public === 1,
         business_profile_img: businessProfileImgUrl,
         business_profile_img_is_public: rawBusiness.business_profile_img_is_public === "1" || rawBusiness.business_profile_img_is_public === 1,
+        business_cc_fee_payer: canonicalBusinessCcFeePayer(
+          rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer,
+        ),
         business_services: (() => {
           let list = [];
           if (rawBusiness.business_services) {
@@ -532,6 +536,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       return;
     }
     try {
+      const ccPayer = canonicalBusinessCcFeePayer(business.business_cc_fee_payer ?? business.bs_cc_fee_payer);
       const serviceWithQuantity = {
         ...selectedService,
         quantity: quantity,
@@ -539,6 +544,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         bounty_recommender_profile_id: selectedBountyRecipient?.rating_profile_id || null,
         business_uid: business_uid,
         business_name: sanitizeText(business.business_name || "") || "",
+        business_cc_fee_payer: ccPayer,
       };
 
       const existingItemIndex = cartItems.findIndex((item) => item.bs_uid === selectedService.bs_uid);
@@ -552,6 +558,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           ...existingItem,
           quantity: newQuantity,
           totalPrice: (parsePrice(existingItem.bs_cost) * newQuantity).toFixed(2),
+          business_cc_fee_payer: ccPayer,
         };
       } else {
         newCartItems = [...cartItems, serviceWithQuantity];
@@ -1068,9 +1075,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
                           locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
                         }}
                       />
-                      {viewer.view_timestamp ? (
+                      {getLatestProfileViewTimestamp(viewer.view_timestamp) ? (
                         <Text style={{ fontSize: 11, color: "#999", paddingHorizontal: 12, paddingBottom: 6 }}>
-                          Viewed: {new Date(viewer.view_timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}
                         </Text>
                       ) : null}
                     </TouchableOpacity>
@@ -1332,6 +1339,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
                     key={idx}
                     service={service}
                     businessUid={business_uid}
+                    businessCcFeePayer={canonicalBusinessCcFeePayer(
+                      business.business_cc_fee_payer ?? business.bs_cc_fee_payer,
+                    )}
                     showEditButton={isOwner}
                     showOwnerTags={isOwner}
                     darkMode={darkMode}

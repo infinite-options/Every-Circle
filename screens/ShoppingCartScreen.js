@@ -1,5 +1,5 @@
 // ShoppingCartScreen.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -40,12 +40,141 @@ import StripePayment from "../components/StripePaymentWeb";
 import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
 import { parsePrice } from "../utils/priceUtils";
+import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 
 // Use the publishable key from environment variables
 const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
 // console.log("STRIPE_PUBLISHABLE_KEY:", STRIPE_PUBLISHABLE_KEY);
 
 const GENERIC_CART_TITLES = ["All Items", "My Cart", "Cart"];
+
+/** Seller id for checkout grouping (business_uid or expertise profile_uid). */
+function getCheckoutSellerId(item) {
+  if (!item || typeof item !== "object") return null;
+  if (item.itemType === "expertise") {
+    const p = item.profile_uid != null && String(item.profile_uid).trim() !== "" ? String(item.profile_uid).trim() : null;
+    const b = item.business_uid != null && String(item.business_uid).trim() !== "" ? String(item.business_uid).trim() : null;
+    return p || b || null;
+  }
+  const b = item.business_uid != null && String(item.business_uid).trim() !== "" ? String(item.business_uid).trim() : null;
+  return b || null;
+}
+
+function roundMoney(n) {
+  return Math.round(Number(n) * 100) / 100;
+}
+
+/** Whether this service line is subject to sales tax (expertise handled separately). */
+function isLineTaxable(item) {
+  if (!item || item.itemType === "expertise") return false;
+  const v = item.bs_is_taxable;
+  if (v === undefined || v === null || v === "") {
+    return parsePrice(item.bs_tax_rate) > 0;
+  }
+  if (v === false || v === 0) return false;
+  if (typeof v === "string") {
+    const t = v.trim().toLowerCase();
+    if (t === "0" || t === "false" || t === "no") return false;
+    if (t === "1" || t === "true" || t === "yes") return true;
+    const n = parseInt(t, 10);
+    if (!Number.isNaN(n)) return n !== 0;
+  }
+  if (typeof v === "number") return v !== 0;
+  return Boolean(v);
+}
+
+/**
+ * Tax rate as a percentage for formula: pretax × (rate ÷ 100).
+ * Matches product edit: enter "8.25" for 8.25%. Stored value is shown on each cart line for verification.
+ */
+function taxRatePercentForCalculation(raw) {
+  return parsePrice(raw != null ? raw : 0);
+}
+
+/**
+ * Pretax line total, sales tax, and metadata for cart display / checkout.
+ * Services: pretax = bs_cost × qty; tax when taxable and rate > 0.
+ */
+function lineMerchandiseAndTax(item) {
+  const qty = parseInt(item.quantity, 10) || 1;
+  if (item.itemType === "expertise") {
+    const pretax = roundMoney(parsePrice(item.cost) * qty);
+    return {
+      pretax,
+      tax: 0,
+      taxable: false,
+      rawTaxRate: null,
+      ratePercentUsed: null,
+    };
+  }
+  const pretax = roundMoney(parsePrice(item.bs_cost) * qty);
+  const rawTaxRate = item.bs_tax_rate;
+  const taxable = isLineTaxable(item);
+  const ratePercent = taxRatePercentForCalculation(rawTaxRate);
+  const tax = taxable && ratePercent > 0 ? roundMoney(pretax * (ratePercent / 100)) : 0;
+  return {
+    pretax,
+    tax,
+    taxable,
+    rawTaxRate,
+    ratePercentUsed: taxable && ratePercent > 0 ? ratePercent : null,
+  };
+}
+
+function calculateSubtotalForCartItems(items) {
+  return items.reduce((sum, item) => sum + lineMerchandiseAndTax(item).pretax, 0);
+}
+
+/** True when buyer pays Stripe card fees (business_cc_fee_payer === buyer). */
+function groupBuyerPaysCardFee(items) {
+  const raw = items[0]?.business_cc_fee_payer ?? items[0]?.bs_cc_fee_payer;
+  return canonicalBusinessCcFeePayer(raw) === "buyer";
+}
+
+/**
+ * One entry per seller: merchandise, sales tax, optional 3% card fee (buyer only), Stripe total.
+ */
+function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
+  const map = new Map();
+  for (const item of cartItems) {
+    const sid = getCheckoutSellerId(item);
+    if (!sid) continue;
+    if (!map.has(sid)) map.set(sid, []);
+    map.get(sid).push(item);
+  }
+  return Array.from(map.entries()).map(([sellerId, items]) => {
+    let merchandiseSubtotal = 0;
+    let salesTaxTotal = 0;
+    for (const item of items) {
+      const { pretax, tax } = lineMerchandiseAndTax(item);
+      merchandiseSubtotal += pretax;
+      salesTaxTotal += tax;
+    }
+    merchandiseSubtotal = roundMoney(merchandiseSubtotal);
+    salesTaxTotal = roundMoney(salesTaxTotal);
+    const subtotalAfterTax = roundMoney(merchandiseSubtotal + salesTaxTotal);
+    const buyerPaysCardFee = groupBuyerPaysCardFee(items);
+    const processingFee = buyerPaysCardFee ? roundMoney(subtotalAfterTax * 0.03) : 0;
+    const total = roundMoney(subtotalAfterTax + processingFee);
+    const first = items[0];
+    const displayName =
+      (typeof resolveBusinessName === "function" && resolveBusinessName(first)) ||
+      (first?.business_name && String(first.business_name).trim()) ||
+      (first?.itemType === "expertise" && first?.title && String(first.title).trim()) ||
+      "Purchase";
+    return {
+      sellerId,
+      items,
+      merchandiseSubtotal,
+      salesTaxTotal,
+      subtotalAfterTax,
+      buyerPaysCardFee,
+      processingFee,
+      total,
+      displayName,
+    };
+  });
+}
 
 const ShoppingCartScreen = ({ route, navigation }) => {
   const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id } = route.params;
@@ -100,9 +229,245 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const [showPaymentFailure, setShowPaymentFailure] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
   const [customerUid, setCustomerUid] = useState(null);
-  const [escrow, setEscrow] = useState(true);
+  /** Per seller (business / expertise profile): whether this checkout uses escrow. */
+  const [escrowBySeller, setEscrowBySeller] = useState({});
   const [refundAcknowledged, setRefundAcknowledged] = useState(false); //refund acknowledgement state
-  const [refundError, setRefundError] = useState(false); 
+  const [refundError, setRefundError] = useState(false);
+
+  /** Web: one Stripe payment per seller; kept in ref + state so submit handler sees latest step. */
+  const webCheckoutSessionRef = useRef(null);
+  const [webCheckoutSession, setWebCheckoutSession] = useState(null); // { groups, index } | null
+
+  useEffect(() => {
+    webCheckoutSessionRef.current = webCheckoutSession;
+  }, [webCheckoutSession]);
+
+  // Handle fees dialog continue
+  const handleFeesDialogContinue = async () => {
+    try {
+      setShowFeesDialog(false);
+      setLoading(true);
+
+      const groups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+      if (!groups.length) {
+        Alert.alert("Error", "No billable items in your cart (missing seller information).");
+        setLoading(false);
+        return;
+      }
+
+      const totalRows = cartItems.filter((it) => getCheckoutSellerId(it)).length;
+      if (totalRows < cartItems.length) {
+        Alert.alert("Error", "Some cart items cannot be checked out. Remove or fix items without a business or profile.");
+        setLoading(false);
+        return;
+      }
+
+      const session = { groups, index: 0 };
+      webCheckoutSessionRef.current = session;
+      setWebCheckoutSession(session);
+
+      await loadStripePublicKey("ECTEST");
+
+      setShowStripePayment(true);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error loading Stripe:", error);
+      Alert.alert("Error", "Failed to initialize payment. Please try again.");
+      setLoading(false);
+    }
+  };
+
+  // Web Stripe payment submission handler
+  const handleWebPaymentSubmit = async (paymentIntent, paymentMethod) => {
+    console.log("=== handleWebPaymentSubmit CALLED ===");
+    try {
+      setLoading(true);
+      console.log("Web payment submitted - paymentIntent:", paymentIntent, "paymentMethod:", paymentMethod);
+
+      const buyerUid = await AsyncStorage.getItem("profile_uid");
+      if (!buyerUid) {
+        throw new Error("User ID not found");
+      }
+
+      const sess = webCheckoutSessionRef.current;
+      if (!sess || !sess.groups.length || sess.index >= sess.groups.length) {
+        throw new Error("Checkout session expired. Please start again.");
+      }
+
+      const group = sess.groups[sess.index];
+      console.log(`Recording web payment step ${sess.index + 1}/${sess.groups.length} for`, group.sellerId);
+
+      await recordSingleBusinessTransaction(buyerUid, paymentIntent, group, escrowBySeller[group.sellerId] !== false);
+
+      const nextIndex = sess.index + 1;
+      if (nextIndex < sess.groups.length) {
+        const nextSession = { groups: sess.groups, index: nextIndex };
+        webCheckoutSessionRef.current = nextSession;
+        setWebCheckoutSession(nextSession);
+        setShowStripePayment(false);
+        setTimeout(() => setShowStripePayment(true), 200);
+        setLoading(false);
+        return;
+      }
+
+      webCheckoutSessionRef.current = null;
+      setWebCheckoutSession(null);
+
+      try {
+        console.log("Clearing all cart data...");
+        const keys = await AsyncStorage.getAllKeys();
+        const cartKeys = keys.filter((key) => key.startsWith("cart_"));
+        await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
+        setCartItems([]);
+        Alert.alert("Success", "Payment successful! Your order has been placed.", [
+          {
+            text: "OK",
+            onPress: () => {
+              navigation.navigate("Search", { refreshCart: true });
+            },
+          },
+        ]);
+      } catch (error) {
+        console.error("Error clearing cart data:", error);
+        Alert.alert("Error", "There was an error clearing your cart. Please try again.");
+      }
+    } catch (error) {
+      console.error("Web payment submission error:", error);
+      const sess = webCheckoutSessionRef.current;
+      if (sess && sess.index > 0) {
+        try {
+          const paid = sess.groups.slice(0, sess.index).flatMap((g) => g.items);
+          await removePaidItemsFromStorage(paid);
+        } catch (e) {
+          console.warn("Could not trim cart after failed multi-step web checkout:", e);
+        }
+        webCheckoutSessionRef.current = null;
+        setWebCheckoutSession(null);
+        setShowStripePayment(false);
+      }
+      setPaymentError(error);
+      setShowPaymentFailure(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCheckout = async () => {
+    console.log("Checkout button pressed");
+    console.log("Platform:", Platform.OS);
+
+    if (!stripeInitialized) {
+      Alert.alert("Error", "Payment system is not ready. Please try again.");
+      return;
+    }
+
+    if (!refundAcknowledged) {
+      setRefundError(true);
+      return;
+    }
+    setRefundError(false);
+
+    // Web Stripe flow
+    if (isWeb) {
+      try {
+        setLoading(true);
+        setShowFeesDialog(true);
+      } catch (error) {
+        console.error("Error starting web checkout:", error);
+        Alert.alert("Error", "An error occurred. Please try again.");
+        setLoading(false);
+      }
+      return;
+    }
+
+    const groups = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+    if (!groups.length) {
+      Alert.alert("Error", "No billable items in your cart (missing seller information).");
+      return;
+    }
+    const totalRows = cartItems.filter((it) => getCheckoutSellerId(it)).length;
+    if (totalRows < cartItems.length) {
+      Alert.alert("Error", "Some cart items cannot be checked out. Remove or fix items without a business or profile.");
+      return;
+    }
+
+    const buyerUid = await AsyncStorage.getItem("profile_uid");
+    if (!buyerUid) {
+      Alert.alert("Error", "User ID not found. Please log in again.");
+      return;
+    }
+
+    const completedGroups = [];
+    try {
+      setLoading(true);
+      console.log("Starting checkout —", groups.length, "separate payment(s) for", groups.length, "seller(s)");
+
+      for (let i = 0; i < groups.length; i++) {
+        const group = groups[i];
+        console.log(`Native checkout step ${i + 1}/${groups.length}`, group.sellerId, group.total);
+
+        const clientSecret = await createPaymentIntent(group.total);
+        const ok = await initializePaymentSheetForGroup(clientSecret, group.displayName);
+        if (!ok) {
+          throw new Error("Failed to initialize payment sheet");
+        }
+
+        const result = await presentPaymentSheet();
+        if (result.error) {
+          console.error("Payment error:", result.error);
+          throw new Error(result.error.message || "Payment failed");
+        }
+
+        await recordSingleBusinessTransaction(buyerUid, clientSecret, group, escrowBySeller[group.sellerId] !== false);
+        completedGroups.push(group);
+      }
+
+      try {
+        console.log("Clearing all cart data...");
+        const keys = await AsyncStorage.getAllKeys();
+        const cartKeys = keys.filter((key) => key.startsWith("cart_"));
+        await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
+        setCartItems([]);
+
+        Alert.alert("Success", "Payment successful! Your order has been placed.", [
+          {
+            text: "OK",
+            onPress: () => {
+              navigation.navigate("Search", { refreshCart: true });
+            },
+          },
+        ]);
+      } catch (error) {
+        console.error("Error clearing cart data:", error);
+        Alert.alert("Error", "There was an error clearing your cart. Please try again.");
+      }
+    } catch (error) {
+      console.error("Checkout error:", error);
+      if (completedGroups.length > 0) {
+        try {
+          await removePaidItemsFromStorage(completedGroups.flatMap((g) => g.items));
+        } catch (e) {
+          console.warn("Failed to trim cart after partial checkout:", e);
+        }
+        const paidKeys = new Set(
+          completedGroups.flatMap((g) =>
+            g.items.map((it) => (it.itemType === "expertise" ? `e:${it.expertise_uid}` : `s:${it.business_uid}:${it.bs_uid}`)),
+          ),
+        );
+        setCartItems((prev) =>
+          prev.filter((it) => !paidKeys.has(it.itemType === "expertise" ? `e:${it.expertise_uid}` : `s:${it.business_uid}:${it.bs_uid}`)),
+        );
+        Alert.alert(
+          "Partial checkout",
+          `${completedGroups.length} of ${groups.length} payment(s) succeeded. Those items were removed from your cart. Remaining items are still in your cart. Please try again for the rest, or contact support if you were charged incorrectly.`,
+        );
+      } else {
+        Alert.alert("Error", error.message || "An error occurred during checkout. Please try again.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     console.log("ShoppingCartScreen mounted");
@@ -141,6 +506,21 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   useEffect(() => {
     setCartItems(initialCartItems);
   }, [initialCartItems]);
+
+  useEffect(() => {
+    const ids = new Set(cartItems.map(getCheckoutSellerId).filter(Boolean));
+    if (ids.size === 0) return;
+    setEscrowBySeller((prev) => {
+      const next = { ...prev };
+      ids.forEach((id) => {
+        if (next[id] === undefined) next[id] = true;
+      });
+      Object.keys(next).forEach((k) => {
+        if (!ids.has(k)) delete next[k];
+      });
+      return next;
+    });
+  }, [cartItems]);
 
   // Load Stripe public key for web
   const loadStripePublicKey = async (businessCode = "ECTEST") => {
@@ -261,7 +641,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }, 0);
   };
 
-  const createPaymentIntent = async () => {
+  const createPaymentIntent = async (paymentTotal) => {
     try {
       console.log("Creating payment intent...");
       const profile_uid = await AsyncStorage.getItem("profile_uid");
@@ -271,7 +651,11 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         throw new Error("User profile not found");
       }
 
-      const total = calculateTotal();
+      const total =
+        paymentTotal !== undefined && paymentTotal !== null ? Number(paymentTotal) : calculateTotal();
+      if (!Number.isFinite(total) || total <= 0) {
+        throw new Error("Invalid payment amount");
+      }
       console.log("Creating payment intent for amount:", total);
 
       const requestBody = {
@@ -279,7 +663,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         business_code: "ECTEST",
         payment_summary: {
           tax: 0,
-          total: total.toString(),
+          total: Number(total).toFixed(2),
         },
       };
 
@@ -317,19 +701,13 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
   };
 
-  const initializePayment = async () => {
+  const initializePaymentSheetForGroup = async (clientSecret, merchantDisplayName) => {
     try {
-      console.log("Initializing payment...");
-      setLoading(true);
-
-      const clientSecret = await createPaymentIntent();
       console.log("Initializing payment sheet with client secret", clientSecret);
-
-      // Store the client secret for later use
       setCurrentClientSecret(clientSecret);
 
       const { error: initError } = await initPaymentSheet({
-        merchantDisplayName: businessName,
+        merchantDisplayName: merchantDisplayName || businessName || "Every Circle",
         paymentIntentClientSecret: clientSecret,
         defaultBillingDetails: {
           name: "Customer Name",
@@ -353,8 +731,102 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       console.error("Payment initialization error:", error);
       Alert.alert("Error", "Failed to initialize payment");
       return false;
-    } finally {
-      setLoading(false);
+    }
+  };
+
+  /** POST one transaction row for one Stripe payment (one seller's lines only). */
+  const recordSingleBusinessTransaction = async (buyerUid, paymentIntent, group, escrowValue = true) => {
+    try {
+      console.log("Recording transaction for seller", group.sellerId, "items:", group.items);
+
+      let buyerProfileId;
+      if (!buyerUid.startsWith("110")) {
+        buyerProfileId = await getProfileId(buyerUid);
+        console.log("Buyer profile ID:", buyerProfileId);
+      } else {
+        buyerProfileId = buyerUid;
+      }
+
+      const subtotalAfterTax = group.subtotalAfterTax;
+      const fee = group.processingFee;
+      const total = group.total;
+
+      const defaultRecommender =
+        recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231";
+
+      const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
+
+      const items = group.items.map((item) => {
+        const qty = parseInt(item.quantity, 10) || 1;
+        const bountyType = item.itemType === "expertise" ? "per_item" : item.bs_bounty_type || "per_item";
+        const bounty = item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty);
+        const sellerBusinessId = item.business_uid || item.profile_uid;
+        return {
+          business_id: sellerBusinessId,
+          bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
+          item_type: item.itemType === "expertise" ? "expertise" : "service",
+          bounty,
+          bounty_type: bountyType,
+          quantity: qty,
+          recommender_profile_id: item.bounty_recommender_profile_id || defaultRecommender,
+        };
+      });
+
+      const transactionData = {
+        profile_id: buyerProfileId,
+        business_id: group.sellerId,
+        stripe_payment_intent: paymentIntent,
+        total_amount_paid: parseFloat(Number(total).toFixed(2)),
+        total_costs: parseFloat(Number(subtotalAfterTax).toFixed(2)),
+        total_taxes: parseFloat(Number(fee).toFixed(2)),
+        transaction_in_escrow: transactionInEscrow,
+        items,
+      };
+
+      console.log("Posting transaction for one seller:", JSON.stringify(transactionData, null, 2));
+
+      const response = await fetch(TRANSACTIONS_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(transactionData),
+      });
+
+      console.log("RESPONSE STATUS:", response.status);
+      console.log("RESPONSE OK:", response.ok);
+
+      const result = await response.json();
+      console.log("RESPONSE BODY:", JSON.stringify(result, null, 2));
+      console.log("Transaction recorded:", result);
+
+      if (!response.ok) {
+        throw new Error(`Failed to record transaction: ${result.message || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Error recording transactions:", error);
+      throw error;
+    }
+  };
+
+  /** Remove specific line items from AsyncStorage (partial checkout success). */
+  const removePaidItemsFromStorage = async (paidItems) => {
+    const businessUidToRemoveBsUids = new Map();
+    for (const item of paidItems) {
+      if (item.itemType === "expertise") {
+        const key = item.cart_key || `cart_expertise_${item.expertise_uid}`;
+        await AsyncStorage.removeItem(key);
+        continue;
+      }
+      const biz = item.business_uid;
+      if (!biz || !item.bs_uid) continue;
+      if (!businessUidToRemoveBsUids.has(biz)) businessUidToRemoveBsUids.set(biz, new Set());
+      businessUidToRemoveBsUids.get(biz).add(item.bs_uid);
+    }
+    for (const [biz, uidSet] of businessUidToRemoveBsUids) {
+      const stored = await AsyncStorage.getItem(`cart_${biz}`);
+      if (!stored) continue;
+      const cartData = JSON.parse(stored);
+      cartData.items = (cartData.items || []).filter((row) => !uidSet.has(row.bs_uid));
+      await AsyncStorage.setItem(`cart_${biz}`, JSON.stringify(cartData));
     }
   };
 
@@ -390,278 +862,13 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
   };
 
-  /** One POST per checkout: full Stripe totals + all line items. Each item includes `business_id` (seller) for multi-seller carts. */
-  const recordTransactions = async (buyerUid, paymentIntent, totalAmount = null, processingFee = null, escrowValue = true) => {
-    try {
-      console.log("Recording single transaction for cart items:", cartItems);
-
-      let buyerProfileId;
-      if (!buyerUid.startsWith("110")) {
-        buyerProfileId = await getProfileId(buyerUid);
-        console.log("Buyer profile ID:", buyerProfileId);
-      } else {
-        buyerProfileId = buyerUid;
-      }
-
-      const subtotal = calculateTotal();
-      const fee = processingFee !== null ? processingFee : subtotal * 0.03;
-      const total = totalAmount !== null ? totalAmount : subtotal + fee;
-
-      const defaultRecommender =
-        recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231";
-
-      const first = cartItems[0];
-      const legacyBusinessId =
-        first != null
-          ? first.itemType === "expertise"
-            ? first.profile_uid
-            : first.business_uid
-          : business_uid && business_uid !== "all"
-            ? business_uid
-            : null;
-
-      const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
-
-      const items = cartItems.map((item) => {
-        const qty = parseInt(item.quantity, 10) || 1;
-        const bountyType = item.itemType === "expertise" ? "per_item" : item.bs_bounty_type || "per_item";
-        const bounty = item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty);
-        const sellerBusinessId = item.business_uid || item.profile_uid;
-        return {
-          business_id: sellerBusinessId,
-          bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
-          item_type: item.itemType === "expertise" ? "expertise" : "service",
-          bounty,
-          bounty_type: bountyType,
-          quantity: qty,
-          recommender_profile_id: item.bounty_recommender_profile_id || defaultRecommender,
-        };
-      });
-
-      const transactionData = {
-        profile_id: buyerProfileId,
-        business_id: legacyBusinessId,
-        stripe_payment_intent: paymentIntent,
-        total_amount_paid: parseFloat(Number(total).toFixed(2)),
-        total_costs: parseFloat(Number(subtotal).toFixed(2)),
-        total_taxes: parseFloat(Number(fee).toFixed(2)),
-        transaction_in_escrow: transactionInEscrow,
-        items,
-      };
-
-      console.log("Posting single transaction (multi-seller lines in items[]):", JSON.stringify(transactionData, null, 2));
-
-      const response = await fetch(TRANSACTIONS_ENDPOINT, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(transactionData),
-      });
-
-      console.log("RESPONSE STATUS:", response.status);
-      console.log("RESPONSE OK:", response.ok);
-
-      const result = await response.json();
-      console.log("RESPONSE BODY:", JSON.stringify(result, null, 2));
-      console.log("Transaction recorded:", result);
-
-      if (!response.ok) {
-        throw new Error(`Failed to record transaction: ${result.message || "Unknown error"}`);
-      }
-    } catch (error) {
-      console.error("Error recording transactions:", error);
-      throw error;
-    }
-  };
-
-  // Handle fees dialog continue
-  const handleFeesDialogContinue = async () => {
-    try {
-      setShowFeesDialog(false);
-      setLoading(true);
-
-      // Load Stripe public key
-      await loadStripePublicKey("ECTEST"); // Using ECTEST for now, can be made dynamic
-
-      // Calculate total with 3% fee
-      const subtotal = calculateTotal();
-      const fee = subtotal * 0.03;
-      const total = subtotal + fee;
-
-      // Show Stripe payment modal
-      setShowStripePayment(true);
-      setLoading(false);
-    } catch (error) {
-      console.error("Error loading Stripe:", error);
-      Alert.alert("Error", "Failed to initialize payment. Please try again.");
-      setLoading(false);
-    }
-  };
-
-  // Web Stripe payment submission handler
-  const handleWebPaymentSubmit = async (paymentIntent, paymentMethod) => {
-    console.log("=== handleWebPaymentSubmit CALLED ===");
-    try {
-      setLoading(true);
-      console.log("Web payment submitted - paymentIntent:", paymentIntent, "paymentMethod:", paymentMethod);
-
-      // Get the buyer's ID
-      const buyerUid = await AsyncStorage.getItem("profile_uid");
-      if (!buyerUid) {
-        throw new Error("User ID not found");
-      }
-
-      // Calculate amounts with 3% processing fee
-      const subtotal = calculateTotal();
-      const processingFee = subtotal * 0.03;
-      const totalAmount = subtotal + processingFee;
-
-      console.log("Web payment amounts - Subtotal:", subtotal, "Processing Fee (3%):", processingFee, "Total:", totalAmount);
-
-      // Record the transactions with fee included
-      await recordTransactions(buyerUid, paymentIntent, totalAmount, processingFee, escrow);
-
-      // Clear ALL cart data from AsyncStorage
-      try {
-        console.log("Clearing all cart data...");
-        const keys = await AsyncStorage.getAllKeys();
-        const cartKeys = keys.filter((key) => key.startsWith("cart_"));
-        console.log("Found cart keys to clear:", cartKeys);
-
-        // Clear each cart
-        await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
-        console.log("All cart data cleared successfully");
-
-        // Clear local state
-        setCartItems([]);
-
-        Alert.alert("Success", "Payment successful! Your order has been placed.", [
-          {
-            text: "OK",
-            onPress: () => {
-              // Navigate to Search screen with refresh parameter
-              navigation.navigate("Search", { refreshCart: true });
-            },
-          },
-        ]);
-      } catch (error) {
-        console.error("Error clearing cart data:", error);
-        Alert.alert("Error", "There was an error clearing your cart. Please try again.");
-      }
-    } catch (error) {
-      console.error("Web payment submission error:", error);
-      setPaymentError(error);
-      setShowPaymentFailure(true);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCheckout = async () => {
-    console.log("Checkout button pressed");
-    console.log("Platform:", Platform.OS);
-
-    if (!stripeInitialized) {
-      Alert.alert("Error", "Payment system is not ready. Please try again.");
-      return;
-    }
-
-    if (!refundAcknowledged) {
-      setRefundError(true);
-      return;
-    }
-    setRefundError(false);
-
-    // Web Stripe flow
-    if (isWeb) {
-      try {
-        setLoading(true);
-        // Show fees dialog first
-        setShowFeesDialog(true);
-      } catch (error) {
-        console.error("Error starting web checkout:", error);
-        Alert.alert("Error", "An error occurred. Please try again.");
-        setLoading(false);
-      }
-      return;
-    }
-
-    // Native Stripe flow (existing code)
-    try {
-      setLoading(true);
-      console.log("Starting checkout process...");
-
-      const initialized = await initializePayment();
-      if (!initialized) {
-        console.log("Payment initialization failed");
-        return;
-      }
-
-      console.log("Presenting payment sheet...");
-      const result = await presentPaymentSheet();
-
-      // Log Stripe result structure for debugging
-      console.log("Stripe result structure:", {
-        hasError: "error" in result,
-        hasPaymentOption: "paymentOption" in result,
-        keys: Object.keys(result),
-      });
-
-      if (result.error) {
-        console.error("Payment error:", result.error);
-        Alert.alert("Error", "Payment failed. Please try again.");
-        return;
-      }
-
-      console.log("Payment successful!");
-
-      // For successful payments, Stripe only returns { error: undefined }
-      // We need to use the original client secret which contains the payment intent ID
-      console.log("Using stored client secret as payment intent:", currentClientSecret);
-      const paymentIntent = currentClientSecret;
-
-      // Get the buyer's ID
-      const buyerUid = await AsyncStorage.getItem("profile_uid");
-      if (!buyerUid) {
-        throw new Error("User ID not found");
-      }
-
-      // Record the transactions
-      await recordTransactions(buyerUid, paymentIntent, null, null, escrow);
-
-      // Clear ALL cart data from AsyncStorage
-      try {
-        console.log("Clearing all cart data...");
-        const keys = await AsyncStorage.getAllKeys();
-        const cartKeys = keys.filter((key) => key.startsWith("cart_"));
-        console.log("Found cart keys to clear:", cartKeys);
-
-        // Clear each cart
-        await Promise.all(cartKeys.map((key) => AsyncStorage.removeItem(key)));
-        console.log("All cart data cleared successfully");
-
-        // Clear local state
-        setCartItems([]);
-
-        Alert.alert("Success", "Payment successful! Your order has been placed.", [
-          {
-            text: "OK",
-            onPress: () => {
-              // Navigate to Search screen with refresh parameter
-              navigation.navigate("Search", { refreshCart: true });
-            },
-          },
-        ]);
-      } catch (error) {
-        console.error("Error clearing cart data:", error);
-        Alert.alert("Error", "There was an error clearing your cart. Please try again.");
-      }
-    } catch (error) {
-      console.error("Checkout error:", error);
-      Alert.alert("Error", "An error occurred during checkout. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const sellerGroupsPreview = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
+  const multiSellerCheckout = sellerGroupsPreview.length > 1;
+  const feeDialogFirstGroup = sellerGroupsPreview[0];
+  const webStripeAmount =
+    webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index]
+      ? webCheckoutSession.groups[webCheckoutSession.index].total
+      : 0;
 
   const content = (
     <View style={styles.container}>
@@ -687,6 +894,11 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                 const showLineBusiness =
                   Boolean(lineBusiness) &&
                   (item.itemType === "expertise" || business_uid === "all" || !showVendorHeader);
+                const lineTax = lineMerchandiseAndTax(item);
+                const rawRateLabel =
+                  lineTax.rawTaxRate === undefined || lineTax.rawTaxRate === null || String(lineTax.rawTaxRate).trim() === ""
+                    ? "—"
+                    : String(lineTax.rawTaxRate);
                 return (
                 <View key={index} style={styles.cartItemContainer}>
                   <TouchableOpacity style={styles.removeButton} onPress={() => handleRemoveItem(index)}>
@@ -738,32 +950,83 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                           </Text>
                         </View>
                       )}
+                      {item.itemType === "expertise" ? (
+                        <Text style={styles.lineTaxMeta}>Sales tax: n/a (expertise)</Text>
+                      ) : (
+                        <View style={styles.lineTaxBlock}>
+                          <Text style={styles.lineTaxMeta}>
+                            Taxable: {lineTax.taxable ? "Yes" : "No"}
+                            {" · "}
+                            <Text style={styles.lineTaxMetaEm}>bs_tax_rate</Text> (stored): {rawRateLabel}
+                          </Text>
+                          <Text style={styles.lineTaxMeta}>
+                            Rate used for this line:{" "}
+                            {lineTax.ratePercentUsed != null ? `${Number(lineTax.ratePercentUsed).toFixed(4)}%` : "—"}{" "}
+                            · Line sales tax: ${lineTax.tax.toFixed(2)}
+                          </Text>
+                        </View>
+                      )}
                     </View>
                   </View>
                 </View>
               );
               })}
               <View style={styles.totalContainer}>
-                <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Subtotal:</Text>
-                  <Text style={styles.totalValue}>${calculateTotal().toFixed(2)}</Text>
-                </View>
-                <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Credit card processing fee (3%):</Text>
-                  <Text style={styles.totalValue}>${(calculateTotal() * 0.03).toFixed(2)}</Text>
-                </View>
-                <View style={[styles.totalRow, styles.grandTotalRow]}>
-                  <Text style={styles.grandTotalLabel}>Total:</Text>
-                  <Text style={styles.grandTotalValue}>${(calculateTotal() * 1.03).toFixed(2)}</Text>
-                </View>
-              </View>
-
-              <View style={styles.escrowSection}>
-                <TouchableOpacity style={styles.escrowRow} onPress={() => setEscrow(!escrow)} activeOpacity={0.7}>
-                  <View style={[styles.checkbox, escrow && styles.checkboxChecked]}>{escrow && <Text style={styles.checkmark}>✓</Text>}</View>
-                  <Text style={styles.escrowLabel}>Escrow</Text>
-                  <Ionicons name='information-circle-outline' size={18} color='#666' style={styles.infoIcon} />
-                </TouchableOpacity>
+                <Text style={styles.multiSellerHint}>
+                  {multiSellerCheckout
+                    ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). Sales tax is computed per item. Credit card processing (3%) applies only when that business has “buyer pays” card fees.`
+                    : "Sales tax is computed per item. Credit card processing (3%) applies only when the business has “buyer pays” card fees."}
+                </Text>
+                {sellerGroupsPreview.map((g) => (
+                  <View key={g.sellerId} style={styles.perBusinessBlock}>
+                    {multiSellerCheckout ? <Text style={styles.perBusinessTitle}>{g.displayName}</Text> : null}
+                    <View style={styles.totalRow}>
+                      <Text style={styles.totalLabel}>Merchandise subtotal</Text>
+                      <Text style={styles.totalValue}>${g.merchandiseSubtotal.toFixed(2)}</Text>
+                    </View>
+                    <View style={styles.totalRow}>
+                      <Text style={styles.totalLabel}>Sales tax</Text>
+                      <Text style={styles.totalValue}>${g.salesTaxTotal.toFixed(2)}</Text>
+                    </View>
+                    <View style={styles.totalRow}>
+                      <Text style={styles.totalLabel}>Credit card processing (3%)</Text>
+                      <Text style={styles.totalValue}>${g.processingFee.toFixed(2)}</Text>
+                    </View>
+                    {!g.buyerPaysCardFee ? (
+                      <Text style={styles.cardFeeWaivedNote}>Business pays card fees — the processing line above is $0.00.</Text>
+                    ) : null}
+                    <View style={[styles.totalRow, styles.perBusinessTotalRow]}>
+                      <Text style={styles.totalLabel}>Business total</Text>
+                      <Text style={styles.totalValue}>${g.total.toFixed(2)}</Text>
+                    </View>
+                    <View style={styles.escrowSection}>
+                      <TouchableOpacity
+                        style={styles.escrowRow}
+                        onPress={() =>
+                          setEscrowBySeller((prev) => {
+                            const cur = prev[g.sellerId] !== false;
+                            return { ...prev, [g.sellerId]: !cur };
+                          })
+                        }
+                        activeOpacity={0.7}
+                      >
+                        <View style={[styles.checkbox, escrowBySeller[g.sellerId] !== false && styles.checkboxChecked]}>
+                          {escrowBySeller[g.sellerId] !== false && <Text style={styles.checkmark}>✓</Text>}
+                        </View>
+                        <Text style={styles.escrowLabel}>Escrow ({g.displayName})</Text>
+                        <Ionicons name='information-circle-outline' size={18} color='#666' style={styles.infoIcon} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+                {multiSellerCheckout ? (
+                  <View style={[styles.totalRow, styles.grandTotalRow]}>
+                    <Text style={styles.grandTotalLabel}>Grand total</Text>
+                    <Text style={styles.grandTotalValue}>
+                      ${sellerGroupsPreview.reduce((sum, g) => sum + g.total, 0).toFixed(2)}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
 
               <View style={styles.escrowSection}>
@@ -827,14 +1090,26 @@ const ShoppingCartScreen = ({ route, navigation }) => {
             onCancel={() => {
               setShowFeesDialog(false);
               setLoading(false);
+              webCheckoutSessionRef.current = null;
+              setWebCheckoutSession(null);
             }}
-            subtotal={cartItems.length > 0 ? calculateTotal() : null}
-            totalWithFee={cartItems.length > 0 ? calculateTotal() * 1.03 : null}
+            subtitle={
+              cartItems.length > 0 && multiSellerCheckout && feeDialogFirstGroup
+                ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). This step is for: ${feeDialogFirstGroup.displayName}.`
+                : null
+            }
+            merchandiseSubtotal={feeDialogFirstGroup ? feeDialogFirstGroup.merchandiseSubtotal : undefined}
+            salesTaxTotal={feeDialogFirstGroup ? feeDialogFirstGroup.salesTaxTotal : undefined}
+            cardProcessingFee={feeDialogFirstGroup ? feeDialogFirstGroup.processingFee : undefined}
+            buyerPaysCardFee={feeDialogFirstGroup ? feeDialogFirstGroup.buyerPaysCardFee : undefined}
+            subtotal={feeDialogFirstGroup ? feeDialogFirstGroup.subtotalAfterTax : null}
+            totalWithFee={feeDialogFirstGroup ? feeDialogFirstGroup.total : null}
           />
           {stripePromise && customerUid && (
             <StripePayment
+              key={`stripe-pay-${webCheckoutSession?.index ?? 0}-${webStripeAmount}`}
               message='ECTEST'
-              amount={calculateTotal() * 1.03} // Add 3% fee
+              amount={webStripeAmount || 0}
               paidBy={customerUid}
               show={showStripePayment}
               setShow={setShowStripePayment}
@@ -966,6 +1241,39 @@ const styles = StyleSheet.create({
     marginTop: 10,
     alignItems: "stretch",
   },
+  multiSellerHint: {
+    fontSize: 13,
+    color: "#555",
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  perBusinessBlock: {
+    borderWidth: 1,
+    borderColor: "#e8e0f5",
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+    backgroundColor: "#faf8fc",
+  },
+  perBusinessTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#333",
+    marginBottom: 8,
+  },
+  perBusinessTotalRow: {
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#ddd",
+  },
+  cardFeeWaivedNote: {
+    fontSize: 13,
+    color: "#666",
+    fontStyle: "italic",
+    marginTop: 4,
+    marginBottom: 4,
+  },
   grandTotalRow: {
     marginTop: 8,
     paddingTop: 8,
@@ -1039,6 +1347,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
     marginBottom: 10,
+  },
+  lineTaxBlock: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+  },
+  lineTaxMeta: {
+    fontSize: 12,
+    color: "#555",
+    lineHeight: 17,
+    marginBottom: 4,
+  },
+  lineTaxMetaEm: {
+    fontWeight: "700",
+    color: "#444",
   },
   priceContainer: {
     borderTopWidth: 1,

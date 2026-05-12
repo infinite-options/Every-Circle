@@ -7,6 +7,24 @@
  * - bs_shipping → bs_free_shipping / bs_buyer_pays_shipping when flags are absent
  */
 
+/** Canonical values for backend JSON: "buyer" | "seller" | "". */
+export function normalizeBsCcFeePayer(raw) {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s === "buyer") return "buyer";
+  if (s === "seller") return "seller";
+  return "";
+}
+
+/** True = business/seller pays CC fees (default). False = buyer pays. */
+export function businessPaysCcFeeFromApiPayer(raw) {
+  return normalizeBsCcFeePayer(raw) !== "buyer";
+}
+
+/** For business-level display/API: "buyer" or "seller" (defaults to seller). */
+export function canonicalBusinessCcFeePayer(raw) {
+  return normalizeBsCcFeePayer(raw) === "buyer" ? "buyer" : "seller";
+}
+
 export function normalizeBusinessServiceFromApi(service) {
   if (!service || typeof service !== "object") return service;
 
@@ -35,6 +53,16 @@ export function normalizeBusinessServiceFromApi(service) {
     String(service.bs_quantity).trim() !== ""
   ) {
     bs_qty_unlimited = 0;
+  }
+
+  // Legacy / inconsistent rows: limited flag with quantity text "unlimited"
+  if (
+    bs_qty_unlimited === 0 &&
+    bs_available_quantity !== "" &&
+    String(bs_available_quantity).trim().toLowerCase() === "unlimited"
+  ) {
+    bs_qty_unlimited = 1;
+    bs_available_quantity = "";
   }
 
   let bs_condition_type = service.bs_condition_type;
@@ -75,12 +103,8 @@ export function normalizeBusinessServiceFromApi(service) {
     bs_condition_detail,
     bs_free_shipping,
     bs_buyer_pays_shipping,
-    bs_cc_fee_payer:
-      String(service.bs_cc_fee_payer || "").toLowerCase() === "buyer"
-        ? "buyer"
-        : String(service.bs_cc_fee_payer || "").toLowerCase() === "seller"
-          ? "seller"
-          : "",
+    // CC fee payer is business-level only; strip legacy per-product values for UI.
+    bs_cc_fee_payer: "",
     bs_qty_unlimited,
     bs_available_quantity,
     bs_service_image_is_public: imgIsPublic,

@@ -727,6 +727,9 @@ const ExpertiseDetailScreenContent = ({ route, navigation }) => {
                   other_uid: profile_uid,
                   other_name: `${userForMiniCard.firstName} ${userForMiniCard.lastName}`.trim() || "Chat",
                   other_image: userForMiniCard.profileImage && userForMiniCard.imageIsPublic ? userForMiniCard.profileImage : null,
+                  reply_context: {
+                    label: `Offering: ${String(expertiseData?.title || "").trim() || "Offering"}`,
+                  },
                 })
               }
             >

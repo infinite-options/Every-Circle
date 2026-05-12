@@ -1,5 +1,5 @@
 // NetworkScreen.js - Web-compatible version
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import BottomNavBar from "../components/BottomNavBar";
@@ -21,6 +21,7 @@ import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../confi
 import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTokenNoLongerActive } from "../utils/ablyClient";
 import { getSessionProfile } from "../utils/sessionProfile";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
+import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -2033,7 +2034,7 @@ const NetworkScreen = ({ navigation }) => {
     } catch (_) {}
   };
 
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     const session = await getSessionProfile();
     const uid = (profileUid || session?.profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
     if (!uid) return;
@@ -2046,7 +2047,17 @@ const NetworkScreen = ({ navigation }) => {
       setConversations([]);
     }
     setConversationsLoading(false);
-  };
+  }, [profileUid]);
+
+  // When returning from Chat, refresh the list so the just-sent message appears immediately.
+  useFocusEffect(
+    useCallback(() => {
+      if (showMessages) {
+        fetchConversations();
+        clearUnread();
+      }
+    }, [showMessages, fetchConversations, clearUnread]),
+  );
 
   const _convRelTime = (iso) => {
     if (!iso) return "";
@@ -2878,8 +2889,8 @@ const NetworkScreen = ({ navigation }) => {
                         locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
                       }}
                     />
-                    {viewer.view_timestamp ? (
-                      <Text style={styles.viewedTimestamp}>Viewed: {new Date(viewer.view_timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</Text>
+                    {getLatestProfileViewTimestamp(viewer.view_timestamp) ? (
+                      <Text style={styles.viewedTimestamp}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text>
                     ) : null}
                   </TouchableOpacity>
                 ))

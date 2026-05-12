@@ -3,17 +3,70 @@ import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform } from "react-native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
-const StripeFeesDialog = ({ show, setShow, onContinue, onCancel, subtotal, totalWithFee }) => {
+const StripeFeesDialog = ({
+  show,
+  setShow,
+  onContinue,
+  onCancel,
+  subtitle,
+  /** Legacy: single “subtotal” and total including a simple fee line. */
+  subtotal,
+  totalWithFee,
+  /** Shopping cart: per-line tax + optional buyer-paid card fee. */
+  merchandiseSubtotal,
+  salesTaxTotal,
+  cardProcessingFee,
+  buyerPaysCardFee,
+}) => {
   const { darkMode } = useDarkMode();
-  const hasBreakdown = subtotal != null && totalWithFee != null;
-  const fee = hasBreakdown ? (totalWithFee - subtotal).toFixed(2) : null;
+
+  const hasCartBreakdown =
+    typeof merchandiseSubtotal === "number" &&
+    typeof salesTaxTotal === "number" &&
+    typeof cardProcessingFee === "number" &&
+    typeof totalWithFee === "number";
+
+  const hasLegacyBreakdown =
+    !hasCartBreakdown && subtotal != null && totalWithFee != null && Number.isFinite(Number(subtotal)) && Number.isFinite(Number(totalWithFee));
+
+  const legacyFee = hasLegacyBreakdown ? (Number(totalWithFee) - Number(subtotal)).toFixed(2) : null;
 
   return (
     <Modal animationType='fade' transparent={true} visible={show} onRequestClose={onCancel}>
       <View style={[styles.modalOverlay, darkMode && styles.darkModalOverlay]}>
         <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
           <Text style={[styles.title, darkMode && styles.darkTitle]}>Payment Processing Fees</Text>
-          {hasBreakdown ? (
+          {subtitle ? (
+            <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>{subtitle}</Text>
+          ) : null}
+          {hasCartBreakdown ? (
+            <>
+              <View style={[styles.breakdownSection, darkMode && styles.darkBreakdownSection]}>
+                <View style={styles.breakdownRow}>
+                  <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Merchandise subtotal:</Text>
+                  <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${merchandiseSubtotal.toFixed(2)}</Text>
+                </View>
+                <View style={styles.breakdownRow}>
+                  <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Sales tax:</Text>
+                  <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${salesTaxTotal.toFixed(2)}</Text>
+                </View>
+                <View style={styles.breakdownRow}>
+                  <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Credit card processing (3%):</Text>
+                  <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${cardProcessingFee.toFixed(2)}</Text>
+                </View>
+                {!buyerPaysCardFee ? (
+                  <Text style={[styles.waivedNote, darkMode && styles.darkWaivedNote]}>The business pays Stripe fees; the processing line is $0.00.</Text>
+                ) : null}
+                <View style={[styles.breakdownRow, styles.totalRow, darkMode && styles.darkTotalRow]}>
+                  <Text style={[styles.breakdownLabel, styles.totalLabel, darkMode && styles.darkBreakdownLabel]}>Charged total:</Text>
+                  <Text style={[styles.breakdownValue, styles.totalValue, darkMode && styles.darkBreakdownValue]}>${Number(totalWithFee).toFixed(2)}</Text>
+                </View>
+              </View>
+              <Text style={[styles.message, darkMode && styles.darkMessage]}>
+                This matches the amount for this payment step. Click Continue to proceed.
+              </Text>
+            </>
+          ) : hasLegacyBreakdown ? (
             <>
               <View style={[styles.breakdownSection, darkMode && styles.darkBreakdownSection]}>
                 <View style={styles.breakdownRow}>
@@ -22,7 +75,7 @@ const StripeFeesDialog = ({ show, setShow, onContinue, onCancel, subtotal, total
                 </View>
                 <View style={styles.breakdownRow}>
                   <Text style={[styles.breakdownLabel, darkMode && styles.darkBreakdownLabel]}>Credit card fee (3%):</Text>
-                  <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${fee}</Text>
+                  <Text style={[styles.breakdownValue, darkMode && styles.darkBreakdownValue]}>${legacyFee}</Text>
                 </View>
                 <View style={[styles.breakdownRow, styles.totalRow, darkMode && styles.darkTotalRow]}>
                   <Text style={[styles.breakdownLabel, styles.totalLabel, darkMode && styles.darkBreakdownLabel]}>Total:</Text>
@@ -32,7 +85,7 @@ const StripeFeesDialog = ({ show, setShow, onContinue, onCancel, subtotal, total
               <Text style={[styles.message, darkMode && styles.darkMessage]}>This matches the total shown on the previous page. Click Continue to proceed with payment.</Text>
             </>
           ) : (
-            <Text style={[styles.message, darkMode && styles.darkMessage]}>An additional 3% will be charged as credit card processing fees</Text>
+            <Text style={[styles.message, darkMode && styles.darkMessage]}>An additional 3% may be charged as credit card processing fees when the buyer pays card fees.</Text>
           )}
 
           <View style={styles.buttonContainer}>
@@ -90,6 +143,26 @@ const styles = StyleSheet.create({
   },
   darkTitle: {
     color: "#fff",
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#555",
+    marginBottom: 12,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  darkSubtitle: {
+    color: "#bbb",
+  },
+  waivedNote: {
+    fontSize: 13,
+    color: "#666",
+    fontStyle: "italic",
+    marginBottom: 8,
+    lineHeight: 18,
+  },
+  darkWaivedNote: {
+    color: "#aaa",
   },
   message: {
     fontSize: 16,
@@ -187,4 +260,3 @@ const styles = StyleSheet.create({
 });
 
 export default StripeFeesDialog;
-

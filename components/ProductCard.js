@@ -1,6 +1,8 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { normalizeBsCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
+import { parsePrice } from "../utils/priceUtils";
 
 const DEFAULT_PRODUCT_IMAGE = require("../assets/profile.png");
 
@@ -13,7 +15,7 @@ const parseTags = (raw) => {
     .filter(Boolean);
 };
 
-const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, darkMode, businessUid }) => {
+const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, darkMode, businessUid, businessCcFeePayer }) => {
   const tags = useMemo(() => parseTags(service.bs_tags), [service.bs_tags]);
 
   const productImageUri = useMemo(() => {
@@ -88,14 +90,30 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
     return null;
   }, [service.bs_free_shipping, service.bs_buyer_pays_shipping, service.bs_shipping]);
 
+  /** When bs_is_taxable is on, show bs_tax_rate as a percent (e.g. "4.00" → "Tax rate: 4.00%"). */
+  const taxRateLine = useMemo(() => {
+    const v = service.bs_is_taxable;
+    const taxable =
+      v === true ||
+      v === 1 ||
+      v === "1" ||
+      (typeof v === "string" && ["true", "yes"].includes(v.trim().toLowerCase()));
+    if (!taxable) return null;
+    const n = parsePrice(service.bs_tax_rate != null ? service.bs_tax_rate : 0);
+    if (!Number.isFinite(n)) return "Tax rate: —";
+    return `Tax rate: ${n.toFixed(2)}%`;
+  }, [service.bs_is_taxable, service.bs_tax_rate]);
+
   const ccLine = useMemo(() => {
-    const p = service.bs_cc_fee_payer;
+    const fromBusiness =
+      businessCcFeePayer != null && String(businessCcFeePayer).trim() !== "" ? normalizeBsCcFeePayer(businessCcFeePayer) : "";
+    const p = fromBusiness === "buyer" || fromBusiness === "seller" ? fromBusiness : normalizeBsCcFeePayer(service.bs_cc_fee_payer);
     if (!p || String(p).trim() === "") return null;
     const low = String(p).toLowerCase();
     if (low === "buyer") return "Card processing fees: buyer pays";
     if (low === "seller") return "Card processing fees: seller pays";
     return null;
-  }, [service.bs_cc_fee_payer]);
+  }, [businessCcFeePayer, service.bs_cc_fee_payer]);
 
   const metaTextStyle = darkMode ? styles.metaTextDark : styles.metaText;
   const tagChipTextStyle = darkMode ? styles.tagChipTextDark : styles.tagChipText;
@@ -151,6 +169,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
         <Text style={metaTextStyle}>{quantityLine}</Text>
         {conditionLine ? <Text style={metaTextStyle}>{conditionLine}</Text> : null}
         {shippingLine ? <Text style={metaTextStyle}>{shippingLine}</Text> : null}
+        {taxRateLine ? <Text style={metaTextStyle}>{taxRateLine}</Text> : null}
         {ccLine ? <Text style={metaTextStyle}>{ccLine}</Text> : null}
         {showOwnerTags && tags.length > 0 ? (
           <View style={styles.tagsRow}>

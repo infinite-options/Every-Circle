@@ -8,6 +8,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { USER_PROFILE_INFO_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
 import MiniCard from "../components/MiniCard";
 import { sanitizeText } from "../utils/textSanitizer";
+import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
 
@@ -370,10 +371,8 @@ const ConnectWebScreen = () => {
                         locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
                       }}
                     />
-                    {viewer.view_timestamp ? (
-                      <Text style={styles.viewedTimestamp}>
-                        Viewed: {new Date(viewer.view_timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                      </Text>
+                    {getLatestProfileViewTimestamp(viewer.view_timestamp) ? (
+                      <Text style={styles.viewedTimestamp}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text>
                     ) : null}
                   </TouchableOpacity>
                 ))
