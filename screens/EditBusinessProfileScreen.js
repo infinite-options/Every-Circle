@@ -1,6 +1,6 @@
 //EditBusinessProfileScreen.js
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Keyboard, UIManager, findNodeHandle, ActivityIndicator, Platform, InteractionManager } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Keyboard, UIManager, findNodeHandle, ActivityIndicator, Platform, InteractionManager, Modal, BackHandler } from "react-native";
 import axios from "axios";
 import MiniCard from "../components/MiniCard";
 import BottomNavBar from "../components/BottomNavBar";
@@ -44,6 +44,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const serviceTaxRateInputRef = useRef(null);
   const serviceQuantitySectionRef = useRef(null);
   const serviceQuantityInputRef = useRef(null);
+  const pendingRemoveActionRef = useRef(null);
+  /** Skip unsaved `beforeRemove` while navigating away after a successful submit (isChanged clears async). */
+  const suppressLeavePromptRef = useRef(false);
 
   // Business profile image state (backend: business_profile_img, delete_business_profile_img, business_profile_img_is_public)
   // Profile image comes from business_profile_img; other images stay in business_images_url
@@ -253,8 +256,10 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [existingBusinessUsers, setExistingBusinessUsers] = useState(Array.isArray(business_users) ? business_users : []);
   const [deletedBusinessUsers, setDeletedBusinessUsers] = useState([]);
   const [isOwner, setIsOwner] = useState(false);
-  const [isChanged, setIsChanged] = useState(true);
+  const [isChanged, setIsChanged] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState(null);
 
   // BUSINESS-SPECIFIC: businessRoles constant (not in EditProfileScreen)
   const businessRoles = [
@@ -613,6 +618,45 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       return;
     }
 
+    // New product form is open but nothing was added to the list — block submit (not the generic "leave" modal).
+    if (showServiceForm && editingServiceIndex === null) {
+      const f = serviceForm;
+      const hasDraftContent =
+        String(f.bs_service_name || "").trim() !== "" ||
+        String(f.bs_service_desc || "").trim() !== "" ||
+        String(f.bs_notes || "").trim() !== "" ||
+        String(f.bs_sku || "").trim() !== "" ||
+        String(f.bs_tags || "").trim() !== "" ||
+        String(f.bs_duration_minutes || "").trim() !== "" ||
+        String(f.bs_cost || "").trim() !== "" ||
+        String(f.bs_bounty || "").trim() !== "" ||
+        (f.bs_bounty_type && f.bs_bounty_type !== "none") ||
+        f.bs_qty_unlimited === 0 ||
+        f.bs_qty_unlimited === "0" ||
+        f.bs_is_taxable === 1 ||
+        f.bs_is_taxable === "1" ||
+        f.bs_free_shipping === 1 ||
+        f.bs_free_shipping === "1" ||
+        f.bs_buyer_pays_shipping === 1 ||
+        f.bs_buyer_pays_shipping === "1" ||
+        String(f.bs_refund_policy || "").trim() !== "" ||
+        (String(f.bs_return_window_days || "").trim() !== "" && String(f.bs_return_window_days).trim() !== "0") ||
+        f.bs_condition_type === "used" ||
+        f.bs_condition_type === "new" ||
+        (serviceProductImageUri && String(serviceProductImageUri).trim() !== "" && !serviceProductImageError) ||
+        !!serviceProductWebFile;
+      if (hasDraftContent) {
+        const msg =
+          'You have a new product or service that is not on the list yet. Tap "Add Product/Service" to add it, or tap Cancel on the product form to discard it, then submit.';
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          window.alert(msg);
+        } else {
+          Alert.alert("Product not added", msg);
+        }
+        return;
+      }
+    }
+
     setIsLoading(true);
     // Declare imageFileSize outside try block so it's accessible in catch block
     let imageFileSize = 0;
@@ -947,9 +991,13 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       });
 
       if (response.status === 200) {
-        Alert.alert("Success", "Business profile updated.");
+        suppressLeavePromptRef.current = true;
         setIsChanged(false);
         navigation.navigate("BusinessProfile", { business_uid: businessUID });
+        Alert.alert("Success", "Business profile updated.");
+        setTimeout(() => {
+          suppressLeavePromptRef.current = false;
+        }, 1500);
       } else {
         Alert.alert("Error", "Update failed. Try again.");
       }
@@ -1606,6 +1654,32 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     checkBusinessOwnership();
   }, [business_users]);
 
+  // Warn before leaving with unsaved changes (same pattern as EditProfileScreen: beforeRemove + modal + BottomNavBar).
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+      if (suppressLeavePromptRef.current) return;
+      if (!isChanged) return;
+      e.preventDefault();
+      pendingRemoveActionRef.current = e.data.action;
+      setShowUnsavedChangesModal(true);
+    });
+    return unsubscribe;
+  }, [navigation, isChanged]);
+
+  useEffect(() => {
+    const handleHardwareBack = () => {
+      if (suppressLeavePromptRef.current) return false;
+      if (!isChanged) return false;
+      pendingRemoveActionRef.current = null;
+      setShowUnsavedChangesModal(true);
+      return true;
+    };
+    if (Platform.OS === "android") {
+      const sub = BackHandler.addEventListener("hardwareBackPress", handleHardwareBack);
+      return () => sub.remove();
+    }
+  }, [isChanged]);
+
   // Track the currently focused input
   const focusedInputRef = useRef(null);
   const keyboardHeightRef = useRef(0);
@@ -2238,7 +2312,19 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}>
-      <AppHeader title='Edit Business Profile' {...getHeaderColors("editBusinessProfile")} onBackPress={() => navigation.goBack()} />
+      <AppHeader
+        title='Edit Business Profile'
+        {...getHeaderColors("editBusinessProfile")}
+        onBackPress={() => {
+          if (isChanged) {
+            pendingRemoveActionRef.current = null;
+            setPendingNavigation(null);
+            setShowUnsavedChangesModal(true);
+          } else {
+            navigation.goBack();
+          }
+        }}
+      />
       <ScrollView
         ref={scrollViewRef}
         style={{ flex: 1, padding: 20, backgroundColor: darkMode ? "#1a1a1a" : "#ffffff" }}
@@ -2465,8 +2551,70 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         </TouchableOpacity>
       </ScrollView>
       <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 10 }}>
-        <BottomNavBar navigation={navigation} />
+        <BottomNavBar
+          navigation={navigation}
+          onBeforeNavigate={(destination) => {
+            if (isChanged) {
+              pendingRemoveActionRef.current = null;
+              setPendingNavigation(destination);
+              setShowUnsavedChangesModal(true);
+              return false;
+            }
+            return true;
+          }}
+        />
       </View>
+
+      <Modal
+        visible={showUnsavedChangesModal}
+        transparent
+        animationType='fade'
+        onRequestClose={() => {
+          setShowUnsavedChangesModal(false);
+          setPendingNavigation(null);
+          pendingRemoveActionRef.current = null;
+        }}
+      >
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "center", alignItems: "center" }}>
+          <View style={[styles.modalContainer, darkMode && styles.darkModalContainer]}>
+            <Text style={[styles.modalText, darkMode && styles.darkModalText]}>You have unsaved changes. Are you sure you want to leave this page?</Text>
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: "#999" }]}
+                onPress={() => {
+                  setShowUnsavedChangesModal(false);
+                  setPendingNavigation(null);
+                  pendingRemoveActionRef.current = null;
+                }}
+              >
+                <Text style={[styles.modalButtonText, darkMode && styles.darkModalButtonText]}>No</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, darkMode && styles.darkModalButton]}
+                onPress={() => {
+                  const action = pendingRemoveActionRef.current;
+                  const dest = pendingNavigation;
+                  setShowUnsavedChangesModal(false);
+                  setPendingNavigation(null);
+                  pendingRemoveActionRef.current = null;
+                  setIsChanged(false);
+                  setTimeout(() => {
+                    if (action) {
+                      navigation.dispatch(action);
+                    } else if (dest) {
+                      navigation.navigate(dest);
+                    } else {
+                      navigation.goBack();
+                    }
+                  }, 0);
+                }}
+              >
+                <Text style={[styles.modalButtonText, darkMode && styles.darkModalButtonText]}>Yes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       {/* MISSING: Business Approval Modal (EditProfileScreen has this) */}
       {/* Note: Not needed for business profile editing */}
     </View>
@@ -3252,8 +3400,48 @@ const styles = StyleSheet.create({
   togglePillActiveRed: { backgroundColor: "#ef9a9a" },
   togglePillText: { fontSize: 13, color: "#4e4e4e", fontWeight: "500" },
   togglePillTextActive: { color: "#fff", fontWeight: "bold" },
-  // MISSING: modalContainer, modalText, modalButton, modalButtonText, darkModalContainer, darkModalText, darkModalButton, darkModalButtonText styles (EditProfileScreen has these)
-  // Note: Business profile doesn't have business approval modal
+  modalContainer: {
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    padding: 24,
+    width: "85%",
+    maxWidth: 400,
+    alignItems: "center",
+  },
+  modalText: {
+    fontSize: 16,
+    marginBottom: 16,
+    textAlign: "center",
+    color: "#000",
+  },
+  modalButton: {
+    marginTop: 10,
+    backgroundColor: "#FF9500",
+    borderRadius: 25,
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    minWidth: 100,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+  },
+  modalButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  darkModalContainer: {
+    backgroundColor: "#2d2d2d",
+  },
+  darkModalText: {
+    color: "#ffffff",
+  },
+  darkModalButton: {
+    backgroundColor: "#4a9eff",
+  },
+  darkModalButtonText: {
+    color: "#ffffff",
+  },
 });
 
 export default EditBusinessProfileScreen;

@@ -42,6 +42,16 @@ function NoBountyIcon({ darkMode, muted }) {
   );
 }
 
+/** Normalize API bounty fields: "", null, NaN, or non‑positive → null so results row shows NoBountyIcon. */
+function parseSearchMaxBounty(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (s === "") return null;
+  const n = parseFloat(s);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
 // Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
 const formatDateTimeForDisplay = (value) => {
   if (!value || typeof value !== "string" || value.trim() === "") return "";
@@ -97,9 +107,9 @@ async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
           rating: row && Number.isFinite(parseFloat(row.avg_rating)) ? parseFloat(row.avg_rating) : null,
           ratingCount: row ? row.rating_count : 0,
           connection_degree: row?.nearest_connection ?? null,
-          max_bounty: row ? parseFloat(row.max_bounty) : null,
-          max_per_item_bounty: row ? parseFloat(row.max_per_item_bounty) || null : null,
-          max_total_bounty: row ? parseFloat(row.max_total_bounty) || null : null,
+          max_bounty: row ? parseSearchMaxBounty(row.max_bounty) : null,
+          max_per_item_bounty: row ? parseSearchMaxBounty(row.max_per_item_bounty) : null,
+          max_total_bounty: row ? parseSearchMaxBounty(row.max_total_bounty) : null,
         };
         if (row != null) {
           const raw = row.product_count;
@@ -885,7 +895,7 @@ export default function SearchScreen({ route }) {
             hasPriceTag: b.has_price_tag || false,
             hasX: b.has_x || false,
             hasDollar: b.has_dollar_sign || false,
-            max_bounty: b.max_bounty || b.business_max_bounty || null,
+            max_bounty: parseSearchMaxBounty(b.max_bounty ?? b.business_max_bounty),
             business_short_bio: sanitizeText(b.business_short_bio),
             business_tag_line: sanitizeText(b.business_tag_line),
             tags: b.tags || [],
@@ -1662,7 +1672,8 @@ export default function SearchScreen({ route }) {
               if (noProducts) {
                 return <NoBountyIcon darkMode={darkMode} muted />;
               }
-              return item.max_bounty != null ? <Text style={[styles.bountyEmojiIcon, styles.bountyEmojiIconCompact]}>💰</Text> : <NoBountyIcon darkMode={darkMode} />;
+              const hasBounty = item.max_bounty != null && Number.isFinite(item.max_bounty) && item.max_bounty > 0;
+              return hasBounty ? <Text style={[styles.bountyEmojiIcon, styles.bountyEmojiIconCompact]}>💰</Text> : <NoBountyIcon darkMode={darkMode} />;
             })()}
           </View>
 

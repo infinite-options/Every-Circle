@@ -19,7 +19,7 @@ const DEBUG_APPLE_SIGNIN_SKIP_BACKEND = false;
 // Suppress VirtualizedList nesting warning - we're using nestedScrollEnabled and proper configuration
 LogBox.ignoreLogs(["VirtualizedLists should never be nested inside plain ScrollViews"]);
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { NavigationContainer } from "@react-navigation/native";
+import { NavigationContainer, getStateFromPath as parsePathToNavigationState } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { clearUserProfileCacheStorage } from "./utils/sessionProfile";
@@ -846,11 +846,9 @@ export default function App() {
     console.error("App.js - Error state:", error);
   }
 
-  // Configure linking for web URL routing
-  const linking = {
-    prefixes: ["everycircle://", "https://everycircle.com", "http://everycircle.com", "http://localhost:8081"],
-    config: {
-      screens: {
+  // Configure linking for web URL routing (include stack screens that are used on web so history / popstate
+  // does not dispatch RESET with a state missing `routes` — see BaseRouter RESET / useLinking).
+  const linkingScreensConfig = {
         Home: "",
         NewConnection: {
           path: "newconnection/:profile_uid?",
@@ -885,7 +883,32 @@ export default function App() {
             other_image: (v) => v,
           },
         },
-      },
+        BusinessProfile: {
+          path: "business/:business_uid",
+          parse: {
+            business_uid: (v) => (v != null ? String(v) : ""),
+          },
+        },
+        ShoppingCart: "cart",
+      };
+
+  const linking = {
+    prefixes: ["everycircle://", "https://everycircle.com", "http://everycircle.com", "http://localhost:8081", "http://127.0.0.1:8081"],
+    config: {
+      screens: linkingScreensConfig,
+    },
+    getStateFromPath(path, options) {
+      try {
+        const state = parsePathToNavigationState(path, options);
+        if (state == null) return undefined;
+        if (!state.routes || !Array.isArray(state.routes) || state.routes.length === 0) {
+          return undefined;
+        }
+        return state;
+      } catch (e) {
+        console.warn("App.js linking getStateFromPath failed:", path, e?.message);
+        return undefined;
+      }
     },
   };
 
@@ -895,8 +918,9 @@ export default function App() {
 
     // Get current route name
     const getCurrentRoute = (navState) => {
-      if (!navState) return null;
+      if (!navState || !Array.isArray(navState.routes) || typeof navState.index !== "number") return null;
       const route = navState.routes[navState.index];
+      if (!route) return null;
       if (route.state) {
         return getCurrentRoute(route.state);
       }
