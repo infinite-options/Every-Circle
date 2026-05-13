@@ -3,7 +3,6 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from "react
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback } from "react";
-import { normalizeBsCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { parsePrice } from "../utils/priceUtils";
 
 const DEFAULT_PRODUCT_IMAGE = require("../assets/profile.png");
@@ -17,7 +16,7 @@ const parseTags = (raw) => {
     .filter(Boolean);
 };
 
-const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, darkMode, businessUid, businessCcFeePayer }) => {
+const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, darkMode, businessUid }) => {
   const tags = useMemo(() => parseTags(service.bs_tags), [service.bs_tags]);
 
   const productImageUri = useMemo(() => {
@@ -105,17 +104,6 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
     if (!Number.isFinite(n)) return "Tax rate: —";
     return `Tax rate: ${n.toFixed(2)}%`;
   }, [service.bs_is_taxable, service.bs_tax_rate]);
-
-  const ccLine = useMemo(() => {
-    const fromBusiness =
-      businessCcFeePayer != null && String(businessCcFeePayer).trim() !== "" ? normalizeBsCcFeePayer(businessCcFeePayer) : "";
-    const p = fromBusiness === "buyer" || fromBusiness === "seller" ? fromBusiness : normalizeBsCcFeePayer(service.bs_cc_fee_payer);
-    if (!p || String(p).trim() === "") return null;
-    const low = String(p).toLowerCase();
-    if (low === "buyer") return "Card processing fees: buyer pays";
-    if (low === "seller") return "Card processing fees: seller pays";
-    return null;
-  }, [businessCcFeePayer, service.bs_cc_fee_payer]);
 
   const metaTextStyle = darkMode ? styles.metaTextDark : styles.metaText;
   const tagChipTextStyle = darkMode ? styles.tagChipTextDark : styles.tagChipText;
@@ -259,7 +247,6 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
         {conditionLine ? <Text style={metaTextStyle}>{conditionLine}</Text> : null}
         {shippingLine ? <Text style={metaTextStyle}>{shippingLine}</Text> : null}
         {taxRateLine ? <Text style={metaTextStyle}>{taxRateLine}</Text> : null}
-        {ccLine ? <Text style={metaTextStyle}>{ccLine}</Text> : null}
         {showOwnerTags && tags.length > 0 ? (
           <View style={styles.tagsRow}>
             {tags.map((tag, i) => (

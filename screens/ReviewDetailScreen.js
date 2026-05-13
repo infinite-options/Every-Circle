@@ -743,9 +743,6 @@ export default function ReviewDetailScreen({ route, navigation }) {
                   key={idx}
                   service={service}
                   businessUid={business_uid}
-                  businessCcFeePayer={canonicalBusinessCcFeePayer(
-                    business?.business_cc_fee_payer ?? business?.bs_cc_fee_payer,
-                  )}
                   showEditButton={false}
                   onPress={() => handleProductPress(service)}
                 />

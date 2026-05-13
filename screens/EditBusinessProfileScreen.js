@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import ProductCard from "../components/ProductCard";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 import { normalizeBusinessServiceFromApi as normalizeBusinessServiceRow, businessPaysCcFeeFromApiPayer } from "../utils/normalizeBusinessServiceFromApi";
+import { parsePrice } from "../utils/priceUtils";
 
 const BusinessProfileAPI = BUSINESS_INFO_ENDPOINT;
 const DEFAULT_BUSINESS_IMAGE = require("../assets/profile.png");
@@ -64,7 +65,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [originalServiceProductImage, setOriginalServiceProductImage] = useState("");
   const [serviceProductWebFile, setServiceProductWebFile] = useState(null);
   const [serviceProductImageError, setServiceProductImageError] = useState(false);
-  const [serviceImageToolsVisible, setServiceImageToolsVisible] = useState(false);
 
   // BUSINESS-SPECIFIC: Category selection (3-level hierarchy like BusinessStep2) - must be before useEffects that use them
   const [allCategories, setAllCategories] = useState([]);
@@ -741,8 +741,21 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           bs_bounty: service.bs_bounty || "",
           bs_bounty_currency: service.bs_bounty_currency || "USD",
           bs_bounty_type: service.bs_bounty_type || "per_item",
-          bs_is_taxable: typeof service.bs_is_taxable === "undefined" ? 1 : service.bs_is_taxable,
-          bs_tax_rate: service.bs_tax_rate || "0",
+          bs_is_taxable: (() => {
+            if (service.bs_is_taxable === 1 || service.bs_is_taxable === "1" || service.bs_is_taxable === true) return 1;
+            if (service.bs_is_taxable === 0 || service.bs_is_taxable === "0" || service.bs_is_taxable === false) return 0;
+            return parsePrice(service.bs_tax_rate) > 0 ? 1 : 0;
+          })(),
+          bs_tax_rate: (() => {
+            const taxable =
+              service.bs_is_taxable === 1 ||
+              service.bs_is_taxable === "1" ||
+              service.bs_is_taxable === true ||
+              (!(service.bs_is_taxable === 0 || service.bs_is_taxable === "0" || service.bs_is_taxable === false) && parsePrice(service.bs_tax_rate) > 0);
+            if (!taxable) return "0";
+            const s = String(service.bs_tax_rate ?? "").trim();
+            return s !== "" ? s : "0";
+          })(),
           bs_discount_allowed: typeof service.bs_discount_allowed === "undefined" ? 1 : service.bs_discount_allowed,
           bs_refund_policy: service.bs_refund_policy || "",
           bs_return_window_days: service.bs_return_window_days || "0",
@@ -1256,7 +1269,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_bounty: "",
     bs_bounty_currency: "USD",
     bs_bounty_type: "per_item",
-    bs_is_taxable: 1,
+    bs_is_taxable: 0,
     bs_tax_rate: "0",
     bs_discount_allowed: 1,
     bs_refund_policy: "",
@@ -1269,9 +1282,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_is_visible: 1,
     bs_status: "active",
     bs_image_key: "",
-    // bs_qty_unlimited: 1,
-    bs_quantity: service.bs_quantity,           
-    bs_qty_unlimited: service.bs_qty_unlimited,
+    bs_quantity: "",
+    bs_qty_unlimited: 1,
     bs_available_quantity: "",
     bs_condition_type: "new",
     bs_condition_detail: "",
@@ -1315,6 +1327,15 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       }
     }
 
+    const formTaxable = serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1" || serviceForm.bs_is_taxable === true;
+    if (formTaxable) {
+      const rate = parsePrice(serviceForm.bs_tax_rate);
+      if (!Number.isFinite(rate) || rate <= 0) {
+        Alert.alert("Validation", "Taxable items need a tax rate greater than 0% (for example 8.25).");
+        return null;
+      }
+    }
+
     let nextBsImageKey = existingService?.bs_image_key ?? serviceForm.bs_image_key ?? "";
     let _svcNewImageUri = null;
     let _svcWebImageFile = null;
@@ -1344,6 +1365,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       ...serviceForm,
       bs_qty_unlimited: isUnlimited ? 1 : 0,
       bs_available_quantity: isUnlimited ? "" : String(serviceForm.bs_available_quantity || "").trim(),
+      bs_is_taxable: formTaxable ? 1 : 0,
+      bs_tax_rate: formTaxable ? String(parsePrice(serviceForm.bs_tax_rate) || "0") : "0",
       bs_image_key: nextBsImageKey,
       bs_uid: existingService?.bs_uid || "",
       _svcNewImageUri,
@@ -1357,7 +1380,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setOriginalServiceProductImage("");
     setServiceProductWebFile(null);
     setServiceProductImageError(false);
-    setServiceImageToolsVisible(false);
   };
 
   const handleAddService = () => {
@@ -1397,6 +1419,19 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_qty_unlimited: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? 0 : 1,
       bs_available_quantity: service.bs_available_quantity != null ? String(service.bs_available_quantity) : "",
       bs_service_image_is_public: service.bs_service_image_is_public === 0 || service.bs_service_image_is_public === "0" ? 0 : 1,
+      bs_is_taxable: (() => {
+        if (service.bs_is_taxable === 1 || service.bs_is_taxable === "1" || service.bs_is_taxable === true) return 1;
+        if (service.bs_is_taxable === 0 || service.bs_is_taxable === "0" || service.bs_is_taxable === false) return 0;
+        return parsePrice(service.bs_tax_rate) > 0 ? 1 : 0;
+      })(),
+      bs_tax_rate: (() => {
+        const taxable =
+          service.bs_is_taxable === 1 ||
+          service.bs_is_taxable === "1" ||
+          service.bs_is_taxable === true ||
+          (!(service.bs_is_taxable === 0 || service.bs_is_taxable === "0" || service.bs_is_taxable === false) && parsePrice(service.bs_tax_rate) > 0);
+        return taxable ? String(service.bs_tax_rate ?? "").trim() || "0" : "0";
+      })(),
     });
     const remoteDisplay = resolveServiceImageDisplayUri(service.bs_image_key);
     const pendingUri = service._svcNewImageUri && String(service._svcNewImageUri).trim() !== "" ? String(service._svcNewImageUri).trim() : "";
@@ -1405,7 +1440,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setOriginalServiceProductImage(remoteDisplay);
     setServiceProductWebFile(service._svcWebFile || null);
     setServiceProductImageError(false);
-    setServiceImageToolsVisible(false);
     setEditingServiceIndex(index);
     setShowServiceForm(true);
   };
@@ -1515,30 +1549,48 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           />
           <View style={styles.serviceImageShowHideRow}>
             <TouchableOpacity
-              onPress={() => setServiceImageToolsVisible(true)}
-              style={[styles.serviceImageTogglePill, serviceImageToolsVisible && styles.serviceImageTogglePillActive, darkMode && !serviceImageToolsVisible && styles.serviceImageTogglePillDark]}
+              onPress={() => {
+                handleServiceChange("bs_service_image_is_public", 1);
+                setIsChanged(true);
+              }}
+              style={[
+                styles.serviceImageTogglePill,
+                (serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && styles.serviceImageTogglePillActive,
+                darkMode &&
+                  !(serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") &&
+                  styles.serviceImageTogglePillDark,
+              ]}
               activeOpacity={0.7}
             >
               <Text
                 style={[
                   styles.serviceImageTogglePillText,
-                  serviceImageToolsVisible && styles.serviceImageTogglePillTextActive,
-                  !serviceImageToolsVisible && darkMode && styles.serviceImageTogglePillTextMutedDark,
+                  (serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && styles.serviceImageTogglePillTextActive,
+                  !(serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") &&
+                    darkMode &&
+                    styles.serviceImageTogglePillTextMutedDark,
                 ]}
               >
                 Show
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => setServiceImageToolsVisible(false)}
-              style={[styles.serviceImageTogglePill, !serviceImageToolsVisible && styles.serviceImageTogglePillActive, darkMode && serviceImageToolsVisible && styles.serviceImageTogglePillDark]}
+              onPress={() => {
+                handleServiceChange("bs_service_image_is_public", 0);
+                setIsChanged(true);
+              }}
+              style={[
+                styles.serviceImageTogglePill,
+                !(serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && styles.serviceImageTogglePillActive,
+                darkMode && (serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && styles.serviceImageTogglePillDark,
+              ]}
               activeOpacity={0.7}
             >
               <Text
                 style={[
                   styles.serviceImageTogglePillText,
-                  !serviceImageToolsVisible && styles.serviceImageTogglePillTextActive,
-                  serviceImageToolsVisible && darkMode && styles.serviceImageTogglePillTextMutedDark,
+                  !(serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && styles.serviceImageTogglePillTextActive,
+                  (serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && darkMode && styles.serviceImageTogglePillTextMutedDark,
                 ]}
               >
                 Hide
@@ -1548,7 +1600,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           <TouchableOpacity style={[styles.serviceUploadButton, darkMode && styles.darkServiceUploadButton]} onPress={handlePickServiceProductImage} activeOpacity={0.8}>
             <Text style={styles.serviceUploadButtonText}>Upload</Text>
           </TouchableOpacity>
-          {serviceImageToolsVisible && serviceProductImageUri ? (
+          {serviceProductImageUri ? (
             <TouchableOpacity onPress={handleRemoveServiceProductImage} style={styles.serviceRemoveImageBtn}>
               <Text style={[styles.serviceRemoveImageText, darkMode && styles.darkServiceRemoveImageText]}>Remove image</Text>
             </TouchableOpacity>
@@ -1581,44 +1633,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             textAlignVertical='top'
           />
         </View>
-      </View>
-
-      <Text style={[styles.label, darkMode && styles.darkLabel]}>Product image visibility</Text>
-      <View style={{ flexDirection: "row", gap: 6, marginBottom: 12 }}>
-        <TouchableOpacity
-          onPress={() => {
-            handleServiceChange("bs_service_image_is_public", 1);
-            setIsChanged(true);
-          }}
-          style={[styles.togglePill, (serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && styles.togglePillActiveGreen]}
-        >
-          <Text
-            style={[
-              styles.togglePillText,
-              (serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && styles.togglePillTextActive,
-              darkMode && !(serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && { color: "#ccc" },
-            ]}
-          >
-            Visible
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => {
-            handleServiceChange("bs_service_image_is_public", 0);
-            setIsChanged(true);
-          }}
-          style={[styles.togglePill, !(serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && styles.togglePillActiveRed]}
-        >
-          <Text
-            style={[
-              styles.togglePillText,
-              !(serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && styles.togglePillTextActive,
-              darkMode && (serviceForm.bs_service_image_is_public === 1 || serviceForm.bs_service_image_is_public === "1") && { color: "#ccc" },
-            ]}
-          >
-            Hide
-          </Text>
-        </TouchableOpacity>
       </View>
 
       <Text style={[styles.label, darkMode && styles.darkLabel]}>Cost</Text>
@@ -1656,6 +1670,65 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           placeholderTextColor={darkMode ? "#cccccc" : "#666"}
         />
       </View>
+
+      <Text style={[styles.label, darkMode && styles.darkLabel]}>Sales tax</Text>
+      <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+        <TouchableOpacity
+          style={[
+            styles.bountyTypeBtn,
+            !(serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1") && styles.bountyTypeBtnActive,
+          ]}
+          onPress={() => {
+            setServiceForm((prev) => ({ ...prev, bs_is_taxable: 0, bs_tax_rate: "0" }));
+            setIsChanged(true);
+          }}
+        >
+          <Text
+            style={[
+              styles.bountyTypeBtnText,
+              !(serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1") && styles.bountyTypeBtnTextActive,
+            ]}
+          >
+            Not taxable
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.bountyTypeBtn, (serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1") && styles.bountyTypeBtnActive]}
+          onPress={() => {
+            setServiceForm((prev) => ({
+              ...prev,
+              bs_is_taxable: 1,
+              bs_tax_rate: prev.bs_tax_rate && String(prev.bs_tax_rate).trim() !== "" && String(prev.bs_tax_rate).trim() !== "0" ? String(prev.bs_tax_rate) : "",
+            }));
+            setIsChanged(true);
+          }}
+        >
+          <Text
+            style={[
+              styles.bountyTypeBtnText,
+              (serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1") && styles.bountyTypeBtnTextActive,
+            ]}
+          >
+            Taxable
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1" ? (
+        <>
+          <Text style={[styles.sublabel, darkMode && styles.darkSublabel]}>Tax rate (%)</Text>
+          <TextInput
+            style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput, { marginBottom: 12 }]}
+            value={String(serviceForm.bs_tax_rate ?? "")}
+            onChangeText={(t) => {
+              handleServiceChange("bs_tax_rate", t.replace(/[^0-9.]/g, ""));
+              setIsChanged(true);
+            }}
+            placeholder='e.g. 8.25'
+            keyboardType='decimal-pad'
+            placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+          />
+        </>
+      ) : null}
 
       <Text style={[styles.label, darkMode && styles.darkLabel]}>Bounty Type</Text>
       <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
@@ -1974,7 +2047,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
               <ProductCard
                 service={service}
                 businessUid={businessUID}
-                businessCcFeePayer={formData.businessPaysCcFee ? "seller" : "buyer"}
                 onEdit={() => handleEditService(service, idx)}
                 showEditButton={true}
                 darkMode={darkMode}

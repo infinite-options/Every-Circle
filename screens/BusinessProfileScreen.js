@@ -1392,7 +1392,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
                     key={idx}
                     service={service}
                     businessUid={business_uid}
-                    businessCcFeePayer={canonicalBusinessCcFeePayer(business.business_cc_fee_payer ?? business.bs_cc_fee_payer)}
                     showEditButton={isOwner}
                     showOwnerTags={isOwner}
                     darkMode={darkMode}
