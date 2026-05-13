@@ -16,7 +16,7 @@ import {
   SEARCH_BASE_URL,
   SEARCH_GLOBAL_ENDPOINT,
   BUSINESS_DETAILS_ENDPOINT,
-  BUSINESS_TAG_SEARCH_ENDPOINT,
+  // BUSINESS_TAG_SEARCH_ENDPOINT, // disabled for testing without businesstagsearch
   BUSINESS_INFO_ENDPOINT,
   USER_PROFILE_INFO_ENDPOINT,
   PROFILE_WISH_INFO_ENDPOINT,
@@ -874,7 +874,8 @@ export default function SearchScreen({ route }) {
           };
         });
 
-        // Run tag search in parallel with main search
+        // Run tag search in parallel with main search — disabled for testing without businesstagsearch
+        /*
         try {
           const tagRes = await fetch(`${BUSINESS_TAG_SEARCH_ENDPOINT}?q=${encodeURIComponent(q)}`);
           const tagJson = await tagRes.json();
@@ -910,6 +911,7 @@ export default function SearchScreen({ route }) {
         } catch (e) {
           console.log("Could not fetch tag search results:", e);
         }
+        */
 
         list = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(list);
 
@@ -1781,7 +1783,9 @@ export default function SearchScreen({ route }) {
           {/* Only show table header for businesses, not for expertise or seeking */}
           {searchType === "businesses" && (
             <View style={[styles.tableHeader, darkMode && styles.darkTableHeader]}>
-              <Text style={[styles.tableHeaderText, styles.tableHeaderCompany, darkMode && styles.darkTableHeaderText]}>Company</Text>
+              <Text style={[styles.tableHeaderText, styles.tableHeaderCompany, darkMode && styles.darkTableHeaderText]}>
+                Company ({results.length} {results.length === 1 ? "result" : "results"})
+              </Text>
               <Text style={[styles.tableHeaderText, styles.tableHeaderRating, darkMode && styles.darkTableHeaderText]}>Rating(#)</Text>
               <Text style={[styles.tableHeaderText, styles.tableHeaderBounty, darkMode && styles.darkTableHeaderText]} numberOfLines={1}>
                 Bounty

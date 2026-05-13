@@ -32,7 +32,7 @@ import {
   PROFILE_VIEWS_ENDPOINT,
   BUSINESS_RESULTS_ENDPOINT,
   BUSINESS_DETAILS_ENDPOINT,
-  BUSINESS_TAG_SEARCH_ENDPOINT,
+  // BUSINESS_TAG_SEARCH_ENDPOINT, // disabled for testing without businesstagsearch
 } from "../apiConfig";
 import config from "../config";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -315,7 +315,8 @@ const ProfileScreen = ({ route, navigation }) => {
         max_bounty: b.max_bounty || b.business_max_bounty || null,
         connection_degree: null,
       }));
-      // Tag search — same as SearchScreen
+      // Tag search — same as SearchScreen — disabled for testing without businesstagsearch
+      /*
       try {
         const tagRes = await fetch(`${BUSINESS_TAG_SEARCH_ENDPOINT}?q=${encodeURIComponent(trimmed)}`);
         const tagJson = await tagRes.json();
@@ -337,6 +338,7 @@ const ProfileScreen = ({ route, navigation }) => {
           list = [...list, ...tagList];
         }
       } catch (_) {}
+      */
       // Fetch business details (ratings, connection, bounty) — same POST as SearchScreen
       try {
         const profileUid = await AsyncStorage.getItem("profile_uid");

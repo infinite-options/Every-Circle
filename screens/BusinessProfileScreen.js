@@ -17,6 +17,7 @@ import { getHeaderColors } from "../config/headerColors";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
+import { getSessionProfile } from "../utils/sessionProfile";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -352,9 +353,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           rawBusiness.image_is_public === 1,
         business_profile_img: businessProfileImgUrl,
         business_profile_img_is_public: rawBusiness.business_profile_img_is_public === "1" || rawBusiness.business_profile_img_is_public === 1,
-        business_cc_fee_payer: canonicalBusinessCcFeePayer(
-          rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer,
-        ),
+        business_cc_fee_payer: canonicalBusinessCcFeePayer(rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer),
         business_services: (() => {
           let list = [];
           if (rawBusiness.business_services) {
@@ -368,7 +367,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
               list = rawBusiness.business_services;
             }
           }
-          
+
           if ((!Array.isArray(list) || list.length === 0) && Array.isArray(result.services)) {
             list = result.services;
           }
@@ -376,9 +375,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           return list.map((svc) => normalizeBusinessServiceFromApi(svc));
         })(),
         business_updated_at: rawBusiness.business_updated_at ?? rawBusiness.updated_at,
-        
       };
-      
 
       setBusiness(businessWithRatings);
 
@@ -415,9 +412,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         try {
           const viewerProfileId = await AsyncStorage.getItem("profile_uid");
           if (viewerProfileId) {
-            const ownerProfileIds = result.business_users
-              .map((bu) => bu.profile_id)
-              .filter(Boolean);
+            const ownerProfileIds = result.business_users.map((bu) => bu.profile_id).filter(Boolean);
             const viewerIsOwner = ownerProfileIds.includes(viewerProfileId);
             if (!viewerIsOwner) {
               // Record view against the business_uid so business owners can see who visited
@@ -465,24 +460,52 @@ export default function BusinessProfileScreen({ route, navigation }) {
           (bu) =>
             (userUid && (bu.user_uid === userUid || bu.bu_user_id === userUid || bu.business_user_id === userUid)) ||
             (profileUid &&
-              (bu.profile_id === profileUid || bu.profile_uid === profileUid || bu.profile_personal_uid === profileUid || String(bu.profile_id || bu.profile_uid || bu.profile_personal_uid || "").trim() === String(profileUid || "").trim())),
+              (bu.profile_id === profileUid ||
+                bu.profile_uid === profileUid ||
+                bu.profile_personal_uid === profileUid ||
+                String(bu.profile_id || bu.profile_uid || bu.profile_personal_uid || "").trim() === String(profileUid || "").trim())),
         );
         if (matchInBusinessUsers) {
           setIsOwner(true);
           return;
         }
-        // Fallback: profile screen shows "my businesses" from profile API business_info. If this business
-        // appears there, treat as owner (handles APIs that link business→user by profile, not user_uid).
+        // Fallback: same data as GET userprofileinfo — from session cache (Profile load / login) + my_business_uids.
+        // Avoids duplicate network calls here (effect can re-run when `business` updates after ratings merge).
         if (profileUid) {
-          const response = await fetch(`${ProfileScreenAPI}/${profileUid}`);
-          const userData = await response.json();
-          if (userData && userData.business_info) {
-            const businessInfo = typeof userData.business_info === "string" ? JSON.parse(userData.business_info) : userData.business_info;
-            const isInProfileBusinesses =
-              Array.isArray(businessInfo) && businessInfo.some((biz) => (biz.business_uid || biz.profile_business_uid || biz.profile_business_business_id) === business_uid);
-            setIsOwner(isInProfileBusinesses);
-            return;
+          const parseBusinessInfoList = (raw) => {
+            if (!raw) return [];
+            if (Array.isArray(raw)) return raw;
+            if (typeof raw === "string") {
+              try {
+                const parsed = JSON.parse(raw);
+                return Array.isArray(parsed) ? parsed : [];
+              } catch {
+                return [];
+              }
+            }
+            return [];
+          };
+          const session = await getSessionProfile();
+          const rawBiz = session?.rawProfile?.business_info ?? session?.businessInfo;
+          const businessInfo = parseBusinessInfoList(rawBiz);
+          const uidStr = String(business_uid || "");
+          let isInProfileBusinesses = businessInfo.some(
+            (biz) => String(biz?.business_uid || biz?.profile_business_uid || biz?.profile_business_business_id || "") === uidStr,
+          );
+          if (!isInProfileBusinesses && Array.isArray(session?.businessUids) && session.businessUids.length > 0) {
+            isInProfileBusinesses = session.businessUids.some((id) => String(id) === uidStr);
           }
+          if (!isInProfileBusinesses) {
+            try {
+              const rawUids = await AsyncStorage.getItem("my_business_uids");
+              const arr = JSON.parse(rawUids || "[]");
+              if (Array.isArray(arr)) {
+                isInProfileBusinesses = arr.some((id) => String(id) === uidStr);
+              }
+            } catch (_) {}
+          }
+          setIsOwner(isInProfileBusinesses);
+          return;
         }
         setIsOwner(false);
       } catch (error) {
@@ -525,16 +548,14 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
   const handleProductPress = (service) => {
     // Block sold-out items from being added to cart
-    const unlimited =
-      service.bs_qty_unlimited === 1 ||
-      service.bs_qty_unlimited === "1" ||
-      service.bs_qty_unlimited === true;
+    const unlimited = service.bs_qty_unlimited === 1 || service.bs_qty_unlimited === "1" || service.bs_qty_unlimited === true;
     if (!unlimited) {
-      const raw = service.bs_quantity != null && String(service.bs_quantity).trim() !== ""
-        ? String(service.bs_quantity).trim()
-        : service.bs_available_quantity != null && String(service.bs_available_quantity).trim() !== ""
-          ? String(service.bs_available_quantity).trim()
-          : null;
+      const raw =
+        service.bs_quantity != null && String(service.bs_quantity).trim() !== ""
+          ? String(service.bs_quantity).trim()
+          : service.bs_available_quantity != null && String(service.bs_available_quantity).trim() !== ""
+            ? String(service.bs_available_quantity).trim()
+            : null;
       if (raw && raw.toLowerCase() !== "unlimited") {
         const num = parseInt(raw, 10);
         if (!isNaN(num) && num === 0) {
@@ -549,14 +570,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
     setBountySort("connection");
     setQuantityModalVisible(true);
   };
-  
+
   const handleQuantityConfirm = async () => {
     const stock = selectedService?.bs_quantity;
-    const isLimited =
-      stock != null &&
-      String(stock).toLowerCase() !== "unlimited" &&
-      selectedService?.bs_qty_unlimited !== 1 &&
-      selectedService?.bs_qty_unlimited !== "1";
+    const isLimited = stock != null && String(stock).toLowerCase() !== "unlimited" && selectedService?.bs_qty_unlimited !== 1 && selectedService?.bs_qty_unlimited !== "1";
     if (isLimited) {
       const max = parseInt(stock, 10);
       if (!isNaN(max) && max === 0) {
@@ -1090,8 +1107,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 <Text style={styles.sectionHeaderText}>WHO VIEWED MY BUSINESS</Text>
                 <Ionicons name={showBusinessViewers ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
-              {showBusinessViewers && (
-                businessViewers.length > 0 ? (
+              {showBusinessViewers &&
+                (businessViewers.length > 0 ? (
                   businessViewers.map((viewer, index) => (
                     <TouchableOpacity
                       key={viewer.view_viewer_id || index}
@@ -1117,16 +1134,13 @@ export default function BusinessProfileScreen({ route, navigation }) {
                         }}
                       />
                       {getLatestProfileViewTimestamp(viewer.view_timestamp) ? (
-                        <Text style={{ fontSize: 11, color: "#999", paddingHorizontal: 12, paddingBottom: 6 }}>
-                          Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}
-                        </Text>
+                        <Text style={{ fontSize: 11, color: "#999", paddingHorizontal: 12, paddingBottom: 6 }}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text>
                       ) : null}
                     </TouchableOpacity>
                   ))
                 ) : (
                   <Text style={{ fontStyle: "italic", color: "#666", padding: 12 }}>No business profile views yet</Text>
-                )
-              )}
+                ))}
             </View>
           )}
 
@@ -1380,9 +1394,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                     key={idx}
                     service={service}
                     businessUid={business_uid}
-                    businessCcFeePayer={canonicalBusinessCcFeePayer(
-                      business.business_cc_fee_payer ?? business.bs_cc_fee_payer,
-                    )}
+                    businessCcFeePayer={canonicalBusinessCcFeePayer(business.business_cc_fee_payer ?? business.bs_cc_fee_payer)}
                     showEditButton={isOwner}
                     showOwnerTags={isOwner}
                     darkMode={darkMode}
@@ -1431,29 +1443,29 @@ export default function BusinessProfileScreen({ route, navigation }) {
               <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
               {(() => {
                 const stock = selectedService?.bs_quantity;
-                const isLimited =
-                  stock != null &&
-                  String(stock).toLowerCase() !== "unlimited" &&
-                  selectedService?.bs_qty_unlimited !== 1 &&
-                  selectedService?.bs_qty_unlimited !== "1";
+                const isLimited = stock != null && String(stock).toLowerCase() !== "unlimited" && selectedService?.bs_qty_unlimited !== 1 && selectedService?.bs_qty_unlimited !== "1";
                 if (!isLimited) return null;
                 const num = parseInt(stock, 10);
                 if (isNaN(num)) return null;
                 const isSoldOut = num === 0;
                 const isLow = num > 0 && num <= 5;
                 return (
-                  <View style={{
-                    backgroundColor: isSoldOut ? "#fee2e2" : isLow ? "#fef9c3" : "#dcfce7",
-                    borderRadius: 10,
-                    paddingHorizontal: 12,
-                    paddingVertical: 4,
-                    marginBottom: 12,
-                  }}>
-                    <Text style={{
-                      fontSize: 13,
-                      fontWeight: "600",
-                      color: isSoldOut ? "#dc2626" : isLow ? "#b45309" : "#166534",
-                    }}>
+                  <View
+                    style={{
+                      backgroundColor: isSoldOut ? "#fee2e2" : isLow ? "#fef9c3" : "#dcfce7",
+                      borderRadius: 10,
+                      paddingHorizontal: 12,
+                      paddingVertical: 4,
+                      marginBottom: 12,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: "600",
+                        color: isSoldOut ? "#dc2626" : isLow ? "#b45309" : "#166534",
+                      }}
+                    >
                       {isSoldOut ? "Out of stock" : `${num} available`}
                     </Text>
                   </View>
@@ -1470,11 +1482,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                   style={styles.quantityButton}
                   onPress={() => {
                     const stock = selectedService?.bs_quantity;
-                    const isLimited =
-                      stock != null &&
-                      String(stock).toLowerCase() !== "unlimited" &&
-                      selectedService?.bs_qty_unlimited !== 1 &&
-                      selectedService?.bs_qty_unlimited !== "1";
+                    const isLimited = stock != null && String(stock).toLowerCase() !== "unlimited" && selectedService?.bs_qty_unlimited !== 1 && selectedService?.bs_qty_unlimited !== "1";
                     if (isLimited) {
                       const max = parseInt(stock, 10);
                       if (!isNaN(max) && quantity >= max) {
@@ -1644,7 +1652,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
                                       paddingVertical: 4,
                                     }}
                                   >
-                                    <Text style={{ color: isSelected ? "#fff" : "#9C45F7", fontWeight: "700", fontSize: 12 }}>💰 ${parsePrice(selectedService.bs_bounty).toFixed(2)}{selectedService.bs_bounty_type === "per_item" ? " / item" : " total"}</Text>
+                                    <Text style={{ color: isSelected ? "#fff" : "#9C45F7", fontWeight: "700", fontSize: 12 }}>
+                                      💰 ${parsePrice(selectedService.bs_bounty).toFixed(2)}
+                                      {selectedService.bs_bounty_type === "per_item" ? " / item" : " total"}
+                                    </Text>
                                   </View>
                                 )}
                               </TouchableOpacity>
