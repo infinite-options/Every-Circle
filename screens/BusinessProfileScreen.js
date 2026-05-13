@@ -489,9 +489,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           const rawBiz = session?.rawProfile?.business_info ?? session?.businessInfo;
           const businessInfo = parseBusinessInfoList(rawBiz);
           const uidStr = String(business_uid || "");
-          let isInProfileBusinesses = businessInfo.some(
-            (biz) => String(biz?.business_uid || biz?.profile_business_uid || biz?.profile_business_business_id || "") === uidStr,
-          );
+          let isInProfileBusinesses = businessInfo.some((biz) => String(biz?.business_uid || biz?.profile_business_uid || biz?.profile_business_business_id || "") === uidStr);
           if (!isInProfileBusinesses && Array.isArray(session?.businessUids) && session.businessUids.length > 0) {
             isInProfileBusinesses = session.businessUids.some((id) => String(id) === uidStr);
           }

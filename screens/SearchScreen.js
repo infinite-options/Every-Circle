@@ -26,12 +26,18 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
 import { getHeaderColors } from "../config/headerColors";
 import { isWishEnded } from "../utils/wishUtils";
-/** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. */
-function NoBountyIcon({ darkMode }) {
+/** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
+function NoBountyIcon({ darkMode, muted }) {
   return (
-    <View style={styles.noBountyIconWrap} accessibilitylabel='No bounty'>
+    <View
+      style={[styles.noBountyIconWrap, muted && styles.noBountyIconWrapMuted, darkMode && muted && styles.darkNoBountyIconWrapMuted]}
+      accessibilityLabel={muted ? "No products or bounty" : "No bounty"}
+    >
       <Text style={styles.noBountyEmoji}>💰</Text>
-      <View pointerEvents='none' style={[styles.noBountySlash, darkMode && styles.darkNoBountySlash]} />
+      <View
+        pointerEvents='none'
+        style={[styles.noBountySlash, darkMode && !muted && styles.darkNoBountySlash, muted && styles.noBountySlashMuted, darkMode && muted && styles.darkNoBountySlashMuted]}
+      />
     </View>
   );
 }
@@ -50,7 +56,7 @@ const formatDateTimeForDisplay = (value) => {
 };
 
 /**
- * POSTs to `/api/v1/business_details` (ratings, connection degree, max bounty fields) and merges into rows with `itemType === "businesses"`.
+ * POSTs to `/api/v1/business_details` (ratings, connection degree, max bounty fields, product_count) and merges into rows with `itemType === "businesses"`.
  * Used for accurate stars, review count, connection degree, and bounty vs search-index guesses.
  */
 async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
@@ -86,7 +92,7 @@ async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
       merged = merged.map((b) => {
         if (b.itemType !== "businesses") return b;
         const row = ratingsJson.result[b.id];
-        return {
+        const next = {
           ...b,
           rating: row && Number.isFinite(parseFloat(row.avg_rating)) ? parseFloat(row.avg_rating) : null,
           ratingCount: row ? row.rating_count : 0,
@@ -95,6 +101,16 @@ async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
           max_per_item_bounty: row ? parseFloat(row.max_per_item_bounty) || null : null,
           max_total_bounty: row ? parseFloat(row.max_total_bounty) || null : null,
         };
+        if (row != null) {
+          const raw = row.product_count;
+          let product_count = null;
+          if (raw != null && raw !== "") {
+            const n = parseInt(String(raw), 10);
+            if (Number.isFinite(n)) product_count = n;
+          }
+          next.product_count = product_count;
+        }
+        return next;
       });
     }
   } catch (e) {
@@ -1640,7 +1656,14 @@ export default function SearchScreen({ route }) {
           </View>
 
           <View style={styles.businessTableBountyCol}>
-            {item.max_bounty != null ? <Text style={[styles.bountyEmojiIcon, styles.bountyEmojiIconCompact]}>💰</Text> : <NoBountyIcon darkMode={darkMode} />}
+            {(() => {
+              const hasProductDetail = item.product_count !== undefined;
+              const noProducts = hasProductDetail && (item.product_count === 0 || item.product_count == null);
+              if (noProducts) {
+                return <NoBountyIcon darkMode={darkMode} muted />;
+              }
+              return item.max_bounty != null ? <Text style={[styles.bountyEmojiIcon, styles.bountyEmojiIconCompact]}>💰</Text> : <NoBountyIcon darkMode={darkMode} />;
+            })()}
           </View>
 
           <View style={styles.businessTableLevelCol}>
@@ -2315,6 +2338,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  noBountyIconWrapMuted: {
+    opacity: 0.48,
+  },
+  darkNoBountyIconWrapMuted: {
+    opacity: 0.42,
+  },
   noBountyEmoji: {
     fontSize: 20,
   },
@@ -2325,6 +2354,12 @@ const styles = StyleSheet.create({
     borderRadius: 1,
     backgroundColor: "#1a1a1a",
     transform: [{ rotate: "-42deg" }],
+  },
+  noBountySlashMuted: {
+    backgroundColor: "#9e9e9e",
+  },
+  darkNoBountySlashMuted: {
+    backgroundColor: "#757575",
   },
   percentSymbol: {
     fontSize: 18,
