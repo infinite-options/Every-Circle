@@ -732,15 +732,19 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       // BUSINESS-SPECIFIC: Services/products handling (EditProfileScreen handles experience, education, expertise, wishes, businesses arrays)
       const norm01 = (v) => (v === 1 || v === "1" || v === true ? 1 : 0);
       const fullServiceSchema = (service, idx) => {
-        const condType = service.bs_condition_type === "used" ? "used" : "new";
+        const condRaw = service.bs_condition_type;
+        const condType = condRaw === "used" ? "used" : "new";
+        const bountyNone = service.bs_bounty_type === "none" || !String(service.bs_bounty || "").trim();
+        const bountyTypeOut = bountyNone ? "per_item" : service.bs_bounty_type === "total" ? "total" : "per_item";
+        const bountyOut = bountyNone ? "" : service.bs_bounty || "";
         const baseSchema = {
           bs_service_name: service.bs_service_name || "",
           bs_service_desc: service.bs_service_desc || "",
           bs_notes: service.bs_notes || "",
           bs_sku: service.bs_sku || "",
-          bs_bounty: service.bs_bounty || "",
+          bs_bounty: bountyOut,
           bs_bounty_currency: service.bs_bounty_currency || "USD",
-          bs_bounty_type: service.bs_bounty_type || "per_item",
+          bs_bounty_type: bountyTypeOut,
           bs_is_taxable: (() => {
             if (service.bs_is_taxable === 1 || service.bs_is_taxable === "1" || service.bs_is_taxable === true) return 1;
             if (service.bs_is_taxable === 0 || service.bs_is_taxable === "0" || service.bs_is_taxable === false) return 0;
@@ -1268,7 +1272,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_sku: "",
     bs_bounty: "",
     bs_bounty_currency: "USD",
-    bs_bounty_type: "per_item",
+    bs_bounty_type: "none",
     bs_is_taxable: 0,
     bs_tax_rate: "0",
     bs_discount_allowed: 1,
@@ -1285,7 +1289,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_quantity: "",
     bs_qty_unlimited: 1,
     bs_available_quantity: "",
-    bs_condition_type: "new",
+    bs_condition_type: "na",
     bs_condition_detail: "",
     bs_free_shipping: 0,
     bs_buyer_pays_shipping: 0,
@@ -1305,6 +1309,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       }
       return { ...prev, bs_free_shipping: 1, bs_buyer_pays_shipping: 0 };
     });
+    setIsChanged(true);
   };
 
   const toggleBuyerPaysShipping = () => {
@@ -1314,7 +1319,17 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       }
       return { ...prev, bs_buyer_pays_shipping: 1, bs_free_shipping: 0 };
     });
+    setIsChanged(true);
   };
+
+  const setShippingNotApplicable = () => {
+    setServiceForm((prev) => ({ ...prev, bs_free_shipping: 0, bs_buyer_pays_shipping: 0 }));
+    setIsChanged(true);
+  };
+
+  const isShippingNotApplicable = (form) =>
+    !(form.bs_free_shipping === 1 || form.bs_free_shipping === "1") &&
+    !(form.bs_buyer_pays_shipping === 1 || form.bs_buyer_pays_shipping === "1");
 
   const buildServiceRowForList = () => {
     const existingService = editingServiceIndex !== null ? services[editingServiceIndex] : null;
@@ -1361,10 +1376,26 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       }
     }
 
+    const bountyTypeForList =
+      serviceForm.bs_bounty_type === "none"
+        ? "per_item"
+        : serviceForm.bs_bounty_type === "total"
+          ? "total"
+          : "per_item";
+    const bountyAmtForList = serviceForm.bs_bounty_type === "none" ? "" : serviceForm.bs_bounty || "";
+
+    const condForm = serviceForm.bs_condition_type;
+    const conditionTypeForList = condForm === "used" ? "used" : "new";
+    const conditionDetailForList = condForm === "used" ? String(serviceForm.bs_condition_detail || "").trim() : "";
+
     return {
       ...serviceForm,
       bs_qty_unlimited: isUnlimited ? 1 : 0,
       bs_available_quantity: isUnlimited ? "" : String(serviceForm.bs_available_quantity || "").trim(),
+      bs_bounty_type: bountyTypeForList,
+      bs_bounty: bountyAmtForList,
+      bs_condition_type: conditionTypeForList,
+      bs_condition_detail: conditionDetailForList,
       bs_is_taxable: formTaxable ? 1 : 0,
       bs_tax_rate: formTaxable ? String(parsePrice(serviceForm.bs_tax_rate) || "0") : "0",
       bs_image_key: nextBsImageKey,
@@ -1412,8 +1443,22 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       ...service,
       bs_uid: service.bs_uid || "",
       bs_tags: service.bs_tags || "",
-      bs_condition_type: service.bs_condition_type || "new",
-      bs_condition_detail: service.bs_condition_detail || "",
+      bs_condition_type: (() => {
+        if (service.bs_condition_type === "used") return "used";
+        if (service.bs_condition_type === "na") return "na";
+        return "new";
+      })(),
+      bs_condition_detail: service.bs_condition_type === "used" ? service.bs_condition_detail || "" : "",
+      bs_bounty_type: (() => {
+        const b = service.bs_bounty;
+        if (b == null || String(b).trim() === "" || parsePrice(b) === 0) return "none";
+        if (service.bs_bounty_type === "total") return "total";
+        return "per_item";
+      })(),
+      bs_bounty:
+        service.bs_bounty == null || String(service.bs_bounty).trim() === "" || parsePrice(service.bs_bounty) === 0
+          ? ""
+          : String(service.bs_bounty),
       bs_free_shipping: service.bs_free_shipping === 1 || service.bs_free_shipping === "1" || service.bs_free_shipping === true ? 1 : 0,
       bs_buyer_pays_shipping: service.bs_buyer_pays_shipping === 1 || service.bs_buyer_pays_shipping === "1" || service.bs_buyer_pays_shipping === true ? 1 : 0,
       bs_qty_unlimited: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? 0 : 1,
@@ -1635,208 +1680,364 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         </View>
       </View>
 
-      <Text style={[styles.label, darkMode && styles.darkLabel]}>Cost</Text>
-      <View style={styles.serviceAmountRow}>
-        <Dropdown
-          style={[styles.serviceCurrencyDropdown, styles.serviceCurrencyDropdownGreen, darkMode && styles.darkServiceCurrencyDropdown, darkMode && styles.darkServiceCurrencyDropdownGreen]}
-          data={SERVICE_CURRENCY_OPTIONS}
-          labelField='label'
-          valueField='value'
-          placeholder='USD'
-          placeholderTextColor={darkMode ? "#999" : "#666"}
-          value={serviceForm.bs_cost_currency || "USD"}
-          onChange={(item) => {
-            handleServiceChange("bs_cost_currency", item.value);
-            setIsChanged(true);
-          }}
-          containerStyle={[{ borderRadius: 12, width: 96, borderWidth: 2, borderColor: "#00C721" }, darkMode && { backgroundColor: "#1a2e1f", borderColor: "#4ade80" }]}
-          itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 15 }}
-          selectedTextStyle={{ color: darkMode ? "#86efac" : "#166534", fontSize: 15, fontWeight: "600" }}
-          activeColor={darkMode ? "#14532d" : "#dcfce7"}
-          maxHeight={220}
-          renderItem={(item) => (
-            <View style={{ paddingVertical: 0, paddingHorizontal: 12 }}>
-              <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 15 }}>{item.label}</Text>
-            </View>
-          )}
-          flatListProps={{ nestedScrollEnabled: true }}
-        />
-        <TextInput
-          style={[styles.input, styles.serviceAmountInput, darkMode && styles.darkInput]}
-          value={serviceForm.bs_cost}
-          onChangeText={(t) => handleServiceChange("bs_cost", t)}
-          placeholder='0.00'
-          keyboardType='decimal-pad'
-          placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-        />
-      </View>
-
-      <Text style={[styles.label, darkMode && styles.darkLabel]}>Sales tax</Text>
-      <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-        <TouchableOpacity
-          style={[
-            styles.bountyTypeBtn,
-            !(serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1") && styles.bountyTypeBtnActive,
-          ]}
-          onPress={() => {
-            setServiceForm((prev) => ({ ...prev, bs_is_taxable: 0, bs_tax_rate: "0" }));
-            setIsChanged(true);
-          }}
-        >
-          <Text
+      <View style={styles.serviceFormCompactRow}>
+        <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Cost</Text>
+        <View style={styles.serviceFormRowBody}>
+          <Dropdown
             style={[
-              styles.bountyTypeBtnText,
-              !(serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1") && styles.bountyTypeBtnTextActive,
+              styles.serviceCurrencyDropdown,
+              styles.serviceCurrencyDropdownCompact,
+              styles.serviceCurrencyDropdownGreen,
+              darkMode && styles.darkServiceCurrencyDropdown,
+              darkMode && styles.darkServiceCurrencyDropdownGreen,
             ]}
-          >
-            Not taxable
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.bountyTypeBtn, (serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1") && styles.bountyTypeBtnActive]}
-          onPress={() => {
-            setServiceForm((prev) => ({
-              ...prev,
-              bs_is_taxable: 1,
-              bs_tax_rate: prev.bs_tax_rate && String(prev.bs_tax_rate).trim() !== "" && String(prev.bs_tax_rate).trim() !== "0" ? String(prev.bs_tax_rate) : "",
-            }));
-            setIsChanged(true);
-          }}
-        >
-          <Text
-            style={[
-              styles.bountyTypeBtnText,
-              (serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1") && styles.bountyTypeBtnTextActive,
-            ]}
-          >
-            Taxable
-          </Text>
-        </TouchableOpacity>
-      </View>
-      {serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1" ? (
-        <>
-          <Text style={[styles.sublabel, darkMode && styles.darkSublabel]}>Tax rate (%)</Text>
-          <TextInput
-            style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput, { marginBottom: 12 }]}
-            value={String(serviceForm.bs_tax_rate ?? "")}
-            onChangeText={(t) => {
-              handleServiceChange("bs_tax_rate", t.replace(/[^0-9.]/g, ""));
+            data={SERVICE_CURRENCY_OPTIONS}
+            labelField='label'
+            valueField='value'
+            placeholder='USD'
+            placeholderTextColor={darkMode ? "#999" : "#666"}
+            value={serviceForm.bs_cost_currency || "USD"}
+            onChange={(item) => {
+              handleServiceChange("bs_cost_currency", item.value);
               setIsChanged(true);
             }}
-            placeholder='e.g. 8.25'
+            containerStyle={[{ borderRadius: 10, width: 84, borderWidth: 2, borderColor: "#00C721" }, darkMode && { backgroundColor: "#1a2e1f", borderColor: "#4ade80" }]}
+            itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 14 }}
+            selectedTextStyle={{ color: darkMode ? "#86efac" : "#166534", fontSize: 14, fontWeight: "600" }}
+            activeColor={darkMode ? "#14532d" : "#dcfce7"}
+            maxHeight={220}
+            renderItem={(item) => (
+              <View style={{ paddingVertical: 0, paddingHorizontal: 12 }}>
+                <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 14 }}>{item.label}</Text>
+              </View>
+            )}
+            flatListProps={{ nestedScrollEnabled: true }}
+          />
+          <TextInput
+            style={[styles.input, styles.serviceAmountInput, styles.serviceAmountInputCompact, darkMode && styles.darkInput]}
+            value={serviceForm.bs_cost}
+            onChangeText={(t) => handleServiceChange("bs_cost", t)}
+            placeholder='0.00'
             keyboardType='decimal-pad'
             placeholderTextColor={darkMode ? "#cccccc" : "#666"}
           />
-        </>
-      ) : null}
-
-      <Text style={[styles.label, darkMode && styles.darkLabel]}>Bounty Type</Text>
-      <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-        <TouchableOpacity style={[styles.bountyTypeBtn, serviceForm.bs_bounty_type === "per_item" && styles.bountyTypeBtnActive]} onPress={() => handleServiceChange("bs_bounty_type", "per_item")}>
-          <Text style={[styles.bountyTypeBtnText, serviceForm.bs_bounty_type === "per_item" && styles.bountyTypeBtnTextActive]}>Per Item</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.bountyTypeBtn, serviceForm.bs_bounty_type === "total" && styles.bountyTypeBtnActive]} onPress={() => handleServiceChange("bs_bounty_type", "total")}>
-          <Text style={[styles.bountyTypeBtnText, serviceForm.bs_bounty_type === "total" && styles.bountyTypeBtnTextActive]}>Total (Fixed)</Text>
-        </TouchableOpacity>
+        </View>
       </View>
 
-      <Text style={[styles.label, darkMode && styles.darkLabel]}>Bounty</Text>
-      <View style={styles.serviceAmountRow}>
-        <Dropdown
-          style={[styles.serviceCurrencyDropdown, styles.serviceCurrencyDropdownGreen, darkMode && styles.darkServiceCurrencyDropdown, darkMode && styles.darkServiceCurrencyDropdownGreen]}
-          data={SERVICE_CURRENCY_OPTIONS}
-          labelField='label'
-          valueField='value'
-          placeholder='USD'
-          placeholderTextColor={darkMode ? "#999" : "#666"}
-          value={serviceForm.bs_bounty_currency || "USD1"}
-          onChange={(item) => {
-            handleServiceChange("bs_bounty_currency", item.value);
-            setIsChanged(true);
-          }}
-          containerStyle={[{ borderRadius: 12, width: 96, borderWidth: 2, borderColor: "#00C721" }, darkMode && { backgroundColor: "#1a2e1f", borderColor: "#4ade80" }]}
-          itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 15 }}
-          selectedTextStyle={{ color: darkMode ? "#86efac" : "#166534", fontSize: 15, fontWeight: "600" }}
-          activeColor={darkMode ? "#14532d" : "#dcfce7"}
-          maxHeight={220}
-          renderItem={(item) => (
-            <View style={{ paddingVertical: 8, paddingHorizontal: 12 }}>
-              <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 15 }}>{item.label}</Text>
-            </View>
-          )}
-          flatListProps={{ nestedScrollEnabled: true }}
-        />
-        <TextInput
-          style={[styles.input, styles.serviceAmountInput, darkMode && styles.darkInput]}
-          value={serviceForm.bs_bounty}
-          onChangeText={(t) => handleServiceChange("bs_bounty", t)}
-          placeholder='0.00'
-          keyboardType='decimal-pad'
-          placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-        />
+      <View style={styles.serviceFormCompactRow}>
+        <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Sales tax</Text>
+        <View style={styles.serviceFormRowBody}>
+          <TouchableOpacity
+            style={[
+              styles.bountyTypeBtn,
+              styles.bountyTypeBtnCompact,
+              !(serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1") && styles.bountyTypeBtnActive,
+            ]}
+            onPress={() => {
+              setServiceForm((prev) => ({ ...prev, bs_is_taxable: 0, bs_tax_rate: "0" }));
+              setIsChanged(true);
+            }}
+          >
+            <Text
+              style={[
+                styles.bountyTypeBtnText,
+                styles.bountyTypeBtnTextCompact,
+                !(serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1") && styles.bountyTypeBtnTextActive,
+              ]}
+            >
+              No tax
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.bountyTypeBtn,
+              styles.bountyTypeBtnCompact,
+              (serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1") && styles.bountyTypeBtnActive,
+            ]}
+            onPress={() => {
+              setServiceForm((prev) => ({
+                ...prev,
+                bs_is_taxable: 1,
+                bs_tax_rate: prev.bs_tax_rate && String(prev.bs_tax_rate).trim() !== "" && String(prev.bs_tax_rate).trim() !== "0" ? String(prev.bs_tax_rate) : "",
+              }));
+              setIsChanged(true);
+            }}
+          >
+            <Text
+              style={[
+                styles.bountyTypeBtnText,
+                styles.bountyTypeBtnTextCompact,
+                (serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1") && styles.bountyTypeBtnTextActive,
+              ]}
+            >
+              Taxable
+            </Text>
+          </TouchableOpacity>
+          {serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1" ? (
+            <TextInput
+              style={[styles.serviceFormRowInput, darkMode && styles.darkServiceFormRowInput]}
+              value={String(serviceForm.bs_tax_rate ?? "")}
+              onChangeText={(t) => {
+                handleServiceChange("bs_tax_rate", t.replace(/[^0-9.]/g, ""));
+                setIsChanged(true);
+              }}
+              placeholder='% e.g. 8.25'
+              keyboardType='decimal-pad'
+              placeholderTextColor={darkMode ? "#888" : "#999"}
+            />
+          ) : null}
+        </View>
       </View>
 
-      <Text style={[styles.label, darkMode && styles.darkLabel]}>Condition</Text>
-      <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-        <TouchableOpacity style={[styles.bountyTypeBtn, serviceForm.bs_condition_type !== "used" && styles.bountyTypeBtnActive]} onPress={() => handleServiceChange("bs_condition_type", "new")}>
-          <Text style={[styles.bountyTypeBtnText, serviceForm.bs_condition_type !== "used" && styles.bountyTypeBtnTextActive]}>New</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.bountyTypeBtn, serviceForm.bs_condition_type === "used" && styles.bountyTypeBtnActive]} onPress={() => handleServiceChange("bs_condition_type", "used")}>
-          <Text style={[styles.bountyTypeBtnText, serviceForm.bs_condition_type === "used" && styles.bountyTypeBtnTextActive]}>Used</Text>
-        </TouchableOpacity>
+      <View style={styles.serviceFormCompactRow}>
+        <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Bounty</Text>
+        <View style={styles.serviceFormRowBody}>
+          <TouchableOpacity
+            style={[styles.bountyTypeBtn, styles.bountyTypeBtnCompact, serviceForm.bs_bounty_type === "none" && styles.bountyTypeBtnActive]}
+            onPress={() => {
+              setServiceForm((prev) => ({ ...prev, bs_bounty_type: "none", bs_bounty: "" }));
+              setIsChanged(true);
+            }}
+          >
+            <Text style={[styles.bountyTypeBtnText, styles.bountyTypeBtnTextCompact, serviceForm.bs_bounty_type === "none" && styles.bountyTypeBtnTextActive]}>No Bounty</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.bountyTypeBtn,
+              styles.bountyTypeBtnCompact,
+              styles.bountyTypeBtnLong,
+              serviceForm.bs_bounty_type === "per_item" && styles.bountyTypeBtnActive,
+            ]}
+            onPress={() => {
+              setServiceForm((prev) => ({ ...prev, bs_bounty_type: "per_item" }));
+              setIsChanged(true);
+            }}
+          >
+            <Text
+              style={[
+                styles.bountyTypeBtnText,
+                styles.bountyTypeBtnTextCompact,
+                styles.bountyTypeBtnTextLong,
+                serviceForm.bs_bounty_type === "per_item" && styles.bountyTypeBtnTextActive,
+              ]}
+            >
+              Pay Bounty Per Item
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.bountyTypeBtn,
+              styles.bountyTypeBtnCompact,
+              styles.bountyTypeBtnLong,
+              serviceForm.bs_bounty_type === "total" && styles.bountyTypeBtnActive,
+            ]}
+            onPress={() => {
+              setServiceForm((prev) => ({ ...prev, bs_bounty_type: "total" }));
+              setIsChanged(true);
+            }}
+          >
+            <Text
+              style={[
+                styles.bountyTypeBtnText,
+                styles.bountyTypeBtnTextCompact,
+                styles.bountyTypeBtnTextLong,
+                serviceForm.bs_bounty_type === "total" && styles.bountyTypeBtnTextActive,
+              ]}
+            >
+              Pay Single Bounty
+            </Text>
+          </TouchableOpacity>
+          {serviceForm.bs_bounty_type !== "none" ? (
+            <>
+              <Dropdown
+                style={[
+                  styles.serviceCurrencyDropdown,
+                  styles.serviceCurrencyDropdownCompact,
+                  styles.serviceCurrencyDropdownGreen,
+                  darkMode && styles.darkServiceCurrencyDropdown,
+                  darkMode && styles.darkServiceCurrencyDropdownGreen,
+                ]}
+                data={SERVICE_CURRENCY_OPTIONS}
+                labelField='label'
+                valueField='value'
+                placeholder='USD'
+                placeholderTextColor={darkMode ? "#999" : "#666"}
+                value={serviceForm.bs_bounty_currency || "USD"}
+                onChange={(item) => {
+                  handleServiceChange("bs_bounty_currency", item.value);
+                  setIsChanged(true);
+                }}
+                containerStyle={[{ borderRadius: 10, width: 84, borderWidth: 2, borderColor: "#00C721" }, darkMode && { backgroundColor: "#1a2e1f", borderColor: "#4ade80" }]}
+                itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 14 }}
+                selectedTextStyle={{ color: darkMode ? "#86efac" : "#166534", fontSize: 14, fontWeight: "600" }}
+                activeColor={darkMode ? "#14532d" : "#dcfce7"}
+                maxHeight={220}
+                renderItem={(item) => (
+                  <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
+                    <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 14 }}>{item.label}</Text>
+                  </View>
+                )}
+                flatListProps={{ nestedScrollEnabled: true }}
+              />
+              <TextInput
+                style={[styles.input, styles.serviceAmountInput, styles.serviceAmountInputCompact, darkMode && styles.darkInput]}
+                value={serviceForm.bs_bounty}
+                onChangeText={(t) => handleServiceChange("bs_bounty", t)}
+                placeholder='0.00'
+                keyboardType='decimal-pad'
+                placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+              />
+            </>
+          ) : null}
+        </View>
       </View>
-      {serviceForm.bs_condition_type === "used" ? (
-        <TextInput
-          style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
-          value={serviceForm.bs_condition_detail}
-          onChangeText={(t) => handleServiceChange("bs_condition_detail", t)}
-          placeholder='Condition details (e.g. Like new, minor wear)'
-          placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-        />
-      ) : null}
 
-      <Text style={[styles.label, darkMode && styles.darkLabel]}>Available quantity</Text>
-      <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-        <TouchableOpacity
-          style={[styles.bountyTypeBtn, (serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnActive]}
-          onPress={() => handleServiceChange("bs_qty_unlimited", 1)}
-        >
-          <Text style={[styles.bountyTypeBtnText, (serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnTextActive]}>No limit</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.bountyTypeBtn, !(serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnActive]}
-          onPress={() => handleServiceChange("bs_qty_unlimited", 0)}
-        >
-          <Text style={[styles.bountyTypeBtnText, !(serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnTextActive]}>Limited quantity</Text>
-        </TouchableOpacity>
+      <View style={styles.serviceFormCompactRow}>
+        <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Condition</Text>
+        <View style={styles.serviceFormRowBody}>
+          <TouchableOpacity
+            style={[
+              styles.bountyTypeBtn,
+              styles.bountyTypeBtnCompact,
+              styles.bountyTypeBtnLong,
+              serviceForm.bs_condition_type === "na" && styles.bountyTypeBtnActive,
+            ]}
+            onPress={() => {
+              setServiceForm((prev) => ({ ...prev, bs_condition_type: "na", bs_condition_detail: "" }));
+              setIsChanged(true);
+            }}
+          >
+            <Text
+              style={[
+                styles.bountyTypeBtnText,
+                styles.bountyTypeBtnTextCompact,
+                styles.bountyTypeBtnTextLong,
+                serviceForm.bs_condition_type === "na" && styles.bountyTypeBtnTextActive,
+              ]}
+            >
+              Not Applicable
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.bountyTypeBtn,
+              styles.bountyTypeBtnCompact,
+              styles.bountyTypeBtnLong,
+              serviceForm.bs_condition_type === "new" && styles.bountyTypeBtnActive,
+            ]}
+            onPress={() => {
+              setServiceForm((prev) => ({ ...prev, bs_condition_type: "new", bs_condition_detail: "" }));
+              setIsChanged(true);
+            }}
+          >
+            <Text
+              style={[
+                styles.bountyTypeBtnText,
+                styles.bountyTypeBtnTextCompact,
+                styles.bountyTypeBtnTextLong,
+                serviceForm.bs_condition_type === "new" && styles.bountyTypeBtnTextActive,
+              ]}
+            >
+              New
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.bountyTypeBtn,
+              styles.bountyTypeBtnCompact,
+              styles.bountyTypeBtnLong,
+              serviceForm.bs_condition_type === "used" && styles.bountyTypeBtnActive,
+            ]}
+            onPress={() => {
+              setServiceForm((prev) => ({ ...prev, bs_condition_type: "used" }));
+              setIsChanged(true);
+            }}
+          >
+            <Text
+              style={[
+                styles.bountyTypeBtnText,
+                styles.bountyTypeBtnTextCompact,
+                styles.bountyTypeBtnTextLong,
+                serviceForm.bs_condition_type === "used" && styles.bountyTypeBtnTextActive,
+              ]}
+            >
+              Used
+            </Text>
+          </TouchableOpacity>
+          {serviceForm.bs_condition_type === "used" ? (
+            <TextInput
+              style={[styles.serviceFormRowInput, darkMode && styles.darkServiceFormRowInput]}
+              value={serviceForm.bs_condition_detail}
+              onChangeText={(t) => handleServiceChange("bs_condition_detail", t)}
+              placeholder='Description'
+              placeholderTextColor={darkMode ? "#888" : "#999"}
+            />
+          ) : null}
+        </View>
       </View>
-      {!(serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") ? (
-        <TextInput
-          style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
-          value={serviceForm.bs_available_quantity}
-          onChangeText={(t) => handleServiceChange("bs_available_quantity", t.replace(/\D/g, ""))}
-          placeholder='Quantity available'
-          keyboardType='number-pad'
-          placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-        />
-      ) : null}
 
-      <Text style={[styles.label, darkMode && styles.darkLabel]}>Shipping (if applicable)</Text>
-      <TouchableOpacity style={styles.serviceCheckboxRow} onPress={toggleFreeShipping} activeOpacity={0.7}>
-        <Ionicons name={serviceForm.bs_free_shipping === 1 ? "checkbox" : "square-outline"} size={22} color={serviceForm.bs_free_shipping === 1 ? "#9C45F7" : darkMode ? "#aaa" : "#666"} />
-        <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Free shipping</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={[styles.serviceCheckboxRow, { marginBottom: 10 }]} onPress={toggleBuyerPaysShipping} activeOpacity={0.7}>
-        <Ionicons name={serviceForm.bs_buyer_pays_shipping === 1 ? "checkbox" : "square-outline"} size={22} color={serviceForm.bs_buyer_pays_shipping === 1 ? "#9C45F7" : darkMode ? "#aaa" : "#666"} />
-        <Text style={[styles.serviceCheckboxLabel, darkMode && styles.darkServiceCheckboxLabel]}>Buyer pays shipping</Text>
-      </TouchableOpacity>
-      <TextInput
-        style={[styles.input, styles.serviceFormInput, darkMode && styles.darkInput]}
-        value={serviceForm.bs_tags}
-        onChangeText={(t) => handleServiceChange("bs_tags", t)}
-        placeholder='Tags (comma separated, e.g. Suit, Men)'
-        placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-      />
+      <View style={styles.serviceFormCompactRow}>
+        <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Quantity</Text>
+        <View style={styles.serviceFormRowBody}>
+          <TouchableOpacity
+            style={[styles.bountyTypeBtn, styles.bountyTypeBtnCompact, (serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnActive]}
+            onPress={() => handleServiceChange("bs_qty_unlimited", 1)}
+          >
+            <Text style={[styles.bountyTypeBtnText, styles.bountyTypeBtnTextCompact, (serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnTextActive]}>No limit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.bountyTypeBtn, styles.bountyTypeBtnCompact, !(serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnActive]}
+            onPress={() => handleServiceChange("bs_qty_unlimited", 0)}
+          >
+            <Text style={[styles.bountyTypeBtnText, styles.bountyTypeBtnTextCompact, !(serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") && styles.bountyTypeBtnTextActive]}>Limited</Text>
+          </TouchableOpacity>
+          {!(serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") ? (
+            <TextInput
+              style={[styles.serviceFormRowInput, darkMode && styles.darkServiceFormRowInput]}
+              value={serviceForm.bs_available_quantity}
+              onChangeText={(t) => handleServiceChange("bs_available_quantity", t.replace(/\D/g, ""))}
+              placeholder='Count'
+              keyboardType='number-pad'
+              placeholderTextColor={darkMode ? "#888" : "#999"}
+            />
+          ) : null}
+        </View>
+      </View>
+
+      <View style={styles.serviceFormCompactRow}>
+        <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Shipping</Text>
+        <View style={[styles.serviceFormRowBody, { flexWrap: "wrap", gap: 10 }]}>
+          <TouchableOpacity style={styles.serviceCheckboxRowInline} onPress={setShippingNotApplicable} activeOpacity={0.7}>
+            <Ionicons
+              name={isShippingNotApplicable(serviceForm) ? "checkbox" : "square-outline"}
+              size={20}
+              color={isShippingNotApplicable(serviceForm) ? "#9C45F7" : darkMode ? "#aaa" : "#666"}
+            />
+            <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>Not applicable</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.serviceCheckboxRowInline} onPress={toggleFreeShipping} activeOpacity={0.7}>
+            <Ionicons name={serviceForm.bs_free_shipping === 1 ? "checkbox" : "square-outline"} size={20} color={serviceForm.bs_free_shipping === 1 ? "#9C45F7" : darkMode ? "#aaa" : "#666"} />
+            <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>Free</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.serviceCheckboxRowInline} onPress={toggleBuyerPaysShipping} activeOpacity={0.7}>
+            <Ionicons name={serviceForm.bs_buyer_pays_shipping === 1 ? "checkbox" : "square-outline"} size={20} color={serviceForm.bs_buyer_pays_shipping === 1 ? "#9C45F7" : darkMode ? "#aaa" : "#666"} />
+            <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>Buyer pays</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.serviceFormCompactRow}>
+        <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Tags</Text>
+        <View style={styles.serviceFormRowBody}>
+          <TextInput
+            style={[styles.serviceFormRowInput, darkMode && styles.darkServiceFormRowInput]}
+            value={serviceForm.bs_tags}
+            onChangeText={(t) => handleServiceChange("bs_tags", t)}
+            placeholder='Comma separated'
+            placeholderTextColor={darkMode ? "#888" : "#999"}
+          />
+        </View>
+      </View>
       <View style={styles.formButtons}>
         <TouchableOpacity style={[styles.formButton, styles.cancelButton, darkMode && styles.darkCancelButton]} onPress={handleCancelEdit}>
           <Text style={[styles.cancelButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
@@ -2146,9 +2347,9 @@ const styles = StyleSheet.create({
   serviceFormMiniCard: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 12,
-    marginBottom: 8,
-    padding: 12,
+    gap: 10,
+    marginBottom: 6,
+    padding: 10,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#e0e0e0",
@@ -2272,6 +2473,104 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     marginBottom: 12,
+  },
+  /** One logical field per row: title (fixed) + controls + optional flex input */
+  serviceFormCompactRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+    gap: 8,
+    minHeight: 40,
+  },
+  serviceFormRowTitle: {
+    width: 108,
+    flexShrink: 0,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#111",
+  },
+  darkServiceFormRowTitle: {
+    color: "#f3f3f3",
+  },
+  serviceFormRowBody: {
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 6,
+    minWidth: 0,
+  },
+  serviceFormRowInput: {
+    flex: 1,
+    minWidth: 72,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: Platform.OS === "ios" ? 9 : 7,
+    fontSize: 14,
+    marginBottom: 0,
+    backgroundColor: "#fff",
+    color: "#000",
+  },
+  darkServiceFormRowInput: {
+    borderColor: "#555",
+    backgroundColor: "#2d2d2d",
+    color: "#fff",
+  },
+  bountyTypeBtnCompact: {
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+  },
+  bountyTypeBtnTextCompact: {
+    fontSize: 12,
+  },
+  bountyTypeBtnLong: {
+    maxWidth: 118,
+    paddingHorizontal: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bountyTypeBtnTextLong: {
+    fontSize: 10,
+    lineHeight: 13,
+    textAlign: "center",
+  },
+  serviceCurrencyDropdownCompact: {
+    width: 84,
+    height: 40,
+    minHeight: 40,
+    maxHeight: 40,
+    paddingVertical: 0,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    backgroundColor: "#f0f0f0",
+  },
+  serviceAmountInputCompact: {
+    flex: 1,
+    marginBottom: 0,
+    minWidth: 64,
+    height: 40,
+    minHeight: 40,
+    maxHeight: 40,
+    paddingVertical: 8,
+    fontSize: 14,
+  },
+  serviceCheckboxRowInline: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 2,
+  },
+  serviceCheckboxLabelCompact: {
+    fontSize: 12,
+    color: "#333",
+    flexShrink: 1,
+  },
+  darkServiceCheckboxLabelCompact: {
+    color: "#ddd",
   },
   serviceCurrencyDropdown: {
     width: 96,
@@ -2404,9 +2703,9 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   formTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "bold",
-    marginBottom: 15,
+    marginBottom: 10,
     color: "#333",
   },
   formButtons: {
@@ -2443,8 +2742,8 @@ const styles = StyleSheet.create({
   serviceFormContainer: {
     backgroundColor: "#f5f5f5",
     borderRadius: 10,
-    padding: 12,
-    marginTop: 10,
+    padding: 10,
+    marginTop: 8,
   },
   serviceFormInput: {
     marginBottom: 12,
