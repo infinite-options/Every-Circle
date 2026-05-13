@@ -127,17 +127,72 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
     return !isNaN(num) && num === 0;
   })();
 
+  const cardStyle = [styles.cardContainer, darkMode && styles.cardContainerDark, isSoldOut && { opacity: 0.5 }];
+
+  // Use View when the card is not pressable so overlays (e.g. delete on Edit Business Profile) receive touches.
+  if (!onPress || isSoldOut) {
+    return (
+      <View style={cardStyle}>
+        {renderProductCardBody({
+          service,
+          darkMode,
+          showEditButton,
+          showOwnerTags,
+          onEdit,
+          thumbSource,
+          metaTextStyle,
+          tagChipTextStyle,
+          tags,
+          quantityLine,
+          conditionLine,
+          shippingLine,
+          taxRateLine,
+          isSoldOut,
+        })}
+      </View>
+    );
+  }
+
   return (
-    <TouchableOpacity
-      style={[
-        styles.cardContainer,
-        darkMode && styles.cardContainerDark,
-        isSoldOut && { opacity: 0.5 },
-      ]}
-      onPress={isSoldOut ? null : onPress}
-      activeOpacity={isSoldOut ? 1 : (onPress ? 0.7 : 1)}
-      disabled={isSoldOut}
-    >
+    <TouchableOpacity style={cardStyle} onPress={onPress} activeOpacity={0.7} disabled={isSoldOut}>
+      {renderProductCardBody({
+        service,
+        darkMode,
+        showEditButton,
+        showOwnerTags,
+        onEdit,
+        thumbSource,
+        metaTextStyle,
+        tagChipTextStyle,
+        tags,
+        quantityLine,
+        conditionLine,
+        shippingLine,
+        taxRateLine,
+        isSoldOut,
+      })}
+    </TouchableOpacity>
+  );
+};
+
+function renderProductCardBody({
+  service,
+  darkMode,
+  showEditButton,
+  showOwnerTags,
+  onEdit,
+  thumbSource,
+  metaTextStyle,
+  tagChipTextStyle,
+  tags,
+  quantityLine,
+  conditionLine,
+  shippingLine,
+  taxRateLine,
+  isSoldOut,
+}) {
+  return (
+    <>
       <View style={styles.cardTopRow}>
         <Image source={thumbSource} style={[styles.productThumbInline, darkMode && styles.productThumbInlineDark]} resizeMode='cover' />
         <View style={styles.cardRightColumn}>
@@ -257,7 +312,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
           </View>
         ) : null}
       </View>
-    </TouchableOpacity>
+    </>
   );
 };
 
