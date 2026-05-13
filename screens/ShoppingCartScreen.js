@@ -1089,19 +1089,6 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                             : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${(parsePrice(item.totalPrice) || parsePrice(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
                         </Text>
                       </View>
-                      {(item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty)) > 0 && (
-                        <View style={[styles.totalRow, styles.bountyNoteRow]}>
-                          <Text style={styles.bountyNoteLabel}>Bounty (paid by Seller)</Text>
-                          <Text style={styles.bountyNoteValue}>
-                            $
-                            {item.itemType === "expertise"
-                              ? (parsePrice(item.bounty) * (item.quantity || 1)).toFixed(2)
-                              : item.bs_bounty_type === "total"
-                                ? parsePrice(item.bs_bounty).toFixed(2)
-                                : (parsePrice(item.bs_bounty) * (item.quantity || 1)).toFixed(2)}
-                          </Text>
-                        </View>
-                      )}
                       {item.itemType === "expertise" ? (
                         <Text style={styles.lineTaxMeta}>Sales tax: n/a (expertise)</Text>
                       ) : (
@@ -1114,6 +1101,19 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                             </Text>
                             <Text style={styles.lineTaxAmount}>${lineTax.tax.toFixed(2)}</Text>
                           </View>
+                        </View>
+                      )}
+                      {(item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty)) > 0 && (
+                        <View style={[styles.totalRow, styles.bountyNoteRow]}>
+                          <Text style={styles.bountyNoteLabel}>Bounty (paid by Seller)</Text>
+                          <Text style={styles.bountyNoteValue}>
+                            $
+                            {item.itemType === "expertise"
+                              ? (parsePrice(item.bounty) * (item.quantity || 1)).toFixed(2)
+                              : item.bs_bounty_type === "total"
+                                ? parsePrice(item.bs_bounty).toFixed(2)
+                                : (parsePrice(item.bs_bounty) * (item.quantity || 1)).toFixed(2)}
+                          </Text>
                         </View>
                       )}
                     </View>
@@ -1413,9 +1413,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#faf8fc",
   },
   perBusinessTitle: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: "700",
-    color: "#333",
+    color: "#9C45F7",
     marginBottom: 8,
   },
   perBusinessTotalRow: {
@@ -1584,12 +1584,14 @@ const styles = StyleSheet.create({
     borderTopColor: "#E0E0E0",
   },
   bountyNoteLabel: {
-    fontSize: 13,
+    fontSize: 12,
+    lineHeight: 17,
     color: "#888",
     fontStyle: "italic",
   },
   bountyNoteValue: {
-    fontSize: 13,
+    fontSize: 12,
+    lineHeight: 17,
     color: "#888",
     fontStyle: "italic",
   },
