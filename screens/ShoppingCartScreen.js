@@ -1020,6 +1020,10 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                   lineTax.rawTaxRate === undefined || lineTax.rawTaxRate === null || String(lineTax.rawTaxRate).trim() === ""
                     ? "—"
                     : String(lineTax.rawTaxRate);
+                const storedRateWithPercent =
+                  rawRateLabel === "—"
+                    ? "—"
+                    : `${String(rawRateLabel).replace(/%+\s*$/, "")}%`;
                 return (
                 <View key={index} style={styles.cartItemContainer}>
                   <TouchableOpacity style={styles.removeButton} onPress={() => handleRemoveItem(index)}>
@@ -1102,16 +1106,14 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                         <Text style={styles.lineTaxMeta}>Sales tax: n/a (expertise)</Text>
                       ) : (
                         <View style={styles.lineTaxBlock}>
-                          <Text style={styles.lineTaxMeta}>
-                            Taxable: {lineTax.taxable ? "Yes" : "No"}
-                            {" · "}
-                            <Text style={styles.lineTaxMetaEm}>bs_tax_rate</Text> (stored): {rawRateLabel}
-                          </Text>
-                          <Text style={styles.lineTaxMeta}>
-                            Rate used for this line:{" "}
-                            {lineTax.ratePercentUsed != null ? `${Number(lineTax.ratePercentUsed).toFixed(4)}%` : "—"}{" "}
-                            · Line sales tax: ${lineTax.tax.toFixed(2)}
-                          </Text>
+                          <View style={styles.lineTaxRow}>
+                            <Text style={styles.lineTaxMetaLeft} numberOfLines={4}>
+                              Taxable: {lineTax.taxable ? "Yes" : "No"}
+                              {" · "}
+                              <Text style={styles.lineTaxMetaEm}>Product Tax Rate:</Text> {storedRateWithPercent}
+                            </Text>
+                            <Text style={styles.lineTaxAmount}>${lineTax.tax.toFixed(2)}</Text>
+                          </View>
                         </View>
                       )}
                     </View>
@@ -1508,6 +1510,25 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: "#eee",
+  },
+  lineTaxRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  lineTaxMetaLeft: {
+    flex: 1,
+    flexShrink: 1,
+    fontSize: 12,
+    color: "#555",
+    lineHeight: 17,
+    marginRight: 10,
+  },
+  lineTaxAmount: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#333",
+    lineHeight: 17,
   },
   lineTaxMeta: {
     fontSize: 12,
