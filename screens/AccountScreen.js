@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
-import { ACCOUNT_SCREEN_PERSONAL_ENDPOINT, ACCOUNT_SCREEN_BUSINESS_ENDPOINT, API_BASE_URL, BUSINESS_INFO_ENDPOINT, TRANSACTION_RECEIPT_ENDPOINT } from "../apiConfig";
+import { ACCOUNT_SCREEN_PERSONAL_ENDPOINT, ACCOUNT_SCREEN_BUSINESS_ENDPOINT, API_BASE_URL, TRANSACTION_RECEIPT_ENDPOINT } from "../apiConfig";
 import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
 import { useFocusEffect } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -22,7 +22,7 @@ const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
  * Expected GET /api/v1/account-screen/personal/:profile_id JSON (flexible keys):
  * - data.transactions | purchase_transactions | personal_transactions | purchases | purchase: buyer rows as array, or { code, data }, or nested { data | items | rows | transactions | list | results | records }[]
  * - data.bounty | bounty_results | bounty_data: same shape as legacy /api/bountyresults body, or bounty_items[] + totals
- * - data.seller_transactions | seller_tx: line items for seller-side expertise qty OR { code, data } (omit key → legacy fetch)
+ * - data.seller_transactions | seller_tx: line items for seller-side expertise qty OR { code, data } (omit key → treat as no seller lines)
  * - data.profile | user_profile: optional { user_email, personal_info, expertise_info } for MiniCard + expertise list
  */
 /** Backend may send numeric or string success codes (e.g. 200 vs "200"). */
@@ -49,7 +49,8 @@ function mapAccountScreenPersonalResponse(json) {
     return {
       transactions: isApiSuccessCode(root.code) ? root.data : [],
       bounty: null,
-      sellerTransactions: undefined,
+      /** Top-level `data` array is buyer rows only; no nested seller list in this shape */
+      sellerTransactions: [],
       profile: null,
     };
   }
@@ -102,7 +103,7 @@ function mapAccountScreenPersonalResponse(json) {
   let sellerTransactions;
   const stRaw = payload.seller_transactions ?? payload.seller_tx ?? payload.seller_transaction_lines;
   if (stRaw === undefined) {
-    sellerTransactions = undefined;
+    sellerTransactions = [];
   } else if (Array.isArray(stRaw)) {
     sellerTransactions = stRaw;
   } else if (stRaw && isApiSuccessCode(stRaw.code) && Array.isArray(stRaw.data)) {
@@ -120,7 +121,94 @@ function mapAccountScreenPersonalResponse(json) {
  * Expected GET /api/v1/account-screen/business/:business_uid JSON (flexible keys):
  * - data.bounty_results | business_bounty | bounty: { data: [...] } (business bounty lines)
  * - data.seller_transactions | transactions_seller: seller line rows OR { code, data } (same as legacy /transactions/seller/:id)
+ * - data.business | business_profile | profile (optional): same field names as GET /api/v1/businessinfo/:uid `business` object for MiniCard
  */
+function extractBusinessRawFromAccountScreenPayload(root, payload) {
+  const tryNode = (node) => {
+    if (node == null || typeof node !== "object") return null;
+    if (node.business && typeof node.business === "object" && !Array.isArray(node.business)) {
+      return tryNode(node.business);
+    }
+    if (node.business_name != null || node.profile_business_name != null || node.business_phone_number != null) {
+      return node;
+    }
+    return null;
+  };
+  for (const bag of [payload, root]) {
+    if (!bag || typeof bag !== "object") continue;
+    for (const key of ["business", "business_profile", "business_details", "business_info"]) {
+      const hit = tryNode(bag[key]);
+      if (hit) return hit;
+    }
+    const prof = bag.profile;
+    if (prof && typeof prof === "object") {
+      const hit = tryNode(prof);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/** Maps API `business` object (businessinfo or account-screen) to MiniCard `business` prop shape */
+function mapRawBusinessToSelectedBusinessFullData(rawBusiness) {
+  if (!rawBusiness || typeof rawBusiness !== "object") return null;
+  const businessProfileImg = rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
+  const imageIsPublic =
+    rawBusiness.business_profile_img_is_public === "1" ||
+    rawBusiness.business_profile_img_is_public === 1 ||
+    rawBusiness.business_image_is_public === "1" ||
+    rawBusiness.business_image_is_public === 1;
+  return {
+    business_name: rawBusiness.business_name,
+    business_location: rawBusiness.business_location,
+    business_address_line_1: rawBusiness.business_address_line_1,
+    business_city: rawBusiness.business_city,
+    business_state: rawBusiness.business_state,
+    business_zip_code: rawBusiness.business_zip_code,
+    business_phone_number: rawBusiness.business_phone_number,
+    business_email_id: rawBusiness.business_email_id,
+    business_website: rawBusiness.business_website,
+    business_tag_line: rawBusiness.business_tag_line,
+    tagline: rawBusiness.business_tag_line,
+    first_image: businessProfileImg || rawBusiness.business_images_url?.[0] || rawBusiness.business_google_photos?.[0],
+    business_profile_img: businessProfileImg,
+    imageIsPublic,
+    phoneIsPublic: rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1,
+    emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1,
+    taglineIsPublic: rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1,
+    locationIsPublic: rawBusiness.business_location_is_public === "1" || rawBusiness.business_location_is_public === 1,
+  };
+}
+
+/** Session `business_info` row — enough for name/tagline until account-screen includes full `business` */
+function mapSessionBusinessRowToMiniCard(row) {
+  if (!row || typeof row !== "object") return null;
+  const name = row.business_name || row.profile_business_name || "";
+  const tag = row.business_tag_line || row.profile_business_tag_line || row.tag_line || "";
+  const img = row.business_profile_img || row.profile_business_image || null;
+  const imgStr = img && String(img).trim() !== "" ? String(img).trim() : null;
+  return {
+    business_name: name,
+    business_location: row.business_location || row.profile_business_location || "",
+    business_address_line_1: row.business_address_line_1 || "",
+    business_city: row.business_city || "",
+    business_state: row.business_state || "",
+    business_zip_code: row.business_zip_code || "",
+    business_phone_number: row.business_phone_number || row.profile_business_phone_number || "",
+    business_email_id: row.business_email_id || row.business_email || "",
+    business_website: row.business_website || "",
+    business_tag_line: tag,
+    tagline: tag,
+    first_image: imgStr,
+    business_profile_img: imgStr,
+    imageIsPublic: row.business_profile_img_is_public === "1" || row.business_profile_img_is_public === 1 || row.profile_business_image_is_public === "1" || row.profile_business_image_is_public === 1,
+    phoneIsPublic: row.business_phone_number_is_public === "1" || row.business_phone_number_is_public === 1,
+    emailIsPublic: row.business_email_id_is_public === "1" || row.business_email_id_is_public === 1,
+    taglineIsPublic: row.business_tag_line_is_public === "1" || row.business_tag_line_is_public === 1,
+    locationIsPublic: row.business_location_is_public === "1" || row.business_location_is_public === 1,
+  };
+}
+
 function mapAccountScreenBusinessResponse(json) {
   const root = json && typeof json === "object" ? json : {};
   let payload = root;
@@ -147,7 +235,9 @@ function mapAccountScreenBusinessResponse(json) {
     bountyResult = { data: [] };
   }
 
-  return { bountyResult, sellerLines };
+  const businessForMiniCardRaw = extractBusinessRawFromAccountScreenPayload(root, payload);
+
+  return { bountyResult, sellerLines, businessForMiniCardRaw };
 }
 
 function parseExpertiseInfo(raw) {
@@ -192,46 +282,6 @@ function buildExpertiseRows(expertiseList, sellerTransactions) {
       isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
     };
   });
-}
-
-/** Same rows as GET /api/v1/transactions/:profile_id — used when account-screen omits purchases or uses unknown keys. */
-async function fetchLegacyPersonalBuyerTransactions(profileId) {
-  if (!profileId) return [];
-  const transactionsUrl = `${API_BASE_URL}/api/v1/transactions/${profileId}`;
-  try {
-    const response = await fetch(transactionsUrl, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
-    if (response.status === 400) return [];
-    if (!response.ok) return [];
-    const result = await response.json();
-    if (result && result.code === 200 && Array.isArray(result.data)) return result.data;
-  } catch (e) {
-    console.error("Legacy buyer transactions fetch failed:", e);
-  }
-  return [];
-}
-
-async function fetchLegacySellerTransactionsForProfile(profileId) {
-  const sellerTransactionsUrl = `${API_BASE_URL}/api/v1/transactions/seller/${profileId}`;
-  try {
-    const transactionsResponse = await fetch(sellerTransactionsUrl, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
-    if (transactionsResponse.ok) {
-      const transactionsResult = await transactionsResponse.json();
-      if (transactionsResult && transactionsResult.code === 200 && Array.isArray(transactionsResult.data)) {
-        return transactionsResult.data;
-      }
-    } else if (transactionsResponse.status === 400) {
-      return [];
-    }
-  } catch (e) {
-    console.error("Legacy seller transactions fetch failed:", e);
-  }
-  return [];
 }
 
 export default function AccountScreen({ navigation }) {
@@ -287,12 +337,30 @@ export default function AccountScreen({ navigation }) {
   //for returns
   const [returnRequests, setReturnRequests] = useState({});
   const [receiptTransaction, setReceiptTransaction] = useState(null);
-  /** Settings → Debug Mode = Yes: show Transaction ID, Type, Purchased Item in PURCHASES; No hides those columns. */
+  /** Settings → Debug Mode = Yes: show Transaction ID, Type, Purchased Item in PURCHASES (wide enough); Purchased Item on web also when width > 600. */
   const [settingsDebugModeEnabled, setSettingsDebugModeEnabled] = useState(false);
 
   //for return message
   const [returnNote, setReturnNote] = useState("");
   const [showReturnNoteModal, setShowReturnNoteModal] = useState(false);
+
+  /** Coalesce overlapping refreshAccountScreenPersonal calls (focus + escrow update, Strict Mode, etc.) */
+  const refreshPersonalInFlightRef = useRef(null);
+
+  /** Avoid stale `selectedAccount` / `businessUID` / `businesses` inside `refreshAccountScreenBusiness` when invoked from a focus callback with `[]` deps */
+  const selectedAccountRef = useRef(selectedAccount);
+  const businessUIDRef = useRef(businessUID);
+  const businessesRef = useRef(businesses);
+
+  useEffect(() => {
+    selectedAccountRef.current = selectedAccount;
+  }, [selectedAccount]);
+  useEffect(() => {
+    businessUIDRef.current = businessUID;
+  }, [businessUID]);
+  useEffect(() => {
+    businessesRef.current = businesses;
+  }, [businesses]);
 
   //seller can see return note in transaction details if return requested
   const [showReturnNoteViewModal, setShowReturnNoteViewModal] = useState(false);
@@ -349,7 +417,7 @@ export default function AccountScreen({ navigation }) {
       const sellerId = transaction.seller_id || "";
       const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${profileId}/${transactionUid}${sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : ""}`;
 
-      const response = await fetch(url, { method: "GET", headers: { "Content-Type": "application/json" } });
+      const response = await fetch(url, { method: "GET" });
       if (!response.ok) {
         throw new Error(`Failed to load receipt: ${response.status}`);
       }
@@ -542,118 +610,109 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
-  /** GET /api/v1/account-screen/personal/:profile_id — maps to purchases, bounties, sales (expertise qty). */
+  /** GET /api/v1/account-screen/personal/:profile_id — maps to purchases, bounties, sales (expertise qty). One in-flight request; no GET /transactions fallbacks. */
   const refreshAccountScreenPersonal = async () => {
-    try {
-      setTransactionLoading(true);
-      setBountyLoading(true);
-      setExpertiseLoading(true);
-      const rawProfileId = await AsyncStorage.getItem("profile_uid");
-      const profileId = rawProfileId ? String(rawProfileId).trim() : "";
-      if (!profileId) {
-        console.log("No profile ID found, skipping account-screen personal fetch");
-        setTransactionData([]);
-        setBountyData(null);
-        setExpertiseData([]);
-        return;
-      }
-      const url = `${ACCOUNT_SCREEN_PERSONAL_ENDPOINT}/${profileId}`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (response.status === 400) {
-        // Treat as empty aggregate payload but still load purchases/bounties/sales like legacy.
-        const legacyTx = await fetchLegacyPersonalBuyerTransactions(profileId);
-        setTransactionData(legacyTx);
-        setBountyData({ data: [] });
-        let sellerTx = await fetchLegacySellerTransactionsForProfile(profileId);
+    if (refreshPersonalInFlightRef.current) {
+      return refreshPersonalInFlightRef.current;
+    }
+    const task = (async () => {
+      try {
+        setTransactionLoading(true);
+        setBountyLoading(true);
+        setExpertiseLoading(true);
+        const rawProfileId = await AsyncStorage.getItem("profile_uid");
+        const profileId = rawProfileId ? String(rawProfileId).trim() : "";
+        if (!profileId) {
+          console.log("No profile ID found, skipping account-screen personal fetch");
+          setTransactionData([]);
+          setBountyData(null);
+          setExpertiseData([]);
+          return;
+        }
+        const url = `${ACCOUNT_SCREEN_PERSONAL_ENDPOINT}/${profileId}`;
+        const response = await fetch(url, {
+          method: "GET",
+        });
+        if (response.status === 400) {
+          // Aggregate unavailable: show empty purchases/bounties; expertise from cached profile + no seller lines.
+          setTransactionData([]);
+          setBountyData({ data: [] });
+          const session = await getSessionProfile();
+          const profileResult = session?.rawProfile;
+          const expertiseList = profileResult?.expertise_info ? parseExpertiseInfo(profileResult.expertise_info) : [];
+          setExpertiseData(buildExpertiseRows(expertiseList, []));
+          await fetchPersonalProfileData();
+          return;
+        }
+        if (!response.ok) {
+          throw new Error(`account-screen personal HTTP ${response.status}`);
+        }
+        const contentType = response.headers.get("content-type");
+        if (!contentType || !contentType.includes("application/json")) {
+          throw new Error("account-screen personal returned non-JSON");
+        }
+        const json = await response.json();
+        const mapped = mapAccountScreenPersonalResponse(json);
+
+        const purchaseRows = Array.isArray(mapped.transactions) ? mapped.transactions : [];
+        setTransactionData(purchaseRows);
+
+        if (mapped.bounty) {
+          setBountyData(mapped.bounty);
+        } else {
+          setBountyData({ data: [] });
+        }
+
+        if (mapped.profile?.personal_info) {
+          const result = mapped.profile;
+          setPersonalProfileData({
+            firstName: result.personal_info.profile_personal_first_name || "",
+            lastName: result.personal_info.profile_personal_last_name || "",
+            email: result.user_email || "",
+            phoneNumber: result.personal_info.profile_personal_phone_number || "",
+            tagLine: result.personal_info.profile_personal_tag_line || "",
+            city: result.personal_info.profile_personal_city || "",
+            state: result.personal_info.profile_personal_state || "",
+            profileImage: result.personal_info.profile_personal_image || "",
+            emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
+            phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
+            tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
+            locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
+            imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
+          });
+        } else {
+          await fetchPersonalProfileData();
+        }
+
+        const sellerTx = Array.isArray(mapped.sellerTransactions) ? mapped.sellerTransactions : [];
+
         const session = await getSessionProfile();
         const profileResult = session?.rawProfile;
-        const expertiseList = profileResult?.expertise_info ? parseExpertiseInfo(profileResult.expertise_info) : [];
-        setExpertiseData(buildExpertiseRows(expertiseList, sellerTx));
-        await fetchPersonalProfileData();
-        return;
-      }
-      if (!response.ok) {
-        throw new Error(`account-screen personal HTTP ${response.status}`);
-      }
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("account-screen personal returned non-JSON");
-      }
-      const json = await response.json();
-      const mapped = mapAccountScreenPersonalResponse(json);
-
-      let purchaseRows = mapped.transactions;
-      if (!purchaseRows.length) {
-        purchaseRows = await fetchLegacyPersonalBuyerTransactions(profileId);
-      }
-
-      setTransactionData(purchaseRows);
-
-      if (mapped.bounty) {
-        setBountyData(mapped.bounty);
-      } else {
-        setBountyData({ data: [] });
-      }
-
-      if (mapped.profile?.personal_info) {
-        const result = mapped.profile;
-        setPersonalProfileData({
-          firstName: result.personal_info.profile_personal_first_name || "",
-          lastName: result.personal_info.profile_personal_last_name || "",
-          email: result.user_email || "",
-          phoneNumber: result.personal_info.profile_personal_phone_number || "",
-          tagLine: result.personal_info.profile_personal_tag_line || "",
-          city: result.personal_info.profile_personal_city || "",
-          state: result.personal_info.profile_personal_state || "",
-          profileImage: result.personal_info.profile_personal_image || "",
-          emailIsPublic: result.personal_info.profile_personal_email_is_public === 1,
-          phoneIsPublic: result.personal_info.profile_personal_phone_number_is_public === 1,
-          tagLineIsPublic: result.personal_info.profile_personal_tag_line_is_public === 1,
-          locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
-          imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
-        });
-      } else {
-        await fetchPersonalProfileData();
-      }
-
-      let sellerTx = mapped.sellerTransactions;
-      if (sellerTx === undefined) {
-        sellerTx = await fetchLegacySellerTransactionsForProfile(profileId);
-      }
-
-      const session = await getSessionProfile();
-      const profileResult = session?.rawProfile;
-      let expertiseList = [];
-      if (mapped.profile?.expertise_info != null) {
-        expertiseList = parseExpertiseInfo(mapped.profile.expertise_info);
-      } else if (profileResult?.expertise_info) {
-        expertiseList = parseExpertiseInfo(profileResult.expertise_info);
-      }
-      setExpertiseData(buildExpertiseRows(expertiseList, sellerTx));
-    } catch (error) {
-      console.error("Error loading account-screen personal:", error);
-      try {
-        const rawPid = await AsyncStorage.getItem("profile_uid");
-        const pid = rawPid ? String(rawPid).trim() : "";
-        if (pid) {
-          const legacy = await fetchLegacyPersonalBuyerTransactions(pid);
-          setTransactionData(legacy);
-        } else {
-          setTransactionData([]);
+        let expertiseList = [];
+        if (mapped.profile?.expertise_info != null) {
+          expertiseList = parseExpertiseInfo(mapped.profile.expertise_info);
+        } else if (profileResult?.expertise_info) {
+          expertiseList = parseExpertiseInfo(profileResult.expertise_info);
         }
-      } catch {
+        setExpertiseData(buildExpertiseRows(expertiseList, sellerTx));
+      } catch (error) {
+        console.error("Error loading account-screen personal:", error);
         setTransactionData([]);
+        setBountyData({ error: error.message });
+        setExpertiseData([]);
+      } finally {
+        setTransactionLoading(false);
+        setBountyLoading(false);
+        setExpertiseLoading(false);
       }
-      setBountyData({ error: error.message });
-      setExpertiseData([]);
-    } finally {
-      setTransactionLoading(false);
-      setBountyLoading(false);
-      setExpertiseLoading(false);
-    }
+    })();
+    refreshPersonalInFlightRef.current = task;
+    task.finally(() => {
+      if (refreshPersonalInFlightRef.current === task) {
+        refreshPersonalInFlightRef.current = null;
+      }
+    });
+    return task;
   };
 
   const updateTransactionEscrow = async (transactionUid) => {
@@ -704,6 +763,7 @@ export default function AccountScreen({ navigation }) {
 
       // Store all businesses in state
       setBusinesses(businessList);
+      businessesRef.current = Array.isArray(businessList) ? businessList : [];
 
       // Get the first business UID
       if (businessList.length > 0) {
@@ -711,10 +771,12 @@ export default function AccountScreen({ navigation }) {
         const businessId = firstBusiness.business_uid || firstBusiness.profile_business_uid;
         console.log("Setting business UID:", businessId);
         setBusinessUID(businessId);
+        businessUIDRef.current = businessId;
         return businessId;
       }
 
       console.log("No businesses found for user");
+      businessUIDRef.current = null;
       return null;
     } catch (error) {
       console.error("Error fetching user businesses:", error);
@@ -777,9 +839,6 @@ export default function AccountScreen({ navigation }) {
 
       const response = await fetch(`${API_BASE_URL}/api/v1/business_services/transaction/${transactionUid}`, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
       });
 
       if (response.ok) {
@@ -811,7 +870,6 @@ export default function AccountScreen({ navigation }) {
       try {
         const r = await fetch(`${TRANSACTION_RECEIPT_ENDPOINT}/${txn.transaction_profile_id}/${uid}?seller_id=${encodeURIComponent(biz)}`, {
           method: "GET",
-          headers: { "Content-Type": "application/json" },
         });
         let items = [];
         if (r.ok) {
@@ -829,13 +887,14 @@ export default function AccountScreen({ navigation }) {
 
   /**
    * GET /api/v1/account-screen/business/:business_uid — product results + seller lines for grouping/receipts.
-   * @param {string} [primaryBusinessUidOverride] — use right after fetchUserBusinesses() before React state updates.
+   * @param {string} [primaryBusinessUidOverride] — optional first-business uid before `businessUID` state commits.
    */
   const refreshAccountScreenBusiness = async (primaryBusinessUidOverride) => {
     try {
       setBusinessTransactionLoading(true);
       setBusinessBountyLoading(true);
-      const targetBusinessUID = selectedAccount !== "personal" ? selectedAccount : (primaryBusinessUidOverride ?? businessUID);
+      const selectedAcct = selectedAccountRef.current;
+      const targetBusinessUID = selectedAcct !== "personal" ? selectedAcct : (primaryBusinessUidOverride ?? businessUIDRef.current);
 
       if (!targetBusinessUID) {
         console.log("No business UID available");
@@ -843,6 +902,7 @@ export default function AccountScreen({ navigation }) {
         setBusinessBountyData(null);
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
+        setSelectedBusinessFullData(null);
         return;
       }
 
@@ -851,7 +911,6 @@ export default function AccountScreen({ navigation }) {
 
       const response = await fetch(`${ACCOUNT_SCREEN_BUSINESS_ENDPOINT}/${targetBusinessUID}`, {
         method: "GET",
-        headers: { "Content-Type": "application/json" },
       });
 
       if (response.status === 400) {
@@ -859,6 +918,12 @@ export default function AccountScreen({ navigation }) {
         setBusinessTransactionData([]);
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
+        if (selectedAcct !== "personal") {
+          const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+          setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
+        } else {
+          setSelectedBusinessFullData(null);
+        }
         return;
       }
 
@@ -867,13 +932,29 @@ export default function AccountScreen({ navigation }) {
         setBusinessTransactionData([]);
         setBusinessBountyData(null);
         businessReceiptFetchedRef.current = new Set();
+        if (selectedAcct !== "personal") {
+          const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+          setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
+        } else {
+          setSelectedBusinessFullData(null);
+        }
         return;
       }
 
       const json = await response.json();
-      const { bountyResult, sellerLines } = mapAccountScreenBusinessResponse(json);
+      const { bountyResult, sellerLines, businessForMiniCardRaw } = mapAccountScreenBusinessResponse(json);
 
-      const selectedBusiness = businesses.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+      const selectedBusiness = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+
+      const miniForCard =
+        selectedAcct === "personal"
+          ? null
+          : (() => {
+              let m = businessForMiniCardRaw ? mapRawBusinessToSelectedBusinessFullData(businessForMiniCardRaw) : null;
+              if (!m) m = mapSessionBusinessRowToMiniCard(selectedBusiness);
+              return m;
+            })();
+      setSelectedBusinessFullData(miniForCard);
 
       if (bountyResult?.data && Array.isArray(bountyResult.data)) {
         bountyResult.data.forEach((bounty) => {
@@ -889,7 +970,7 @@ export default function AccountScreen({ navigation }) {
         setBusinessBountyData(null);
       }
 
-      if (selectedAccount === "personal") {
+      if (selectedAcct === "personal") {
         setBusinessTransactionData([]);
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
@@ -959,6 +1040,13 @@ export default function AccountScreen({ navigation }) {
       setBusinessBountyData({ error: error.message });
       setBusinessReceiptCache({});
       businessReceiptFetchedRef.current = new Set();
+      const selectedAcct = selectedAccountRef.current;
+      if (selectedAcct !== "personal") {
+        const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === selectedAcct);
+        setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
+      } else {
+        setSelectedBusinessFullData(null);
+      }
     } finally {
       setBusinessTransactionLoading(false);
       setBusinessBountyLoading(false);
@@ -974,8 +1062,14 @@ export default function AccountScreen({ navigation }) {
       refreshAccountScreenPersonal();
 
       const loadBusinessData = async () => {
-        const primaryBusinessUid = await fetchUserBusinesses();
-        await refreshAccountScreenBusiness(primaryBusinessUid);
+        await fetchUserBusinesses();
+        // Session cache fills the dropdown; skip account-screen/business until a business profile is selected (or tab refocus while on business).
+        if (selectedAccountRef.current !== "personal") {
+          await refreshAccountScreenBusiness();
+        } else {
+          setBusinessTransactionLoading(false);
+          setBusinessBountyLoading(false);
+        }
       };
       loadBusinessData();
 
@@ -991,63 +1085,15 @@ export default function AccountScreen({ navigation }) {
     }, []),
   );
 
-  // Load business data when switching to business account
+  // Load business aggregate when switching to a business profile; clear MiniCard on personal. Session `businesses` fills dropdown first.
   useEffect(() => {
+    if (selectedAccount === "personal" || !selectedAccount) {
+      setSelectedBusinessFullData(null);
+    }
     if (selectedAccount !== "personal") {
       refreshAccountScreenBusiness();
     }
-  }, [selectedAccount, businesses]); // Add 'businesses' as dependency
-
-  // Add this with your other useEffects
-  useEffect(() => {
-    const fetchSelectedBusinessFullData = async () => {
-      if (selectedAccount === "personal" || !selectedAccount) {
-        setSelectedBusinessFullData(null);
-        return;
-      }
-
-      try {
-        const response = await fetch(`${BUSINESS_INFO_ENDPOINT}/${selectedAccount}`);
-        const result = await response.json();
-
-        if (result && result.business) {
-          const rawBusiness = result.business;
-
-          const businessProfileImg = rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
-          const imageIsPublic =
-            rawBusiness.business_profile_img_is_public === "1" ||
-            rawBusiness.business_profile_img_is_public === 1 ||
-            rawBusiness.business_image_is_public === "1" ||
-            rawBusiness.business_image_is_public === 1;
-          setSelectedBusinessFullData({
-            business_name: rawBusiness.business_name,
-            business_location: rawBusiness.business_location,
-            business_address_line_1: rawBusiness.business_address_line_1,
-            business_city: rawBusiness.business_city,
-            business_state: rawBusiness.business_state,
-            business_zip_code: rawBusiness.business_zip_code,
-            business_phone_number: rawBusiness.business_phone_number,
-            business_email_id: rawBusiness.business_email_id,
-            business_website: rawBusiness.business_website,
-            business_tag_line: rawBusiness.business_tag_line,
-            tagline: rawBusiness.business_tag_line,
-            first_image: businessProfileImg || rawBusiness.business_images_url?.[0] || rawBusiness.business_google_photos?.[0],
-            business_profile_img: businessProfileImg,
-            imageIsPublic: imageIsPublic,
-            phoneIsPublic: rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1,
-            emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1,
-            taglineIsPublic: rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1,
-            locationIsPublic: rawBusiness.business_location_is_public === "1" || rawBusiness.business_location_is_public === 1,
-          });
-        }
-      } catch (error) {
-        console.error("Error fetching selected business full data:", error);
-        setSelectedBusinessFullData(null);
-      }
-    };
-
-    fetchSelectedBusinessFullData();
-  }, [selectedAccount]);
+  }, [selectedAccount, businesses]);
 
   // Format date to dd/mm format
   const formatTransactionDate = (dateString) => {
@@ -1621,7 +1667,7 @@ export default function AccountScreen({ navigation }) {
 
   const businessNetEarningsTotal = businessTransactionData.reduce((s, t) => s + parseFloat(t.net_earning || 0), 0);
 
-  /** Debug Mode Yes (Settings): show Transaction ID, Type, Purchased Item. Narrow web (<700px) uses the same compact layout as mobile without those columns. */
+  /** Debug Mode Yes (Settings): show Transaction ID, Type, Purchased Item. Narrow web (<700px) uses the same compact layout as mobile without those debug columns. Purchased Item also shows on web when width > 600 regardless of Debug Mode (unless compact dev flag hides it). */
   const purchasesShowDebugColumns = SHOW_NETWORK_DEBUG_UI !== 0 && settingsDebugModeEnabled;
   const narrowWebPurchasesLayout = Platform.OS === "web" && windowWidth < 700;
   const effectivePurchasesShowDebugColumns = purchasesShowDebugColumns && !narrowWebPurchasesLayout;
@@ -1629,7 +1675,9 @@ export default function AccountScreen({ navigation }) {
   /** Purchases: Transaction ID; Bounty Results: ID — same visibility (debug + wide web, not compact dev flag). */
   const showPurchasesTxnIdColumn = effectivePurchasesShowDebugColumns && !compactPurchasesLayout;
   const showPurchasesTypeColumn = effectivePurchasesShowDebugColumns;
-  const showPurchasesPurchasedItemColumn = effectivePurchasesShowDebugColumns && !compactPurchasesLayout;
+  const showWebWidePurchasedItemColumn = Platform.OS === "web" && windowWidth > 600;
+  const showPurchasesPurchasedItemColumn =
+    !compactPurchasesLayout && (effectivePurchasesShowDebugColumns || showWebWidePurchasedItemColumn);
 
   if (isLoading) {
     return (
@@ -1780,13 +1828,16 @@ export default function AccountScreen({ navigation }) {
                         // const showPendingLink = (isSeeking || isBusiness) && isPending;
                         // const wasAutoPaid = autoPaidTransactionIds.has(transaction.transaction_uid);
 
-                        const isSeeking = (transaction.purchase_type || "").toLowerCase() === "seeking";
-                        const isBusiness = (transaction.purchase_type || "").toLowerCase() === "business";
-                        const isPending = transaction.transaction_in_escrow === 1;
+                        const purchaseTypeLower = (transaction.purchase_type || "").toLowerCase();
+                        const isSeeking = purchaseTypeLower === "seeking";
+                        const isBusiness = purchaseTypeLower === "business";
+                        const isExpertise = purchaseTypeLower === "expertise" || purchaseTypeLower === "offering";
+                        const isPending = Number(transaction.transaction_in_escrow) === 1;
                         const purchaseDate = new Date(transaction.transaction_datetime);
                         const isOlderThan5Days = (new Date() - purchaseDate) / (1000 * 60 * 60 * 24) >= 5;
-                        const showPendingLink = (isSeeking || isBusiness) && isPending;
-                        const showAutoPaid = (isSeeking || isBusiness) && !isPending && isOlderThan5Days;
+                        /** Any purchase still in escrow: Pending is tappable (confirm receipt / release). */
+                        const showPendingLink = isPending;
+                        const showAutoPaid = (isSeeking || isBusiness || isExpertise) && !isPending && isOlderThan5Days;
 
                         const compactTx = compactPurchasesLayout;
 
