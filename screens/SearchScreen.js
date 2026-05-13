@@ -1,5 +1,5 @@
 // SearchScreen.js
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, SafeAreaView, FlatList, ActivityIndicator, Alert, Dimensions, Modal, Image, Platform } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -23,11 +23,9 @@ import {
 } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
+import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
 import { getHeaderColors } from "../config/headerColors";
 import { isWishEnded } from "../utils/wishUtils";
-import { formatWholeDollars } from "../utils/priceUtils";
-
-// Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. */
 function NoBountyIcon({ darkMode }) {
   return (
@@ -38,6 +36,7 @@ function NoBountyIcon({ darkMode }) {
   );
 }
 
+// Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
 const formatDateTimeForDisplay = (value) => {
   if (!value || typeof value !== "string" || value.trim() === "") return "";
   const trimmed = value.trim();
@@ -110,6 +109,8 @@ export default function SearchScreen({ route }) {
   const { darkMode } = useDarkMode();
   const [cartItems, setCartItems] = useState([]);
   const [cartCount, setCartCount] = useState(0);
+  /** When set, Add to Cart modal is shown for this search expertise row. */
+  const [expertiseCartModalItem, setExpertiseCartModalItem] = useState(null);
 
   const [isFirstVisit, setIsFirstVisit] = useState(true);
   const [hasLoadedInitialSearch, setHasLoadedInitialSearch] = useState(false);
@@ -171,59 +172,54 @@ export default function SearchScreen({ route }) {
     }, [route.params?.restoreState, route.params?.searchState]),
   );
 
-  // Load cart items when component mounts and when screen is focused
-  useEffect(() => {
-    const loadCartItems = async () => {
-      try {
-        const keys = await AsyncStorage.getAllKeys();
-        const cartKeys = keys.filter((key) => key.startsWith("cart_"));
+  const loadCartItems = useCallback(async () => {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const cartKeys = keys.filter((key) => key.startsWith("cart_"));
 
-        let totalItems = 0;
-        let allCartItems = [];
+      let totalItems = 0;
+      let allCartItems = [];
 
-        for (const key of cartKeys) {
-          const cartData = await AsyncStorage.getItem(key);
-          if (cartData) {
-            const parsed = JSON.parse(cartData);
+      for (const key of cartKeys) {
+        const cartData = await AsyncStorage.getItem(key);
+        if (cartData) {
+          const parsed = JSON.parse(cartData);
 
-            if (key.startsWith("cart_expertise_")) {
-              // Expertise items stored as single objects, not { items: [] }
-              totalItems += 1;
-              allCartItems.push({ ...parsed, cart_key: key });
-            } else {
-              // Business items stored as { items: [] }
-              const items = parsed.items || []; // ← safe fallback
-              totalItems += items.length;
-              const businessUid = key.replace("cart_", "");
-              const itemsWithBusiness = items.map((item) => ({
-                ...item,
-                business_uid: businessUid,
-              }));
-              allCartItems = [...allCartItems, ...itemsWithBusiness];
-            }
+          if (key.startsWith("cart_expertise_")) {
+            totalItems += 1;
+            allCartItems.push({ ...parsed, cart_key: key });
+          } else {
+            const items = parsed.items || [];
+            totalItems += items.length;
+            const businessUid = key.replace("cart_", "");
+            const itemsWithBusiness = items.map((item) => ({
+              ...item,
+              business_uid: businessUid,
+            }));
+            allCartItems = [...allCartItems, ...itemsWithBusiness];
           }
         }
-
-        setCartCount(totalItems);
-        setCartItems(allCartItems);
-      } catch (error) {
-        console.error("Error loading cart items:", error);
-        setCartCount(0);
-        setCartItems([]);
       }
-    };
 
-    // Load cart items when component mounts
+      setCartCount(totalItems);
+      setCartItems(allCartItems);
+    } catch (error) {
+      console.error("Error loading cart items:", error);
+      setCartCount(0);
+      setCartItems([]);
+    }
+  }, []);
+
+  useEffect(() => {
     loadCartItems();
 
-    // Add focus listener to refresh cart count when returning to this screen
     const unsubscribe = navigation.addListener("focus", () => {
       console.log("SearchScreen focused - refreshing cart");
       loadCartItems();
     });
 
     return unsubscribe;
-  }, [navigation, route.params?.refreshCart]); // Add route.params?.refreshCart as a dependency
+  }, [navigation, loadCartItems, route.params?.refreshCart]);
 
   // Load saved search state or perform initial "Chinese" search
   useEffect(() => {
@@ -525,7 +521,16 @@ export default function SearchScreen({ route }) {
               details: item.profile_expertise_details,
               bounty: item.profile_expertise_bounty,
               cost: item.profile_expertise_cost,
+              quantity: item.profile_expertise_quantity || item.quantity,
+              profile_expertise_quantity: item.profile_expertise_quantity || item.quantity,
               expertise_uid: item.profile_expertise_uid,
+              profile_expertise_start: item.profile_expertise_start || "",
+              profile_expertise_end: item.profile_expertise_end || "",
+              profile_expertise_location: item.profile_expertise_location || "",
+              profile_expertise_mode: item.profile_expertise_mode || "",
+              profile_expertise_image: item.profile_expertise_image || "",
+              profile_expertise_image_is_public: item.profile_expertise_image_is_public,
+              profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
             },
             profileData: {
               firstName: item.profile_personal_first_name || "",
@@ -818,6 +823,7 @@ export default function SearchScreen({ route }) {
             bounty: item.profile_expertise_bounty,
             cost: item.profile_expertise_cost,
             quantity: item.profile_expertise_quantity || item.quantity,
+            profile_expertise_quantity: item.profile_expertise_quantity || item.quantity,
             expertise_uid: item.profile_expertise_uid,
             profile_expertise_start: item.profile_expertise_start || "",
             profile_expertise_end: item.profile_expertise_end || "",
@@ -1134,6 +1140,66 @@ export default function SearchScreen({ route }) {
     return <Text style={[styles.scoreBreakdownText, darkMode && styles.darkScoreBreakdownText]}>{text}</Text>;
   };
 
+  const getSearchStateForRestore = () => ({
+    searchQuery,
+    searchType,
+    results,
+    distance,
+    network,
+    bounty,
+    rating,
+  });
+
+  const handleExpertiseAddToCartConfirm = async (modalData) => {
+    const row = expertiseCartModalItem;
+    if (!row?.expertiseData?.expertise_uid || !row.profile_uid) {
+      Alert.alert("Error", "Missing expertise or seller information.");
+      setExpertiseCartModalItem(null);
+      return;
+    }
+    try {
+      const { expertiseData, profileData, profile_uid } = row;
+      const { quantity: qty, escrow, subtotal, totalWithFee } = modalData;
+      const cartKey = `cart_expertise_${expertiseData.expertise_uid}`;
+      const sellerDisplayName = [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim();
+      const cartItem = {
+        expertise_uid: expertiseData.expertise_uid,
+        title: expertiseData.title,
+        description: expertiseData.description,
+        cost: expertiseData.cost,
+        bounty: expertiseData.bounty,
+        profile_uid,
+        profileData,
+        business_name: sellerDisplayName || "",
+        itemType: "expertise",
+        quantity: qty,
+        escrow,
+        subtotal,
+        totalWithFee,
+        cart_key: cartKey,
+        addedAt: new Date().toISOString(),
+      };
+      await AsyncStorage.setItem(cartKey, JSON.stringify(cartItem));
+      setExpertiseCartModalItem(null);
+      await loadCartItems();
+      Alert.alert("Added to Cart", `${expertiseData?.title || "Item"} (x${qty}) has been added to your cart.`, [
+        { text: "Continue Browsing", style: "cancel" },
+        {
+          text: "View Cart",
+          onPress: () =>
+            navigation.navigate("ShoppingCart", {
+              cartItems: [cartItem],
+              businessName: "Expertise",
+              business_uid: profile_uid,
+            }),
+        },
+      ]);
+    } catch (error) {
+      console.error("Error adding expertise to cart from search:", error);
+      Alert.alert("Error", "Failed to add to cart. Please try again.");
+    }
+  };
+
   const renderWishItem = (item, idx) => {
     // Render wish item with MiniCard-like profile display
     const profile = item.profileData || {};
@@ -1276,49 +1342,70 @@ export default function SearchScreen({ route }) {
 
     const isOwnExpertise = currentProfileUid && item.profile_uid === currentProfileUid;
 
+    const expertiseLocationTrimmed =
+      expertise.profile_expertise_location != null && String(expertise.profile_expertise_location).trim() !== ""
+        ? String(expertise.profile_expertise_location).trim()
+        : "";
+    const expertiseQtyRaw = expertise.quantity ?? expertise.profile_expertise_quantity;
+    const expertiseQtyTrimmed = expertiseQtyRaw != null && String(expertiseQtyRaw).trim() !== "" ? String(expertiseQtyRaw).trim() : "";
+    const hasExpertiseSchedule = !!(expertise.profile_expertise_start || expertise.profile_expertise_end);
+    const expertiseModeTrimmed =
+      expertise.profile_expertise_mode != null && String(expertise.profile_expertise_mode).trim() !== ""
+        ? String(expertise.profile_expertise_mode).trim()
+        : "";
+    const hasExpertiseScheduleMeta = !!(hasExpertiseSchedule || expertiseLocationTrimmed || expertiseModeTrimmed);
+    const hasExpertiseCostRow = !!(expertise.cost || expertiseQtyTrimmed || expertise.bounty);
+
+    const canOpenSellerProfile = !!item.profile_uid;
+    const canAddExpertiseToCart = !!(item.profile_uid && expertise.expertise_uid);
+
     return (
-      <TouchableOpacity
-        key={`${item.id}-${idx}`}
-        activeOpacity={isOwnExpertise ? 1 : 0.7}
-        // style={[styles.wishItem, darkMode && styles.darkWishItem]}
-        style={[styles.wishItem, darkMode && styles.darkWishItem, isOwnExpertise && { opacity: 0.6 }]}
-        onPress={() => {
-          if (isOwnExpertise) return;
-          console.log("🏢 Navigating to ExpertiseDetail from expertise card:", expertise.title, "Profile ID:", item.profile_uid);
-          if (item.profile_uid && expertise) {
-            navigation.navigate("ExpertiseDetail", {
-              expertiseData: expertise,
-              profileData: profile,
-              profile_uid: item.profile_uid,
-              searchState: {
-                searchQuery,
-                searchType,
-                results,
-                distance,
-                network,
-                bounty,
-                rating,
-              },
-            });
-          } else {
-            console.warn("No profile_uid or expertise data found for expertise item");
-          }
-        }}
-      >
-        {/* Profile Image and Info (MiniCard-like) */}
+      <View key={`${item.id}-${idx}`} style={[styles.wishItem, darkMode && styles.darkWishItem, isOwnExpertise && { opacity: 0.6 }]}>
+        {/* Profile: image + name navigate to seller profile */}
         <View style={styles.wishProfileContainer}>
-          <Image
-            source={profile.image && profile.imageIsPublic && profile.image !== "" && String(profile.image).trim() !== "" ? { uri: String(profile.image) } : require("../assets/profile.png")}
-            style={[styles.wishProfileImage, darkMode && styles.darkWishProfileImage]}
-            tintColor={darkMode ? "#ffffff" : undefined}
-            onError={(error) => {
-              console.log("Expertise profile image failed to load:", error.nativeEvent.error);
+          <TouchableOpacity
+            activeOpacity={canOpenSellerProfile ? 0.7 : 1}
+            disabled={!canOpenSellerProfile}
+            onPress={() => {
+              if (!item.profile_uid) return;
+              navigation.navigate("Profile", {
+                profile_uid: item.profile_uid,
+                returnTo: "Search",
+                searchState: getSearchStateForRestore(),
+              });
             }}
-            defaultSource={require("../assets/profile.png")}
-          />
+            accessibilityRole="button"
+            accessibilityLabel="View seller profile"
+          >
+            <Image
+              source={profile.image && profile.imageIsPublic && profile.image !== "" && String(profile.image).trim() !== "" ? { uri: String(profile.image) } : require("../assets/profile.png")}
+              style={[styles.wishProfileImage, darkMode && styles.darkWishProfileImage]}
+              tintColor={darkMode ? "#ffffff" : undefined}
+              onError={(error) => {
+                console.log("Expertise profile image failed to load:", error.nativeEvent.error);
+              }}
+              defaultSource={require("../assets/profile.png")}
+            />
+          </TouchableOpacity>
           <View style={styles.wishProfileInfo}>
-            {/* Name is always visible */}
-            <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>{[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Anonymous User"}</Text>
+            <TouchableOpacity
+              activeOpacity={canOpenSellerProfile ? 0.7 : 1}
+              disabled={!canOpenSellerProfile}
+              onPress={() => {
+                if (!item.profile_uid) return;
+                navigation.navigate("Profile", {
+                  profile_uid: item.profile_uid,
+                  returnTo: "Search",
+                  searchState: getSearchStateForRestore(),
+                });
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="View seller profile"
+            >
+              <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>
+                {[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Anonymous User"}
+              </Text>
+            </TouchableOpacity>
             {/* Show email if public */}
             {(() => {
               const email = profile.emailIsPublic && profile.email ? String(profile.email).trim() : "";
@@ -1332,7 +1419,7 @@ export default function SearchScreen({ route }) {
           </View>
         </View>
 
-        {/* Expertise Information */}
+        {/* Expertise Information (no tap-through to expertise detail) */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
           <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
           {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
@@ -1340,29 +1427,118 @@ export default function SearchScreen({ route }) {
           {expertise.description && String(expertise.description).trim() && String(expertise.description).trim() !== "." && (
             <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{String(expertise.description).trim()}</Text>
           )}
-          <View style={styles.expertiseDetailsContainer}>
-            {expertise.cost && (
-              <View style={styles.wishBountyContainer}>
-                <View style={styles.moneyBagIconContainer}>
-                  <Text style={styles.moneyBagDollarSymbol}>$</Text>
+          {/* Cost / Qty / bounty row — same layout as Profile OFFERING cards */}
+          {hasExpertiseCostRow && (
+            <View style={styles.expertiseOfferingCostRow}>
+              {expertise.cost ? (
+                <View style={styles.seekingMetaLine}>
+                  <View style={styles.moneyBagIconContainer}>
+                    <Text style={styles.moneyBagDollarSymbol}>$</Text>
+                  </View>
+                  <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>
+                    {String(expertise.cost).toLowerCase() !== "free" ? `Cost: $${String(expertise.cost).replace(/^\$/, "")}` : `Cost: ${expertise.cost}`}
+                  </Text>
                 </View>
-                <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>
-                  {String(expertise.cost).toLowerCase() !== "free" ? `Cost: $${String(expertise.cost).replace(/^\$/, "")}` : `Cost: ${expertise.cost}`}
-                </Text>
+              ) : null}
+              <View style={styles.expertiseOfferingRightCluster}>
+                {expertiseQtyTrimmed ? (
+                  <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>Qty: {expertiseQtyTrimmed}</Text>
+                ) : null}
+                {expertise.bounty ? (
+                  <Text style={[styles.wishBountyLabel, styles.expertiseOfferingBountyCompact, darkMode && styles.darkWishBountyLabel]}>
+                    {String(expertise.bounty).toLowerCase() !== "free" ? `💰 $${String(expertise.bounty).replace(/^\$/, "")}` : `💰 ${expertise.bounty}`}
+                  </Text>
+                ) : null}
               </View>
-            )}
-            {expertise.bounty && (
-              <View style={styles.wishBountyContainerRight}>
-                <Text style={styles.bountyEmojiIcon}>💰</Text>
-                <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>
-                  {String(expertise.bounty).toLowerCase() !== "free" ? `Bounty: $${formatWholeDollars(expertise.bounty)}` : `Bounty: ${expertise.bounty}`}
-                </Text>
-              </View>
-            )}
-          </View>
+            </View>
+          )}
+          {/* Calendar, location, in-person / virtual — same as Profile OFFERING meta */}
+          {hasExpertiseScheduleMeta && (
+            <View style={[styles.seekingMetaRow, styles.expertiseOfferingMetaRow]}>
+              {hasExpertiseSchedule ? (
+                <View style={styles.seekingMetaLine}>
+                  <Ionicons name="calendar-outline" size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
+                  <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
+                    {expertise.profile_expertise_start ? formatDateTimeForDisplay(expertise.profile_expertise_start) : "—"}
+                    {expertise.profile_expertise_start && expertise.profile_expertise_end ? " → " : ""}
+                    {expertise.profile_expertise_end ? formatDateTimeForDisplay(expertise.profile_expertise_end) : ""}
+                  </Text>
+                </View>
+              ) : null}
+              {expertiseLocationTrimmed || expertiseModeTrimmed ? (
+                <View style={[styles.seekingMetaLine, styles.seekingMetaLineSpaceBetween, hasExpertiseSchedule && { marginTop: 4 }]}>
+                  {expertiseLocationTrimmed ? (
+                    <View style={styles.seekingMetaLine}>
+                      <Ionicons name="location-outline" size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
+                      <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{expertiseLocationTrimmed}</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.seekingMetaSpacer} />
+                  )}
+                  {expertiseModeTrimmed ? (
+                    <View style={styles.seekingMetaLine}>
+                      <Ionicons
+                        name={String(expertiseModeTrimmed).toLowerCase() === "virtual" ? "videocam-outline" : "people-outline"}
+                        size={14}
+                        color={darkMode ? "#999" : "#666"}
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{expertiseModeTrimmed}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+          )}
+          {!isOwnExpertise ? (
+            <View style={styles.expertiseCardActionRow}>
+              <TouchableOpacity
+                style={[
+                  styles.expertiseCardMessageButton,
+                  darkMode && styles.darkExpertiseCardMessageButton,
+                  !canOpenSellerProfile && styles.expertiseCardActionDisabled,
+                ]}
+                onPress={() => {
+                  if (!item.profile_uid) return;
+                  const offeringLabel =
+                    expertise.title && String(expertise.title).trim()
+                      ? String(expertise.title).trim()
+                      : item.company
+                        ? String(item.company).trim()
+                        : "Offering";
+                  navigation.navigate("Chat", {
+                    other_uid: item.profile_uid,
+                    other_name: [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim() || "Chat",
+                    other_image:
+                      profile.imageIsPublic && profile.image && String(profile.image).trim() !== ""
+                        ? String(profile.image)
+                        : null,
+                    reply_context: { label: `Offering: ${offeringLabel}` },
+                  });
+                }}
+                disabled={!canOpenSellerProfile}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
+                <Text style={styles.expertiseCardActionButtonText}>Messaging</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.expertiseCardCartButton, darkMode && styles.darkExpertiseCardCartButton, !canAddExpertiseToCart && styles.expertiseCardActionDisabled]}
+                onPress={() => {
+                  if (!canAddExpertiseToCart) return;
+                  setExpertiseCartModalItem({ expertiseData: expertise, profileData: profile, profile_uid: item.profile_uid });
+                }}
+                disabled={!canAddExpertiseToCart}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="cart-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+                <Text style={styles.expertiseCardActionButtonText}>Add to Cart</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
         {isOwnExpertise && <Text style={[styles.ownExpertiseNotice, darkMode && styles.darkOwnExpertiseNotice]}>You cannot purchase your own expertise.</Text>}
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -1968,6 +2144,17 @@ export default function SearchScreen({ route }) {
           </SafeAreaView>
         </Modal>
 
+        <AddToCartDetailsModal
+          show={expertiseCartModalItem != null}
+          setShow={(v) => {
+            if (!v) setExpertiseCartModalItem(null);
+          }}
+          expertiseData={expertiseCartModalItem?.expertiseData}
+          profileData={expertiseCartModalItem?.profileData}
+          onAddToCart={handleExpertiseAddToCartConfirm}
+          onCancel={() => setExpertiseCartModalItem(null)}
+        />
+
         {/* Bottom Navigation Bar */}
         <BottomNavBar navigation={navigation} />
         <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Search' instructions={searchFeedbackInstructions} questions={searchFeedbackQuestions} />
@@ -2516,11 +2703,90 @@ const styles = StyleSheet.create({
   darkWishInfoContainer: {
     borderTopColor: "#404040",
   },
-  expertiseDetailsContainer: {
+  expertiseOfferingCostRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 5,
+    marginLeft: 0,
+    marginTop: 4,
+  },
+  expertiseOfferingRightCluster: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "flex-end",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  expertiseOfferingBountyCompact: {
+    textAlign: "right",
+    minWidth: 60,
+  },
+  expertiseOfferingMetaRow: {
+    marginTop: 6,
+  },
+  seekingMetaLineSpaceBetween: {
+    justifyContent: "space-between",
+  },
+  seekingMetaSpacer: {
+    flex: 1,
+  },
+  seekingMetaRow: {
+    marginLeft: 0,
+  },
+  seekingMetaLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  seekingMetaText: {
+    color: "#666",
+    fontSize: 13,
+  },
+  darkSeekingMetaText: {
+    color: "#999",
+  },
+  expertiseCardActionRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: 8,
+    marginTop: 12,
+  },
+  expertiseCardMessageButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#AF52DE",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    minHeight: 42,
+  },
+  darkExpertiseCardMessageButton: {
+    backgroundColor: "#8f47b5",
+  },
+  expertiseCardCartButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#00C7BE",
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    minHeight: 42,
+  },
+  darkExpertiseCardCartButton: {
+    backgroundColor: "#009e98",
+  },
+  expertiseCardActionDisabled: {
+    opacity: 0.45,
+  },
+  expertiseCardActionButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 13,
   },
   ownExpertiseNotice: {
     fontSize: 13,

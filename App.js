@@ -68,7 +68,6 @@ import EditBusinessProfileScreen from "./screens/EditBusinessProfileScreen";
 import ShoppingCartScreen from "./screens/ShoppingCartScreen";
 import ReviewBusinessScreen from "./screens/ReviewBusinessScreen";
 import ReviewDetailScreen from "./screens/ReviewDetailScreen";
-import ExpertiseDetailScreen from "./screens/ExpertiseDetailScreen";
 import WishDetailScreen from "./screens/WishDetailScreen";
 import WishResponsesScreen from "./screens/WishResponsesScreen";
 import ConnectScreen from "./screens/ConnectScreen";
@@ -1001,7 +1000,6 @@ export default function App() {
                 <Stack.Screen name='ShoppingCart' component={ShoppingCartScreen} />
                 <Stack.Screen name='ReviewBusiness' component={ReviewBusinessScreen} options={{ headerShown: false }} />
                 <Stack.Screen name='ReviewDetail' component={ReviewDetailScreen} options={{ headerShown: false }} />
-                <Stack.Screen name='ExpertiseDetail' component={ExpertiseDetailScreen} options={{ headerShown: false }} />
                 <Stack.Screen name='WishDetail' component={WishDetailScreen} options={{ headerShown: false }} />
                 <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
                 <Stack.Screen name='Connect' component={ConnectScreenWrapper} />

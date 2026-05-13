@@ -1314,18 +1314,6 @@ const ProfileScreen = ({ route, navigation }) => {
                     restoreState: true,
                     searchState: searchState,
                   });
-                } else if (returnTo === "ExpertiseDetail" && route.params?.expertiseDetailState) {
-                  // Navigate back to ExpertiseDetail screen
-                  console.log("🔙 Returning to ExpertiseDetail");
-                  const { expertiseData, profileData, profile_uid, searchState, returnTo: detailReturnTo, profileState: detailProfileState } = route.params.expertiseDetailState;
-                  navigation.navigate("ExpertiseDetail", {
-                    expertiseData,
-                    profileData,
-                    profile_uid,
-                    searchState,
-                    returnTo: detailReturnTo,
-                    profileState: detailProfileState,
-                  });
                 } else if (returnTo === "WishDetail" && route.params?.wishDetailState) {
                   // Navigate back to WishDetail screen
                   console.log("🔙 Returning to WishDetail");
@@ -1665,44 +1653,6 @@ const ProfileScreen = ({ route, navigation }) => {
                         exp.profile_expertise_image &&
                         String(exp.profile_expertise_image).trim() !== "" &&
                         !expertiseImageIsHidden;
-                      const goOfferingDetail = () => {
-                        const expertiseData = {
-                          expertise_uid: exp.profile_expertise_uid,
-                          title: exp.name,
-                          description: exp.description,
-                          quantity: exp.quantity,
-                          cost: exp.cost,
-                          bounty: exp.bounty,
-                          profile_expertise_start: exp.profile_expertise_start,
-                          profile_expertise_end: exp.profile_expertise_end,
-                          profile_expertise_location: exp.profile_expertise_location,
-                          profile_expertise_mode: exp.profile_expertise_mode,
-                          profile_expertise_image: exp.profile_expertise_image,
-                          profile_expertise_image_is_public: exp.profile_expertise_image_is_public,
-                        };
-                        const profileData = {
-                          firstName: user.firstName,
-                          lastName: user.lastName,
-                          email: user.email,
-                          phone: user.phoneNumber,
-                          image: user.profileImage,
-                          tagLine: user.tagLine,
-                          city: user.city,
-                          state: user.state,
-                          emailIsPublic: user.emailIsPublic,
-                          phoneIsPublic: user.phoneIsPublic,
-                          imageIsPublic: user.imageIsPublic,
-                          tagLineIsPublic: user.tagLineIsPublic,
-                          locationIsPublic: user.locationIsPublic,
-                        };
-                        navigation.navigate("ExpertiseDetail", {
-                          expertiseData,
-                          profileData,
-                          profile_uid: profileUID,
-                          returnTo: "Profile",
-                          profileState: { profile_uid: profileUID, returnTo, searchState },
-                        });
-                      };
                       const offeringBody = (
                         <>
                           <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 8, gap: 10 }}>
@@ -1815,9 +1765,7 @@ const ProfileScreen = ({ route, navigation }) => {
                       if (routeProfileUID && !isCurrentUserProfile) {
                         return (
                           <View key={index} style={cardShellStyle}>
-                            <TouchableOpacity activeOpacity={0.7} onPress={goOfferingDetail}>
-                              <View>{offeringBody}</View>
-                            </TouchableOpacity>
+                            <View>{offeringBody}</View>
                             {messageAboutOfferingBtn}
                           </View>
                         );

@@ -1,13 +1,13 @@
 // ShoppingCartScreen.js
-import React, { useEffect, useState, useRef } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from "react-native";
+import React, { useEffect, useState, useRef, useCallback } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, findNodeHandle, InteractionManager } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { recordServicePurchase } from "../utils/purchaseService";
+import { useFocusEffect } from "@react-navigation/native";
 
 // Only import Stripe on native platforms (not web)
 let StripeProvider = null;
@@ -128,6 +128,11 @@ function calculateSubtotalForCartItems(items) {
 
 /** True when buyer pays Stripe card fees (business_cc_fee_payer === buyer). */
 function groupBuyerPaysCardFee(items) {
+  if (!items || items.length === 0) return false;
+  // Expertise lines don't carry business_cc_fee_payer; AddToCartDetailsModal always quotes 3% to the buyer.
+  if (items.some((it) => it && it.itemType === "expertise")) {
+    return true;
+  }
   const raw = items[0]?.business_cc_fee_payer ?? items[0]?.bs_cc_fee_payer;
   return canonicalBusinessCcFeePayer(raw) === "buyer";
 }
@@ -234,6 +239,8 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const [escrowBySeller, setEscrowBySeller] = useState({});
   const [refundAcknowledged, setRefundAcknowledged] = useState(false); //refund acknowledgement state
   const [refundError, setRefundError] = useState(false);
+  const scrollViewRef = useRef(null);
+  const refundPolicySectionRef = useRef(null);
 
   /** Web: one Stripe payment per seller; kept in ref + state so submit handler sees latest step. */
   const webCheckoutSessionRef = useRef(null);
@@ -242,6 +249,15 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   useEffect(() => {
     webCheckoutSessionRef.current = webCheckoutSession;
   }, [webCheckoutSession]);
+
+  /** Start at top of the list whenever this screen is opened so users review items first; refund scroll runs only from Proceed without acknowledgement. */
+  useFocusEffect(
+    useCallback(() => {
+      requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+      });
+    }, []),
+  );
 
   // Handle fees dialog continue
   const handleFeesDialogContinue = async () => {
@@ -355,6 +371,40 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
   };
 
+  const focusRefundPolicySection = () => {
+    InteractionManager.runAfterInteractions(() => {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          const scroll = scrollViewRef.current;
+          const target = refundPolicySectionRef.current;
+          if (!scroll) return;
+          if (!target) {
+            scroll.scrollToEnd({ animated: true });
+            return;
+          }
+          const scrollNative = findNodeHandle(scroll);
+          if (!scrollNative) {
+            scroll.scrollToEnd({ animated: true });
+            return;
+          }
+          try {
+            target.measureLayout(
+              scrollNative,
+              (_x, y) => {
+                scroll.scrollTo({ y: Math.max(0, y - 16), animated: true });
+              },
+              () => {
+                scroll.scrollToEnd({ animated: true });
+              },
+            );
+          } catch {
+            scroll.scrollToEnd({ animated: true });
+          }
+        }, 80);
+      });
+    });
+  };
+
   const handleCheckout = async () => {
     console.log("Checkout button pressed");
     console.log("Platform:", Platform.OS);
@@ -366,6 +416,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
     if (!refundAcknowledged) {
       setRefundError(true);
+      focusRefundPolicySection();
       return;
     }
     setRefundError(false);
@@ -928,6 +979,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
   const sellerGroupsPreview = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
   const multiSellerCheckout = sellerGroupsPreview.length > 1;
+  const hasExpertiseInCart = cartItems.some((it) => it.itemType === "expertise");
   const feeDialogFirstGroup = sellerGroupsPreview[0];
   const webStripeAmount =
     webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index]
@@ -945,7 +997,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       <AppHeader title='Shopping Cart' backgroundColor='#9C45F7' darkModeBackgroundColor='#7B35C7' onBackPress={() => navigation.goBack()} />
 
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+        <ScrollView ref={scrollViewRef} style={styles.scrollView} contentContainerStyle={styles.content}>
           {cartItems.length === 0 ? (
             <Text style={styles.emptyCart}>Your cart is empty</Text>
           ) : (
@@ -1069,9 +1121,14 @@ const ShoppingCartScreen = ({ route, navigation }) => {
               })}
               <View style={styles.totalContainer}>
                 <Text style={styles.multiSellerHint}>
+                  {hasExpertiseInCart
+                    ? "Expertise purchases include a 3% credit card processing fee in each seller total below (same as when you added them to the cart). "
+                    : null}
                   {multiSellerCheckout
-                    ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). Sales tax is computed per item. Credit card processing (3%) applies only when that business has “buyer pays” card fees.`
-                    : "Sales tax is computed per item. Credit card processing (3%) applies only when the business has “buyer pays” card fees."}
+                    ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). Sales tax is computed per item. For business services only, credit card processing (3%) applies when that business has “buyer pays” card fees.`
+                    : hasExpertiseInCart
+                      ? "Sales tax is computed per business service item when applicable. For business services only, credit card processing (3%) applies when the business has “buyer pays” card fees."
+                      : "Sales tax is computed per item. Credit card processing (3%) applies only when the business has “buyer pays” card fees."}
                 </Text>
                 {sellerGroupsPreview.map((g) => (
                   <View key={g.sellerId} style={styles.perBusinessBlock}>
@@ -1125,7 +1182,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                 ) : null}
               </View>
 
-              <View style={styles.escrowSection}>
+              <View ref={refundPolicySectionRef} collapsable={false} style={styles.escrowSection}>
                 <TouchableOpacity
                   style={styles.escrowRow}
                   onPress={() => {
