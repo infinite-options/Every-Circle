@@ -43,6 +43,7 @@ import { sanitizeText } from "../utils/textSanitizer";
 import { getBusinessSuggestions as fetchGooglePlaces, getPlaceDetails } from "../utils/googlePlaces";
 import { isWishEnded } from "../utils/wishUtils";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
+import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors } from "../config/headerColors";
@@ -1598,23 +1599,52 @@ const ProfileScreen = ({ route, navigation }) => {
             }}
           />
 
-          {/* Message button — only when viewing someone else's profile */}
-          {routeProfileUID && !isCurrentUserProfile && (
-            <TouchableOpacity
-              style={styles.chatButton}
-              activeOpacity={0.8}
-              onPress={() =>
-                navigation.navigate("Chat", {
-                  other_uid: routeProfileUID || profileUID,
-                  other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
-                  other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
-                })
-              }
-            >
-              <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' style={{ marginRight: 7 }} />
-              <Text style={styles.chatButtonText}>Message</Text>
-            </TouchableOpacity>
-          )}
+          {/* Add / View Connection + Message — only when viewing someone else's profile */}
+          {routeProfileUID && !isCurrentUserProfile && (() => {
+            const relTypeTrim = relationshipType ? String(relationshipType).trim() : "";
+            const hasAssignedRelationship =
+              (existingRelationship && existingRelationship.circle_uid) ||
+              (!!relTypeTrim && relTypeTrim !== "." && relTypeTrim !== "null");
+            const connectionLabel = hasAssignedRelationship ? "View Connection" : "Add Connection";
+            const profileViewColors = getHeaderColors("profileView");
+            const connectionBtnBg = darkMode ? profileViewColors.darkModeBackgroundColor : profileViewColors.backgroundColor;
+            const openConnectionPopup = () => {
+              setShowRelationshipDropdown(false);
+              setShowConnectPopup(true);
+            };
+            return (
+              <View style={styles.profileActionsRow}>
+                <TouchableOpacity
+                  style={[styles.profileActionButtonPill, { backgroundColor: connectionBtnBg }]}
+                  activeOpacity={0.85}
+                  onPress={openConnectionPopup}
+                  accessibilityRole='button'
+                  accessibilityLabel={connectionLabel}
+                >
+                  <Ionicons name='add' size={20} color='#fff' style={{ marginRight: 6 }} />
+                  <Text style={styles.connectionActionButtonText} numberOfLines={1}>
+                    {connectionLabel}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.chatButton, styles.profileActionButtonPill]}
+                  activeOpacity={0.8}
+                  onPress={() =>
+                    navigation.navigate("Chat", {
+                      other_uid: routeProfileUID || profileUID,
+                      other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
+                      other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
+                    })
+                  }
+                  accessibilityRole='button'
+                  accessibilityLabel='Message'
+                >
+                  <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' style={{ marginRight: 7 }} />
+                  <Text style={styles.chatButtonText}>Message</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })()}
 
           {/* Bio section */}
           {user.shortBioIsPublic && (
@@ -1680,29 +1710,7 @@ const ProfileScreen = ({ route, navigation }) => {
                               ) : null}
                             </View>
                           </View>
-                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0 }}>
-                            {exp.cost ? (
-                              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                                <View style={styles.moneyBagIconContainer}>
-                                  <Text style={styles.moneyBagDollarSymbol}>$</Text>
-                                </View>
-                                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
-                                  {exp.cost.toLowerCase() !== "free" ? `Cost: $${exp.cost.replace(/^\$/, "")}` : `Cost: ${exp.cost}`}
-                                </Text>
-                              </View>
-                            ) : null}
-                            <View style={{ flexDirection: "row", alignItems: "center", flex: 1, justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
-                              {exp.quantity ? (
-                                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(exp.quantity).trim()}</Text>
-                              ) : null}
-                              {exp.bounty ? (
-                                <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
-                                  {exp.bounty.toLowerCase() !== "free" ? `💰 $${exp.bounty.replace(/^\$/, "")}` : `💰 ${exp.bounty}`}
-                                </Text>
-                              ) : null}
-                            </View>
-                          </View>
-                          {exp.profile_expertise_start || exp.profile_expertise_end || exp.profile_expertise_location || exp.profile_expertise_mode ? (
+                          {exp.profile_expertise_start || exp.profile_expertise_end || exp.profile_expertise_location || formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
                             <View style={[styles.seekingMetaRow, { marginTop: 6 }]}>
                               {exp.profile_expertise_start || exp.profile_expertise_end ? (
                                 <View style={styles.seekingMetaLine}>
@@ -1714,7 +1722,7 @@ const ProfileScreen = ({ route, navigation }) => {
                                   </Text>
                                 </View>
                               ) : null}
-                              {exp.profile_expertise_location || exp.profile_expertise_mode ? (
+                              {exp.profile_expertise_location || formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
                                 <View style={[styles.seekingMetaLine, styles.seekingMetaLineSpaceBetween, (exp.profile_expertise_start || exp.profile_expertise_end) && { marginTop: 4 }]}>
                                   {exp.profile_expertise_location ? (
                                     <View style={styles.seekingMetaLine}>
@@ -1724,19 +1732,48 @@ const ProfileScreen = ({ route, navigation }) => {
                                   ) : (
                                     <View style={styles.seekingMetaSpacer} />
                                   )}
-                                  {exp.profile_expertise_mode ? (
+                                  {formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
                                     <View style={styles.seekingMetaLine}>
-                                      <Ionicons
-                                        name={String(exp.profile_expertise_mode).toLowerCase() === "virtual" ? "videocam-outline" : "people-outline"}
-                                        size={14}
-                                        color={darkMode ? "#999" : "#666"}
-                                        style={{ marginRight: 6 }}
-                                      />
-                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{exp.profile_expertise_mode}</Text>
+                                      {getExpertiseModeIoniconNames(exp.profile_expertise_mode).map((iconName, iconIdx, arr) => (
+                                        <Ionicons
+                                          key={iconName}
+                                          name={iconName}
+                                          size={14}
+                                          color={darkMode ? "#999" : "#666"}
+                                          style={{ marginRight: iconIdx < arr.length - 1 ? 4 : 6 }}
+                                        />
+                                      ))}
+                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
+                                        {formatExpertiseModeForDisplay(exp.profile_expertise_mode)}
+                                      </Text>
                                     </View>
                                   ) : null}
                                 </View>
                               ) : null}
+                            </View>
+                          ) : null}
+                          {exp.cost || exp.quantity || exp.bounty ? (
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0, marginTop: 6 }}>
+                              {exp.cost ? (
+                                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                                  <View style={styles.moneyBagIconContainer}>
+                                    <Text style={styles.moneyBagDollarSymbol}>$</Text>
+                                  </View>
+                                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
+                                    {exp.cost.toLowerCase() !== "free" ? `Cost: $${exp.cost.replace(/^\$/, "")}` : `Cost: ${exp.cost}`}
+                                  </Text>
+                                </View>
+                              ) : null}
+                              <View style={{ flexDirection: "row", alignItems: "center", flex: 1, justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
+                                {exp.quantity ? (
+                                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(exp.quantity).trim()}</Text>
+                                ) : null}
+                                {exp.bounty ? (
+                                  <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
+                                    {exp.bounty.toLowerCase() !== "free" ? `💰 $${exp.bounty.replace(/^\$/, "")}` : `💰 ${exp.bounty}`}
+                                  </Text>
+                                ) : null}
+                              </View>
                             </View>
                           ) : null}
                         </>
@@ -1805,8 +1842,11 @@ const ProfileScreen = ({ route, navigation }) => {
                         wish.profile_wish_image &&
                         String(wish.profile_wish_image).trim() !== "" &&
                         !wishImageIsHidden;
-                      const wishItem = (
-                        <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}>
+                      const wishKey = wish.profile_wish_uid || String(index);
+                      const shellStyle = [styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }];
+
+                      const wishCardContent = (
+                        <>
                           <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 2 }}>
                             {showWishImage ? (
                               <Image
@@ -1840,58 +1880,36 @@ const ProfileScreen = ({ route, navigation }) => {
                                         profile_wish_mode: wish.profile_wish_mode,
                                         profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
                                       };
-                                  const profileDataForNavigation = {
-                                    firstName: user.firstName,
-                                    lastName: user.lastName,
-                                    email: user.email,
-                                    phone: user.phoneNumber,
-                                    image: user.profileImage,
-                                    tagLine: user.tagLine,
-                                    city: user.city,
-                                    state: user.state,
-                                    emailIsPublic: user.emailIsPublic,
-                                    phoneIsPublic: user.phoneIsPublic,
-                                    imageIsPublic: user.imageIsPublic,
-                                    tagLineIsPublic: user.tagLineIsPublic,
-                                    locationIsPublic: user.locationIsPublic,
-                                  };
-                                  navigation.navigate("WishResponses", {
-                                    wishData: wishDataForNavigation,
-                                    profileData: profileDataForNavigation,
-                                    profile_uid: profileUID,
-                                    profileState: { profile_uid: profileUID, returnTo, searchState },
-                                  });
-                                }}
-                                activeOpacity={0.7}
-                              >
-                                <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Responses: {wish.wish_responses || 0}</Text>
-                              </TouchableOpacity>
-                            )}
+                                      const profileDataForNavigation = {
+                                        firstName: user.firstName,
+                                        lastName: user.lastName,
+                                        email: user.email,
+                                        phone: user.phoneNumber,
+                                        image: user.profileImage,
+                                        tagLine: user.tagLine,
+                                        city: user.city,
+                                        state: user.state,
+                                        emailIsPublic: user.emailIsPublic,
+                                        phoneIsPublic: user.phoneIsPublic,
+                                        imageIsPublic: user.imageIsPublic,
+                                        tagLineIsPublic: user.tagLineIsPublic,
+                                        locationIsPublic: user.locationIsPublic,
+                                      };
+                                      navigation.navigate("WishResponses", {
+                                        wishData: wishDataForNavigation,
+                                        profileData: profileDataForNavigation,
+                                        profile_uid: profileUID,
+                                        profileState: { profile_uid: profileUID, returnTo, searchState },
+                                      });
+                                    }}
+                                    activeOpacity={0.7}
+                                  >
+                                    <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Responses: {wish.wish_responses || 0}</Text>
+                                  </TouchableOpacity>
+                                )}
                               </View>
                               {wish.details ? (
                                 <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{wish.details}</Text>
-                              ) : null}
-                            </View>
-                          </View>
-                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0 }}>
-                            {wish.cost ? (
-                              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                                <View style={styles.moneyBagIconContainer}>
-                                  <Text style={styles.moneyBagDollarSymbol}>$</Text>
-                                </View>
-                                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
-                                  {wish.cost.toLowerCase() !== "free" ? `Cost: $${wish.cost.replace(/^\$/, "")}` : `Cost: ${wish.cost}`}
-                                </Text>
-                              </View>
-                            ) : null}
-                            <View style={{ flexDirection: "row", alignItems: "center", flex: 1, justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
-                              {wish.profile_wish_quantity ? (
-                                <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(wish.profile_wish_quantity).trim()}</Text>
-                              ) : null}
-                              {wish.amount ? (
-                                <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
-                                  {wish.amount.toLowerCase() !== "free" ? `💰 $${wish.amount.replace(/^\$/, "")}` : `💰 ${wish.amount}`}
-                                </Text>
                               ) : null}
                             </View>
                           </View>
@@ -1932,58 +1950,110 @@ const ProfileScreen = ({ route, navigation }) => {
                               ) : null}
                             </View>
                           ) : null}
-                        </View>
+                          {wish.cost || wish.profile_wish_quantity || wish.amount ? (
+                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0, marginTop: 6 }}>
+                              {wish.cost ? (
+                                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                                  <View style={styles.moneyBagIconContainer}>
+                                    <Text style={styles.moneyBagDollarSymbol}>$</Text>
+                                  </View>
+                                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
+                                    {wish.cost.toLowerCase() !== "free" ? `Cost: $${wish.cost.replace(/^\$/, "")}` : `Cost: ${wish.cost}`}
+                                  </Text>
+                                </View>
+                              ) : null}
+                              <View style={{ flexDirection: "row", alignItems: "center", flex: 1, justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
+                                {wish.profile_wish_quantity ? (
+                                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(wish.profile_wish_quantity).trim()}</Text>
+                                ) : null}
+                                {wish.amount ? (
+                                  <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
+                                    {wish.amount.toLowerCase() !== "free" ? `💰 $${wish.amount.replace(/^\$/, "")}` : `💰 ${wish.amount}`}
+                                  </Text>
+                                ) : null}
+                              </View>
+                            </View>
+                          ) : null}
+                        </>
                       );
+
+                      const openWishDetail = () => {
+                        const wishData = {
+                          wish_uid: wish.profile_wish_uid,
+                          title: wish.helpNeeds,
+                          description: wish.details,
+                          bounty: wish.amount,
+                          cost: wish.cost,
+                          profile_wish_quantity: wish.profile_wish_quantity,
+                          profile_wish_image: wish.profile_wish_image,
+                          profile_wish_image_is_public: wish.profile_wish_image_is_public,
+                          profile_wish_start: wish.profile_wish_start,
+                          profile_wish_end: wish.profile_wish_end,
+                          profile_wish_location: wish.profile_wish_location,
+                          profile_wish_mode: wish.profile_wish_mode,
+                          profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
+                        };
+                        const profileData = {
+                          firstName: user.firstName,
+                          lastName: user.lastName,
+                          email: user.email,
+                          phone: user.phoneNumber,
+                          image: user.profileImage,
+                          tagLine: user.tagLine,
+                          city: user.city,
+                          state: user.state,
+                          emailIsPublic: user.emailIsPublic,
+                          phoneIsPublic: user.phoneIsPublic,
+                          imageIsPublic: user.imageIsPublic,
+                          tagLineIsPublic: user.tagLineIsPublic,
+                          locationIsPublic: user.locationIsPublic,
+                        };
+                        navigation.navigate("WishDetail", {
+                          wishData,
+                          profileData,
+                          profile_uid: profileUID,
+                          returnTo: "Profile",
+                          profileState: { profile_uid: profileUID, returnTo, searchState },
+                        });
+                      };
+
+                      const messageAboutSeekingBtn =
+                        routeProfileUID && !isCurrentUserProfile ? (
+                          <TouchableOpacity
+                            style={[styles.contextChatButton, darkMode && styles.darkContextChatButton]}
+                            activeOpacity={0.8}
+                            onPress={() =>
+                              navigation.navigate("Chat", {
+                                other_uid: routeProfileUID || profileUID,
+                                other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
+                                other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
+                                reply_context: {
+                                  label: `Seeking: ${sanitizeText(wish.helpNeeds) || "Seeking"}`,
+                                },
+                              })
+                            }
+                          >
+                            <Ionicons name='chatbubble-ellipses-outline' size={14} color='#fff' style={{ marginRight: 6 }} />
+                            <Text style={styles.contextChatButtonText}>Message about this seeking</Text>
+                          </TouchableOpacity>
+                        ) : null;
+
                       if (routeProfileUID && !isCurrentUserProfile) {
                         return (
-                          <TouchableOpacity
-                            key={index}
-                            activeOpacity={0.7}
-                            onPress={() => {
-                              const wishData = {
-                                wish_uid: wish.profile_wish_uid,
-                                title: wish.helpNeeds,
-                                description: wish.details,
-                                bounty: wish.amount,
-                                cost: wish.cost,
-                                profile_wish_quantity: wish.profile_wish_quantity,
-                                profile_wish_image: wish.profile_wish_image,
-                                profile_wish_image_is_public: wish.profile_wish_image_is_public,
-                                profile_wish_start: wish.profile_wish_start,
-                                profile_wish_end: wish.profile_wish_end,
-                                profile_wish_location: wish.profile_wish_location,
-                                profile_wish_mode: wish.profile_wish_mode,
-                                profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
-                              };
-                              const profileData = {
-                                firstName: user.firstName,
-                                lastName: user.lastName,
-                                email: user.email,
-                                phone: user.phoneNumber,
-                                image: user.profileImage,
-                                tagLine: user.tagLine,
-                                city: user.city,
-                                state: user.state,
-                                emailIsPublic: user.emailIsPublic,
-                                phoneIsPublic: user.phoneIsPublic,
-                                imageIsPublic: user.imageIsPublic,
-                                tagLineIsPublic: user.tagLineIsPublic,
-                                locationIsPublic: user.locationIsPublic,
-                              };
-                              navigation.navigate("WishDetail", {
-                                wishData,
-                                profileData,
-                                profile_uid: profileUID,
-                                returnTo: "Profile",
-                                profileState: { profile_uid: profileUID, returnTo, searchState },
-                              });
-                            }}
-                          >
-                            {wishItem}
-                          </TouchableOpacity>
+                          <View key={wishKey} style={shellStyle}>
+                            <TouchableOpacity activeOpacity={0.7} onPress={openWishDetail}>
+                              <View>{wishCardContent}</View>
+                            </TouchableOpacity>
+                            {messageAboutSeekingBtn}
+                          </View>
                         );
                       }
-                      return wishItem;
+
+                      return (
+                        <View key={wishKey} style={shellStyle}>
+                          {wishCardContent}
+                        </View>
+                      );
                     })
                 ) : (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No seeking added yet</Text>
@@ -2726,17 +2796,35 @@ const styles = StyleSheet.create({
   darkSeekingMetaText: {
     color: "#999",
   },
+  profileActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 14,
+    marginBottom: 4,
+    alignSelf: "center",
+  },
+  /** Same padding/radius as the original single Message button; minWidth keeps both pills equal. */
+  profileActionButtonPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 28,
+    borderRadius: 24,
+    minWidth: 192,
+  },
+  connectionActionButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 15,
+  },
   chatButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    alignSelf: "center",
     backgroundColor: "#AF52DE",
-    paddingVertical: 10,
-    paddingHorizontal: 28,
-    borderRadius: 24,
-    marginTop: 14,
-    marginBottom: 4,
   },
   chatButtonText: {
     color: "#fff",

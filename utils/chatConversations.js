@@ -113,11 +113,32 @@ export function normalizeConversationListItem(conv, myProfileUid) {
   };
 }
 
-/** Parse conversations GET JSON → normalized list (no sort; server order). */
+/** Parse conversation last-activity time for sorting (matches NetworkScreen date display). */
+function conversationListSortMillis(iso) {
+  if (iso == null || iso === "") return 0;
+  const s = String(iso).trim();
+  if (!s) return 0;
+  const normalized = s.includes("T") ? s : s.replace(" ", "T");
+  const withZ = normalized.endsWith("Z") || /[+-]\d{2}:?\d{2}$/.test(normalized) ? normalized : `${normalized}Z`;
+  const t = new Date(withZ).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+function conversationActivityMillis(item) {
+  if (!item || typeof item !== "object") return 0;
+  return Math.max(conversationListSortMillis(item.last_sent_at), conversationListSortMillis(item.last_message_at));
+}
+
+/** Parse conversations GET JSON → normalized list, newest activity first. */
 export function normalizeConversationsResponse(json, myProfileUid) {
   if (!json || typeof json !== "object") return [];
   const rows = Array.isArray(json.result) ? json.result : [];
-  return rows.map((c) => normalizeConversationListItem(c, myProfileUid));
+  const list = rows.map((c) => normalizeConversationListItem(c, myProfileUid));
+  return list.sort((a, b) => {
+    const diff = conversationActivityMillis(b) - conversationActivityMillis(a);
+    if (diff !== 0) return diff;
+    return String(b.conversation_uid || "").localeCompare(String(a.conversation_uid || ""));
+  });
 }
 
 /** Map a message row to UI fields used by ChatScreen (supports legacy keys). */

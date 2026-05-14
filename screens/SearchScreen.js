@@ -26,6 +26,7 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
 import { getHeaderColors } from "../config/headerColors";
 import { isWishEnded } from "../utils/wishUtils";
+import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
 function NoBountyIcon({ darkMode, muted }) {
   return (
@@ -1375,11 +1376,8 @@ export default function SearchScreen({ route }) {
     const expertiseQtyRaw = expertise.quantity ?? expertise.profile_expertise_quantity;
     const expertiseQtyTrimmed = expertiseQtyRaw != null && String(expertiseQtyRaw).trim() !== "" ? String(expertiseQtyRaw).trim() : "";
     const hasExpertiseSchedule = !!(expertise.profile_expertise_start || expertise.profile_expertise_end);
-    const expertiseModeTrimmed =
-      expertise.profile_expertise_mode != null && String(expertise.profile_expertise_mode).trim() !== ""
-        ? String(expertise.profile_expertise_mode).trim()
-        : "";
-    const hasExpertiseScheduleMeta = !!(hasExpertiseSchedule || expertiseLocationTrimmed || expertiseModeTrimmed);
+    const expertiseModeDisplay = formatExpertiseModeForDisplay(expertise.profile_expertise_mode);
+    const hasExpertiseScheduleMeta = !!(hasExpertiseSchedule || expertiseLocationTrimmed || expertiseModeDisplay);
     const hasExpertiseCostRow = !!(expertise.cost || expertiseQtyTrimmed || expertise.bounty);
 
     const canOpenSellerProfile = !!item.profile_uid;
@@ -1491,7 +1489,7 @@ export default function SearchScreen({ route }) {
                   </Text>
                 </View>
               ) : null}
-              {expertiseLocationTrimmed || expertiseModeTrimmed ? (
+              {expertiseLocationTrimmed || expertiseModeDisplay ? (
                 <View style={[styles.seekingMetaLine, styles.seekingMetaLineSpaceBetween, hasExpertiseSchedule && { marginTop: 4 }]}>
                   {expertiseLocationTrimmed ? (
                     <View style={styles.seekingMetaLine}>
@@ -1501,15 +1499,18 @@ export default function SearchScreen({ route }) {
                   ) : (
                     <View style={styles.seekingMetaSpacer} />
                   )}
-                  {expertiseModeTrimmed ? (
+                  {expertiseModeDisplay ? (
                     <View style={styles.seekingMetaLine}>
-                      <Ionicons
-                        name={String(expertiseModeTrimmed).toLowerCase() === "virtual" ? "videocam-outline" : "people-outline"}
-                        size={14}
-                        color={darkMode ? "#999" : "#666"}
-                        style={{ marginRight: 6 }}
-                      />
-                      <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{expertiseModeTrimmed}</Text>
+                      {getExpertiseModeIoniconNames(expertise.profile_expertise_mode).map((iconName, iconIdx, arr) => (
+                        <Ionicons
+                          key={iconName}
+                          name={iconName}
+                          size={14}
+                          color={darkMode ? "#999" : "#666"}
+                          style={{ marginRight: iconIdx < arr.length - 1 ? 4 : 6 }}
+                        />
+                      ))}
+                      <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{expertiseModeDisplay}</Text>
                     </View>
                   ) : null}
                 </View>
