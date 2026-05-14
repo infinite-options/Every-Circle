@@ -1029,7 +1029,7 @@ export default function SettingsScreen() {
                 <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
                   <MaterialIcons name='notifications' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Notifications</Text>
+                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Allow Location-Based Notifications</Text>
                   </Text>
                 </View>
                 <SettingsBoolPills value={allowNotifications} onValueChange={setAllowNotifications} leftLabel='No' rightLabel='Yes' darkMode={darkMode} />
@@ -1108,6 +1108,15 @@ export default function SettingsScreen() {
           {/* Information & Links Container */}
           {showInformation && (
             <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { marginBottom: 16 }]}>
+              {/* How It Works */}
+              <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("HowItWorksScreen")}>
+                <View style={styles.itemLabel}>
+                  <MaterialIcons name='help' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How It Works</Text>
+                </View>
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
+              </TouchableOpacity>
+
               {/* Terms and Conditions */}
               <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("TermsAndConditions")}>
                 <View style={styles.itemLabel}>
@@ -1131,15 +1140,6 @@ export default function SettingsScreen() {
                 <View style={styles.itemLabel}>
                   <MaterialIcons name='lock' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
-                </View>
-                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
-              </TouchableOpacity>
-
-              {/* How It Works */}
-              <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("HowItWorksScreen")}>
-                <View style={styles.itemLabel}>
-                  <MaterialIcons name='help' size={20} style={styles.icon} color={settingsMenuIconColor} />
-                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How It Works</Text>
                 </View>
                 <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>

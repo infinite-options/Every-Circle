@@ -692,19 +692,8 @@ const NetworkScreen = ({ navigation }) => {
 
           if (uid && uid !== "[object Object]") {
             setProfileUid(uid);
-            // Fetch user profile data for QR code
+            // One profile fetch: QR mini-card + Who Viewed My Profile businesses (see fetchUserProfileForQR)
             fetchUserProfileForQR(uid);
-            // Load businesses for "Who Viewed My Profile" account switcher
-            try {
-              const profRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${uid}`);
-              if (profRes.ok) {
-                const profJson = await profRes.json();
-                const bizList = profJson.business_info ? (typeof profJson.business_info === "string" ? JSON.parse(profJson.business_info) : profJson.business_info) : [];
-                setViewerBusinesses(bizList);
-              }
-            } catch (e) {
-              console.warn("NetworkScreen - Failed to load viewer businesses:", e);
-            }
           } else {
             console.warn("⚠️ Invalid profile_uid loaded:", uid);
           }
@@ -759,6 +748,18 @@ const NetworkScreen = ({ navigation }) => {
       const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUID}`);
       if (!response.ok) return;
       const apiUser = await response.json();
+
+      try {
+        const bizRaw = apiUser?.business_info;
+        let businessList = [];
+        if (bizRaw != null && bizRaw !== "") {
+          businessList = typeof bizRaw === "string" ? JSON.parse(bizRaw) : bizRaw;
+        }
+        setViewerBusinesses(Array.isArray(businessList) ? businessList : []);
+      } catch (e) {
+        console.warn("NetworkScreen - Failed to parse business_info from profile:", e);
+        setViewerBusinesses([]);
+      }
 
       // Fetch user_uid (the 110 number) from AsyncStorage
       let userUid = null;

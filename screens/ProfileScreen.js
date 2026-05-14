@@ -1337,6 +1337,14 @@ const ProfileScreen = ({ route, navigation }) => {
                     profile_uid,
                     profileState: wishResponsesProfileState,
                   });
+                } else if (returnTo === "Chat") {
+                  if (navigation.canGoBack()) {
+                    navigation.goBack();
+                  } else if (route.params?.chatParams) {
+                    navigation.navigate("Chat", route.params.chatParams);
+                  } else {
+                    navigation.navigate("Network");
+                  }
                 } else if (returnTo === "Network") {
                   // Navigate back to Network screen
                   console.log("🔙 Returning to Network");

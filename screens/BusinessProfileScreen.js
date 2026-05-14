@@ -785,6 +785,16 @@ export default function BusinessProfileScreen({ route, navigation }) {
         title='BUSINESS PROFILE'
         {...getHeaderColors("businessProfile")}
         onBackPress={() => {
+          if (returnTo === "Chat") {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+              return;
+            }
+            if (route.params?.chatParams) {
+              navigation.navigate("Chat", route.params.chatParams);
+              return;
+            }
+          }
           if (returnTo === "Search" && searchState) {
             navigation.navigate("Search", { restoreState: true, searchState });
           } else {
