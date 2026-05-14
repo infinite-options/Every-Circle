@@ -658,22 +658,18 @@ const NetworkScreen = ({ navigation }) => {
       };
 
       setUserProfileData(publicData);
-      // Create QR code data with EveryCircle identifier
-      // Format: JSON with type identifier for app scanning, URL for web compatibility
-      const qrData = {
+      // QR encodes a single HTTPS URL so phone cameras open the scan landing page in the browser.
+      const scanUrl = `https://everycircle.com/scan/${profileUID}`;
+      const qrMeta = {
         type: "everycircle",
         profile_uid: profileUID,
         version: "1.0",
-        // Include URL for web compatibility
-        url: `https://everycircle.com/newconnection/${profileUID}`,
-        // Form Switch: if true, User 1 will see a form to add User 2 when they scan
+        url: scanUrl,
         form_switch_enabled: formSwitchEnabled,
       };
-      const qrDataString = JSON.stringify(qrData);
-      console.log("🔗 QR Code Data:", qrDataString);
-      // Store both the string (for QR code) and the object (for display)
-      setQrCodeData(qrDataString);
-      setQrCodeDataObject(qrData);
+      console.log("🔗 QR Code URL:", scanUrl);
+      setQrCodeData(scanUrl);
+      setQrCodeDataObject(qrMeta);
 
       // Initialize Ably channel when QR code is generated
       initializeAblyChannel(profileUID);

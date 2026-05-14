@@ -48,16 +48,38 @@ export default function QRScannerScreen({ route }) {
 
     console.log("📦 QR DATA:", data);
 
+    const profileUidFromEveryCircleUrl = (raw) => {
+      try {
+        const u = new URL(raw.trim());
+        const host = u.hostname.replace(/^www\./, "");
+        const isProd = host === "everycircle.com";
+        const isLocal = host === "localhost" || host === "127.0.0.1";
+        if (!isProd && !isLocal) return null;
+        const parts = u.pathname.split("/").filter(Boolean);
+        if (parts[0] === "scan" && parts[1]) return parts[1].split("?")[0] || null;
+        if (parts[0] === "newconnection" && parts[1]) return parts[1].split("?")[0] || null;
+      } catch (_) {
+        /* not a URL */
+      }
+      return null;
+    };
+
     try {
       let parsed;
 
       try {
         parsed = JSON.parse(data);
       } catch {
-        if (data.startsWith("https://everycircle.com/newconnection/")) {
+        const fromUrl = profileUidFromEveryCircleUrl(data);
+        if (fromUrl) {
           parsed = {
             type: "everycircle",
-            profile_uid: data.split("/").pop(),
+            profile_uid: fromUrl,
+          };
+        } else if (data.startsWith("https://everycircle.com/newconnection/") || data.startsWith("https://everycircle.com/scan/")) {
+          parsed = {
+            type: "everycircle",
+            profile_uid: data.split("/").pop()?.split("?")[0],
           };
         } else {
           throw new Error("Invalid QR");
