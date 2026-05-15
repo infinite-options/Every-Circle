@@ -10,6 +10,7 @@ import {
   API_BASE_URL,
   TRANSACTION_RECEIPT_ENDPOINT,
   TRANSACTIONS_ENDPOINT,
+  TRANSACTIONS_RETURN_ENDPOINT,
   TRANSACTIONS_RETURNS_DECLINED_ENDPOINT,
 } from "../apiConfig";
 import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
@@ -59,6 +60,37 @@ function receiptMoneyNullable(v) {
   if (typeof v === "string" && v.trim() === "") return null;
   const n = parsePrice(v);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Purchased quantity on a receipt line (defaults to 1). */
+function getReceiptLineQty(row) {
+  const q = parsePrice(row?.ti_bs_qty);
+  return q > 0 ? Math.round(q) : 1;
+}
+
+/** Stable id for a receipt line in API payloads (prefer transaction line uid). */
+function getReceiptLineTransactionItemUid(row) {
+  const uid = row?.ti_uid != null && String(row.ti_uid).trim() !== "" ? String(row.ti_uid).trim() : "";
+  if (uid) return uid;
+  const bsId = row?.ti_bs_id != null && String(row.ti_bs_id).trim() !== "" ? String(row.ti_bs_id).trim() : "";
+  return bsId;
+}
+
+/** Sum return qty already requested for a line (supports partial multi-qty returns). */
+function getReturnedQtyForLine(returnRequestData, itemIndex, purchasedQty) {
+  if (!returnRequestData?.notes?.length) return 0;
+  const id = String(itemIndex);
+  let total = 0;
+  for (const entry of returnRequestData.notes) {
+    if (!(entry.items || []).includes(id)) continue;
+    const q = entry.itemQuantities?.[id];
+    if (q != null && Number(q) > 0) {
+      total += Math.round(Number(q));
+    } else {
+      total += purchasedQty;
+    }
+  }
+  return total;
 }
 
 /** Unit cost × qty for each receipt row (same rule as return modal: qty defaults to 1). */
@@ -494,6 +526,7 @@ export default function AccountScreen({ navigation }) {
 
   //select item to return
   const [selectedReturnItems, setSelectedReturnItems] = useState([]);
+  const [returnItemQuantities, setReturnItemQuantities] = useState({});
   const [returnModalReceiptData, setReturnModalReceiptData] = useState([]);
 
   const [businessReceiptCache, setBusinessReceiptCache] = useState({});
@@ -566,32 +599,58 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
-  const handleReturnRequest = async (transaction, note) => {
+  const handleReturnRequest = async (transaction, buyerNote, transactionReturnItems) => {
     const uid = transaction?.transaction_uid;
-    if (!uid) return;
+    if (!uid) return false;
+    if (!Array.isArray(transactionReturnItems) || transactionReturnItems.length === 0) {
+      Alert.alert("Error", "No return line items to submit.");
+      return false;
+    }
     try {
+      const note = (buyerNote || "").trim();
       const existingNote = returnRequests[uid]?.notes?.map((n) => n.note).join("\n\n---RETURN---\n\n") || "";
       const allNotes = existingNote ? `${existingNote}\n\n---RETURN---\n\n${note}` : note;
-      await fetch(TRANSACTIONS_ENDPOINT, {
-        method: "PUT",
+      const response = await fetch(TRANSACTIONS_RETURN_ENDPOINT, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           transaction_uid: uid,
           transaction_return_requested: 1,
           transaction_return_note: allNotes,
+          transaction_return_items: transactionReturnItems,
         }),
       });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
       const existing = returnRequests[uid] || { items: [], notes: [] };
+      const itemQuantities = selectedReturnItems.reduce((acc, id) => {
+        acc[id] = returnItemQuantities[id] ?? 1;
+        return acc;
+      }, {});
+      const mergedItems = [...new Set([...(existing.items || []), ...selectedReturnItems])];
       const updated = {
-        items: [...(existing.items || []), ...selectedReturnItems],
-        notes: [...(existing.notes || []), { items: selectedReturnItems, note: note || "", date: new Date().toISOString() }],
+        items: mergedItems,
+        notes: [
+          ...(existing.notes || []),
+          {
+            items: selectedReturnItems,
+            itemQuantities,
+            transactionReturnItems,
+            note: note || "",
+            date: new Date().toISOString(),
+          },
+        ],
       };
       setReturnRequests((prev) => ({ ...prev, [uid]: updated }));
       await AsyncStorage.setItem(`return_request_${uid}`, JSON.stringify(updated));
       setReturnNote("");
+      setReturnItemQuantities({});
+      return true;
     } catch (error) {
       console.error("Error requesting return:", error);
       Alert.alert("Error", "Failed to submit return request. Please try again.");
+      return false;
     }
   };
 
@@ -1797,8 +1856,7 @@ export default function AccountScreen({ navigation }) {
   const showPurchasesTxnIdColumn = effectivePurchasesShowDebugColumns && !compactPurchasesLayout;
   const showPurchasesTypeColumn = effectivePurchasesShowDebugColumns;
   const showWebWidePurchasedItemColumn = Platform.OS === "web" && windowWidth > 600;
-  const showPurchasesPurchasedItemColumn =
-    !compactPurchasesLayout && (effectivePurchasesShowDebugColumns || showWebWidePurchasedItemColumn);
+  const showPurchasesPurchasedItemColumn = !compactPurchasesLayout && (effectivePurchasesShowDebugColumns || showWebWidePurchasedItemColumn);
 
   if (isLoading) {
     return (
@@ -2425,18 +2483,11 @@ export default function AccountScreen({ navigation }) {
                     </View>
                     {receiptData.map((item, index) => (
                       <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
-                        <Text
-                          style={[styles.receiptTableCell, styles.receiptTableCellItem, darkMode && { color: "#e0e0e0" }]}
-                          numberOfLines={3}
-                        >
+                        <Text style={[styles.receiptTableCell, styles.receiptTableCellItem, darkMode && { color: "#e0e0e0" }]} numberOfLines={3}>
                           {item.bs_service_name || "N/A"}
                         </Text>
-                        <Text style={[styles.receiptTableCell, styles.receiptTableCellQty, darkMode && { color: "#e0e0e0" }]}>
-                          {item.ti_bs_qty ?? "N/A"}
-                        </Text>
-                        <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, darkMode && { color: "#e0e0e0" }]}>
-                          ${parseFloat(item.ti_bs_cost || 0).toFixed(2)}
-                        </Text>
+                        <Text style={[styles.receiptTableCell, styles.receiptTableCellQty, darkMode && { color: "#e0e0e0" }]}>{item.ti_bs_qty ?? "N/A"}</Text>
+                        <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, darkMode && { color: "#e0e0e0" }]}>${parseFloat(item.ti_bs_cost || 0).toFixed(2)}</Text>
                       </View>
                     ))}
                   </View>
@@ -2454,15 +2505,15 @@ export default function AccountScreen({ navigation }) {
 
             {(() => {
               const uid = receiptTransaction?.transaction_uid;
-              const storedItems = returnRequests[uid]?.items || [];
+              const returnData = returnRequests[uid];
               const totalItems = receiptData.length;
 
-              // Only count indices that are actually valid for this receipt
-              const validIndices = Array.from({ length: totalItems }, (_, i) => String(i));
-              const returnedValidIndices = validIndices.filter((id) => storedItems.includes(id));
-
-              // Must have receipt items AND every valid index must be returned
-              const allItemsReturned = totalItems > 0 && storedItems.length > 0 && returnedValidIndices.length >= totalItems;
+              const allItemsReturned =
+                totalItems > 0 &&
+                receiptData.every((row, index) => {
+                  const purchasedQty = getReceiptLineQty(row);
+                  return getReturnedQtyForLine(returnData, index, purchasedQty) >= purchasedQty;
+                });
 
               return (
                 <TouchableOpacity
@@ -2471,6 +2522,8 @@ export default function AccountScreen({ navigation }) {
                   onPress={() => {
                     if (!allItemsReturned) {
                       setReturnModalReceiptData(receiptData);
+                      setSelectedReturnItems([]);
+                      setReturnItemQuantities({});
                       setShowReceiptModal(false);
                       setTimeout(() => setShowReturnNoteModal(true), 300);
                     }
@@ -2508,44 +2561,153 @@ export default function AccountScreen({ navigation }) {
       </Modal>
 
       {/* Return Note Input Modal */}
-      <Modal animationType='fade' transparent={true} visible={showReturnNoteModal} onRequestClose={() => setShowReturnNoteModal(false)}>
+      <Modal
+        animationType='fade'
+        transparent={true}
+        visible={showReturnNoteModal}
+        onRequestClose={() => {
+          setShowReturnNoteModal(false);
+          setReturnNote("");
+          setSelectedReturnItems([]);
+          setReturnItemQuantities({});
+        }}
+      >
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent, { maxHeight: "80%" }]}>
             <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>Request Return</Text>
 
             {/* Item selection */}
             <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>Select item(s) to return:</Text>
-            <ScrollView style={{ maxHeight: 160, marginBottom: 12 }}>
+            <ScrollView style={{ maxHeight: 220, marginBottom: 12 }}>
               {returnModalReceiptData.map((item, index) => {
                 const itemId = String(index);
                 const isSelected = selectedReturnItems.includes(itemId);
-                const alreadyReturned = (returnRequests[receiptTransaction?.transaction_uid]?.items || []).includes(itemId);
+                const purchasedQty = getReceiptLineQty(item);
+                const returnRequestData = returnRequests[receiptTransaction?.transaction_uid];
+                const alreadyReturnedQty = getReturnedQtyForLine(returnRequestData, index, purchasedQty);
+                const alreadyReturned = alreadyReturnedQty >= purchasedQty;
+                const remainingQty = Math.max(0, purchasedQty - alreadyReturnedQty);
+                const returnQty = returnItemQuantities[itemId] ?? 1;
+                const needsQtyPicker = isSelected && purchasedQty > 1 && remainingQty > 1;
+
                 return (
-                  <TouchableOpacity
+                  <View
                     key={itemId}
-                    disabled={alreadyReturned}
                     style={{
-                      flexDirection: "row",
-                      alignItems: "center",
                       paddingVertical: 8,
                       paddingHorizontal: 4,
                       borderBottomWidth: 1,
                       borderBottomColor: darkMode ? "#444" : "#eee",
                       opacity: alreadyReturned ? 0.4 : 1,
                     }}
-                    onPress={() => {
-                      if (!alreadyReturned) {
-                        setSelectedReturnItems((prev) => (isSelected ? prev.filter((id) => id !== itemId) : [...prev, itemId]));
-                      }
-                    }}
-                    activeOpacity={0.7}
                   >
-                    <Ionicons name={isSelected ? "checkbox" : "square-outline"} size={18} color={isSelected ? "#B71C1C" : "#555"} style={{ marginRight: 8 }} />
-                    <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", flex: 1 }}>
-                      {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {item.ti_bs_qty || 1}
-                    </Text>
-                    {alreadyReturned && <Text style={{ fontSize: 11, color: "#B71C1C", marginLeft: 4 }}>Already returned</Text>}
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      disabled={alreadyReturned}
+                      style={{ flexDirection: "row", alignItems: "center" }}
+                      onPress={() => {
+                        if (alreadyReturned) return;
+                        if (isSelected) {
+                          setSelectedReturnItems((prev) => prev.filter((id) => id !== itemId));
+                          setReturnItemQuantities((prev) => {
+                            const next = { ...prev };
+                            delete next[itemId];
+                            return next;
+                          });
+                        } else {
+                          setSelectedReturnItems((prev) => [...prev, itemId]);
+                          setReturnItemQuantities((prev) => ({
+                            ...prev,
+                            [itemId]: Math.min(1, remainingQty) || 1,
+                          }));
+                        }
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name={isSelected ? "checkbox" : "square-outline"} size={18} color={isSelected ? "#B71C1C" : "#555"} style={{ marginRight: 8 }} />
+                      <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", flex: 1 }}>
+                        {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {purchasedQty}
+                      </Text>
+                      {alreadyReturned ? (
+                        <Text style={{ fontSize: 11, color: "#B71C1C", marginLeft: 4 }}>Already returned</Text>
+                      ) : alreadyReturnedQty > 0 ? (
+                        <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>{remainingQty} left</Text>
+                      ) : null}
+                    </TouchableOpacity>
+
+                    {needsQtyPicker && (
+                      <View style={{ marginTop: 8, marginLeft: 26 }}>
+                        <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>How many are you returning?</Text>
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <TouchableOpacity
+                            style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 8,
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#555" : "#ccc",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
+                            }}
+                            onPress={() =>
+                              setReturnItemQuantities((prev) => ({
+                                ...prev,
+                                [itemId]: Math.max(1, (prev[itemId] ?? 1) - 1),
+                              }))
+                            }
+                          >
+                            <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>−</Text>
+                          </TouchableOpacity>
+                          <TextInput
+                            style={{
+                              width: 48,
+                              marginHorizontal: 10,
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#555" : "#ccc",
+                              borderRadius: 8,
+                              paddingVertical: 6,
+                              textAlign: "center",
+                              fontSize: 14,
+                              color: darkMode ? "#fff" : "#333",
+                              backgroundColor: darkMode ? "#3a3a3a" : "#fff",
+                            }}
+                            value={String(returnQty)}
+                            onChangeText={(t) => {
+                              const digits = t.replace(/[^0-9]/g, "");
+                              const n = digits === "" ? "" : parseInt(digits, 10);
+                              setReturnItemQuantities((prev) => ({
+                                ...prev,
+                                [itemId]: n === "" ? "" : Math.min(remainingQty, Math.max(1, n)),
+                              }));
+                            }}
+                            keyboardType='number-pad'
+                            maxLength={4}
+                          />
+                          <TouchableOpacity
+                            style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 8,
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#555" : "#ccc",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
+                            }}
+                            onPress={() =>
+                              setReturnItemQuantities((prev) => ({
+                                ...prev,
+                                [itemId]: Math.min(remainingQty, (prev[itemId] ?? 1) + 1),
+                              }))
+                            }
+                          >
+                            <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>+</Text>
+                          </TouchableOpacity>
+                          <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginLeft: 8 }}>of {remainingQty}</Text>
+                        </View>
+                      </View>
+                    )}
+                  </View>
                 );
               })}
             </ScrollView>
@@ -2574,36 +2736,76 @@ export default function AccountScreen({ navigation }) {
 
             {selectedReturnItems.length === 0 && <Text style={{ color: "#B71C1C", fontSize: 12, marginBottom: 8, textAlign: "center" }}>Please select at least one item to return.</Text>}
 
-            <View style={{ flexDirection: "row", gap: 12 }}>
-              <TouchableOpacity
-                style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
-                onPress={() => {
-                  setShowReturnNoteModal(false);
-                  setReturnNote("");
-                  setSelectedReturnItems([]);
-                }}
-              >
-                <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.receiveItemModalButton, { backgroundColor: selectedReturnItems.length === 0 ? "#ccc" : "#B71C1C" }]}
-                disabled={selectedReturnItems.length === 0}
-                onPress={async () => {
-                  const selectedNames = returnModalReceiptData
-                    .filter((item, index) => selectedReturnItems.includes(String(index)))
-                    .map((item) => `${item.bs_service_name || "Item"} x${item.ti_bs_qty || 1}`)
-                    .join(", ");
-                  // const fullNote = `Items: ${selectedNames}\n\nReason: ${returnNote}`;
-                  const fullNote = `Buyer Note: ${returnNote}`;
-                  await handleReturnRequest(receiptTransaction, fullNote);
-                  setShowReturnNoteModal(false);
-                  setReturnNote("");
-                  setSelectedReturnItems([]);
-                }}
-              >
-                <Text style={styles.receiveItemModalButtonText}>Submit</Text>
-              </TouchableOpacity>
-            </View>
+            {(() => {
+              const returnRequestData = returnRequests[receiptTransaction?.transaction_uid];
+              const hasInvalidQty = selectedReturnItems.some((id) => {
+                const index = parseInt(id, 10);
+                const item = returnModalReceiptData[index];
+                if (!item) return true;
+                const purchasedQty = getReceiptLineQty(item);
+                const alreadyReturnedQty = getReturnedQtyForLine(returnRequestData, index, purchasedQty);
+                const remainingQty = purchasedQty - alreadyReturnedQty;
+                const raw = returnItemQuantities[id];
+                const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
+                if (purchasedQty > 1 && remainingQty > 1) {
+                  return !Number.isFinite(n) || n < 1 || n > remainingQty;
+                }
+                return false;
+              });
+              const canSubmitReturn = selectedReturnItems.length > 0 && !hasInvalidQty;
+
+              return (
+                <View style={{ flexDirection: "row", gap: 12 }}>
+                  <TouchableOpacity
+                    style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
+                    onPress={() => {
+                      setShowReturnNoteModal(false);
+                      setReturnNote("");
+                      setSelectedReturnItems([]);
+                      setReturnItemQuantities({});
+                    }}
+                  >
+                    <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.receiveItemModalButton, { backgroundColor: canSubmitReturn ? "#B71C1C" : "#ccc" }]}
+                    disabled={!canSubmitReturn}
+                    onPress={async () => {
+                      const returnRequestData = returnRequests[receiptTransaction?.transaction_uid];
+                      const transactionReturnItems = [];
+                      for (const id of selectedReturnItems) {
+                        const index = parseInt(id, 10);
+                        const item = returnModalReceiptData[index];
+                        if (!item) continue;
+                        const transaction_item_uid = getReceiptLineTransactionItemUid(item);
+                        if (!transaction_item_uid) {
+                          Alert.alert("Error", "Receipt line is missing a transaction item id (ti_uid or ti_bs_id). Cannot submit return.");
+                          return;
+                        }
+                        const purchasedQty = getReceiptLineQty(item);
+                        const alreadyReturnedQty = getReturnedQtyForLine(returnRequestData, index, purchasedQty);
+                        const remainingQty = purchasedQty - alreadyReturnedQty;
+                        const raw = returnItemQuantities[id];
+                        const return_quantity = purchasedQty > 1 && remainingQty > 1 ? (typeof raw === "number" ? raw : parseInt(String(raw), 10) || 1) : Math.min(1, remainingQty) || 1;
+                        transactionReturnItems.push({ transaction_item_uid, return_quantity });
+                      }
+                      if (transactionReturnItems.length === 0) {
+                        Alert.alert("Error", "Could not build return items.");
+                        return;
+                      }
+                      const ok = await handleReturnRequest(receiptTransaction, returnNote, transactionReturnItems);
+                      if (!ok) return;
+                      setShowReturnNoteModal(false);
+                      setReturnNote("");
+                      setSelectedReturnItems([]);
+                      setReturnItemQuantities({});
+                    }}
+                  >
+                    <Text style={styles.receiveItemModalButtonText}>Submit</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
           </View>
         </View>
       </Modal>
@@ -2619,7 +2821,14 @@ export default function AccountScreen({ navigation }) {
                 (entry, idx) => {
                   // Look up the receipt items for this transaction from the cache
                   const cachedReceipt = businessReceiptCache[viewingReturnTransactionUid] || [];
-                  const returnedItems = (entry.items || []).map((itemId) => cachedReceipt[parseInt(itemId)]).filter(Boolean);
+                  const returnedItems = (entry.items || [])
+                    .map((itemId) => {
+                      const item = cachedReceipt[parseInt(itemId, 10)];
+                      if (!item) return null;
+                      const returnQty = entry.itemQuantities?.[itemId];
+                      return { item, returnQty: returnQty != null && Number(returnQty) > 0 ? Math.round(Number(returnQty)) : getReceiptLineQty(item) };
+                    })
+                    .filter(Boolean);
 
                   return (
                     <View
@@ -2639,7 +2848,7 @@ export default function AccountScreen({ navigation }) {
                       {returnedItems.length > 0 && (
                         <View style={{ marginBottom: 10 }}>
                           <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>Items to Return:</Text>
-                          {returnedItems.map((item, itemIdx) => (
+                          {returnedItems.map(({ item, returnQty }, itemIdx) => (
                             <View
                               key={itemIdx}
                               style={{
@@ -2653,7 +2862,7 @@ export default function AccountScreen({ navigation }) {
                               }}
                             >
                               <Text style={{ fontSize: 12, color: darkMode ? "#fff" : "#333", flex: 1 }}>{item.bs_service_name || "Item"}</Text>
-                              <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666", marginHorizontal: 8 }}>x{item.ti_bs_qty || 1}</Text>
+                              <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666", marginHorizontal: 8 }}>x{returnQty}</Text>
                               <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666" }}>${parseFloat(item.ti_bs_cost || 0).toFixed(2)}</Text>
                             </View>
                           ))}
