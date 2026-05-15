@@ -21,6 +21,7 @@ import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../confi
 import { getSessionProfile } from "../utils/sessionProfile";
 // import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
+import { parsePrice } from "../utils/priceUtils";
 
 /** 1 = compact: Purchases (Date, Type, Seller, Paid, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
@@ -48,6 +49,120 @@ function extractTransactionArray(raw) {
     if (Array.isArray(raw[key])) return raw[key];
   }
   return [];
+}
+
+const RECEIPT_TOTAL_EPS = 0.02;
+
+/** Parse optional money from receipt API; `null` if absent (not same as $0). */
+function receiptMoneyNullable(v) {
+  if (v == null) return null;
+  if (typeof v === "string" && v.trim() === "") return null;
+  const n = parsePrice(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Unit cost × qty for each receipt row (same rule as return modal: qty defaults to 1). */
+function sumReceiptLineMerchandise(rows) {
+  if (!Array.isArray(rows)) return 0;
+  return rows.reduce((sum, row) => {
+    const unit = parsePrice(row.ti_bs_cost);
+    const q = parsePrice(row.ti_bs_qty);
+    const qty = q > 0 ? q : 1;
+    return sum + unit * qty;
+  }, 0);
+}
+
+function formatReceiptUsd(n) {
+  return Number.isFinite(n) ? `$${n.toFixed(2)}` : "—";
+}
+
+/** Below receipt line items: merchandise, tax, fees, total, and arithmetic check vs amount paid. */
+function ReceiptTransactionTotalsFooter({ receiptRows, darkMode }) {
+  if (!Array.isArray(receiptRows) || receiptRows.length === 0) return null;
+  const first = receiptRows[0] || {};
+  const fromLines = sumReceiptLineMerchandise(receiptRows);
+  const txnMerch = receiptMoneyNullable(first.transaction_amount);
+  const txnTaxes = receiptMoneyNullable(first.transaction_taxes);
+  const txnFees = receiptMoneyNullable(first.transaction_fees);
+  const txnTotal = receiptMoneyNullable(first.transaction_total);
+
+  const hasAnyBreakdown = txnMerch != null || txnTaxes != null || txnFees != null || txnTotal != null;
+  if (!hasAnyBreakdown) return null;
+
+  const merchDisplay = txnMerch != null ? txnMerch : fromLines;
+  const merchLabel = txnMerch != null ? "Merchandise (subtotal)" : "Merchandise (from line items)";
+
+  const labelColor = darkMode ? "#ccc" : "#444";
+  const valueColor = darkMode ? "#eee" : "#222";
+  const secondaryColor = darkMode ? "#aaa" : "#666";
+  const borderColor = darkMode ? "#444" : "#ddd";
+
+  const row = (label, valueText) => (
+    <View key={label} style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8, paddingHorizontal: 2 }}>
+      <Text style={{ fontSize: 14, color: labelColor, flex: 1, paddingRight: 10 }}>{label}</Text>
+      <Text style={{ fontSize: 14, fontWeight: "600", color: valueColor }}>{valueText}</Text>
+    </View>
+  );
+
+  const taxesStr = txnTaxes != null ? formatReceiptUsd(txnTaxes) : "—";
+  const feesStr = txnFees != null ? formatReceiptUsd(txnFees) : "—";
+  const totalStr = txnTotal != null ? formatReceiptUsd(txnTotal) : "—";
+
+  const linesVsMerch = txnMerch != null && fromLines > 0 && Math.abs(fromLines - txnMerch) > RECEIPT_TOTAL_EPS;
+
+  let verifyText = "";
+  let verifyColor = secondaryColor;
+  let verifyBold = false;
+
+  if (txnTotal != null) {
+    if (txnTaxes != null && txnFees != null) {
+      const merchForSum = txnMerch != null ? txnMerch : fromLines;
+      const sum = merchForSum + txnTaxes + txnFees;
+      if (Math.abs(sum - txnTotal) <= RECEIPT_TOTAL_EPS) {
+        verifyText = `Subtotal + sales tax + fees matches amount paid (${formatReceiptUsd(txnTotal)}).`;
+        verifyColor = "#18884A";
+        verifyBold = true;
+      } else {
+        verifyText = `Totals do not match: ${formatReceiptUsd(merchForSum)} + ${formatReceiptUsd(txnTaxes)} + ${formatReceiptUsd(txnFees)} = ${formatReceiptUsd(sum)}, but amount paid is ${formatReceiptUsd(txnTotal)}.`;
+        verifyColor = "#B71C1C";
+        verifyBold = true;
+      }
+    } else {
+      verifyText = "Tax or fee fields were not returned; skipped automatic check against amount paid.";
+      verifyColor = secondaryColor;
+    }
+  } else {
+    verifyText = "Transaction total was not returned; cannot verify amount paid.";
+    verifyColor = secondaryColor;
+  }
+
+  return (
+    <View style={{ marginTop: 8, paddingTop: 14, borderTopWidth: 1, borderTopColor: borderColor, width: "100%" }}>
+      {row(merchLabel, formatReceiptUsd(merchDisplay))}
+      {txnMerch != null && linesVsMerch ? (
+        <Text style={{ fontSize: 12, color: secondaryColor, marginBottom: 8, paddingHorizontal: 2 }}>
+          Note: Sum of unit cost × quantity on lines ({formatReceiptUsd(fromLines)}) differs from reported merchandise subtotal ({formatReceiptUsd(txnMerch)}).
+        </Text>
+      ) : null}
+      {row("Sales tax", taxesStr)}
+      {row("Fees (card processing)", feesStr)}
+      {row("Amount paid", totalStr)}
+      {verifyText ? (
+        <Text
+          style={{
+            fontSize: 13,
+            color: verifyColor,
+            marginTop: 6,
+            fontWeight: verifyBold ? "600" : "400",
+            paddingHorizontal: 2,
+          }}
+        >
+          {verifyBold && verifyColor === "#18884A" ? "✓ " : null}
+          {verifyText}
+        </Text>
+      ) : null}
+    </View>
+  );
 }
 
 function mapAccountScreenPersonalResponse(json) {
@@ -2300,22 +2415,34 @@ export default function AccountScreen({ navigation }) {
             {receiptLoading ? (
               <ActivityIndicator size='large' color='#18884A' style={{ marginVertical: 24 }} />
             ) : receiptData.length > 0 ? (
-              <ScrollView style={styles.receiptScrollView} horizontal>
-                <View>
-                  <View style={styles.receiptTableHeader}>
-                    <Text style={styles.receiptHeaderCell}>Item Name</Text>
-                    <Text style={styles.receiptHeaderCell}>Qty</Text>
-                    <Text style={styles.receiptHeaderCell}>Cost</Text>
-                  </View>
-                  {receiptData.map((item, index) => (
-                    <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
-                      <Text style={styles.receiptTableCell}>{item.bs_service_name || "N/A"}</Text>
-                      <Text style={styles.receiptTableCell}>{item.ti_bs_qty ?? "N/A"}</Text>
-                      <Text style={styles.receiptTableCell}>${parseFloat(item.ti_bs_cost || 0).toFixed(2)}</Text>
+              <>
+                <ScrollView style={styles.receiptScrollView} contentContainerStyle={styles.receiptScrollViewContent}>
+                  <View style={styles.receiptTableWrap}>
+                    <View style={styles.receiptTableHeader}>
+                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellItem]}>Item Name</Text>
+                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellQty]}>Qty</Text>
+                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellCost]}>Cost</Text>
                     </View>
-                  ))}
-                </View>
-              </ScrollView>
+                    {receiptData.map((item, index) => (
+                      <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
+                        <Text
+                          style={[styles.receiptTableCell, styles.receiptTableCellItem, darkMode && { color: "#e0e0e0" }]}
+                          numberOfLines={3}
+                        >
+                          {item.bs_service_name || "N/A"}
+                        </Text>
+                        <Text style={[styles.receiptTableCell, styles.receiptTableCellQty, darkMode && { color: "#e0e0e0" }]}>
+                          {item.ti_bs_qty ?? "N/A"}
+                        </Text>
+                        <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, darkMode && { color: "#e0e0e0" }]}>
+                          ${parseFloat(item.ti_bs_cost || 0).toFixed(2)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </ScrollView>
+                <ReceiptTransactionTotalsFooter receiptRows={receiptData} darkMode={darkMode} />
+              </>
             ) : (
               <Text style={[styles.noDataText, { marginVertical: 24 }]}>No receipt data available.</Text>
             )}
@@ -3120,6 +3247,15 @@ const styles = StyleSheet.create({
   receiptScrollView: {
     maxHeight: 300,
     marginVertical: 16,
+    width: "100%",
+    alignSelf: "stretch",
+  },
+  receiptScrollViewContent: {
+    width: "100%",
+    flexGrow: 1,
+  },
+  receiptTableWrap: {
+    width: "100%",
   },
   receiptTableHeader: {
     flexDirection: "row",
@@ -3128,13 +3264,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     marginBottom: 2,
+    width: "100%",
   },
   receiptHeaderCell: {
-    width: 120,
     fontSize: 13,
     color: "#fff",
     fontWeight: "bold",
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
+  },
+  receiptHeaderCellItem: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  receiptHeaderCellQty: {
+    width: 52,
+    textAlign: "right",
+  },
+  receiptHeaderCellCost: {
+    width: 88,
+    textAlign: "right",
   },
   receiptTableRow: {
     flexDirection: "row",
@@ -3142,12 +3291,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
+    width: "100%",
+    alignItems: "flex-start",
   },
   receiptTableCell: {
-    width: 120,
     fontSize: 12,
     color: "#333",
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
+  },
+  receiptTableCellItem: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  receiptTableCellQty: {
+    width: 52,
+    textAlign: "right",
+  },
+  receiptTableCellCost: {
+    width: 88,
+    textAlign: "right",
   },
   receiptCloseButton: {
     backgroundColor: "#F5F5F5",

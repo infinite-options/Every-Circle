@@ -315,6 +315,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
         }
       }
 
+      const profileCcFeePayer = canonicalBusinessCcFeePayer(
+        rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer,
+      );
+
       const businessWithRatings = {
         ...rawBusiness,
         business_user_id: rawBusiness.business_user_id || "",
@@ -353,7 +357,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           rawBusiness.image_is_public === 1,
         business_profile_img: businessProfileImgUrl,
         business_profile_img_is_public: rawBusiness.business_profile_img_is_public === "1" || rawBusiness.business_profile_img_is_public === 1,
-        business_cc_fee_payer: canonicalBusinessCcFeePayer(rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer),
+        business_cc_fee_payer: profileCcFeePayer,
         business_services: (() => {
           let list = [];
           if (rawBusiness.business_services) {
@@ -372,7 +376,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
             list = result.services;
           }
           if (!Array.isArray(list)) return [];
-          return list.map((svc) => normalizeBusinessServiceFromApi(svc));
+          return list.map((svc) => ({
+            ...normalizeBusinessServiceFromApi(svc),
+            business_cc_fee_payer: profileCcFeePayer,
+          }));
         })(),
         business_updated_at: rawBusiness.business_updated_at ?? rawBusiness.updated_at,
       };

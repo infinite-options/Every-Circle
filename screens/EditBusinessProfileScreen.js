@@ -16,7 +16,11 @@ import { Dropdown } from "react-native-element-dropdown";
 import { Ionicons } from "@expo/vector-icons";
 import ProductCard from "../components/ProductCard";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
-import { normalizeBusinessServiceFromApi as normalizeBusinessServiceRow, businessPaysCcFeeFromApiPayer } from "../utils/normalizeBusinessServiceFromApi";
+import {
+  normalizeBusinessServiceFromApi as normalizeBusinessServiceRow,
+  businessPaysCcFeeFromApiPayer,
+  canonicalBusinessCcFeePayer,
+} from "../utils/normalizeBusinessServiceFromApi";
 import { parsePrice } from "../utils/priceUtils";
 
 const BusinessProfileAPI = BUSINESS_INFO_ENDPOINT;
@@ -1346,13 +1350,24 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   const [services, setServices] = useState(() => {
     const initialServices = business?.business_services || business?.services || [];
-    return initialServices.map((service) => normalizeServiceFromApi(service));
+    const profileCcFeePayer = canonicalBusinessCcFeePayer(
+      business?.business_cc_fee_payer ?? business?.bs_cc_fee_payer ?? business?.business_bs_cc_fee_payer ?? business?.cc_fee_payer,
+    );
+    return initialServices.map((service) => ({
+      ...normalizeServiceFromApi(service),
+      business_cc_fee_payer: profileCcFeePayer,
+    }));
   });
 
   const [showServiceForm, setShowServiceForm] = useState(false);
   const [editingServiceIndex, setEditingServiceIndex] = useState(null);
   /** Persisted rows removed this session (bs_uid); sent on save like delete_experiences on Edit Profile */
   const [deletedBusinessServiceUids, setDeletedBusinessServiceUids] = useState([]);
+
+  useEffect(() => {
+    const p = formData.businessPaysCcFee ? "seller" : "buyer";
+    setServices((prev) => prev.map((row) => ({ ...row, business_cc_fee_payer: p })));
+  }, [formData.businessPaysCcFee]);
 
   const defaultService = {
     bs_uid: "",
@@ -1475,6 +1490,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
     return {
       ...serviceForm,
+      business_cc_fee_payer: formData.businessPaysCcFee ? "seller" : "buyer",
       bs_qty_unlimited: isUnlimited ? 1 : 0,
       bs_available_quantity: isUnlimited ? "" : String(serviceForm.bs_available_quantity || "").trim(),
       bs_bounty_type: bountyTypeForList,

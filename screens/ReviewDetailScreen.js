@@ -158,6 +158,10 @@ export default function ReviewDetailScreen({ route, navigation }) {
         }
       }
 
+      const profileCcFeePayer = canonicalBusinessCcFeePayer(
+        rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer,
+      );
+
       setBusiness({
         ...rawBusiness,
         tagline: rawBusiness.business_tag_line || rawBusiness.tagline || "",
@@ -174,9 +178,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
           rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1 || rawBusiness.tagline_is_public === "1" || rawBusiness.tagline_is_public === 1,
         shortBioIsPublic:
           rawBusiness.business_short_bio_is_public === "1" || rawBusiness.business_short_bio_is_public === 1 || rawBusiness.short_bio_is_public === "1" || rawBusiness.short_bio_is_public === 1,
-        business_cc_fee_payer: canonicalBusinessCcFeePayer(
-          rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer,
-        ),
+        business_cc_fee_payer: profileCcFeePayer,
         business_services: (() => {
           let list = [];
           if (rawBusiness.business_services) {
@@ -195,17 +197,10 @@ export default function ReviewDetailScreen({ route, navigation }) {
             list = result.services;
           }
           if (!Array.isArray(list)) return [];
-          return list.map((svc) => normalizeBusinessServiceFromApi(svc));
-
-          const normalized = list.map((svc) => normalizeBusinessServiceFromApi(svc));
-          console.log("DEBUG services after normalize:", normalized.map(s => ({
-            bs_uid: s.bs_uid,
-            bs_quantity: s.bs_quantity,
-            bs_available_quantity: s.bs_available_quantity,
-            bs_qty_unlimited: s.bs_qty_unlimited,
-          })));
-          return normalized;
-
+          return list.map((svc) => ({
+            ...normalizeBusinessServiceFromApi(svc),
+            business_cc_fee_payer: profileCcFeePayer,
+          }));
         })(),
       });
     } catch (err) {

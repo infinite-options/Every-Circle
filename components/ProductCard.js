@@ -1,9 +1,8 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
-import { useCallback } from "react";
 import { parsePrice } from "../utils/priceUtils";
+import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 
 const DEFAULT_PRODUCT_IMAGE = require("../assets/profile.png");
 
@@ -175,6 +174,49 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
   );
 };
 
+/** Matches checkout: 3% processing when buyer pays card fees (ShoppingCart `groupBuyerPaysCardFee`). */
+function creditCardFeeBuyerMetaLine(service) {
+  const raw = service?.business_cc_fee_payer ?? service?.bs_cc_fee_payer;
+  if (canonicalBusinessCcFeePayer(raw) !== "buyer") return null;
+  return "Credit Card Fee: 3% paid by Buyer";
+}
+
+function renderCostBountyFooter(service, darkMode) {
+  const hasCost = service.bs_cost != null && String(service.bs_cost).trim() !== "";
+  const hasBounty = service.bs_bounty != null && String(service.bs_bounty).trim() !== "";
+  if (!hasCost && !hasBounty) return null;
+
+  return (
+    <View style={[styles.costBountyFooter, darkMode && styles.costBountyFooterDark]}>
+      <View style={styles.pricingContainer}>
+        {hasCost ? (
+          <View style={styles.costContainer}>
+            <View style={styles.moneyBagIconContainer}>
+              <Text style={styles.moneyBagDollarSymbol}>$</Text>
+            </View>
+            <Text style={[styles.amountText, darkMode && styles.amountTextDark]}>
+              Cost: {service.bs_cost_currency === "USD" || !service.bs_cost_currency ? "$" : service.bs_cost_currency + " "}
+              {service.bs_cost}
+            </Text>
+          </View>
+        ) : hasBounty ? (
+          <View style={{ flex: 1 }} />
+        ) : null}
+        {hasBounty ? (
+          <View style={styles.bountyContainerRight}>
+            <Text style={styles.bountyEmojiIcon}>💰</Text>
+            <Text style={[styles.amountText, darkMode && styles.amountTextDark]}>
+              Bounty: {service.bs_bounty_currency === "USD" || !service.bs_bounty_currency ? "$" : service.bs_bounty_currency + " "}
+              {service.bs_bounty}
+              {service.bs_bounty_type === "per_item" ? " / item" : " total"}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
 function renderProductCardBody({
   service,
   darkMode,
@@ -191,6 +233,7 @@ function renderProductCardBody({
   taxRateLine,
   isSoldOut,
 }) {
+  const ccFeeBuyerLine = creditCardFeeBuyerMetaLine(service);
   return (
     <>
       <View style={styles.cardTopRow}>
@@ -214,29 +257,6 @@ function renderProductCardBody({
         </View>
       </View>
       <View style={styles.textContainer}>
-        <View style={styles.pricingContainer}>
-          {service.bs_cost ? (
-            <View style={styles.costContainer}>
-              <View style={styles.moneyBagIconContainer}>
-                <Text style={styles.moneyBagDollarSymbol}>$</Text>
-              </View>
-              <Text style={[styles.amountText, darkMode && styles.amountTextDark]}>
-                Cost: {service.bs_cost_currency === "USD" || !service.bs_cost_currency ? "$" : service.bs_cost_currency + " "}
-                {service.bs_cost}
-              </Text>
-            </View>
-          ) : null}
-          {service.bs_bounty ? (
-            <View style={styles.bountyContainerRight}>
-              <Text style={styles.bountyEmojiIcon}>💰</Text>
-              <Text style={[styles.amountText, darkMode && styles.amountTextDark]}>
-                Bounty: {service.bs_bounty_currency === "USD" || !service.bs_bounty_currency ? "$" : service.bs_bounty_currency + " "}
-                {service.bs_bounty}
-                {service.bs_bounty_type === "per_item" ? " / item" : " total"}
-              </Text>
-            </View>
-          ) : null}
-        </View>
         <Text style={metaTextStyle}>{quantityLine}</Text>
         {isSoldOut && (
           <View style={{
@@ -302,6 +322,7 @@ function renderProductCardBody({
         {conditionLine ? <Text style={metaTextStyle}>{conditionLine}</Text> : null}
         {shippingLine ? <Text style={metaTextStyle}>{shippingLine}</Text> : null}
         {taxRateLine ? <Text style={metaTextStyle}>{taxRateLine}</Text> : null}
+        {ccFeeBuyerLine ? <Text style={metaTextStyle}>{ccFeeBuyerLine}</Text> : null}
         {showOwnerTags && tags.length > 0 ? (
           <View style={styles.tagsRow}>
             {tags.map((tag, i) => (
@@ -311,6 +332,7 @@ function renderProductCardBody({
             ))}
           </View>
         ) : null}
+        {renderCostBountyFooter(service, darkMode)}
       </View>
     </>
   );
@@ -421,7 +443,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 4,
+    width: "100%",
+    gap: 8,
+  },
+  costBountyFooter: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e5ea",
+  },
+  costBountyFooterDark: {
+    borderTopColor: "#48484a",
   },
   costContainer: {
     flexDirection: "row",

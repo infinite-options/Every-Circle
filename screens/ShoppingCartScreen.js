@@ -42,6 +42,7 @@ import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
 import { parsePrice } from "../utils/priceUtils";
 import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
+import { recordServicePurchase } from "../utils/purchaseService";
 
 // Use the publishable key from environment variables
 const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
@@ -63,6 +64,42 @@ function getCheckoutSellerId(item) {
 
 function roundMoney(n) {
   return Math.round(Number(n) * 100) / 100;
+}
+
+/** Bounty amount string for cart copy (matches Price row currency rules). */
+function formatCartBountyAmountStr(item, amountNum) {
+  const n = Number(amountNum);
+  const fixed = Number.isFinite(n) ? n.toFixed(2) : "0.00";
+  if (item.itemType === "expertise") return `$${fixed}`;
+  const cur = item.bs_cost_currency;
+  if (cur === "USD" || !cur) return `$${fixed}`;
+  return `${cur} ${fixed}`;
+}
+
+/** e.g. "Bounty ($3.50 total paid by Seller)" vs "… per item …" */
+function formatCartBountyPaidBySellerLine(item) {
+  if (item.itemType === "expertise") {
+    const amt = parsePrice(item.bounty);
+    return `Bounty (${formatCartBountyAmountStr(item, amt)} per item paid by Seller)`;
+  }
+  const amt = parsePrice(item.bs_bounty);
+  const amountStr = formatCartBountyAmountStr(item, amt);
+  const isTotal = item.bs_bounty_type === "total";
+  return `Bounty (${amountStr} ${isTotal ? "total" : "per item"} paid by Seller)`;
+}
+
+/** Total bounty $ for this cart line (matches checkout / old right column). */
+function formatCartBountyLineTotalValueStr(item) {
+  const qty = item.quantity || 1;
+  let num;
+  if (item.itemType === "expertise") {
+    num = parsePrice(item.bounty) * qty;
+  } else if (item.bs_bounty_type === "total") {
+    num = parsePrice(item.bs_bounty);
+  } else {
+    num = parsePrice(item.bs_bounty) * qty;
+  }
+  return formatCartBountyAmountStr(item, num);
 }
 
 /**
@@ -1145,15 +1182,8 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                       )}
                       {(item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty)) > 0 && (
                         <View style={[styles.totalRow, styles.bountyNoteRow]}>
-                          <Text style={styles.bountyNoteLabel}>Bounty (paid by Seller)</Text>
-                          <Text style={styles.bountyNoteValue}>
-                            $
-                            {item.itemType === "expertise"
-                              ? (parsePrice(item.bounty) * (item.quantity || 1)).toFixed(2)
-                              : item.bs_bounty_type === "total"
-                                ? parsePrice(item.bs_bounty).toFixed(2)
-                                : (parsePrice(item.bs_bounty) * (item.quantity || 1)).toFixed(2)}
-                          </Text>
+                          <Text style={[styles.bountyNoteLabel, { flex: 1, paddingRight: 8 }]}>{formatCartBountyPaidBySellerLine(item)}</Text>
+                          <Text style={styles.bountyNoteValue}>{formatCartBountyLineTotalValueStr(item)}</Text>
                         </View>
                       )}
                     </View>
