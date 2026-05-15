@@ -317,9 +317,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         }
       }
 
-      const profileCcFeePayer = canonicalBusinessCcFeePayer(
-        rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer,
-      );
+      const profileCcFeePayer = canonicalBusinessCcFeePayer(rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer);
 
       const businessWithRatings = {
         ...rawBusiness,
@@ -1187,7 +1185,15 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 )}
                 <TouchableOpacity
                   style={[styles.editReviewButton, darkMode && styles.darkEditReviewButton]}
-                  onPress={() => navigation.navigate("ReviewBusiness", { business_uid, business_name: business.business_name, reviewData: userReview, isEdit: true })}
+                  onPress={() =>
+                    navigation.navigate("ReviewBusiness", {
+                      business_uid,
+                      business_name: business.business_name,
+                      reviewData: userReview,
+                      rating_uid: userReview?.rating_uid,
+                      isEdit: true,
+                    })
+                  }
                 >
                   <Text style={styles.editReviewButtonText}>Edit Review</Text>
                 </TouchableOpacity>

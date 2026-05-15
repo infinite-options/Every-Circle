@@ -6,16 +6,7 @@ import { getBountyEligibleReviews, productHasBounty, sortReviewsForBountyPicker 
 /**
  * "Who referred you?" picker shown in the add-to-cart quantity modal when a product has a bounty.
  */
-export default function BountyRecipientPicker({
-  reviews,
-  selectedService,
-  selectedBountyRecipient,
-  onSelectRecipient,
-  bountySort,
-  onBountySortChange,
-  bountySearch,
-  onBountySearchChange,
-}) {
+export default function BountyRecipientPicker({ reviews, selectedService, selectedBountyRecipient, onSelectRecipient, bountySort, onBountySortChange, bountySearch, onBountySearchChange }) {
   const eligible = getBountyEligibleReviews(reviews);
   if (!productHasBounty(selectedService, parsePrice) || eligible.length === 0) {
     return null;

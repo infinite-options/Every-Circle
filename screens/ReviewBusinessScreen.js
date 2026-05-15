@@ -1,59 +1,84 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Platform, ScrollView, Pressable } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, Pressable, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import BottomNavBar from "../components/BottomNavBar";
 import { RATINGS_ENDPOINT } from "../apiConfig";
+import { appendReviewImagesToFormData } from "../utils/reviewImageFormData";
+
+function resolveRatingUid(reviewData, routeParams) {
+  const fromParams = routeParams?.rating_uid;
+  if (fromParams != null && String(fromParams).trim() !== "") return String(fromParams).trim();
+  if (!reviewData) return "";
+  const uid = reviewData.rating_uid ?? reviewData.rating_id ?? reviewData.id;
+  return uid != null && String(uid).trim() !== "" ? String(uid).trim() : "";
+}
 
 export default function ReviewBusinessScreen({ route, navigation }) {
-  const { business_uid, business_name, reviewData, isEdit } = route.params;
+  const { business_uid, business_name, reviewData, isEdit } = route.params || {};
   const [profileId, setProfileId] = useState("");
   const [rating, setRating] = useState(0);
   const [description, setDescription] = useState("");
   const [receiptDate, setReceiptDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [receiptFile, setReceiptFile] = useState(null);
-  const [imageFile, setImageFile] = useState(null);
+  const [uploadedImages, setUploadedImages] = useState([]);
+  const [favoriteIndex, setFavoriteIndex] = useState(0);
 
-  // Validation state
   const isValid = rating > 0 && description.trim() && receiptDate;
 
   useEffect(() => {
     AsyncStorage.getItem("profile_uid").then(setProfileId);
-    // Pre-populate if editing
     if (reviewData) {
       setRating(Number(reviewData.rating_star) || 0);
       setDescription(reviewData.rating_description || "");
       if (reviewData.rating_receipt_date) {
         setReceiptDate(new Date(reviewData.rating_receipt_date));
       }
-      // Note: For files, we can't pre-populate the file picker, but we could show a label if needed
+      const favIdx = Number(reviewData.rating_favorite_image_index ?? reviewData.favorite_image_index);
+      if (!Number.isNaN(favIdx) && favIdx >= 0) {
+        setFavoriteIndex(favIdx);
+      }
     }
   }, [reviewData]);
 
-  const pickFile = async (setter, fileType) => {
+  const pickReceipt = async () => {
     try {
-      console.log(`============================================`);
-      console.log(`PICKING FILE: ${fileType}`);
-      console.log(`============================================`);
-      const result = await DocumentPicker.getDocumentAsync({ type: "*/*" });
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        console.log(`File selected:`, {
-          name: asset.name,
-          uri: asset.uri,
-          mimeType: asset.mimeType,
-          size: asset.size,
-        });
-        setter(asset);
-      } else {
-        console.log(`File selection canceled`);
+      const result = await DocumentPicker.getDocumentAsync({ type: "*/*", copyToCacheDirectory: true });
+      if (!result.canceled && result.assets?.length > 0) {
+        setReceiptFile(result.assets[0]);
       }
     } catch (error) {
-      console.error(`Error picking file (${fileType}):`, error);
-      Alert.alert("Error", `Failed to pick ${fileType}: ${error.message}`);
+      Alert.alert("Error", `Failed to pick receipt: ${error.message}`);
     }
+  };
+
+  const pickUploadedImages = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "image/*",
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+      if (!result.canceled && result.assets?.length > 0) {
+        setUploadedImages((prev) => [...prev, ...result.assets]);
+      }
+    } catch (error) {
+      Alert.alert("Error", `Failed to pick images: ${error.message}`);
+    }
+  };
+
+  const removeUploadedImage = (index) => {
+    setUploadedImages((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      if (favoriteIndex >= next.length) {
+        setFavoriteIndex(Math.max(0, next.length - 1));
+      } else if (index < favoriteIndex) {
+        setFavoriteIndex((f) => Math.max(0, f - 1));
+      }
+      return next;
+    });
   };
 
   const handleSave = async () => {
@@ -65,41 +90,28 @@ export default function ReviewBusinessScreen({ route, navigation }) {
       Alert.alert("Error", "Profile ID not found. Please try logging in again.");
       return;
     }
-    console.log("============================================");
-    console.log("SAVING REVIEW - Rating to be saved:", rating);
-    console.log("Profile ID:", profileId);
-    console.log("============================================");
+
+    const ratingUid = resolveRatingUid(reviewData, route.params);
+    if (isEdit && !ratingUid) {
+      Alert.alert("Error", "Review ID is missing. Please go back and try editing again.");
+      return;
+    }
+
     const formData = new FormData();
     formData.append("rating_profile_id", profileId);
     formData.append("rating_business_id", business_uid);
     formData.append("rating_star", rating);
     formData.append("rating_description", description);
     formData.append("rating_receipt_date", receiptDate.toISOString().split("T")[0]);
-    if (receiptFile) {
-      formData.append("rating_receipt_image", {
-        uri: receiptFile.uri,
-        name: receiptFile.name,
-        type: receiptFile.mimeType || "image/jpeg",
-      });
-    }
-    if (imageFile) {
-      formData.append("rating_image", {
-        uri: imageFile.uri,
-        name: imageFile.name,
-        type: imageFile.mimeType || "image/jpeg",
-      });
+    if (isEdit && ratingUid) {
+      formData.append("rating_uid", ratingUid);
     }
 
-    // Build payload object for logging (excluding file objects)
-    const payloadData = {
-      rating_profile_id: profileId,
-      rating_business_id: business_uid,
-      rating_star: rating,
-      rating_description: description,
-      rating_receipt_date: receiptDate.toISOString().split("T")[0],
-      rating_receipt_image: receiptFile ? `[FILE: ${receiptFile.name}, ${receiptFile.mimeType || "image/jpeg"}]` : "not provided",
-      rating_image: imageFile ? `[FILE: ${imageFile.name}, ${imageFile.mimeType || "image/jpeg"}]` : "not provided",
-    };
+    const imageFieldLog = await appendReviewImagesToFormData(formData, {
+      receiptFile,
+      uploadedImages,
+      favoriteIndex,
+    });
 
     const method = isEdit ? "PUT" : "POST";
 
@@ -107,55 +119,42 @@ export default function ReviewBusinessScreen({ route, navigation }) {
     console.log("ENDPOINT: RATINGS");
     console.log("URL:", RATINGS_ENDPOINT);
     console.log("METHOD:", method);
-    console.log("REQUEST BODY (FormData):");
-    console.log("rating_profile_id:", payloadData.rating_profile_id);
-    console.log("rating_business_id:", payloadData.rating_business_id);
-    console.log("rating_star:", payloadData.rating_star);
-    console.log("rating_description:", payloadData.rating_description);
-    console.log("rating_receipt_date:", payloadData.rating_receipt_date);
-    console.log("rating_receipt_image:", payloadData.rating_receipt_image);
-    console.log("rating_image:", payloadData.rating_image);
+    console.log("rating_uid:", ratingUid || "(new review)");
+    console.log("image fields:", imageFieldLog.length ? imageFieldLog.join(", ") : "none");
+    console.log("platform:", Platform.OS);
     console.log("============================================");
 
     try {
-      // Don't set Content-Type header - let the browser/fetch set it automatically with boundary
-      // This is required for FormData to work correctly on Web
       const response = await fetch(RATINGS_ENDPOINT, {
         method,
         body: formData,
+        // Do not set Content-Type — fetch must add multipart boundary automatically.
       });
 
-      console.log("RESPONSE STATUS:", response.status);
-      console.log("RESPONSE OK:", response.ok);
-
       const result = await response.json();
+      console.log("RESPONSE STATUS:", response.status);
       console.log("RESPONSE BODY:", JSON.stringify(result, null, 2));
 
       if (response.ok) {
-        // Build the new review object
         const newReview = {
+          ...(ratingUid ? { rating_uid: ratingUid } : {}),
           rating_profile_id: profileId,
           rating_business_id: business_uid,
           rating_star: rating,
           rating_description: description,
           rating_receipt_date: receiptDate.toISOString().split("T")[0],
-          // Optionally add file info if you want to display it locally
+          ...(uploadedImages.length > 0 ? { rating_favorite_image_index: favoriteIndex } : {}),
         };
 
         try {
-          // Get current ratings_info from AsyncStorage
           const ratingsInfoStr = await AsyncStorage.getItem("user_ratings_info");
           let ratingsInfo = [];
           if (ratingsInfoStr) {
             ratingsInfo = JSON.parse(ratingsInfoStr);
-            // Remove any existing review for this business
             ratingsInfo = ratingsInfo.filter((r) => r.rating_business_id !== business_uid);
           }
-          // Add the new/updated review
           ratingsInfo.push(newReview);
-          // Save back to AsyncStorage
           await AsyncStorage.setItem("user_ratings_info", JSON.stringify(ratingsInfo));
-          console.log("Updated user_ratings_info in AsyncStorage:", ratingsInfo);
         } catch (e) {
           console.warn("Failed to update user_ratings_info in AsyncStorage:", e);
         }
@@ -163,16 +162,10 @@ export default function ReviewBusinessScreen({ route, navigation }) {
         Alert.alert("Success", isEdit ? "Review updated!" : "Review submitted!");
         navigation.goBack();
       } else {
-        console.error("RESPONSE ERROR:", result);
         throw new Error(result.message || "Failed to submit review");
       }
     } catch (err) {
       console.error("FETCH ERROR:", err);
-      console.error("Error details:", {
-        message: err.message,
-        name: err.name,
-        stack: err.stack,
-      });
       Alert.alert("Error", err.message || "Network request failed. Please check your connection and try again.");
     }
   };
@@ -188,23 +181,8 @@ export default function ReviewBusinessScreen({ route, navigation }) {
           {[1, 2, 3, 4, 5].map((i) => {
             const isSelected = rating >= i;
             return (
-              <Pressable
-                key={i}
-                onPress={() => {
-                  console.log("Rating selected:", i);
-                  setRating(i);
-                }}
-                style={({ pressed }) => [styles.ratingTouchable, pressed && styles.ratingPressed]}
-              >
-                <View
-                  style={[
-                    styles.circle,
-                    isSelected && {
-                      backgroundColor: "#9C45F7",
-                      borderColor: "#9C45F7",
-                    },
-                  ]}
-                />
+              <Pressable key={i} onPress={() => setRating(i)} style={({ pressed }) => [styles.ratingTouchable, pressed && styles.ratingPressed]}>
+                <View style={[styles.circle, isSelected && { backgroundColor: "#9C45F7", borderColor: "#9C45F7" }]} />
               </Pressable>
             );
           })}
@@ -227,12 +205,34 @@ export default function ReviewBusinessScreen({ route, navigation }) {
             }}
           />
         )}
-        <TouchableOpacity onPress={() => pickFile(setReceiptFile, "Receipt")} style={styles.uploadButton}>
-          <Text>{receiptFile ? receiptFile.name : "Upload Receipt"}</Text>
+        <TouchableOpacity onPress={pickReceipt} style={styles.uploadButton}>
+          <Text>{receiptFile ? `Receipt: ${receiptFile.name}` : "Upload Receipt"}</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => pickFile(setImageFile, "Image")} style={styles.uploadButton}>
-          <Text>{imageFile ? imageFile.name : "Upload Image"}</Text>
+        <TouchableOpacity onPress={pickUploadedImages} style={styles.uploadButton}>
+          <Text>Add Photos</Text>
         </TouchableOpacity>
+        {uploadedImages.length > 0 && (
+          <View style={styles.imageList}>
+            {uploadedImages.map((asset, index) => (
+              <View key={`${asset.uri}-${index}`} style={styles.imageRow}>
+                <Text style={styles.imageRowLabel} numberOfLines={1}>
+                  img_{index}
+                  {favoriteIndex === index ? " ★ favorite (img_favorite)" : ""}
+                </Text>
+                <View style={styles.imageRowActions}>
+                  {favoriteIndex !== index && (
+                    <TouchableOpacity onPress={() => setFavoriteIndex(index)}>
+                      <Text style={styles.setFavoriteText}>Set favorite</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity onPress={() => removeUploadedImage(index)}>
+                    <Text style={styles.removeImageText}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
         <TouchableOpacity style={[styles.saveButton, !isValid && styles.saveButtonDisabled]} onPress={handleSave} disabled={!isValid}>
           <Text style={[styles.saveButtonText, !isValid && styles.saveButtonTextDisabled]}>{isEdit ? "Update Review" : "Submit Review"}</Text>
         </TouchableOpacity>
@@ -251,11 +251,23 @@ const styles = StyleSheet.create({
   ratingTouchable: { cursor: "pointer", padding: 2 },
   ratingPressed: { opacity: 0.7 },
   circle: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: "#ccc", marginHorizontal: 5 },
-  circleSelected: { backgroundColor: "#9C45F7", borderColor: "#9C45F7" },
   ratingText: { fontSize: 14, color: "#9C45F7", fontWeight: "600", marginTop: 5, marginBottom: 5 },
   input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, minHeight: 80, marginTop: 5 },
   dateButton: { padding: 10, backgroundColor: "#eee", borderRadius: 8, marginTop: 5 },
   uploadButton: { padding: 10, backgroundColor: "#eee", borderRadius: 8, marginTop: 10, alignItems: "center" },
+  imageList: { marginTop: 12 },
+  imageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  imageRowLabel: { flex: 1, fontSize: 14, color: "#333", marginRight: 8 },
+  imageRowActions: { flexDirection: "row", alignItems: "center", gap: 12 },
+  setFavoriteText: { color: "#9C45F7", fontWeight: "600", fontSize: 13 },
+  removeImageText: { color: "#c00", fontSize: 13 },
   saveButton: {
     backgroundColor: "#800000",
     paddingVertical: 12,
@@ -268,11 +280,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 20,
   },
-  saveButtonDisabled: {
-    backgroundColor: "#999",
-  },
+  saveButtonDisabled: { backgroundColor: "#999" },
   saveButtonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-  saveButtonTextDisabled: {
-    color: "#ccc",
-  },
+  saveButtonTextDisabled: { color: "#ccc" },
 });
