@@ -24,28 +24,28 @@ export const formatWholeDollars = (val) => Math.round(parsePrice(val));
  */
 export const formatCostValue = (val) => {
   if (val == null || val === "") return "";
-  
+
   // Keep as string to preserve incomplete decimals while the user is typing,
   // so we don't force formatting until the user leaves the input.
   const strVal = String(val).trim();
-  
+
   // Allow incomplete decimals while typing (e.g., "0.", ".5").
   if (strVal.endsWith(".") || strVal.startsWith(".")) {
     return strVal;
   }
-  
+
   // Parse as number after typing is complete.
   const num = parsePrice(val);
   if (isNaN(num)) return "";
-  
+
   // Allow 0 as a valid value
   if (num === 0) return "0";
-  
+
   // Check if it's a whole number
   if (Number.isInteger(num)) {
     return num.toString();
   }
-  
+
   // For decimal numbers, ensure 2 decimal places
   return num.toFixed(2);
 };

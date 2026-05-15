@@ -1546,7 +1546,7 @@ export default function SearchScreen({ route }) {
                 disabled={!canOpenSellerProfile}
                 activeOpacity={0.85}
               >
-                <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
+                <Ionicons name="chatbubble-ellipses-outline" size={17} color="#fff" style={{ marginRight: 7 }} />
                 <Text style={styles.expertiseCardActionButtonText}>Messaging</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -1558,7 +1558,7 @@ export default function SearchScreen({ route }) {
                 disabled={!canAddExpertiseToCart}
                 activeOpacity={0.85}
               >
-                <Ionicons name="cart-outline" size={16} color="#fff" style={{ marginRight: 6 }} />
+                <Ionicons name="cart-outline" size={20} color="#fff" style={{ marginRight: 6 }} />
                 <Text style={styles.expertiseCardActionButtonText}>Add to Cart</Text>
               </TouchableOpacity>
             </View>
@@ -1679,28 +1679,38 @@ export default function SearchScreen({ route }) {
           </View>
 
           <View style={styles.businessTableLevelCol}>
-            <TouchableOpacity
-              style={styles.levelButton}
-              onPress={(e) => {
-                e.stopPropagation();
-                navigation.navigate("SearchTab", {
-                  centerCompany: {
-                    id: item.id,
-                    name: item.company,
-                    rating: item.rating,
-                  },
-                });
-              }}
-            >
-              <View style={{ position: "relative" }}>
-                <Image source={require("../assets/connect.png")} style={{ width: 22, height: 22, tintColor: darkMode ? "#ffffff" : "#000000" }} />
-                {item.connection_degree != null && (
-                  <View style={styles.connectionBadge}>
-                    <Text style={styles.connectionBadgeText}>{item.connection_degree}</Text>
+            {(() => {
+              const reviewCount = Number(item.ratingCount);
+              const hasBusinessReviews = Number.isFinite(reviewCount) && reviewCount > 0;
+              const iconTint = hasBusinessReviews ? (darkMode ? "#ffffff" : "#000000") : darkMode ? "#5a5a5a" : "#b0b0b0";
+              const wrapOpacity = hasBusinessReviews ? 1 : 0.5;
+              return (
+                <TouchableOpacity
+                  style={[styles.levelButton, { opacity: wrapOpacity }]}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    navigation.navigate("SearchTab", {
+                      centerCompany: {
+                        id: item.id,
+                        name: item.company,
+                        rating: item.rating,
+                      },
+                    });
+                  }}
+                >
+                  <View style={{ position: "relative" }}>
+                    <Image source={require("../assets/connect.png")} style={{ width: 22, height: 22, tintColor: iconTint }} />
+                    {item.connection_degree != null && (
+                      <View style={[styles.connectionBadge, !hasBusinessReviews && { opacity: 0.85 }]}>
+                        <Text style={[styles.connectionBadgeText, !hasBusinessReviews && { color: darkMode ? "#888" : "#666" }]}>
+                          {item.connection_degree}
+                        </Text>
+                      </View>
+                    )}
                   </View>
-                )}
-              </View>
-            </TouchableOpacity>
+                </TouchableOpacity>
+              );
+            })()}
           </View>
 
           {(item.hasBounty || item.hasX || item.hasPriceTag || item.hasDollar) && (
@@ -2795,34 +2805,37 @@ const styles = StyleSheet.create({
   },
   expertiseCardActionRow: {
     flexDirection: "row",
-    alignItems: "stretch",
-    gap: 8,
-    marginTop: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 14,
+    marginBottom: 4,
+    flexWrap: "wrap",
+    alignSelf: "center",
   },
+  /** Match ProfileScreen `profileActionButtonPill` + Message / Connection pill sizing */
   expertiseCardMessageButton: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#AF52DE",
     paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 16,
-    minHeight: 42,
+    paddingHorizontal: 28,
+    borderRadius: 24,
+    minWidth: 192,
   },
   darkExpertiseCardMessageButton: {
     backgroundColor: "#8f47b5",
   },
   expertiseCardCartButton: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#00C7BE",
     paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 16,
-    minHeight: 42,
+    paddingHorizontal: 28,
+    borderRadius: 24,
+    minWidth: 192,
   },
   darkExpertiseCardCartButton: {
     backgroundColor: "#009e98",
@@ -2833,7 +2846,7 @@ const styles = StyleSheet.create({
   expertiseCardActionButtonText: {
     color: "#fff",
     fontWeight: "600",
-    fontSize: 13,
+    fontSize: 15,
   },
   ownExpertiseNotice: {
     fontSize: 13,
