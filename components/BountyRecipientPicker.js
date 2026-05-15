@@ -1,14 +1,36 @@
 import React from "react";
 import { View, Text, TouchableOpacity, Image, TextInput } from "react-native";
 import { parsePrice } from "../utils/priceUtils";
-import { getBountyEligibleReviews, productHasBounty, sortReviewsForBountyPicker } from "../utils/bountyRecipientUtils";
+import {
+  isBountyReviewDisabled,
+  isCurrentUserBountyReview,
+  mergeBountyEligibleReviews,
+  productHasBounty,
+  sortReviewsForBountyPicker,
+} from "../utils/bountyRecipientUtils";
 
 /**
  * "Who referred you?" picker shown in the add-to-cart quantity modal when a product has a bounty.
  */
-export default function BountyRecipientPicker({ reviews, selectedService, selectedBountyRecipient, onSelectRecipient, bountySort, onBountySortChange, bountySearch, onBountySearchChange }) {
-  const eligible = getBountyEligibleReviews(reviews);
+export default function BountyRecipientPicker({
+  reviews,
+  userReview,
+  currentUserProfileId,
+  selectedService,
+  selectedBountyRecipient,
+  onSelectRecipient,
+  bountySort,
+  onBountySortChange,
+  bountySearch,
+  onBountySearchChange,
+}) {
+  const eligible = mergeBountyEligibleReviews(reviews, userReview);
   if (!productHasBounty(selectedService, parsePrice) || eligible.length === 0) {
+    return null;
+  }
+
+  // Only the current user's verified review — no picker; parent uses current user as recommender.
+  if (eligible.length === 1 && isCurrentUserBountyReview(eligible[0], currentUserProfileId)) {
     return null;
   }
 
@@ -75,12 +97,17 @@ export default function BountyRecipientPicker({ reviews, selectedService, select
       )}
 
       {filtered.map((review) => {
-        const isSelected = selectedBountyRecipient?.rating_uid === review.rating_uid;
+        const disabled = isBountyReviewDisabled(review, eligible, currentUserProfileId);
+        const isSelected = !disabled && selectedBountyRecipient?.rating_uid === review.rating_uid;
         const name = [review.profile_personal_first_name, review.profile_personal_last_name].filter(Boolean).join(" ") || `User ${review.rating_profile_id}`;
         return (
           <TouchableOpacity
             key={review.rating_uid}
-            onPress={() => onSelectRecipient(isSelected ? null : review)}
+            onPress={() => {
+              if (disabled) return;
+              onSelectRecipient(isSelected ? null : review);
+            }}
+            disabled={disabled}
             style={{
               flexDirection: "row",
               alignItems: "center",
@@ -88,8 +115,9 @@ export default function BountyRecipientPicker({ reviews, selectedService, select
               marginBottom: 8,
               borderRadius: 10,
               borderWidth: 1.5,
-              borderColor: isSelected ? "#9C45F7" : "#ddd",
-              backgroundColor: isSelected ? "#f5eeff" : "#fafafa",
+              borderColor: disabled ? "#e8e8e8" : isSelected ? "#9C45F7" : "#ddd",
+              backgroundColor: disabled ? "#f0f0f0" : isSelected ? "#f5eeff" : "#fafafa",
+              opacity: disabled ? 0.55 : 1,
             }}
           >
             <View
@@ -98,7 +126,7 @@ export default function BountyRecipientPicker({ reviews, selectedService, select
                 height: 20,
                 borderRadius: 10,
                 borderWidth: 2,
-                borderColor: isSelected ? "#9C45F7" : "#ccc",
+                borderColor: disabled ? "#ddd" : isSelected ? "#9C45F7" : "#ccc",
                 alignItems: "center",
                 justifyContent: "center",
                 marginRight: 10,
@@ -126,8 +154,10 @@ export default function BountyRecipientPicker({ reviews, selectedService, select
             )}
 
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: "600", color: "#333" }}>{name}</Text>
-              {review.circle_num_nodes != null ? (
+              <Text style={{ fontWeight: "600", color: disabled ? "#999" : "#333" }}>{name}</Text>
+              {disabled ? (
+                <Text style={{ fontSize: 12, color: "#aaa" }}>Your review — not eligible</Text>
+              ) : review.circle_num_nodes != null ? (
                 <Text style={{ fontSize: 12, color: "#888" }}>{`Level ${review.circle_num_nodes} Connection`}</Text>
               ) : (
                 <Text style={{ fontSize: 12, color: "#888" }}>Verified reviewer</Text>
@@ -137,13 +167,13 @@ export default function BountyRecipientPicker({ reviews, selectedService, select
             {selectedService?.bs_bounty && (
               <View
                 style={{
-                  backgroundColor: isSelected ? "#9C45F7" : "#f0e8ff",
+                  backgroundColor: disabled ? "#eee" : isSelected ? "#9C45F7" : "#f0e8ff",
                   borderRadius: 8,
                   paddingHorizontal: 8,
                   paddingVertical: 4,
                 }}
               >
-                <Text style={{ color: isSelected ? "#fff" : "#9C45F7", fontWeight: "700", fontSize: 12 }}>
+                <Text style={{ color: disabled ? "#aaa" : isSelected ? "#fff" : "#9C45F7", fontWeight: "700", fontSize: 12 }}>
                   💰 ${parsePrice(selectedService.bs_bounty).toFixed(2)}
                   {selectedService.bs_bounty_type === "per_item" ? " / item" : " total"}
                 </Text>

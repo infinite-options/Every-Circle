@@ -10,7 +10,14 @@ import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, RATINGS_ENDPOINT } from "../apiConfig";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
-import { getBountyEligibleReviews, productHasBounty } from "../utils/bountyRecipientUtils";
+import {
+  bountyPickerRequiresSelection,
+  getDefaultBountyRecipient,
+  isBountyReviewDisabled,
+  mergeBountyEligibleReviews,
+  productHasBounty,
+  resolveBountyRecommenderProfileId,
+} from "../utils/bountyRecipientUtils";
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
@@ -31,6 +38,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
   const [reviewerData, setReviewerData] = useState(null);
   const [loadingReviewer, setLoadingReviewer] = useState(false);
   const [currentUserProfileId, setCurrentUserProfileId] = useState(null);
+  const [userReview, setUserReview] = useState(null);
   const [allReviews, setAllReviews] = useState([]);
   const [selectedBountyRecipient, setSelectedBountyRecipient] = useState(null);
   const [bountySort, setBountySort] = useState("connection");
@@ -70,13 +78,22 @@ export default function ReviewDetailScreen({ route, navigation }) {
 
   useEffect(() => {
     if (currentUserProfileId && business?.ratings) {
-      const otherReviews = business.ratings.filter((rating) => rating.rating_profile_id !== currentUserProfileId);
+      let userReviewFromAPI = null;
+      const otherReviews = [];
+      business.ratings.forEach((rating) => {
+        if (rating.rating_profile_id === currentUserProfileId) {
+          userReviewFromAPI = rating;
+        } else {
+          otherReviews.push(rating);
+        }
+      });
       otherReviews.sort((a, b) => {
         if (a.circle_num_nodes == null && b.circle_num_nodes == null) return 0;
         if (a.circle_num_nodes == null) return 1;
         if (b.circle_num_nodes == null) return -1;
         return a.circle_num_nodes - b.circle_num_nodes;
       });
+      setUserReview(userReviewFromAPI);
       setAllReviews(otherReviews);
     }
   }, [currentUserProfileId, business]);
@@ -343,26 +360,42 @@ export default function ReviewDetailScreen({ route, navigation }) {
     setSelectedService(service);
     setQuantity(1);
     setBountySort("connection");
+    setBountySearch("");
+
+    const eligible = mergeBountyEligibleReviews(allReviews, userReview);
+    let initialRecipient = getDefaultBountyRecipient(eligible, currentUserProfileId);
     if (reviewer_profile_id && reviewer_profile_id !== "Charity") {
-      const match = allReviews.find((r) => r.rating_profile_id === reviewer_profile_id);
-      if (match) setSelectedBountyRecipient(match);
+      const match = eligible.find((r) => r.rating_profile_id === reviewer_profile_id);
+      if (match && !isBountyReviewDisabled(match, eligible, currentUserProfileId)) {
+        initialRecipient = match;
+      }
     }
+    setSelectedBountyRecipient(initialRecipient);
+
     setQuantityModalVisible(true);
   };
 
   const handleQuantityConfirm = async () => {
-    const bountyEligible = getBountyEligibleReviews(allReviews);
-    if (productHasBounty(selectedService, parsePrice) && bountyEligible.length > 0 && !selectedBountyRecipient) {
+    const bountyEligible = mergeBountyEligibleReviews(allReviews, userReview);
+    if (
+      productHasBounty(selectedService, parsePrice) &&
+      bountyPickerRequiresSelection(bountyEligible, currentUserProfileId, selectedBountyRecipient)
+    ) {
       Alert.alert("Select a Reviewer", "Please select who referred you before adding to cart.");
       return;
     }
+    const bountyRecommenderProfileId = resolveBountyRecommenderProfileId({
+      selectedBountyRecipient,
+      currentUserProfileId,
+      eligibleReviews: bountyEligible,
+    });
     try {
       const ccPayer = canonicalBusinessCcFeePayer(business?.business_cc_fee_payer ?? business?.bs_cc_fee_payer);
       const serviceWithQuantity = {
         ...selectedService,
         quantity: quantity,
         totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
-        bounty_recommender_profile_id: selectedBountyRecipient?.rating_profile_id || null,
+        bounty_recommender_profile_id: bountyRecommenderProfileId,
         business_uid: business_uid,
         business_name: sanitizeText(business?.business_name || business_name || "") || "",
         business_cc_fee_payer: ccPayer,
@@ -391,10 +424,10 @@ export default function ReviewDetailScreen({ route, navigation }) {
       }
 
       let cartItemsToSave = newCartItems;
-      if (selectedBountyRecipient?.rating_profile_id) {
+      if (bountyRecommenderProfileId) {
         cartItemsToSave = newCartItems.map((item) => {
           if (item.business_uid === business_uid || item.bs_business_id === business_uid) {
-            return { ...item, bounty_recommender_profile_id: selectedBountyRecipient.rating_profile_id };
+            return { ...item, bounty_recommender_profile_id: bountyRecommenderProfileId };
           }
           return item;
         });
@@ -867,6 +900,8 @@ export default function ReviewDetailScreen({ route, navigation }) {
 
                 <BountyRecipientPicker
                   reviews={allReviews}
+                  userReview={userReview}
+                  currentUserProfileId={currentUserProfileId}
                   selectedService={selectedService}
                   selectedBountyRecipient={selectedBountyRecipient}
                   onSelectRecipient={setSelectedBountyRecipient}

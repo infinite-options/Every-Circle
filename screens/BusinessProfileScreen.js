@@ -19,7 +19,14 @@ import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "..
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import { getSessionProfile } from "../utils/sessionProfile";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
-import { getBountyEligibleReviews, productHasBounty } from "../utils/bountyRecipientUtils";
+import {
+  bountyPickerRequiresSelection,
+  getDefaultBountyRecipient,
+  isBountyReviewDisabled,
+  mergeBountyEligibleReviews,
+  productHasBounty,
+  resolveBountyRecommenderProfileId,
+} from "../utils/bountyRecipientUtils";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -573,6 +580,19 @@ export default function BusinessProfileScreen({ route, navigation }) {
     setSelectedService(service);
     setQuantity(1);
     setBountySort("connection");
+    setBountySearch("");
+
+    const eligible = mergeBountyEligibleReviews(allReviews, userReview);
+    const defaultRecipient = getDefaultBountyRecipient(eligible, currentUserProfileId);
+    if (defaultRecipient) {
+      setSelectedBountyRecipient(defaultRecipient);
+    } else if (
+      selectedBountyRecipient &&
+      isBountyReviewDisabled(selectedBountyRecipient, eligible, currentUserProfileId)
+    ) {
+      setSelectedBountyRecipient(null);
+    }
+
     setQuantityModalVisible(true);
   };
 
@@ -591,18 +611,26 @@ export default function BusinessProfileScreen({ route, navigation }) {
         return;
       }
     }
-    const bountyEligible = getBountyEligibleReviews(allReviews);
-    if (productHasBounty(selectedService, parsePrice) && bountyEligible.length > 0 && !selectedBountyRecipient) {
+    const bountyEligible = mergeBountyEligibleReviews(allReviews, userReview);
+    if (
+      productHasBounty(selectedService, parsePrice) &&
+      bountyPickerRequiresSelection(bountyEligible, currentUserProfileId, selectedBountyRecipient)
+    ) {
       Alert.alert("Select a Reviewer", "Please select who referred you before adding to cart.");
       return;
     }
+    const bountyRecommenderProfileId = resolveBountyRecommenderProfileId({
+      selectedBountyRecipient,
+      currentUserProfileId,
+      eligibleReviews: bountyEligible,
+    });
     try {
       const ccPayer = canonicalBusinessCcFeePayer(business.business_cc_fee_payer ?? business.bs_cc_fee_payer);
       const serviceWithQuantity = {
         ...selectedService,
         quantity: quantity,
         totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
-        bounty_recommender_profile_id: selectedBountyRecipient?.rating_profile_id || null,
+        bounty_recommender_profile_id: bountyRecommenderProfileId,
         business_uid: business_uid,
         business_name: sanitizeText(business.business_name || "") || "",
         business_cc_fee_payer: ccPayer,
@@ -626,12 +654,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
       }
 
       // Always update ALL items from this business to use the latest selected reviewer
-      if (selectedBountyRecipient?.rating_profile_id) {
+      if (bountyRecommenderProfileId) {
         newCartItems = newCartItems.map((item) => {
-          // if (item.business_uid === business_uid) {
           if (item.business_uid === business_uid || item.bs_business_id === business_uid) {
-            console.log("Updating bounty recipient for item:", item.bs_uid, "to:", selectedBountyRecipient.rating_profile_id);
-            return { ...item, bounty_recommender_profile_id: selectedBountyRecipient.rating_profile_id };
+            console.log("Updating bounty recipient for item:", item.bs_uid, "to:", bountyRecommenderProfileId);
+            return { ...item, bounty_recommender_profile_id: bountyRecommenderProfileId };
           }
           return item;
         });
@@ -1521,6 +1548,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
               <BountyRecipientPicker
                 reviews={allReviews}
+                userReview={userReview}
+                currentUserProfileId={currentUserProfileId}
                 selectedService={selectedService}
                 selectedBountyRecipient={selectedBountyRecipient}
                 onSelectRecipient={setSelectedBountyRecipient}
