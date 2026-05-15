@@ -4,7 +4,14 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
-import { ACCOUNT_SCREEN_PERSONAL_ENDPOINT, ACCOUNT_SCREEN_BUSINESS_ENDPOINT, API_BASE_URL, TRANSACTION_RECEIPT_ENDPOINT } from "../apiConfig";
+import {
+  ACCOUNT_SCREEN_PERSONAL_ENDPOINT,
+  ACCOUNT_SCREEN_BUSINESS_ENDPOINT,
+  API_BASE_URL,
+  TRANSACTION_RECEIPT_ENDPOINT,
+  TRANSACTIONS_ENDPOINT,
+  TRANSACTIONS_RETURNS_DECLINED_ENDPOINT,
+} from "../apiConfig";
 import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
 import { useFocusEffect } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -450,7 +457,7 @@ export default function AccountScreen({ navigation }) {
     try {
       const existingNote = returnRequests[uid]?.notes?.map((n) => n.note).join("\n\n---RETURN---\n\n") || "";
       const allNotes = existingNote ? `${existingNote}\n\n---RETURN---\n\n${note}` : note;
-      await fetch(`${API_BASE_URL}/api/v1/transactions`, {
+      await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -475,7 +482,7 @@ export default function AccountScreen({ navigation }) {
 
   const handleReturnAccept = async (transactionUid) => {
     try {
-      await fetch(`${API_BASE_URL}/api/v1/transactions`, {
+      await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -500,7 +507,7 @@ export default function AccountScreen({ navigation }) {
         transaction_return_seller_note: note,
       });
       console.log("=== DECLINE BODY BEING SENT:", body);
-      const response = await fetch(`${API_BASE_URL}/api/v1/transactions/returns/declined`, {
+      const response = await fetch(TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body,
@@ -718,8 +725,7 @@ export default function AccountScreen({ navigation }) {
   const updateTransactionEscrow = async (transactionUid) => {
     try {
       setUpdatingEscrow(true);
-      const url = `${API_BASE_URL}/api/v1/transactions`;
-      const response = await fetch(url, {
+      const response = await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1117,7 +1123,7 @@ export default function AccountScreen({ navigation }) {
   const triggerAutoPay = useCallback(async (transactionUid) => {
     try {
       await saveAutoPaidId(transactionUid); // persists + updates state
-      await fetch(`${API_BASE_URL}/api/v1/transactions`, {
+      await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transaction_uid: transactionUid, transaction_in_escrow: 0 }),

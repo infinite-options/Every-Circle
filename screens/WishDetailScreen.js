@@ -59,6 +59,7 @@ const WishDetailScreenContent = ({ route, navigation }) => {
         total_amount_paid: 0, // Wishes have no cost
         total_costs: 0, // Wishes have no cost
         total_taxes: 0,
+        total_fees: 0,
         items: [
           {
             wish_uid: wishData?.wish_uid,

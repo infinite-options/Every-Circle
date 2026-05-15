@@ -65,6 +65,18 @@ function roundMoney(n) {
   return Math.round(Number(n) * 100) / 100;
 }
 
+/**
+ * `navigate("ShoppingCart", { cartItems })` is not always an array: params may be missing, or callers
+ * occasionally pass the AsyncStorage shape `{ items: [...] }`. Coerce once when syncing into state so
+ * the rest of the screen can assume `cartItems` is always `[]` or a row array.
+ */
+function cartItemsFromRouteParams(raw) {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "object" && Array.isArray(raw.items)) return raw.items;
+  return [];
+}
+
 /** Whether this service line is subject to sales tax (expertise handled separately). */
 function isLineTaxable(item) {
   if (!item || item.itemType === "expertise") return false;
@@ -141,6 +153,7 @@ function groupBuyerPaysCardFee(items) {
  * One entry per seller: merchandise, sales tax, optional 3% card fee (buyer only), Stripe total.
  */
 function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
+  if (!Array.isArray(cartItems)) return [];
   const map = new Map();
   for (const item of cartItems) {
     const sid = getCheckoutSellerId(item);
@@ -183,8 +196,8 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
 }
 
 const ShoppingCartScreen = ({ route, navigation }) => {
-  const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id } = route.params;
-  const [cartItems, setCartItems] = useState(initialCartItems);
+  const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id } = route.params || {};
+  const [cartItems, setCartItems] = useState(() => cartItemsFromRouteParams(initialCartItems));
 
   const resolveItemBusinessName = (item) => {
     if (item.itemType === "expertise") {
@@ -561,7 +574,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
   // Update local state when initialCartItems changes
   useEffect(() => {
-    setCartItems(initialCartItems);
+    setCartItems(cartItemsFromRouteParams(initialCartItems));
   }, [initialCartItems]);
 
   useEffect(() => {
@@ -638,6 +651,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const handleRemoveItem = async (index) => {
     try {
       const itemToRemove = cartItems[index];
+      if (!itemToRemove) return;
 
       if (itemToRemove.itemType === "expertise") {
         await AsyncStorage.removeItem(itemToRemove.cart_key || `cart_expertise_${itemToRemove.expertise_uid}`);
@@ -862,9 +876,10 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         buyerProfileId = buyerUid;
       }
 
-      const subtotalAfterTax = group.subtotalAfterTax;
-      const fee = group.processingFee;
-      const total = group.total;
+      const merchandiseSubtotal = group.merchandiseSubtotal;
+      const salesTaxTotal = group.salesTaxTotal;
+      const processingFee = group.processingFee;
+      const chargedTotal = group.total;
 
       const defaultRecommender =
         recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231";
@@ -876,6 +891,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         const bountyType = item.itemType === "expertise" ? "per_item" : item.bs_bounty_type || "per_item";
         const bounty = item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty);
         const sellerBusinessId = item.business_uid || item.profile_uid;
+        const { pretax, tax } = lineMerchandiseAndTax(item);
         return {
           business_id: sellerBusinessId,
           bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
@@ -884,21 +900,45 @@ const ShoppingCartScreen = ({ route, navigation }) => {
           bounty_type: bountyType,
           quantity: qty,
           recommender_profile_id: item.bounty_recommender_profile_id || defaultRecommender,
+          /** Line pretax merchandise (before sales tax); helps backend reconcile ti_bs_sales_tax. */
+          ti_bs_pretax: parseFloat(Number(pretax).toFixed(2)),
+          /** Sales tax for this line only (same as cart UI per-line tax). */
+          ti_bs_sales_tax: parseFloat(Number(tax).toFixed(2)),
         };
       });
 
+      // total_costs = pretax merchandise only (matches "Merchandise subtotal" in fee dialog).
+      // total_amount_paid = Stripe charged amount (merchandise + sales tax + card processing).
+      // total_taxes / total_fees break out the tax and fee portions of the charge.
+      const salesTaxRounded = parseFloat(Number(salesTaxTotal).toFixed(2));
+      const merchandiseRounded = parseFloat(Number(merchandiseSubtotal).toFixed(2));
       const transactionData = {
         profile_id: buyerProfileId,
         business_id: group.sellerId,
         stripe_payment_intent: paymentIntent,
-        total_amount_paid: parseFloat(Number(total).toFixed(2)),
-        total_costs: parseFloat(Number(subtotalAfterTax).toFixed(2)),
-        total_taxes: parseFloat(Number(fee).toFixed(2)),
+        total_amount_paid: parseFloat(Number(chargedTotal).toFixed(2)),
+        total_costs: merchandiseRounded,
+        total_taxes: salesTaxRounded,
+        total_fees: parseFloat(Number(processingFee).toFixed(2)),
         transaction_in_escrow: transactionInEscrow,
         items,
       };
 
-      console.log("Posting transaction for one seller:", JSON.stringify(transactionData, null, 2));
+      console.log("[ShoppingCart] Transaction POST — each field before endpoint:");
+      console.log({
+        profile_id: transactionData.profile_id,
+        business_id: transactionData.business_id,
+        stripe_payment_intent: transactionData.stripe_payment_intent,
+        total_amount_paid: transactionData.total_amount_paid,
+        total_costs: transactionData.total_costs,
+        total_taxes: transactionData.total_taxes,
+        total_fees: transactionData.total_fees,
+        transaction_in_escrow: transactionData.transaction_in_escrow,
+        items_count: Array.isArray(transactionData.items) ? transactionData.items.length : 0,
+        items: transactionData.items,
+      });
+
+      console.log("Posting transaction for one seller (full JSON):", JSON.stringify(transactionData, null, 2));
 
       const response = await fetch(TRANSACTIONS_ENDPOINT, {
         method: "POST",

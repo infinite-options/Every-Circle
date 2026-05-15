@@ -313,13 +313,17 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
       const fee = parseFloat(processingFee) || 0;
       const totalPaid = totalAmountPaid !== null ? parseFloat(totalAmountPaid) : subtotal + fee;
 
+      const roundedFee = Math.round(fee * 100) / 100;
+      const roundedSubtotal = Math.round(subtotal * 100) / 100;
+
       const transactionData = {
         profile_id: buyerUid,
         business_id: responderProfileUid, // Use responder's profile UID as business_id
         stripe_payment_intent: paymentIntent,
         total_amount_paid: totalPaid,
-        total_costs: subtotal,
-        total_taxes: Math.round(fee * 100) / 100,
+        total_costs: roundedSubtotal,
+        total_taxes: 0,
+        total_fees: roundedFee,
         // Ensure tinyint: 1 or 0 only (backend expects tinyint)
         transaction_in_escrow: transactionInEscrow === true || transactionInEscrow === 1 ? 1 : 0,
         items: [
@@ -336,6 +340,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
             cost: costAmount != null ? parseFloat(costAmount) : 0,
             item_cost: costValue != null ? parseFloat(costValue) : 0,
             recommender_profile_id: responderProfileUid, // Use responder's profile UID
+            ti_bs_sales_tax: 0,
           },
         ],
       };

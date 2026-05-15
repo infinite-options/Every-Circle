@@ -13,7 +13,7 @@ import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
-import { API_BASE_URL } from "../apiConfig";
+import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT } from "../apiConfig";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -918,7 +918,7 @@ export default function SettingsScreen() {
     setAdminLoading(true);
     setAdminError(null);
     try {
-      const url = `${API_BASE_URL}/api/v1/transactions/returns/declined`;
+      const url = TRANSACTIONS_RETURNS_DECLINED_ENDPOINT;
       console.log("Fetching admin returns from:", url);
       const response = await fetch(url);
       console.log("Response status:", response.status);
@@ -1503,7 +1503,7 @@ export default function SettingsScreen() {
                 style={{ flex: 1, backgroundColor: "#B71C1C", padding: 14, borderRadius: 10, alignItems: "center" }}
                 onPress={async () => {
                   try {
-                    const res = await fetch(`${API_BASE_URL}/api/v1/transactions/returns/declined`, {
+                    const res = await fetch(TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, {
                       method: "PUT",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
@@ -1533,7 +1533,7 @@ export default function SettingsScreen() {
                 style={{ flex: 1, backgroundColor: "#18884A", padding: 14, borderRadius: 10, alignItems: "center" }}
                 onPress={async () => {
                   try {
-                    const res = await fetch(`${API_BASE_URL}/api/v1/transactions/returns/declined`, {
+                    const res = await fetch(TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, {
                       method: "PUT",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({

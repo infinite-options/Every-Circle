@@ -71,6 +71,8 @@ export const SEARCH_REFERRAL_ENDPOINT = `${API_BASE_URL}/api/search_referral`;
 
 // Transaction and Rating Endpoints
 export const TRANSACTIONS_ENDPOINT = `${API_BASE_URL}/api/v1/transactions`;
+/** GET list / PUT resolve — admin declined returns queue */
+export const TRANSACTIONS_RETURNS_DECLINED_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/returns/declined`;
 /** Aggregated Account screen payloads (Flask: AccountScreenPersonal / AccountScreenBusiness) */
 export const ACCOUNT_SCREEN_PERSONAL_ENDPOINT = `${API_BASE_URL}/api/v1/account-screen/personal`;
 export const ACCOUNT_SCREEN_BUSINESS_ENDPOINT = `${API_BASE_URL}/api/v1/account-screen/business`;
