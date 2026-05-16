@@ -104,6 +104,19 @@ function sumReceiptLineMerchandise(rows) {
   }, 0);
 }
 
+/** Merchandise subtotal: transaction_amount when present, else sum of line unit × qty. */
+function getReceiptMerchandiseSubtotal(receiptRows) {
+  if (!Array.isArray(receiptRows) || receiptRows.length === 0) return null;
+  const txnMerch = receiptMoneyNullable(receiptRows[0]?.transaction_amount);
+  if (txnMerch != null) return txnMerch;
+  return sumReceiptLineMerchandise(receiptRows);
+}
+
+function isReturnReceipt(receiptRows) {
+  const merch = getReceiptMerchandiseSubtotal(receiptRows);
+  return merch != null && merch < 0;
+}
+
 function formatReceiptUsd(n) {
   return Number.isFinite(n) ? `$${n.toFixed(2)}` : "—";
 }
@@ -606,6 +619,11 @@ export default function AccountScreen({ navigation }) {
       Alert.alert("Error", "No return line items to submit.");
       return false;
     }
+    const profileId = transaction?.transaction_profile_id || (await AsyncStorage.getItem("profile_uid"));
+    if (!profileId) {
+      Alert.alert("Error", "Cannot submit return: missing profile.");
+      return false;
+    }
     try {
       const note = (buyerNote || "").trim();
       const existingNote = returnRequests[uid]?.notes?.map((n) => n.note).join("\n\n---RETURN---\n\n") || "";
@@ -614,6 +632,7 @@ export default function AccountScreen({ navigation }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          profile_id: profileId,
           transaction_uid: uid,
           transaction_return_requested: 1,
           transaction_return_note: allNotes,
@@ -1867,6 +1886,8 @@ export default function AccountScreen({ navigation }) {
     );
   }
 
+  const receiptIsReturnReceipt = !receiptLoading && receiptData.length > 0 && isReturnReceipt(receiptData);
+
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
@@ -2469,7 +2490,9 @@ export default function AccountScreen({ navigation }) {
       <Modal animationType='fade' transparent={true} visible={showReceiptModal} onRequestClose={() => setShowReceiptModal(false)}>
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiptModalContent, darkMode && styles.darkModalContent]}>
-            <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle, { textAlign: "center" }]}>Transaction Receipt</Text>
+            <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle, { textAlign: "center" }]}>
+              {receiptIsReturnReceipt ? "Return Receipt" : "Transaction Receipt"}
+            </Text>
             {receiptLoading ? (
               <ActivityIndicator size='large' color='#18884A' style={{ marginVertical: 24 }} />
             ) : receiptData.length > 0 ? (
@@ -2503,36 +2526,37 @@ export default function AccountScreen({ navigation }) {
               <Text style={{ color: "#B71C1C", textAlign: "center", marginTop: 12, fontWeight: "600", fontSize: 14 }}>✓ Return has been requested</Text>
             )}
 
-            {(() => {
-              const uid = receiptTransaction?.transaction_uid;
-              const returnData = returnRequests[uid];
-              const totalItems = receiptData.length;
+            {!receiptIsReturnReceipt &&
+              (() => {
+                const uid = receiptTransaction?.transaction_uid;
+                const returnData = returnRequests[uid];
+                const totalItems = receiptData.length;
 
-              const allItemsReturned =
-                totalItems > 0 &&
-                receiptData.every((row, index) => {
-                  const purchasedQty = getReceiptLineQty(row);
-                  return getReturnedQtyForLine(returnData, index, purchasedQty) >= purchasedQty;
-                });
+                const allItemsReturned =
+                  totalItems > 0 &&
+                  receiptData.every((row, index) => {
+                    const purchasedQty = getReceiptLineQty(row);
+                    return getReturnedQtyForLine(returnData, index, purchasedQty) >= purchasedQty;
+                  });
 
-              return (
-                <TouchableOpacity
-                  style={[styles.receiptCloseButton, { borderColor: "#B71C1C", marginTop: 12 }, allItemsReturned && { opacity: 0.4 }]}
-                  disabled={allItemsReturned}
-                  onPress={() => {
-                    if (!allItemsReturned) {
-                      setReturnModalReceiptData(receiptData);
-                      setSelectedReturnItems([]);
-                      setReturnItemQuantities({});
-                      setShowReceiptModal(false);
-                      setTimeout(() => setShowReturnNoteModal(true), 300);
-                    }
-                  }}
-                >
-                  <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>{allItemsReturned ? "All Items Returned" : "Request Return"}</Text>
-                </TouchableOpacity>
-              );
-            })()}
+                return (
+                  <TouchableOpacity
+                    style={[styles.receiptCloseButton, { borderColor: "#B71C1C", marginTop: 12 }, allItemsReturned && { opacity: 0.4 }]}
+                    disabled={allItemsReturned}
+                    onPress={() => {
+                      if (!allItemsReturned) {
+                        setReturnModalReceiptData(receiptData);
+                        setSelectedReturnItems([]);
+                        setReturnItemQuantities({});
+                        setShowReceiptModal(false);
+                        setTimeout(() => setShowReturnNoteModal(true), 300);
+                      }
+                    }}
+                  >
+                    <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>{allItemsReturned ? "All Items Returned" : "Request Return"}</Text>
+                  </TouchableOpacity>
+                );
+              })()}
 
             {/* Request Return button */}
             {/* <TouchableOpacity
