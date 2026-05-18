@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, ScrollView, Platform, Share, SafeAreaView } from "react-native";
-import { useRoute, useNavigation } from "@react-navigation/native";
+import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import MiniCard from "../components/MiniCard";
-import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
-import { sanitizeText } from "../utils/textSanitizer";
+import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
+import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 
 function escapeVCardValue(value) {
   if (!value) return "";
@@ -53,6 +54,15 @@ function resolveProfileUidFromRoute(route) {
   return null;
 }
 
+/** Params for Login / SignUp when continuing from a scan link (QR owner's profile_uid). */
+export function scanLandingAuthParams(profileUid) {
+  return {
+    returnToScanLanding: true,
+    profile_uid: profileUid,
+    referralProfileUid: profileUid,
+  };
+}
+
 export default function ScanLandingScreen() {
   const route = useRoute();
   const navigation = useNavigation();
@@ -61,66 +71,103 @@ export default function ScanLandingScreen() {
   const [loading, setLoading] = useState(!!profileUid);
   const [error, setError] = useState(null);
   const [profileData, setProfileData] = useState(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [redirecting, setRedirecting] = useState(false);
+  const redirectStartedRef = useRef(false);
 
-  useEffect(() => {
+  const loadProfile = useCallback(async () => {
     if (!profileUid) {
-      setLoading(false);
       setError("Invalid or missing link.");
+      setLoading(false);
       return;
     }
-
-    let cancelled = false;
-
-    (async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
-        if (!response.ok) {
-          throw new Error("Profile not found");
-        }
-        const apiUser = await response.json();
-        const p = apiUser?.personal_info || {};
-        const tagLineIsPublic = p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1;
-        const emailIsPublic = p.profile_personal_email_is_public === 1;
-        const phoneIsPublic = p.profile_personal_phone_number_is_public === 1;
-        const imageIsPublic = p.profile_personal_image_is_public === 1;
-        const locationIsPublic = p.profile_personal_location_is_public === 1;
-
-        const next = {
-          profile_uid: profileUid,
-          user_uid: apiUser?.user_uid != null ? String(apiUser.user_uid) : "",
-          firstName: sanitizeText(p.profile_personal_first_name || ""),
-          lastName: sanitizeText(p.profile_personal_last_name || ""),
-          tagLine: tagLineIsPublic ? sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || "") : "",
-          email: emailIsPublic ? sanitizeText(apiUser?.user_email || "") : "",
-          phoneNumber: phoneIsPublic ? sanitizeText(p.profile_personal_phone_number || "") : "",
-          profileImage: imageIsPublic ? sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : "") : "",
-          city: locationIsPublic ? sanitizeText(p.profile_personal_city || "") : "",
-          state: locationIsPublic ? sanitizeText(p.profile_personal_state || "") : "",
-          emailIsPublic,
-          phoneIsPublic,
-          tagLineIsPublic,
-          locationIsPublic,
-          imageIsPublic,
-        };
-
-        if (!cancelled) setProfileData(next);
-      } catch (e) {
-        if (!cancelled) setError(e.message || "Something went wrong.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    try {
+      setLoading(true);
+      setError(null);
+      const card = await fetchPublicProfileCard(profileUid);
+      setProfileData(card);
+    } catch (e) {
+      setError(e.message || "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
   }, [profileUid]);
 
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  const checkSession = useCallback(async () => {
+    setCheckingSession(true);
+    try {
+      const uid = await AsyncStorage.getItem("profile_uid");
+      setIsLoggedIn(!!uid);
+    } catch {
+      setIsLoggedIn(false);
+    } finally {
+      setCheckingSession(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      checkSession();
+    }, [checkSession]),
+  );
+
+  const redirectToNetwork = useCallback(async () => {
+    if (!profileUid || redirectStartedRef.current) return;
+    const myUid = await AsyncStorage.getItem("profile_uid");
+    if (!myUid) return;
+
+    redirectStartedRef.current = true;
+    setRedirecting(true);
+    await goToNetworkForScanConnect(navigation, profileUid);
+  }, [profileUid, navigation]);
+
+  // Already logged in, or returning after login/signup (openConnectModal)
+  useEffect(() => {
+    if (!profileUid || loading || checkingSession || redirectStartedRef.current) return;
+
+    const shouldRedirect = isLoggedIn || route.params?.openConnectModal === true;
+    if (!shouldRedirect) return;
+
+    if (route.params?.openConnectModal === true && !isLoggedIn) {
+      let cancelled = false;
+      let tries = 0;
+      const poll = setInterval(async () => {
+        if (cancelled) return;
+        const myUid = await AsyncStorage.getItem("profile_uid");
+        if (myUid) {
+          clearInterval(poll);
+          setIsLoggedIn(true);
+          redirectToNetwork();
+          navigation.setParams({ openConnectModal: undefined });
+        } else if (++tries > 24) {
+          clearInterval(poll);
+        }
+      }, 500);
+      return () => {
+        cancelled = true;
+        clearInterval(poll);
+      };
+    }
+
+    if (isLoggedIn) {
+      redirectToNetwork();
+    }
+  }, [profileUid, loading, checkingSession, isLoggedIn, route.params?.openConnectModal, redirectToNetwork, navigation]);
+
+  const authParams = useMemo(() => (profileUid ? scanLandingAuthParams(profileUid) : {}), [profileUid]);
+
   const goToSignUp = useCallback(() => {
-    navigation.navigate("SignUp", { ref_profile_uid: profileUid });
-  }, [navigation, profileUid]);
+    navigation.navigate("SignUp", authParams);
+  }, [navigation, authParams]);
+
+  const goToLogin = useCallback(() => {
+    navigation.navigate("Login", authParams);
+  }, [navigation, authParams]);
 
   const downloadVCard = useCallback(() => {
     if (!profileData) return;
@@ -147,23 +194,30 @@ export default function ScanLandingScreen() {
     }).catch(() => {});
   }, [profileData]);
 
+  const showGuestActions = !checkingSession && !isLoggedIn && !redirecting;
+  const showRedirecting = redirecting || (isLoggedIn && !showGuestActions);
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Text style={styles.brand}>EveryCircle</Text>
         <Text style={styles.headline}>Connect on EveryCircle</Text>
-        <Text style={styles.sub}>Someone shared their profile with you. Join the app to connect, or save their public contact card below.</Text>
+        <Text style={styles.sub}>
+          {showRedirecting
+            ? "Taking you to your network…"
+            : "Someone shared their profile with you. Log in or sign up to connect, or save their public contact card."}
+        </Text>
 
-        {loading && (
+        {(loading || showRedirecting) && (
           <View style={styles.centerRow}>
             <ActivityIndicator size="large" color="#2434C2" />
-            <Text style={styles.muted}>Loading profile…</Text>
+            <Text style={styles.muted}>{loading ? "Loading profile…" : "Opening connect…"}</Text>
           </View>
         )}
 
         {!loading && error && <Text style={styles.error}>{error}</Text>}
 
-        {!loading && !error && profileData && (
+        {!loading && !error && profileData && showGuestActions && (
           <>
             <View style={styles.cardWrap}>
               <MiniCard user={profileData} />
@@ -171,6 +225,10 @@ export default function ScanLandingScreen() {
 
             <TouchableOpacity style={styles.primaryBtn} onPress={goToSignUp} activeOpacity={0.85}>
               <Text style={styles.primaryBtnText}>Sign up for EveryCircle</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.secondaryBtn, styles.loginBtn]} onPress={goToLogin} activeOpacity={0.85}>
+              <Text style={styles.secondaryBtnText}>Log in</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.secondaryBtn} onPress={downloadVCard} activeOpacity={0.85}>
@@ -206,6 +264,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#2434C2",
     backgroundColor: "#fff",
+    marginBottom: 12,
+  },
+  loginBtn: {
+    marginBottom: 12,
   },
   secondaryBtnText: { color: "#2434C2", fontSize: 15, fontWeight: "600", textAlign: "center" },
 });

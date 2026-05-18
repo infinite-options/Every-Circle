@@ -12,12 +12,14 @@ import axios from "axios";
 import { Ionicons } from "@expo/vector-icons";
 import { ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
+import { ensureSessionProfileUid } from "../utils/ensureSessionProfileUid";
+import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 // import SignUpScreen from "./screens/SignUpScreen";
 
 // Accept navigation from props
-export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn, onError }) {
+export default function LoginScreen({ navigation, route, onGoogleSignIn, onAppleSignIn, onError }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isValid, setIsValid] = useState(false);
@@ -156,6 +158,21 @@ export default function LoginScreen({ navigation, onGoogleSignIn, onAppleSignIn,
       await clearUserProfileCacheStorage();
 
       console.log("LoginScreen - user_uid", user_uid);
+
+      const scanProfileUid = route?.params?.returnToScanLanding ? route?.params?.profile_uid : null;
+      if (scanProfileUid) {
+        const sessionProfileUid = await ensureSessionProfileUid(user_uid);
+        if (sessionProfileUid) {
+          await goToNetworkForScanConnect(navigation, scanProfileUid);
+        } else {
+          navigation.navigate("UserInfo", {
+            returnToScanLanding: true,
+            profile_uid: scanProfileUid,
+            referralId: scanProfileUid,
+          });
+        }
+        return;
+      }
 
       navigation.navigate("Profile");
     } catch (error) {

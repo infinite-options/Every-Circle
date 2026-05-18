@@ -66,11 +66,13 @@ export async function publishNewConnectionOpened(qrOwnerProfileUid, options = {}
   }
 
   try {
-    let scannerProfileUid = null;
-    try {
-      scannerProfileUid = await AsyncStorage.getItem("profile_uid");
-    } catch (_) {
-      /* ignore */
+    let scannerProfileUid = options.scannerProfileUid ?? null;
+    if (!scannerProfileUid) {
+      try {
+        scannerProfileUid = await AsyncStorage.getItem("profile_uid");
+      } catch (_) {
+        /* ignore */
+      }
     }
 
     const authClientId = scannerProfileUid || qrOwnerProfileUid;

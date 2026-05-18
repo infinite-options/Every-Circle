@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import AppHeader from "../components/AppHeader";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 
 export default function QRScannerScreen({ route }) {
   const navigation = useNavigation();
@@ -91,10 +92,7 @@ export default function QRScannerScreen({ route }) {
           onScanComplete(parsed);
           navigation.goBack();
         } else {
-          // Same connect modal as Network scan (not NewConnection full page)
-          navigation.navigate("Network", {
-            scannedProfileUid: parsed.profile_uid,
-          });
+          goToNetworkForScanConnect(navigation, parsed.profile_uid);
         }
       } else {
         throw new Error("Invalid QR format");

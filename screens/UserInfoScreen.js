@@ -5,6 +5,8 @@ import { storeUserEmail, getUserEmail } from "../utils/emailStorage";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
+import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
+import { profileUidFromUserProfileResponse } from "../utils/ensureSessionProfileUid";
 
 export default function UserInfoScreen({ navigation, route }) {
   // console.log("UserInfoScreen - route.params:", route.params);
@@ -234,9 +236,18 @@ export default function UserInfoScreen({ navigation, route }) {
 
       console.log("Profile update successful, proceeding to next screen");
 
-      // Check if we should redirect back to NewConnection screen
-      if (route?.params?.returnToNewConnection && route?.params?.profile_uid) {
-        // Navigate back to NewConnection screen with profile_uid
+      const savedProfileUid = profileUidFromUserProfileResponse(responseObject);
+      if (savedProfileUid) {
+        await AsyncStorage.setItem("profile_uid", savedProfileUid);
+        setProfilePersonalUid(savedProfileUid);
+        console.log("UserInfoScreen - Saved profile_uid to session:", savedProfileUid);
+      }
+
+      if (route?.params?.returnToScanLanding && route?.params?.profile_uid) {
+        Alert.alert("Success", "Profile saved successfully!");
+        console.log("UserInfoScreen - Navigating to Network after scan with profile_uid:", route.params.profile_uid);
+        await goToNetworkForScanConnect(navigation, route.params.profile_uid);
+      } else if (route?.params?.returnToNewConnection && route?.params?.profile_uid) {
         Alert.alert("Success", "Profile saved successfully!");
         console.log("UserInfoScreen - Navigating to NewConnection with profile_uid:", route.params.profile_uid);
         navigation.navigate("NewConnection", {

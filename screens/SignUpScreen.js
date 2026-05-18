@@ -16,6 +16,16 @@ import { getHeaderColors } from "../config/headerColors";
 import { useUnread } from "../contexts/UnreadContext";
 import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 import { saveSessionProfilePayload, clearUserProfileCacheStorage } from "../utils/sessionProfile";
+import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
+
+function authContinuationParams(route) {
+  const p = route?.params || {};
+  const out = {};
+  if (p.profile_uid) out.profile_uid = p.profile_uid;
+  if (p.returnToScanLanding) out.returnToScanLanding = true;
+  if (p.returnToNewConnection) out.returnToNewConnection = true;
+  return out;
+}
 
 export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, navigation, route }) {
   const { reinitialize } = useUnread();
@@ -55,7 +65,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     if (!route.params?.pendingReferralAfterOAuth || oauthReferralHandledRef.current) return;
     oauthReferralHandledRef.current = true;
 
-    const { googleUserInfo: gInfo, appleUserInfo: aInfo, referralProfileUid: refUid, returnToNewConnection, profile_uid } = route.params || {};
+    const { googleUserInfo: gInfo, appleUserInfo: aInfo, referralProfileUid: refUid } = route.params || {};
 
     if (refUid) {
       (async () => {
@@ -64,8 +74,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           ...(gInfo ? { googleUserInfo: gInfo } : {}),
           ...(aInfo ? { appleUserInfo: aInfo } : {}),
           referralId: refUid,
-          returnToNewConnection,
-          profile_uid,
+          ...authContinuationParams(route),
         });
       })();
       return;
@@ -93,8 +102,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         navigation.navigate("UserInfo", {
           appleUserInfo: route.params.appleUserInfo,
           referralId: route.params.referralProfileUid,
-          returnToNewConnection: route.params?.returnToNewConnection,
-          profile_uid: route.params?.profile_uid,
+          ...authContinuationParams(route),
         });
       } else {
         setShowReferralModal(true);
@@ -186,23 +194,20 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           navigation.navigate("UserInfo", {
             googleUserInfo: pendingGoogleUserInfo,
             referralId: foundReferralUid,
-            returnToNewConnection: route.params?.returnToNewConnection,
-            profile_uid: route.params?.profile_uid,
+            ...authContinuationParams(route),
           });
           setPendingGoogleUserInfo(null);
         } else if (pendingAppleUserInfo) {
           navigation.navigate("UserInfo", {
             appleUserInfo: pendingAppleUserInfo,
             referralId: foundReferralUid,
-            returnToNewConnection: route.params?.returnToNewConnection,
-            profile_uid: route.params?.profile_uid,
+            ...authContinuationParams(route),
           });
           setPendingAppleUserInfo(null);
         } else if (pendingRegularSignup) {
           navigation.navigate("UserInfo", {
             referralId: foundReferralUid,
-            returnToNewConnection: route.params?.returnToNewConnection,
-            profile_uid: route.params?.profile_uid,
+            ...authContinuationParams(route),
           });
           setPendingRegularSignup(false);
         }
@@ -225,23 +230,20 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       navigation.navigate("UserInfo", {
         googleUserInfo: pendingGoogleUserInfo,
         referralId: selectedUid,
-        returnToNewConnection: route.params?.returnToNewConnection,
-        profile_uid: route.params?.profile_uid,
+        ...authContinuationParams(route),
       });
       setPendingGoogleUserInfo(null);
     } else if (pendingAppleUserInfo) {
       navigation.navigate("UserInfo", {
         appleUserInfo: pendingAppleUserInfo,
         referralId: selectedUid,
-        returnToNewConnection: route.params?.returnToNewConnection,
-        profile_uid: route.params?.profile_uid,
+        ...authContinuationParams(route),
       });
       setPendingAppleUserInfo(null);
     } else if (pendingRegularSignup) {
       navigation.navigate("UserInfo", {
         referralId: selectedUid,
-        returnToNewConnection: route.params?.returnToNewConnection,
-        profile_uid: route.params?.profile_uid,
+        ...authContinuationParams(route),
       });
       setPendingRegularSignup(false);
     }
@@ -258,23 +260,20 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       navigation.navigate("UserInfo", {
         googleUserInfo: pendingGoogleUserInfo,
         referralId: newUserReferralId,
-        returnToNewConnection: route.params?.returnToNewConnection,
-        profile_uid: route.params?.profile_uid,
+        ...authContinuationParams(route),
       });
       setPendingGoogleUserInfo(null);
     } else if (pendingAppleUserInfo) {
       navigation.navigate("UserInfo", {
         appleUserInfo: pendingAppleUserInfo,
         referralId: newUserReferralId,
-        returnToNewConnection: route.params?.returnToNewConnection,
-        profile_uid: route.params?.profile_uid,
+        ...authContinuationParams(route),
       });
       setPendingAppleUserInfo(null);
     } else if (pendingRegularSignup) {
       navigation.navigate("UserInfo", {
         referralId: newUserReferralId,
-        returnToNewConnection: route.params?.returnToNewConnection,
-        profile_uid: route.params?.profile_uid,
+        ...authContinuationParams(route),
       });
       setPendingRegularSignup(false);
     }
@@ -317,8 +316,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             navigation.navigate("UserInfo", {
               googleUserInfo: googleUserInfo,
               referralId: route.params.referralProfileUid,
-              returnToNewConnection: route.params?.returnToNewConnection,
-              profile_uid: route.params?.profile_uid,
+              ...authContinuationParams(route),
             });
             setPendingGoogleUserInfo(null);
           } else {
@@ -409,8 +407,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                 await AsyncStorage.setItem("user_email_id", user_email);
 
                 setIsAttemptingLogin(false);
-                // Navigate directly to UserInfo without showing alert
-                navigation.navigate("UserInfo");
+                navigation.navigate("UserInfo", { ...authContinuationParams(route) });
                 return;
               }
 
@@ -422,6 +419,10 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
               reinitialize().catch(() => {});
 
               setIsAttemptingLogin(false);
+              if (route.params?.returnToScanLanding && route.params?.profile_uid) {
+                await goToNetworkForScanConnect(navigation, route.params.profile_uid);
+                return;
+              }
               navigation.navigate("Profile", {
                 user: {
                   ...fullUser,
@@ -458,7 +459,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   await clearUserProfileCacheStorage();
                   await AsyncStorage.setItem("user_uid", createAccountData.user_uid);
                   setIsAttemptingLogin(false);
-                  navigation.navigate("UserInfo");
+                  navigation.navigate("UserInfo", { ...authContinuationParams(route) });
                   return;
                 }
               } catch (profileError) {
@@ -482,8 +483,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             await AsyncStorage.setItem("referral_uid", route.params.referralProfileUid);
             navigation.navigate("UserInfo", {
               referralId: route.params.referralProfileUid,
-              returnToNewConnection: route.params?.returnToNewConnection,
-              profile_uid: route.params?.profile_uid,
+              ...authContinuationParams(route),
             });
             setPendingRegularSignup(false);
           } else {

@@ -20,6 +20,8 @@ import { getHeaderColors, getHeaderColor } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTokenNoLongerActive } from "../utils/ablyClient";
 import { publishNewConnectionOpened } from "../utils/publishNewConnectionOpened";
+import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
+import { addScannedCircleConnection } from "../utils/addScannedCircleConnection";
 import { getSessionProfile } from "../utils/sessionProfile";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
@@ -212,38 +214,6 @@ const connectionFilterModalStyles = StyleSheet.create({
     paddingRight: 8,
   },
 });
-
-/** Public mini-card fields for a profile (QR scan / reciprocal exchange popup). */
-async function fetchPublicProfileCard(profileUid) {
-  const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
-  if (!response.ok) {
-    throw new Error("Profile not found");
-  }
-  const apiUser = await response.json();
-  const p = apiUser?.personal_info || {};
-  const tagLineIsPublic = p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1;
-  const emailIsPublic = p.profile_personal_email_is_public === 1;
-  const phoneIsPublic = p.profile_personal_phone_number_is_public === 1;
-  const imageIsPublic = p.profile_personal_image_is_public === 1;
-  const locationIsPublic = p.profile_personal_location_is_public === 1;
-
-  return {
-    profile_uid: profileUid,
-    firstName: sanitizeText(p.profile_personal_first_name || ""),
-    lastName: sanitizeText(p.profile_personal_last_name || ""),
-    tagLine: tagLineIsPublic ? sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || "") : "",
-    email: emailIsPublic ? sanitizeText(apiUser?.user_email || "") : "",
-    phoneNumber: phoneIsPublic ? sanitizeText(p.profile_personal_phone_number || "") : "",
-    profileImage: imageIsPublic ? sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : "") : "",
-    city: locationIsPublic ? sanitizeText(p.profile_personal_city || "") : "",
-    state: locationIsPublic ? sanitizeText(p.profile_personal_state || "") : "",
-    emailIsPublic,
-    phoneIsPublic,
-    tagLineIsPublic,
-    locationIsPublic,
-    imageIsPublic,
-  };
-}
 
 const NetworkScreen = ({ navigation }) => {
   const route = useRoute();
@@ -1103,14 +1073,33 @@ const NetworkScreen = ({ navigation }) => {
     showScannedProfileModalRef.current = showScannedProfileModal;
   }, [showScannedProfileModal]);
 
-  // Deep link / Connect-tab scan: open the same modal on Network
+  const lastHandledScanConnectKeyRef = useRef(null);
+
+  const openConnectModalFromScanParam = useCallback(
+    (uid, scanConnectToken) => {
+      if (!uid) return;
+      const key = `${uid}:${scanConnectToken ?? ""}`;
+      if (lastHandledScanConnectKeyRef.current === key) return;
+      lastHandledScanConnectKeyRef.current = key;
+      showScannedProfileModal(uid);
+      navigation.setParams({ scannedProfileUid: undefined, scanConnectToken: undefined });
+    },
+    [showScannedProfileModal, navigation],
+  );
+
+  const scanUid = route.params?.scannedProfileUid;
+  const scanToken = route.params?.scanConnectToken;
+
+  // Scan landing / QR scanner → show connect modal (Ably publish is done in goToNetworkForScanConnect or handleQRScanComplete)
   useEffect(() => {
-    const uid = route.params?.scannedProfileUid;
-    if (!uid) return;
-    showScannedProfileModal(uid);
-    publishNewConnectionOpened(uid, { message: "QR Code Scanned" });
-    navigation.setParams({ scannedProfileUid: undefined });
-  }, [route.params?.scannedProfileUid, showScannedProfileModal, navigation]);
+    openConnectModalFromScanParam(scanUid, scanToken);
+  }, [scanUid, scanToken, openConnectModalFromScanParam]);
+
+  useFocusEffect(
+    useCallback(() => {
+      openConnectModalFromScanParam(scanUid, scanToken);
+    }, [scanUid, scanToken, openConnectModalFromScanParam]),
+  );
 
   // Handle QR scan complete - fetch profile data and show popup
   const handleQRScanComplete = async (scanData) => {
@@ -1136,74 +1125,10 @@ const NetworkScreen = ({ navigation }) => {
   // Handle adding connection from scanned profile
   const handleAddScannedConnection = async (connectionData) => {
     try {
-      if (!scannedProfileData || !scannedProfileData.profile_uid) {
-        return;
-      }
+      if (!scannedProfileData?.profile_uid) return;
 
-      const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
-      if (!loggedInProfileUID) {
-        // Handle not logged in
-        return;
-      }
-
-      if (loggedInProfileUID === scannedProfileData.profile_uid) {
-        // Handle cannot add self
-        return;
-      }
-
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, "0");
-      const day = String(now.getDate()).padStart(2, "0");
-      const circleDate = `${year}-${month}-${day}`;
-
-      // Handle both old format (just relationship string) and new format (object)
-      const relationship = typeof connectionData === "string" ? connectionData : (connectionData?.relationship ?? null);
-      const event = typeof connectionData === "object" ? connectionData.event || "" : "";
-      const note = typeof connectionData === "object" ? connectionData.note || "" : "";
-      const city = typeof connectionData === "object" ? connectionData.city || "" : "";
-      const state = typeof connectionData === "object" ? connectionData.state || "" : "";
-      const introducedBy = typeof connectionData === "object" ? connectionData.introducedBy || "" : "";
-
-      // Calculate circle_num_nodes
-      let circleNumNodes = null;
-      try {
-        const pathResponse = await fetch(`${API_BASE_URL}/api/connections_path/${loggedInProfileUID}/${scannedProfileData.profile_uid}`);
-        if (pathResponse.ok) {
-          const pathData = await pathResponse.json();
-          const combinedPath = pathData.combined_path || "";
-          if (combinedPath) {
-            const nodes = combinedPath.split(",").filter((n) => n.trim());
-            circleNumNodes = Math.max(0, nodes.length - 2) + 1;
-          }
-        }
-      } catch (err) {
-        console.warn("Could not fetch connections_path:", err);
-      }
-
-      const requestBody = {
-        circle_profile_id: loggedInProfileUID,
-        circle_related_person_id: scannedProfileData.profile_uid,
-        circle_relationship: relationship ?? null,
-        circle_date: circleDate,
-        ...(event && { circle_event: event }),
-        ...(note && { circle_note: note }),
-        ...(city && { circle_city: city }),
-        ...(state && { circle_state: state }),
-        ...(introducedBy && { circle_introduced_by: introducedBy }),
-        ...(circleNumNodes !== null && { circle_num_nodes: circleNumNodes }),
-      };
-
-      const response = await fetch(CIRCLES_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (response.ok) {
-        // Refresh network data by refetching
+      const result = await addScannedCircleConnection(scannedProfileData.profile_uid, connectionData);
+      if (result.ok) {
         const currentProfileUID = await AsyncStorage.getItem("profile_uid");
         const currentDegree = (await AsyncStorage.getItem("network_degree")) || "2";
         if (currentProfileUID) {
@@ -1211,14 +1136,11 @@ const NetworkScreen = ({ navigation }) => {
         }
         setShowScannedProfilePopup(false);
         setScannedProfileData(null);
-        // You might want to show a success message here
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to add connection");
+      } else if (result.error && result.error !== "not_logged_in" && result.error !== "self") {
+        console.error("Error adding scanned connection:", result.error);
       }
     } catch (error) {
       console.error("Error adding scanned connection:", error);
-      // You might want to show an error alert here
     }
   };
 
@@ -3217,6 +3139,7 @@ const NetworkScreen = ({ navigation }) => {
         onClose={() => {
           setShowScannedProfilePopup(false);
           setScannedProfileData(null);
+          lastHandledScanConnectKeyRef.current = null;
         }}
         onAddConnection={(relationship) => handleAddScannedConnection(relationship)}
       />
