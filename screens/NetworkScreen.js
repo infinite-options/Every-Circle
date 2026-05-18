@@ -7,7 +7,7 @@ import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useRoute } from "@react-navigation/native";
 import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT, CHAT_CONVERSATIONS_ENDPOINT, NEARBY_USERS_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
 import MiniCard from "../components/MiniCard";
 import WebTextInput from "../components/WebTextInput";
@@ -19,6 +19,7 @@ import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors, getHeaderColor } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTokenNoLongerActive } from "../utils/ablyClient";
+import { publishNewConnectionOpened } from "../utils/publishNewConnectionOpened";
 import { getSessionProfile } from "../utils/sessionProfile";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
@@ -212,7 +213,40 @@ const connectionFilterModalStyles = StyleSheet.create({
   },
 });
 
+/** Public mini-card fields for a profile (QR scan / reciprocal exchange popup). */
+async function fetchPublicProfileCard(profileUid) {
+  const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
+  if (!response.ok) {
+    throw new Error("Profile not found");
+  }
+  const apiUser = await response.json();
+  const p = apiUser?.personal_info || {};
+  const tagLineIsPublic = p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1;
+  const emailIsPublic = p.profile_personal_email_is_public === 1;
+  const phoneIsPublic = p.profile_personal_phone_number_is_public === 1;
+  const imageIsPublic = p.profile_personal_image_is_public === 1;
+  const locationIsPublic = p.profile_personal_location_is_public === 1;
+
+  return {
+    profile_uid: profileUid,
+    firstName: sanitizeText(p.profile_personal_first_name || ""),
+    lastName: sanitizeText(p.profile_personal_last_name || ""),
+    tagLine: tagLineIsPublic ? sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || "") : "",
+    email: emailIsPublic ? sanitizeText(apiUser?.user_email || "") : "",
+    phoneNumber: phoneIsPublic ? sanitizeText(p.profile_personal_phone_number || "") : "",
+    profileImage: imageIsPublic ? sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : "") : "",
+    city: locationIsPublic ? sanitizeText(p.profile_personal_city || "") : "",
+    state: locationIsPublic ? sanitizeText(p.profile_personal_state || "") : "",
+    emailIsPublic,
+    phoneIsPublic,
+    tagLineIsPublic,
+    locationIsPublic,
+    imageIsPublic,
+  };
+}
+
 const NetworkScreen = ({ navigation }) => {
+  const route = useRoute();
   const { darkMode } = useDarkMode();
   const { clearUnread } = useUnread();
   const [storageData, setStorageData] = useState([]);
@@ -270,6 +304,7 @@ const NetworkScreen = ({ navigation }) => {
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [scannedProfileData, setScannedProfileData] = useState(null);
   const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
+  const showScannedProfileModalRef = useRef(null);
   const [showViewMyNetwork, setShowViewMyNetwork] = useState(true);
   /** Bumped on each screen focus so debounced fetch runs once per visit (avoids duplicate immediate refetch). */
   const [focusTick, setFocusTick] = useState(0);
@@ -985,20 +1020,14 @@ const NetworkScreen = ({ navigation }) => {
             scanner_profile_uid: message.data.scanner_profile_uid || null,
           });
 
-          // If Form Switch is enabled and we have User 2's profile_uid, navigate to New Connection page
-          // console.log("🔵 NetworkScreen - Checking Form Switch:", formSwitchEnabledRef.current, "scanner_profile_uid:", message.data.scanner_profile_uid);
+          // Exchange Contact Info: show same connect modal as the scanner (stay on Network)
           if (formSwitchEnabledRef.current && message.data.scanner_profile_uid) {
             const scannerProfileUid = message.data.scanner_profile_uid;
-            // console.log("🔵 NetworkScreen - Form Switch is ON, navigating to NewConnection page for User 2:", scannerProfileUid);
-            // Defer navigation so it runs in the main React/UI context (fixes iOS where Ably callback can run before navigation is ready)
             InteractionManager.runAfterInteractions(() => {
-              navigation.navigate("NewConnection", {
-                profile_uid: scannerProfileUid,
-                fromFormSwitch: true, // Flag to indicate this came from Form Switch
-              });
+              showScannedProfileModalRef.current?.(scannerProfileUid);
             });
           } else {
-            console.log("🔵 NetworkScreen - Form Switch is OFF or no scanner_profile_uid, not navigating");
+            console.log("🔵 NetworkScreen - Form Switch is OFF or no scanner_profile_uid, not opening connect modal");
           }
         } else {
           console.warn("⚠️ NetworkScreen - Message received but data structure unexpected:", message.data);
@@ -1059,6 +1088,30 @@ const NetworkScreen = ({ navigation }) => {
     return () => clearInterval(id);
   }, [ablyListeningChannel]);
 
+  const showScannedProfileModal = useCallback(async (profileUid) => {
+    if (!profileUid) return;
+    try {
+      const profileInfo = await fetchPublicProfileCard(profileUid);
+      setScannedProfileData(profileInfo);
+      setShowScannedProfilePopup(true);
+    } catch (error) {
+      console.error("Error loading profile for connect modal:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    showScannedProfileModalRef.current = showScannedProfileModal;
+  }, [showScannedProfileModal]);
+
+  // Deep link / Connect-tab scan: open the same modal on Network
+  useEffect(() => {
+    const uid = route.params?.scannedProfileUid;
+    if (!uid) return;
+    showScannedProfileModal(uid);
+    publishNewConnectionOpened(uid, { message: "QR Code Scanned" });
+    navigation.setParams({ scannedProfileUid: undefined });
+  }, [route.params?.scannedProfileUid, showScannedProfileModal, navigation]);
+
   // Handle QR scan complete - fetch profile data and show popup
   const handleQRScanComplete = async (scanData) => {
     try {
@@ -1067,43 +1120,16 @@ const NetworkScreen = ({ navigation }) => {
         return;
       }
 
-      // Fetch the profile data
-      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${scanData.profile_uid}`);
-      if (!response.ok) {
-        throw new Error("Profile not found");
-      }
-      const apiUser = await response.json();
+      await showScannedProfileModal(scanData.profile_uid);
 
-      // Extract and sanitize profile information
-      const p = apiUser?.personal_info || {};
-      const tagLineIsPublic = p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1;
-      const emailIsPublic = p.profile_personal_email_is_public === 1;
-      const phoneIsPublic = p.profile_personal_phone_number_is_public === 1;
-      const imageIsPublic = p.profile_personal_image_is_public === 1;
-      const locationIsPublic = p.profile_personal_location_is_public === 1;
-
-      const profileInfo = {
-        profile_uid: scanData.profile_uid,
-        firstName: sanitizeText(p.profile_personal_first_name || ""),
-        lastName: sanitizeText(p.profile_personal_last_name || ""),
-        tagLine: tagLineIsPublic ? sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || "") : "",
-        email: emailIsPublic ? sanitizeText(apiUser?.user_email || "") : "",
-        phoneNumber: phoneIsPublic ? sanitizeText(p.profile_personal_phone_number || "") : "",
-        profileImage: imageIsPublic ? sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : "") : "",
-        city: locationIsPublic ? sanitizeText(p.profile_personal_city || "") : "",
-        state: locationIsPublic ? sanitizeText(p.profile_personal_state || "") : "",
-        emailIsPublic,
-        phoneIsPublic,
-        tagLineIsPublic,
-        locationIsPublic,
-        imageIsPublic,
-      };
-
-      setScannedProfileData(profileInfo);
-      setShowScannedProfilePopup(true);
+      // Notify QR owner (Exchange Contact Info)
+      publishNewConnectionOpened(scanData.profile_uid, { message: "QR Code Scanned" }).then((result) => {
+        if (result.ok) {
+          console.log("✅ NetworkScreen - Ably new-connection-opened published for reciprocal exchange");
+        }
+      });
     } catch (error) {
       console.error("Error fetching scanned profile:", error);
-      // You might want to show an error alert here
     }
   };
 
