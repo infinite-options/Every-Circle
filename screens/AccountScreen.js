@@ -31,7 +31,7 @@ const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
  * Expected GET /api/v1/account-screen/personal/:profile_id JSON (flexible keys):
  * - data.transactions | purchase_transactions | personal_transactions | purchases | purchase: buyer rows as array, or { code, data }, or nested { data | items | rows | transactions | list | results | records }[]
  * - data.bounty | bounty_results | bounty_data: same shape as legacy /api/bountyresults body, or bounty_items[] + totals
- * - data.seller_transactions | seller_tx: line items for seller-side expertise qty OR { code, data } (omit key → treat as no seller lines)
+ * - data.seller_transactions | seller_tx: { code, data: [...] } seller lines (Seeking → Wishes Response; expertise uid match → Sales qty)
  * - data.profile | user_profile: optional { user_email, personal_info, expertise_info } for MiniCard + expertise list
  */
 /** Backend may send numeric or string success codes (e.g. 200 vs "200"). */
@@ -416,6 +416,31 @@ function parseExpertiseInfo(raw) {
   }
 }
 
+/** Seller lines where the personal profile fulfilled a wish (purchase_type Seeking). */
+function filterSeekingSellerTransactions(sellerTransactions) {
+  if (!Array.isArray(sellerTransactions)) return [];
+  return sellerTransactions.filter((row) => row && (row.purchase_type || "").toLowerCase() === "seeking");
+}
+
+/** Seller lines for expertise or offering purchases (purchase_type Expertise | Offering). */
+function filterExpertiseOfferingSellerTransactions(sellerTransactions) {
+  if (!Array.isArray(sellerTransactions)) return [];
+  return sellerTransactions.filter((row) => {
+    const t = (row?.purchase_type || "").toLowerCase();
+    return t === "expertise" || t === "offering";
+  });
+}
+
+function sortSellerTransactionsByDateDesc(rows) {
+  return [...(Array.isArray(rows) ? rows : [])].sort((a, b) => new Date(b.transaction_datetime) - new Date(a.transaction_datetime));
+}
+
+function getSellerTransactionLineQty(row) {
+  const raw = row?.[".ti_bs_qty"] ?? row?.ti_bs_qty;
+  const n = parseInt(String(raw), 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
 function buildExpertiseRows(expertiseList, sellerTransactions) {
   const list = Array.isArray(expertiseList) ? expertiseList : [];
   const sellerTx = Array.isArray(sellerTransactions) ? sellerTransactions : [];
@@ -462,6 +487,8 @@ export default function AccountScreen({ navigation }) {
   const [transactionLoading, setTransactionLoading] = useState(true);
   const [expertiseData, setExpertiseData] = useState([]);
   const [expertiseLoading, setExpertiseLoading] = useState(true);
+  const [wishesResponseData, setWishesResponseData] = useState([]);
+  const [expertiseOfferingData, setExpertiseOfferingData] = useState([]);
   const [accountType, setAccountType] = useState("personal"); // 'personal' or 'business'
   const [businessTransactionData, setBusinessTransactionData] = useState([]);
   const [businessTransactionLoading, setBusinessTransactionLoading] = useState(true);
@@ -478,6 +505,8 @@ export default function AccountScreen({ navigation }) {
 
   // Section collapse states
   const [showExpertise, setShowExpertise] = useState(true);
+  const [showWishesResponse, setShowWishesResponse] = useState(true);
+  const [showExpertiseOffering, setShowExpertiseOffering] = useState(true);
   const [showTransactionHistory, setShowTransactionHistory] = useState(true);
   const [showNetEarning, setShowNetEarning] = useState(true);
   const [showBountyResults, setShowBountyResults] = useState(true);
@@ -827,6 +856,8 @@ export default function AccountScreen({ navigation }) {
           setTransactionData([]);
           setBountyData(null);
           setExpertiseData([]);
+          setWishesResponseData([]);
+          setExpertiseOfferingData([]);
           return;
         }
         const url = `${ACCOUNT_SCREEN_PERSONAL_ENDPOINT}/${profileId}`;
@@ -841,6 +872,8 @@ export default function AccountScreen({ navigation }) {
           const profileResult = session?.rawProfile;
           const expertiseList = profileResult?.expertise_info ? parseExpertiseInfo(profileResult.expertise_info) : [];
           setExpertiseData(buildExpertiseRows(expertiseList, []));
+          setWishesResponseData([]);
+          setExpertiseOfferingData([]);
           await fetchPersonalProfileData();
           return;
         }
@@ -895,11 +928,15 @@ export default function AccountScreen({ navigation }) {
           expertiseList = parseExpertiseInfo(profileResult.expertise_info);
         }
         setExpertiseData(buildExpertiseRows(expertiseList, sellerTx));
+        setWishesResponseData(sortSellerTransactionsByDateDesc(filterSeekingSellerTransactions(sellerTx)));
+        setExpertiseOfferingData(sortSellerTransactionsByDateDesc(filterExpertiseOfferingSellerTransactions(sellerTx)));
       } catch (error) {
         console.error("Error loading account-screen personal:", error);
         setTransactionData([]);
         setBountyData({ error: error.message });
         setExpertiseData([]);
+        setWishesResponseData([]);
+        setExpertiseOfferingData([]);
       } finally {
         setTransactionLoading(false);
         setBountyLoading(false);
@@ -1219,11 +1256,33 @@ export default function AccountScreen({ navigation }) {
             bounty_paid: bounty,
             net_earning: netEarning,
             business_name: item.business_name,
+            purchase_type: item.purchase_type || "business",
+            purchaser_name: item.purchaser_name || "",
+            purchased_item_parts: [],
+            total_qty: 0,
+            transaction_in_escrow: item.transaction_in_escrow,
             transaction_return_requested: item.transaction_return_requested || 0,
             transaction_return_note: item.transaction_return_note || "",
             transaction_return_status: item.transaction_return_status || "",
           };
         }
+        const entry = transactionMap[txnId];
+        entry.total_qty += parseInt(item.ti_bs_qty, 10) || 1;
+        const lineName = item.bs_service_name || item.purchased_item || "";
+        if (lineName && !entry.purchased_item_parts.includes(lineName)) {
+          entry.purchased_item_parts.push(lineName);
+        }
+        if (item.purchaser_name && !entry.purchaser_name) {
+          entry.purchaser_name = item.purchaser_name;
+        }
+        if (item.purchase_type) {
+          entry.purchase_type = item.purchase_type;
+        }
+      });
+
+      Object.values(transactionMap).forEach((entry) => {
+        entry.purchased_item = entry.purchased_item_parts.length > 0 ? entry.purchased_item_parts.join(", ") : "N/A";
+        delete entry.purchased_item_parts;
       });
 
       const filteredTransactions = Object.values(transactionMap).sort((a, b) => {
@@ -1888,6 +1947,79 @@ export default function AccountScreen({ navigation }) {
 
   const receiptIsReturnReceipt = !receiptLoading && receiptData.length > 0 && isReturnReceipt(receiptData);
 
+  /** Personal seller_transactions table (Wishes Response, Expertise/Offering) — same layout as Purchases. */
+  const renderPersonalSellerTransactionsTable = (rows) => (
+    <View style={styles.transactionsContainer}>
+      <View style={styles.transactionHeaderRow}>
+        <Text style={styles.transactionHeaderDate}>Date</Text>
+        {showPurchasesTxnIdColumn ? <Text style={styles.transactionHeaderId}>Transaction ID</Text> : null}
+        {showPurchasesTypeColumn ? <Text style={styles.transactionHeaderPurchaseType}>Type</Text> : null}
+        <Text style={styles.transactionHeaderBusiness}>Buyer</Text>
+        {showPurchasesPurchasedItemColumn ? <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text> : null}
+        {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderQty}>Qty</Text>}
+        <Text style={styles.transactionHeaderPaid}>Paid</Text>
+        <Text style={styles.transactionHeaderAmount}>Amount</Text>
+      </View>
+      {rows.map((transaction, i) => {
+        const compactTx = compactPurchasesLayout;
+        const uid = transaction.transaction_uid;
+        const returnStatus = returnStatuses[uid] || transaction.transaction_return_status || "";
+        const returnRequested = returnRequests[uid]?.items?.length > 0 || Number(transaction.transaction_return_requested) === 1;
+        const isPending = Number(transaction.transaction_in_escrow) === 1;
+
+        return (
+          <View key={transaction.ti_uid || transaction[".ti_uid"] || uid || i} style={styles.transactionRow}>
+            <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+            {showPurchasesTxnIdColumn ? <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text> : null}
+            {showPurchasesTypeColumn ? <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "N/A"}</Text> : null}
+            <View style={{ flex: 1, paddingHorizontal: 4, justifyContent: "center", minWidth: 0 }}>
+              <TouchableOpacity onPress={() => fetchReceipt(transaction)} activeOpacity={0.7}>
+                <Text style={[styles.transactionBusiness, styles.receiptLink]} numberOfLines={4}>
+                  {transaction.business_name || transaction.transaction_profile_id || "N/A"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {showPurchasesPurchasedItemColumn ? (
+              <View style={styles.transactionPurchasedItemCell}>
+                <Text style={styles.transactionPurchasedItem} numberOfLines={4}>
+                  {transaction.purchased_item || "N/A"}
+                </Text>
+              </View>
+            ) : null}
+            {!compactTx && <Text style={styles.transactionQty}>{getSellerTransactionLineQty(transaction)}</Text>}
+            <View style={styles.transactionPaidCell}>
+              {returnStatus === "accepted" || transaction.transaction_return_status === "accepted" ? (
+                <Text style={[styles.transactionPaidText, { color: "#B71C1C", fontWeight: "600" }]}>Returned</Text>
+              ) : returnRequested && returnStatus !== "declined" && returnStatus !== "resolved" ? (
+                <Text style={[styles.transactionPaidText, { color: "#E65100", fontWeight: "600" }]}>Returning</Text>
+              ) : (
+                <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Received"}</Text>
+              )}
+            </View>
+            <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+
+  const handleMiniCardPress = async () => {
+    if (selectedAccount === "personal") {
+      if (!personalProfileData) return;
+      const profileId = (await AsyncStorage.getItem("profile_uid")) || (await AsyncStorage.getItem("user_uid"));
+      if (profileId) {
+        navigation.navigate("Profile", { profile_uid: profileId, returnTo: "Account" });
+      } else {
+        navigation.navigate("Profile");
+      }
+      return;
+    }
+    const businessUid = selectedAccount !== "personal" ? selectedAccount : businessUID;
+    if (businessUid && selectedBusinessFullData) {
+      navigation.navigate("BusinessProfile", { business_uid: businessUid, returnTo: "Account" });
+    }
+  };
+
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Header */}
@@ -1914,7 +2046,13 @@ export default function AccountScreen({ navigation }) {
       <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContentContainer} showsVerticalScrollIndicator={true}>
         {/* MiniCard - shows personal or business depending on selection */}
         <View style={styles.sectionContainer}>
-          {selectedAccount === "personal" ? personalProfileData && <MiniCard user={personalProfileData} /> : selectedBusinessFullData && <MiniCard business={selectedBusinessFullData} />}
+          <TouchableOpacity
+            onPress={handleMiniCardPress}
+            activeOpacity={0.85}
+            disabled={selectedAccount === "personal" ? !personalProfileData : !selectedBusinessFullData}
+          >
+            {selectedAccount === "personal" ? personalProfileData && <MiniCard user={personalProfileData} /> : selectedBusinessFullData && <MiniCard business={selectedBusinessFullData} />}
+          </TouchableOpacity>
         </View>
         {/* Select Profile Dropdown Row */}
         <View style={styles.selectProfileRow}>
@@ -1996,6 +2134,28 @@ export default function AccountScreen({ navigation }) {
                 </>
               )}
             </View>
+
+            {/* Expertise / Offering — seller_transactions (hidden when none) */}
+            {!expertiseLoading && expertiseOfferingData.length > 0 && (
+              <View style={styles.sectionContainer}>
+                <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowExpertiseOffering(!showExpertiseOffering)}>
+                  <Text style={styles.sectionHeaderText}>EXPERTISE / OFFERING</Text>
+                  <Ionicons name={showExpertiseOffering ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+                </TouchableOpacity>
+                {showExpertiseOffering && renderPersonalSellerTransactionsTable(expertiseOfferingData)}
+              </View>
+            )}
+
+            {/* Wishes Response — seller_transactions with purchase_type Seeking (hidden when none) */}
+            {!expertiseLoading && wishesResponseData.length > 0 && (
+              <View style={styles.sectionContainer}>
+                <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowWishesResponse(!showWishesResponse)}>
+                  <Text style={styles.sectionHeaderText}>WISHES RESPONSE</Text>
+                  <Ionicons name={showWishesResponse ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+                </TouchableOpacity>
+                {showWishesResponse && renderPersonalSellerTransactionsTable(wishesResponseData)}
+              </View>
+            )}
 
             {/* Purchases */}
             <View style={styles.sectionContainer}>
@@ -2318,42 +2478,42 @@ export default function AccountScreen({ navigation }) {
                     <Text style={styles.loadingText}>Loading business transaction data...</Text>
                   ) : businessTransactionData.length > 0 ? (
                     <View style={styles.transactionsContainer}>
-                      {/* Table Header */}
                       <View style={styles.transactionHeaderRow}>
                         <Text style={styles.transactionHeaderDate}>Date</Text>
-                        <Text style={styles.transactionHeaderId}>Transaction ID</Text>
-                        <Text style={styles.transactionHeaderPurchaseType}>Type</Text>
-                        <Text style={styles.transactionHeaderBusiness}>Seller</Text>
-                        <Text style={styles.transactionHeaderPurchasedItem}>Item</Text>
-                        <Text style={styles.transactionHeaderQty}>Qty</Text>
+                        {showPurchasesTxnIdColumn ? <Text style={styles.transactionHeaderId}>Transaction ID</Text> : null}
+                        {showPurchasesTypeColumn ? <Text style={styles.transactionHeaderPurchaseType}>Type</Text> : null}
+                        <Text style={styles.transactionHeaderBusiness}>Buyer</Text>
+                        {showPurchasesPurchasedItemColumn ? <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text> : null}
+                        {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderQty}>Qty</Text>}
                         <Text style={styles.transactionHeaderPaid}>Paid</Text>
                         <Text style={styles.transactionHeaderAmount}>Amount</Text>
                       </View>
-                      {/* Table Rows */}
                       {businessTransactionData.map((transaction, i) => {
                         const isExpanded = expandedTransactionId === transaction.transaction_uid;
-
-                        // Get services for this transaction from businessBountyData
-                        //const transactionServices = businessBountyData?.data?.filter((item) => item.transaction_uid === transaction.transaction_uid) || [];
-
+                        const compactTx = compactPurchasesLayout;
                         const transactionServices =
                           businessReceiptCache[transaction.transaction_uid] || businessBountyData?.data?.filter((item) => item.transaction_uid === transaction.transaction_uid) || [];
+                        const uid = transaction.transaction_uid;
+                        const returnStatus = returnStatuses[uid] || transaction.transaction_return_status || "";
+                        const returnRequested = returnRequests[uid]?.items?.length > 0 || transaction.transaction_return_requested === 1;
+                        const isPending = Number(transaction.transaction_in_escrow) === 1;
+                        const hasOpenReturn =
+                          (transaction.transaction_return_requested === 1 || returnRequests[uid]?.items?.length > 0) &&
+                          returnStatus !== "accepted" &&
+                          returnStatus !== "resolved" &&
+                          transaction.transaction_return_status !== "accepted" &&
+                          transaction.transaction_return_status !== "resolved";
 
                         return (
                           <View key={transaction.transaction_uid || i}>
-                            {/* Main Transaction Row */}
                             <TouchableOpacity
                               style={[
-                                styles.businessTransactionRow,
-                                (transaction.transaction_return_requested === 1 || returnRequests[transaction.transaction_uid]?.items?.length > 0) &&
-                                  returnStatuses[transaction.transaction_uid] !== "accepted" &&
-                                  returnStatuses[transaction.transaction_uid] !== "resolved" &&
-                                  transaction.transaction_return_status !== "accepted" &&
-                                  transaction.transaction_return_status !== "resolved" && {
-                                    backgroundColor: "#FDECEA",
-                                    borderLeftWidth: 4,
-                                    borderLeftColor: "#b35454",
-                                  },
+                                styles.transactionRow,
+                                hasOpenReturn && {
+                                  backgroundColor: "#FDECEA",
+                                  borderLeftWidth: 4,
+                                  borderLeftColor: "#b35454",
+                                },
                               ]}
                               onPress={async () => {
                                 if (isExpanded) {
@@ -2365,55 +2525,60 @@ export default function AccountScreen({ navigation }) {
                               }}
                               activeOpacity={0.7}
                             >
-                              <Text style={styles.businessTransactionCell}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
-                              <Text style={styles.businessTransactionCell}>
-                                {transaction.transaction_uid || "N/A"} {isExpanded ? "▲" : "▼"}
-                              </Text>
-
-                              <Text style={styles.businessTransactionCell}>{transaction.transaction_profile_id?.substring(0, 10) || "N/A"}</Text>
-                              <Text style={styles.businessTransactionCell}>${transaction.transaction_total.toFixed(2)}</Text>
-                              <Text style={styles.businessTransactionCell}>${transaction.bounty_paid.toFixed(2)}</Text>
-                              <Text
-                                style={[
-                                  styles.businessTransactionCell,
-                                  {
-                                    color: returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted" ? "#B71C1C" : "#333",
-                                  },
-                                ]}
-                              >
-                                {returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted"
-                                  ? `-$${transaction.transaction_taxes.toFixed(2)}`
-                                  : `$${transaction.transaction_taxes.toFixed(2)}`}
-                              </Text>
-                              <Text style={[styles.businessTransactionCell, { width: 55, flex: 0, textAlign: "right" }]}>${transaction.net_earning.toFixed(2)}</Text>
+                              <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                              {showPurchasesTxnIdColumn ? (
+                                <Text style={styles.transactionId}>
+                                  {transaction.transaction_uid || "N/A"} {isExpanded ? "▲" : "▼"}
+                                </Text>
+                              ) : null}
+                              {showPurchasesTypeColumn ? <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "business"}</Text> : null}
+                              <View style={{ flex: 1, paddingHorizontal: 4, justifyContent: "center", minWidth: 0 }}>
+                                <Text style={styles.transactionBusiness} numberOfLines={4}>
+                                  {transaction.purchaser_name || transaction.transaction_profile_id || "N/A"}
+                                  {!showPurchasesTxnIdColumn ? (isExpanded ? " ▲" : " ▼") : ""}
+                                </Text>
+                              </View>
+                              {showPurchasesPurchasedItemColumn ? (
+                                <View style={styles.transactionPurchasedItemCell}>
+                                  <Text style={styles.transactionPurchasedItem} numberOfLines={4}>
+                                    {transaction.purchased_item || "N/A"}
+                                  </Text>
+                                </View>
+                              ) : null}
+                              {!compactTx && <Text style={styles.transactionQty}>{transaction.total_qty || 1}</Text>}
+                              <View style={styles.transactionPaidCell}>
+                                {returnStatus === "accepted" || transaction.transaction_return_status === "accepted" ? (
+                                  <Text style={[styles.transactionPaidText, { color: "#B71C1C", fontWeight: "600" }]}>Returned</Text>
+                                ) : returnRequested && returnStatus !== "declined" && returnStatus !== "resolved" ? (
+                                  <Text style={[styles.transactionPaidText, { color: "#E65100", fontWeight: "600" }]}>Returning</Text>
+                                ) : (
+                                  <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Received"}</Text>
+                                )}
+                              </View>
+                              <Text style={styles.transactionAmount}>${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
                             </TouchableOpacity>
 
-                            {/* Expanded Services Details */}
                             {isExpanded && (
                               <View style={styles.expandedServicesContainer}>
                                 {transactionServices.length > 0 ? (
-                                  <>
-                                    {/* Services Header */}
-                                    <View style={styles.servicesHeaderRow}>
-                                      <Text style={styles.servicesHeaderCell}>Product UID</Text>
-                                      <Text style={styles.servicesHeaderCell}>Product Name</Text>
-                                      <Text style={styles.servicesHeaderCell}>Cost</Text>
-                                      <Text style={styles.servicesHeaderCell}>Bounty</Text>
-                                      <Text style={styles.servicesHeaderCell}>Qty</Text>
-                                      <Text style={styles.servicesHeaderCell}>Bounty Paid</Text>
+                                  <View style={[styles.transactionsContainer, { marginTop: 4, paddingVertical: 0 }]}>
+                                    <View style={styles.transactionHeaderRow}>
+                                      <Text style={[styles.transactionHeaderBusiness, { flex: 1.2 }]}>Item</Text>
+                                      <Text style={styles.transactionHeaderQty}>Qty</Text>
+                                      <Text style={[styles.transactionHeaderAmount, { width: 80 }]}>Cost</Text>
                                     </View>
-                                    {/* Services Rows */}
                                     {transactionServices.map((service, idx) => (
-                                      <View key={idx} style={styles.servicesRow}>
-                                        <Text style={styles.servicesCell}>{service.ti_bs_id || service.bs_uid || "N/A"}</Text>
-                                        <Text style={styles.servicesCell}>{service.bs_service_name || "N/A"}</Text>
-                                        <Text style={styles.servicesCell}>${parseFloat(service.ti_bs_cost || service.bs_cost || 0).toFixed(2)}</Text>
-                                        <Text style={styles.servicesCell}>{service.ti_bs_qty || 0}</Text>
+                                      <View key={service.ti_uid || service.ti_bs_id || idx} style={styles.transactionRow}>
+                                        <Text style={[styles.transactionBusiness, { flex: 1.2 }]} numberOfLines={3}>
+                                          {service.bs_service_name || "N/A"}
+                                        </Text>
+                                        <Text style={styles.transactionQty}>{service.ti_bs_qty ?? 1}</Text>
+                                        <Text style={[styles.transactionAmount, { width: 80 }]}>${parseFloat(service.ti_bs_cost || service.bs_cost || 0).toFixed(2)}</Text>
                                       </View>
                                     ))}
-                                  </>
+                                  </View>
                                 ) : (
-                                  <Text style={styles.noServicesText}>No services data available</Text>
+                                  <Text style={styles.noServicesText}>No line items available</Text>
                                 )}
                                 {/* Return request indicator */}
                                 {(transaction.transaction_return_requested === 1 || returnRequests[transaction.transaction_uid]?.items?.length > 0) && (
@@ -2446,24 +2611,30 @@ export default function AccountScreen({ navigation }) {
                                 )}
                                 {(returnStatuses[transaction.transaction_uid] === "accepted" || transaction.transaction_return_status === "accepted") && (
                                   <View
-                                    style={{
-                                      flexDirection: "row",
-                                      paddingVertical: 8,
-                                      paddingHorizontal: 4,
-                                      backgroundColor: "#FDECEA",
-                                      borderLeftWidth: 4,
-                                      borderLeftColor: "#B71C1C",
-                                      marginTop: 4,
-                                      borderRadius: 4,
-                                    }}
+                                    style={[
+                                      styles.transactionRow,
+                                      {
+                                        backgroundColor: "#FDECEA",
+                                        borderLeftWidth: 4,
+                                        borderLeftColor: "#B71C1C",
+                                        marginTop: 4,
+                                      },
+                                    ]}
                                   >
-                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>RETURN</Text>
-                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
-                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>Refund</Text>
-                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
-                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
-                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
-                                    <Text style={{ width: 55, flex: 0, fontSize: 11, color: "#B71C1C", textAlign: "right" }}>-${transaction.transaction_taxes.toFixed(2)}</Text>
+                                    <Text style={[styles.transactionDate, { color: "#B71C1C" }]}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                                    {showPurchasesTxnIdColumn ? <Text style={[styles.transactionId, { color: "#B71C1C" }]}>—</Text> : null}
+                                    {showPurchasesTypeColumn ? <Text style={[styles.transactionPurchaseType, { color: "#B71C1C" }]}>—</Text> : null}
+                                    <Text style={[styles.transactionBusiness, { color: "#B71C1C" }]}>Refund</Text>
+                                    {showPurchasesPurchasedItemColumn ? (
+                                      <View style={styles.transactionPurchasedItemCell}>
+                                        <Text style={[styles.transactionPurchasedItem, { color: "#B71C1C" }]}>—</Text>
+                                      </View>
+                                    ) : null}
+                                    {!compactTx && <Text style={[styles.transactionQty, { color: "#B71C1C" }]}>—</Text>}
+                                    <View style={styles.transactionPaidCell}>
+                                      <Text style={[styles.transactionPaidText, { color: "#B71C1C", fontWeight: "600" }]}>Returned</Text>
+                                    </View>
+                                    <Text style={[styles.transactionAmount, { color: "#B71C1C" }]}>-${parseFloat(transaction.transaction_total || 0).toFixed(2)}</Text>
                                   </View>
                                 )}
                               </View>
