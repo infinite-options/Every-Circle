@@ -298,10 +298,7 @@ const NetworkScreen = ({ navigation }) => {
   const [showViewersAccountDropdown, setShowViewersAccountDropdown] = useState(false);
   const [connectDirectlyVisible, setConnectDirectlyVisible] = useState(false);
 
-  const connectDirectlyMergedNetworkData = useMemo(
-    () => mergeNetworkNodesForReferral(connectionsNetworkCache, circlesNetworkCache),
-    [connectionsNetworkCache, circlesNetworkCache],
-  );
+  const connectDirectlyMergedNetworkData = useMemo(() => mergeNetworkNodesForReferral(connectionsNetworkCache, circlesNetworkCache), [connectionsNetworkCache, circlesNetworkCache]);
 
   const fetchProfileViewers = async (accountId) => {
     try {
@@ -382,40 +379,40 @@ const NetworkScreen = ({ navigation }) => {
 
       if (showAsyncStorageValue !== null) {
         const parsedValue = JSON.parse(showAsyncStorageValue);
-        console.log("📥 Setting showAsyncStorage to:", parsedValue);
+        // console.log("📥 Setting showAsyncStorage to:", parsedValue);
         setShowAsyncStorage(parsedValue);
       } else {
         console.log("📥 No persisted showAsyncStorage value, using default: false (collapsed)");
       }
       if (degreeValue !== null) {
-        console.log("📥 Setting degree to:", degreeValue);
+        // console.log("📥 Setting degree to:", degreeValue);
         setDegree(degreeValue);
       } else {
         console.log("📥 No persisted degree value, using default: 2");
       }
       if (viewModeValue !== null) {
-        console.log("📥 Setting viewMode to:", viewModeValue);
+        // console.log("📥 Setting viewMode to:", viewModeValue);
         setViewMode(viewModeValue);
       } else {
         console.log("📥 No persisted viewMode value, using default: list");
       }
 
       if (dateFilterValue !== null) {
-        console.log("📥 Setting dateFilter to:", dateFilterValue);
+        // console.log("📥 Setting dateFilter to:", dateFilterValue);
         setDateFilter(dateFilterValue);
       } else {
         console.log("📥 No persisted dateFilter value, using default: All");
       }
 
       if (locationFilterValue !== null) {
-        console.log("📥 Setting locationFilter to:", locationFilterValue);
+        // console.log("📥 Setting locationFilter to:", locationFilterValue);
         setLocationFilter(locationFilterValue);
       } else {
         console.log("📥 No persisted locationFilter value, using default: All");
       }
 
       if (eventFilterValue !== null) {
-        console.log("📥 Setting eventFilter to:", eventFilterValue);
+        // console.log("📥 Setting eventFilter to:", eventFilterValue);
         setEventFilter(eventFilterValue);
       } else {
         console.log("📥 No persisted eventFilter value, using default: All");
@@ -1412,62 +1409,65 @@ const NetworkScreen = ({ navigation }) => {
     [profileUid, degree],
   );
 
-  const fetchCirclesPayload = useCallback(async (overrideProfileUid = null) => {
-    const uid = await resolveProfileUidForNetwork(overrideProfileUid, profileUid);
-    if (!uid) {
-      throw new Error("No profile UID available");
-    }
-    const response = await fetch(`${CIRCLES_ENDPOINT}/${uid}`, networkListFetchOptions());
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-    const result = await response.json();
-    if (result && result.data && Array.isArray(result.data)) {
-      return result.data.map((circle) => {
-        const p = circle;
-        const tagLineRaw = p.profile_personal_tag_line || p.profile_personal_tagline || "";
-        const emailRaw = p.user_email_id ?? p.user_email ?? "";
-        return {
-          ...circle,
-          degree: 1,
-          __mc: {
-            firstName: sanitizeText(p.profile_personal_first_name || ""),
-            lastName: sanitizeText(p.profile_personal_last_name || ""),
-            tagLine: sanitizeText(tagLineRaw || ""),
-            city: sanitizeText(p.profile_personal_city || ""),
-            state: sanitizeText(p.profile_personal_state || ""),
-            email: sanitizeText(emailRaw || ""),
-            phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
-            profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
-            relationship: circle.circle_relationship || null,
-            emailIsPublic: p.profile_personal_email_is_public === 1,
-            phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
-            tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
-            locationIsPublic: p.profile_personal_location_is_public === 1,
-            imageIsPublic: p.profile_personal_image_is_public === 1,
-            personal_info: {
-              profile_personal_first_name: sanitizeText(p.profile_personal_first_name || ""),
-              profile_personal_last_name: sanitizeText(p.profile_personal_last_name || ""),
-              profile_personal_tag_line: sanitizeText(tagLineRaw || ""),
-              profile_personal_tagline: sanitizeText(tagLineRaw || ""),
-              profile_personal_phone_number: sanitizeText(p.profile_personal_phone_number || ""),
-              profile_personal_image: sanitizeText(p.profile_personal_image || ""),
-              profile_personal_city: sanitizeText(p.profile_personal_city || ""),
-              profile_personal_state: sanitizeText(p.profile_personal_state || ""),
-              profile_personal_email_is_public: p.profile_personal_email_is_public || 0,
-              profile_personal_phone_number_is_public: p.profile_personal_phone_number_is_public || 0,
-              profile_personal_tag_line_is_public: p.profile_personal_tag_line_is_public || p.profile_personal_tagline_is_public || 0,
-              profile_personal_image_is_public: p.profile_personal_image_is_public || 0,
-              profile_personal_location_is_public: p.profile_personal_location_is_public || 0,
+  const fetchCirclesPayload = useCallback(
+    async (overrideProfileUid = null) => {
+      const uid = await resolveProfileUidForNetwork(overrideProfileUid, profileUid);
+      if (!uid) {
+        throw new Error("No profile UID available");
+      }
+      const response = await fetch(`${CIRCLES_ENDPOINT}/${uid}`, networkListFetchOptions());
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      const result = await response.json();
+      if (result && result.data && Array.isArray(result.data)) {
+        return result.data.map((circle) => {
+          const p = circle;
+          const tagLineRaw = p.profile_personal_tag_line || p.profile_personal_tagline || "";
+          const emailRaw = p.user_email_id ?? p.user_email ?? "";
+          return {
+            ...circle,
+            degree: 1,
+            __mc: {
+              firstName: sanitizeText(p.profile_personal_first_name || ""),
+              lastName: sanitizeText(p.profile_personal_last_name || ""),
+              tagLine: sanitizeText(tagLineRaw || ""),
+              city: sanitizeText(p.profile_personal_city || ""),
+              state: sanitizeText(p.profile_personal_state || ""),
+              email: sanitizeText(emailRaw || ""),
+              phoneNumber: sanitizeText(p.profile_personal_phone_number || ""),
+              profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
+              relationship: circle.circle_relationship || null,
+              emailIsPublic: p.profile_personal_email_is_public === 1,
+              phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
+              tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
+              locationIsPublic: p.profile_personal_location_is_public === 1,
+              imageIsPublic: p.profile_personal_image_is_public === 1,
+              personal_info: {
+                profile_personal_first_name: sanitizeText(p.profile_personal_first_name || ""),
+                profile_personal_last_name: sanitizeText(p.profile_personal_last_name || ""),
+                profile_personal_tag_line: sanitizeText(tagLineRaw || ""),
+                profile_personal_tagline: sanitizeText(tagLineRaw || ""),
+                profile_personal_phone_number: sanitizeText(p.profile_personal_phone_number || ""),
+                profile_personal_image: sanitizeText(p.profile_personal_image || ""),
+                profile_personal_city: sanitizeText(p.profile_personal_city || ""),
+                profile_personal_state: sanitizeText(p.profile_personal_state || ""),
+                profile_personal_email_is_public: p.profile_personal_email_is_public || 0,
+                profile_personal_phone_number_is_public: p.profile_personal_phone_number_is_public || 0,
+                profile_personal_tag_line_is_public: p.profile_personal_tag_line_is_public || p.profile_personal_tagline_is_public || 0,
+                profile_personal_image_is_public: p.profile_personal_image_is_public || 0,
+                profile_personal_location_is_public: p.profile_personal_location_is_public || 0,
+              },
             },
-          },
-          network_profile_personal_uid: circle.circle_related_person_id || circle.profile_personal_uid,
-        };
-      });
-    }
-    return [];
-  }, [profileUid]);
+            network_profile_personal_uid: circle.circle_related_person_id || circle.profile_personal_uid,
+          };
+        });
+      }
+      return [];
+    },
+    [profileUid],
+  );
 
   const fetchNetwork = async (overrideProfileUid = null, overrideDegree = null) => {
     console.log("🔘 Fetch Network");
@@ -2970,9 +2970,7 @@ const NetworkScreen = ({ navigation }) => {
                         locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
                       }}
                     />
-                    {getLatestProfileViewTimestamp(viewer.view_timestamp) ? (
-                      <Text style={styles.viewedTimestamp}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text>
-                    ) : null}
+                    {getLatestProfileViewTimestamp(viewer.view_timestamp) ? <Text style={styles.viewedTimestamp}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text> : null}
                   </TouchableOpacity>
                 ))
               ) : (

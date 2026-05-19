@@ -340,17 +340,17 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = async () => {
-    console.log("SettingsScreen.js - Logout Button pressed ==> handleLogout called");
-    console.log("SettingsScreen.js - Platform:", isWeb ? "Web" : "Native");
+    // console.log("SettingsScreen.js - Logout Button pressed ==> handleLogout called");
+    // console.log("SettingsScreen.js - Platform:", isWeb ? "Web" : "Native");
 
     // On web, use window.confirm() since Alert.alert with multiple buttons doesn't work
     // On native, use Alert.alert with proper buttons
     let userConfirmed = false;
 
     if (isWeb) {
-      console.log("SettingsScreen.js - Web platform: Using window.confirm()");
+      // console.log("SettingsScreen.js - Web platform: Using window.confirm()");
       userConfirmed = window.confirm("Are you sure you want to logout?");
-      console.log("SettingsScreen.js - User confirmed logout:", userConfirmed);
+      // console.log("SettingsScreen.js - User confirmed logout:", userConfirmed);
     } else {
       // On native, show Alert with buttons
       Alert.alert("Log Out", "Are you sure you want to log out?", [
@@ -358,7 +358,7 @@ export default function SettingsScreen() {
           text: "Cancel",
           style: "cancel",
           onPress: () => {
-            console.log("SettingsScreen.js - User cancelled log out");
+            // console.log("SettingsScreen.js - User cancelled log out");
           },
         },
         {
@@ -377,26 +377,26 @@ export default function SettingsScreen() {
     if (userConfirmed) {
       await performLogout();
     } else {
-      console.log("SettingsScreen.js - User cancelled logout");
+      // console.log("SettingsScreen.js - User cancelled logout");
     }
   };
 
   const performLogout = async () => {
     try {
-      console.log("SettingsScreen.js - User confirmed logout - starting logout process");
+      // console.log("SettingsScreen.js - User confirmed logout - starting logout process");
 
       // Sign out from Google (only on native platforms)
       if (!isWeb && GoogleSignin) {
-        console.log("SettingsScreen.js - Attempting Google Sign Out");
+        // console.log("SettingsScreen.js - Attempting Google Sign Out");
         const isSignedIn = await GoogleSignin.isSignedIn();
         if (isSignedIn) {
           await GoogleSignin.signOut();
-          console.log("SettingsScreen.js - Google Sign Out successful");
+          // console.log("SettingsScreen.js - Google Sign Out successful");
         } else {
-          console.log("SettingsScreen.js - User not signed in to Google");
+          // console.log("SettingsScreen.js - User not signed in to Google");
         }
       } else if (isWeb) {
-        console.log("SettingsScreen.js - Web platform: Skipping Google Sign Out");
+        // console.log("SettingsScreen.js - Web platform: Skipping Google Sign Out");
       }
 
       // Get all keys to clear Apple authentication data
@@ -442,10 +442,10 @@ export default function SettingsScreen() {
         ...appleKeys,
       ];
 
-      console.log("SettingsScreen.js - Clearing AsyncStorage keys:", keysToRemove);
-      console.log("SettingsScreen.js - Total keys to remove:", keysToRemove.length);
+      // console.log("SettingsScreen.js - Clearing AsyncStorage keys:", keysToRemove);
+      // console.log("SettingsScreen.js - Total keys to remove:", keysToRemove.length);
       await AsyncStorage.multiRemove(keysToRemove);
-      console.log("SettingsScreen.js - AsyncStorage cleared successfully");
+      // console.log("SettingsScreen.js - AsyncStorage cleared successfully");
 
       // Clear shared Ably client so next login reauths cleanly with new client_id.
       resetSharedAblyClient();
@@ -456,16 +456,16 @@ export default function SettingsScreen() {
       toggleDarkMode(false);
       stopLiveLocationSharing();
       setStoredCoords({ lat: null, lng: null, updatedAt: null });
-      console.log("SettingsScreen.js - Dark mode reset to light");
+      // console.log("SettingsScreen.js - Dark mode reset to light");
 
       // Navigate to Home screen using CommonActions.reset for reliable navigation
-      console.log("SettingsScreen.js - Navigating to Home screen");
-      console.log("SettingsScreen.js - Platform:", isWeb ? "Web" : "Native");
+      // console.log("SettingsScreen.js - Navigating to Home screen");
+      // console.log("SettingsScreen.js - Platform:", isWeb ? "Web" : "Native");
 
       // Use CommonActions.reset() which works reliably on both web and native
       // This ensures the navigation stack is properly cleared
       try {
-        console.log("SettingsScreen.js - Using CommonActions.reset() to navigate to Home");
+        // console.log("SettingsScreen.js - Using CommonActions.reset() to navigate to Home");
 
         // On web, no need to wait since we're using window.confirm() which is synchronous
         navigation.dispatch(
@@ -474,8 +474,8 @@ export default function SettingsScreen() {
             routes: [{ name: "Home" }],
           }),
         );
-        console.log("SettingsScreen.js - CommonActions.reset() dispatched successfully");
-        console.log("SettingsScreen.js - Logout completed successfully");
+        // console.log("SettingsScreen.js - CommonActions.reset() dispatched successfully");
+        // console.log("SettingsScreen.js - Logout completed successfully");
       } catch (navError) {
         console.error("SettingsScreen.js - Navigation error:", navError);
         console.error("SettingsScreen.js - Navigation error details:", navError.message, navError.stack);
@@ -486,10 +486,10 @@ export default function SettingsScreen() {
             // On web, try replace or navigate
             if (typeof navigation.replace === "function") {
               navigation.replace("Home");
-              console.log("SettingsScreen.js - Fallback: navigation.replace() succeeded");
+              // console.log("SettingsScreen.js - Fallback: navigation.replace() succeeded");
             } else {
               navigation.navigate("Home");
-              console.log("SettingsScreen.js - Fallback: navigation.navigate() succeeded");
+              // console.log("SettingsScreen.js - Fallback: navigation.navigate() succeeded");
             }
           } else {
             // On native, try reset
@@ -497,13 +497,13 @@ export default function SettingsScreen() {
               index: 0,
               routes: [{ name: "Home" }],
             });
-            console.log("SettingsScreen.js - Fallback: navigation.reset() succeeded");
+            // console.log("SettingsScreen.js - Fallback: navigation.reset() succeeded");
           }
         } catch (fallbackError) {
           console.error("SettingsScreen.js - All navigation methods failed:", fallbackError);
           // Last resort on web: reload the page
           if (isWeb && typeof window !== "undefined") {
-            console.log("SettingsScreen.js - Using window.location.href as last resort");
+            // console.log("SettingsScreen.js - Using window.location.href as last resort");
             window.location.href = "/";
           } else {
             Alert.alert("Navigation Error", "Logged out successfully, but navigation failed. Please restart the app.");

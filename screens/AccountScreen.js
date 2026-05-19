@@ -363,10 +363,19 @@ function mapAccountScreenPersonalResponse(json) {
 
 /**
  * Expected GET /api/v1/account-screen/business/:business_uid JSON (flexible keys):
- * - data.bounty_results | business_bounty | bounty: { data: [...] } (business bounty lines)
+ * - data.bounty_results | business_bounty_results | business_bounty | bounty: { data: [...] } (business bounty lines)
  * - data.seller_transactions | transactions_seller: seller line rows OR { code, data } (same as legacy /transactions/seller/:id)
  * - data.business | business_profile | profile (optional): same field names as GET /api/v1/businessinfo/:uid `business` object for MiniCard
  */
+/** Seller line is a business product sale (API uses purchase_type and/or bs_uid 250-*, not always ti_bs_id on the line). */
+function isBusinessProductSellerLine(item) {
+  if (!item || typeof item !== "object") return false;
+  const purchaseType = String(item.purchase_type || "").toLowerCase();
+  if (purchaseType === "business") return true;
+  const serviceId = String(item.ti_bs_id ?? item.bs_uid ?? "").trim();
+  return serviceId.startsWith("250-");
+}
+
 function extractBusinessRawFromAccountScreenPayload(root, payload) {
   const tryNode = (node) => {
     if (node == null || typeof node !== "object") return null;
@@ -460,18 +469,24 @@ function mapAccountScreenBusinessResponse(json) {
     payload = root.data;
   }
 
-  let bountyResult = payload.bounty_results ?? payload.business_bounty ?? payload.bounty ?? null;
+  let bountyResult = payload.bounty_results ?? payload.business_bounty_results ?? payload.business_bounty ?? payload.bounty ?? null;
   if (bountyResult && !bountyResult.data && Array.isArray(payload.bounty_lines)) {
     bountyResult = { ...bountyResult, data: payload.bounty_lines };
+  }
+  if (bountyResult && !Array.isArray(bountyResult.data)) {
+    const bountyLines = extractTransactionArray(bountyResult);
+    if (bountyLines.length) {
+      bountyResult = { ...bountyResult, data: bountyLines };
+    }
   }
 
   let sellerLines = [];
   const sellerRaw = payload.seller_transactions ?? payload.transactions_seller ?? payload.business_seller_transactions;
   if (Array.isArray(sellerRaw)) {
     sellerLines = sellerRaw;
-  } else if (sellerRaw && sellerRaw.code === 200 && Array.isArray(sellerRaw.data)) {
+  } else if (sellerRaw && isApiSuccessCode(sellerRaw.code) && Array.isArray(sellerRaw.data)) {
     sellerLines = sellerRaw.data;
-  } else if (root.code === 200 && Array.isArray(root.data) && !sellerRaw) {
+  } else if (isApiSuccessCode(root.code) && Array.isArray(root.data) && !sellerRaw) {
     sellerLines = root.data;
   }
 
@@ -1278,7 +1293,7 @@ export default function AccountScreen({ navigation }) {
         return;
       }
 
-      const businessTransactions = sellerLines.filter((item) => item.ti_bs_id && item.ti_bs_id.startsWith("250-"));
+      const businessTransactions = sellerLines.filter(isBusinessProductSellerLine);
       businessTransactions.forEach((txn) => {
         txn.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || "Unknown Business";
       });
