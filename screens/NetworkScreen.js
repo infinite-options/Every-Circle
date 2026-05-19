@@ -961,8 +961,8 @@ const NetworkScreen = ({ navigation }) => {
       };
 
       // Attach to channel
-      console.log("🔵 NetworkScreen - Initial channel state:", channel.state);
-      console.log("🔵 NetworkScreen - Attaching to channel:", channelName);
+      // console.log("🔵 NetworkScreen - Initial channel state:", channel.state);
+      // console.log("🔵 NetworkScreen - Attaching to channel:", channelName);
 
       channel.attach((err) => {
         if (err) {
@@ -997,7 +997,7 @@ const NetworkScreen = ({ navigation }) => {
               showScannedProfileModalRef.current?.(scannerProfileUid);
             });
           } else {
-            console.log("🔵 NetworkScreen - Form Switch is OFF or no scanner_profile_uid, not opening connect modal");
+            // console.log("🔵 NetworkScreen - Form Switch is OFF or no scanner_profile_uid, not opening connect modal");
           }
         } else {
           console.warn("⚠️ NetworkScreen - Message received but data structure unexpected:", message.data);
@@ -1970,7 +1970,7 @@ const NetworkScreen = ({ navigation }) => {
 
   // Debug: Log render start
   if (__DEV__) {
-    console.log("🔵 NetworkScreen - RENDER START");
+    // console.log("🔵 NetworkScreen - RENDER START");
     // console.log("🔵 NetworkScreen - profileUid:", profileUid, "type:", typeof profileUid);
     // console.log("🔵 NetworkScreen - storageData length:", storageData.length);
     // console.log("🔵 NetworkScreen - networkData length:", networkData.length);
@@ -2226,7 +2226,7 @@ const NetworkScreen = ({ navigation }) => {
                           formSwitchEnabledRef.current = value; // Update ref
                           // Persist the setting
                           await AsyncStorage.setItem("form_switch_enabled", value ? "true" : "false");
-                          console.log("🔵 NetworkScreen - Form Switch set to:", value);
+                          // console.log("🔵 NetworkScreen - Form Switch set to:", value);
                           // Update QR code with new setting
                           if (profileUid) {
                             fetchUserProfileForQR(profileUid);
@@ -2612,7 +2612,7 @@ const NetworkScreen = ({ navigation }) => {
                                     }
 
                                     if (list.length === 0) {
-                                      if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} has no items after filtering`);
+                                      // if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} has no items after filtering`);
                                       return null;
                                     }
 
@@ -2635,7 +2635,7 @@ const NetworkScreen = ({ navigation }) => {
                                             {list.map((node, index) => {
                                               // if (__DEV__) console.log(`🔵 NetworkScreen - Rendering node ${deg}-${index}, __mc:`, node.__mc);
                                               if (!node.__mc) {
-                                                if (__DEV__) console.log(`🔵 NetworkScreen - Node ${deg}-${index} has no __mc, skipping`);
+                                                // if (__DEV__) console.log(`🔵 NetworkScreen - Node ${deg}-${index} has no __mc, skipping`);
                                                 return null;
                                               }
                                               // if (__DEV__) console.log(`🔵 NetworkScreen - Rendering MiniCard for node ${deg}-${index}`);

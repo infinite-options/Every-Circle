@@ -879,8 +879,9 @@ export default function ReviewDetailScreen({ route, navigation }) {
 
         <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { maxHeight: "85%", width: "90%" }]}>
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ alignItems: "center", width: "100%" }}>
+            <View style={[styles.modalContent, styles.quantityModalContent]}>
+              <ScrollView style={styles.quantityModalScroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.quantityModalScrollContent}>
+                <View style={styles.quantityModalHeader}>
                 <Text style={styles.modalTitle}>Add to Cart</Text>
                 <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
 
@@ -897,6 +898,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
                 </View>
 
                 <Text style={styles.totalPrice}>Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
+                </View>
 
                 <BountyRecipientPicker
                   reviews={allReviews}
@@ -1089,6 +1091,30 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     width: "80%",
     maxHeight: "80%",
+  },
+  quantityModalContent: {
+    maxHeight: "85%",
+    width: "88%",
+    maxWidth: 400,
+    alignSelf: "center",
+    alignItems: "stretch",
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+  },
+  quantityModalScroll: {
+    width: "100%",
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  quantityModalScrollContent: {
+    width: "100%",
+    alignItems: "stretch",
+    paddingBottom: 8,
+  },
+  quantityModalHeader: {
+    width: "100%",
+    alignItems: "center",
+    marginBottom: 4,
   },
   modalTitle: {
     fontSize: 18,

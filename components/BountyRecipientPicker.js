@@ -43,7 +43,7 @@ export default function BountyRecipientPicker({
   });
 
   return (
-    <View style={{ marginTop: 16, marginBottom: 8, width: "100%" }}>
+    <View style={{ marginTop: 16, marginBottom: 8, width: "100%", alignSelf: "stretch" }}>
       <Text style={{ fontSize: 16, fontWeight: "bold", marginBottom: 4, textAlign: "center" }}>
         💰 Who referred you? <Text style={{ color: "#FF3B30" }}>*</Text>
       </Text>
@@ -111,6 +111,8 @@ export default function BountyRecipientPicker({
             style={{
               flexDirection: "row",
               alignItems: "center",
+              alignSelf: "stretch",
+              width: "100%",
               padding: 10,
               marginBottom: 8,
               borderRadius: 10,
@@ -153,20 +155,27 @@ export default function BountyRecipientPicker({
               </View>
             )}
 
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: "600", color: disabled ? "#999" : "#333" }}>{name}</Text>
+            <View style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
+              <Text style={{ fontWeight: "600", color: disabled ? "#999" : "#333" }} numberOfLines={2}>
+                {name}
+              </Text>
               {disabled ? (
-                <Text style={{ fontSize: 12, color: "#aaa" }}>Your review — not eligible</Text>
+                <Text style={{ fontSize: 12, color: "#aaa" }} numberOfLines={1}>
+                  Your review — not eligible
+                </Text>
               ) : review.circle_num_nodes != null ? (
-                <Text style={{ fontSize: 12, color: "#888" }}>{`Level ${review.circle_num_nodes} Connection`}</Text>
+                <Text style={{ fontSize: 12, color: "#888" }} numberOfLines={1}>{`Level ${review.circle_num_nodes} Connection`}</Text>
               ) : (
-                <Text style={{ fontSize: 12, color: "#888" }}>Verified reviewer</Text>
+                <Text style={{ fontSize: 12, color: "#888" }} numberOfLines={1}>
+                  Verified reviewer
+                </Text>
               )}
             </View>
 
             {selectedService?.bs_bounty && (
               <View
                 style={{
+                  flexShrink: 0,
                   backgroundColor: disabled ? "#eee" : isSelected ? "#9C45F7" : "#f0e8ff",
                   borderRadius: 8,
                   paddingHorizontal: 8,

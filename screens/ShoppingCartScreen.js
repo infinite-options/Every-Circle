@@ -1,6 +1,6 @@
 // ShoppingCartScreen.js
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, findNodeHandle, InteractionManager } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, InteractionManager } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
@@ -245,23 +245,13 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
     const fromItem = item.business_name && String(item.business_name).trim();
     if (fromItem) return fromItem;
-    if (
-      business_uid &&
-      business_uid !== "all" &&
-      item.business_uid === business_uid &&
-      businessName &&
-      !GENERIC_CART_TITLES.includes(String(businessName))
-    ) {
+    if (business_uid && business_uid !== "all" && item.business_uid === business_uid && businessName && !GENERIC_CART_TITLES.includes(String(businessName))) {
       return String(businessName).trim();
     }
     return null;
   };
 
-  const showVendorHeader =
-    Boolean(businessName && String(businessName).trim()) &&
-    business_uid &&
-    business_uid !== "all" &&
-    !GENERIC_CART_TITLES.includes(String(businessName));
+  const showVendorHeader = Boolean(businessName && String(businessName).trim()) && business_uid && business_uid !== "all" && !GENERIC_CART_TITLES.includes(String(businessName));
 
   // Only use Stripe hook if available (not on web)
   let initPaymentSheet, presentPaymentSheet;
@@ -290,7 +280,8 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const [refundAcknowledged, setRefundAcknowledged] = useState(false); //refund acknowledgement state
   const [refundError, setRefundError] = useState(false);
   const scrollViewRef = useRef(null);
-  const refundPolicySectionRef = useRef(null);
+  /** Y offset of refund policy block within ScrollView content (from onLayout). */
+  const refundSectionScrollYRef = useRef(0);
 
   /** Web: one Stripe payment per seller; kept in ref + state so submit handler sees latest step. */
   const webCheckoutSessionRef = useRef(null);
@@ -426,28 +417,11 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       requestAnimationFrame(() => {
         setTimeout(() => {
           const scroll = scrollViewRef.current;
-          const target = refundPolicySectionRef.current;
           if (!scroll) return;
-          if (!target) {
-            scroll.scrollToEnd({ animated: true });
-            return;
-          }
-          const scrollNative = findNodeHandle(scroll);
-          if (!scrollNative) {
-            scroll.scrollToEnd({ animated: true });
-            return;
-          }
-          try {
-            target.measureLayout(
-              scrollNative,
-              (_x, y) => {
-                scroll.scrollTo({ y: Math.max(0, y - 16), animated: true });
-              },
-              () => {
-                scroll.scrollToEnd({ animated: true });
-              },
-            );
-          } catch {
+          const y = refundSectionScrollYRef.current;
+          if (y > 0) {
+            scroll.scrollTo({ y: Math.max(0, y - 16), animated: true });
+          } else {
             scroll.scrollToEnd({ animated: true });
           }
         }, 80);
@@ -543,7 +517,6 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         ]);
 
         await decrementStockForPurchasedItems();
-
       } catch (error) {
         console.error("Error clearing cart data:", error);
         Alert.alert("Error", "There was an error clearing your cart. Please try again.");
@@ -556,14 +529,8 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         } catch (e) {
           console.warn("Failed to trim cart after partial checkout:", e);
         }
-        const paidKeys = new Set(
-          completedGroups.flatMap((g) =>
-            g.items.map((it) => (it.itemType === "expertise" ? `e:${it.expertise_uid}` : `s:${it.business_uid}:${it.bs_uid}`)),
-          ),
-        );
-        setCartItems((prev) =>
-          prev.filter((it) => !paidKeys.has(it.itemType === "expertise" ? `e:${it.expertise_uid}` : `s:${it.business_uid}:${it.bs_uid}`)),
-        );
+        const paidKeys = new Set(completedGroups.flatMap((g) => g.items.map((it) => (it.itemType === "expertise" ? `e:${it.expertise_uid}` : `s:${it.business_uid}:${it.bs_uid}`))));
+        setCartItems((prev) => prev.filter((it) => !paidKeys.has(it.itemType === "expertise" ? `e:${it.expertise_uid}` : `s:${it.business_uid}:${it.bs_uid}`)));
         Alert.alert(
           "Partial checkout",
           `${completedGroups.length} of ${groups.length} payment(s) succeeded. Those items were removed from your cart. Remaining items are still in your cart. Please try again for the rest, or contact support if you were charged incorrectly.`,
@@ -717,12 +684,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
       // ── NEW: cap at available stock for limited-quantity items ──
       const availableStock = item.bs_quantity;
-      if (
-        change > 0 &&
-        availableStock !== undefined &&
-        availableStock !== null &&
-        String(availableStock).toLowerCase() !== "unlimited"
-      ) {
+      if (change > 0 && availableStock !== undefined && availableStock !== null && String(availableStock).toLowerCase() !== "unlimited") {
         const maxQty = parseInt(availableStock, 10);
         if (!isNaN(maxQty) && newQuantity > maxQty) {
           Alert.alert("Stock limit", `Only ${maxQty} available for this item.`);
@@ -755,43 +717,41 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
   // Add this helper alongside the other handlers (e.g. after recordTransactions)
   const decrementStockForPurchasedItems = async () => {
-  const eligibleItems = cartItems.filter((item) => {
-    if (item.itemType === "expertise") return false;
-    const qty = item.bs_quantity;
-    if (!qty || String(qty).toLowerCase() === "unlimited") return false;
-    return true;
-  });
+    const eligibleItems = cartItems.filter((item) => {
+      if (item.itemType === "expertise") return false;
+      const qty = item.bs_quantity;
+      if (!qty || String(qty).toLowerCase() === "unlimited") return false;
+      return true;
+    });
 
-  const results = await Promise.allSettled(
-    eligibleItems.map((item) => recordServicePurchase(item.bs_uid, item.quantity || 1))
-  );
+    const results = await Promise.allSettled(eligibleItems.map((item) => recordServicePurchase(item.bs_uid, item.quantity || 1)));
 
-  // Update local cartItems state with new remaining quantities from backend response
-  setCartItems((prev) =>
-    prev.map((item) => {
-      if (item.itemType === "expertise") return item;
-      const eligibleIndex = eligibleItems.findIndex((e) => e.bs_uid === item.bs_uid);
-      if (eligibleIndex === -1) return item;
+    // Update local cartItems state with new remaining quantities from backend response
+    setCartItems((prev) =>
+      prev.map((item) => {
+        if (item.itemType === "expertise") return item;
+        const eligibleIndex = eligibleItems.findIndex((e) => e.bs_uid === item.bs_uid);
+        if (eligibleIndex === -1) return item;
 
-      const result = results[eligibleIndex];
-      if (result.status === "fulfilled" && result.value?.success) {
-        const remaining = result.value.remaining;
-        return {
-          ...item,
-          bs_quantity: remaining === null ? "unlimited" : String(remaining),
-        };
+        const result = results[eligibleIndex];
+        if (result.status === "fulfilled" && result.value?.success) {
+          const remaining = result.value.remaining;
+          return {
+            ...item,
+            bs_quantity: remaining === null ? "unlimited" : String(remaining),
+          };
+        }
+        return item;
+      }),
+    );
+
+    results.forEach((result, i) => {
+      if (result.status === "rejected") {
+        console.error(`Stock decrement failed for item index ${i}:`, result.reason);
+      } else if (!result.value?.success) {
+        console.warn(`Stock decrement returned failure for item index ${i}:`, result.value);
       }
-      return item;
-    })
-  );
-
-  results.forEach((result, i) => {
-    if (result.status === "rejected") {
-      console.error(`Stock decrement failed for item index ${i}:`, result.reason);
-    } else if (!result.value?.success) {
-      console.warn(`Stock decrement returned failure for item index ${i}:`, result.value);
-    }
-  });
+    });
   };
 
   const calculateTotal = () => {
@@ -817,8 +777,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         throw new Error("User profile not found");
       }
 
-      const total =
-        paymentTotal !== undefined && paymentTotal !== null ? Number(paymentTotal) : calculateTotal();
+      const total = paymentTotal !== undefined && paymentTotal !== null ? Number(paymentTotal) : calculateTotal();
       if (!Number.isFinite(total) || total <= 0) {
         throw new Error("Invalid payment amount");
       }
@@ -918,8 +877,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       const processingFee = group.processingFee;
       const chargedTotal = group.total;
 
-      const defaultRecommender =
-        recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231";
+      const defaultRecommender = recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231";
 
       const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
 
@@ -1058,13 +1016,9 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const multiSellerCheckout = sellerGroupsPreview.length > 1;
   const hasExpertiseInCart = cartItems.some((it) => it.itemType === "expertise");
   const feeDialogFirstGroup = sellerGroupsPreview[0];
-  const webStripeAmount =
-    webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index]
-      ? webCheckoutSession.groups[webCheckoutSession.index].total
-      : 0;
+  const webStripeAmount = webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index] ? webCheckoutSession.groups[webCheckoutSession.index].total : 0;
   const webCheckoutPayeeDisplayName =
-    (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName &&
-      String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
+    (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName && String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
     (feeDialogFirstGroup?.displayName && String(feeDialogFirstGroup.displayName).trim()) ||
     null;
 
@@ -1089,113 +1043,108 @@ const ShoppingCartScreen = ({ route, navigation }) => {
               )}
               {cartItems.map((item, index) => {
                 const lineBusiness = resolveItemBusinessName(item);
-                const showLineBusiness =
-                  Boolean(lineBusiness) &&
-                  (item.itemType === "expertise" || business_uid === "all" || !showVendorHeader);
+                const showLineBusiness = Boolean(lineBusiness) && (item.itemType === "expertise" || business_uid === "all" || !showVendorHeader);
                 const lineTax = lineMerchandiseAndTax(item);
-                const rawRateLabel =
-                  lineTax.rawTaxRate === undefined || lineTax.rawTaxRate === null || String(lineTax.rawTaxRate).trim() === ""
-                    ? "—"
-                    : String(lineTax.rawTaxRate);
-                const storedRateWithPercent =
-                  rawRateLabel === "—"
-                    ? "—"
-                    : `${String(rawRateLabel).replace(/%+\s*$/, "")}%`;
+                const rawRateLabel = lineTax.rawTaxRate === undefined || lineTax.rawTaxRate === null || String(lineTax.rawTaxRate).trim() === "" ? "—" : String(lineTax.rawTaxRate);
+                const storedRateWithPercent = rawRateLabel === "—" ? "—" : `${String(rawRateLabel).replace(/%+\s*$/, "")}%`;
                 return (
-                <View key={index} style={styles.cartItemContainer}>
-                  <TouchableOpacity style={styles.removeButton} onPress={() => handleRemoveItem(index)}>
-                    <Ionicons name='close-circle' size={24} color='#FF3B30' />
-                  </TouchableOpacity>
-                  <View style={styles.cartItemContent}>
-                    <Text style={styles.itemName}>{item.itemType === "expertise" ? item.title : item.bs_service_name}</Text>
-                    {/* Stock badge for limited-quantity items */}
-                    {item.itemType !== "expertise" && (() => {
-                      const qty = item.bs_quantity;
-                      if (!qty || String(qty).toLowerCase() === "unlimited") return null;
-                      const num = parseInt(qty, 10);
-                      if (isNaN(num)) return null;
-                      const isSoldOut = num === 0;
-                      const isLow = num > 0 && num <= 5;
-                      return (
-                        <View style={{
-                          alignSelf: "flex-start",
-                          backgroundColor: isSoldOut ? "#fee2e2" : isLow ? "#fef9c3" : "#dcfce7",
-                          borderRadius: 10,
-                          paddingHorizontal: 8,
-                          paddingVertical: 2,
-                          marginBottom: 6,
-                        }}>
-                          <Text style={{
-                            fontSize: 12,
-                            fontWeight: "600",
-                            color: isSoldOut ? "#dc2626" : isLow ? "#b45309" : "#166534",
-                          }}>
-                            {isSoldOut ? "Out of stock" : isLow ? `Only ${num} left` : `${num} in stock`}
+                  <View key={index} style={styles.cartItemContainer}>
+                    <TouchableOpacity style={styles.removeButton} onPress={() => handleRemoveItem(index)}>
+                      <Ionicons name='close-circle' size={24} color='#FF3B30' />
+                    </TouchableOpacity>
+                    <View style={styles.cartItemContent}>
+                      <Text style={styles.itemName}>{item.itemType === "expertise" ? item.title : item.bs_service_name}</Text>
+                      {/* Stock badge for limited-quantity items */}
+                      {item.itemType !== "expertise" &&
+                        (() => {
+                          const qty = item.bs_quantity;
+                          if (!qty || String(qty).toLowerCase() === "unlimited") return null;
+                          const num = parseInt(qty, 10);
+                          if (isNaN(num)) return null;
+                          const isSoldOut = num === 0;
+                          const isLow = num > 0 && num <= 5;
+                          return (
+                            <View
+                              style={{
+                                alignSelf: "flex-start",
+                                backgroundColor: isSoldOut ? "#fee2e2" : isLow ? "#fef9c3" : "#dcfce7",
+                                borderRadius: 10,
+                                paddingHorizontal: 8,
+                                paddingVertical: 2,
+                                marginBottom: 6,
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: "600",
+                                  color: isSoldOut ? "#dc2626" : isLow ? "#b45309" : "#166534",
+                                }}
+                              >
+                                {isSoldOut ? "Out of stock" : isLow ? `Only ${num} left` : `${num} in stock`}
+                              </Text>
+                            </View>
+                          );
+                        })()}
+                      {showLineBusiness ? <Text style={styles.itemBusinessName}>{lineBusiness}</Text> : null}
+                      <Text style={styles.itemDescription}>{item.itemType === "expertise" ? item.description : item.bs_service_desc}</Text>
+                      <View style={styles.priceContainer}>
+                        <View style={styles.priceRow}>
+                          <Text style={styles.priceLabel}>Price:</Text>
+                          <Text style={styles.priceValue}>
+                            {item.itemType === "expertise"
+                              ? `$${parsePrice(item.cost).toFixed(2)}`
+                              : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${parsePrice(item.bs_cost).toFixed(2)}`}
                           </Text>
                         </View>
-                      );
-                    })()}
-                    {showLineBusiness ? <Text style={styles.itemBusinessName}>{lineBusiness}</Text> : null}
-                    <Text style={styles.itemDescription}>{item.itemType === "expertise" ? item.description : item.bs_service_desc}</Text>
-                    <View style={styles.priceContainer}>
-                      <View style={styles.priceRow}>
-                        <Text style={styles.priceLabel}>Price:</Text>
-                        <Text style={styles.priceValue}>
-                          {item.itemType === "expertise"
-                            ? `$${parsePrice(item.cost).toFixed(2)}`
-                            : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${parsePrice(item.bs_cost).toFixed(2)}`}
-                        </Text>
-                      </View>
-                      <View style={styles.quantityContainer}>
-                        <Text style={styles.priceLabel}>Quantity:</Text>
-                        <View style={styles.quantityControls}>
-                          <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, -1)}>
-                            <Ionicons name='remove' size={20} color='#9C45F7' />
-                          </TouchableOpacity>
-                          <Text style={styles.quantityText}>{item.quantity || 1}</Text>
-                          <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, 1)}>
-                            <Ionicons name='add' size={20} color='#9C45F7' />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                      <View style={styles.totalRow}>
-                        <Text style={styles.totalLabel}>Total Price:</Text>
-                        <Text style={styles.totalValue}>
-                          {item.itemType === "expertise"
-                            ? `$${(parsePrice(item.cost) * (item.quantity || 1)).toFixed(2)}`
-                            : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${(parsePrice(item.totalPrice) || parsePrice(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
-                        </Text>
-                      </View>
-                      {item.itemType === "expertise" ? (
-                        <Text style={styles.lineTaxMeta}>Sales tax: n/a (expertise)</Text>
-                      ) : (
-                        <View style={styles.lineTaxBlock}>
-                          <View style={styles.lineTaxRow}>
-                            <Text style={styles.lineTaxMetaLeft} numberOfLines={4}>
-                              Taxable: {lineTax.taxable ? "Yes" : "No"}
-                              {" · "}
-                              <Text style={styles.lineTaxMetaEm}>Product Tax Rate:</Text> {storedRateWithPercent}
-                            </Text>
-                            <Text style={styles.lineTaxAmount}>${lineTax.tax.toFixed(2)}</Text>
+                        <View style={styles.quantityContainer}>
+                          <Text style={styles.priceLabel}>Quantity:</Text>
+                          <View style={styles.quantityControls}>
+                            <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, -1)}>
+                              <Ionicons name='remove' size={20} color='#9C45F7' />
+                            </TouchableOpacity>
+                            <Text style={styles.quantityText}>{item.quantity || 1}</Text>
+                            <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, 1)}>
+                              <Ionicons name='add' size={20} color='#9C45F7' />
+                            </TouchableOpacity>
                           </View>
                         </View>
-                      )}
-                      {(item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty)) > 0 && (
-                        <View style={[styles.totalRow, styles.bountyNoteRow]}>
-                          <Text style={[styles.bountyNoteLabel, { flex: 1, paddingRight: 8 }]}>{formatCartBountyPaidBySellerLine(item)}</Text>
-                          <Text style={styles.bountyNoteValue}>{formatCartBountyLineTotalValueStr(item)}</Text>
+                        <View style={styles.totalRow}>
+                          <Text style={styles.totalLabel}>Total Price:</Text>
+                          <Text style={styles.totalValue}>
+                            {item.itemType === "expertise"
+                              ? `$${(parsePrice(item.cost) * (item.quantity || 1)).toFixed(2)}`
+                              : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${(parsePrice(item.totalPrice) || parsePrice(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
+                          </Text>
                         </View>
-                      )}
+                        {item.itemType === "expertise" ? (
+                          <Text style={styles.lineTaxMeta}>Sales tax: n/a (expertise)</Text>
+                        ) : (
+                          <View style={styles.lineTaxBlock}>
+                            <View style={styles.lineTaxRow}>
+                              <Text style={styles.lineTaxMetaLeft} numberOfLines={4}>
+                                Taxable: {lineTax.taxable ? "Yes" : "No"}
+                                {" · "}
+                                <Text style={styles.lineTaxMetaEm}>Product Tax Rate:</Text> {storedRateWithPercent}
+                              </Text>
+                              <Text style={styles.lineTaxAmount}>${lineTax.tax.toFixed(2)}</Text>
+                            </View>
+                          </View>
+                        )}
+                        {(item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty)) > 0 && (
+                          <View style={[styles.totalRow, styles.bountyNoteRow]}>
+                            <Text style={[styles.bountyNoteLabel, { flex: 1, paddingRight: 8 }]}>{formatCartBountyPaidBySellerLine(item)}</Text>
+                            <Text style={styles.bountyNoteValue}>{formatCartBountyLineTotalValueStr(item)}</Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
                   </View>
-                </View>
-              );
+                );
               })}
               <View style={styles.totalContainer}>
                 <Text style={styles.multiSellerHint}>
-                  {hasExpertiseInCart
-                    ? "Expertise purchases include a 3% credit card processing fee in each seller total below (same as when you added them to the cart). "
-                    : null}
+                  {hasExpertiseInCart ? "Expertise purchases include a 3% credit card processing fee in each seller total below (same as when you added them to the cart). " : null}
                   {multiSellerCheckout
                     ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). Sales tax is computed per item. For business services only, credit card processing (3%) applies when that business has “buyer pays” card fees.`
                     : hasExpertiseInCart
@@ -1217,9 +1166,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                       <Text style={styles.totalLabel}>Credit card processing (3%)</Text>
                       <Text style={styles.totalValue}>${g.processingFee.toFixed(2)}</Text>
                     </View>
-                    {!g.buyerPaysCardFee ? (
-                      <Text style={styles.cardFeeWaivedNote}>Business pays card fees — the processing line above is $0.00.</Text>
-                    ) : null}
+                    {!g.buyerPaysCardFee ? <Text style={styles.cardFeeWaivedNote}>Business pays card fees — the processing line above is $0.00.</Text> : null}
                     <View style={[styles.totalRow, styles.perBusinessTotalRow]}>
                       <Text style={styles.totalLabel}>Business total</Text>
                       <Text style={styles.totalValue}>${g.total.toFixed(2)}</Text>
@@ -1247,14 +1194,18 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                 {multiSellerCheckout ? (
                   <View style={[styles.totalRow, styles.grandTotalRow]}>
                     <Text style={styles.grandTotalLabel}>Grand total</Text>
-                    <Text style={styles.grandTotalValue}>
-                      ${sellerGroupsPreview.reduce((sum, g) => sum + g.total, 0).toFixed(2)}
-                    </Text>
+                    <Text style={styles.grandTotalValue}>${sellerGroupsPreview.reduce((sum, g) => sum + g.total, 0).toFixed(2)}</Text>
                   </View>
                 ) : null}
               </View>
 
-              <View ref={refundPolicySectionRef} collapsable={false} style={styles.escrowSection}>
+              <View
+                collapsable={false}
+                style={styles.escrowSection}
+                onLayout={(e) => {
+                  refundSectionScrollYRef.current = e.nativeEvent.layout.y;
+                }}
+              >
                 <TouchableOpacity
                   style={styles.escrowRow}
                   onPress={() => {
@@ -1263,22 +1214,14 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                   }}
                   activeOpacity={0.7}
                 >
-                  <View style={[
-                    styles.checkbox,
-                    refundAcknowledged && styles.checkboxChecked,
-                    refundError && { borderColor: "#FF3B30" },
-                  ]}>
+                  <View style={[styles.checkbox, refundAcknowledged && styles.checkboxChecked, refundError && { borderColor: "#FF3B30" }]}>
                     {refundAcknowledged && <Text style={styles.checkmark}>✓</Text>}
                   </View>
                   <Text style={[styles.escrowLabel, { flex: 1 }, refundError && { color: "#FF3B30" }]}>
                     Return must be made in 5 days for a full refund, any returns past 5 days will result in a partial refund. Check the box to acknowledge.
                   </Text>
                 </TouchableOpacity>
-                {refundError && (
-                  <Text style={{ color: "#FF3B30", fontSize: 13, marginTop: 6, marginLeft: 34 }}>
-                    You must acknowledge the return policy before checking out.
-                  </Text>
-                )}
+                {refundError && <Text style={{ color: "#FF3B30", fontSize: 13, marginTop: 6, marginLeft: 34 }}>You must acknowledge the return policy before checking out.</Text>}
               </View>
             </>
           )}

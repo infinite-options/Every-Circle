@@ -71,13 +71,7 @@ const formatDateTimeForDisplay = (value) => {
  * Used for accurate stars, review count, connection degree, and bounty vs search-index guesses.
  */
 async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
-  const businessIds = [
-    ...new Set(
-      items
-        .filter((b) => b.itemType === "businesses" && b.id != null && String(b.id).trim() !== "")
-        .map((b) => String(b.id)),
-    ),
-  ];
+  const businessIds = [...new Set(items.filter((b) => b.itemType === "businesses" && b.id != null && String(b.id).trim() !== "").map((b) => String(b.id)))];
   if (businessIds.length === 0) return items;
 
   let profileUid = null;
@@ -417,7 +411,7 @@ export default function SearchScreen({ route }) {
   useEffect(() => {
     if (!loading && results.length > 0) {
       console.log("🎨 Rendering results:", results.length, "items");
-      console.log("🎨 Results array:", results);
+      // console.log("🎨 Results array:", results);
     }
   }, [results, loading]);
 
@@ -537,11 +531,7 @@ export default function SearchScreen({ route }) {
             score: item.score || 0,
             score_breakdown: item.score_breakdown || null,
             itemType: "expertise",
-            profile_uid:
-              item.profile_expertise_profile_personal_id ||
-              item.profile_personal_uid ||
-              item.expertise_owner_profile_uid ||
-              null,
+            profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
             expertiseData: {
               title: item.profile_expertise_title,
               description: item.profile_expertise_description,
@@ -838,11 +828,7 @@ export default function SearchScreen({ route }) {
           score: item.score || 0,
           score_breakdown: item.score_breakdown || null,
           itemType: "expertise",
-          profile_uid:
-            item.profile_expertise_profile_personal_id ||
-            item.profile_personal_uid ||
-            item.expertise_owner_profile_uid ||
-            null,
+          profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
           expertiseData: {
             title: item.profile_expertise_title,
             description: item.profile_expertise_description,
@@ -1160,9 +1146,7 @@ export default function SearchScreen({ route }) {
 
     if (!parts.length && !detailParts.length) return null;
 
-    const text = detailParts.length
-      ? `${parts.join(" | ")}\n${detailParts.join(" | ")}`
-      : parts.join(" | ");
+    const text = detailParts.length ? `${parts.join(" | ")}\n${detailParts.join(" | ")}` : parts.join(" | ");
 
     return <Text style={[styles.scoreBreakdownText, darkMode && styles.darkScoreBreakdownText]}>{text}</Text>;
   };
@@ -1370,9 +1354,7 @@ export default function SearchScreen({ route }) {
     const isOwnExpertise = currentProfileUid && item.profile_uid === currentProfileUid;
 
     const expertiseLocationTrimmed =
-      expertise.profile_expertise_location != null && String(expertise.profile_expertise_location).trim() !== ""
-        ? String(expertise.profile_expertise_location).trim()
-        : "";
+      expertise.profile_expertise_location != null && String(expertise.profile_expertise_location).trim() !== "" ? String(expertise.profile_expertise_location).trim() : "";
     const expertiseQtyRaw = expertise.quantity ?? expertise.profile_expertise_quantity;
     const expertiseQtyTrimmed = expertiseQtyRaw != null && String(expertiseQtyRaw).trim() !== "" ? String(expertiseQtyRaw).trim() : "";
     const hasExpertiseSchedule = !!(expertise.profile_expertise_start || expertise.profile_expertise_end);
@@ -1398,8 +1380,8 @@ export default function SearchScreen({ route }) {
                 searchState: getSearchStateForRestore(),
               });
             }}
-            accessibilityRole="button"
-            accessibilityLabel="View seller profile"
+            accessibilityRole='button'
+            accessibilityLabel='View seller profile'
           >
             <Image
               source={profile.image && profile.imageIsPublic && profile.image !== "" && String(profile.image).trim() !== "" ? { uri: String(profile.image) } : require("../assets/profile.png")}
@@ -1423,12 +1405,10 @@ export default function SearchScreen({ route }) {
                   searchState: getSearchStateForRestore(),
                 });
               }}
-              accessibilityRole="button"
-              accessibilityLabel="View seller profile"
+              accessibilityRole='button'
+              accessibilityLabel='View seller profile'
             >
-              <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>
-                {[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Anonymous User"}
-              </Text>
+              <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>{[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Anonymous User"}</Text>
             </TouchableOpacity>
             {/* Show email if public */}
             {(() => {
@@ -1465,9 +1445,7 @@ export default function SearchScreen({ route }) {
                 </View>
               ) : null}
               <View style={styles.expertiseOfferingRightCluster}>
-                {expertiseQtyTrimmed ? (
-                  <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>Qty: {expertiseQtyTrimmed}</Text>
-                ) : null}
+                {expertiseQtyTrimmed ? <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>Qty: {expertiseQtyTrimmed}</Text> : null}
                 {expertise.bounty ? (
                   <Text style={[styles.wishBountyLabel, styles.expertiseOfferingBountyCompact, darkMode && styles.darkWishBountyLabel]}>
                     {String(expertise.bounty).toLowerCase() !== "free" ? `💰 $${String(expertise.bounty).replace(/^\$/, "")}` : `💰 ${expertise.bounty}`}
@@ -1481,7 +1459,7 @@ export default function SearchScreen({ route }) {
             <View style={[styles.seekingMetaRow, styles.expertiseOfferingMetaRow]}>
               {hasExpertiseSchedule ? (
                 <View style={styles.seekingMetaLine}>
-                  <Ionicons name="calendar-outline" size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
+                  <Ionicons name='calendar-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
                   <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
                     {expertise.profile_expertise_start ? formatDateTimeForDisplay(expertise.profile_expertise_start) : "—"}
                     {expertise.profile_expertise_start && expertise.profile_expertise_end ? " → " : ""}
@@ -1493,7 +1471,7 @@ export default function SearchScreen({ route }) {
                 <View style={[styles.seekingMetaLine, styles.seekingMetaLineSpaceBetween, hasExpertiseSchedule && { marginTop: 4 }]}>
                   {expertiseLocationTrimmed ? (
                     <View style={styles.seekingMetaLine}>
-                      <Ionicons name="location-outline" size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
+                      <Ionicons name='location-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
                       <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{expertiseLocationTrimmed}</Text>
                     </View>
                   ) : (
@@ -1502,13 +1480,7 @@ export default function SearchScreen({ route }) {
                   {expertiseModeDisplay ? (
                     <View style={styles.seekingMetaLine}>
                       {getExpertiseModeIoniconNames(expertise.profile_expertise_mode).map((iconName, iconIdx, arr) => (
-                        <Ionicons
-                          key={iconName}
-                          name={iconName}
-                          size={14}
-                          color={darkMode ? "#999" : "#666"}
-                          style={{ marginRight: iconIdx < arr.length - 1 ? 4 : 6 }}
-                        />
+                        <Ionicons key={iconName} name={iconName} size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: iconIdx < arr.length - 1 ? 4 : 6 }} />
                       ))}
                       <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{expertiseModeDisplay}</Text>
                     </View>
@@ -1520,33 +1492,21 @@ export default function SearchScreen({ route }) {
           {!isOwnExpertise ? (
             <View style={styles.expertiseCardActionRow}>
               <TouchableOpacity
-                style={[
-                  styles.expertiseCardMessageButton,
-                  darkMode && styles.darkExpertiseCardMessageButton,
-                  !canOpenSellerProfile && styles.expertiseCardActionDisabled,
-                ]}
+                style={[styles.expertiseCardMessageButton, darkMode && styles.darkExpertiseCardMessageButton, !canOpenSellerProfile && styles.expertiseCardActionDisabled]}
                 onPress={() => {
                   if (!item.profile_uid) return;
-                  const offeringLabel =
-                    expertise.title && String(expertise.title).trim()
-                      ? String(expertise.title).trim()
-                      : item.company
-                        ? String(item.company).trim()
-                        : "Offering";
+                  const offeringLabel = expertise.title && String(expertise.title).trim() ? String(expertise.title).trim() : item.company ? String(item.company).trim() : "Offering";
                   navigation.navigate("Chat", {
                     other_uid: item.profile_uid,
                     other_name: [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim() || "Chat",
-                    other_image:
-                      profile.imageIsPublic && profile.image && String(profile.image).trim() !== ""
-                        ? String(profile.image)
-                        : null,
+                    other_image: profile.imageIsPublic && profile.image && String(profile.image).trim() !== "" ? String(profile.image) : null,
                     reply_context: { label: `Offering: ${offeringLabel}` },
                   });
                 }}
                 disabled={!canOpenSellerProfile}
                 activeOpacity={0.85}
               >
-                <Ionicons name="chatbubble-ellipses-outline" size={17} color="#fff" style={{ marginRight: 7 }} />
+                <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' style={{ marginRight: 7 }} />
                 <Text style={styles.expertiseCardActionButtonText}>Messaging</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -1558,7 +1518,7 @@ export default function SearchScreen({ route }) {
                 disabled={!canAddExpertiseToCart}
                 activeOpacity={0.85}
               >
-                <Ionicons name="cart-outline" size={20} color="#fff" style={{ marginRight: 6 }} />
+                <Ionicons name='cart-outline' size={20} color='#fff' style={{ marginRight: 6 }} />
                 <Text style={styles.expertiseCardActionButtonText}>Add to Cart</Text>
               </TouchableOpacity>
             </View>
@@ -1702,9 +1662,7 @@ export default function SearchScreen({ route }) {
                     <Image source={require("../assets/connect.png")} style={{ width: 22, height: 22, tintColor: iconTint }} />
                     {item.connection_degree != null && (
                       <View style={[styles.connectionBadge, !hasBusinessReviews && { opacity: 0.85 }]}>
-                        <Text style={[styles.connectionBadgeText, !hasBusinessReviews && { color: darkMode ? "#888" : "#666" }]}>
-                          {item.connection_degree}
-                        </Text>
+                        <Text style={[styles.connectionBadgeText, !hasBusinessReviews && { color: darkMode ? "#888" : "#666" }]}>{item.connection_degree}</Text>
                       </View>
                     )}
                   </View>

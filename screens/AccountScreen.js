@@ -2222,16 +2222,16 @@ export default function AccountScreen({ navigation }) {
                   ) : personalWallet ? (
                     <View style={styles.balanceSectionBody}>
                       <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Useable Balance</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>{formatWalletUsd(personalWallet.wallet_useable_balance)}</Text>
+                      </View>
+                      <View style={styles.balanceContainer}>
                         <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Actual Balance</Text>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(personalWallet.wallet_actual_balance)}</Text>
                       </View>
                       <View style={styles.balanceContainer}>
                         <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
                         <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>{formatWalletUsd(personalWallet.wallet_pending)}</Text>
-                      </View>
-                      <View style={styles.balanceContainer}>
-                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Useable Balance</Text>
-                        <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>{formatWalletUsd(personalWallet.wallet_useable_balance)}</Text>
                       </View>
                     </View>
                   ) : (
