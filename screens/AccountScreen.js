@@ -31,6 +31,9 @@ const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
  * Expected GET /api/v1/account-screen/personal/:profile_id JSON (flexible keys):
  * - data.transactions | purchase_transactions | personal_transactions | purchases | purchase: buyer rows as array, or { code, data }, or nested { data | items | rows | transactions | list | results | records }[]
  * - data.bounty | bounty_results | bounty_data: same shape as legacy /api/bountyresults body, or bounty_items[] + totals
+ * - wallet: root, data, or bounty_results.wallet ({ wallet_actual_balance, wallet_pending, wallet_useable_balance, ... })
+ * - Aggregate shape: { purchases: { data }, bounty_results: { data, totals, wallet }, seller_transactions: { data } }
+ * - Top-level bounty shape: data[] + total_bounties + total_bounty_earned + wallet (purchases may be in purchases / purchase_transactions)
  * - data.seller_transactions | seller_tx: line items for seller-side expertise qty OR { code, data } (omit key → treat as no seller lines)
  * - data.profile | user_profile: optional { user_email, personal_info, expertise_info } for MiniCard + expertise list
  */
@@ -210,12 +213,82 @@ function ReceiptTransactionTotalsFooter({ receiptRows, darkMode }) {
   );
 }
 
+/** Wallet block from account-screen/personal (root, data, or inside bounty_results). */
+function extractPersonalWallet(root, payload, bountyBlock) {
+  const bag = payload && typeof payload === "object" ? payload : null;
+  const bountyBag = bountyBlock && typeof bountyBlock === "object" ? bountyBlock : null;
+  const w =
+    root?.wallet ??
+    bag?.wallet ??
+    bag?.bounty_results?.wallet ??
+    bountyBag?.wallet ??
+    null;
+  return w && typeof w === "object" && !Array.isArray(w) ? w : null;
+}
+
+/** Normalize bounty_results / legacy bounty shapes to { data, total_bounty_earned, total_bounties }. */
+function normalizePersonalBounty(bountyRaw, root, payload) {
+  if (bountyRaw == null) return null;
+  if (Array.isArray(bountyRaw)) {
+    return {
+      data: bountyRaw,
+      total_bounty_earned: root?.total_bounty_earned ?? payload?.total_bounty_earned,
+      total_bounties: root?.total_bounties ?? payload?.total_bounties,
+    };
+  }
+  if (typeof bountyRaw !== "object") return null;
+  const rows = Array.isArray(bountyRaw.data)
+    ? bountyRaw.data
+    : Array.isArray(bountyRaw.bounty_items)
+      ? bountyRaw.bounty_items
+      : isApiSuccessCode(bountyRaw.code) && Array.isArray(bountyRaw.data)
+        ? bountyRaw.data
+        : [];
+  return {
+    data: rows,
+    total_bounty_earned: bountyRaw.total_bounty_earned ?? root?.total_bounty_earned ?? payload?.total_bounty_earned,
+    total_bounties: bountyRaw.total_bounties ?? root?.total_bounties ?? payload?.total_bounties,
+  };
+}
+
+function formatWalletUsd(val) {
+  return `$${parsePrice(val).toFixed(2)}`;
+}
+
 function mapAccountScreenPersonalResponse(json) {
   const root = json && typeof json === "object" ? json : {};
+
   if (Array.isArray(root.data)) {
+    const bountyResultsBlock = root.bounty_results ?? null;
+    const walletEarly = extractPersonalWallet(root, root, bountyResultsBlock ?? { data: root.data, wallet: root.wallet });
+    const hasBountyTotals = root.total_bounty_earned != null || root.total_bounties != null || walletEarly != null || bountyResultsBlock != null;
+    if (hasBountyTotals) {
+      const purchasesRaw = root.purchases ?? root.purchase_transactions ?? root.personal_transactions ?? root.buyer_transactions;
+      let sellerTransactions = [];
+      const stRaw = root.seller_transactions ?? root.seller_tx;
+      if (Array.isArray(stRaw)) {
+        sellerTransactions = stRaw;
+      } else if (stRaw && isApiSuccessCode(stRaw.code) && Array.isArray(stRaw.data)) {
+        sellerTransactions = stRaw.data;
+      }
+      const bountyRaw = bountyResultsBlock ?? {
+        data: root.data,
+        total_bounty_earned: root.total_bounty_earned,
+        total_bounties: root.total_bounties,
+        wallet: root.wallet,
+      };
+      return {
+        transactions: extractTransactionArray(purchasesRaw),
+        bounty: normalizePersonalBounty(bountyRaw, root, root),
+        wallet: extractPersonalWallet(root, root, bountyRaw),
+        sellerTransactions,
+        profile: root.profile ?? root.user_profile ?? null,
+      };
+    }
     return {
       transactions: isApiSuccessCode(root.code) ? root.data : [],
       bounty: null,
+      wallet: extractPersonalWallet(root, root, null),
       /** Top-level `data` array is buyer rows only; no nested seller list in this shape */
       sellerTransactions: [],
       profile: null,
@@ -258,7 +331,8 @@ function mapAccountScreenPersonalResponse(json) {
     return row;
   });
 
-  let bounty = payload.bounty ?? payload.bounty_results ?? payload.bounty_data ?? null;
+  const bountyRaw = payload.bounty ?? payload.bounty_results ?? payload.bounty_data ?? null;
+  let bounty = bountyRaw;
   if (!bounty && Array.isArray(payload.bounty_items)) {
     bounty = {
       data: payload.bounty_items,
@@ -266,6 +340,9 @@ function mapAccountScreenPersonalResponse(json) {
       total_bounties: payload.total_bounties,
     };
   }
+  bounty = normalizePersonalBounty(bounty, root, payload);
+
+  const walletFromResponse = extractPersonalWallet(root, payload, bountyRaw);
 
   let sellerTransactions;
   const stRaw = payload.seller_transactions ?? payload.seller_tx ?? payload.seller_transaction_lines;
@@ -281,7 +358,7 @@ function mapAccountScreenPersonalResponse(json) {
 
   const profile = payload.profile ?? payload.user_profile ?? payload.personal_profile ?? null;
 
-  return { transactions, bounty, sellerTransactions, profile };
+  return { transactions, bounty, sellerTransactions, profile, wallet: walletFromResponse };
 }
 
 /**
@@ -458,6 +535,7 @@ export default function AccountScreen({ navigation }) {
   const [isLoading, setIsLoading] = useState(true);
   const [bountyData, setBountyData] = useState(null);
   const [bountyLoading, setBountyLoading] = useState(true);
+  const [personalWallet, setPersonalWallet] = useState(null);
   const [transactionData, setTransactionData] = useState([]);
   const [transactionLoading, setTransactionLoading] = useState(true);
   const [expertiseData, setExpertiseData] = useState([]);
@@ -485,6 +563,7 @@ export default function AccountScreen({ navigation }) {
   const [showBusinessNetEarning, setShowBusinessNetEarning] = useState(true);
   const [showBusinessTransactionHistory, setShowBusinessTransactionHistory] = useState(true);
   const [showBalance, setShowBalance] = useState(true);
+  const [showWallet, setShowWallet] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [showReceiveItemModal, setShowReceiveItemModal] = useState(false);
@@ -826,6 +905,7 @@ export default function AccountScreen({ navigation }) {
           console.log("No profile ID found, skipping account-screen personal fetch");
           setTransactionData([]);
           setBountyData(null);
+          setPersonalWallet(null);
           setExpertiseData([]);
           return;
         }
@@ -862,6 +942,7 @@ export default function AccountScreen({ navigation }) {
         } else {
           setBountyData({ data: [] });
         }
+        setPersonalWallet(mapped.wallet ?? null);
 
         if (mapped.profile?.personal_info) {
           const result = mapped.profile;
@@ -899,6 +980,7 @@ export default function AccountScreen({ navigation }) {
         console.error("Error loading account-screen personal:", error);
         setTransactionData([]);
         setBountyData({ error: error.message });
+        setPersonalWallet(null);
         setExpertiseData([]);
       } finally {
         setTransactionLoading(false);
@@ -2123,6 +2205,40 @@ export default function AccountScreen({ navigation }) {
                 <Ionicons name={showNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showNetEarning && <NetEarningChart />}
+            </View>
+
+            {/* Wallet */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowWallet(!showWallet)}>
+                <Text style={styles.sectionHeaderText}>WALLET</Text>
+                <Ionicons name={showWallet ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showWallet && (
+                <>
+                  {bountyLoading ? (
+                    <Text style={styles.loadingText}>Loading wallet...</Text>
+                  ) : bountyData?.error ? (
+                    <Text style={styles.errorText}>Unable to load wallet.</Text>
+                  ) : personalWallet ? (
+                    <View style={styles.balanceSectionBody}>
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Actual Balance</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(personalWallet.wallet_actual_balance)}</Text>
+                      </View>
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>{formatWalletUsd(personalWallet.wallet_pending)}</Text>
+                      </View>
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Useable Balance</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>{formatWalletUsd(personalWallet.wallet_useable_balance)}</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <Text style={styles.noDataText}>No wallet data available.</Text>
+                  )}
+                </>
+              )}
             </View>
 
             {/* Balance summary */}
