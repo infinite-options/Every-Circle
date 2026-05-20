@@ -108,7 +108,8 @@ function lineMerchandiseAndTax(item) {
       ratePercentUsed: null,
     };
   }
-  const pretax = roundMoney(parsePrice(item.bs_cost) * qty);
+  //const pretax = roundMoney(parsePrice(item.bs_cost) * qty);
+  const pretax = roundMoney(parsePrice(item.bs_cost_with_extras || item.bs_cost) * qty);
   const rawTaxRate = item.bs_tax_rate;
   const taxable = isLineTaxable(item);
   const ratePercent = taxRatePercentForCalculation(rawTaxRate);
@@ -184,7 +185,8 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
 
 const ShoppingCartScreen = ({ route, navigation }) => {
   const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id } = route.params;
-  const [cartItems, setCartItems] = useState(initialCartItems);
+   //const [cartItems, setCartItems] = useState(initialCartItems);
+   const [cartItems, setCartItems] = useState(Array.isArray(initialCartItems) ? initialCartItems : []);
 
   const resolveItemBusinessName = (item) => {
     if (item.itemType === "expertise") {
@@ -333,6 +335,27 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       setWebCheckoutSession(null);
 
       try {
+        const choicesRecord = {};
+        cartItems.forEach((item) => {
+          if (item.bs_uid && (item.selectedChoiceLabels || item.choicesExtraCost || item.specialInstructions)) {
+            choicesRecord[item.bs_uid] = {
+              choicesExtraCost: item.choicesExtraCost || 0,
+              selectedChoiceLabels: item.selectedChoiceLabels || {},
+              selectedChoices: item.selectedChoices || {},
+              specialInstructions: item.specialInstructions || "",
+              unitPrice: item.unitPrice,
+            };
+          }
+        });
+        if (Object.keys(choicesRecord).length > 0) {
+          const existing = await AsyncStorage.getItem("receipt_choices_by_bs_uid");
+          const existingParsed = existing ? JSON.parse(existing) : {};
+          await AsyncStorage.setItem(
+            "receipt_choices_by_bs_uid",
+            JSON.stringify({ ...existingParsed, ...choicesRecord })
+          );
+          console.log("Saved receipt choices:", JSON.stringify(choicesRecord));
+        }
         console.log("Clearing all cart data...");
         const keys = await AsyncStorage.getAllKeys();
         const cartKeys = keys.filter((key) => key.startsWith("cart_"));
@@ -477,6 +500,27 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       }
 
       try {
+        const choicesRecord = {};
+        cartItems.forEach((item) => {
+          if (item.bs_uid && (item.selectedChoiceLabels || item.choicesExtraCost || item.specialInstructions)) {
+            choicesRecord[item.bs_uid] = {
+              choicesExtraCost: item.choicesExtraCost || 0,
+              selectedChoiceLabels: item.selectedChoiceLabels || {},
+              selectedChoices: item.selectedChoices || {},
+              specialInstructions: item.specialInstructions || "",
+              unitPrice: item.unitPrice,
+            };
+          }
+        });
+        if (Object.keys(choicesRecord).length > 0) {
+          const existing = await AsyncStorage.getItem("receipt_choices_by_bs_uid");
+          const existingParsed = existing ? JSON.parse(existing) : {};
+          await AsyncStorage.setItem(
+            "receipt_choices_by_bs_uid",
+            JSON.stringify({ ...existingParsed, ...choicesRecord })
+          );
+          console.log("Saved receipt choices:", JSON.stringify(choicesRecord));
+        }
         console.log("Clearing all cart data...");
         const keys = await AsyncStorage.getAllKeys();
         const cartKeys = keys.filter((key) => key.startsWith("cart_"));
@@ -561,7 +605,8 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
   // Update local state when initialCartItems changes
   useEffect(() => {
-    setCartItems(initialCartItems);
+    // setCartItems(initialCartItems);
+    setCartItems(Array.isArray(initialCartItems) ? initialCartItems : []);
   }, [initialCartItems]);
 
   useEffect(() => {
@@ -871,6 +916,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
       const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
 
+      // In recordSingleBusinessTransaction, update the items map:
       const items = group.items.map((item) => {
         const qty = parseInt(item.quantity, 10) || 1;
         const bountyType = item.itemType === "expertise" ? "per_item" : item.bs_bounty_type || "per_item";
@@ -884,6 +930,11 @@ const ShoppingCartScreen = ({ route, navigation }) => {
           bounty_type: bountyType,
           quantity: qty,
           recommender_profile_id: item.bounty_recommender_profile_id || defaultRecommender,
+          // Pass choices data so backend can store it on the transaction item
+          choices_extra_cost: item.choicesExtraCost || 0,
+          unit_price: item.unitPrice || parsePrice(item.bs_cost),
+          selected_choices: item.selectedChoices || {},
+          special_instructions: item.specialInstructions || "",
         };
       });
 
@@ -1066,8 +1117,9 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                         <Text style={styles.priceValue}>
                           {item.itemType === "expertise"
                             ? `$${parsePrice(item.cost).toFixed(2)}`
-                            : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${parsePrice(item.bs_cost).toFixed(2)}`}
-                        </Text>
+                            : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${parsePrice(item.bs_cost_with_extras || item.bs_cost).toFixed(2)}`
+                          }
+                            </Text>
                       </View>
                       <View style={styles.quantityContainer}>
                         <Text style={styles.priceLabel}>Quantity:</Text>

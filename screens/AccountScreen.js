@@ -18,6 +18,7 @@ import MiniCard from "../components/MiniCard";
 /** 1 = compact: Purchases (Date, Type, Seller, Paid, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
 
+
 /**
  * Expected GET /api/v1/account-screen/personal/:profile_id JSON (flexible keys):
  * - data.transactions | purchase_transactions | personal_transactions | purchases | purchase: buyer rows as array, or { code, data }, or nested { data | items | rows | transactions | list | results | records }[]
@@ -352,6 +353,8 @@ export default function AccountScreen({ navigation }) {
   const businessUIDRef = useRef(businessUID);
   const businessesRef = useRef(businesses);
 
+  const [receiptEnrichedItems, setReceiptEnrichedItems] = useState({});
+
   useEffect(() => {
     selectedAccountRef.current = selectedAccount;
   }, [selectedAccount]);
@@ -413,7 +416,44 @@ export default function AccountScreen({ navigation }) {
         transaction_return_requested: transaction.transaction_return_requested || (parsedReturn?.requested ? 1 : 0),
       });
 
-      // Pass seller_id so backend filters to only this seller's items
+      // Load enriched choices FIRST so they're ready when receipt data arrives
+      try {
+        // 1. Persistent choices saved at checkout time
+        const stored = await AsyncStorage.getItem("receipt_choices_by_bs_uid");
+        const persistedChoices = stored ? JSON.parse(stored) : {};
+
+        // 2. Active cart items as fallback (not yet checked out)
+        const allKeys = await AsyncStorage.getAllKeys();
+        const cartKeys = allKeys.filter((k) => k.startsWith("cart_"));
+        const allCartRaw = await AsyncStorage.multiGet(cartKeys);
+        const cartEnrichMap = {};
+        allCartRaw.forEach(([, val]) => {
+          if (!val) return;
+          try {
+            const parsed = JSON.parse(val);
+            (parsed.items || []).forEach((cartItem) => {
+              if (cartItem.bs_uid && (cartItem.selectedChoiceLabels || cartItem.choicesExtraCost)) {
+                cartEnrichMap[cartItem.bs_uid] = {
+                  choicesExtraCost: cartItem.choicesExtraCost || 0,
+                  selectedChoiceLabels: cartItem.selectedChoiceLabels || {},
+                  selectedChoices: cartItem.selectedChoices || {},
+                  specialInstructions: cartItem.specialInstructions || "",
+                  unitPrice: cartItem.unitPrice,
+                };
+              }
+            });
+          } catch {}
+        });
+
+        // Persisted data takes priority over active cart
+        const merged = { ...cartEnrichMap, ...persistedChoices };
+        console.log("fetchReceipt - enriched items loaded:", Object.keys(merged).length, "keys");
+        console.log("fetchReceipt - enriched items:", JSON.stringify(merged));
+        setReceiptEnrichedItems(merged);
+      } catch (e) {
+        console.warn("fetchReceipt - failed to load enriched items:", e);
+      }
+
       const sellerId = transaction.seller_id || "";
       const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${profileId}/${transactionUid}${sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : ""}`;
 
@@ -433,7 +473,6 @@ export default function AccountScreen({ navigation }) {
         items = [result.data];
       }
 
-      // No client-side filtering needed — backend handles it via seller_id param
       setReceiptData(items);
     } catch (error) {
       console.error("Error fetching receipt:", error);
@@ -531,19 +570,47 @@ export default function AccountScreen({ navigation }) {
   };
 
   const loadReturnRequests = async () => {
+    // Load persistent receipt choices saved at checkout time
+    try {
+      const stored = await AsyncStorage.getItem("receipt_choices_by_bs_uid");
+      const persistedChoices = stored ? JSON.parse(stored) : {};
+
+      // Also scan active carts as fallback (items not yet checked out)
+      const keys = await AsyncStorage.getAllKeys();
+      const cartKeys = keys.filter((k) => k.startsWith("cart_"));
+      const allCartRaw = await AsyncStorage.multiGet(cartKeys);
+      const cartEnrichMap = {};
+      allCartRaw.forEach(([, val]) => {
+        if (!val) return;
+        try {
+          const parsed = JSON.parse(val);
+          (parsed.items || []).forEach((cartItem) => {
+            if (cartItem.bs_uid) {
+              cartEnrichMap[cartItem.bs_uid] = {
+                choicesExtraCost: cartItem.choicesExtraCost || 0,
+                selectedChoiceLabels: cartItem.selectedChoiceLabels || {},
+                selectedChoices: cartItem.selectedChoices || {},
+                specialInstructions: cartItem.specialInstructions || "",
+                unitPrice: cartItem.unitPrice,
+              };
+            }
+          });
+        } catch {}
+      });
+
+      // Merge: persisted checkout data takes priority over active cart
+      setReceiptEnrichedItems({ ...cartEnrichMap, ...persistedChoices });
+    } catch {}
+
+    // Also load actual return requests
     try {
       const keys = await AsyncStorage.getAllKeys();
       const returnKeys = keys.filter((k) => k.startsWith("return_request_"));
-      console.log("=== STORED RETURN KEYS ===", returnKeys);
       const loaded = {};
       for (const key of returnKeys) {
         const uid = key.replace("return_request_", "");
         const val = await AsyncStorage.getItem(key);
-        //loaded[uid] = val ? JSON.parse(val) : { items: [], notes: [] };
-        if (val) {
-          loaded[uid] = JSON.parse(val);
-        }
-        // skip entirely if no stored value — don't create empty entries
+        if (val) loaded[uid] = JSON.parse(val);
       }
       setReturnRequests(loaded);
     } catch (e) {
@@ -2291,28 +2358,128 @@ export default function AccountScreen({ navigation }) {
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiptModalContent, darkMode && styles.darkModalContent]}>
             <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle, { textAlign: "center" }]}>Transaction Receipt</Text>
-            {receiptLoading ? (
-              <ActivityIndicator size='large' color='#18884A' style={{ marginVertical: 24 }} />
-            ) : receiptData.length > 0 ? (
+            {/* Receipt Table Section */}
+            
+            {receiptData.length > 0 ? (
               <ScrollView style={styles.receiptScrollView} horizontal>
                 <View>
                   <View style={styles.receiptTableHeader}>
-                    <Text style={styles.receiptHeaderCell}>Item Name</Text>
-                    <Text style={styles.receiptHeaderCell}>Qty</Text>
-                    <Text style={styles.receiptHeaderCell}>Cost</Text>
+                    <Text style={[styles.receiptHeaderCell, { width: 140 }]}>Item</Text>
+                    <Text style={[styles.receiptHeaderCell, { width: 40 }]}>Qty</Text>
+                    <Text style={[styles.receiptHeaderCell, { width: 75 }]}>Base</Text>
+                    <Text style={[styles.receiptHeaderCell, { width: 130 }]}>Chosen Options</Text>
+                    <Text style={[styles.receiptHeaderCell, { width: 75 }]}>Total</Text>
                   </View>
-                  {receiptData.map((item, index) => (
-                    <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
-                      <Text style={styles.receiptTableCell}>{item.bs_service_name || "N/A"}</Text>
-                      <Text style={styles.receiptTableCell}>{item.ti_bs_qty ?? "N/A"}</Text>
-                      <Text style={styles.receiptTableCell}>${parseFloat(item.ti_bs_cost || 0).toFixed(2)}</Text>
-                    </View>
-                  ))}
+
+                  {receiptData.map((item, index) => {
+                    const baseCost = parseFloat(item.ti_bs_cost || 0);
+                    const qty = parseInt(item.ti_bs_qty || 1, 10);
+
+                    const enrich = receiptEnrichedItems[item.ti_bs_id]
+                      || receiptEnrichedItems[item.bs_uid]
+                      || {};
+
+                    const choiceLabels = enrich.selectedChoiceLabels || {};
+                    const choicesExtraCost = parseFloat(enrich.choicesExtraCost || 0);
+                    const specialInstructions = enrich.specialInstructions || "";
+                    const hasChoices = Object.keys(choiceLabels).length > 0;
+
+                    const unitPrice = baseCost + choicesExtraCost;
+                    const lineTotal = unitPrice * qty;
+
+                    return (
+                      <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
+                        {/* Item name */}
+                        <View style={{ width: 140, paddingHorizontal: 4, justifyContent: "center" }}>
+                          <Text style={{ fontSize: 12, color: "#333" }} numberOfLines={3}>
+                            {item.bs_service_name || "N/A"}
+                          </Text>
+                          {specialInstructions ? (
+                            <Text style={{ fontSize: 10, color: "#888", marginTop: 2, fontStyle: "italic" }}>
+                              Note: {specialInstructions}
+                            </Text>
+                          ) : null}
+                        </View>
+
+                        {/* Qty */}
+                        <Text style={[styles.receiptTableCell, { width: 40, textAlign: "center" }]}>
+                          {qty}
+                        </Text>
+
+                        {/* Base cost */}
+                        <Text style={[styles.receiptTableCell, { width: 75, textAlign: "right" }]}>
+                          ${baseCost.toFixed(2)}
+                        </Text>
+
+                        {/* Chosen options — only what the buyer selected, with extra cost if any */}
+                        <View style={{ width: 130, paddingHorizontal: 4, justifyContent: "center" }}>
+                          {hasChoices ? (
+                            <>
+                              {Object.entries(choiceLabels).map(([groupTitle, label]) => (
+                                <Text key={groupTitle} style={{ fontSize: 10, color: "#555", lineHeight: 15 }}>
+                                  {groupTitle}: {label}
+                                </Text>
+                              ))}
+                              {choicesExtraCost > 0 && (
+                                <Text style={{ fontSize: 10, color: "#18884A", fontWeight: "600", marginTop: 2 }}>
+                                  +${choicesExtraCost.toFixed(2)}
+                                </Text>
+                              )}
+                            </>
+                          ) : (
+                            <Text style={{ fontSize: 11, color: "#aaa" }}>—</Text>
+                          )}
+                        </View>
+
+                        {/* Line total (base + options) × qty */}
+                        <Text style={[styles.receiptTableCell, { width: 75, textAlign: "right", fontWeight: "600" }]}>
+                          ${lineTotal.toFixed(2)}
+                        </Text>
+                      </View>
+                    );
+                  })}
+
+                  {/* Grand total */}
+                  {(() => {
+                    const grandTotal = receiptData.reduce((sum, item) => {
+                      const enrich = receiptEnrichedItems[item.ti_bs_id]
+                        || receiptEnrichedItems[item.bs_uid]
+                        || {};
+                      const baseCost = parseFloat(item.ti_bs_cost || 0);
+                      const qty = parseInt(item.ti_bs_qty || 1, 10);
+                      const choicesExtra = parseFloat(enrich.choicesExtraCost || 0);
+                      return sum + (baseCost + choicesExtra) * qty;
+                    }, 0);
+                    return (
+                      <View style={[styles.receiptTableRow, {
+                        borderTopWidth: 2,
+                        borderTopColor: "#18884A",
+                        marginTop: 4,
+                      }]}>
+                        <View style={{ width: 140 }} />
+                        <Text style={{ width: 40 }} />
+                        <Text style={{ width: 75 }} />
+                        <Text style={[styles.receiptTableCell, {
+                          width: 130, fontWeight: "700", textAlign: "right"
+                        }]}>
+                          Grand Total
+                        </Text>
+                        <Text style={[styles.receiptTableCell, {
+                          width: 75, fontWeight: "700",
+                          color: "#18884A", textAlign: "right"
+                        }]}>
+                          ${grandTotal.toFixed(2)}
+                        </Text>
+                      </View>
+                    );
+                  })()}
                 </View>
               </ScrollView>
             ) : (
               <Text style={[styles.noDataText, { marginVertical: 24 }]}>No receipt data available.</Text>
             )}
+
+
 
             {/* Return requested confirmation message */}
             {(returnRequests[receiptTransaction?.transaction_uid]?.requested || receiptTransaction?.transaction_return_requested === 1) && (
