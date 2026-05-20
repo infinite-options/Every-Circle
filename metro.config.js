@@ -9,6 +9,12 @@ const defaultResolver = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, realModuleName, platform, moduleName) => {
   // On web, redirect TextInput-related imports to our stubs
   if (platform === "web") {
+    if (realModuleName === "@stripe/stripe-react-native") {
+      return {
+        filePath: path.resolve(__dirname, "web-stubs/stripe-react-native.js"),
+        type: "sourceFile",
+      };
+    }
     if (realModuleName && realModuleName.includes("TextInput/TextInput")) {
       return {
         filePath: path.resolve(__dirname, "web-stubs/TextInput.js"),

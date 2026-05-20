@@ -13,9 +13,6 @@ const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
 // Set to false to POST to `APPLE_AUTH_ENDPOINT` and continue sign-in (profile) flow.
 const DEBUG_APPLE_SIGNIN_SKIP_BACKEND = false;
 
-// Video component removed - expo-av was causing build issues with new architecture
-// If needed in the future, re-add expo-av and configure it properly
-
 // Suppress VirtualizedList nesting warning - we're using nestedScrollEnabled and proper configuration
 LogBox.ignoreLogs(["VirtualizedLists should never be nested inside plain ScrollViews"]);
 import { SafeAreaProvider } from "react-native-safe-area-context";
