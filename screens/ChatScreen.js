@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Image, Keyboard, Platform } from "react-native";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Keyboard, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,11 +7,13 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
+import MiniCard from "../components/MiniCard";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
-import { CHAT_CONVERSATIONS_ENDPOINT, CHAT_MESSAGES_ENDPOINT } from "../apiConfig";
+import { CHAT_CONVERSATIONS_ENDPOINT, CHAT_MESSAGES_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { createAblyRealtimeClient } from "../utils/ablyClient";
 import { normalizeMessageForUi, orderMessagesForChatList } from "../utils/chatConversations";
+import { sanitizeText } from "../utils/textSanitizer";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,6 +40,108 @@ function formatDayLabel(isoString) {
   if (sameDay(isoString, today.toISOString())) return "Today";
   if (sameDay(isoString, yesterday.toISOString())) return "Yesterday";
   return d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+}
+
+/** Name + image from navigation params when API profile is not ready yet. */
+function miniCardUserFromParams(displayName, imageUri) {
+  const n = (displayName || "").trim();
+  const parts = n.split(/\s+/).filter(Boolean);
+  const firstName = parts.length > 1 ? parts.slice(0, -1).join(" ") : n;
+  const lastName = parts.length > 1 ? parts[parts.length - 1] : "";
+  const img = imageUri && String(imageUri).trim() !== "" ? sanitizeText(String(imageUri)) : "";
+  return {
+    firstName: sanitizeText(firstName) || "Chat",
+    lastName: sanitizeText(lastName),
+    tagLine: "",
+    email: "",
+    phoneNumber: "",
+    profileImage: img,
+    city: "",
+    state: "",
+    tagLineIsPublic: false,
+    emailIsPublic: false,
+    phoneIsPublic: false,
+    locationIsPublic: false,
+    imageIsPublic: !!img,
+  };
+}
+
+function mapUserProfileApiToMiniCardUser(apiUser) {
+  const p = apiUser?.personal_info || {};
+  const tagLineIsPublic = p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1;
+  const emailIsPublic = p.profile_personal_email_is_public === 1;
+  const phoneIsPublic = p.profile_personal_phone_number_is_public === 1;
+  const imageIsPublic = p.profile_personal_image_is_public === 1;
+  const locationIsPublic = p.profile_personal_location_is_public === 1;
+  return {
+    firstName: sanitizeText(p.profile_personal_first_name || ""),
+    lastName: sanitizeText(p.profile_personal_last_name || ""),
+    tagLine: tagLineIsPublic ? sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || "") : "",
+    email: emailIsPublic ? sanitizeText(apiUser?.user_email || "") : "",
+    phoneNumber: phoneIsPublic ? sanitizeText(p.profile_personal_phone_number || "") : "",
+    profileImage: imageIsPublic && p.profile_personal_image ? sanitizeText(String(p.profile_personal_image)) : "",
+    city: locationIsPublic ? sanitizeText(p.profile_personal_city || "") : "",
+    state: locationIsPublic ? sanitizeText(p.profile_personal_state || "") : "",
+    emailIsPublic,
+    phoneIsPublic,
+    tagLineIsPublic,
+    locationIsPublic,
+    imageIsPublic,
+  };
+}
+
+function mapRawBusinessToMiniCardBusiness(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const tagline = raw.business_tag_line || raw.tagline || "";
+  const profileImg =
+    raw.business_profile_img && String(raw.business_profile_img).trim() !== "" ? String(raw.business_profile_img).trim() : null;
+  let firstGallery = null;
+  if (raw.images && Array.isArray(raw.images) && raw.images[0]) {
+    firstGallery = String(raw.images[0]);
+  }
+  const emailIsPublic =
+    raw.business_email_id_is_public === "1" ||
+    raw.business_email_id_is_public === 1 ||
+    raw.email_is_public === "1" ||
+    raw.email_is_public === 1;
+  const phoneIsPublic =
+    raw.business_phone_number_is_public === "1" ||
+    raw.business_phone_number_is_public === 1 ||
+    raw.phone_is_public === "1" ||
+    raw.phone_is_public === 1;
+  const taglineIsPublic =
+    raw.business_tag_line_is_public === "1" ||
+    raw.business_tag_line_is_public === 1 ||
+    raw.tagline_is_public === "1" ||
+    raw.tagline_is_public === 1;
+  const locationIsPublic = raw.business_location_is_public === "1" || raw.business_location_is_public === 1;
+  const imageIsPublic =
+    raw.business_profile_img_is_public === "1" ||
+    raw.business_profile_img_is_public === 1 ||
+    raw.business_image_is_public === "1" ||
+    raw.business_image_is_public === 1 ||
+    raw.image_is_public === "1" ||
+    raw.image_is_public === 1;
+
+  return {
+    business_name: sanitizeText(raw.business_name || ""),
+    tagline: sanitizeText(tagline),
+    business_location: sanitizeText(raw.business_location || ""),
+    business_address_line_1: sanitizeText(raw.business_address_line_1 || ""),
+    business_city: sanitizeText(raw.business_city || ""),
+    business_state: sanitizeText(raw.business_state || ""),
+    business_zip_code: sanitizeText(raw.business_zip_code || ""),
+    business_phone_number: sanitizeText(raw.business_phone_number || ""),
+    business_email: sanitizeText(raw.business_email_id || raw.business_email || ""),
+    business_website: sanitizeText(raw.business_website || ""),
+    first_image: profileImg || firstGallery,
+    business_profile_img: profileImg,
+    imageIsPublic,
+    phoneIsPublic,
+    emailIsPublic,
+    taglineIsPublic,
+    locationIsPublic,
+  };
 }
 
 // ─── component ───────────────────────────────────────────────────────────────
@@ -69,6 +173,8 @@ export default function ChatScreen() {
   const [error, setError] = useState(null);
   const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
   const [pendingReplyContext, setPendingReplyContext] = useState(reply_context || null);
+  /** Fetched profile for MiniCard; when null, `paramMiniCardUser` is used. */
+  const [fetchedMiniCard, setFetchedMiniCard] = useState(null);
 
   const flatListRef = useRef(null);
   const ablyClientRef = useRef(null);
@@ -76,6 +182,42 @@ export default function ChatScreen() {
   const ablyMessageHandlerRef = useRef(null);
   // Keep a live ref to myUid so Ably callbacks can read it without stale closure
   const myUidRef = useRef(null);
+
+  const paramMiniCardUser = useMemo(() => {
+    if (!other_uid) return null;
+    return miniCardUserFromParams(paramOtherName || "Chat", paramOtherImage || null);
+  }, [other_uid, paramOtherName, paramOtherImage]);
+
+  const openOtherPartyProfile = useCallback(() => {
+    if (!other_uid) return;
+    const replyToPass = pendingReplyContext || reply_context;
+    const chatParams = {
+      ...(convUid || initialConvUid ? { conversation_uid: convUid || initialConvUid } : {}),
+      other_uid,
+      other_name: otherName || "Chat",
+      other_image: otherImage ?? paramOtherImage ?? null,
+      ...(my_uid_override ? { my_uid_override } : {}),
+      ...(replyToPass ? { reply_context: replyToPass } : {}),
+    };
+    const fromChat = { returnTo: "Chat", chatParams };
+    if (fetchedMiniCard?.business) {
+      navigation.navigate("BusinessProfile", { business_uid: other_uid, ...fromChat });
+      return;
+    }
+    navigation.navigate("Profile", { profile_uid: other_uid, ...fromChat });
+  }, [
+    navigation,
+    other_uid,
+    fetchedMiniCard,
+    convUid,
+    initialConvUid,
+    otherName,
+    otherImage,
+    paramOtherImage,
+    my_uid_override,
+    reply_context,
+    pendingReplyContext,
+  ]);
 
   // ─── bootstrap ──────────────────────────────────────────────────────────
 
@@ -98,7 +240,52 @@ export default function ChatScreen() {
     setMessages([]);
     setError(null);
     setLoading(true);
+    setFetchedMiniCard(null);
   }, [initialConvUid, other_uid, paramOtherName, paramOtherImage, reply_context]);
+
+  // Load other party profile for MiniCard (personal user or business).
+  useEffect(() => {
+    let cancelled = false;
+    if (!other_uid) {
+      setFetchedMiniCard(null);
+      return;
+    }
+    (async () => {
+      try {
+        const userRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${encodeURIComponent(other_uid)}`);
+        if (cancelled) return;
+        if (userRes.ok) {
+          const apiUser = await userRes.json();
+          if (cancelled) return;
+          if (apiUser?.personal_info != null && typeof apiUser.personal_info === "object") {
+            setFetchedMiniCard({ user: mapUserProfileApiToMiniCardUser(apiUser) });
+            return;
+          }
+        }
+      } catch (_) {
+        if (cancelled) return;
+      }
+      try {
+        const busRes = await fetch(`${BUSINESS_INFO_ENDPOINT}/${encodeURIComponent(other_uid)}`);
+        if (cancelled) return;
+        if (busRes.ok) {
+          const json = await busRes.json();
+          const raw = json?.business;
+          const mapped = mapRawBusinessToMiniCardBusiness(raw);
+          if (mapped && !cancelled) {
+            setFetchedMiniCard({ business: mapped });
+            return;
+          }
+        }
+      } catch (_) {
+        /* keep fallback */
+      }
+      if (!cancelled) setFetchedMiniCard(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [other_uid]);
 
   // Once we have myUid, ensure a conversation exists
   useEffect(() => {
@@ -376,12 +563,29 @@ export default function ChatScreen() {
         }}
         rightButton={
           other_uid ? (
-            <TouchableOpacity onPress={() => navigation.navigate("Profile", { profile_uid: other_uid })} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity onPress={openOtherPartyProfile} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name='person-circle-outline' size={26} color='#fff' />
             </TouchableOpacity>
           ) : null
         }
       />
+
+      {other_uid && paramMiniCardUser ? (
+        <View style={[styles.chatMiniCardOuter, darkMode && styles.chatMiniCardOuterDark]}>
+          <TouchableOpacity
+            activeOpacity={0.88}
+            onPress={openOtherPartyProfile}
+            accessibilityRole='button'
+            accessibilityLabel={`Open ${otherName} profile`}
+          >
+            {fetchedMiniCard?.business ? (
+              <MiniCard business={fetchedMiniCard.business} />
+            ) : (
+              <MiniCard user={fetchedMiniCard?.user || paramMiniCardUser} />
+            )}
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/*
         Do not wrap list + input in a full-screen KeyboardAvoidingView on iOS — it often collapses flex
@@ -462,6 +666,19 @@ const styles = StyleSheet.create({
   containerDark: { backgroundColor: "#121212" },
   /** Reserve space above absolute BottomNavBar */
   screenWithBottomNav: { paddingBottom: 88 },
+
+  chatMiniCardOuter: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    backgroundColor: "#fff",
+  },
+  chatMiniCardOuterDark: {
+    backgroundColor: "#121212",
+    borderBottomColor: "#2a2a2a",
+  },
 
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
 

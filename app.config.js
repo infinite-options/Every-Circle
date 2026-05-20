@@ -55,11 +55,7 @@ module.exports = ({ config: expoConfig }) => ({
         backgroundColor: "#ffffff",
       },
 
-      permissions: [
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.CAMERA",
-      ],
+      permissions: ["android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_FINE_LOCATION", "android.permission.CAMERA"],
 
       config: {
         googleMaps: {
@@ -92,8 +88,8 @@ module.exports = ({ config: expoConfig }) => ({
           },
 
           android: {
-            compileSdkVersion: 35,
-            targetSdkVersion: 35,
+            compileSdkVersion: 36,
+            targetSdkVersion: 36,
             buildToolsVersion: "35.0.0",
             minSdkVersion: 24,
             ndkVersion: "25.1.8937393",
@@ -113,7 +109,9 @@ module.exports = ({ config: expoConfig }) => ({
         },
       ],
 
+      "expo-dev-client",
       "expo-font",
+      "expo-web-browser",
       "expo-apple-authentication",
       [
         "expo-camera",

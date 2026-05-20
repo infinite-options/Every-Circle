@@ -7,7 +7,7 @@ import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useRoute } from "@react-navigation/native";
 import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT, CHAT_CONVERSATIONS_ENDPOINT, NEARBY_USERS_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
 import MiniCard from "../components/MiniCard";
 import WebTextInput from "../components/WebTextInput";
@@ -19,6 +19,9 @@ import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import { getHeaderColors, getHeaderColor } from "../config/headerColors";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 import { createAblyRealtimeClient, getAblyTokenObscuredIfStillValid, markAblyTokenNoLongerActive } from "../utils/ablyClient";
+import { publishNewConnectionOpened } from "../utils/publishNewConnectionOpened";
+import { fetchPublicProfileCard } from "../utils/fetchPublicProfileCard";
+import { addScannedCircleConnection } from "../utils/addScannedCircleConnection";
 import { getSessionProfile } from "../utils/sessionProfile";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
@@ -105,6 +108,82 @@ function ConnectionFilterModal({ visible, title, options, selected, onSelect, on
 const RELATIONSHIP_FILTER_OPTIONS = ["All", "Colleagues", "Friends", "Family"];
 const DATE_FILTER_OPTIONS = ["All", "This Week", "This Month", "This Year"];
 
+/** Persist connections graph and circles separately so one fetch does not wipe the other. */
+const ASYNC_NETWORK_DATA_CONNECTIONS = "network_data_connections";
+const ASYNC_NETWORK_GROUPED_CONNECTIONS = "network_grouped_connections";
+const ASYNC_NETWORK_DATA_CIRCLES = "network_data_circles";
+const ASYNC_NETWORK_GROUPED_CIRCLES = "network_grouped_circles";
+
+/** Merge connections + circles for Connect Directly / referral lookup (dedupe by profile uid, prefer richer node). */
+function mergeNetworkNodesForReferral(connectionsList, circlesList) {
+  const score = (n) => {
+    let s = 0;
+    const rel = n.circle_relationship;
+    if (rel != null && String(rel).trim() !== "") s += 2;
+    if (n.degree != null && String(n.degree).trim() !== "") s += 1;
+    return s;
+  };
+  const pick = (a, b) => (score(b) > score(a) ? b : a);
+  const map = new Map();
+  for (const n of connectionsList || []) {
+    const u = n.network_profile_personal_uid;
+    if (u) map.set(u, n);
+  }
+  for (const n of circlesList || []) {
+    const u = n.network_profile_personal_uid;
+    if (!u) continue;
+    map.set(u, map.has(u) ? pick(map.get(u), n) : n);
+  }
+  return Array.from(map.values());
+}
+
+function groupNetworkByDegree(data) {
+  const grouped = {};
+  (data || []).forEach((item) => {
+    const deg = Number(item.degree) || 0;
+    if (!grouped[deg]) grouped[deg] = [];
+    grouped[deg].push(item);
+  });
+  return grouped;
+}
+
+async function resolveProfileUidForNetwork(overrideUid, profileUidState) {
+  let uid = overrideUid;
+  if (!uid) {
+    try {
+      const directUid = await AsyncStorage.getItem("profile_uid");
+      if (directUid) {
+        try {
+          const parsed = JSON.parse(directUid);
+          uid = typeof parsed === "string" ? parsed : String(parsed);
+        } catch (e) {
+          uid = String(directUid).trim();
+        }
+      } else {
+        uid = profileUidState;
+      }
+    } catch (e) {
+      uid = profileUidState;
+    }
+  }
+  return String(uid || "").trim();
+}
+
+function networkListFetchOptions() {
+  return Platform.OS === "web"
+    ? {
+        method: "GET",
+        mode: "cors",
+        credentials: "omit",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        cache: "no-cache",
+      }
+    : {
+        method: "GET",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+      };
+}
+
 const connectionFilterModalStyles = StyleSheet.create({
   overlay: {
     flex: 1,
@@ -137,11 +216,17 @@ const connectionFilterModalStyles = StyleSheet.create({
 });
 
 const NetworkScreen = ({ navigation }) => {
+  const route = useRoute();
   const { darkMode } = useDarkMode();
   const { clearUnread } = useUnread();
   const [storageData, setStorageData] = useState([]);
   const [networkData, setNetworkData] = useState([]);
   const [groupedNetwork, setGroupedNetwork] = useState({});
+  /** Last loaded connections graph (persists separately from circles). */
+  const [connectionsNetworkCache, setConnectionsNetworkCache] = useState([]);
+  /** Last loaded circles list. */
+  const [circlesNetworkCache, setCirclesNetworkCache] = useState([]);
+  const [connectDirectlyPrepareLoading, setConnectDirectlyPrepareLoading] = useState(false);
   const [profileUid, setProfileUid] = useState("");
   const [degree, setDegree] = useState("2");
   const [loading, setLoading] = useState(false);
@@ -189,6 +274,7 @@ const NetworkScreen = ({ navigation }) => {
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [scannedProfileData, setScannedProfileData] = useState(null);
   const [showScannedProfilePopup, setShowScannedProfilePopup] = useState(false);
+  const showScannedProfileModalRef = useRef(null);
   const [showViewMyNetwork, setShowViewMyNetwork] = useState(true);
   /** Bumped on each screen focus so debounced fetch runs once per visit (avoids duplicate immediate refetch). */
   const [focusTick, setFocusTick] = useState(0);
@@ -211,6 +297,8 @@ const NetworkScreen = ({ navigation }) => {
   const [viewerBusinesses, setViewerBusinesses] = useState([]);
   const [showViewersAccountDropdown, setShowViewersAccountDropdown] = useState(false);
   const [connectDirectlyVisible, setConnectDirectlyVisible] = useState(false);
+
+  const connectDirectlyMergedNetworkData = useMemo(() => mergeNetworkNodesForReferral(connectionsNetworkCache, circlesNetworkCache), [connectionsNetworkCache, circlesNetworkCache]);
 
   const fetchProfileViewers = async (accountId) => {
     try {
@@ -255,6 +343,10 @@ const NetworkScreen = ({ navigation }) => {
         notesFilterValue,
         introducedByFilterValue,
         settingsDebugModeValue,
+        connectionsDataStr,
+        circlesDataStr,
+        groupedConnectionsStr,
+        groupedCirclesStr,
       ] = await Promise.all([
         AsyncStorage.getItem("network_showAsyncStorage"),
         AsyncStorage.getItem("network_degree"),
@@ -269,6 +361,10 @@ const NetworkScreen = ({ navigation }) => {
         AsyncStorage.getItem("network_notesFilter"),
         AsyncStorage.getItem("network_introducedByFilter"),
         AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY),
+        AsyncStorage.getItem(ASYNC_NETWORK_DATA_CONNECTIONS),
+        AsyncStorage.getItem(ASYNC_NETWORK_DATA_CIRCLES),
+        AsyncStorage.getItem(ASYNC_NETWORK_GROUPED_CONNECTIONS),
+        AsyncStorage.getItem(ASYNC_NETWORK_GROUPED_CIRCLES),
       ]);
 
       console.log("📥 Loaded values:", {
@@ -277,6 +373,8 @@ const NetworkScreen = ({ navigation }) => {
         viewMode: viewModeValue,
         hasNetworkData: networkDataValue !== null,
         hasGroupedNetwork: groupedNetworkValue !== null,
+        hasConnectionsKey: connectionsDataStr !== null,
+        hasCirclesKey: circlesDataStr !== null,
       });
 
       if (showAsyncStorageValue !== null) {
@@ -327,29 +425,80 @@ const NetworkScreen = ({ navigation }) => {
         setIntroducedByFilter(introducedByFilterValue);
       }
 
-      // Load network data if available
-      if (networkDataValue !== null) {
+      const parseNetworkJson = (s) => {
+        if (s == null) return null;
         try {
-          const parsedNetworkData = JSON.parse(networkDataValue);
-          console.log("📥 Loading network data, items:", parsedNetworkData.length);
-          setNetworkData(parsedNetworkData);
+          return JSON.parse(s);
         } catch (e) {
-          console.error("❌ Error parsing network data:", e);
+          console.error("❌ Error parsing persisted network JSON:", e);
+          return null;
         }
-      } else {
-        console.log("📥 No persisted network data");
+      };
+
+      let connectionsParsed = connectionsDataStr != null ? parseNetworkJson(connectionsDataStr) : null;
+      let circlesParsed = circlesDataStr != null ? parseNetworkJson(circlesDataStr) : null;
+      let groupedConnectionsParsed = groupedConnectionsStr != null ? parseNetworkJson(groupedConnectionsStr) : null;
+      let groupedCirclesParsed = groupedCirclesStr != null ? parseNetworkJson(groupedCirclesStr) : null;
+
+      const legacyParsed = networkDataValue != null ? parseNetworkJson(networkDataValue) : null;
+      const legacyGrouped = groupedNetworkValue != null ? parseNetworkJson(groupedNetworkValue) : null;
+      const activeForMigrate = activeViewValue === "circles" ? "circles" : "connections";
+
+      if (connectionsParsed == null && legacyParsed != null && Array.isArray(legacyParsed) && activeForMigrate !== "circles") {
+        connectionsParsed = legacyParsed;
+        groupedConnectionsParsed = legacyGrouped && typeof legacyGrouped === "object" ? legacyGrouped : groupNetworkByDegree(legacyParsed);
+        try {
+          await AsyncStorage.multiSet([
+            [ASYNC_NETWORK_DATA_CONNECTIONS, JSON.stringify(connectionsParsed)],
+            [ASYNC_NETWORK_GROUPED_CONNECTIONS, JSON.stringify(groupedConnectionsParsed)],
+          ]);
+        } catch (migrateErr) {
+          console.warn("Network migration to connections keys failed:", migrateErr);
+        }
+      }
+      if (circlesParsed == null && legacyParsed != null && Array.isArray(legacyParsed) && activeForMigrate === "circles") {
+        circlesParsed = legacyParsed;
+        groupedCirclesParsed = legacyGrouped && typeof legacyGrouped === "object" ? legacyGrouped : { 1: legacyParsed };
+        try {
+          await AsyncStorage.multiSet([
+            [ASYNC_NETWORK_DATA_CIRCLES, JSON.stringify(circlesParsed)],
+            [ASYNC_NETWORK_GROUPED_CIRCLES, JSON.stringify(groupedCirclesParsed)],
+          ]);
+        } catch (migrateErr) {
+          console.warn("Network migration to circles keys failed:", migrateErr);
+        }
       }
 
-      if (groupedNetworkValue !== null) {
-        try {
-          const parsedGroupedNetwork = JSON.parse(groupedNetworkValue);
-          console.log("📥 Loading grouped network data, degrees:", Object.keys(parsedGroupedNetwork).length);
-          setGroupedNetwork(parsedGroupedNetwork);
-        } catch (e) {
-          console.error("❌ Error parsing grouped network data:", e);
+      const connectionsList = Array.isArray(connectionsParsed) ? connectionsParsed : [];
+      const circlesList = Array.isArray(circlesParsed) ? circlesParsed : [];
+      setConnectionsNetworkCache(connectionsList);
+      setCirclesNetworkCache(circlesList);
+
+      const view = activeViewValue === "circles" ? "circles" : "connections";
+      if (view === "circles") {
+        if (circlesList.length > 0 || circlesDataStr != null) {
+          setNetworkData(circlesList);
+          setGroupedNetwork(groupedCirclesParsed && typeof groupedCirclesParsed === "object" && Object.keys(groupedCirclesParsed).length > 0 ? groupedCirclesParsed : { 1: circlesList });
+        } else if (legacyParsed != null && Array.isArray(legacyParsed) && activeForMigrate === "circles") {
+          setNetworkData(legacyParsed);
+          setGroupedNetwork(legacyGrouped && typeof legacyGrouped === "object" ? legacyGrouped : { 1: legacyParsed });
+        } else {
+          setNetworkData([]);
+          setGroupedNetwork({});
         }
+      } else if (connectionsList.length > 0 || connectionsDataStr != null) {
+        setNetworkData(connectionsList);
+        setGroupedNetwork(
+          groupedConnectionsParsed && typeof groupedConnectionsParsed === "object" && Object.keys(groupedConnectionsParsed).length > 0
+            ? groupedConnectionsParsed
+            : groupNetworkByDegree(connectionsList),
+        );
+      } else if (legacyParsed != null && Array.isArray(legacyParsed)) {
+        setNetworkData(legacyParsed);
+        setGroupedNetwork(legacyGrouped && typeof legacyGrouped === "object" ? legacyGrouped : groupNetworkByDegree(legacyParsed));
       } else {
-        console.log("📥 No persisted grouped network data");
+        setNetworkData([]);
+        setGroupedNetwork({});
       }
 
       if (activeViewValue === "connections" || activeViewValue === "circles") {
@@ -545,19 +694,8 @@ const NetworkScreen = ({ navigation }) => {
 
           if (uid && uid !== "[object Object]") {
             setProfileUid(uid);
-            // Fetch user profile data for QR code
+            // One profile fetch: QR mini-card + Who Viewed My Profile businesses (see fetchUserProfileForQR)
             fetchUserProfileForQR(uid);
-            // Load businesses for "Who Viewed My Profile" account switcher
-            try {
-              const profRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${uid}`);
-              if (profRes.ok) {
-                const profJson = await profRes.json();
-                const bizList = profJson.business_info ? (typeof profJson.business_info === "string" ? JSON.parse(profJson.business_info) : profJson.business_info) : [];
-                setViewerBusinesses(bizList);
-              }
-            } catch (e) {
-              console.warn("NetworkScreen - Failed to load viewer businesses:", e);
-            }
           } else {
             console.warn("⚠️ Invalid profile_uid loaded:", uid);
           }
@@ -613,6 +751,18 @@ const NetworkScreen = ({ navigation }) => {
       if (!response.ok) return;
       const apiUser = await response.json();
 
+      try {
+        const bizRaw = apiUser?.business_info;
+        let businessList = [];
+        if (bizRaw != null && bizRaw !== "") {
+          businessList = typeof bizRaw === "string" ? JSON.parse(bizRaw) : bizRaw;
+        }
+        setViewerBusinesses(Array.isArray(businessList) ? businessList : []);
+      } catch (e) {
+        console.warn("NetworkScreen - Failed to parse business_info from profile:", e);
+        setViewerBusinesses([]);
+      }
+
       // Fetch user_uid (the 110 number) from AsyncStorage
       let userUid = null;
       try {
@@ -658,22 +808,18 @@ const NetworkScreen = ({ navigation }) => {
       };
 
       setUserProfileData(publicData);
-      // Create QR code data with EveryCircle identifier
-      // Format: JSON with type identifier for app scanning, URL for web compatibility
-      const qrData = {
+      // QR encodes a single HTTPS URL so phone cameras open the scan landing page in the browser.
+      const scanUrl = `https://everycircle.com/scan/${profileUID}`;
+      const qrMeta = {
         type: "everycircle",
         profile_uid: profileUID,
         version: "1.0",
-        // Include URL for web compatibility
-        url: `https://everycircle.com/newconnection/${profileUID}`,
-        // Form Switch: if true, User 1 will see a form to add User 2 when they scan
+        url: scanUrl,
         form_switch_enabled: formSwitchEnabled,
       };
-      const qrDataString = JSON.stringify(qrData);
-      console.log("🔗 QR Code Data:", qrDataString);
-      // Store both the string (for QR code) and the object (for display)
-      setQrCodeData(qrDataString);
-      setQrCodeDataObject(qrData);
+      console.log("🔗 QR Code URL:", scanUrl);
+      setQrCodeData(scanUrl);
+      setQrCodeDataObject(qrMeta);
 
       // Initialize Ably channel when QR code is generated
       initializeAblyChannel(profileUID);
@@ -841,20 +987,14 @@ const NetworkScreen = ({ navigation }) => {
             scanner_profile_uid: message.data.scanner_profile_uid || null,
           });
 
-          // If Form Switch is enabled and we have User 2's profile_uid, navigate to New Connection page
-          // console.log("🔵 NetworkScreen - Checking Form Switch:", formSwitchEnabledRef.current, "scanner_profile_uid:", message.data.scanner_profile_uid);
+          // Exchange Contact Info: show same connect modal as the scanner (stay on Network)
           if (formSwitchEnabledRef.current && message.data.scanner_profile_uid) {
             const scannerProfileUid = message.data.scanner_profile_uid;
-            // console.log("🔵 NetworkScreen - Form Switch is ON, navigating to NewConnection page for User 2:", scannerProfileUid);
-            // Defer navigation so it runs in the main React/UI context (fixes iOS where Ably callback can run before navigation is ready)
             InteractionManager.runAfterInteractions(() => {
-              navigation.navigate("NewConnection", {
-                profile_uid: scannerProfileUid,
-                fromFormSwitch: true, // Flag to indicate this came from Form Switch
-              });
+              showScannedProfileModalRef.current?.(scannerProfileUid);
             });
           } else {
-            console.log("🔵 NetworkScreen - Form Switch is OFF or no scanner_profile_uid, not navigating");
+            console.log("🔵 NetworkScreen - Form Switch is OFF or no scanner_profile_uid, not opening connect modal");
           }
         } else {
           console.warn("⚠️ NetworkScreen - Message received but data structure unexpected:", message.data);
@@ -915,6 +1055,49 @@ const NetworkScreen = ({ navigation }) => {
     return () => clearInterval(id);
   }, [ablyListeningChannel]);
 
+  const showScannedProfileModal = useCallback(async (profileUid) => {
+    if (!profileUid) return;
+    try {
+      const profileInfo = await fetchPublicProfileCard(profileUid);
+      setScannedProfileData(profileInfo);
+      setShowScannedProfilePopup(true);
+    } catch (error) {
+      console.error("Error loading profile for connect modal:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    showScannedProfileModalRef.current = showScannedProfileModal;
+  }, [showScannedProfileModal]);
+
+  const lastHandledScanConnectKeyRef = useRef(null);
+
+  const openConnectModalFromScanParam = useCallback(
+    (uid, scanConnectToken) => {
+      if (!uid) return;
+      const key = `${uid}:${scanConnectToken ?? ""}`;
+      if (lastHandledScanConnectKeyRef.current === key) return;
+      lastHandledScanConnectKeyRef.current = key;
+      showScannedProfileModal(uid);
+      navigation.setParams({ scannedProfileUid: undefined, scanConnectToken: undefined });
+    },
+    [showScannedProfileModal, navigation],
+  );
+
+  const scanUid = route.params?.scannedProfileUid;
+  const scanToken = route.params?.scanConnectToken;
+
+  // Scan landing / QR scanner → show connect modal (Ably publish is done in goToNetworkForScanConnect or handleQRScanComplete)
+  useEffect(() => {
+    openConnectModalFromScanParam(scanUid, scanToken);
+  }, [scanUid, scanToken, openConnectModalFromScanParam]);
+
+  useFocusEffect(
+    useCallback(() => {
+      openConnectModalFromScanParam(scanUid, scanToken);
+    }, [scanUid, scanToken, openConnectModalFromScanParam]),
+  );
+
   // Handle QR scan complete - fetch profile data and show popup
   const handleQRScanComplete = async (scanData) => {
     try {
@@ -923,117 +1106,26 @@ const NetworkScreen = ({ navigation }) => {
         return;
       }
 
-      // Fetch the profile data
-      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${scanData.profile_uid}`);
-      if (!response.ok) {
-        throw new Error("Profile not found");
-      }
-      const apiUser = await response.json();
+      await showScannedProfileModal(scanData.profile_uid);
 
-      // Extract and sanitize profile information
-      const p = apiUser?.personal_info || {};
-      const tagLineIsPublic = p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1;
-      const emailIsPublic = p.profile_personal_email_is_public === 1;
-      const phoneIsPublic = p.profile_personal_phone_number_is_public === 1;
-      const imageIsPublic = p.profile_personal_image_is_public === 1;
-      const locationIsPublic = p.profile_personal_location_is_public === 1;
-
-      const profileInfo = {
-        profile_uid: scanData.profile_uid,
-        firstName: sanitizeText(p.profile_personal_first_name || ""),
-        lastName: sanitizeText(p.profile_personal_last_name || ""),
-        tagLine: tagLineIsPublic ? sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline || "") : "",
-        email: emailIsPublic ? sanitizeText(apiUser?.user_email || "") : "",
-        phoneNumber: phoneIsPublic ? sanitizeText(p.profile_personal_phone_number || "") : "",
-        profileImage: imageIsPublic ? sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : "") : "",
-        city: locationIsPublic ? sanitizeText(p.profile_personal_city || "") : "",
-        state: locationIsPublic ? sanitizeText(p.profile_personal_state || "") : "",
-        emailIsPublic,
-        phoneIsPublic,
-        tagLineIsPublic,
-        locationIsPublic,
-        imageIsPublic,
-      };
-
-      setScannedProfileData(profileInfo);
-      setShowScannedProfilePopup(true);
+      // Notify QR owner (Exchange Contact Info)
+      publishNewConnectionOpened(scanData.profile_uid, { message: "QR Code Scanned" }).then((result) => {
+        if (result.ok) {
+          console.log("✅ NetworkScreen - Ably new-connection-opened published for reciprocal exchange");
+        }
+      });
     } catch (error) {
       console.error("Error fetching scanned profile:", error);
-      // You might want to show an error alert here
     }
   };
 
   // Handle adding connection from scanned profile
   const handleAddScannedConnection = async (connectionData) => {
     try {
-      if (!scannedProfileData || !scannedProfileData.profile_uid) {
-        return;
-      }
+      if (!scannedProfileData?.profile_uid) return;
 
-      const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
-      if (!loggedInProfileUID) {
-        // Handle not logged in
-        return;
-      }
-
-      if (loggedInProfileUID === scannedProfileData.profile_uid) {
-        // Handle cannot add self
-        return;
-      }
-
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, "0");
-      const day = String(now.getDate()).padStart(2, "0");
-      const circleDate = `${year}-${month}-${day}`;
-
-      // Handle both old format (just relationship string) and new format (object)
-      const relationship = typeof connectionData === "string" ? connectionData : (connectionData?.relationship ?? null);
-      const event = typeof connectionData === "object" ? connectionData.event || "" : "";
-      const note = typeof connectionData === "object" ? connectionData.note || "" : "";
-      const city = typeof connectionData === "object" ? connectionData.city || "" : "";
-      const state = typeof connectionData === "object" ? connectionData.state || "" : "";
-      const introducedBy = typeof connectionData === "object" ? connectionData.introducedBy || "" : "";
-
-      // Calculate circle_num_nodes
-      let circleNumNodes = null;
-      try {
-        const pathResponse = await fetch(`${API_BASE_URL}/api/connections_path/${loggedInProfileUID}/${scannedProfileData.profile_uid}`);
-        if (pathResponse.ok) {
-          const pathData = await pathResponse.json();
-          const combinedPath = pathData.combined_path || "";
-          if (combinedPath) {
-            const nodes = combinedPath.split(",").filter((n) => n.trim());
-            circleNumNodes = Math.max(0, nodes.length - 2) + 1;
-          }
-        }
-      } catch (err) {
-        console.warn("Could not fetch connections_path:", err);
-      }
-
-      const requestBody = {
-        circle_profile_id: loggedInProfileUID,
-        circle_related_person_id: scannedProfileData.profile_uid,
-        circle_relationship: relationship ?? null,
-        circle_date: circleDate,
-        ...(event && { circle_event: event }),
-        ...(note && { circle_note: note }),
-        ...(city && { circle_city: city }),
-        ...(state && { circle_state: state }),
-        ...(introducedBy && { circle_introduced_by: introducedBy }),
-        ...(circleNumNodes !== null && { circle_num_nodes: circleNumNodes }),
-      };
-
-      const response = await fetch(CIRCLES_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (response.ok) {
-        // Refresh network data by refetching
+      const result = await addScannedCircleConnection(scannedProfileData.profile_uid, connectionData);
+      if (result.ok) {
         const currentProfileUID = await AsyncStorage.getItem("profile_uid");
         const currentDegree = (await AsyncStorage.getItem("network_degree")) || "2";
         if (currentProfileUID) {
@@ -1041,14 +1133,11 @@ const NetworkScreen = ({ navigation }) => {
         }
         setShowScannedProfilePopup(false);
         setScannedProfileData(null);
-        // You might want to show a success message here
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to add connection");
+      } else if (result.error && result.error !== "not_logged_in" && result.error !== "self") {
+        console.error("Error adding scanned connection:", result.error);
       }
     } catch (error) {
       console.error("Error adding scanned connection:", error);
-      // You might want to show an error alert here
     }
   };
 
@@ -1238,16 +1327,6 @@ const NetworkScreen = ({ navigation }) => {
     };
   }, [graphHtml, viewMode]);
 
-  const groupByDegree = (data) => {
-    const grouped = {};
-    data.forEach((item) => {
-      const deg = Number(item.degree) || 0;
-      if (!grouped[deg]) grouped[deg] = [];
-      grouped[deg].push(item);
-    });
-    return grouped;
-  };
-
   const pluckMiniCardFields = (apiUser) => {
     const p = apiUser?.personal_info || {};
     return {
@@ -1284,83 +1363,20 @@ const NetworkScreen = ({ navigation }) => {
     );
   };
 
-  const fetchNetwork = async (overrideProfileUid = null, overrideDegree = null) => {
-    console.log("🔘 Fetch Network");
-    setActiveView("connections");
-    // Keep current viewMode (list or graph) so user stays on View as Graph if they switched Network
-    setRelationshipFilter("All");
-    setDateFilter("All");
-    setLocationFilter("All");
-    setEventFilter("All");
-    setNotesFilter("All");
-    setIntroducedByFilter("All");
-    setLoading(true);
-    setError(null);
-
-    try {
-      // Get UID from AsyncStorage or use override
-      //overrideProfileUid is the UID passed in, if any
-      let uid = overrideProfileUid; //if uid provided use it, if not get from AsyncStorage
+  const fetchConnectionsPayload = useCallback(
+    async (overrideProfileUid = null, overrideDegree = null) => {
+      const uid = await resolveProfileUidForNetwork(overrideProfileUid, profileUid);
+      const deg = String(overrideDegree ?? degree ?? "1").trim();
       if (!uid) {
-        // No override uid, get from AsyncStorage
-        try {
-          const directUid = await AsyncStorage.getItem("profile_uid"); //getting uid from AsyncStorage
-          if (directUid) {
-            //directUid is the uid stored in AsyncStorage under "profile_uid"
-            try {
-              const parsed = JSON.parse(directUid); //try to parse it in case it's stored as JSON
-              uid = typeof parsed === "string" ? parsed : String(parsed); //ensure it's a string
-            } catch (e) {
-              //not JSON, use as string
-              uid = String(directUid).trim();
-            }
-          } else {
-            uid = profileUid;
-          }
-        } catch (e) {
-          uid = profileUid;
-        }
-      }
-
-      uid = String(uid || "").trim();
-      const deg = String(overrideDegree || degree || "1").trim(); //degree passed in or from last selected degree state or a default one
-
-      if (!uid) {
-        //final check for uid
         throw new Error("No profile UID available");
       }
-
-      console.log("Fetching for UID:", uid, "Level:", deg); //log final uid and degree being used
-
-      // CORS handling for web
-      const fetchOptions =
-        Platform.OS === "web"
-          ? {
-              method: "GET",
-              mode: "cors",
-              credentials: "omit",
-              headers: { "Content-Type": "application/json", Accept: "application/json" },
-              cache: "no-cache",
-            }
-          : {
-              method: "GET",
-              headers: { "Content-Type": "application/json", Accept: "application/json" },
-            };
-
-      const response = await fetch(`${API_BASE_URL}/api/network/${uid}/${deg}`, fetchOptions); //fetching network data from API
-
+      const response = await fetch(`${API_BASE_URL}/api/network/${uid}/${deg}`, networkListFetchOptions());
       if (!response.ok) {
-        //check for HTTP errors
         const errorText = await response.text();
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
-
-      const data = await response.json(); //parse JSON response
-      // console.log("✅ Received", data.length, "connections");
-      // console.log("✅ Sample data:", data[0]);
-
-      // Format data - backend now has ALL fields, no need for additional API calls
-      const formatted = data.map((node) => ({
+      const data = await response.json();
+      return data.map((node) => ({
         ...node,
         __mc: {
           firstName: sanitizeText(node.profile_personal_first_name || ""),
@@ -1389,99 +1405,24 @@ const NetworkScreen = ({ navigation }) => {
           },
         },
       }));
+    },
+    [profileUid, degree],
+  );
 
-      // console.log("✅ Formatted sample:", formatted[0]);
-
-      // Update state
-      setNetworkData(formatted);
-      setGroupedNetwork(groupByDegree(formatted));
-      // console.log("🟢 groupedNetwork keys:", Object.keys(groupByDegree(formatted)));
-      // console.log("🟢 formatted length:", formatted.length);
-      // console.log("🟢 formatted[0].__mc:", formatted[0]?.__mc);
-
-      // Save for asyncStorage
-      try {
-        await AsyncStorage.setItem("network_data", JSON.stringify(formatted)); //saving raw formatted data
-        await AsyncStorage.setItem("network_grouped", JSON.stringify(groupByDegree(formatted))); //saving grouped data
-        await AsyncStorage.setItem("network_activeView", "connections");
-      } catch (e) {
-        console.error("❌ Error saving network data:", e);
-      }
-    } catch (err) {
-      console.error("❌ Fetch failed:", err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchCircle = async () => {
-    // console.log("🔘 Fetch Circle");
-    setActiveView("circles");
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Get UID from AsyncStorage
-      let uid = null;
-      try {
-        const directUid = await AsyncStorage.getItem("profile_uid");
-        if (directUid) {
-          try {
-            const parsed = JSON.parse(directUid);
-            uid = typeof parsed === "string" ? parsed : String(parsed);
-          } catch (e) {
-            uid = String(directUid).trim();
-          }
-        } else {
-          uid = profileUid;
-        }
-      } catch (e) {
-        uid = profileUid;
-      }
-
-      uid = String(uid || "").trim();
-
+  const fetchCirclesPayload = useCallback(
+    async (overrideProfileUid = null) => {
+      const uid = await resolveProfileUidForNetwork(overrideProfileUid, profileUid);
       if (!uid) {
         throw new Error("No profile UID available");
       }
-
-      // console.log("Fetching circles for UID:", uid);
-
-      // CORS handling for web
-      const fetchOptions =
-        Platform.OS === "web"
-          ? {
-              method: "GET",
-              mode: "cors",
-              credentials: "omit",
-              headers: { "Content-Type": "application/json", Accept: "application/json" },
-              cache: "no-cache",
-            }
-          : {
-              method: "GET",
-              headers: { "Content-Type": "application/json", Accept: "application/json" },
-            };
-
-      // Fetch circles for the user
-      const response = await fetch(`${CIRCLES_ENDPOINT}/${uid}`, fetchOptions);
-
+      const response = await fetch(`${CIRCLES_ENDPOINT}/${uid}`, networkListFetchOptions());
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
-
       const result = await response.json();
-      // console.log("✅ Received circles response:", result);
-
-      // Check if result has data array
       if (result && result.data && Array.isArray(result.data)) {
-        const circles = result.data;
-        // console.log("✅ Received", circles.length, "circles");
-
-        // Circles payload includes profile fields per row — no N+1 profile requests
-        const formatted = circles.map((circle) => {
+        return result.data.map((circle) => {
           const p = circle;
           const tagLineRaw = p.profile_personal_tag_line || p.profile_personal_tagline || "";
           const emailRaw = p.user_email_id ?? p.user_email ?? "";
@@ -1522,25 +1463,73 @@ const NetworkScreen = ({ navigation }) => {
             network_profile_personal_uid: circle.circle_related_person_id || circle.profile_personal_uid,
           };
         });
+      }
+      return [];
+    },
+    [profileUid],
+  );
 
-        // Update state with circles data
-        setNetworkData(formatted);
-        setGroupedNetwork({ 1: formatted }); // Group all circles as degree 1
-        setError(null);
+  const fetchNetwork = async (overrideProfileUid = null, overrideDegree = null) => {
+    console.log("🔘 Fetch Network");
+    setActiveView("connections");
+    // Keep current viewMode (list or graph) so user stays on View as Graph if they switched Network
+    setRelationshipFilter("All");
+    setDateFilter("All");
+    setLocationFilter("All");
+    setEventFilter("All");
+    setNotesFilter("All");
+    setIntroducedByFilter("All");
+    setLoading(true);
+    setError(null);
 
-        // Save circles data and activeView for persistence (so View as Graph shows correct data on reload)
-        try {
-          await AsyncStorage.setItem("network_data", JSON.stringify(formatted));
-          await AsyncStorage.setItem("network_grouped", JSON.stringify({ 1: formatted }));
-          await AsyncStorage.setItem("network_activeView", "circles");
-        } catch (e) {
-          console.error("❌ Error saving circles data:", e);
-        }
-      } else {
-        // No circles found or empty response
-        setNetworkData([]);
-        setGroupedNetwork({});
-        setError(null);
+    try {
+      const formatted = await fetchConnectionsPayload(overrideProfileUid, overrideDegree);
+      const grouped = groupNetworkByDegree(formatted);
+      setNetworkData(formatted);
+      setGroupedNetwork(grouped);
+      setConnectionsNetworkCache(formatted);
+      try {
+        await AsyncStorage.multiSet([
+          [ASYNC_NETWORK_DATA_CONNECTIONS, JSON.stringify(formatted)],
+          [ASYNC_NETWORK_GROUPED_CONNECTIONS, JSON.stringify(grouped)],
+          ["network_data", JSON.stringify(formatted)],
+          ["network_grouped", JSON.stringify(grouped)],
+          ["network_activeView", "connections"],
+        ]);
+      } catch (e) {
+        console.error("❌ Error saving network data:", e);
+      }
+    } catch (err) {
+      console.error("❌ Fetch failed:", err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCircle = async () => {
+    setActiveView("circles");
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const formatted = await fetchCirclesPayload(null);
+      const grouped = { 1: formatted };
+      setNetworkData(formatted);
+      setGroupedNetwork(grouped);
+      setCirclesNetworkCache(formatted);
+      setError(null);
+      try {
+        await AsyncStorage.multiSet([
+          [ASYNC_NETWORK_DATA_CIRCLES, JSON.stringify(formatted)],
+          [ASYNC_NETWORK_GROUPED_CIRCLES, JSON.stringify(grouped)],
+          ["network_data", JSON.stringify(formatted)],
+          ["network_grouped", JSON.stringify(grouped)],
+          ["network_activeView", "circles"],
+        ]);
+      } catch (e) {
+        console.error("❌ Error saving circles data:", e);
       }
     } catch (err) {
       console.error("Error fetching circles:", err);
@@ -1551,6 +1540,98 @@ const NetworkScreen = ({ navigation }) => {
       setLoading(false);
     }
   };
+
+  // When Connect Directly opens, ensure both connections and circles snapshots exist (fetch missing side).
+  useEffect(() => {
+    if (!connectDirectlyVisible || !settingsLoaded) return;
+    let cancelled = false;
+    (async () => {
+      setConnectDirectlyPrepareLoading(true);
+      try {
+        const uid = await resolveProfileUidForNetwork(null, profileUid);
+        if (!uid) return;
+
+        const degStored = await AsyncStorage.getItem("network_degree");
+        const deg = String(degStored || degree || "2").trim() || "2";
+
+        const [connStr, circStr] = await Promise.all([AsyncStorage.getItem(ASYNC_NETWORK_DATA_CONNECTIONS), AsyncStorage.getItem(ASYNC_NETWORK_DATA_CIRCLES)]);
+
+        let connections = null;
+        let circles = null;
+        if (connStr != null) {
+          try {
+            connections = JSON.parse(connStr);
+          } catch {
+            connections = null;
+          }
+        }
+        if (circStr != null) {
+          try {
+            circles = JSON.parse(circStr);
+          } catch {
+            circles = null;
+          }
+        }
+
+        if (connections === null) {
+          try {
+            const fetched = await fetchConnectionsPayload(null, deg);
+            if (cancelled) return;
+            connections = fetched;
+            const grouped = groupNetworkByDegree(fetched);
+            await AsyncStorage.multiSet([
+              [ASYNC_NETWORK_DATA_CONNECTIONS, JSON.stringify(fetched)],
+              [ASYNC_NETWORK_GROUPED_CONNECTIONS, JSON.stringify(grouped)],
+            ]);
+            setConnectionsNetworkCache(fetched);
+          } catch (e) {
+            console.warn("Connect Directly — connections prefetch failed:", e);
+            if (!cancelled) {
+              await AsyncStorage.multiSet([
+                [ASYNC_NETWORK_DATA_CONNECTIONS, "[]"],
+                [ASYNC_NETWORK_GROUPED_CONNECTIONS, JSON.stringify({})],
+              ]);
+              setConnectionsNetworkCache([]);
+            }
+          }
+        } else if (!cancelled) {
+          setConnectionsNetworkCache(Array.isArray(connections) ? connections : []);
+        }
+
+        if (circles === null) {
+          try {
+            const fetchedCircles = await fetchCirclesPayload(null);
+            if (cancelled) return;
+            circles = fetchedCircles;
+            const groupedC = { 1: fetchedCircles };
+            await AsyncStorage.multiSet([
+              [ASYNC_NETWORK_DATA_CIRCLES, JSON.stringify(fetchedCircles)],
+              [ASYNC_NETWORK_GROUPED_CIRCLES, JSON.stringify(groupedC)],
+            ]);
+            setCirclesNetworkCache(fetchedCircles);
+          } catch (e) {
+            console.warn("Connect Directly — circles prefetch failed:", e);
+            if (!cancelled) {
+              await AsyncStorage.multiSet([
+                [ASYNC_NETWORK_DATA_CIRCLES, "[]"],
+                [ASYNC_NETWORK_GROUPED_CIRCLES, JSON.stringify({ 1: [] })],
+              ]);
+              setCirclesNetworkCache([]);
+            }
+          }
+        } else if (!cancelled) {
+          setCirclesNetworkCache(Array.isArray(circles) ? circles : []);
+        }
+      } catch (outer) {
+        console.warn("Connect Directly — prepare failed:", outer);
+      } finally {
+        if (!cancelled) setConnectDirectlyPrepareLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connectDirectlyVisible, settingsLoaded, profileUid, degree, fetchConnectionsPayload, fetchCirclesPayload]);
 
   const degreeLabel = (deg) => {
     if (deg === 1) return "1st-Level Connections";
@@ -2889,9 +2970,7 @@ const NetworkScreen = ({ navigation }) => {
                         locationIsPublic: viewer.viewer_location_is_public === 1 || viewer.viewer_location_is_public === "1",
                       }}
                     />
-                    {getLatestProfileViewTimestamp(viewer.view_timestamp) ? (
-                      <Text style={styles.viewedTimestamp}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text>
-                    ) : null}
+                    {getLatestProfileViewTimestamp(viewer.view_timestamp) ? <Text style={styles.viewedTimestamp}>Viewed: {formatProfileViewedDate(viewer.view_timestamp) || "—"}</Text> : null}
                   </TouchableOpacity>
                 ))
               ) : (
@@ -3049,7 +3128,8 @@ const NetworkScreen = ({ navigation }) => {
         searchPlaceholder='Email, location, or name'
         noResultsSubtext='Try another spelling, city, or email.'
         searchButtonColor={getHeaderColor("network")}
-        networkData={networkData}
+        networkData={connectDirectlyMergedNetworkData}
+        preparingNetwork={connectDirectlyPrepareLoading}
       />
       <ScannedProfilePopup
         visible={showScannedProfilePopup}
@@ -3057,6 +3137,7 @@ const NetworkScreen = ({ navigation }) => {
         onClose={() => {
           setShowScannedProfilePopup(false);
           setScannedProfileData(null);
+          lastHandledScanConnectKeyRef.current = null;
         }}
         onAddConnection={(relationship) => handleAddScannedConnection(relationship)}
       />

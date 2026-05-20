@@ -13,7 +13,7 @@ import WebTextInput from "../components/WebTextInput";
 import * as Location from "expo-location";
 import { Dropdown } from "react-native-element-dropdown";
 import { Ionicons } from "@expo/vector-icons";
-import { createAblyRealtimeClient } from "../utils/ablyClient";
+import { publishNewConnectionOpened } from "../utils/publishNewConnectionOpened";
 
 const NewConnectionScreen = () => {
   const { darkMode } = useDarkMode();
@@ -114,204 +114,26 @@ const NewConnectionScreen = () => {
     parseQRCodeDataAndSendMessage();
   }, [route.params, profileUid]);
 
-  // Function to send "New Connection Page Opened" message via Ably
   const sendAblyMessage = async (profileUid) => {
     if (!profileUid) {
       console.warn("⚠️ NewConnectionScreen - Cannot send Ably message: no profile_uid");
       return;
     }
 
-    try {
-      // Dynamically import Ably - handle web vs native differently
-      let Ably;
-      const isWeb = Platform.OS === "web";
-
-      try {
-        if (isWeb) {
-          // On web, try dynamic import or use Ably from window if available
-          if (typeof window !== "undefined" && window.Ably) {
-            Ably = window.Ably;
-            console.log("✅ NewConnectionScreen - Ably loaded from window.Ably (web)");
-          } else {
-            // Try require for web (might work with bundler)
-            try {
-              Ably = require("ably");
-              console.log("✅ NewConnectionScreen - Ably module loaded via require (web)");
-            } catch (requireError) {
-              // Try dynamic import for web
-              console.warn("⚠️ NewConnectionScreen - require() failed on web, trying dynamic import");
-              throw new Error("Ably package not available on web. Please install: npm install ably");
-            }
-          }
-        } else {
-          // On native, use require
-          Ably = require("ably");
-          console.log("✅ NewConnectionScreen - Ably module loaded (native)");
-        }
-      } catch (e) {
-        const errorMessage = e.message || String(e);
-        console.warn("⚠️ NewConnectionScreen - Ably not available:", errorMessage);
-        console.error("❌ NewConnectionScreen - Ably import error details:", e);
-        console.error("❌ NewConnectionScreen - Platform:", Platform.OS);
-        console.error("❌ NewConnectionScreen - Is Web:", isWeb);
-
-        setAblyMessageSent({
-          channel: `/${profileUid}`,
-          message: "Error: Ably module not found",
-          timestamp: new Date().toISOString(),
-          error: `Ably not installed or not available on ${Platform.OS}. Please run: npm install ably`,
-        });
-        return;
-      }
-
-      // Verify Ably is actually available
-      if (!Ably || !Ably.Realtime) {
-        const errorMsg = "Ably module loaded but Realtime class not found";
-        console.error("❌ NewConnectionScreen -", errorMsg);
-        setAblyMessageSent({
-          channel: `/${profileUid}`,
-          message: "Error: Ably module incomplete",
-          timestamp: new Date().toISOString(),
-          error: errorMsg,
-        });
-        return;
-      }
-
-      console.log("🔵 NewConnectionScreen - Sending Ably message to channel:", `/${profileUid}`);
-
-      // Old key-based auth (kept for reference):
-      // const ablyApiKey = Constants.expoConfig?.extra?.ablyApiKey || process.env.EXPO_PUBLIC_ABLY_API_KEY || EXPO_PUBLIC_ABLY_API_KEY || "";
-      // if (!ablyApiKey) {
-      //   console.warn("⚠️ NewConnectionScreen - Ably API key not configured");
-      //   return;
-      // }
-      // const client = new Ably.Realtime({ key: ablyApiKey });
-      const authClientId = (await AsyncStorage.getItem("profile_uid")) || profileUid;
-      const client = createAblyRealtimeClient(authClientId);
-      const channelName = `/${profileUid}`;
-      const channel = client.channels.get(channelName);
-
-      // Wait for connection
-      console.log("🔵 NewConnectionScreen - Waiting for Ably connection...");
-      console.log("🔵 NewConnectionScreen - Initial connection state:", client.connection.state);
-
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          console.error("❌ NewConnectionScreen - Timeout waiting for Ably connection. Current state:", client.connection.state);
-          reject(new Error(`Timeout waiting for Ably connection. State: ${client.connection.state}`));
-        }, 10000);
-
-        // Check if already connected
-        if (client.connection.state === "connected") {
-          clearTimeout(timeout);
-          console.log("✅ NewConnectionScreen - Already connected");
-          resolve();
-          return;
-        }
-
-        client.connection.on("connected", () => {
-          clearTimeout(timeout);
-          console.log("✅ NewConnectionScreen - Ably client connected");
-          resolve();
-        });
-
-        client.connection.on("failed", (stateChange) => {
-          clearTimeout(timeout);
-          console.error("❌ NewConnectionScreen - Ably connection failed. State:", stateChange);
-          reject(new Error(`Ably connection failed. State: ${stateChange.reason || stateChange}`));
-        });
-
-        client.connection.on("suspended", () => {
-          console.warn("⚠️ NewConnectionScreen - Ably connection suspended");
-        });
-
-        client.connection.on("disconnected", () => {
-          console.warn("⚠️ NewConnectionScreen - Ably connection disconnected");
-        });
-      });
-
-      // Wait for channel to be attached
-      console.log("🔵 NewConnectionScreen - Waiting for channel attachment...");
-      console.log("🔵 NewConnectionScreen - Initial channel state:", channel.state);
-
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          console.error("❌ NewConnectionScreen - Timeout waiting for channel attachment. Current state:", channel.state);
-          reject(new Error(`Timeout waiting for channel attachment. State: ${channel.state}`));
-        }, 5000);
-
-        if (channel.state === "attached") {
-          clearTimeout(timeout);
-          console.log("✅ NewConnectionScreen - Channel already attached");
-          resolve();
-        } else {
-          channel.on("attached", () => {
-            clearTimeout(timeout);
-            console.log("✅ NewConnectionScreen - Channel attached");
-            resolve();
-          });
-
-          channel.on("detached", () => {
-            console.warn("⚠️ NewConnectionScreen - Channel detached");
-          });
-
-          channel.on("suspended", () => {
-            console.warn("⚠️ NewConnectionScreen - Channel suspended");
-          });
-
-          channel.attach((err) => {
-            if (err) {
-              clearTimeout(timeout);
-              console.error("❌ NewConnectionScreen - Error attaching channel:", err);
-              reject(err);
-            } else {
-              console.log("🔵 NewConnectionScreen - Channel attach called, waiting for attached event...");
-            }
-          });
-        }
-      });
-
-      // Get User 2's (the scanner's) profile_uid from AsyncStorage
-      let user2ProfileUid = null;
-      try {
-        user2ProfileUid = await AsyncStorage.getItem("profile_uid");
-        console.log("🔵 NewConnectionScreen - User 2 (scanner) profile_uid:", user2ProfileUid);
-      } catch (e) {
-        console.warn("⚠️ NewConnectionScreen - Could not get User 2 profile_uid:", e);
-      }
-
-      // Publish message with both User 1's and User 2's profile_uid
-      const messageData = {
-        message: "New Connection Page Opened",
-        timestamp: new Date().toISOString(),
-        profile_uid: profileUid, // User 1's profile_uid (the QR code owner)
-        scanner_profile_uid: user2ProfileUid, // User 2's profile_uid (the person who scanned)
-      };
-
-      console.log("🔵 NewConnectionScreen - Publishing message to channel:", channelName);
-      console.log("🔵 NewConnectionScreen - Message data:", JSON.stringify(messageData, null, 2));
-      console.log("🔵 NewConnectionScreen - Channel state before publish:", channel.state);
-
-      await channel.publish("new-connection-opened", messageData);
-
-      console.log("✅ NewConnectionScreen - Ably message sent successfully to channel:", channelName);
-
-      // Update state to display message info
+    const result = await publishNewConnectionOpened(profileUid);
+    if (result.ok) {
+      console.log("✅ NewConnectionScreen - Ably message sent successfully to channel:", result.channel);
       setAblyMessageSent({
-        channel: channelName,
-        message: messageData.message,
-        timestamp: messageData.timestamp,
+        channel: result.channel,
+        message: result.messageData.message,
+        timestamp: result.messageData.timestamp,
       });
-
-      // Do not close shared client here; other screens reuse it.
-    } catch (error) {
-      console.error("❌ NewConnectionScreen - Error sending Ably message:", error);
-      // Update state to show error
+    } else {
       setAblyMessageSent({
         channel: `/${profileUid}`,
         message: "Error: Failed to send message",
         timestamp: new Date().toISOString(),
-        error: error.message,
+        error: result.error,
       });
     }
   };

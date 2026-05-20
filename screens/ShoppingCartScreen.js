@@ -1,6 +1,6 @@
 // ShoppingCartScreen.js
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, findNodeHandle, InteractionManager } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, InteractionManager } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
@@ -42,6 +42,7 @@ import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
 import { parsePrice } from "../utils/priceUtils";
 import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
+import { recordServicePurchase } from "../utils/purchaseService";
 
 // Use the publishable key from environment variables
 const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
@@ -63,6 +64,54 @@ function getCheckoutSellerId(item) {
 
 function roundMoney(n) {
   return Math.round(Number(n) * 100) / 100;
+}
+
+/** Bounty amount string for cart copy (matches Price row currency rules). */
+function formatCartBountyAmountStr(item, amountNum) {
+  const n = Number(amountNum);
+  const fixed = Number.isFinite(n) ? n.toFixed(2) : "0.00";
+  if (item.itemType === "expertise") return `$${fixed}`;
+  const cur = item.bs_cost_currency;
+  if (cur === "USD" || !cur) return `$${fixed}`;
+  return `${cur} ${fixed}`;
+}
+
+/** e.g. "Bounty ($3.50 total paid by Seller)" vs "… per item …" */
+function formatCartBountyPaidBySellerLine(item) {
+  if (item.itemType === "expertise") {
+    const amt = parsePrice(item.bounty);
+    return `Bounty (${formatCartBountyAmountStr(item, amt)} per item paid by Seller)`;
+  }
+  const amt = parsePrice(item.bs_bounty);
+  const amountStr = formatCartBountyAmountStr(item, amt);
+  const isTotal = item.bs_bounty_type === "total";
+  return `Bounty (${amountStr} ${isTotal ? "total" : "per item"} paid by Seller)`;
+}
+
+/** Total bounty $ for this cart line (matches checkout / old right column). */
+function formatCartBountyLineTotalValueStr(item) {
+  const qty = item.quantity || 1;
+  let num;
+  if (item.itemType === "expertise") {
+    num = parsePrice(item.bounty) * qty;
+  } else if (item.bs_bounty_type === "total") {
+    num = parsePrice(item.bs_bounty);
+  } else {
+    num = parsePrice(item.bs_bounty) * qty;
+  }
+  return formatCartBountyAmountStr(item, num);
+}
+
+/**
+ * `navigate("ShoppingCart", { cartItems })` is not always an array: params may be missing, or callers
+ * occasionally pass the AsyncStorage shape `{ items: [...] }`. Coerce once when syncing into state so
+ * the rest of the screen can assume `cartItems` is always `[]` or a row array.
+ */
+function cartItemsFromRouteParams(raw) {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "object" && Array.isArray(raw.items)) return raw.items;
+  return [];
 }
 
 /** Whether this service line is subject to sales tax (expertise handled separately). */
@@ -142,6 +191,7 @@ function groupBuyerPaysCardFee(items) {
  * One entry per seller: merchandise, sales tax, optional 3% card fee (buyer only), Stripe total.
  */
 function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
+  if (!Array.isArray(cartItems)) return [];
   const map = new Map();
   for (const item of cartItems) {
     const sid = getCheckoutSellerId(item);
@@ -185,7 +235,7 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
 
 const ShoppingCartScreen = ({ route, navigation }) => {
   const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id } = route.params;
-   //const [cartItems, setCartItems] = useState(initialCartItems);
+   const [cartItems, setCartItems] = useState(initialCartItems);
    const [cartItems, setCartItems] = useState(Array.isArray(initialCartItems) ? initialCartItems : []);
 
   const resolveItemBusinessName = (item) => {
@@ -197,23 +247,13 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     }
     const fromItem = item.business_name && String(item.business_name).trim();
     if (fromItem) return fromItem;
-    if (
-      business_uid &&
-      business_uid !== "all" &&
-      item.business_uid === business_uid &&
-      businessName &&
-      !GENERIC_CART_TITLES.includes(String(businessName))
-    ) {
+    if (business_uid && business_uid !== "all" && item.business_uid === business_uid && businessName && !GENERIC_CART_TITLES.includes(String(businessName))) {
       return String(businessName).trim();
     }
     return null;
   };
 
-  const showVendorHeader =
-    Boolean(businessName && String(businessName).trim()) &&
-    business_uid &&
-    business_uid !== "all" &&
-    !GENERIC_CART_TITLES.includes(String(businessName));
+  const showVendorHeader = Boolean(businessName && String(businessName).trim()) && business_uid && business_uid !== "all" && !GENERIC_CART_TITLES.includes(String(businessName));
 
   // Only use Stripe hook if available (not on web)
   let initPaymentSheet, presentPaymentSheet;
@@ -242,7 +282,8 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const [refundAcknowledged, setRefundAcknowledged] = useState(false); //refund acknowledgement state
   const [refundError, setRefundError] = useState(false);
   const scrollViewRef = useRef(null);
-  const refundPolicySectionRef = useRef(null);
+  /** Y offset of refund policy block within ScrollView content (from onLayout). */
+  const refundSectionScrollYRef = useRef(0);
 
   /** Web: one Stripe payment per seller; kept in ref + state so submit handler sees latest step. */
   const webCheckoutSessionRef = useRef(null);
@@ -399,28 +440,11 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       requestAnimationFrame(() => {
         setTimeout(() => {
           const scroll = scrollViewRef.current;
-          const target = refundPolicySectionRef.current;
           if (!scroll) return;
-          if (!target) {
-            scroll.scrollToEnd({ animated: true });
-            return;
-          }
-          const scrollNative = findNodeHandle(scroll);
-          if (!scrollNative) {
-            scroll.scrollToEnd({ animated: true });
-            return;
-          }
-          try {
-            target.measureLayout(
-              scrollNative,
-              (_x, y) => {
-                scroll.scrollTo({ y: Math.max(0, y - 16), animated: true });
-              },
-              () => {
-                scroll.scrollToEnd({ animated: true });
-              },
-            );
-          } catch {
+          const y = refundSectionScrollYRef.current;
+          if (y > 0) {
+            scroll.scrollTo({ y: Math.max(0, y - 16), animated: true });
+          } else {
             scroll.scrollToEnd({ animated: true });
           }
         }, 80);
@@ -537,7 +561,6 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         ]);
 
         await decrementStockForPurchasedItems();
-
       } catch (error) {
         console.error("Error clearing cart data:", error);
         Alert.alert("Error", "There was an error clearing your cart. Please try again.");
@@ -550,14 +573,8 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         } catch (e) {
           console.warn("Failed to trim cart after partial checkout:", e);
         }
-        const paidKeys = new Set(
-          completedGroups.flatMap((g) =>
-            g.items.map((it) => (it.itemType === "expertise" ? `e:${it.expertise_uid}` : `s:${it.business_uid}:${it.bs_uid}`)),
-          ),
-        );
-        setCartItems((prev) =>
-          prev.filter((it) => !paidKeys.has(it.itemType === "expertise" ? `e:${it.expertise_uid}` : `s:${it.business_uid}:${it.bs_uid}`)),
-        );
+        const paidKeys = new Set(completedGroups.flatMap((g) => g.items.map((it) => (it.itemType === "expertise" ? `e:${it.expertise_uid}` : `s:${it.business_uid}:${it.bs_uid}`))));
+        setCartItems((prev) => prev.filter((it) => !paidKeys.has(it.itemType === "expertise" ? `e:${it.expertise_uid}` : `s:${it.business_uid}:${it.bs_uid}`)));
         Alert.alert(
           "Partial checkout",
           `${completedGroups.length} of ${groups.length} payment(s) succeeded. Those items were removed from your cart. Remaining items are still in your cart. Please try again for the rest, or contact support if you were charged incorrectly.`,
@@ -683,6 +700,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const handleRemoveItem = async (index) => {
     try {
       const itemToRemove = cartItems[index];
+      if (!itemToRemove) return;
 
       if (itemToRemove.itemType === "expertise") {
         await AsyncStorage.removeItem(itemToRemove.cart_key || `cart_expertise_${itemToRemove.expertise_uid}`);
@@ -711,12 +729,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
       // ── NEW: cap at available stock for limited-quantity items ──
       const availableStock = item.bs_quantity;
-      if (
-        change > 0 &&
-        availableStock !== undefined &&
-        availableStock !== null &&
-        String(availableStock).toLowerCase() !== "unlimited"
-      ) {
+      if (change > 0 && availableStock !== undefined && availableStock !== null && String(availableStock).toLowerCase() !== "unlimited") {
         const maxQty = parseInt(availableStock, 10);
         if (!isNaN(maxQty) && newQuantity > maxQty) {
           Alert.alert("Stock limit", `Only ${maxQty} available for this item.`);
@@ -749,43 +762,41 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
   // Add this helper alongside the other handlers (e.g. after recordTransactions)
   const decrementStockForPurchasedItems = async () => {
-  const eligibleItems = cartItems.filter((item) => {
-    if (item.itemType === "expertise") return false;
-    const qty = item.bs_quantity;
-    if (!qty || String(qty).toLowerCase() === "unlimited") return false;
-    return true;
-  });
+    const eligibleItems = cartItems.filter((item) => {
+      if (item.itemType === "expertise") return false;
+      const qty = item.bs_quantity;
+      if (!qty || String(qty).toLowerCase() === "unlimited") return false;
+      return true;
+    });
 
-  const results = await Promise.allSettled(
-    eligibleItems.map((item) => recordServicePurchase(item.bs_uid, item.quantity || 1))
-  );
+    const results = await Promise.allSettled(eligibleItems.map((item) => recordServicePurchase(item.bs_uid, item.quantity || 1)));
 
-  // Update local cartItems state with new remaining quantities from backend response
-  setCartItems((prev) =>
-    prev.map((item) => {
-      if (item.itemType === "expertise") return item;
-      const eligibleIndex = eligibleItems.findIndex((e) => e.bs_uid === item.bs_uid);
-      if (eligibleIndex === -1) return item;
+    // Update local cartItems state with new remaining quantities from backend response
+    setCartItems((prev) =>
+      prev.map((item) => {
+        if (item.itemType === "expertise") return item;
+        const eligibleIndex = eligibleItems.findIndex((e) => e.bs_uid === item.bs_uid);
+        if (eligibleIndex === -1) return item;
 
-      const result = results[eligibleIndex];
-      if (result.status === "fulfilled" && result.value?.success) {
-        const remaining = result.value.remaining;
-        return {
-          ...item,
-          bs_quantity: remaining === null ? "unlimited" : String(remaining),
-        };
+        const result = results[eligibleIndex];
+        if (result.status === "fulfilled" && result.value?.success) {
+          const remaining = result.value.remaining;
+          return {
+            ...item,
+            bs_quantity: remaining === null ? "unlimited" : String(remaining),
+          };
+        }
+        return item;
+      }),
+    );
+
+    results.forEach((result, i) => {
+      if (result.status === "rejected") {
+        console.error(`Stock decrement failed for item index ${i}:`, result.reason);
+      } else if (!result.value?.success) {
+        console.warn(`Stock decrement returned failure for item index ${i}:`, result.value);
       }
-      return item;
-    })
-  );
-
-  results.forEach((result, i) => {
-    if (result.status === "rejected") {
-      console.error(`Stock decrement failed for item index ${i}:`, result.reason);
-    } else if (!result.value?.success) {
-      console.warn(`Stock decrement returned failure for item index ${i}:`, result.value);
-    }
-  });
+    });
   };
 
   const calculateTotal = () => {
@@ -811,8 +822,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         throw new Error("User profile not found");
       }
 
-      const total =
-        paymentTotal !== undefined && paymentTotal !== null ? Number(paymentTotal) : calculateTotal();
+      const total = paymentTotal !== undefined && paymentTotal !== null ? Number(paymentTotal) : calculateTotal();
       if (!Number.isFinite(total) || total <= 0) {
         throw new Error("Invalid payment amount");
       }
@@ -907,12 +917,12 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         buyerProfileId = buyerUid;
       }
 
-      const subtotalAfterTax = group.subtotalAfterTax;
-      const fee = group.processingFee;
-      const total = group.total;
+      const merchandiseSubtotal = group.merchandiseSubtotal;
+      const salesTaxTotal = group.salesTaxTotal;
+      const processingFee = group.processingFee;
+      const chargedTotal = group.total;
 
-      const defaultRecommender =
-        recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231";
+      const defaultRecommender = recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231";
 
       const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
 
@@ -922,6 +932,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         const bountyType = item.itemType === "expertise" ? "per_item" : item.bs_bounty_type || "per_item";
         const bounty = item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty);
         const sellerBusinessId = item.business_uid || item.profile_uid;
+        const { pretax, tax } = lineMerchandiseAndTax(item);
         return {
           business_id: sellerBusinessId,
           bs_uid: item.itemType === "expertise" ? item.expertise_uid : item.bs_uid,
@@ -938,18 +949,38 @@ const ShoppingCartScreen = ({ route, navigation }) => {
         };
       });
 
+      // total_costs = pretax merchandise only (matches "Merchandise subtotal" in fee dialog).
+      // total_amount_paid = Stripe charged amount (merchandise + sales tax + card processing).
+      // total_taxes / total_fees break out the tax and fee portions of the charge.
+      const salesTaxRounded = parseFloat(Number(salesTaxTotal).toFixed(2));
+      const merchandiseRounded = parseFloat(Number(merchandiseSubtotal).toFixed(2));
       const transactionData = {
         profile_id: buyerProfileId,
         business_id: group.sellerId,
         stripe_payment_intent: paymentIntent,
-        total_amount_paid: parseFloat(Number(total).toFixed(2)),
-        total_costs: parseFloat(Number(subtotalAfterTax).toFixed(2)),
-        total_taxes: parseFloat(Number(fee).toFixed(2)),
+        total_amount_paid: parseFloat(Number(chargedTotal).toFixed(2)),
+        total_costs: merchandiseRounded,
+        total_taxes: salesTaxRounded,
+        total_fees: parseFloat(Number(processingFee).toFixed(2)),
         transaction_in_escrow: transactionInEscrow,
         items,
       };
 
-      console.log("Posting transaction for one seller:", JSON.stringify(transactionData, null, 2));
+      console.log("[ShoppingCart] Transaction POST — each field before endpoint:");
+      console.log({
+        profile_id: transactionData.profile_id,
+        business_id: transactionData.business_id,
+        stripe_payment_intent: transactionData.stripe_payment_intent,
+        total_amount_paid: transactionData.total_amount_paid,
+        total_costs: transactionData.total_costs,
+        total_taxes: transactionData.total_taxes,
+        total_fees: transactionData.total_fees,
+        transaction_in_escrow: transactionData.transaction_in_escrow,
+        items_count: Array.isArray(transactionData.items) ? transactionData.items.length : 0,
+        items: transactionData.items,
+      });
+
+      console.log("Posting transaction for one seller (full JSON):", JSON.stringify(transactionData, null, 2));
 
       const response = await fetch(TRANSACTIONS_ENDPOINT, {
         method: "POST",
@@ -1032,13 +1063,9 @@ const ShoppingCartScreen = ({ route, navigation }) => {
   const multiSellerCheckout = sellerGroupsPreview.length > 1;
   const hasExpertiseInCart = cartItems.some((it) => it.itemType === "expertise");
   const feeDialogFirstGroup = sellerGroupsPreview[0];
-  const webStripeAmount =
-    webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index]
-      ? webCheckoutSession.groups[webCheckoutSession.index].total
-      : 0;
+  const webStripeAmount = webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index] ? webCheckoutSession.groups[webCheckoutSession.index].total : 0;
   const webCheckoutPayeeDisplayName =
-    (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName &&
-      String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
+    (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName && String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
     (feeDialogFirstGroup?.displayName && String(feeDialogFirstGroup.displayName).trim()) ||
     null;
 
@@ -1063,18 +1090,10 @@ const ShoppingCartScreen = ({ route, navigation }) => {
               )}
               {cartItems.map((item, index) => {
                 const lineBusiness = resolveItemBusinessName(item);
-                const showLineBusiness =
-                  Boolean(lineBusiness) &&
-                  (item.itemType === "expertise" || business_uid === "all" || !showVendorHeader);
+                const showLineBusiness = Boolean(lineBusiness) && (item.itemType === "expertise" || business_uid === "all" || !showVendorHeader);
                 const lineTax = lineMerchandiseAndTax(item);
-                const rawRateLabel =
-                  lineTax.rawTaxRate === undefined || lineTax.rawTaxRate === null || String(lineTax.rawTaxRate).trim() === ""
-                    ? "—"
-                    : String(lineTax.rawTaxRate);
-                const storedRateWithPercent =
-                  rawRateLabel === "—"
-                    ? "—"
-                    : `${String(rawRateLabel).replace(/%+\s*$/, "")}%`;
+                const rawRateLabel = lineTax.rawTaxRate === undefined || lineTax.rawTaxRate === null || String(lineTax.rawTaxRate).trim() === "" ? "—" : String(lineTax.rawTaxRate);
+                const storedRateWithPercent = rawRateLabel === "—" ? "—" : `${String(rawRateLabel).replace(/%+\s*$/, "")}%`;
                 return (
                 <View key={index} style={styles.cartItemContainer}>
                   <TouchableOpacity style={styles.removeButton} onPress={() => handleRemoveItem(index)}>
@@ -1175,9 +1194,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
               })}
               <View style={styles.totalContainer}>
                 <Text style={styles.multiSellerHint}>
-                  {hasExpertiseInCart
-                    ? "Expertise purchases include a 3% credit card processing fee in each seller total below (same as when you added them to the cart). "
-                    : null}
+                  {hasExpertiseInCart ? "Expertise purchases include a 3% credit card processing fee in each seller total below (same as when you added them to the cart). " : null}
                   {multiSellerCheckout
                     ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). Sales tax is computed per item. For business services only, credit card processing (3%) applies when that business has “buyer pays” card fees.`
                     : hasExpertiseInCart
@@ -1199,9 +1216,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                       <Text style={styles.totalLabel}>Credit card processing (3%)</Text>
                       <Text style={styles.totalValue}>${g.processingFee.toFixed(2)}</Text>
                     </View>
-                    {!g.buyerPaysCardFee ? (
-                      <Text style={styles.cardFeeWaivedNote}>Business pays card fees — the processing line above is $0.00.</Text>
-                    ) : null}
+                    {!g.buyerPaysCardFee ? <Text style={styles.cardFeeWaivedNote}>Business pays card fees — the processing line above is $0.00.</Text> : null}
                     <View style={[styles.totalRow, styles.perBusinessTotalRow]}>
                       <Text style={styles.totalLabel}>Business total</Text>
                       <Text style={styles.totalValue}>${g.total.toFixed(2)}</Text>
@@ -1229,14 +1244,18 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                 {multiSellerCheckout ? (
                   <View style={[styles.totalRow, styles.grandTotalRow]}>
                     <Text style={styles.grandTotalLabel}>Grand total</Text>
-                    <Text style={styles.grandTotalValue}>
-                      ${sellerGroupsPreview.reduce((sum, g) => sum + g.total, 0).toFixed(2)}
-                    </Text>
+                    <Text style={styles.grandTotalValue}>${sellerGroupsPreview.reduce((sum, g) => sum + g.total, 0).toFixed(2)}</Text>
                   </View>
                 ) : null}
               </View>
 
-              <View ref={refundPolicySectionRef} collapsable={false} style={styles.escrowSection}>
+              <View
+                collapsable={false}
+                style={styles.escrowSection}
+                onLayout={(e) => {
+                  refundSectionScrollYRef.current = e.nativeEvent.layout.y;
+                }}
+              >
                 <TouchableOpacity
                   style={styles.escrowRow}
                   onPress={() => {
@@ -1245,22 +1264,14 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                   }}
                   activeOpacity={0.7}
                 >
-                  <View style={[
-                    styles.checkbox,
-                    refundAcknowledged && styles.checkboxChecked,
-                    refundError && { borderColor: "#FF3B30" },
-                  ]}>
+                  <View style={[styles.checkbox, refundAcknowledged && styles.checkboxChecked, refundError && { borderColor: "#FF3B30" }]}>
                     {refundAcknowledged && <Text style={styles.checkmark}>✓</Text>}
                   </View>
                   <Text style={[styles.escrowLabel, { flex: 1 }, refundError && { color: "#FF3B30" }]}>
                     Return must be made in 5 days for a full refund, any returns past 5 days will result in a partial refund. Check the box to acknowledge.
                   </Text>
                 </TouchableOpacity>
-                {refundError && (
-                  <Text style={{ color: "#FF3B30", fontSize: 13, marginTop: 6, marginLeft: 34 }}>
-                    You must acknowledge the return policy before checking out.
-                  </Text>
-                )}
+                {refundError && <Text style={{ color: "#FF3B30", fontSize: 13, marginTop: 6, marginLeft: 34 }}>You must acknowledge the return policy before checking out.</Text>}
               </View>
             </>
           )}

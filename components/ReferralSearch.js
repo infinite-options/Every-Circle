@@ -19,6 +19,7 @@ const ReferralSearch = ({
   searchPlaceholder = "Search by name or city",
   noResultsSubtext = "Try a different name or location",
   networkData = [],
+  preparingNetwork = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -184,6 +185,13 @@ const ReferralSearch = ({
             </TouchableOpacity>
           </View>
 
+          {preparingNetwork ? (
+            <View style={styles.preparingBanner} accessibilityRole='progressbar' accessibilityLabel='Loading network data'>
+              <ActivityIndicator size='small' color='#007AFF' />
+              <Text style={styles.preparingBannerText}>Loading your network for connection details…</Text>
+            </View>
+          ) : null}
+
           {/* Search Input */}
           <View style={styles.searchContainer}>
             <Ionicons name='search' size={20} color='#666' style={styles.searchIcon} />
@@ -262,6 +270,21 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "bold",
     color: "#333",
+  },
+  preparingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#f0f6ff",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  preparingBannerText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#5060a0",
   },
   closeButton: {
     padding: 4,

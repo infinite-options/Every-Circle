@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import AppHeader from "../components/AppHeader";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 
 export default function QRScannerScreen({ route }) {
   const navigation = useNavigation();
@@ -48,16 +49,38 @@ export default function QRScannerScreen({ route }) {
 
     console.log("📦 QR DATA:", data);
 
+    const profileUidFromEveryCircleUrl = (raw) => {
+      try {
+        const u = new URL(raw.trim());
+        const host = u.hostname.replace(/^www\./, "");
+        const isProd = host === "everycircle.com";
+        const isLocal = host === "localhost" || host === "127.0.0.1";
+        if (!isProd && !isLocal) return null;
+        const parts = u.pathname.split("/").filter(Boolean);
+        if (parts[0] === "scan" && parts[1]) return parts[1].split("?")[0] || null;
+        if (parts[0] === "newconnection" && parts[1]) return parts[1].split("?")[0] || null;
+      } catch (_) {
+        /* not a URL */
+      }
+      return null;
+    };
+
     try {
       let parsed;
 
       try {
         parsed = JSON.parse(data);
       } catch {
-        if (data.startsWith("https://everycircle.com/newconnection/")) {
+        const fromUrl = profileUidFromEveryCircleUrl(data);
+        if (fromUrl) {
           parsed = {
             type: "everycircle",
-            profile_uid: data.split("/").pop(),
+            profile_uid: fromUrl,
+          };
+        } else if (data.startsWith("https://everycircle.com/newconnection/") || data.startsWith("https://everycircle.com/scan/")) {
+          parsed = {
+            type: "everycircle",
+            profile_uid: data.split("/").pop()?.split("?")[0],
           };
         } else {
           throw new Error("Invalid QR");
@@ -69,12 +92,7 @@ export default function QRScannerScreen({ route }) {
           onScanComplete(parsed);
           navigation.goBack();
         } else {
-          // Pass the full parsed QR code data
-          navigation.navigate("Connect", {
-            profile_uid: parsed.profile_uid,
-            qr_code_data: JSON.stringify(parsed), // Pass full QR code data as JSON string
-            ...parsed, // Also spread individual fields for backward compatibility
-          });
+          goToNetworkForScanConnect(navigation, parsed.profile_uid);
         }
       } else {
         throw new Error("Invalid QR format");

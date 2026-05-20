@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Modal, Scro
 import { BUSINESSES_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import MiniCard from "./MiniCard";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 
 const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic, navigation, handleDelete, preFetchedBusinessesData, onInputFocus }) => {
   const { darkMode } = useDarkMode();
@@ -112,28 +113,22 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
       const updatedBusinessesData = businessesData.map((businessDataItem) => {
         const originalIndex = businessDataItem.index;
         const matchingBusiness = businesses[originalIndex];
-        
+
         if (matchingBusiness) {
           // Sync individualIsPublic and other fields that might change
           return {
             ...businessDataItem,
-            individualIsPublic: matchingBusiness.individualIsPublic !== undefined 
-              ? matchingBusiness.individualIsPublic 
-              : businessDataItem.individualIsPublic,
-            isPublic: matchingBusiness.isPublic !== undefined 
-              ? matchingBusiness.isPublic 
-              : businessDataItem.isPublic,
-            role: matchingBusiness.role || businessDataItem.role,
-            isApproved: matchingBusiness.isApproved !== undefined 
-              ? matchingBusiness.isApproved 
-              : businessDataItem.isApproved,
+            individualIsPublic: matchingBusiness.individualIsPublic !== undefined ? matchingBusiness.individualIsPublic : businessDataItem.individualIsPublic,
+            isPublic: matchingBusiness.isPublic !== undefined ? matchingBusiness.isPublic : businessDataItem.isPublic,
+            role: sanitizeText(matchingBusiness.role || businessDataItem.role, ""),
+            isApproved: matchingBusiness.isApproved !== undefined ? matchingBusiness.isApproved : businessDataItem.isApproved,
           };
         }
         return businessDataItem;
       });
       setBusinessesData(updatedBusinessesData);
     }
- }, [businesses]);  // Run whenever businesses prop changes
+  }, [businesses]); // Run whenever businesses prop changes
 
   const fetchBusinessesData = async (businesses) => {
     try {
@@ -215,13 +210,11 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
             emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1 || rawBusiness.email_is_public === "1" || rawBusiness.email_is_public === 1,
             business_uid: rawBusiness.business_uid || "",
             profile_business_uid: bus.profile_business_uid || "",
-            role: originalBusiness?.role || "",
+            role: sanitizeText(originalBusiness?.role, ""),
             isApproved: originalBusiness?.isApproved || false,
             // Get individualIsPublic from the businesses prop (which has the latest data from backend)
-            individualIsPublic: originalBusiness?.individualIsPublic ?? 
-                             (bus.bu_individual_business_is_public === 1 || 
-                              bus.bu_individual_business_is_public === "1" || 
-                              bus.bu_individual_business_is_public === true),
+            individualIsPublic:
+              originalBusiness?.individualIsPublic ?? (bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === true),
             index: businesses.indexOf(bus), // Store original index for editing/deleting
           };
         } catch (error) {
@@ -272,7 +265,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
               {/* Header with toggle */}
               <View style={styles.rowHeader}>
                 <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{idx + 1}</Text>
-               <View style={styles.toggleContainer}>
+                <View style={styles.toggleContainer}>
                   <TouchableOpacity onPress={() => toggleEntryVisibility(originalIndex)} style={[styles.togglePill, originalBusiness?.isPublic && styles.togglePillActiveGreen]}>
                     <Text style={[styles.togglePillText, originalBusiness?.isPublic && styles.togglePillTextActive]}>{originalBusiness?.isPublic ? "Visible" : "Show"}</Text>
                   </TouchableOpacity>
@@ -281,7 +274,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                   </TouchableOpacity>
                 </View>
               </View>
-              
+
               {/* Business card */}
               <TouchableOpacity
                 onPress={() => {
@@ -293,11 +286,11 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
               >
                 <MiniCard business={business} />
               </TouchableOpacity>
-              
-              {/* Role text */}
-              {business.role && (
+
+              {/* Role text — use isSafeForConditional so "." is never rendered as a View child on web */}
+              {isSafeForConditional(business.role) && (
                 <View style={styles.roleContainer}>
-                  <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {business.role}</Text>
+                  <Text style={[styles.roleText, darkMode && styles.darkRoleText]}>Role: {sanitizeText(business.role)}</Text>
                 </View>
               )}
             </View>
@@ -372,7 +365,6 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                   value={item.role}
                   onChangeText={(text) => handleInputChange(actualIndex, "role", text)}
                 />
-                
               </View>
             );
           })
@@ -501,13 +493,13 @@ const styles = StyleSheet.create({
     color: "#999",
   },
   businessActions: {
-  flexDirection: "row",
-  justifyContent: "space-between",
-  alignItems: "center",
-  marginTop: 8,
-  paddingLeft: 10,
-  paddingRight: 10,
-},
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 8,
+    paddingLeft: 10,
+    paddingRight: 10,
+  },
   existingBusinessText: {
     fontSize: 16,
     color: "#000",

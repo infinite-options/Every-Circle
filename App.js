@@ -13,9 +13,6 @@ const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
 // Set to false to POST to `APPLE_AUTH_ENDPOINT` and continue sign-in (profile) flow.
 const DEBUG_APPLE_SIGNIN_SKIP_BACKEND = false;
 
-// Video component removed - expo-av was causing build issues with new architecture
-// If needed in the future, re-add expo-av and configure it properly
-
 // Suppress VirtualizedList nesting warning - we're using nestedScrollEnabled and proper configuration
 LogBox.ignoreLogs(["VirtualizedLists should never be nested inside plain ScrollViews"]);
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -73,6 +70,7 @@ import WishResponsesScreen from "./screens/WishResponsesScreen";
 import ConnectScreen from "./screens/ConnectScreen";
 import ConnectWebScreen from "./screens/ConnectWebScreen";
 import NewConnectionScreen from "./screens/NewConnectionScreen";
+import ScanLandingScreen from "./screens/ScanLandingScreen";
 import QRScannerScreen from "./screens/QRScannerScreen";
 import InboxScreen from "./screens/InboxScreen";
 import ChatScreen from "./screens/ChatScreen";
@@ -856,6 +854,12 @@ export default function App() {
             profile_uid: (profile_uid) => profile_uid,
           },
         },
+        ScanLanding: {
+          path: "scan/:profile_uid",
+          parse: {
+            profile_uid: (profile_uid) => profile_uid,
+          },
+        },
         Connect: {
           path: "connect",
           parse: {
@@ -939,10 +943,10 @@ export default function App() {
     const cookiesAllowedValue = cookiesStatus !== null ? JSON.parse(cookiesStatus) : true;
 
     // Allowed screens when cookies are not allowed (only Settings)
-    const cookiesAllowedScreens = ["Settings"];
+    const cookiesAllowedScreens = ["Settings", "ScanLanding"];
 
     // Allowed screens when terms are not accepted
-    const termsAllowedScreens = ["Home", "Login", "SignUp", "Settings", "TermsAndConditions"];
+    const termsAllowedScreens = ["Home", "Login", "SignUp", "Settings", "TermsAndConditions", "ScanLanding"];
 
     // If cookies not allowed and trying to access any screen except Settings
     if (!cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
@@ -1028,6 +1032,7 @@ export default function App() {
                 <Stack.Screen name='WishResponses' component={WishResponsesScreen} options={{ headerShown: false }} />
                 <Stack.Screen name='Connect' component={ConnectScreenWrapper} />
                 <Stack.Screen name='NewConnection' component={NewConnectionScreen} />
+                <Stack.Screen name='ScanLanding' component={ScanLandingScreen} />
                 <Stack.Screen name='QRScanner' component={QRScannerScreen} options={{ headerShown: false }} />
                 <Stack.Screen name='Inbox' component={InboxScreen} />
                 <Stack.Screen name='Chat' component={ChatScreen} />

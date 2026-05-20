@@ -18,6 +18,15 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import { getSessionProfile } from "../utils/sessionProfile";
+import BountyRecipientPicker from "../components/BountyRecipientPicker";
+import {
+  bountyPickerRequiresSelection,
+  getDefaultBountyRecipient,
+  isBountyReviewDisabled,
+  mergeBountyEligibleReviews,
+  productHasBounty,
+  resolveBountyRecommenderProfileId,
+} from "../utils/bountyRecipientUtils";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -320,6 +329,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
         }
       }
 
+      const profileCcFeePayer = canonicalBusinessCcFeePayer(rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer);
+
       const businessWithRatings = {
         ...rawBusiness,
         business_user_id: rawBusiness.business_user_id || "",
@@ -358,7 +369,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           rawBusiness.image_is_public === 1,
         business_profile_img: businessProfileImgUrl,
         business_profile_img_is_public: rawBusiness.business_profile_img_is_public === "1" || rawBusiness.business_profile_img_is_public === 1,
-        business_cc_fee_payer: canonicalBusinessCcFeePayer(rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer),
+        business_cc_fee_payer: profileCcFeePayer,
         business_services: (() => {
           let list = [];
           if (rawBusiness.business_services) {
@@ -377,7 +388,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
             list = result.services;
           }
           if (!Array.isArray(list)) return [];
-          return list.map((svc) => normalizeBusinessServiceFromApi(svc));
+          return list.map((svc) => ({
+            ...normalizeBusinessServiceFromApi(svc),
+            business_cc_fee_payer: profileCcFeePayer,
+          }));
         })(),
         business_updated_at: rawBusiness.business_updated_at ?? rawBusiness.updated_at,
       };
@@ -587,6 +601,19 @@ export default function BusinessProfileScreen({ route, navigation }) {
         .finally(() => setServiceOptionsLoading(false));
     }
     setBountySort("connection");
+    setBountySearch("");
+
+    const eligible = mergeBountyEligibleReviews(allReviews, userReview);
+    const defaultRecipient = getDefaultBountyRecipient(eligible, currentUserProfileId);
+    if (defaultRecipient) {
+      setSelectedBountyRecipient(defaultRecipient);
+    } else if (
+      selectedBountyRecipient &&
+      isBountyReviewDisabled(selectedBountyRecipient, eligible, currentUserProfileId)
+    ) {
+      setSelectedBountyRecipient(null);
+    }
+
     setQuantityModalVisible(true);
   };
 
@@ -605,13 +632,19 @@ export default function BusinessProfileScreen({ route, navigation }) {
         return;
       }
     }
-
+    // If there are verified reviews, bounty assignment is mandatory
     const verifiedReviews = allReviews.filter((r) => r.is_verified && r.circle_num_nodes !== null && r.circle_num_nodes !== undefined).slice(0, 5);
+
     if (verifiedReviews.length > 0 && !selectedBountyRecipient) {
       Alert.alert("Select a Reviewer", "Please select who referred you before adding to cart.");
       return;
     }
 
+    const bountyRecommenderProfileId = resolveBountyRecommenderProfileId({
+      selectedBountyRecipient,
+      currentUserProfileId,
+      eligibleReviews: bountyEligible,
+    });
     try {
       const ccPayer = canonicalBusinessCcFeePayer(business.business_cc_fee_payer ?? business.bs_cc_fee_payer);
 
@@ -643,13 +676,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       const serviceWithQuantity = {
         ...selectedService,
         quantity: quantity,
-        selectedChoices: selectedChoices,
-        selectedChoiceLabels: selectedChoiceLabels,  // ← add this
-        specialInstructions: specialInstructions,
-        choicesExtraCost: choicesExtraCost,
-        unitPrice: unitPrice,
-        totalPrice: (unitPrice * quantity).toFixed(2),
-        bs_cost_with_extras: unitPrice.toFixed(2),
+        totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
         bounty_recommender_profile_id: selectedBountyRecipient?.rating_profile_id || null,
         business_uid: business_uid,
         business_name: sanitizeText(business.business_name || "") || "",
@@ -674,9 +701,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
         newCartItems = [...cartItems, serviceWithQuantity];
       }
 
+      // Always update ALL items from this business to use the latest selected reviewer
       if (selectedBountyRecipient?.rating_profile_id) {
         newCartItems = newCartItems.map((item) => {
           if (item.business_uid === business_uid || item.bs_business_id === business_uid) {
+            console.log("Updating bounty recipient for item:", item.bs_uid, "to:", selectedBountyRecipient.rating_profile_id);
             return { ...item, bounty_recommender_profile_id: selectedBountyRecipient.rating_profile_id };
           }
           return item;
@@ -831,6 +860,16 @@ export default function BusinessProfileScreen({ route, navigation }) {
         title='BUSINESS PROFILE'
         {...getHeaderColors("businessProfile")}
         onBackPress={() => {
+          if (returnTo === "Chat") {
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+              return;
+            }
+            if (route.params?.chatParams) {
+              navigation.navigate("Chat", route.params.chatParams);
+              return;
+            }
+          }
           if (returnTo === "Search" && searchState) {
             navigation.navigate("Search", { restoreState: true, searchState });
           } else {
@@ -1216,7 +1255,15 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 )}
                 <TouchableOpacity
                   style={[styles.editReviewButton, darkMode && styles.darkEditReviewButton]}
-                  onPress={() => navigation.navigate("ReviewBusiness", { business_uid, business_name: business.business_name, reviewData: userReview, isEdit: true })}
+                  onPress={() =>
+                    navigation.navigate("ReviewBusiness", {
+                      business_uid,
+                      business_name: business.business_name,
+                      reviewData: userReview,
+                      rating_uid: userReview?.rating_uid,
+                      isEdit: true,
+                    })
+                  }
                 >
                   <Text style={styles.editReviewButtonText}>Edit Review</Text>
                 </TouchableOpacity>
@@ -1480,8 +1527,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
       <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { maxHeight: "85%", width: "90%" }]}>
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ alignItems: "center", width: "100%" }}>
+          <View style={[styles.modalContent, styles.quantityModalContent]}>
+            <ScrollView style={styles.quantityModalScroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.quantityModalScrollContent}>
+              <View style={styles.quantityModalHeader}>
               <Text style={styles.modalTitle}>Add to Cart</Text>
               <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
               {(() => {
@@ -1685,174 +1733,20 @@ export default function BusinessProfileScreen({ route, navigation }) {
               </View>
 
               <Text style={styles.totalPrice}>Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
+              </View>
 
-              {/* Bounty recipient picker — only show if there are verified reviews */}
-              {allReviews.filter((r) => r.is_verified).length > 0 && (
-                <View style={{ marginTop: 16, marginBottom: 8, width: "100%" }}>
-                  <Text style={[styles.modalTitle, { fontSize: 16, marginBottom: 4, textAlign: "center" }]}>
-                    💰 Who referred you? <Text style={{ color: "#FF3B30" }}>*</Text>
-                  </Text>
-                  <Text style={{ fontSize: 11, color: "#FF3B30", textAlign: "center", marginBottom: 4 }}>Required — select a reviewer to assign the bounty</Text>
-                  <Text style={{ fontSize: 12, color: "#888", marginBottom: 10, textAlign: "center" }}>Assign the bounty to a verified reviewer</Text>
-                  {(() => {
-                    const sorted = allReviews
-                      .filter((r) => r.is_verified && r.circle_num_nodes !== null && r.circle_num_nodes !== undefined)
-                      .sort((a, b) => {
-                        if (bountySort === "name") {
-                          const nameA = [a.profile_personal_first_name, a.profile_personal_last_name].filter(Boolean).join(" ").toLowerCase();
-                          const nameB = [b.profile_personal_first_name, b.profile_personal_last_name].filter(Boolean).join(" ").toLowerCase();
-                          return nameA.localeCompare(nameB);
-                        }
-                        return a.circle_num_nodes - b.circle_num_nodes;
-                      })
-                      //.slice(0, 5);
-                      .slice(0, bountySort === "connection" ? 5 : undefined);
-
-                    return (
-                      <>
-                        {/* Sort Toggle */}
-                        <View style={{ flexDirection: "row", justifyContent: "center", marginBottom: 10, gap: 8 }}>
-                          <TouchableOpacity
-                            onPress={() => setBountySort("connection")}
-                            style={{
-                              paddingHorizontal: 14,
-                              paddingVertical: 6,
-                              borderRadius: 20,
-                              backgroundColor: bountySort === "connection" ? "#9C45F7" : "#f0e8ff",
-                            }}
-                          >
-                            <Text style={{ color: bountySort === "connection" ? "#fff" : "#9C45F7", fontWeight: "600", fontSize: 12 }}>By Connection</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => setBountySort("name")}
-                            style={{
-                              paddingHorizontal: 14,
-                              paddingVertical: 6,
-                              borderRadius: 20,
-                              backgroundColor: bountySort === "name" ? "#9C45F7" : "#f0e8ff",
-                            }}
-                          >
-                            <Text style={{ color: bountySort === "name" ? "#fff" : "#9C45F7", fontWeight: "600", fontSize: 12 }}>By Name</Text>
-                          </TouchableOpacity>
-                        </View>
-
-                        {/* Search bar — only shown when sorting by name */}
-                        {bountySort === "name" && (
-                          <TextInput
-                            style={{
-                              borderWidth: 1,
-                              borderColor: "#c4b5fd",
-                              borderRadius: 8,
-                              paddingHorizontal: 12,
-                              paddingVertical: 8,
-                              fontSize: 14,
-                              color: "#333",
-                              backgroundColor: "#fff",
-                              marginBottom: 10,
-                              width: "100%",
-                            }}
-                            placeholder='Search by name...'
-                            placeholderTextColor='#aaa'
-                            value={bountySearch}
-                            onChangeText={setBountySearch}
-                          />
-                        )}
-
-                        {sorted
-                          .filter((review) => {
-                            if (bountySort !== "name" || !bountySearch.trim()) return true;
-                            const name = [review.profile_personal_first_name, review.profile_personal_last_name].filter(Boolean).join(" ").toLowerCase();
-                            return name.includes(bountySearch.trim().toLowerCase());
-                          })
-                          .map((review) => {
-                            const isSelected = selectedBountyRecipient?.rating_uid === review.rating_uid;
-                            const name = [review.profile_personal_first_name, review.profile_personal_last_name].filter(Boolean).join(" ") || `User ${review.rating_profile_id}`;
-                            return (
-                              <TouchableOpacity
-                                key={review.rating_uid}
-                                onPress={() => setSelectedBountyRecipient(isSelected ? null : review)}
-                                style={{
-                                  flexDirection: "row",
-                                  alignItems: "center",
-                                  padding: 10,
-                                  marginBottom: 8,
-                                  borderRadius: 10,
-                                  borderWidth: 1.5,
-                                  borderColor: isSelected ? "#9C45F7" : "#ddd",
-                                  backgroundColor: isSelected ? "#f5eeff" : "#fafafa",
-                                }}
-                              >
-                                {/* Radio */}
-                                <View
-                                  style={{
-                                    width: 20,
-                                    height: 20,
-                                    borderRadius: 10,
-                                    borderWidth: 2,
-                                    borderColor: isSelected ? "#9C45F7" : "#ccc",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    marginRight: 10,
-                                  }}
-                                >
-                                  {isSelected && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#9C45F7" }} />}
-                                </View>
-
-                                {/* Avatar */}
-                                {review.profile_personal_image ? (
-                                  <Image
-                                    source={{ uri: review.profile_personal_image }}
-                                    style={{ width: 36, height: 36, borderRadius: 18, marginRight: 10 }}
-                                    defaultSource={require("../assets/profile.png")}
-                                  />
-                                ) : (
-                                  <View
-                                    style={{
-                                      width: 36,
-                                      height: 36,
-                                      borderRadius: 18,
-                                      marginRight: 10,
-                                      backgroundColor: "#e0e0e0",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                    }}
-                                  >
-                                    <Text style={{ fontWeight: "bold", color: "#555" }}>{(review.profile_personal_first_name?.charAt(0) || "U").toUpperCase()}</Text>
-                                  </View>
-                                )}
-
-                                {/* Info */}
-                                <View style={{ flex: 1 }}>
-                                  <Text style={{ fontWeight: "600", color: "#333" }}>{name}</Text>
-                                  {review.circle_num_nodes !== null && review.circle_num_nodes !== undefined && (
-                                    <Text style={{ fontSize: 12, color: "#888" }}>{`Level ${review.circle_num_nodes} Connection`}</Text>
-                                  )}
-                                </View>
-
-                                {/* Bounty badge */}
-                                {selectedService?.bs_bounty && (
-                                  <View
-                                    style={{
-                                      backgroundColor: isSelected ? "#9C45F7" : "#f0e8ff",
-                                      borderRadius: 8,
-                                      paddingHorizontal: 8,
-                                      paddingVertical: 4,
-                                    }}
-                                  >
-                                    <Text style={{ color: isSelected ? "#fff" : "#9C45F7", fontWeight: "700", fontSize: 12 }}>
-                                      💰 ${parsePrice(selectedService.bs_bounty).toFixed(2)}
-                                      {selectedService.bs_bounty_type === "per_item" ? " / item" : " total"}
-                                    </Text>
-                                  </View>
-                                )}
-                              </TouchableOpacity>
-                            );
-                          })}
-                      </>
-                    );
-                  })()}
-                </View>
-              )}
+              <BountyRecipientPicker
+                reviews={allReviews}
+                userReview={userReview}
+                currentUserProfileId={currentUserProfileId}
+                selectedService={selectedService}
+                selectedBountyRecipient={selectedBountyRecipient}
+                onSelectRecipient={setSelectedBountyRecipient}
+                bountySort={bountySort}
+                onBountySortChange={setBountySort}
+                bountySearch={bountySearch}
+                onBountySearchChange={setBountySearch}
+              />
             </ScrollView>
 
             <View style={styles.modalButtons}>
@@ -2028,6 +1922,30 @@ const styles = StyleSheet.create({
     padding: 20,
     width: "80%",
     alignItems: "center",
+  },
+  quantityModalContent: {
+    maxHeight: "85%",
+    width: "88%",
+    maxWidth: 400,
+    alignSelf: "center",
+    alignItems: "stretch",
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+  },
+  quantityModalScroll: {
+    width: "100%",
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  quantityModalScrollContent: {
+    width: "100%",
+    alignItems: "stretch",
+    paddingBottom: 8,
+  },
+  quantityModalHeader: {
+    width: "100%",
+    alignItems: "center",
+    marginBottom: 4,
   },
   modalTitle: {
     fontSize: 20,

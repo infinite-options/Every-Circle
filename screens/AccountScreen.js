@@ -4,7 +4,15 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
-import { ACCOUNT_SCREEN_PERSONAL_ENDPOINT, ACCOUNT_SCREEN_BUSINESS_ENDPOINT, API_BASE_URL, TRANSACTION_RECEIPT_ENDPOINT } from "../apiConfig";
+import {
+  ACCOUNT_SCREEN_PERSONAL_ENDPOINT,
+  ACCOUNT_SCREEN_BUSINESS_ENDPOINT,
+  API_BASE_URL,
+  TRANSACTION_RECEIPT_ENDPOINT,
+  TRANSACTIONS_ENDPOINT,
+  TRANSACTIONS_RETURN_ENDPOINT,
+  TRANSACTIONS_RETURNS_DECLINED_ENDPOINT,
+} from "../apiConfig";
 import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
 import { useFocusEffect } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -14,6 +22,7 @@ import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../confi
 import { getSessionProfile } from "../utils/sessionProfile";
 // import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
+import { parsePrice } from "../utils/priceUtils";
 
 /** 1 = compact: Purchases (Date, Type, Seller, Paid, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
@@ -23,6 +32,9 @@ const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
  * Expected GET /api/v1/account-screen/personal/:profile_id JSON (flexible keys):
  * - data.transactions | purchase_transactions | personal_transactions | purchases | purchase: buyer rows as array, or { code, data }, or nested { data | items | rows | transactions | list | results | records }[]
  * - data.bounty | bounty_results | bounty_data: same shape as legacy /api/bountyresults body, or bounty_items[] + totals
+ * - wallet: root, data, or bounty_results.wallet ({ wallet_actual_balance, wallet_pending, wallet_useable_balance, ... })
+ * - Aggregate shape: { purchases: { data }, bounty_results: { data, totals, wallet }, seller_transactions: { data } }
+ * - Top-level bounty shape: data[] + total_bounties + total_bounty_earned + wallet (purchases may be in purchases / purchase_transactions)
  * - data.seller_transactions | seller_tx: line items for seller-side expertise qty OR { code, data } (omit key → treat as no seller lines)
  * - data.profile | user_profile: optional { user_email, personal_info, expertise_info } for MiniCard + expertise list
  */
@@ -44,12 +56,240 @@ function extractTransactionArray(raw) {
   return [];
 }
 
+const RECEIPT_TOTAL_EPS = 0.02;
+
+/** Parse optional money from receipt API; `null` if absent (not same as $0). */
+function receiptMoneyNullable(v) {
+  if (v == null) return null;
+  if (typeof v === "string" && v.trim() === "") return null;
+  const n = parsePrice(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Purchased quantity on a receipt line (defaults to 1). */
+function getReceiptLineQty(row) {
+  const q = parsePrice(row?.ti_bs_qty);
+  return q > 0 ? Math.round(q) : 1;
+}
+
+/** Stable id for a receipt line in API payloads (prefer transaction line uid). */
+function getReceiptLineTransactionItemUid(row) {
+  const uid = row?.ti_uid != null && String(row.ti_uid).trim() !== "" ? String(row.ti_uid).trim() : "";
+  if (uid) return uid;
+  const bsId = row?.ti_bs_id != null && String(row.ti_bs_id).trim() !== "" ? String(row.ti_bs_id).trim() : "";
+  return bsId;
+}
+
+/** Sum return qty already requested for a line (supports partial multi-qty returns). */
+function getReturnedQtyForLine(returnRequestData, itemIndex, purchasedQty) {
+  if (!returnRequestData?.notes?.length) return 0;
+  const id = String(itemIndex);
+  let total = 0;
+  for (const entry of returnRequestData.notes) {
+    if (!(entry.items || []).includes(id)) continue;
+    const q = entry.itemQuantities?.[id];
+    if (q != null && Number(q) > 0) {
+      total += Math.round(Number(q));
+    } else {
+      total += purchasedQty;
+    }
+  }
+  return total;
+}
+
+/** Unit cost × qty for each receipt row (same rule as return modal: qty defaults to 1). */
+function sumReceiptLineMerchandise(rows) {
+  if (!Array.isArray(rows)) return 0;
+  return rows.reduce((sum, row) => {
+    const unit = parsePrice(row.ti_bs_cost);
+    const q = parsePrice(row.ti_bs_qty);
+    const qty = q > 0 ? q : 1;
+    return sum + unit * qty;
+  }, 0);
+}
+
+/** Merchandise subtotal: transaction_amount when present, else sum of line unit × qty. */
+function getReceiptMerchandiseSubtotal(receiptRows) {
+  if (!Array.isArray(receiptRows) || receiptRows.length === 0) return null;
+  const txnMerch = receiptMoneyNullable(receiptRows[0]?.transaction_amount);
+  if (txnMerch != null) return txnMerch;
+  return sumReceiptLineMerchandise(receiptRows);
+}
+
+function isReturnReceipt(receiptRows) {
+  const merch = getReceiptMerchandiseSubtotal(receiptRows);
+  return merch != null && merch < 0;
+}
+
+function formatReceiptUsd(n) {
+  return Number.isFinite(n) ? `$${n.toFixed(2)}` : "—";
+}
+
+/** Below receipt line items: merchandise, tax, fees, total, and arithmetic check vs amount paid. */
+function ReceiptTransactionTotalsFooter({ receiptRows, darkMode }) {
+  if (!Array.isArray(receiptRows) || receiptRows.length === 0) return null;
+  const first = receiptRows[0] || {};
+  const fromLines = sumReceiptLineMerchandise(receiptRows);
+  const txnMerch = receiptMoneyNullable(first.transaction_amount);
+  const txnTaxes = receiptMoneyNullable(first.transaction_taxes);
+  const txnFees = receiptMoneyNullable(first.transaction_fees);
+  const txnTotal = receiptMoneyNullable(first.transaction_total);
+
+  const hasAnyBreakdown = txnMerch != null || txnTaxes != null || txnFees != null || txnTotal != null;
+  if (!hasAnyBreakdown) return null;
+
+  const merchDisplay = txnMerch != null ? txnMerch : fromLines;
+  const merchLabel = txnMerch != null ? "Merchandise (subtotal)" : "Merchandise (from line items)";
+
+  const labelColor = darkMode ? "#ccc" : "#444";
+  const valueColor = darkMode ? "#eee" : "#222";
+  const secondaryColor = darkMode ? "#aaa" : "#666";
+  const borderColor = darkMode ? "#444" : "#ddd";
+
+  const row = (label, valueText) => (
+    <View key={label} style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8, paddingHorizontal: 2 }}>
+      <Text style={{ fontSize: 14, color: labelColor, flex: 1, paddingRight: 10 }}>{label}</Text>
+      <Text style={{ fontSize: 14, fontWeight: "600", color: valueColor }}>{valueText}</Text>
+    </View>
+  );
+
+  const taxesStr = txnTaxes != null ? formatReceiptUsd(txnTaxes) : "—";
+  const feesStr = txnFees != null ? formatReceiptUsd(txnFees) : "—";
+  const totalStr = txnTotal != null ? formatReceiptUsd(txnTotal) : "—";
+
+  const linesVsMerch = txnMerch != null && fromLines > 0 && Math.abs(fromLines - txnMerch) > RECEIPT_TOTAL_EPS;
+
+  let verifyText = "";
+  let verifyColor = secondaryColor;
+  let verifyBold = false;
+
+  if (txnTotal != null) {
+    if (txnTaxes != null && txnFees != null) {
+      const merchForSum = txnMerch != null ? txnMerch : fromLines;
+      const sum = merchForSum + txnTaxes + txnFees;
+      if (Math.abs(sum - txnTotal) <= RECEIPT_TOTAL_EPS) {
+        verifyText = `Subtotal + sales tax + fees matches amount paid (${formatReceiptUsd(txnTotal)}).`;
+        verifyColor = "#18884A";
+        verifyBold = true;
+      } else {
+        verifyText = `Totals do not match: ${formatReceiptUsd(merchForSum)} + ${formatReceiptUsd(txnTaxes)} + ${formatReceiptUsd(txnFees)} = ${formatReceiptUsd(sum)}, but amount paid is ${formatReceiptUsd(txnTotal)}.`;
+        verifyColor = "#B71C1C";
+        verifyBold = true;
+      }
+    } else {
+      verifyText = "Tax or fee fields were not returned; skipped automatic check against amount paid.";
+      verifyColor = secondaryColor;
+    }
+  } else {
+    verifyText = "Transaction total was not returned; cannot verify amount paid.";
+    verifyColor = secondaryColor;
+  }
+
+  return (
+    <View style={{ marginTop: 8, paddingTop: 14, borderTopWidth: 1, borderTopColor: borderColor, width: "100%" }}>
+      {row(merchLabel, formatReceiptUsd(merchDisplay))}
+      {txnMerch != null && linesVsMerch ? (
+        <Text style={{ fontSize: 12, color: secondaryColor, marginBottom: 8, paddingHorizontal: 2 }}>
+          Note: Sum of unit cost × quantity on lines ({formatReceiptUsd(fromLines)}) differs from reported merchandise subtotal ({formatReceiptUsd(txnMerch)}).
+        </Text>
+      ) : null}
+      {row("Sales tax", taxesStr)}
+      {row("Fees (card processing)", feesStr)}
+      {row("Amount paid", totalStr)}
+      {verifyText ? (
+        <Text
+          style={{
+            fontSize: 13,
+            color: verifyColor,
+            marginTop: 6,
+            fontWeight: verifyBold ? "600" : "400",
+            paddingHorizontal: 2,
+          }}
+        >
+          {verifyBold && verifyColor === "#18884A" ? "✓ " : null}
+          {verifyText}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** Wallet block from account-screen/personal (root, data, or inside bounty_results). */
+function extractPersonalWallet(root, payload, bountyBlock) {
+  const bag = payload && typeof payload === "object" ? payload : null;
+  const bountyBag = bountyBlock && typeof bountyBlock === "object" ? bountyBlock : null;
+  const w =
+    root?.wallet ??
+    bag?.wallet ??
+    bag?.bounty_results?.wallet ??
+    bountyBag?.wallet ??
+    null;
+  return w && typeof w === "object" && !Array.isArray(w) ? w : null;
+}
+
+/** Normalize bounty_results / legacy bounty shapes to { data, total_bounty_earned, total_bounties }. */
+function normalizePersonalBounty(bountyRaw, root, payload) {
+  if (bountyRaw == null) return null;
+  if (Array.isArray(bountyRaw)) {
+    return {
+      data: bountyRaw,
+      total_bounty_earned: root?.total_bounty_earned ?? payload?.total_bounty_earned,
+      total_bounties: root?.total_bounties ?? payload?.total_bounties,
+    };
+  }
+  if (typeof bountyRaw !== "object") return null;
+  const rows = Array.isArray(bountyRaw.data)
+    ? bountyRaw.data
+    : Array.isArray(bountyRaw.bounty_items)
+      ? bountyRaw.bounty_items
+      : isApiSuccessCode(bountyRaw.code) && Array.isArray(bountyRaw.data)
+        ? bountyRaw.data
+        : [];
+  return {
+    data: rows,
+    total_bounty_earned: bountyRaw.total_bounty_earned ?? root?.total_bounty_earned ?? payload?.total_bounty_earned,
+    total_bounties: bountyRaw.total_bounties ?? root?.total_bounties ?? payload?.total_bounties,
+  };
+}
+
+function formatWalletUsd(val) {
+  return `$${parsePrice(val).toFixed(2)}`;
+}
+
 function mapAccountScreenPersonalResponse(json) {
   const root = json && typeof json === "object" ? json : {};
+
   if (Array.isArray(root.data)) {
+    const bountyResultsBlock = root.bounty_results ?? null;
+    const walletEarly = extractPersonalWallet(root, root, bountyResultsBlock ?? { data: root.data, wallet: root.wallet });
+    const hasBountyTotals = root.total_bounty_earned != null || root.total_bounties != null || walletEarly != null || bountyResultsBlock != null;
+    if (hasBountyTotals) {
+      const purchasesRaw = root.purchases ?? root.purchase_transactions ?? root.personal_transactions ?? root.buyer_transactions;
+      let sellerTransactions = [];
+      const stRaw = root.seller_transactions ?? root.seller_tx;
+      if (Array.isArray(stRaw)) {
+        sellerTransactions = stRaw;
+      } else if (stRaw && isApiSuccessCode(stRaw.code) && Array.isArray(stRaw.data)) {
+        sellerTransactions = stRaw.data;
+      }
+      const bountyRaw = bountyResultsBlock ?? {
+        data: root.data,
+        total_bounty_earned: root.total_bounty_earned,
+        total_bounties: root.total_bounties,
+        wallet: root.wallet,
+      };
+      return {
+        transactions: extractTransactionArray(purchasesRaw),
+        bounty: normalizePersonalBounty(bountyRaw, root, root),
+        wallet: extractPersonalWallet(root, root, bountyRaw),
+        sellerTransactions,
+        profile: root.profile ?? root.user_profile ?? null,
+      };
+    }
     return {
       transactions: isApiSuccessCode(root.code) ? root.data : [],
       bounty: null,
+      wallet: extractPersonalWallet(root, root, null),
       /** Top-level `data` array is buyer rows only; no nested seller list in this shape */
       sellerTransactions: [],
       profile: null,
@@ -92,7 +332,8 @@ function mapAccountScreenPersonalResponse(json) {
     return row;
   });
 
-  let bounty = payload.bounty ?? payload.bounty_results ?? payload.bounty_data ?? null;
+  const bountyRaw = payload.bounty ?? payload.bounty_results ?? payload.bounty_data ?? null;
+  let bounty = bountyRaw;
   if (!bounty && Array.isArray(payload.bounty_items)) {
     bounty = {
       data: payload.bounty_items,
@@ -100,6 +341,9 @@ function mapAccountScreenPersonalResponse(json) {
       total_bounties: payload.total_bounties,
     };
   }
+  bounty = normalizePersonalBounty(bounty, root, payload);
+
+  const walletFromResponse = extractPersonalWallet(root, payload, bountyRaw);
 
   let sellerTransactions;
   const stRaw = payload.seller_transactions ?? payload.seller_tx ?? payload.seller_transaction_lines;
@@ -115,15 +359,24 @@ function mapAccountScreenPersonalResponse(json) {
 
   const profile = payload.profile ?? payload.user_profile ?? payload.personal_profile ?? null;
 
-  return { transactions, bounty, sellerTransactions, profile };
+  return { transactions, bounty, sellerTransactions, profile, wallet: walletFromResponse };
 }
 
 /**
  * Expected GET /api/v1/account-screen/business/:business_uid JSON (flexible keys):
- * - data.bounty_results | business_bounty | bounty: { data: [...] } (business bounty lines)
+ * - data.bounty_results | business_bounty_results | business_bounty | bounty: { data: [...] } (business bounty lines)
  * - data.seller_transactions | transactions_seller: seller line rows OR { code, data } (same as legacy /transactions/seller/:id)
  * - data.business | business_profile | profile (optional): same field names as GET /api/v1/businessinfo/:uid `business` object for MiniCard
  */
+/** Seller line is a business product sale (API uses purchase_type and/or bs_uid 250-*, not always ti_bs_id on the line). */
+function isBusinessProductSellerLine(item) {
+  if (!item || typeof item !== "object") return false;
+  const purchaseType = String(item.purchase_type || "").toLowerCase();
+  if (purchaseType === "business") return true;
+  const serviceId = String(item.ti_bs_id ?? item.bs_uid ?? "").trim();
+  return serviceId.startsWith("250-");
+}
+
 function extractBusinessRawFromAccountScreenPayload(root, payload) {
   const tryNode = (node) => {
     if (node == null || typeof node !== "object") return null;
@@ -217,18 +470,24 @@ function mapAccountScreenBusinessResponse(json) {
     payload = root.data;
   }
 
-  let bountyResult = payload.bounty_results ?? payload.business_bounty ?? payload.bounty ?? null;
+  let bountyResult = payload.bounty_results ?? payload.business_bounty_results ?? payload.business_bounty ?? payload.bounty ?? null;
   if (bountyResult && !bountyResult.data && Array.isArray(payload.bounty_lines)) {
     bountyResult = { ...bountyResult, data: payload.bounty_lines };
+  }
+  if (bountyResult && !Array.isArray(bountyResult.data)) {
+    const bountyLines = extractTransactionArray(bountyResult);
+    if (bountyLines.length) {
+      bountyResult = { ...bountyResult, data: bountyLines };
+    }
   }
 
   let sellerLines = [];
   const sellerRaw = payload.seller_transactions ?? payload.transactions_seller ?? payload.business_seller_transactions;
   if (Array.isArray(sellerRaw)) {
     sellerLines = sellerRaw;
-  } else if (sellerRaw && sellerRaw.code === 200 && Array.isArray(sellerRaw.data)) {
+  } else if (sellerRaw && isApiSuccessCode(sellerRaw.code) && Array.isArray(sellerRaw.data)) {
     sellerLines = sellerRaw.data;
-  } else if (root.code === 200 && Array.isArray(root.data) && !sellerRaw) {
+  } else if (isApiSuccessCode(root.code) && Array.isArray(root.data) && !sellerRaw) {
     sellerLines = root.data;
   }
 
@@ -292,6 +551,7 @@ export default function AccountScreen({ navigation }) {
   const [isLoading, setIsLoading] = useState(true);
   const [bountyData, setBountyData] = useState(null);
   const [bountyLoading, setBountyLoading] = useState(true);
+  const [personalWallet, setPersonalWallet] = useState(null);
   const [transactionData, setTransactionData] = useState([]);
   const [transactionLoading, setTransactionLoading] = useState(true);
   const [expertiseData, setExpertiseData] = useState([]);
@@ -319,6 +579,7 @@ export default function AccountScreen({ navigation }) {
   const [showBusinessNetEarning, setShowBusinessNetEarning] = useState(true);
   const [showBusinessTransactionHistory, setShowBusinessTransactionHistory] = useState(true);
   const [showBalance, setShowBalance] = useState(true);
+  const [showWallet, setShowWallet] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [showReceiveItemModal, setShowReceiveItemModal] = useState(false);
@@ -375,6 +636,7 @@ export default function AccountScreen({ navigation }) {
 
   //select item to return
   const [selectedReturnItems, setSelectedReturnItems] = useState([]);
+  const [returnItemQuantities, setReturnItemQuantities] = useState({});
   const [returnModalReceiptData, setReturnModalReceiptData] = useState([]);
 
   const [businessReceiptCache, setBusinessReceiptCache] = useState({});
@@ -483,38 +745,70 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
-  const handleReturnRequest = async (transaction, note) => {
+  const handleReturnRequest = async (transaction, buyerNote, transactionReturnItems) => {
     const uid = transaction?.transaction_uid;
-    if (!uid) return;
+    if (!uid) return false;
+    if (!Array.isArray(transactionReturnItems) || transactionReturnItems.length === 0) {
+      Alert.alert("Error", "No return line items to submit.");
+      return false;
+    }
+    const profileId = transaction?.transaction_profile_id || (await AsyncStorage.getItem("profile_uid"));
+    if (!profileId) {
+      Alert.alert("Error", "Cannot submit return: missing profile.");
+      return false;
+    }
     try {
+      const note = (buyerNote || "").trim();
       const existingNote = returnRequests[uid]?.notes?.map((n) => n.note).join("\n\n---RETURN---\n\n") || "";
       const allNotes = existingNote ? `${existingNote}\n\n---RETURN---\n\n${note}` : note;
-      await fetch(`${API_BASE_URL}/api/v1/transactions`, {
-        method: "PUT",
+      const response = await fetch(TRANSACTIONS_RETURN_ENDPOINT, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          profile_id: profileId,
           transaction_uid: uid,
           transaction_return_requested: 1,
           transaction_return_note: allNotes,
+          transaction_return_items: transactionReturnItems,
         }),
       });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
       const existing = returnRequests[uid] || { items: [], notes: [] };
+      const itemQuantities = selectedReturnItems.reduce((acc, id) => {
+        acc[id] = returnItemQuantities[id] ?? 1;
+        return acc;
+      }, {});
+      const mergedItems = [...new Set([...(existing.items || []), ...selectedReturnItems])];
       const updated = {
-        items: [...(existing.items || []), ...selectedReturnItems],
-        notes: [...(existing.notes || []), { items: selectedReturnItems, note: note || "", date: new Date().toISOString() }],
+        items: mergedItems,
+        notes: [
+          ...(existing.notes || []),
+          {
+            items: selectedReturnItems,
+            itemQuantities,
+            transactionReturnItems,
+            note: note || "",
+            date: new Date().toISOString(),
+          },
+        ],
       };
       setReturnRequests((prev) => ({ ...prev, [uid]: updated }));
       await AsyncStorage.setItem(`return_request_${uid}`, JSON.stringify(updated));
       setReturnNote("");
+      setReturnItemQuantities({});
+      return true;
     } catch (error) {
       console.error("Error requesting return:", error);
       Alert.alert("Error", "Failed to submit return request. Please try again.");
+      return false;
     }
   };
 
   const handleReturnAccept = async (transactionUid) => {
     try {
-      await fetch(`${API_BASE_URL}/api/v1/transactions`, {
+      await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -539,7 +833,7 @@ export default function AccountScreen({ navigation }) {
         transaction_return_seller_note: note,
       });
       console.log("=== DECLINE BODY BEING SENT:", body);
-      const response = await fetch(`${API_BASE_URL}/api/v1/transactions/returns/declined`, {
+      const response = await fetch(TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body,
@@ -693,6 +987,7 @@ export default function AccountScreen({ navigation }) {
           console.log("No profile ID found, skipping account-screen personal fetch");
           setTransactionData([]);
           setBountyData(null);
+          setPersonalWallet(null);
           setExpertiseData([]);
           return;
         }
@@ -729,6 +1024,7 @@ export default function AccountScreen({ navigation }) {
         } else {
           setBountyData({ data: [] });
         }
+        setPersonalWallet(mapped.wallet ?? null);
 
         if (mapped.profile?.personal_info) {
           const result = mapped.profile;
@@ -766,6 +1062,7 @@ export default function AccountScreen({ navigation }) {
         console.error("Error loading account-screen personal:", error);
         setTransactionData([]);
         setBountyData({ error: error.message });
+        setPersonalWallet(null);
         setExpertiseData([]);
       } finally {
         setTransactionLoading(false);
@@ -785,8 +1082,7 @@ export default function AccountScreen({ navigation }) {
   const updateTransactionEscrow = async (transactionUid) => {
     try {
       setUpdatingEscrow(true);
-      const url = `${API_BASE_URL}/api/v1/transactions`;
-      const response = await fetch(url, {
+      const response = await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1064,7 +1360,7 @@ export default function AccountScreen({ navigation }) {
         return;
       }
 
-      const businessTransactions = sellerLines.filter((item) => item.ti_bs_id && item.ti_bs_id.startsWith("250-"));
+      const businessTransactions = sellerLines.filter(isBusinessProductSellerLine);
       businessTransactions.forEach((txn) => {
         txn.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || "Unknown Business";
       });
@@ -1184,7 +1480,7 @@ export default function AccountScreen({ navigation }) {
   const triggerAutoPay = useCallback(async (transactionUid) => {
     try {
       await saveAutoPaidId(transactionUid); // persists + updates state
-      await fetch(`${API_BASE_URL}/api/v1/transactions`, {
+      await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transaction_uid: transactionUid, transaction_in_escrow: 0 }),
@@ -1743,8 +2039,7 @@ export default function AccountScreen({ navigation }) {
   const showPurchasesTxnIdColumn = effectivePurchasesShowDebugColumns && !compactPurchasesLayout;
   const showPurchasesTypeColumn = effectivePurchasesShowDebugColumns;
   const showWebWidePurchasedItemColumn = Platform.OS === "web" && windowWidth > 600;
-  const showPurchasesPurchasedItemColumn =
-    !compactPurchasesLayout && (effectivePurchasesShowDebugColumns || showWebWidePurchasedItemColumn);
+  const showPurchasesPurchasedItemColumn = !compactPurchasesLayout && (effectivePurchasesShowDebugColumns || showWebWidePurchasedItemColumn);
 
   if (isLoading) {
     return (
@@ -1754,6 +2049,8 @@ export default function AccountScreen({ navigation }) {
       </View>
     );
   }
+
+  const receiptIsReturnReceipt = !receiptLoading && receiptData.length > 0 && isReturnReceipt(receiptData);
 
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
@@ -1990,6 +2287,40 @@ export default function AccountScreen({ navigation }) {
                 <Ionicons name={showNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showNetEarning && <NetEarningChart />}
+            </View>
+
+            {/* Wallet */}
+            <View style={styles.sectionContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowWallet(!showWallet)}>
+                <Text style={styles.sectionHeaderText}>WALLET</Text>
+                <Ionicons name={showWallet ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showWallet && (
+                <>
+                  {bountyLoading ? (
+                    <Text style={styles.loadingText}>Loading wallet...</Text>
+                  ) : bountyData?.error ? (
+                    <Text style={styles.errorText}>Unable to load wallet.</Text>
+                  ) : personalWallet ? (
+                    <View style={styles.balanceSectionBody}>
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Useable Balance</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#81c784" : "#2e7d32" }]}>{formatWalletUsd(personalWallet.wallet_useable_balance)}</Text>
+                      </View>
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Actual Balance</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>{formatWalletUsd(personalWallet.wallet_actual_balance)}</Text>
+                      </View>
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>{formatWalletUsd(personalWallet.wallet_pending)}</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <Text style={styles.noDataText}>No wallet data available.</Text>
+                  )}
+                </>
+              )}
             </View>
 
             {/* Balance summary */}
@@ -2486,34 +2817,37 @@ export default function AccountScreen({ navigation }) {
               <Text style={{ color: "#B71C1C", textAlign: "center", marginTop: 12, fontWeight: "600", fontSize: 14 }}>✓ Return has been requested</Text>
             )}
 
-            {(() => {
-              const uid = receiptTransaction?.transaction_uid;
-              const storedItems = returnRequests[uid]?.items || [];
-              const totalItems = receiptData.length;
+            {!receiptIsReturnReceipt &&
+              (() => {
+                const uid = receiptTransaction?.transaction_uid;
+                const returnData = returnRequests[uid];
+                const totalItems = receiptData.length;
 
-              // Only count indices that are actually valid for this receipt
-              const validIndices = Array.from({ length: totalItems }, (_, i) => String(i));
-              const returnedValidIndices = validIndices.filter((id) => storedItems.includes(id));
+                const allItemsReturned =
+                  totalItems > 0 &&
+                  receiptData.every((row, index) => {
+                    const purchasedQty = getReceiptLineQty(row);
+                    return getReturnedQtyForLine(returnData, index, purchasedQty) >= purchasedQty;
+                  });
 
-              // Must have receipt items AND every valid index must be returned
-              const allItemsReturned = totalItems > 0 && storedItems.length > 0 && returnedValidIndices.length >= totalItems;
-
-              return (
-                <TouchableOpacity
-                  style={[styles.receiptCloseButton, { borderColor: "#B71C1C", marginTop: 12 }, allItemsReturned && { opacity: 0.4 }]}
-                  disabled={allItemsReturned}
-                  onPress={() => {
-                    if (!allItemsReturned) {
-                      setReturnModalReceiptData(receiptData);
-                      setShowReceiptModal(false);
-                      setTimeout(() => setShowReturnNoteModal(true), 300);
-                    }
-                  }}
-                >
-                  <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>{allItemsReturned ? "All Items Returned" : "Request Return"}</Text>
-                </TouchableOpacity>
-              );
-            })()}
+                return (
+                  <TouchableOpacity
+                    style={[styles.receiptCloseButton, { borderColor: "#B71C1C", marginTop: 12 }, allItemsReturned && { opacity: 0.4 }]}
+                    disabled={allItemsReturned}
+                    onPress={() => {
+                      if (!allItemsReturned) {
+                        setReturnModalReceiptData(receiptData);
+                        setSelectedReturnItems([]);
+                        setReturnItemQuantities({});
+                        setShowReceiptModal(false);
+                        setTimeout(() => setShowReturnNoteModal(true), 300);
+                      }
+                    }}
+                  >
+                    <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>{allItemsReturned ? "All Items Returned" : "Request Return"}</Text>
+                  </TouchableOpacity>
+                );
+              })()}
 
             {/* Request Return button */}
             {/* <TouchableOpacity
@@ -2542,44 +2876,153 @@ export default function AccountScreen({ navigation }) {
       </Modal>
 
       {/* Return Note Input Modal */}
-      <Modal animationType='fade' transparent={true} visible={showReturnNoteModal} onRequestClose={() => setShowReturnNoteModal(false)}>
+      <Modal
+        animationType='fade'
+        transparent={true}
+        visible={showReturnNoteModal}
+        onRequestClose={() => {
+          setShowReturnNoteModal(false);
+          setReturnNote("");
+          setSelectedReturnItems([]);
+          setReturnItemQuantities({});
+        }}
+      >
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent, { maxHeight: "80%" }]}>
             <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>Request Return</Text>
 
             {/* Item selection */}
             <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>Select item(s) to return:</Text>
-            <ScrollView style={{ maxHeight: 160, marginBottom: 12 }}>
+            <ScrollView style={{ maxHeight: 220, marginBottom: 12 }}>
               {returnModalReceiptData.map((item, index) => {
                 const itemId = String(index);
                 const isSelected = selectedReturnItems.includes(itemId);
-                const alreadyReturned = (returnRequests[receiptTransaction?.transaction_uid]?.items || []).includes(itemId);
+                const purchasedQty = getReceiptLineQty(item);
+                const returnRequestData = returnRequests[receiptTransaction?.transaction_uid];
+                const alreadyReturnedQty = getReturnedQtyForLine(returnRequestData, index, purchasedQty);
+                const alreadyReturned = alreadyReturnedQty >= purchasedQty;
+                const remainingQty = Math.max(0, purchasedQty - alreadyReturnedQty);
+                const returnQty = returnItemQuantities[itemId] ?? 1;
+                const needsQtyPicker = isSelected && purchasedQty > 1 && remainingQty > 1;
+
                 return (
-                  <TouchableOpacity
+                  <View
                     key={itemId}
-                    disabled={alreadyReturned}
                     style={{
-                      flexDirection: "row",
-                      alignItems: "center",
                       paddingVertical: 8,
                       paddingHorizontal: 4,
                       borderBottomWidth: 1,
                       borderBottomColor: darkMode ? "#444" : "#eee",
                       opacity: alreadyReturned ? 0.4 : 1,
                     }}
-                    onPress={() => {
-                      if (!alreadyReturned) {
-                        setSelectedReturnItems((prev) => (isSelected ? prev.filter((id) => id !== itemId) : [...prev, itemId]));
-                      }
-                    }}
-                    activeOpacity={0.7}
                   >
-                    <Ionicons name={isSelected ? "checkbox" : "square-outline"} size={18} color={isSelected ? "#B71C1C" : "#555"} style={{ marginRight: 8 }} />
-                    <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", flex: 1 }}>
-                      {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {item.ti_bs_qty || 1}
-                    </Text>
-                    {alreadyReturned && <Text style={{ fontSize: 11, color: "#B71C1C", marginLeft: 4 }}>Already returned</Text>}
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      disabled={alreadyReturned}
+                      style={{ flexDirection: "row", alignItems: "center" }}
+                      onPress={() => {
+                        if (alreadyReturned) return;
+                        if (isSelected) {
+                          setSelectedReturnItems((prev) => prev.filter((id) => id !== itemId));
+                          setReturnItemQuantities((prev) => {
+                            const next = { ...prev };
+                            delete next[itemId];
+                            return next;
+                          });
+                        } else {
+                          setSelectedReturnItems((prev) => [...prev, itemId]);
+                          setReturnItemQuantities((prev) => ({
+                            ...prev,
+                            [itemId]: Math.min(1, remainingQty) || 1,
+                          }));
+                        }
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name={isSelected ? "checkbox" : "square-outline"} size={18} color={isSelected ? "#B71C1C" : "#555"} style={{ marginRight: 8 }} />
+                      <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", flex: 1 }}>
+                        {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {purchasedQty}
+                      </Text>
+                      {alreadyReturned ? (
+                        <Text style={{ fontSize: 11, color: "#B71C1C", marginLeft: 4 }}>Already returned</Text>
+                      ) : alreadyReturnedQty > 0 ? (
+                        <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>{remainingQty} left</Text>
+                      ) : null}
+                    </TouchableOpacity>
+
+                    {needsQtyPicker && (
+                      <View style={{ marginTop: 8, marginLeft: 26 }}>
+                        <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>How many are you returning?</Text>
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <TouchableOpacity
+                            style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 8,
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#555" : "#ccc",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
+                            }}
+                            onPress={() =>
+                              setReturnItemQuantities((prev) => ({
+                                ...prev,
+                                [itemId]: Math.max(1, (prev[itemId] ?? 1) - 1),
+                              }))
+                            }
+                          >
+                            <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>−</Text>
+                          </TouchableOpacity>
+                          <TextInput
+                            style={{
+                              width: 48,
+                              marginHorizontal: 10,
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#555" : "#ccc",
+                              borderRadius: 8,
+                              paddingVertical: 6,
+                              textAlign: "center",
+                              fontSize: 14,
+                              color: darkMode ? "#fff" : "#333",
+                              backgroundColor: darkMode ? "#3a3a3a" : "#fff",
+                            }}
+                            value={String(returnQty)}
+                            onChangeText={(t) => {
+                              const digits = t.replace(/[^0-9]/g, "");
+                              const n = digits === "" ? "" : parseInt(digits, 10);
+                              setReturnItemQuantities((prev) => ({
+                                ...prev,
+                                [itemId]: n === "" ? "" : Math.min(remainingQty, Math.max(1, n)),
+                              }));
+                            }}
+                            keyboardType='number-pad'
+                            maxLength={4}
+                          />
+                          <TouchableOpacity
+                            style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 8,
+                              borderWidth: 1,
+                              borderColor: darkMode ? "#555" : "#ccc",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
+                            }}
+                            onPress={() =>
+                              setReturnItemQuantities((prev) => ({
+                                ...prev,
+                                [itemId]: Math.min(remainingQty, (prev[itemId] ?? 1) + 1),
+                              }))
+                            }
+                          >
+                            <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>+</Text>
+                          </TouchableOpacity>
+                          <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginLeft: 8 }}>of {remainingQty}</Text>
+                        </View>
+                      </View>
+                    )}
+                  </View>
                 );
               })}
             </ScrollView>
@@ -2608,36 +3051,76 @@ export default function AccountScreen({ navigation }) {
 
             {selectedReturnItems.length === 0 && <Text style={{ color: "#B71C1C", fontSize: 12, marginBottom: 8, textAlign: "center" }}>Please select at least one item to return.</Text>}
 
-            <View style={{ flexDirection: "row", gap: 12 }}>
-              <TouchableOpacity
-                style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
-                onPress={() => {
-                  setShowReturnNoteModal(false);
-                  setReturnNote("");
-                  setSelectedReturnItems([]);
-                }}
-              >
-                <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.receiveItemModalButton, { backgroundColor: selectedReturnItems.length === 0 ? "#ccc" : "#B71C1C" }]}
-                disabled={selectedReturnItems.length === 0}
-                onPress={async () => {
-                  const selectedNames = returnModalReceiptData
-                    .filter((item, index) => selectedReturnItems.includes(String(index)))
-                    .map((item) => `${item.bs_service_name || "Item"} x${item.ti_bs_qty || 1}`)
-                    .join(", ");
-                  // const fullNote = `Items: ${selectedNames}\n\nReason: ${returnNote}`;
-                  const fullNote = `Buyer Note: ${returnNote}`;
-                  await handleReturnRequest(receiptTransaction, fullNote);
-                  setShowReturnNoteModal(false);
-                  setReturnNote("");
-                  setSelectedReturnItems([]);
-                }}
-              >
-                <Text style={styles.receiveItemModalButtonText}>Submit</Text>
-              </TouchableOpacity>
-            </View>
+            {(() => {
+              const returnRequestData = returnRequests[receiptTransaction?.transaction_uid];
+              const hasInvalidQty = selectedReturnItems.some((id) => {
+                const index = parseInt(id, 10);
+                const item = returnModalReceiptData[index];
+                if (!item) return true;
+                const purchasedQty = getReceiptLineQty(item);
+                const alreadyReturnedQty = getReturnedQtyForLine(returnRequestData, index, purchasedQty);
+                const remainingQty = purchasedQty - alreadyReturnedQty;
+                const raw = returnItemQuantities[id];
+                const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
+                if (purchasedQty > 1 && remainingQty > 1) {
+                  return !Number.isFinite(n) || n < 1 || n > remainingQty;
+                }
+                return false;
+              });
+              const canSubmitReturn = selectedReturnItems.length > 0 && !hasInvalidQty;
+
+              return (
+                <View style={{ flexDirection: "row", gap: 12 }}>
+                  <TouchableOpacity
+                    style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
+                    onPress={() => {
+                      setShowReturnNoteModal(false);
+                      setReturnNote("");
+                      setSelectedReturnItems([]);
+                      setReturnItemQuantities({});
+                    }}
+                  >
+                    <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.receiveItemModalButton, { backgroundColor: canSubmitReturn ? "#B71C1C" : "#ccc" }]}
+                    disabled={!canSubmitReturn}
+                    onPress={async () => {
+                      const returnRequestData = returnRequests[receiptTransaction?.transaction_uid];
+                      const transactionReturnItems = [];
+                      for (const id of selectedReturnItems) {
+                        const index = parseInt(id, 10);
+                        const item = returnModalReceiptData[index];
+                        if (!item) continue;
+                        const transaction_item_uid = getReceiptLineTransactionItemUid(item);
+                        if (!transaction_item_uid) {
+                          Alert.alert("Error", "Receipt line is missing a transaction item id (ti_uid or ti_bs_id). Cannot submit return.");
+                          return;
+                        }
+                        const purchasedQty = getReceiptLineQty(item);
+                        const alreadyReturnedQty = getReturnedQtyForLine(returnRequestData, index, purchasedQty);
+                        const remainingQty = purchasedQty - alreadyReturnedQty;
+                        const raw = returnItemQuantities[id];
+                        const return_quantity = purchasedQty > 1 && remainingQty > 1 ? (typeof raw === "number" ? raw : parseInt(String(raw), 10) || 1) : Math.min(1, remainingQty) || 1;
+                        transactionReturnItems.push({ transaction_item_uid, return_quantity });
+                      }
+                      if (transactionReturnItems.length === 0) {
+                        Alert.alert("Error", "Could not build return items.");
+                        return;
+                      }
+                      const ok = await handleReturnRequest(receiptTransaction, returnNote, transactionReturnItems);
+                      if (!ok) return;
+                      setShowReturnNoteModal(false);
+                      setReturnNote("");
+                      setSelectedReturnItems([]);
+                      setReturnItemQuantities({});
+                    }}
+                  >
+                    <Text style={styles.receiveItemModalButtonText}>Submit</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
           </View>
         </View>
       </Modal>
@@ -2653,7 +3136,14 @@ export default function AccountScreen({ navigation }) {
                 (entry, idx) => {
                   // Look up the receipt items for this transaction from the cache
                   const cachedReceipt = businessReceiptCache[viewingReturnTransactionUid] || [];
-                  const returnedItems = (entry.items || []).map((itemId) => cachedReceipt[parseInt(itemId)]).filter(Boolean);
+                  const returnedItems = (entry.items || [])
+                    .map((itemId) => {
+                      const item = cachedReceipt[parseInt(itemId, 10)];
+                      if (!item) return null;
+                      const returnQty = entry.itemQuantities?.[itemId];
+                      return { item, returnQty: returnQty != null && Number(returnQty) > 0 ? Math.round(Number(returnQty)) : getReceiptLineQty(item) };
+                    })
+                    .filter(Boolean);
 
                   return (
                     <View
@@ -2673,7 +3163,7 @@ export default function AccountScreen({ navigation }) {
                       {returnedItems.length > 0 && (
                         <View style={{ marginBottom: 10 }}>
                           <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>Items to Return:</Text>
-                          {returnedItems.map((item, itemIdx) => (
+                          {returnedItems.map(({ item, returnQty }, itemIdx) => (
                             <View
                               key={itemIdx}
                               style={{
@@ -2687,7 +3177,7 @@ export default function AccountScreen({ navigation }) {
                               }}
                             >
                               <Text style={{ fontSize: 12, color: darkMode ? "#fff" : "#333", flex: 1 }}>{item.bs_service_name || "Item"}</Text>
-                              <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666", marginHorizontal: 8 }}>x{item.ti_bs_qty || 1}</Text>
+                              <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666", marginHorizontal: 8 }}>x{returnQty}</Text>
                               <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#666" }}>${parseFloat(item.ti_bs_cost || 0).toFixed(2)}</Text>
                             </View>
                           ))}
@@ -3281,6 +3771,15 @@ const styles = StyleSheet.create({
   receiptScrollView: {
     maxHeight: 300,
     marginVertical: 16,
+    width: "100%",
+    alignSelf: "stretch",
+  },
+  receiptScrollViewContent: {
+    width: "100%",
+    flexGrow: 1,
+  },
+  receiptTableWrap: {
+    width: "100%",
   },
   receiptTableHeader: {
     flexDirection: "row",
@@ -3289,13 +3788,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     marginBottom: 2,
+    width: "100%",
   },
   receiptHeaderCell: {
-    width: 120,
     fontSize: 13,
     color: "#fff",
     fontWeight: "bold",
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
+  },
+  receiptHeaderCellItem: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  receiptHeaderCellQty: {
+    width: 52,
+    textAlign: "right",
+  },
+  receiptHeaderCellCost: {
+    width: 88,
+    textAlign: "right",
   },
   receiptTableRow: {
     flexDirection: "row",
@@ -3303,12 +3815,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
+    width: "100%",
+    alignItems: "flex-start",
   },
   receiptTableCell: {
-    width: 120,
     fontSize: 12,
     color: "#333",
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
+  },
+  receiptTableCellItem: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  receiptTableCellQty: {
+    width: 52,
+    textAlign: "right",
+  },
+  receiptTableCellCost: {
+    width: 88,
+    textAlign: "right",
   },
   receiptCloseButton: {
     backgroundColor: "#F5F5F5",

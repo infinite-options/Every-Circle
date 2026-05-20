@@ -8,7 +8,16 @@ import ProductCard from "../components/ProductCard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, RATINGS_ENDPOINT } from "../apiConfig";
+import BountyRecipientPicker from "../components/BountyRecipientPicker";
+import {
+  bountyPickerRequiresSelection,
+  getDefaultBountyRecipient,
+  isBountyReviewDisabled,
+  mergeBountyEligibleReviews,
+  productHasBounty,
+  resolveBountyRecommenderProfileId,
+} from "../utils/bountyRecipientUtils";
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
@@ -28,6 +37,12 @@ export default function ReviewDetailScreen({ route, navigation }) {
   const [quantity, setQuantity] = useState(1);
   const [reviewerData, setReviewerData] = useState(null);
   const [loadingReviewer, setLoadingReviewer] = useState(false);
+  const [currentUserProfileId, setCurrentUserProfileId] = useState(null);
+  const [userReview, setUserReview] = useState(null);
+  const [allReviews, setAllReviews] = useState([]);
+  const [selectedBountyRecipient, setSelectedBountyRecipient] = useState(null);
+  const [bountySort, setBountySort] = useState("connection");
+  const [bountySearch, setBountySearch] = useState("");
 
   // Load cart items when component mounts
   useEffect(() => {
@@ -37,6 +52,9 @@ export default function ReviewDetailScreen({ route, navigation }) {
         if (storedCartData) {
           const cartData = JSON.parse(storedCartData);
           setCartItems(cartData.items || []);
+          if (cartData.bounty_recipient) {
+            setSelectedBountyRecipient(cartData.bounty_recipient);
+          }
         }
       } catch (error) {
         console.error("Error loading cart items:", error);
@@ -45,6 +63,65 @@ export default function ReviewDetailScreen({ route, navigation }) {
 
     loadCartItems();
   }, [business_uid]);
+
+  useEffect(() => {
+    const getCurrentUserProfileId = async () => {
+      try {
+        const profileId = await AsyncStorage.getItem("profile_uid");
+        setCurrentUserProfileId(profileId);
+      } catch (error) {
+        console.error("Error getting current user profile ID:", error);
+      }
+    };
+    getCurrentUserProfileId();
+  }, []);
+
+  useEffect(() => {
+    if (currentUserProfileId && business?.ratings) {
+      let userReviewFromAPI = null;
+      const otherReviews = [];
+      business.ratings.forEach((rating) => {
+        if (rating.rating_profile_id === currentUserProfileId) {
+          userReviewFromAPI = rating;
+        } else {
+          otherReviews.push(rating);
+        }
+      });
+      otherReviews.sort((a, b) => {
+        if (a.circle_num_nodes == null && b.circle_num_nodes == null) return 0;
+        if (a.circle_num_nodes == null) return 1;
+        if (b.circle_num_nodes == null) return -1;
+        return a.circle_num_nodes - b.circle_num_nodes;
+      });
+      setUserReview(userReviewFromAPI);
+      setAllReviews(otherReviews);
+    }
+  }, [currentUserProfileId, business]);
+
+  const enrichRatingsWithVerification = async (ratings) => {
+    if (!Array.isArray(ratings) || ratings.length === 0) return ratings;
+    try {
+      const viewerUid = (await AsyncStorage.getItem("profile_uid")) || "";
+      const ratingsRes = await fetch(`${RATINGS_ENDPOINT}/${business_uid}?viewer_uid=${viewerUid}`);
+      const ratingsData = await ratingsRes.json();
+      if (!ratingsData?.result) return ratings;
+      const ratingsMap = {};
+      ratingsData.result.forEach((r) => {
+        ratingsMap[r.rating_uid] = {
+          is_verified: r.is_verified,
+          circle_num_nodes: r.circle_num_nodes ?? null,
+        };
+      });
+      return ratings.map((r) => ({
+        ...r,
+        is_verified: ratingsMap[r.rating_uid]?.is_verified || false,
+        circle_num_nodes: ratingsMap[r.rating_uid]?.circle_num_nodes ?? null,
+      }));
+    } catch (e) {
+      console.log("ReviewDetailScreen - Could not fetch verified ratings:", e);
+      return ratings;
+    }
+  };
 
   // Add focus listener to refresh cart data when returning to this screen
   useEffect(() => {
@@ -56,6 +133,9 @@ export default function ReviewDetailScreen({ route, navigation }) {
           if (storedCartData) {
             const cartData = JSON.parse(storedCartData);
             setCartItems(cartData.items || []);
+            if (cartData.bounty_recipient) {
+              setSelectedBountyRecipient(cartData.bounty_recipient);
+            }
           }
         } catch (error) {
           console.error("Error loading cart items:", error);
@@ -158,8 +238,15 @@ export default function ReviewDetailScreen({ route, navigation }) {
         }
       }
 
+      const profileCcFeePayer = canonicalBusinessCcFeePayer(
+        rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer,
+      );
+
+      const enrichedRatings = await enrichRatingsWithVerification(result.ratings || []);
+
       setBusiness({
         ...rawBusiness,
+        ratings: enrichedRatings,
         tagline: rawBusiness.business_tag_line || rawBusiness.tagline || "",
         facebook: socialLinksData.facebook || "",
         instagram: socialLinksData.instagram || "",
@@ -174,9 +261,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
           rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1 || rawBusiness.tagline_is_public === "1" || rawBusiness.tagline_is_public === 1,
         shortBioIsPublic:
           rawBusiness.business_short_bio_is_public === "1" || rawBusiness.business_short_bio_is_public === 1 || rawBusiness.short_bio_is_public === "1" || rawBusiness.short_bio_is_public === 1,
-        business_cc_fee_payer: canonicalBusinessCcFeePayer(
-          rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer,
-        ),
+        business_cc_fee_payer: profileCcFeePayer,
         business_services: (() => {
           let list = [];
           if (rawBusiness.business_services) {
@@ -195,17 +280,10 @@ export default function ReviewDetailScreen({ route, navigation }) {
             list = result.services;
           }
           if (!Array.isArray(list)) return [];
-          return list.map((svc) => normalizeBusinessServiceFromApi(svc));
-
-          const normalized = list.map((svc) => normalizeBusinessServiceFromApi(svc));
-          console.log("DEBUG services after normalize:", normalized.map(s => ({
-            bs_uid: s.bs_uid,
-            bs_quantity: s.bs_quantity,
-            bs_available_quantity: s.bs_available_quantity,
-            bs_qty_unlimited: s.bs_qty_unlimited,
-          })));
-          return normalized;
-
+          return list.map((svc) => ({
+            ...normalizeBusinessServiceFromApi(svc),
+            business_cc_fee_payer: profileCcFeePayer,
+          }));
         })(),
       });
     } catch (err) {
@@ -263,6 +341,11 @@ export default function ReviewDetailScreen({ route, navigation }) {
       fetchBusinessInfo();
     } else {
       setLoading(false);
+      if (Array.isArray(business_data.ratings) && business_data.ratings.length > 0) {
+        enrichRatingsWithVerification(business_data.ratings).then((enrichedRatings) => {
+          setBusiness((prev) => ({ ...(prev || business_data), ratings: enrichedRatings }));
+        });
+      }
     }
   }, [business_uid, business_data]);
 
@@ -276,16 +359,43 @@ export default function ReviewDetailScreen({ route, navigation }) {
   const handleProductPress = (service) => {
     setSelectedService(service);
     setQuantity(1);
+    setBountySort("connection");
+    setBountySearch("");
+
+    const eligible = mergeBountyEligibleReviews(allReviews, userReview);
+    let initialRecipient = getDefaultBountyRecipient(eligible, currentUserProfileId);
+    if (reviewer_profile_id && reviewer_profile_id !== "Charity") {
+      const match = eligible.find((r) => r.rating_profile_id === reviewer_profile_id);
+      if (match && !isBountyReviewDisabled(match, eligible, currentUserProfileId)) {
+        initialRecipient = match;
+      }
+    }
+    setSelectedBountyRecipient(initialRecipient);
+
     setQuantityModalVisible(true);
   };
 
   const handleQuantityConfirm = async () => {
+    const bountyEligible = mergeBountyEligibleReviews(allReviews, userReview);
+    if (
+      productHasBounty(selectedService, parsePrice) &&
+      bountyPickerRequiresSelection(bountyEligible, currentUserProfileId, selectedBountyRecipient)
+    ) {
+      Alert.alert("Select a Reviewer", "Please select who referred you before adding to cart.");
+      return;
+    }
+    const bountyRecommenderProfileId = resolveBountyRecommenderProfileId({
+      selectedBountyRecipient,
+      currentUserProfileId,
+      eligibleReviews: bountyEligible,
+    });
     try {
       const ccPayer = canonicalBusinessCcFeePayer(business?.business_cc_fee_payer ?? business?.bs_cc_fee_payer);
       const serviceWithQuantity = {
         ...selectedService,
         quantity: quantity,
         totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
+        bounty_recommender_profile_id: bountyRecommenderProfileId,
         business_uid: business_uid,
         business_name: sanitizeText(business?.business_name || business_name || "") || "",
         business_cc_fee_payer: ccPayer,
@@ -313,13 +423,23 @@ export default function ReviewDetailScreen({ route, navigation }) {
         console.log(`Added new item ${selectedService.bs_service_name} with quantity ${quantity}`);
       }
 
-      setCartItems(newCartItems);
+      let cartItemsToSave = newCartItems;
+      if (bountyRecommenderProfileId) {
+        cartItemsToSave = newCartItems.map((item) => {
+          if (item.business_uid === business_uid || item.bs_business_id === business_uid) {
+            return { ...item, bounty_recommender_profile_id: bountyRecommenderProfileId };
+          }
+          return item;
+        });
+      }
 
-      // Save to AsyncStorage
+      setCartItems(cartItemsToSave);
+
       await AsyncStorage.setItem(
         `cart_${business_uid}`,
         JSON.stringify({
-          items: newCartItems,
+          items: cartItemsToSave,
+          bounty_recipient: selectedBountyRecipient || null,
         }),
       );
 
@@ -336,12 +456,16 @@ export default function ReviewDetailScreen({ route, navigation }) {
       setCartItems(newCartItems);
 
       // Update AsyncStorage
+      const savedCart = await AsyncStorage.getItem(`cart_${business_uid}`);
+      const savedData = savedCart ? JSON.parse(savedCart) : {};
       await AsyncStorage.setItem(
         `cart_${business_uid}`,
         JSON.stringify({
           items: newCartItems,
+          bounty_recipient: newCartItems.length === 0 ? null : savedData.bounty_recipient || null,
         }),
       );
+      if (newCartItems.length === 0) setSelectedBountyRecipient(null);
     } catch (error) {
       console.error("Error removing item from cart:", error);
       Alert.alert("Error", "Failed to remove item from cart");
@@ -755,23 +879,40 @@ export default function ReviewDetailScreen({ route, navigation }) {
 
         <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>
           <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Select Quantity</Text>
-              <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
+            <View style={[styles.modalContent, styles.quantityModalContent]}>
+              <ScrollView style={styles.quantityModalScroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.quantityModalScrollContent}>
+                <View style={styles.quantityModalHeader}>
+                <Text style={styles.modalTitle}>Add to Cart</Text>
+                <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
 
-              <View style={styles.quantityContainer}>
-                <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => Math.max(1, prev - 1))}>
-                  <Ionicons name='remove' size={24} color='#9C45F7' />
-                </TouchableOpacity>
+                <View style={styles.quantityContainer}>
+                  <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => Math.max(1, prev - 1))}>
+                    <Ionicons name='remove' size={24} color='#9C45F7' />
+                  </TouchableOpacity>
 
-                <Text style={styles.quantityText}>{quantity}</Text>
+                  <Text style={styles.quantityText}>{quantity}</Text>
 
-                <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => prev + 1)}>
-                  <Ionicons name='add' size={24} color='#9C45F7' />
-                </TouchableOpacity>
-              </View>
+                  <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => prev + 1)}>
+                    <Ionicons name='add' size={24} color='#9C45F7' />
+                  </TouchableOpacity>
+                </View>
 
-              <Text style={styles.totalPrice}>Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
+                <Text style={styles.totalPrice}>Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
+                </View>
+
+                <BountyRecipientPicker
+                  reviews={allReviews}
+                  userReview={userReview}
+                  currentUserProfileId={currentUserProfileId}
+                  selectedService={selectedService}
+                  selectedBountyRecipient={selectedBountyRecipient}
+                  onSelectRecipient={setSelectedBountyRecipient}
+                  bountySort={bountySort}
+                  onBountySortChange={setBountySort}
+                  bountySearch={bountySearch}
+                  onBountySearchChange={setBountySearch}
+                />
+              </ScrollView>
 
               <View style={styles.modalButtons}>
                 <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setQuantityModalVisible(false)}>
@@ -950,6 +1091,30 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     width: "80%",
     maxHeight: "80%",
+  },
+  quantityModalContent: {
+    maxHeight: "85%",
+    width: "88%",
+    maxWidth: 400,
+    alignSelf: "center",
+    alignItems: "stretch",
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+  },
+  quantityModalScroll: {
+    width: "100%",
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  quantityModalScrollContent: {
+    width: "100%",
+    alignItems: "stretch",
+    paddingBottom: 8,
+  },
+  quantityModalHeader: {
+    width: "100%",
+    alignItems: "center",
+    marginBottom: 4,
   },
   modalTitle: {
     fontSize: 18,

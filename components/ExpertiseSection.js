@@ -17,6 +17,7 @@ import {
   isStartDateValid,
   isEndDateValid,
 } from "../utils/profileDateTime";
+import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expertiseMode";
 
 let DateTimePicker = null;
 if (Platform.OS !== "web") {
@@ -91,6 +92,14 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
     const updated = [...expertise];
     updated[index][field] = value;
     setExpertise(updated);
+  };
+
+  const toggleExpertiseMode = (index, key) => {
+    const item = expertise[index];
+    const prev = parseExpertiseModeFlags(item?.profile_expertise_mode);
+    const flags = { virtual: !!prev.virtual, inPerson: !!prev.inPerson };
+    flags[key] = !flags[key];
+    handleInputChange(index, "profile_expertise_mode", serializeExpertiseMode(flags));
   };
 
   const getExpertiseDisplayUri = (item) => {
@@ -592,22 +601,25 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
             <View style={styles.dateTimeRow}>
               <Text style={styles.dateTimeLabel}>Mode</Text>
               <View style={styles.modeCheckboxRow}>
-                <TouchableOpacity
-                  style={[styles.modeCheckbox, (item.profile_expertise_mode || "").toLowerCase() === "virtual" && styles.modeCheckboxSelected]}
-                  onPress={() => handleInputChange(index, "profile_expertise_mode", item.profile_expertise_mode === "Virtual" ? "" : "Virtual")}
-                >
-                  <Text style={[styles.modeCheckboxText, (item.profile_expertise_mode || "").toLowerCase() === "virtual" && styles.modeCheckboxTextSelected]}>
-                    Virtual
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modeCheckbox, (item.profile_expertise_mode || "").toLowerCase() === "in-person" && styles.modeCheckboxSelected]}
-                  onPress={() => handleInputChange(index, "profile_expertise_mode", item.profile_expertise_mode === "In-Person" ? "" : "In-Person")}
-                >
-                  <Text style={[styles.modeCheckboxText, (item.profile_expertise_mode || "").toLowerCase() === "in-person" && styles.modeCheckboxTextSelected]}>
-                    In-Person
-                  </Text>
-                </TouchableOpacity>
+                {(() => {
+                  const { virtual, inPerson } = parseExpertiseModeFlags(item.profile_expertise_mode);
+                  return (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.modeCheckbox, virtual && styles.modeCheckboxSelected]}
+                        onPress={() => toggleExpertiseMode(index, "virtual")}
+                      >
+                        <Text style={[styles.modeCheckboxText, virtual && styles.modeCheckboxTextSelected]}>Virtual</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.modeCheckbox, inPerson && styles.modeCheckboxSelected]}
+                        onPress={() => toggleExpertiseMode(index, "inPerson")}
+                      >
+                        <Text style={[styles.modeCheckboxText, inPerson && styles.modeCheckboxTextSelected]}>In-Person</Text>
+                      </TouchableOpacity>
+                    </>
+                  );
+                })()}
               </View>
             </View>
           </View>
