@@ -15,7 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Dropdown } from "react-native-element-dropdown";
 import { Ionicons } from "@expo/vector-icons";
 import ProductCard from "../components/ProductCard";
-import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
+import { API_BASE_URL, BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 import {
   normalizeBusinessServiceFromApi as normalizeBusinessServiceRow,
   businessPaysCcFeeFromApiPayer,
@@ -36,6 +36,239 @@ const SERVICE_CURRENCY_OPTIONS = [
   { label: "INR", value: "INR" },
   { label: "MXN", value: "MXN" },
 ];
+
+const ChoiceGroupsEditor = ({ groups = [], onChange, darkMode }) => {
+  const addGroup = () => {
+    onChange([
+      ...groups,
+      {
+        id: Date.now(),
+        title: "",
+        type: "single", // single | multi
+        required: false,
+        max_selections: 1,
+        options: [],
+      },
+    ]);
+  };
+
+  const removeGroup = (gIdx) => onChange(groups.filter((_, i) => i !== gIdx));
+
+  const updateGroup = (gIdx, field, value) => {
+    const next = groups.map((g, i) => (i === gIdx ? { ...g, [field]: value } : g));
+    onChange(next);
+  };
+
+  const addOption = (gIdx) => {
+    const next = groups.map((g, i) =>
+      i === gIdx
+        ? { ...g, options: [...(g.options || []), { id: Date.now(), label: "", extra_cost: "" }] }
+        : g
+    );
+    onChange(next);
+  };
+
+  const removeOption = (gIdx, oIdx) => {
+    const next = groups.map((g, i) =>
+      i === gIdx ? { ...g, options: g.options.filter((_, j) => j !== oIdx) } : g
+    );
+    onChange(next);
+  };
+
+  const updateOption = (gIdx, oIdx, field, value) => {
+    const next = groups.map((g, i) =>
+      i === gIdx
+        ? {
+            ...g,
+            options: g.options.map((o, j) => (j === oIdx ? { ...o, [field]: value } : o)),
+          }
+        : g
+    );
+    onChange(next);
+  };
+
+  const inputStyle = {
+    borderWidth: 1,
+    borderColor: darkMode ? "#555" : "#ddd",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    fontSize: 14,
+    color: darkMode ? "#fff" : "#000",
+    backgroundColor: darkMode ? "#2d2d2d" : "#fff",
+    flex: 1,
+  };
+
+  const labelStyle = {
+    fontSize: 12,
+    fontWeight: "700",
+    color: darkMode ? "#ccc" : "#555",
+    marginBottom: 4,
+    marginTop: 8,
+  };
+
+  return (
+    <View>
+      {groups.map((group, gIdx) => (
+        <View
+          key={group.id || gIdx}
+          style={{
+            borderWidth: 1,
+            borderColor: darkMode ? "#555" : "#ddd",
+            borderRadius: 10,
+            padding: 12,
+            marginBottom: 10,
+            backgroundColor: darkMode ? "#333" : "#fafafa",
+          }}
+        >
+          {/* Group header */}
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+            <Text style={{ flex: 1, fontWeight: "700", fontSize: 13, color: darkMode ? "#fff" : "#333" }}>
+              Choice Group {gIdx + 1}
+            </Text>
+            <TouchableOpacity onPress={() => removeGroup(gIdx)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={20} color="#ef4444" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Title */}
+          <Text style={labelStyle}>Group Title (e.g. "Choice of Meat")</Text>
+          <TextInput
+            style={inputStyle}
+            value={group.title}
+            onChangeText={(t) => updateGroup(gIdx, "title", t)}
+            placeholder="e.g. Choice of Meat"
+            placeholderTextColor={darkMode ? "#888" : "#999"}
+          />
+
+          {/* Type: single vs multi */}
+          <Text style={labelStyle}>Selection Type</Text>
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 4 }}>
+            {["single", "multi"].map((t) => (
+              <TouchableOpacity
+                key={t}
+                onPress={() => updateGroup(gIdx, "type", t)}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 6,
+                  borderRadius: 20,
+                  borderWidth: 1,
+                  borderColor: group.type === t ? "#9C45F7" : (darkMode ? "#555" : "#ccc"),
+                  backgroundColor: group.type === t ? "#9C45F7" : "transparent",
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: "600", color: group.type === t ? "#fff" : (darkMode ? "#ccc" : "#555") }}>
+                  {t === "single" ? "Choose 1" : "Choose Multiple"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Max selections (multi only) */}
+          {group.type === "multi" && (
+            <>
+              <Text style={labelStyle}>Max Selections</Text>
+              <TextInput
+                style={[inputStyle, { flex: 0, width: 80 }]}
+                value={String(group.max_selections || "")}
+                onChangeText={(t) => updateGroup(gIdx, "max_selections", t.replace(/\D/g, ""))}
+                keyboardType="number-pad"
+                placeholder="e.g. 2"
+                placeholderTextColor={darkMode ? "#888" : "#999"}
+              />
+            </>
+          )}
+
+          {/* Required toggle */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10, marginBottom: 6 }}>
+            <TouchableOpacity onPress={() => updateGroup(gIdx, "required", !group.required)} activeOpacity={0.7}>
+              <Ionicons
+                name={group.required ? "checkbox" : "square-outline"}
+                size={20}
+                color={group.required ? "#9C45F7" : (darkMode ? "#aaa" : "#666")}
+              />
+            </TouchableOpacity>
+            <Text style={{ fontSize: 13, color: darkMode ? "#ddd" : "#444" }}>Required</Text>
+            <Text style={{ fontSize: 11, color: darkMode ? "#888" : "#999" }}>
+              {group.required ? `(REQUIRED)` : `(OPTIONAL)`}
+            </Text>
+            {group.type === "multi" && (
+              <Text style={{ fontSize: 11, color: darkMode ? "#888" : "#999" }}>
+                · UP TO {group.max_selections || 1}
+              </Text>
+            )}
+          </View>
+
+          {/* Options */}
+          <Text style={labelStyle}>Options</Text>
+          {(group.options || []).map((opt, oIdx) => (
+            <View key={opt.id || oIdx} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <Ionicons
+                name={group.type === "single" ? "radio-button-off" : "square-outline"}
+                size={16}
+                color={darkMode ? "#888" : "#aaa"}
+              />
+              <TextInput
+                style={[inputStyle, { flex: 2 }]}
+                value={opt.label}
+                onChangeText={(t) => updateOption(gIdx, oIdx, "label", t)}
+                placeholder="Option name"
+                placeholderTextColor={darkMode ? "#888" : "#999"}
+              />
+              <Text style={{ color: darkMode ? "#888" : "#999", fontSize: 13 }}>+$</Text>
+              <TextInput
+                style={[inputStyle, { flex: 1, minWidth: 60 }]}
+                value={opt.extra_cost}
+                onChangeText={(t) => updateOption(gIdx, oIdx, "extra_cost", t.replace(/[^0-9.]/g, ""))}
+                placeholder="0.00"
+                keyboardType="decimal-pad"
+                placeholderTextColor={darkMode ? "#888" : "#999"}
+              />
+              <TouchableOpacity onPress={() => removeOption(gIdx, oIdx)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close-circle-outline" size={18} color="#ef4444" />
+              </TouchableOpacity>
+            </View>
+          ))}
+
+          <TouchableOpacity
+            onPress={() => addOption(gIdx)}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              marginTop: 4,
+              paddingVertical: 6,
+            }}
+          >
+            <Ionicons name="add-circle-outline" size={18} color="#9C45F7" />
+            <Text style={{ fontSize: 13, color: "#9C45F7", fontWeight: "600" }}>Add Option</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+
+      <TouchableOpacity
+        onPress={addGroup}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 6,
+          paddingVertical: 8,
+          paddingHorizontal: 12,
+          borderRadius: 8,
+          borderWidth: 1,
+          borderStyle: "dashed",
+          borderColor: darkMode ? "#666" : "#bbb",
+          marginTop: 4,
+        }}
+      >
+        <Ionicons name="add-circle-outline" size={18} color={darkMode ? "#aaa" : "#666"} />
+        <Text style={{ fontSize: 13, color: darkMode ? "#aaa" : "#666", fontWeight: "600" }}>
+          Add Choice Group
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
 
 const EditBusinessProfileScreen = ({ route, navigation }) => {
   const { darkMode } = useDarkMode();
@@ -862,6 +1095,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           bs_free_shipping: norm01(service.bs_free_shipping),
           bs_buyer_pays_shipping: norm01(service.bs_buyer_pays_shipping),
           bs_service_image_is_public: norm01(service.bs_service_image_is_public),
+          bs_choice_groups: service.bs_choice_groups || [],
+          bs_special_instructions_enabled: service.bs_special_instructions_enabled || 0,
+          bs_special_instructions_max_chars: service.bs_special_instructions_max_chars || 80,
         };
 
         if (service.bs_uid && service.bs_uid.trim() !== "") {
@@ -995,16 +1231,102 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       });
 
       if (response.status === 200) {
-        suppressLeavePromptRef.current = true;
-        setIsChanged(false);
-        navigation.navigate("BusinessProfile", { business_uid: businessUID });
-        Alert.alert("Success", "Business profile updated.");
-        setTimeout(() => {
-          suppressLeavePromptRef.current = false;
-        }, 1500);
-      } else {
-        Alert.alert("Error", "Update failed. Try again.");
+      // Fetch the saved services to get their bs_uid values
+      let returnedServices = [];
+      try {
+        // const bizRes = await fetch(`${API_BASE_URL}/api/v1/businessinfo/${businessUID}`);
+        // const bizData = await bizRes.json();
+        // const rawServices = bizData?.result?.[0]?.business_services || bizData?.business_services || [];
+        const bizRes = await fetch(`${BUSINESS_INFO_ENDPOINT}/${businessUID}`);
+        const bizData = await bizRes.json();
+        const rawServices = bizData?.services || [];
+        returnedServices = typeof rawServices === "string" ? JSON.parse(rawServices) : rawServices;
+        console.log("🔵 Fetched services after save:", returnedServices.map((s) => ({ bs_uid: s.bs_uid, name: s.bs_service_name })));
+        
+      } catch (e) {
+        console.warn("Could not fetch services after save:", e);
       }
+      
+      
+
+      // Save options for each service
+      // const optionSavePromises = servicesForPayload.map((localSvc) => {
+      //   const uid =
+      //     (localSvc.bs_uid && String(localSvc.bs_uid).trim() !== "" && localSvc.bs_uid) ||
+      //     returnedServices.find(
+      //       (r) =>
+      //         String(r.bs_service_name || "").trim() === String(localSvc.bs_service_name || "").trim() &&
+      //         String(r.bs_uid || "").trim() !== ""
+      //     )?.bs_uid;
+
+      //   console.log(`🔵 Service "${localSvc.bs_service_name}" -> uid: ${uid}, groups: ${(localSvc.bs_choice_groups || []).length}`);
+
+      //   if (!uid) {
+      //     console.warn(`⚠️ No uid for "${localSvc.bs_service_name}", skipping`);
+      //     return Promise.resolve();
+      //   }
+
+      //   return fetch(`${API_BASE_URL}/api/business_service_options/${uid}`, {
+      //     method: "POST",
+      //     headers: { "Content-Type": "application/json" },
+      //     body: JSON.stringify({
+      //       choice_groups: localSvc.bs_choice_groups || [],
+      //       special_instructions_enabled: localSvc.bs_special_instructions_enabled || 0,
+      //       special_instructions_max_chars: localSvc.bs_special_instructions_max_chars || 80,
+      //     }),
+      //   })
+      //     .then((res) => { console.log(`🔵 Options save status for ${uid}:`, res.status); return res.json(); })
+      //     .then((data) => console.log(`🔵 Options save result for ${uid}:`, JSON.stringify(data)))
+      //     .catch((e) => console.warn(`Failed to save options for ${uid}:`, e));
+      // });
+
+      // Replace the entire optionSavePromises block with:
+      const optionSavePromises = servicesForPayload.map(async (localSvc) => {
+        // For existing services, bs_uid is already known
+        let uid = localSvc.bs_uid && String(localSvc.bs_uid).trim() !== "" ? localSvc.bs_uid : null;
+
+        // For new services (no bs_uid), match by name from returnedServices
+        if (!uid) {
+          uid = returnedServices.find(
+            (r) =>
+              String(r.bs_service_name || "").trim() === String(localSvc.bs_service_name || "").trim() &&
+              String(r.bs_uid || "").trim() !== ""
+          )?.bs_uid || null;
+        }
+
+        console.log(`🔵 Service "${localSvc.bs_service_name}" -> uid: ${uid}, groups: ${(localSvc.bs_choice_groups || []).length}`);
+        console.log(`🔵 Choice groups content:`, JSON.stringify(localSvc.bs_choice_groups));
+
+        if (!uid) {
+          console.warn(`⚠️ No uid for "${localSvc.bs_service_name}", skipping`);
+          return Promise.resolve();
+        }
+
+        // Always save options even if bs_choice_groups is empty (to clear removed groups)
+        return fetch(`${API_BASE_URL}/api/business_service_options/${uid}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            choice_groups: localSvc.bs_choice_groups || [],
+            special_instructions_enabled: localSvc.bs_special_instructions_enabled || 0,
+            special_instructions_max_chars: localSvc.bs_special_instructions_max_chars || 80,
+          }),
+        })
+          .then((res) => { console.log(`🔵 Options save status for ${uid}:`, res.status); return res.json(); })
+          .then((data) => console.log(`🔵 Options save result for ${uid}:`, JSON.stringify(data)))
+          .catch((e) => console.warn(`Failed to save options for ${uid}:`, e));
+      });
+      
+      await Promise.all(optionSavePromises);
+
+      suppressLeavePromptRef.current = true;
+      setIsChanged(false);
+      navigation.navigate("BusinessProfile", { business_uid: businessUID });
+      Alert.alert("Success", "Business profile updated.");
+      setTimeout(() => {
+        suppressLeavePromptRef.current = false;
+      }, 1500);
+    }
     } catch (error) {
       // Handle 413 Payload Too Large
       if (error.response && error.response.status === 413) {
@@ -1399,6 +1721,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_free_shipping: 0,
     bs_buyer_pays_shipping: 0,
     bs_service_image_is_public: 1,
+    bs_choice_groups: [],
+    bs_special_instructions_enabled: 0,
+    bs_special_instructions_max_chars: 80,
   };
 
   const [serviceForm, setServiceForm] = useState({ ...defaultService });
@@ -1501,6 +1826,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_tax_rate: formTaxable ? String(parsePrice(serviceForm.bs_tax_rate) || "0") : "0",
       bs_image_key: nextBsImageKey,
       bs_uid: existingService?.bs_uid || "",
+      bs_choice_groups: serviceForm.bs_choice_groups || [],
+      bs_special_instructions_enabled: serviceForm.bs_special_instructions_enabled || 0,
+      bs_special_instructions_max_chars: serviceForm.bs_special_instructions_max_chars || 80,
       _svcNewImageUri,
       _svcWebImageFile,
       _svcDeleteImageUrl,
@@ -1525,6 +1853,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
     const row = buildServiceRowForList();
     if (!row) return;
+
+    console.log("🟢 handleAddService - row.bs_choice_groups:", JSON.stringify(row.bs_choice_groups));
+    console.log("🟢 handleAddService - serviceForm.bs_choice_groups:", JSON.stringify(serviceForm.bs_choice_groups));
 
     if (editingServiceIndex !== null) {
       const updatedServices = [...services];
@@ -1564,6 +1895,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_bounty: service.bs_bounty == null || String(service.bs_bounty).trim() === "" || parsePrice(service.bs_bounty) === 0 ? "" : String(service.bs_bounty),
       bs_free_shipping: service.bs_free_shipping === 1 || service.bs_free_shipping === "1" || service.bs_free_shipping === true ? 1 : 0,
       bs_buyer_pays_shipping: service.bs_buyer_pays_shipping === 1 || service.bs_buyer_pays_shipping === "1" || service.bs_buyer_pays_shipping === true ? 1 : 0,
+      bs_choice_groups: service.bs_choice_groups || [],
+      bs_special_instructions_enabled: service.bs_special_instructions_enabled || 0,
+      bs_special_instructions_max_chars: service.bs_special_instructions_max_chars || 80,
       bs_qty_unlimited: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? 0 : 1,
       bs_available_quantity: service.bs_available_quantity != null ? String(service.bs_available_quantity) : "",
       bs_service_image_is_public: service.bs_service_image_is_public === 0 || service.bs_service_image_is_public === "0" ? 0 : 1,
@@ -1592,6 +1926,22 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setServiceFormTaxRateError(false);
     setServiceFormQuantityError(false);
     setShowServiceForm(true);
+
+    // Load choice groups from backend only if not already set locally
+    if (service.bs_uid && service.bs_uid.trim() !== "") {
+      const localGroups = service.bs_choice_groups || [];
+      if (localGroups.length === 0) {
+        fetch(`${API_BASE_URL}/api/business_service_options/${service.bs_uid}`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.result && data.result.length > 0) {
+              handleServiceChange("bs_choice_groups", data.result);
+            }
+          })
+          .catch((e) => console.warn("Failed to load service options:", e));
+      }
+      // If local groups exist, keep them (don't overwrite with backend)
+    }
   };
 
   const handleCancelEdit = () => {
@@ -1612,6 +1962,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       const uid = svc.bs_uid && String(svc.bs_uid).trim();
       if (uid) {
         setDeletedBusinessServiceUids((prev) => (prev.includes(uid) ? prev : [...prev, uid]));
+      }
+      // Delete options for this service
+      if (uid) {
+        fetch(`${API_BASE_URL}/api/business_service_options/${uid}`, {
+          method: "DELETE",
+        }).catch((e) => console.warn("Failed to delete service options:", e));
       }
       setServices((prev) => prev.filter((_, i) => i !== index));
       setIsChanged(true);
@@ -2281,6 +2637,91 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             />
             <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>Buyer pays</Text>
           </TouchableOpacity>
+        </View>
+      </View>
+      
+      {/* Choice Groups */}
+      <View style={{ marginBottom: 8 }}>
+        <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle, { width: "100%", marginBottom: 8 }]}>
+          Customer Choices
+        </Text>
+        <ChoiceGroupsEditor
+          groups={serviceForm.bs_choice_groups || []}
+          onChange={(groups) => {
+            handleServiceChange("bs_choice_groups", groups);
+            setIsChanged(true);
+          }}
+          darkMode={darkMode}
+        />
+      </View>
+
+      {/* Special Instructions */}
+      <View style={[styles.serviceFormCompactRow, { alignItems: "flex-start", flexWrap: "wrap" }]}>
+        <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>
+          Special Instructions
+        </Text>
+        <View style={{ flex: 1, gap: 8 }}>
+          <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+            <TouchableOpacity
+              style={[
+                styles.bountyTypeBtn,
+                styles.bountyTypeBtnCompact,
+                (serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && styles.bountyTypeBtnActive,
+              ]}
+              onPress={() => { handleServiceChange("bs_special_instructions_enabled", 1); setIsChanged(true); }}
+            >
+              <Text style={[
+                styles.bountyTypeBtnText,
+                styles.bountyTypeBtnTextCompact,
+                (serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && styles.bountyTypeBtnTextActive,
+              ]}>
+                Enabled
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.bountyTypeBtn,
+                styles.bountyTypeBtnCompact,
+                !(serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && styles.bountyTypeBtnActive,
+              ]}
+              onPress={() => { handleServiceChange("bs_special_instructions_enabled", 0); setIsChanged(true); }}
+            >
+              <Text style={[
+                styles.bountyTypeBtnText,
+                styles.bountyTypeBtnTextCompact,
+                !(serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && styles.bountyTypeBtnTextActive,
+              ]}>
+                Disabled
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {(serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555" }}>Max characters:</Text>
+              <TextInput
+                style={[styles.serviceFormRowInput, darkMode && styles.darkServiceFormRowInput, { flex: 0, width: 72 }]}
+                value={String(serviceForm.bs_special_instructions_max_chars || 80)}
+                onChangeText={(t) => { handleServiceChange("bs_special_instructions_max_chars", t.replace(/\D/g, "")); setIsChanged(true); }}
+                keyboardType="number-pad"
+                placeholder="80"
+                placeholderTextColor={darkMode ? "#888" : "#999"}
+              />
+              <View style={{
+                borderWidth: 1,
+                borderColor: darkMode ? "#555" : "#ddd",
+                borderRadius: 8,
+                padding: 10,
+                flex: 1,
+                minHeight: 60,
+                justifyContent: "flex-end",
+                backgroundColor: darkMode ? "#2d2d2d" : "#fff",
+              }}>
+                <Text style={{ color: darkMode ? "#888" : "#aaa", fontSize: 12, textAlign: "right" }}>
+                  {serviceForm.bs_special_instructions_max_chars || 80}
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
       </View>
 

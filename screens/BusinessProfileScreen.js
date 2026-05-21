@@ -9,7 +9,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT, RATINGS_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
+import { API_BASE_URL, BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT, RATINGS_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { parsePrice } from "../utils/priceUtils";
@@ -72,6 +72,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [bountySearch, setBountySearch] = useState("");
 
   const [totalCartCount, setTotalCartCount] = useState(0);
+
+  const [serviceOptions, setServiceOptions] = useState([]);
+  const [serviceOptionsLoading, setServiceOptionsLoading] = useState(false);
+  const [selectedChoices, setSelectedChoices] = useState({}); // { groupTitle: optionId }
+  const [specialInstructions, setSpecialInstructions] = useState("");
 
   // Handle viewport resize on web (for DevTools opening/closing)
   useEffect(() => {
@@ -578,7 +583,23 @@ export default function BusinessProfileScreen({ route, navigation }) {
     }
 
     setSelectedService(service);
-    setQuantity(1);
+    setQuantity(1);setSelectedChoices({});
+    setSpecialInstructions("");
+    setServiceOptions([]);
+    console.log("🛒 handleProductPress - service.bs_uid:", service.bs_uid);
+    console.log("🛒 handleProductPress - full service:", JSON.stringify(service, null, 2));
+    // Fetch choice groups for this service
+    if (service.bs_uid && String(service.bs_uid).trim() !== "") {
+      setServiceOptionsLoading(true);
+      fetch(`${API_BASE_URL}/api/business_service_options/${service.bs_uid}`)
+        .then((res) => res.json())
+        .then((data) => {
+          console.log("🛒 Options response data:", JSON.stringify(data, null, 2));
+          setServiceOptions(data.result || []);
+        })
+        .catch((e) => console.warn("Failed to load service options:", e))
+        .finally(() => setServiceOptionsLoading(false));
+    }
     setBountySort("connection");
     setBountySearch("");
 
@@ -611,14 +632,14 @@ export default function BusinessProfileScreen({ route, navigation }) {
         return;
       }
     }
-    const bountyEligible = mergeBountyEligibleReviews(allReviews, userReview);
-    if (
-      productHasBounty(selectedService, parsePrice) &&
-      bountyPickerRequiresSelection(bountyEligible, currentUserProfileId, selectedBountyRecipient)
-    ) {
+    // If there are verified reviews, bounty assignment is mandatory
+    const verifiedReviews = allReviews.filter((r) => r.is_verified && r.circle_num_nodes !== null && r.circle_num_nodes !== undefined).slice(0, 5);
+
+    if (verifiedReviews.length > 0 && !selectedBountyRecipient) {
       Alert.alert("Select a Reviewer", "Please select who referred you before adding to cart.");
       return;
     }
+
     const bountyRecommenderProfileId = resolveBountyRecommenderProfileId({
       selectedBountyRecipient,
       currentUserProfileId,
@@ -626,11 +647,37 @@ export default function BusinessProfileScreen({ route, navigation }) {
     });
     try {
       const ccPayer = canonicalBusinessCcFeePayer(business.business_cc_fee_payer ?? business.bs_cc_fee_payer);
+
+      // Calculate extra cost from selected choice group options
+      const choicesExtraCost = serviceOptions.reduce((sum, group) => {
+        const sel = selectedChoices[group.title];
+        if (!sel) return sum;
+        const selectedIds = Array.isArray(sel) ? sel : [sel];
+        return sum + (group.options || [])
+          .filter((opt) => selectedIds.includes(opt.id))
+          .reduce((s, opt) => s + (parseFloat(opt.extra_cost) || 0), 0);
+      }, 0);
+
+      const unitPrice = parsePrice(selectedService.bs_cost) + choicesExtraCost;
+
+      const selectedChoiceLabels = {};
+      serviceOptions.forEach((group) => {
+        const sel = selectedChoices[group.title];
+        if (!sel) return;
+        const selectedIds = Array.isArray(sel) ? sel : [sel];
+        const matchingLabels = (group.options || [])
+          .filter((opt) => selectedIds.includes(opt.id))
+          .map((opt) => opt.label);
+        if (matchingLabels.length > 0) {
+          selectedChoiceLabels[group.title] = matchingLabels.join(", ");
+        }
+      });
+
       const serviceWithQuantity = {
         ...selectedService,
         quantity: quantity,
         totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
-        bounty_recommender_profile_id: bountyRecommenderProfileId,
+        bounty_recommender_profile_id: selectedBountyRecipient?.rating_profile_id || null,
         business_uid: business_uid,
         business_name: sanitizeText(business.business_name || "") || "",
         business_cc_fee_payer: ccPayer,
@@ -643,10 +690,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
         newCartItems = [...cartItems];
         const existingItem = newCartItems[existingItemIndex];
         const newQuantity = (existingItem.quantity || 1) + quantity;
+        const existingUnitPrice = (existingItem.unitPrice != null) ? existingItem.unitPrice : parsePrice(existingItem.bs_cost);
         newCartItems[existingItemIndex] = {
           ...existingItem,
           quantity: newQuantity,
-          totalPrice: (parsePrice(existingItem.bs_cost) * newQuantity).toFixed(2),
+          totalPrice: (existingUnitPrice * newQuantity).toFixed(2),
           business_cc_fee_payer: ccPayer,
         };
       } else {
@@ -654,20 +702,15 @@ export default function BusinessProfileScreen({ route, navigation }) {
       }
 
       // Always update ALL items from this business to use the latest selected reviewer
-      if (bountyRecommenderProfileId) {
+      if (selectedBountyRecipient?.rating_profile_id) {
         newCartItems = newCartItems.map((item) => {
           if (item.business_uid === business_uid || item.bs_business_id === business_uid) {
-            console.log("Updating bounty recipient for item:", item.bs_uid, "to:", bountyRecommenderProfileId);
-            return { ...item, bounty_recommender_profile_id: bountyRecommenderProfileId };
+            console.log("Updating bounty recipient for item:", item.bs_uid, "to:", selectedBountyRecipient.rating_profile_id);
+            return { ...item, bounty_recommender_profile_id: selectedBountyRecipient.rating_profile_id };
           }
           return item;
         });
       }
-
-      console.log(
-        "Final cart items recommenders:",
-        newCartItems.map((i) => ({ bs_uid: i.bs_uid, recommender: i.bounty_recommender_profile_id })),
-      );
 
       setCartItems(newCartItems);
       setTotalCartCount((prev) => prev + 1);
@@ -1520,6 +1563,139 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 );
               })()}
 
+              {/* Choice Groups */}
+              {serviceOptionsLoading ? (
+                <ActivityIndicator size="small" color="#9C45F7" style={{ marginVertical: 10 }} />
+              ) : serviceOptions.length > 0 ? (
+                <View style={{ width: "100%", marginBottom: 12 }}>
+                  {serviceOptions.map((group, gIdx) => (
+                    <View key={gIdx} style={{ marginBottom: 14 }}>
+                      {/* Group Header */}
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                        <Text style={{ fontSize: 15, fontWeight: "700", color: "#333" }}>
+                          {group.title}
+                        </Text>
+                        <View style={{
+                          backgroundColor: group.required ? "#fee2e2" : "#f0fdf4",
+                          borderRadius: 10,
+                          paddingHorizontal: 8,
+                          paddingVertical: 2,
+                        }}>
+                          <Text style={{
+                            fontSize: 11,
+                            fontWeight: "600",
+                            color: group.required ? "#dc2626" : "#16a34a",
+                          }}>
+                            {group.required
+                              ? "REQUIRED"
+                              : group.type === "multi"
+                                ? `OPTIONAL (UP TO ${group.max_selections || 1})`
+                                : "OPTIONAL (UP TO 1)"}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Options */}
+                      {(group.options || []).map((opt, oIdx) => {
+                        const isSelected = group.type === "multi"
+                          ? (selectedChoices[group.title] || []).includes(opt.id)
+                          : selectedChoices[group.title] === opt.id;
+
+                        return (
+                          <TouchableOpacity
+                            key={oIdx}
+                            onPress={() => {
+                              setSelectedChoices((prev) => {
+                                if (group.type === "multi") {
+                                  const current = prev[group.title] || [];
+                                  const max = group.max_selections || 1;
+                                  if (current.includes(opt.id)) {
+                                    return { ...prev, [group.title]: current.filter((id) => id !== opt.id) };
+                                  }
+                                  if (current.length >= max) return prev;
+                                  return { ...prev, [group.title]: [...current, opt.id] };
+                                }
+                                // single
+                                return { ...prev, [group.title]: isSelected ? null : opt.id };
+                              });
+                            }}
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              paddingVertical: 10,
+                              borderBottomWidth: 1,
+                              borderBottomColor: "#f0f0f0",
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                              {/* Checkbox or Radio */}
+                              <View style={{
+                                width: 22,
+                                height: 22,
+                                borderRadius: group.type === "multi" ? 4 : 11,
+                                borderWidth: 2,
+                                borderColor: isSelected ? "#9C45F7" : "#ccc",
+                                backgroundColor: isSelected ? "#9C45F7" : "transparent",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                marginRight: 10,
+                              }}>
+                                {isSelected && (
+                                  group.type === "multi"
+                                    ? <Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold" }}>✓</Text>
+                                    : <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#fff" }} />
+                                )}
+                              </View>
+                              <Text style={{ fontSize: 15, color: "#333" }}>{opt.label}</Text>
+                            </View>
+                            {parseFloat(opt.extra_cost) > 0 && (
+                              <Text style={{ fontSize: 14, color: "#666" }}>+${parseFloat(opt.extra_cost).toFixed(2)}</Text>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              {/* Special Instructions */}
+              {selectedService?.bs_special_instructions_enabled === 1 || selectedService?.bs_special_instructions_enabled === "1" ? (
+                <View style={{ width: "100%", marginBottom: 12 }}>
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: "#333", marginBottom: 6 }}>
+                    Special Instructions
+                  </Text>
+                  <TextInput
+                    style={{
+                      borderWidth: 1,
+                      borderColor: "#ddd",
+                      borderRadius: 8,
+                      padding: 10,
+                      fontSize: 14,
+                      color: "#333",
+                      minHeight: 80,
+                      textAlignVertical: "top",
+                      backgroundColor: "#fafafa",
+                      width: "100%",
+                    }}
+                    value={specialInstructions}
+                    onChangeText={(t) => {
+                      const max = parseInt(selectedService?.bs_special_instructions_max_chars || 80, 10);
+                      if (t.length <= max) setSpecialInstructions(t);
+                    }}
+                    placeholder="Add special instructions..."
+                    placeholderTextColor="#aaa"
+                    multiline
+                    maxLength={parseInt(selectedService?.bs_special_instructions_max_chars || 80, 10)}
+                  />
+                  <Text style={{ fontSize: 11, color: "#999", textAlign: "right", marginTop: 4 }}>
+                    {specialInstructions.length}/{selectedService?.bs_special_instructions_max_chars || 80}
+                  </Text>
+                </View>
+              ) : null}
+
               {/* Quantity selector */}
               <View style={styles.quantityContainer}>
                 <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => Math.max(1, prev - 1))}>
@@ -1529,6 +1705,17 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 <TouchableOpacity
                   style={styles.quantityButton}
                   onPress={() => {
+                    // Validate required choice groups
+                    const missingRequired = serviceOptions.filter((group) => {
+                      if (!group.required) return false;
+                      const sel = selectedChoices[group.title];
+                      if (group.type === "multi") return !sel || sel.length === 0;
+                      return !sel;
+                    });
+                    if (missingRequired.length > 0) {
+                      Alert.alert("Selection Required", `Please make a selection for: ${missingRequired.map((g) => g.title).join(", ")}`);
+                      return;
+                    }
                     const stock = selectedService?.bs_quantity;
                     const isLimited = stock != null && String(stock).toLowerCase() !== "unlimited" && selectedService?.bs_qty_unlimited !== 1 && selectedService?.bs_qty_unlimited !== "1";
                     if (isLimited) {

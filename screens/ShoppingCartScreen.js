@@ -157,7 +157,8 @@ function lineMerchandiseAndTax(item) {
       ratePercentUsed: null,
     };
   }
-  const pretax = roundMoney(parsePrice(item.bs_cost) * qty);
+  //const pretax = roundMoney(parsePrice(item.bs_cost) * qty);
+  const pretax = roundMoney(parsePrice(item.bs_cost_with_extras || item.bs_cost) * qty);
   const rawTaxRate = item.bs_tax_rate;
   const taxable = isLineTaxable(item);
   const ratePercent = taxRatePercentForCalculation(rawTaxRate);
@@ -233,8 +234,9 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
 }
 
 const ShoppingCartScreen = ({ route, navigation }) => {
-  const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id } = route.params || {};
-  const [cartItems, setCartItems] = useState(() => cartItemsFromRouteParams(initialCartItems));
+  const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id } = route.params;
+   const [cartItems, setCartItems] = useState(initialCartItems);
+   const [cartItems, setCartItems] = useState(Array.isArray(initialCartItems) ? initialCartItems : []);
 
   const resolveItemBusinessName = (item) => {
     if (item.itemType === "expertise") {
@@ -374,6 +376,27 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       setWebCheckoutSession(null);
 
       try {
+        const choicesRecord = {};
+        cartItems.forEach((item) => {
+          if (item.bs_uid && (item.selectedChoiceLabels || item.choicesExtraCost || item.specialInstructions)) {
+            choicesRecord[item.bs_uid] = {
+              choicesExtraCost: item.choicesExtraCost || 0,
+              selectedChoiceLabels: item.selectedChoiceLabels || {},
+              selectedChoices: item.selectedChoices || {},
+              specialInstructions: item.specialInstructions || "",
+              unitPrice: item.unitPrice,
+            };
+          }
+        });
+        if (Object.keys(choicesRecord).length > 0) {
+          const existing = await AsyncStorage.getItem("receipt_choices_by_bs_uid");
+          const existingParsed = existing ? JSON.parse(existing) : {};
+          await AsyncStorage.setItem(
+            "receipt_choices_by_bs_uid",
+            JSON.stringify({ ...existingParsed, ...choicesRecord })
+          );
+          console.log("Saved receipt choices:", JSON.stringify(choicesRecord));
+        }
         console.log("Clearing all cart data...");
         const keys = await AsyncStorage.getAllKeys();
         const cartKeys = keys.filter((key) => key.startsWith("cart_"));
@@ -501,6 +524,27 @@ const ShoppingCartScreen = ({ route, navigation }) => {
       }
 
       try {
+        const choicesRecord = {};
+        cartItems.forEach((item) => {
+          if (item.bs_uid && (item.selectedChoiceLabels || item.choicesExtraCost || item.specialInstructions)) {
+            choicesRecord[item.bs_uid] = {
+              choicesExtraCost: item.choicesExtraCost || 0,
+              selectedChoiceLabels: item.selectedChoiceLabels || {},
+              selectedChoices: item.selectedChoices || {},
+              specialInstructions: item.specialInstructions || "",
+              unitPrice: item.unitPrice,
+            };
+          }
+        });
+        if (Object.keys(choicesRecord).length > 0) {
+          const existing = await AsyncStorage.getItem("receipt_choices_by_bs_uid");
+          const existingParsed = existing ? JSON.parse(existing) : {};
+          await AsyncStorage.setItem(
+            "receipt_choices_by_bs_uid",
+            JSON.stringify({ ...existingParsed, ...choicesRecord })
+          );
+          console.log("Saved receipt choices:", JSON.stringify(choicesRecord));
+        }
         console.log("Clearing all cart data...");
         const keys = await AsyncStorage.getAllKeys();
         const cartKeys = keys.filter((key) => key.startsWith("cart_"));
@@ -578,7 +622,8 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
   // Update local state when initialCartItems changes
   useEffect(() => {
-    setCartItems(cartItemsFromRouteParams(initialCartItems));
+    // setCartItems(initialCartItems);
+    setCartItems(Array.isArray(initialCartItems) ? initialCartItems : []);
   }, [initialCartItems]);
 
   useEffect(() => {
@@ -881,6 +926,7 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
       const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
 
+      // In recordSingleBusinessTransaction, update the items map:
       const items = group.items.map((item) => {
         const qty = parseInt(item.quantity, 10) || 1;
         const bountyType = item.itemType === "expertise" ? "per_item" : item.bs_bounty_type || "per_item";
@@ -895,10 +941,11 @@ const ShoppingCartScreen = ({ route, navigation }) => {
           bounty_type: bountyType,
           quantity: qty,
           recommender_profile_id: item.bounty_recommender_profile_id || defaultRecommender,
-          /** Line pretax merchandise (before sales tax); helps backend reconcile ti_bs_sales_tax. */
-          ti_bs_pretax: parseFloat(Number(pretax).toFixed(2)),
-          /** Sales tax for this line only (same as cart UI per-line tax). */
-          ti_bs_sales_tax: parseFloat(Number(tax).toFixed(2)),
+          // Pass choices data so backend can store it on the transaction item
+          choices_extra_cost: item.choicesExtraCost || 0,
+          unit_price: item.unitPrice || parsePrice(item.bs_cost),
+          selected_choices: item.selectedChoices || {},
+          special_instructions: item.specialInstructions || "",
         };
       });
 
@@ -1048,99 +1095,102 @@ const ShoppingCartScreen = ({ route, navigation }) => {
                 const rawRateLabel = lineTax.rawTaxRate === undefined || lineTax.rawTaxRate === null || String(lineTax.rawTaxRate).trim() === "" ? "—" : String(lineTax.rawTaxRate);
                 const storedRateWithPercent = rawRateLabel === "—" ? "—" : `${String(rawRateLabel).replace(/%+\s*$/, "")}%`;
                 return (
-                  <View key={index} style={styles.cartItemContainer}>
-                    <TouchableOpacity style={styles.removeButton} onPress={() => handleRemoveItem(index)}>
-                      <Ionicons name='close-circle' size={24} color='#FF3B30' />
-                    </TouchableOpacity>
-                    <View style={styles.cartItemContent}>
-                      <Text style={styles.itemName}>{item.itemType === "expertise" ? item.title : item.bs_service_name}</Text>
-                      {/* Stock badge for limited-quantity items */}
-                      {item.itemType !== "expertise" &&
-                        (() => {
-                          const qty = item.bs_quantity;
-                          if (!qty || String(qty).toLowerCase() === "unlimited") return null;
-                          const num = parseInt(qty, 10);
-                          if (isNaN(num)) return null;
-                          const isSoldOut = num === 0;
-                          const isLow = num > 0 && num <= 5;
-                          return (
-                            <View
-                              style={{
-                                alignSelf: "flex-start",
-                                backgroundColor: isSoldOut ? "#fee2e2" : isLow ? "#fef9c3" : "#dcfce7",
-                                borderRadius: 10,
-                                paddingHorizontal: 8,
-                                paddingVertical: 2,
-                                marginBottom: 6,
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  fontSize: 12,
-                                  fontWeight: "600",
-                                  color: isSoldOut ? "#dc2626" : isLow ? "#b45309" : "#166534",
-                                }}
-                              >
-                                {isSoldOut ? "Out of stock" : isLow ? `Only ${num} left` : `${num} in stock`}
-                              </Text>
-                            </View>
-                          );
-                        })()}
-                      {showLineBusiness ? <Text style={styles.itemBusinessName}>{lineBusiness}</Text> : null}
-                      <Text style={styles.itemDescription}>{item.itemType === "expertise" ? item.description : item.bs_service_desc}</Text>
-                      <View style={styles.priceContainer}>
-                        <View style={styles.priceRow}>
-                          <Text style={styles.priceLabel}>Price:</Text>
-                          <Text style={styles.priceValue}>
-                            {item.itemType === "expertise"
-                              ? `$${parsePrice(item.cost).toFixed(2)}`
-                              : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${parsePrice(item.bs_cost).toFixed(2)}`}
+                <View key={index} style={styles.cartItemContainer}>
+                  <TouchableOpacity style={styles.removeButton} onPress={() => handleRemoveItem(index)}>
+                    <Ionicons name='close-circle' size={24} color='#FF3B30' />
+                  </TouchableOpacity>
+                  <View style={styles.cartItemContent}>
+                    <Text style={styles.itemName}>{item.itemType === "expertise" ? item.title : item.bs_service_name}</Text>
+                    {/* Stock badge for limited-quantity items */}
+                    {item.itemType !== "expertise" && (() => {
+                      const qty = item.bs_quantity;
+                      if (!qty || String(qty).toLowerCase() === "unlimited") return null;
+                      const num = parseInt(qty, 10);
+                      if (isNaN(num)) return null;
+                      const isSoldOut = num === 0;
+                      const isLow = num > 0 && num <= 5;
+                      return (
+                        <View style={{
+                          alignSelf: "flex-start",
+                          backgroundColor: isSoldOut ? "#fee2e2" : isLow ? "#fef9c3" : "#dcfce7",
+                          borderRadius: 10,
+                          paddingHorizontal: 8,
+                          paddingVertical: 2,
+                          marginBottom: 6,
+                        }}>
+                          <Text style={{
+                            fontSize: 12,
+                            fontWeight: "600",
+                            color: isSoldOut ? "#dc2626" : isLow ? "#b45309" : "#166534",
+                          }}>
+                            {isSoldOut ? "Out of stock" : isLow ? `Only ${num} left` : `${num} in stock`}
                           </Text>
                         </View>
-                        <View style={styles.quantityContainer}>
-                          <Text style={styles.priceLabel}>Quantity:</Text>
-                          <View style={styles.quantityControls}>
-                            <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, -1)}>
-                              <Ionicons name='remove' size={20} color='#9C45F7' />
-                            </TouchableOpacity>
-                            <Text style={styles.quantityText}>{item.quantity || 1}</Text>
-                            <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, 1)}>
-                              <Ionicons name='add' size={20} color='#9C45F7' />
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                        <View style={styles.totalRow}>
-                          <Text style={styles.totalLabel}>Total Price:</Text>
-                          <Text style={styles.totalValue}>
-                            {item.itemType === "expertise"
-                              ? `$${(parsePrice(item.cost) * (item.quantity || 1)).toFixed(2)}`
-                              : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${(parsePrice(item.totalPrice) || parsePrice(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
-                          </Text>
-                        </View>
-                        {item.itemType === "expertise" ? (
-                          <Text style={styles.lineTaxMeta}>Sales tax: n/a (expertise)</Text>
-                        ) : (
-                          <View style={styles.lineTaxBlock}>
-                            <View style={styles.lineTaxRow}>
-                              <Text style={styles.lineTaxMetaLeft} numberOfLines={4}>
-                                Taxable: {lineTax.taxable ? "Yes" : "No"}
-                                {" · "}
-                                <Text style={styles.lineTaxMetaEm}>Product Tax Rate:</Text> {storedRateWithPercent}
-                              </Text>
-                              <Text style={styles.lineTaxAmount}>${lineTax.tax.toFixed(2)}</Text>
-                            </View>
-                          </View>
-                        )}
-                        {(item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty)) > 0 && (
-                          <View style={[styles.totalRow, styles.bountyNoteRow]}>
-                            <Text style={[styles.bountyNoteLabel, { flex: 1, paddingRight: 8 }]}>{formatCartBountyPaidBySellerLine(item)}</Text>
-                            <Text style={styles.bountyNoteValue}>{formatCartBountyLineTotalValueStr(item)}</Text>
-                          </View>
-                        )}
+                      );
+                    })()}
+                    {showLineBusiness ? <Text style={styles.itemBusinessName}>{lineBusiness}</Text> : null}
+                    <Text style={styles.itemDescription}>{item.itemType === "expertise" ? item.description : item.bs_service_desc}</Text>
+                    <View style={styles.priceContainer}>
+                      <View style={styles.priceRow}>
+                        <Text style={styles.priceLabel}>Price:</Text>
+                        <Text style={styles.priceValue}>
+                          {item.itemType === "expertise"
+                            ? `$${parsePrice(item.cost).toFixed(2)}`
+                            : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${parsePrice(item.bs_cost_with_extras || item.bs_cost).toFixed(2)}`
+                          }
+                            </Text>
                       </View>
+                      <View style={styles.quantityContainer}>
+                        <Text style={styles.priceLabel}>Quantity:</Text>
+                        <View style={styles.quantityControls}>
+                          <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, -1)}>
+                            <Ionicons name='remove' size={20} color='#9C45F7' />
+                          </TouchableOpacity>
+                          <Text style={styles.quantityText}>{item.quantity || 1}</Text>
+                          <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, 1)}>
+                            <Ionicons name='add' size={20} color='#9C45F7' />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                      <View style={styles.totalRow}>
+                        <Text style={styles.totalLabel}>Total Price:</Text>
+                        <Text style={styles.totalValue}>
+                          {item.itemType === "expertise"
+                            ? `$${(parsePrice(item.cost) * (item.quantity || 1)).toFixed(2)}`
+                            : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${(parsePrice(item.totalPrice) || parsePrice(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
+                        </Text>
+                      </View>
+                      {item.itemType === "expertise" ? (
+                        <Text style={styles.lineTaxMeta}>Sales tax: n/a (expertise)</Text>
+                      ) : (
+                        <View style={styles.lineTaxBlock}>
+                          <View style={styles.lineTaxRow}>
+                            <Text style={styles.lineTaxMetaLeft} numberOfLines={4}>
+                              Taxable: {lineTax.taxable ? "Yes" : "No"}
+                              {" · "}
+                              <Text style={styles.lineTaxMetaEm}>Product Tax Rate:</Text> {storedRateWithPercent}
+                            </Text>
+                            <Text style={styles.lineTaxAmount}>${lineTax.tax.toFixed(2)}</Text>
+                          </View>
+                        </View>
+                      )}
+                      {(item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty)) > 0 && (
+                        <View style={[styles.totalRow, styles.bountyNoteRow]}>
+                          <Text style={styles.bountyNoteLabel}>Bounty (paid by Seller)</Text>
+                          <Text style={styles.bountyNoteValue}>
+                            $
+                            {item.itemType === "expertise"
+                              ? (parsePrice(item.bounty) * (item.quantity || 1)).toFixed(2)
+                              : item.bs_bounty_type === "total"
+                                ? parsePrice(item.bs_bounty).toFixed(2)
+                                : (parsePrice(item.bs_bounty) * (item.quantity || 1)).toFixed(2)}
+                          </Text>
+                        </View>
+                      )}
                     </View>
                   </View>
-                );
+                </View>
+              );
               })}
               <View style={styles.totalContainer}>
                 <Text style={styles.multiSellerHint}>
