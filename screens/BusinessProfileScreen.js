@@ -78,6 +78,15 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [selectedChoices, setSelectedChoices] = useState({}); // { groupTitle: optionId }
   const [specialInstructions, setSpecialInstructions] = useState("");
 
+  const [claimModalVisible, setClaimModalVisible] = useState(false);
+  const [claimStep, setClaimStep] = useState(1);
+  const [claimRole, setClaimRole] = useState("owner");
+  const [claimNote, setClaimNote] = useState("");
+  const [claimFiles, setClaimFiles] = useState([]);
+  const [claimSubmitting, setClaimSubmitting] = useState(false);
+  const [claimStatus, setClaimStatus] = useState(null); // null | 'pending' | 'approved'
+  const [claimSubmittedAt, setClaimSubmittedAt] = useState(null);
+
   // Handle viewport resize on web (for DevTools opening/closing)
   useEffect(() => {
     if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -816,6 +825,31 @@ export default function BusinessProfileScreen({ route, navigation }) {
     }
   };
 
+  const handlePickDocument = () => {
+    // TODO: replace with expo-document-picker
+    const mock = { name: "business_license_2024.pdf", size: "1.2 MB", uri: "file://mock" };
+    setClaimFiles((prev) => [...prev, mock]);
+  };
+
+  const handleRemoveFile = (index) => {
+    setClaimFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleClaimSubmit = async () => {
+    if (claimFiles.length === 0) {
+      Alert.alert("Documents required", "Please upload at least one verification document.");
+      return;
+    }
+    setClaimSubmitting(true);
+    // TODO: POST claimRole, claimNote, claimFiles to your claim endpoint
+    await new Promise((r) => setTimeout(r, 1200)); // remove this stub
+    setClaimSubmitting(false);
+    setClaimStatus("pending");
+    setClaimSubmittedAt(new Date());
+    setClaimModalVisible(false);
+    setClaimStep(1);
+  };
+
   const renderStars = (rating) => {
     return (
       <View style={{ flexDirection: "row" }}>
@@ -1294,6 +1328,179 @@ export default function BusinessProfileScreen({ route, navigation }) {
               <Text style={styles.chatButtonText}>Message Business</Text>
             </TouchableOpacity>
           )}
+
+          {!isOwner && claimStatus === null && (
+            <View style={{ marginTop: 16, marginBottom: 4 }}>
+              <TouchableOpacity
+                style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, backgroundColor: "#4B2E83", paddingVertical: 14, borderRadius: 10 }}
+                onPress={() => setClaimModalVisible(true)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="shield-checkmark-outline" size={20} color="#fff" />
+                <Text style={{ color: "#fff", fontSize: 15, fontWeight: "bold" }}>Claim This Business</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", textAlign: "center", marginTop: 6 }}>
+                Are you the owner? Verify your identity to manage this listing.
+              </Text>
+            </View>
+          )}
+
+          {!isOwner && claimStatus === "pending" && (
+            <View style={{ marginTop: 16, backgroundColor: "rgba(75,46,131,0.08)", borderWidth: 0.5, borderColor: "rgba(75,46,131,0.3)", borderRadius: 10, padding: 14, flexDirection: "row", gap: 10 }}>
+              <Ionicons name="time-outline" size={22} color="#4B2E83" style={{ marginTop: 1 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: "bold", color: "#4B2E83", marginBottom: 4 }}>Claim under review</Text>
+                <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#555", lineHeight: 18 }}>
+                  Submitted on {claimSubmittedAt?.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}. Admin review takes 2–3 business days.
+                </Text>
+                <TouchableOpacity onPress={() => setClaimModalVisible(true)} style={{ marginTop: 10, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="add-circle-outline" size={16} color="#4B2E83" />
+                  <Text style={{ fontSize: 13, fontWeight: "bold", color: "#4B2E83" }}>Add more documents</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Claim Modal */}
+          <Modal visible={claimModalVisible} transparent animationType="slide" onRequestClose={() => setClaimModalVisible(false)}>
+            <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
+              <View style={{ backgroundColor: darkMode ? "#1e1e1e" : "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingBottom: 32, maxHeight: "92%" }}>
+                <View style={{ width: 36, height: 4, backgroundColor: "#ddd", borderRadius: 2, alignSelf: "center", marginTop: 12, marginBottom: 16 }} />
+
+                <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                  <Text style={{ fontSize: 18, fontWeight: "bold", color: darkMode ? "#fff" : "#000", marginBottom: 6 }}>Claim this business</Text>
+                  <Text style={{ fontSize: 13, color: darkMode ? "#aaa" : "#666", lineHeight: 19, marginBottom: 20 }}>
+                    Submit ownership documents for admin review. We'll verify and grant access within 2–3 business days.
+                  </Text>
+
+                  {/* Step indicator */}
+                  <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 24 }}>
+                    {["Your info", "Documents", "Review"].map((label, i) => {
+                      const stepNum = i + 1;
+                      const isDone = claimStep > stepNum;
+                      const isActive = claimStep === stepNum;
+                      return (
+                        <React.Fragment key={label}>
+                          <View style={{ alignItems: "center" }}>
+                            <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: isActive || isDone ? "#4B2E83" : "#eee", borderWidth: 1.5, borderColor: isActive || isDone ? "#4B2E83" : "#ccc", alignItems: "center", justifyContent: "center", marginBottom: 4 }}>
+                              {isDone
+                                ? <Ionicons name="checkmark" size={13} color="#fff" />
+                                : <Text style={{ fontSize: 12, fontWeight: "bold", color: isActive ? "#fff" : "#999" }}>{stepNum}</Text>}
+                            </View>
+                            <Text style={{ fontSize: 10, color: isActive ? "#4B2E83" : (darkMode ? "#aaa" : "#999"), fontWeight: isActive ? "bold" : "normal" }}>{label}</Text>
+                          </View>
+                          {i < 2 && <View style={{ flex: 1, height: 1.5, backgroundColor: isDone ? "#4B2E83" : "#ddd", marginBottom: 18 }} />}
+                        </React.Fragment>
+                      );
+                    })}
+                  </View>
+
+                  {/* Step 1 */}
+                  {claimStep === 1 && (
+                    <View>
+                      <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 10 }}>Your relationship to this business</Text>
+                      {[{ key: "owner", label: "Owner" }, { key: "co_owner", label: "Co-owner" }, { key: "manager", label: "Authorized manager" }].map(({ key, label }) => (
+                        <TouchableOpacity key={key} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 }} onPress={() => setClaimRole(key)}>
+                          <Ionicons name={claimRole === key ? "radio-button-on" : "radio-button-off"} size={18} color="#4B2E83" />
+                          <Text style={{ fontSize: 15, color: darkMode ? "#fff" : "#333" }}>{label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                      <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginTop: 16, marginBottom: 8 }}>Additional context (optional)</Text>
+                      <TextInput
+                        style={{ borderWidth: 0.5, borderColor: darkMode ? "#555" : "#ccc", borderRadius: 8, padding: 10, fontSize: 14, color: darkMode ? "#fff" : "#333", minHeight: 80, textAlignVertical: "top", backgroundColor: darkMode ? "#2a2a2a" : "#fafafa" }}
+                        value={claimNote}
+                        onChangeText={setClaimNote}
+                        placeholder="E.g. I opened this business in 2018..."
+                        placeholderTextColor={darkMode ? "#888" : "#aaa"}
+                        multiline
+                        maxLength={500}
+                      />
+                      <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999", textAlign: "right", marginTop: 4 }}>{claimNote.length}/500</Text>
+                    </View>
+                  )}
+
+                  {/* Step 2 */}
+                  {claimStep === 2 && (
+                    <View>
+                      <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 8 }}>Upload verification documents</Text>
+                      <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginBottom: 8 }}>Accepted: Business license, Gov. ID, Tax filing, Articles of incorporation</Text>
+                      <TouchableOpacity
+                        style={{ borderWidth: 1.5, borderStyle: "dashed", borderColor: darkMode ? "#555" : "#ccc", borderRadius: 10, padding: 24, alignItems: "center", backgroundColor: darkMode ? "#2a2a2a" : "#fafafa", marginBottom: 12 }}
+                        onPress={handlePickDocument}
+                      >
+                        <Ionicons name="cloud-upload-outline" size={36} color={darkMode ? "#aaa" : "#888"} />
+                        <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginTop: 8, marginBottom: 4 }}>Tap to upload files</Text>
+                        <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#999" }}>PDF, JPG, PNG · max 10 MB each</Text>
+                      </TouchableOpacity>
+                      {claimFiles.map((file, i) => (
+                        <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: darkMode ? "#2d2d2d" : "#f5f5f5", borderWidth: 0.5, borderColor: darkMode ? "#444" : "#ddd", borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                          <Ionicons name="document-text-outline" size={20} color="#4B2E83" />
+                          <Text style={{ flex: 1, fontSize: 13, color: darkMode ? "#fff" : "#333" }} numberOfLines={1}>{file.name}</Text>
+                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>{file.size}</Text>
+                          <TouchableOpacity onPress={() => handleRemoveFile(i)}>
+                            <Ionicons name="close-outline" size={20} color={darkMode ? "#aaa" : "#888"} />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-start", backgroundColor: "rgba(75,46,131,0.07)", borderWidth: 0.5, borderColor: "rgba(75,46,131,0.2)", borderRadius: 8, padding: 10, marginTop: 4 }}>
+                        <Ionicons name="information-circle-outline" size={16} color="#4B2E83" style={{ marginTop: 1 }} />
+                        <Text style={{ flex: 1, fontSize: 12, color: darkMode ? "#aaa" : "#555", lineHeight: 18 }}>Your documents are encrypted and only reviewed by admins. They will not be shared publicly.</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Step 3 */}
+                  {claimStep === 3 && (
+                    <View>
+                      <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 12 }}>Review your submission</Text>
+                      <View style={{ backgroundColor: darkMode ? "#2d2d2d" : "#f5f5f5", borderRadius: 10, padding: 14, marginBottom: 12 }}>
+                        {[{ k: "Role", v: claimRole === "owner" ? "Owner" : claimRole === "co_owner" ? "Co-owner" : "Authorized manager" }, { k: "Documents", v: `${claimFiles.length} file${claimFiles.length !== 1 ? "s" : ""}` }].map(({ k, v }, i) => (
+                          <View key={k}>
+                            {i > 0 && <View style={{ height: 0.5, backgroundColor: darkMode ? "#444" : "#ddd", marginVertical: 8 }} />}
+                            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                              <Text style={{ fontSize: 13, color: darkMode ? "#aaa" : "#666" }}>{k}</Text>
+                              <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333" }}>{v}</Text>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                      {claimFiles.map((file, i) => (
+                        <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: darkMode ? "#2d2d2d" : "#f5f5f5", borderWidth: 0.5, borderColor: darkMode ? "#444" : "#ddd", borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                          <Ionicons name="document-text-outline" size={20} color="#4B2E83" />
+                          <Text style={{ flex: 1, fontSize: 13, color: darkMode ? "#fff" : "#333" }} numberOfLines={1}>{file.name}</Text>
+                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>{file.size}</Text>
+                        </View>
+                      ))}
+                      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-start", backgroundColor: "rgba(75,46,131,0.07)", borderWidth: 0.5, borderColor: "rgba(75,46,131,0.2)", borderRadius: 8, padding: 10, marginTop: 4 }}>
+                        <Ionicons name="time-outline" size={16} color="#4B2E83" style={{ marginTop: 1 }} />
+                        <Text style={{ flex: 1, fontSize: 12, color: darkMode ? "#aaa" : "#555", lineHeight: 18 }}>Once submitted, you'll be notified when review is complete (2–3 business days).</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Nav buttons */}
+                  <View style={{ flexDirection: "row", gap: 10, marginTop: 20 }}>
+                    <TouchableOpacity
+                      style={{ flex: 1, paddingVertical: 13, borderRadius: 10, borderWidth: 0.5, borderColor: darkMode ? "#555" : "#ccc", alignItems: "center" }}
+                      onPress={() => claimStep === 1 ? setClaimModalVisible(false) : setClaimStep((s) => s - 1)}
+                      disabled={claimSubmitting}
+                    >
+                      <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#333" }}>{claimStep === 1 ? "Cancel" : "Back"}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{ flex: 2, paddingVertical: 13, borderRadius: 10, backgroundColor: "#4B2E83", alignItems: "center", opacity: claimSubmitting ? 0.6 : 1 }}
+                      onPress={() => claimStep < 3 ? setClaimStep((s) => s + 1) : handleClaimSubmit()}
+                      disabled={claimSubmitting}
+                    >
+                      {claimSubmitting
+                        ? <ActivityIndicator color="#fff" size="small" />
+                        : <Text style={{ fontSize: 14, fontWeight: "bold", color: "#fff" }}>{claimStep < 3 ? "Next →" : "Submit for Review"}</Text>}
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
 
           {/* All Reviews Section */}
           {allReviews.length > 0 && (
