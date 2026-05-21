@@ -1,8 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
-import { View, Text, TextInput, StyleSheet, Dimensions, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
-import { GooglePlacesAutocomplete } from "react-native-google-places-autocomplete";
+import { View, Text, TextInput, StyleSheet, Dimensions, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import config from "../config";
+import { getBusinessSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import { Dropdown } from "react-native-element-dropdown";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -13,7 +12,9 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
   const { darkMode } = useDarkMode();
   // console.log("BusinessStep0 - darkMode value:", darkMode);
   const [loading, setLoading] = useState(false);
-  const googlePlacesRef = useRef();
+  const [placeSearchText, setPlaceSearchText] = useState("");
+  const [placeSuggestions, setPlaceSuggestions] = useState([]);
+  const placesDebounceRef = useRef(null);
 
   useEffect(() => {
     console.log("In BusinessStep0");
@@ -56,56 +57,60 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
     AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
   };
 
-  const handleGooglePlaceSelect = async (data, details = null) => {
-    if (!details) return;
+  const onPlaceSearchChange = (text) => {
+    setPlaceSearchText(text);
+    if (placesDebounceRef.current) clearTimeout(placesDebounceRef.current);
+    if (!text.trim()) {
+      setPlaceSuggestions([]);
+      return;
+    }
+    placesDebounceRef.current = setTimeout(async () => {
+      try {
+        const results = await getBusinessSuggestions(text);
+        setPlaceSuggestions(results);
+      } catch (err) {
+        console.error("BusinessStep0 place suggestions error:", err);
+      }
+    }, 350);
+  };
 
-    console.log("handleGooglePlaceSelect Data: ", data);
-    // console.log("handleGooglePlaceSelect Details: ", details);
+  const handleGooglePlaceSelect = async (place) => {
+    setPlaceSuggestions([]);
+    setPlaceSearchText(place.structured_formatting?.main_text || place.description || "");
+    setLoading(true);
 
-    const addressComponents = details.address_components || [];
-    const getComponent = (type) => addressComponents.find((comp) => comp.types.includes(type))?.long_name || "";
+    try {
+      const pd = await getPlaceDetails(place.place_id);
+      const updated = {
+        ...formData,
+        businessName: pd.name || place.structured_formatting?.main_text || "",
+        location: pd.formatted_address || "",
+        phoneNumber: pd.phone || "",
+        website: pd.website || "",
+        googleId: place.place_id || "",
+        googleRating: "",
+        businessGooglePhotos: [],
+        favImage: "",
+        priceLevel: "",
+        addressLine1: pd.address_line_1 || pd.formatted_address || "",
+        addressLine2: "",
+        city: pd.city || "",
+        state: pd.state || "",
+        country: pd.country || "",
+        zip: pd.zip || "",
+        latitude: pd.lat ?? "",
+        longitude: pd.lng ?? "",
+        types: [],
+      };
 
-    const addressLine1 = `${getComponent("street_number")} ${getComponent("route")}`.trim();
-    const addressLine2 = getComponent("subpremise");
-    const city = getComponent("locality");
-    const state = getComponent("administrative_area_level_1");
-    const country = getComponent("country");
-    const zip = getComponent("postal_code");
-
-    const latFn = details.geometry?.location?.lat;
-    const lngFn = details.geometry?.location?.lng;
-    const latitude = typeof latFn === "function" ? latFn() : (latFn ?? "");
-    const longitude = typeof lngFn === "function" ? lngFn() : (lngFn ?? "");
-
-    const photoReferences = details.photos?.map((photo) => photo.photo_reference) || [];
-    const photoUrls = photoReferences.map((ref) => `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${ref}&key=${config.googleMapsApiKey}`);
-
-    const updated = {
-      ...formData,
-      businessName: details.name || "", // Only the name
-      location: details.vicinity || details.formatted_address || "", // Just the address
-      phoneNumber: details.formatted_phone_number || "", // Phone
-      website: details.website || "",
-      googleId: details.place_id || "",
-      googleRating: details.rating || "",
-      businessGooglePhotos: photoUrls,
-      favImage: photoUrls[0] || "",
-      priceLevel: details.price_level || "",
-      addressLine1: details.vicinity || details.formatted_address || "",
-      addressLine2,
-      city,
-      state,
-      country,
-      zip,
-      latitude,
-      longitude,
-      types: details.types || [],
-    };
-
-    setFormData(updated);
-    await AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
-
-    fetchProfile(details.place_id);
+      setFormData(updated);
+      await AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+      fetchProfile(place.place_id);
+    } catch (err) {
+      console.error("BusinessStep0 place select error:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fetchProfile = async (googlePlaceId) => {
@@ -161,48 +166,37 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Search for Google Maps Business or Organization</Text>
               <View style={{ width: "100%", marginBottom: 20, zIndex: 1000 }}>
-                <GooglePlacesAutocomplete
-                  ref={googlePlacesRef}
+                <TextInput
+                  style={[styles.input, darkMode && styles.darkInput]}
                   placeholder='Enter a Business or Organization name'
-                  placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-                  fetchDetails={true}
-                  onPress={handleGooglePlaceSelect}
-                  query={{
-                    key: config.googleMapsApiKey,
-                    language: "en",
-                    types: "establishment",
-                  }}
-                  textInputProps={{
-                    accessibilitylabel: "Search for a business or organization",
-                    accessibilityHint: "Type a business or organization name and choose one from the suggestions",
-                    accessibilityRole: "search",
-                    "aria-label": "Search for a business or organization",
-                  }}
-                  styles={{
-                    textInput: {
-                      backgroundColor: darkMode ? "#2d2d2d" : "#fff",
-                      color: darkMode ? "#ffffff" : "#000",
-                      borderRadius: 10,
-                      padding: 12,
-                      fontSize: 16,
-                      borderWidth: 1,
-                      borderColor: darkMode ? "#404040" : "#ddd",
-                    },
-                    listView: {
-                      backgroundColor: darkMode ? "#2d2d2d" : "#fff",
-                      zIndex: 9999,
-                      position: "absolute",
-                      top: 60,
-                      borderRadius: 10,
-                      elevation: 3,
-                      boxShadow: "0px 2px 4px rgba(0, 0, 0, 0.1)",
-                    },
-                  }}
-                  enablePoweredByContainer={false}
-                  flatListProps={{
-                    nestedScrollEnabled: true,
-                  }}
+                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                  value={placeSearchText}
+                  onChangeText={onPlaceSearchChange}
+                  accessibilityLabel='Search for a business or organization'
+                  accessibilityHint='Type a business or organization name and choose one from the suggestions'
+                  aria-label='Search for a business or organization'
                 />
+                {placeSuggestions.length > 0 && (
+                  <View style={[styles.suggestionsList, darkMode && styles.darkSuggestionsList]}>
+                    {placeSuggestions.map((item) => (
+                      <TouchableOpacity
+                        key={item.place_id}
+                        style={[styles.suggestionRow, darkMode && styles.darkSuggestionRow]}
+                        onPress={() => handleGooglePlaceSelect(item)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.suggestionMain, darkMode && styles.darkLabel]} numberOfLines={1}>
+                          {item.structured_formatting?.main_text || item.description}
+                        </Text>
+                        {item.structured_formatting?.secondary_text ? (
+                          <Text style={[styles.suggestionSub, darkMode && styles.darkSubtitle]} numberOfLines={1}>
+                            {item.structured_formatting.secondary_text}
+                          </Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
 
               <Text style={[styles.orText, darkMode && styles.darkOrText]}>--- OR ---</Text>
@@ -445,5 +439,36 @@ const styles = StyleSheet.create({
   },
   darkOrText: {
     color: "#cccccc",
+  },
+  suggestionsList: {
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    maxHeight: 220,
+    overflow: "hidden",
+  },
+  darkSuggestionsList: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  suggestionRow: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  darkSuggestionRow: {
+    borderBottomColor: "#404040",
+  },
+  suggestionMain: {
+    fontSize: 16,
+    color: "#333",
+    fontWeight: "600",
+  },
+  suggestionSub: {
+    fontSize: 13,
+    color: "#666",
+    marginTop: 2,
   },
 });

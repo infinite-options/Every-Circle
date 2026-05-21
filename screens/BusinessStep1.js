@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
 import { View, Text, TextInput, StyleSheet, Dimensions, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Image, Alert } from "react-native";
-import { GooglePlacesAutocomplete } from "react-native-google-places-autocomplete";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import config from "../config";
 import { Dropdown } from "react-native-element-dropdown";
@@ -14,7 +13,6 @@ const { width } = Dimensions.get("window");
 export default function BusinessStep1({ formData, setFormData, navigation }) {
   const { darkMode } = useDarkMode();
   const [loading, setLoading] = useState(false);
-  const googlePlacesRef = useRef();
 
   const googlePhotos = formData.businessGooglePhotos || [];
   const userUploadedImages = formData.images || [];
