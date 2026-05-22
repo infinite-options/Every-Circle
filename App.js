@@ -893,6 +893,8 @@ export default function App() {
             business_uid: (v) => (v != null ? String(v) : ""),
           },
         },
+        BusinessSetup: "business-setup",
+        EditProfile: "edit-profile",
         ShoppingCart: "cart",
       };
 
