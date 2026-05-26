@@ -19,6 +19,7 @@ import BusinessSection from "../components/BusinessSection";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
+import { parseCoordinatePairInput } from "../utils/validateCoordinates";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 const DEFAULT_PROFILE_IMAGE = require("../assets/profile.png");
@@ -67,6 +68,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     shortBio: user?.shortBio || "",
     city: user?.city || "",
     state: user?.state || "",
+    homeCoordinates: user?.homeCoordinates || "",
     locationIsPublic: user?.locationIsPublic || false,
     emailIsPublic: user?.emailIsPublic || false,
     phoneIsPublic: user?.phoneIsPublic || false,
@@ -301,6 +303,7 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [shortBioHeight, setShortBioHeight] = useState(40); // Initial height for Short Bio
   const fileInputRef = useRef(null); // For web file input
   const [imageUpdateKey, setImageUpdateKey] = useState(0); // Key to force MiniCard re-render when image changes
+  const [homeCoordinatesError, setHomeCoordinatesError] = useState("");
 
   const toggleVisibility = (fieldName) => {
     setFormData((prev) => {
@@ -548,6 +551,14 @@ const EditProfileScreen = ({ route, navigation }) => {
       return;
     }
 
+    const homeCoords = parseCoordinatePairInput(formData.homeCoordinates);
+    if (homeCoords.error) {
+      setHomeCoordinatesError(homeCoords.error);
+      Alert.alert("Invalid coordinates", homeCoords.error);
+      return;
+    }
+    setHomeCoordinatesError("");
+
     const trimmedProfileUID = profileUID.trim();
     if (!trimmedProfileUID) {
       Alert.alert("Error", "Profile ID is missing.");
@@ -567,6 +578,13 @@ const EditProfileScreen = ({ route, navigation }) => {
 
       payload.append("profile_personal_city", formData.city);
       payload.append("profile_personal_state", formData.state);
+      if (homeCoords.lat != null && homeCoords.lng != null) {
+        payload.append("profile_personal_latitude", String(homeCoords.lat));
+        payload.append("profile_personal_longitude", String(homeCoords.lng));
+      } else {
+        payload.append("profile_personal_latitude", "");
+        payload.append("profile_personal_longitude", "");
+      }
       payload.append("profile_personal_location_is_public", formData.locationIsPublic ? 1 : 0);
       payload.append("profile_personal_phone_number_is_public", formData.phoneIsPublic ? 1 : 0);
       payload.append("profile_personal_email_is_public", formData.emailIsPublic ? 1 : 0);
@@ -1038,6 +1056,8 @@ const EditProfileScreen = ({ route, navigation }) => {
                 ...user.personal_info,
                 profile_personal_city: formData.city,
                 profile_personal_state: formData.state,
+                profile_personal_latitude: homeCoords.lat,
+                profile_personal_longitude: homeCoords.lng,
                 profile_personal_location_is_public: formData.locationIsPublic ? 1 : 0,
               },
             },
@@ -1098,6 +1118,34 @@ const EditProfileScreen = ({ route, navigation }) => {
         maxLength={fieldName === "phoneNumber" ? 14 : undefined}
         keyboardType={fieldName === "phoneNumber" ? "phone-pad" : "default"}
       />
+    </View>
+  );
+
+  const renderHomeCoordinatesField = () => (
+    <View style={styles.fieldContainer}>
+      <Text style={[styles.label, darkMode && styles.darkLabel]}>Home coordinates</Text>
+      <Text style={[styles.homeCoordHint, darkMode && styles.darkHomeCoordHint]}>
+        Decimal degrees (WGS84). Format: latitude, longitude. Leave empty to clear.
+      </Text>
+      <TextInput
+        style={[
+          styles.input,
+          darkMode && styles.darkInput,
+          homeCoordinatesError ? styles.inputError : null,
+        ]}
+        value={formData.homeCoordinates}
+        onChangeText={(text) => {
+          handleFieldChange("homeCoordinates", text);
+          if (homeCoordinatesError) setHomeCoordinatesError("");
+        }}
+        placeholder='e.g. 37.7893, -122.3966'
+        placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+        autoCapitalize='none'
+        autoCorrect={false}
+      />
+      {homeCoordinatesError ? (
+        <Text style={styles.homeCoordErrorText}>{homeCoordinatesError}</Text>
+      ) : null}
     </View>
   );
 
@@ -1401,6 +1449,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         {renderField("Email", formData.email, formData.emailIsPublic, "email", "emailIsPublic")}
         {renderField("City", formData.city, formData.locationIsPublic, "city", "locationIsPublic")}
         {renderField("State", formData.state, formData.locationIsPublic, "state", "locationIsPublic")}
+        {renderHomeCoordinatesField()}
         {renderField("Tag Line", formData.tagLine, formData.tagLineIsPublic, "tagLine", "tagLineIsPublic")}
 
         {/* BIO Section */}
@@ -1788,6 +1837,23 @@ const styles = StyleSheet.create({
   togglePillTextActive: {
     color: "#fff",
     fontWeight: "bold",
+  },
+  homeCoordHint: {
+    fontSize: 13,
+    color: "#666",
+    marginBottom: 8,
+    lineHeight: 18,
+  },
+  darkHomeCoordHint: {
+    color: "#aaa",
+  },
+  inputError: {
+    borderColor: "#c62828",
+  },
+  homeCoordErrorText: {
+    marginTop: 6,
+    fontSize: 13,
+    color: "#c62828",
   },
 });
 

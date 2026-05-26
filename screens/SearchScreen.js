@@ -15,6 +15,7 @@ import {
   TAG_CATEGORY_DISTINCT_ENDPOINT,
   SEARCH_BASE_URL,
   SEARCH_GLOBAL_ENDPOINT,
+  SEARCH_RESULT_LIMIT,
   BUSINESS_DETAILS_ENDPOINT,
   // BUSINESS_TAG_SEARCH_ENDPOINT, // disabled for testing without businesstagsearch
   BUSINESS_INFO_ENDPOINT,
@@ -158,6 +159,8 @@ export default function SearchScreen({ route }) {
 
   // Filter states
   const [distance, setDistance] = useState(null);
+  /** Home address from profile_personal_latitude/longitude (Settings → Home Address Coordinates) */
+  const [userHomeCoords, setUserHomeCoords] = useState({ lat: null, lng: null });
   const [network, setNetwork] = useState(null);
   const [bounty, setBounty] = useState(null);
   const [rating, setRating] = useState(null);
@@ -174,6 +177,30 @@ export default function SearchScreen({ route }) {
   useEffect(() => {
     AsyncStorage.getItem("profile_uid").then((uid) => setCurrentProfileUid(uid));
   }, []);
+
+  const loadUserHomeCoords = useCallback(async () => {
+    try {
+      const { getSessionProfile } = require("../utils/sessionProfile");
+      const session = await getSessionProfile({ forceRefresh: true });
+      const pi = session?.personalInfo || session?.rawProfile?.personal_info;
+      const lat = pi?.profile_personal_latitude;
+      const lng = pi?.profile_personal_longitude;
+      if (lat != null && lng != null && !Number.isNaN(parseFloat(lat)) && !Number.isNaN(parseFloat(lng))) {
+        setUserHomeCoords({ lat: parseFloat(lat), lng: parseFloat(lng) });
+      } else {
+        setUserHomeCoords({ lat: null, lng: null });
+      }
+    } catch (e) {
+      console.warn("[SearchScreen] loadUserHomeCoords failed:", e);
+      setUserHomeCoords({ lat: null, lng: null });
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadUserHomeCoords();
+    }, [loadUserHomeCoords]),
+  );
 
   // Restore search state when returning from Profile
   useFocusEffect(
@@ -426,18 +453,39 @@ export default function SearchScreen({ route }) {
 
   // Filter options (same as FilterScreen)
   const distanceOptions = [5, 10, 15, 25, 50, 100];
+  /** First modal row: omit user_lat / max_distance on Qdrant search. */
+  const distanceModalOptions = [
+    { key: "any", label: "Any distance (no filter)", miles: null },
+    ...distanceOptions.map((d) => ({ key: String(d), label: `${d} mi`, miles: d })),
+  ];
   const networkOptions = [1, 2, 3, 4, 5];
+
+  const clearDistanceFilter = (reRunSearch = true) => {
+    setDistance(null);
+    setDistanceModalVisible(false);
+    if (reRunSearch && searchQuery.trim()) {
+      performSearch(searchQuery, searchType, { distanceMiles: null });
+    }
+  };
+
+  /** Append Qdrant distance params (user home → result coordinates). */
+  const appendDistanceParams = (baseUrl, miles, coords) => {
+    if (miles == null || coords?.lat == null || coords?.lng == null) return baseUrl;
+    const sep = baseUrl.includes("?") ? "&" : "?";
+    return `${baseUrl}${sep}user_lat=${encodeURIComponent(coords.lat)}&user_lon=${encodeURIComponent(coords.lng)}&max_distance=${encodeURIComponent(miles)}`;
+  };
   const bountyOptions = ["Ascending", "Descending"];
   const ratingOptions = ["> 1", "> 2", "> 3", "> 4", "> 4.5", "> 4.6", "> 4.8"];
 
   const globalBusinessResults = searchType === "global" ? results.filter((item) => (item?.itemType || "businesses") === "businesses") : [];
   const globalOfferingResults = searchType === "global" ? results.filter((item) => item?.itemType === "expertise") : [];
 
-  const fetchSearchJson = async (endpoint, q, applyRatingFilter = false) => {
-    let apiUrl = `${endpoint}?q=${encodeURIComponent(q)}`;
+  const fetchSearchJson = async (endpoint, q, applyRatingFilter = false, distanceMiles = distance) => {
+    let apiUrl = `${endpoint}?q=${encodeURIComponent(q)}&limit=${SEARCH_RESULT_LIMIT}`;
     if (applyRatingFilter && rating !== null) {
       apiUrl += `&min_rating=${rating}`;
     }
+    apiUrl = appendDistanceParams(apiUrl, distanceMiles, userHomeCoords);
 
     const fetchOptions =
       Platform.OS === "web"
@@ -469,20 +517,35 @@ export default function SearchScreen({ route }) {
   };
 
   // Extracted search function that can be called programmatically
-  const performSearch = async (query, type = searchType) => {
+  const performSearch = async (query, type = searchType, opts = {}) => {
     const q = query.trim();
     if (!q) return;
+
+    const effectiveDistance = opts.distanceMiles !== undefined ? opts.distanceMiles : distance;
+    if (effectiveDistance != null && (userHomeCoords.lat == null || userHomeCoords.lng == null)) {
+      Alert.alert(
+        "Home address needed",
+        "Set your home address coordinates in Settings to filter search results by distance.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => navigation.navigate("Settings") },
+        ],
+      );
+      return;
+    }
 
     console.log("🔍 Performing search for:", q);
     console.log("🔍 Search type:", type);
     console.log("🔍 Search query length:", q.length);
     console.log("🔍 Search query type:", typeof q);
     console.log("🔍 Rating filter:", rating);
+    console.log("🔍 Distance filter (mi):", effectiveDistance);
+    console.log("🔍 User home coords:", userHomeCoords);
 
     setLoading(true);
     try {
       if (type === "global") {
-        const globalJsonRaw = await fetchSearchJson(SEARCH_GLOBAL_ENDPOINT, q, true);
+        const globalJsonRaw = await fetchSearchJson(SEARCH_GLOBAL_ENDPOINT, q, true, effectiveDistance);
         const globalJson = sanitizeEmptyStrings(globalJsonRaw);
         const globalResults = Array.isArray(globalJson) ? globalJson : globalJson.results || globalJson.result || [];
         const businessResults = globalResults.filter((item) => item.itemType === "businesses");
@@ -597,12 +660,13 @@ export default function SearchScreen({ route }) {
       }
 
       // Build the API URL with query parameter
-      let apiUrl = `${baseEndpoint}?q=${encodeURIComponent(q)}`;
+      let apiUrl = `${baseEndpoint}?q=${encodeURIComponent(q)}&limit=${SEARCH_RESULT_LIMIT}`;
 
       // Add min_rating parameter if rating filter is set
       if (rating !== null) {
         apiUrl += `&min_rating=${rating}`;
       }
+      apiUrl = appendDistanceParams(apiUrl, effectiveDistance, userHomeCoords);
 
       console.log("🎯 EXACT ENDPOINT BEING CALLED:", apiUrl);
 
@@ -2010,36 +2074,38 @@ export default function SearchScreen({ route }) {
                   <Ionicons name='close' size={28} color={darkMode ? "#ffffff" : "#333"} />
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={[styles.resetOption, darkMode && styles.darkResetOption]}
-                onPress={() => {
-                  setDistance(null);
-                  setDistanceModalVisible(false);
-                }}
-              >
-                <Text style={[styles.resetOptionText, darkMode && styles.darkResetOptionText]}>Reset</Text>
-              </TouchableOpacity>
+              <Text style={[styles.distanceModalHint, darkMode && styles.darkDistanceModalHint]}>
+                {distance == null
+                  ? "Showing all results regardless of location."
+                  : "Results are limited to your home address coordinates in Settings."}
+              </Text>
               <FlatList
-                data={distanceOptions.map((d) => `${d} mi`)}
+                data={distanceModalOptions}
                 renderItem={({ item }) => {
-                  const isSelected = distance !== null && item === `${distance} mi`;
+                  const isSelected = item.miles == null ? distance == null : distance === item.miles;
                   return (
                     <TouchableOpacity
                       style={[styles.optionItem, isSelected && styles.selectedOption, darkMode && styles.darkOptionItem, darkMode && isSelected && styles.darkSelectedOption]}
                       onPress={() => {
-                        const value = parseInt(item.replace(" mi", ""));
-                        setDistance(value);
+                        if (item.miles == null) {
+                          clearDistanceFilter(true);
+                          return;
+                        }
+                        setDistance(item.miles);
                         setDistanceModalVisible(false);
+                        if (searchQuery.trim()) {
+                          performSearch(searchQuery, searchType, { distanceMiles: item.miles });
+                        }
                       }}
                     >
                       <Text style={[styles.optionText, isSelected && styles.selectedOptionText, darkMode && styles.darkOptionText, darkMode && isSelected && styles.darkSelectedOptionText]}>
-                        {item}
+                        {item.label}
                       </Text>
-                      {isSelected && <Ionicons name='checkmark' size={24} color={darkMode ? "#9C45F7" : "#9C45F7"} />}
+                      {isSelected && <Ionicons name='checkmark' size={24} color='#9C45F7' />}
                     </TouchableOpacity>
                   );
                 }}
-                keyExtractor={(item) => item.toString()}
+                keyExtractor={(item) => item.key}
                 style={styles.optionsList}
               />
             </View>
@@ -2436,6 +2502,16 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#9C45F7",
     textAlign: "center",
+  },
+  distanceModalHint: {
+    fontSize: 13,
+    color: "#666",
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    lineHeight: 18,
+  },
+  darkDistanceModalHint: {
+    color: "#aaa",
   },
   optionsList: {
     paddingHorizontal: 20,
