@@ -9,7 +9,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import { API_BASE_URL, BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT, RATINGS_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
+import { API_BASE_URL, BUSINESS_CLAIM_ENDPOINT, BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT, RATINGS_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { parsePrice } from "../utils/priceUtils";
@@ -19,6 +19,7 @@ import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "..
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import { getSessionProfile } from "../utils/sessionProfile";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
+import * as DocumentPicker from "expo-document-picker";
 import {
   bountyPickerRequiresSelection,
   getDefaultBountyRecipient,
@@ -825,10 +826,32 @@ export default function BusinessProfileScreen({ route, navigation }) {
     }
   };
 
-  const handlePickDocument = () => {
-    // TODO: replace with expo-document-picker
-    const mock = { name: "business_license_2024.pdf", size: "1.2 MB", uri: "file://mock" };
-    setClaimFiles((prev) => [...prev, mock]);
+  const handlePickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf", "image/jpeg", "image/png"],
+        copyToCacheDirectory: true,
+        multiple: true,
+      });
+
+      if (result.canceled) return;
+
+      const picked = result.assets.map((asset) => ({
+        name: asset.name,
+        size: asset.size
+          ? asset.size > 1024 * 1024
+            ? `${(asset.size / (1024 * 1024)).toFixed(1)} MB`
+            : `${Math.round(asset.size / 1024)} KB`
+          : "Unknown size",
+        uri: asset.uri,
+        mimeType: asset.mimeType,
+        _file: asset.file || null, // web only — raw File object from the browser
+      }));
+
+      setClaimFiles((prev) => [...prev, ...picked]);
+    } catch (e) {
+      Alert.alert("Error", "Could not open file picker. Please try again.");
+    }
   };
 
   const handleRemoveFile = (index) => {
@@ -836,18 +859,65 @@ export default function BusinessProfileScreen({ route, navigation }) {
   };
 
   const handleClaimSubmit = async () => {
-    if (claimFiles.length === 0) {
-      Alert.alert("Documents required", "Please upload at least one verification document.");
+  if (claimFiles.length === 0) {
+    Alert.alert("Documents required", "Please upload at least one verification document.");
+    return;
+  }
+
+  setClaimSubmitting(true);
+  try {
+    const profileId = await AsyncStorage.getItem("profile_uid");
+    if (!profileId) {
+      Alert.alert("Error", "No profile found. Please log in again.");
       return;
     }
-    setClaimSubmitting(true);
-    // TODO: POST claimRole, claimNote, claimFiles to your claim endpoint
-    await new Promise((r) => setTimeout(r, 1200)); // remove this stub
+
+    const formData = new FormData();
+    formData.append("profile_uid", profileId);
+    formData.append("business_uid", business_uid);
+    formData.append("claim_role", claimRole);
+    formData.append("claim_note", claimNote);
+
+    claimFiles.forEach((file, index) => {
+      if (Platform.OS === "web") {
+        // On web, expo-document-picker gives us a blob URI — fetch it and append as a Blob
+        formData.append(`document_${index}`, file._file || file, file.name);
+      } else {
+        // On native, append as RN file object
+        formData.append(`document_${index}`, {
+          uri: file.uri,
+          name: file.name,
+          type: file.mimeType || "application/octet-stream",
+        });
+      }
+    });
+
+    const response = await fetch(BUSINESS_CLAIM_ENDPOINT, {
+      method: "POST",
+      // headers: { "Content-Type": "multipart/form-data" },
+      body: formData,
+    });
+
+    const result = await response.json();
+
+    if (result.code === 200) {
+      setClaimStatus("pending");
+      setClaimSubmittedAt(new Date());
+      setClaimModalVisible(false);
+      setClaimStep(1);
+      Alert.alert("Submitted", "Your claim has been submitted for admin review.");
+    } else if (result.code === 409) {
+      Alert.alert("Already Submitted", "You have already submitted a claim for this business.");
+      setClaimModalVisible(false);
+    } else {
+      Alert.alert("Error", result.message || "Submission failed. Please try again.");
+    }
+  } catch (e) {
+    console.error("Claim submit error:", e);
+    Alert.alert("Error", "Network error. Please check your connection.");
+  } finally {
     setClaimSubmitting(false);
-    setClaimStatus("pending");
-    setClaimSubmittedAt(new Date());
-    setClaimModalVisible(false);
-    setClaimStep(1);
+  }
   };
 
   const renderStars = (rating) => {
