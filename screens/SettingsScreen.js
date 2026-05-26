@@ -13,7 +13,7 @@ import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
-import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, BUSINESS_CLAIM_ENDPOINT} from "../apiConfig";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -210,6 +210,12 @@ export default function SettingsScreen() {
   const [resolvingItem, setResolvingItem] = useState(null);
   const [resolvedInFavorOf, setResolvedInFavorOf] = useState({}); // uid -> 'buyer' | 'seller'
 
+  const [adminClaims, setAdminClaims] = useState([]);
+  const [claimsLoading, setClaimsLoading] = useState(false);
+  const [showClaimsSection, setShowClaimsSection] = useState(false);
+
+  const [userEmail, setUserEmail] = useState("");
+
   console.log("In SettingsScreen");
 
   // on mount, pull saved values
@@ -223,6 +229,10 @@ export default function SettingsScreen() {
       if (p !== null) setDisplayPhoneNumber(JSON.parse(p));
       if (t !== null) setTermsAccepted(JSON.parse(t));
       if (c !== null) setAllowCookies(JSON.parse(c));
+
+      // Load email quickly from AsyncStorage for admin check
+      const storedEmail = await AsyncStorage.getItem("user_email");
+      if (storedEmail) setUserEmail(storedEmail);
 
       try {
         const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
@@ -552,6 +562,7 @@ export default function SettingsScreen() {
             locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
             imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
           });
+          setUserEmail(result.user_email || "");
           const nearbyLat = result.personal_info.profile_personal_nearby_lat;
           const nearbyLng = result.personal_info.profile_personal_nearby_lng;
           const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
@@ -934,6 +945,41 @@ export default function SettingsScreen() {
     }
   };
 
+  const fetchAdminClaims = async () => {
+    setClaimsLoading(true);
+    try {
+      const response = await fetch(`${BUSINESS_CLAIM_ENDPOINT}?status=pending`);
+      const result = await response.json();
+      setAdminClaims(Array.isArray(result?.result) ? result.result : []);
+    } catch (e) {
+      console.error("Admin claims fetch error:", e);
+    } finally {
+      setClaimsLoading(false);
+    }
+  };
+
+  const handleResolveClaim = async (claim_uid, action) => {
+    console.log("handleResolveClaim called:", claim_uid, action);
+    try {
+      const adminUid = await AsyncStorage.getItem("profile_uid");
+      const response = await fetch(BUSINESS_CLAIM_ENDPOINT, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claim_uid, action, admin_uid: adminUid }),
+      });
+      const result = await response.json();
+      if (result.code === 200) {
+        setAdminClaims((prev) => prev.filter((c) => c.claim_uid !== claim_uid));
+        Alert.alert("Done", `Claim ${action} successfully.`);
+      } else {
+        Alert.alert("Error", result.message || "Failed to resolve claim.");
+      }
+    } catch (e) {
+      console.error("Resolve claim error:", e);
+      Alert.alert("Error", "Network error. Please try again.");
+    }
+  };
+
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Nearby alert banner — floats above everything */}
@@ -1155,7 +1201,7 @@ export default function SettingsScreen() {
 
           {/* ADMIN Section — only visible to authorized emails */}
           {console.log("Admin check email:", personalProfileData?.email, "in list:", ADMIN_EMAILS.includes(personalProfileData?.email))}
-          {ADMIN_EMAILS.includes(personalProfileData?.email) && (
+          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
             <>
               <TouchableOpacity
                 style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.15)", marginTop: 8 }]}
@@ -1168,7 +1214,7 @@ export default function SettingsScreen() {
               >
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <MaterialIcons name='admin-panel-settings' size={16} color='#B71C1C' />
-                  <Text style={[styles.informationSectionHeaderText, { color: "#B71C1C" }]}>ADMIN</Text>
+                  <Text style={[styles.informationSectionHeaderText, { color: "#B71C1C" }]}>Declined Returns</Text>
                 </View>
                 <Ionicons name={showAdminSection ? "chevron-up" : "chevron-down"} size={20} color='#B71C1C' />
               </TouchableOpacity>
@@ -1281,6 +1327,118 @@ export default function SettingsScreen() {
                       </TouchableOpacity>
                     </>
                   )}
+                </View>
+              )}
+            </>
+          )}
+
+          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
+            <>
+              <TouchableOpacity
+                style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.10)", marginTop: 8 }]}
+                onPress={() => {
+                  setShowClaimsSection(!showClaimsSection);
+                  if (!showClaimsSection && adminClaims.length === 0) fetchAdminClaims();
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <MaterialIcons name="verified" size={16} color="#B71C1C" />
+                  <Text style={[styles.informationSectionHeaderText, { color: "#B71C1C" }]}>
+                    BUSINESS CLAIMS {adminClaims.length > 0 ? `(${adminClaims.length})` : ""}
+                  </Text>
+                </View>
+                <Ionicons name={showClaimsSection ? "chevron-up" : "chevron-down"} size={20} color="#B71C1C" />
+              </TouchableOpacity>
+
+              {showClaimsSection && (
+                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#B71C1C" }]}>
+                  {claimsLoading ? (
+                    <ActivityIndicator size="small" color="#B71C1C" style={{ margin: 16 }} />
+                  ) : adminClaims.length === 0 ? (
+                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No pending claims.</Text>
+                  ) : (
+                    adminClaims.map((claim, idx) => (
+                      <View
+                        key={claim.claim_uid}
+                        style={{
+                          padding: 12,
+                          borderBottomWidth: idx < adminClaims.length - 1 ? 1 : 0,
+                          borderBottomColor: darkMode ? "#444" : "#eee",
+                          backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#fff5f5") : "transparent",
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>
+                          {claim.business_name || claim.claim_business_id}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>
+                          Claimant: {claim.profile_personal_first_name} {claim.profile_personal_last_name}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>
+                          Role: {claim.claim_role}
+                        </Text>
+                        {claim.claim_note ? (
+                          <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginBottom: 2 }}>
+                            Note: {claim.claim_note}
+                          </Text>
+                        ) : null}
+                        {claim.claim_documents ? (
+                          <Text style={{ fontSize: 11, color: "#4B2E83", marginBottom: 8 }} numberOfLines={2}>
+                            Docs: {claim.claim_documents}
+                          </Text>
+                        ) : null}
+                        <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999", marginBottom: 10 }}>
+                          Submitted: {claim.claim_created_at}
+                        </Text>
+                        <View style={{ flexDirection: "row", gap: 10 }}>
+                          <TouchableOpacity
+                            style={{ flex: 1, backgroundColor: "#18884A", padding: 10, borderRadius: 8, alignItems: "center" }}
+                            onPress={() => {
+                              if (isWeb) {
+                                if (window.confirm(`Grant ${claim.profile_personal_first_name} ownership of ${claim.business_name}?`)) {
+                                  handleResolveClaim(claim.claim_uid, "approved");
+                                }
+                              } else {
+                                Alert.alert(
+                                  "Approve Claim",
+                                  `Grant ${claim.profile_personal_first_name} ownership of ${claim.business_name}?`,
+                                  [
+                                    { text: "Cancel", style: "cancel" },
+                                    { text: "Approve", onPress: () => handleResolveClaim(claim.claim_uid, "approved") },
+                                  ]
+                                );
+                              }
+                            }}
+                          >
+                            <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13 }}>✓ Approve</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={{ flex: 1, backgroundColor: "#B71C1C", padding: 10, borderRadius: 8, alignItems: "center" }}
+                            onPress={() => {
+                              if (isWeb) {
+                                if (window.confirm("Are you sure you want to reject this claim?")) {
+                                  handleResolveClaim(claim.claim_uid, "rejected");
+                                }
+                              } else {
+                                Alert.alert(
+                                  "Reject Claim",
+                                  "Are you sure you want to reject this claim?",
+                                  [
+                                    { text: "Cancel", style: "cancel" },
+                                    { text: "Reject", style: "destructive", onPress: () => handleResolveClaim(claim.claim_uid, "rejected") },
+                                  ]
+                                );
+                              }
+                            }}
+                          >
+                            <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 13 }}>✗ Reject</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))
+                  )}
+                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminClaims}>
+                    <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
+                  </TouchableOpacity>
                 </View>
               )}
             </>

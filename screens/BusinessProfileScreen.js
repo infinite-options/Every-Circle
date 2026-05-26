@@ -149,6 +149,37 @@ export default function BusinessProfileScreen({ route, navigation }) {
     getCurrentUserProfileId();
   }, []);
 
+  // Check if current user already has a pending claim for this business
+  useEffect(() => {
+    const checkExistingClaim = async () => {
+      try {
+        const profileId = await AsyncStorage.getItem("profile_uid");
+        if (!profileId) return;
+        const pendingRes = await fetch(
+          `${BUSINESS_CLAIM_ENDPOINT}?profile_uid=${profileId}&business_uid=${business_uid}&status=pending`
+        );
+        const pendingResult = await pendingRes.json();
+        if (pendingResult?.result?.length > 0) {
+          const claim = pendingResult.result[0];
+          setClaimStatus("pending");
+          setClaimSubmittedAt(new Date(claim.claim_created_at));
+          return;
+        }
+        // Check approved 
+        const approvedRes = await fetch(
+          `${BUSINESS_CLAIM_ENDPOINT}?profile_uid=${profileId}&business_uid=${business_uid}&status=approved`
+        );
+        const approvedResult = await approvedRes.json();
+        if (approvedResult?.result?.length > 0) {
+          setClaimStatus("approved");
+        }
+      } catch (e) {
+        console.warn("Could not check existing claim:", e);
+      }
+    };
+    checkExistingClaim();
+  }, [business_uid]);
+
   // Fetch reviewer profile data
   const fetchReviewerProfile = async (profileId) => {
     if (!profileId || reviewerProfiles[profileId]) {
@@ -209,6 +240,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const fetchBusinessInfo = async () => {
     try {
       setLoading(true);
+      // Clear session cache so ownership check picks up any newly approved claims
+      try {
+        const { clearUserProfileCacheStorage } = require("../utils/sessionProfile");
+        await clearUserProfileCacheStorage();
+      } catch (_) {}
       console.log("[BusinessProfileScreen] fetchBusinessInfo - business_uid from route params:", business_uid);
       // Read viewer UID directly so it's available for the ratings call
       const viewerUid = (await AsyncStorage.getItem("profile_uid")) || "";
