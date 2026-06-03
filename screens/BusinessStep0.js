@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef } from "react";
 import { View, Text, TextInput, StyleSheet, Dimensions, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getBusinessSuggestions, getPlaceDetails } from "../utils/googlePlaces";
-import { Dropdown } from "react-native-element-dropdown";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
@@ -18,8 +17,6 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
 
   useEffect(() => {
     console.log("In BusinessStep0");
-    const apiKey = config.googleMapsApiKey;
-    console.log("BusinessStep0 - Google Maps API Key being used:", apiKey ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}` : "NOT SET");
     // Don't load saved form data - start fresh for new business
     // const loadSavedForm = async () => {
     //   try {

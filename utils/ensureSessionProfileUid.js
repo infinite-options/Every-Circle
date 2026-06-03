@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { decryptResponse } from "./encryption";
 
 /** Extract profile_personal_uid / profile_uid from a userprofileinfo API payload. */
 export function profileUidFromUserProfileResponse(apiUser) {
@@ -29,7 +30,7 @@ export async function ensureSessionProfileUid(userUid) {
     const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${userUid}`);
     if (!response.ok) return null;
 
-    const apiUser = await response.json();
+    const apiUser = decryptResponse(await response.json());
     const profileId = profileUidFromUserProfileResponse(apiUser);
 
     if (profileId) {

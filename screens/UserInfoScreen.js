@@ -7,6 +7,7 @@ import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { profileUidFromUserProfileResponse } from "../utils/ensureSessionProfileUid";
+import { decryptResponse } from "../utils/encryption";
 
 export default function UserInfoScreen({ navigation, route }) {
   // console.log("UserInfoScreen - route.params:", route.params);
@@ -68,7 +69,7 @@ export default function UserInfoScreen({ navigation, route }) {
         if (userUid) {
           console.log("Checking for existing profile with userUid:", userUid);
           const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${userUid}`);
-          const data = await response.json();
+          const data = decryptResponse(await response.json());
           console.log("Profile check response:", JSON.stringify(data, null, 2));
 
           if (data.message !== "Profile not found for this user") {
@@ -219,7 +220,7 @@ export default function UserInfoScreen({ navigation, route }) {
       console.log("API Response status:", response.status);
       // console.log("API Response headers:", JSON.stringify(response.headers, null, 2));
 
-      const responseObject = await response.json();
+      const responseObject = decryptResponse(await response.json());
       console.log("API Response body:", JSON.stringify(responseObject, null, 2));
 
       if (!response.ok) {

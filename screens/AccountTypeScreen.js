@@ -9,6 +9,7 @@ import { getHeaderColors } from "../config/headerColors";
 import { useUnread } from "../contexts/UnreadContext";
 import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 import BottomNavBar from "../components/BottomNavBar";
+import { decryptResponse } from "../utils/encryption";
 
 const isWeb = Platform.OS === "web";
 
@@ -64,7 +65,7 @@ const AccountTypeScreen = ({ navigation, route }) => {
 
       // Check if we have valid profile data (personal_info exists)
       // Even if status is 500, the data might still be valid
-      const profileData = response.data;
+      const profileData = decryptResponse(response.data);
 
       if (profileData && profileData.personal_info) {
         // Store profile_uid in AsyncStorage for consistency with other screens
@@ -85,7 +86,7 @@ const AccountTypeScreen = ({ navigation, route }) => {
       console.error("Error fetching profile:", error.response?.data || error.message);
 
       // Check if error response contains valid data despite the error
-      const errorData = error.response?.data;
+      const errorData = decryptResponse(error.response?.data);
       if (errorData && errorData.personal_info) {
         console.log("Found valid profile data in error response, proceeding...");
 
