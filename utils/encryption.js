@@ -1,13 +1,7 @@
 import CryptoJS from "crypto-js";
 
+const AES_KEY = "InfiniteOptions0"; // Must match backend ENCRYPTION_KEY (16 chars)
 const BLOCK_SIZE = 16;
-
-// Match backend: key[:16].ljust(16, b'\0') — always a 16-byte AES-128 key
-function getAesKey() {
-  const raw = process.env.EXPO_PUBLIC_ENCRYPTION_KEY || "";
-  const padded = raw.slice(0, 16).padEnd(16, "\0");
-  return CryptoJS.enc.Utf8.parse(padded);
-}
 
 // ── Core encrypt / decrypt (CBC mode with IV — matches backend) ──────────────
 
@@ -16,7 +10,7 @@ function encrypt(plainText) {
   try {
     const jsonString = typeof plainText === "string" ? plainText : JSON.stringify(plainText);
     const iv = CryptoJS.lib.WordArray.random(BLOCK_SIZE);
-    const encrypted = CryptoJS.AES.encrypt(jsonString, getAesKey(), {
+    const encrypted = CryptoJS.AES.encrypt(jsonString, CryptoJS.enc.Utf8.parse(AES_KEY), {
       iv,
       mode: CryptoJS.mode.CBC,
       padding: CryptoJS.pad.Pkcs7,
@@ -33,16 +27,14 @@ function decrypt(encryptedBlob) {
   if (!encryptedBlob) return "";
   try {
     const encryptedData = CryptoJS.enc.Base64.parse(encryptedBlob);
-    const iv = CryptoJS.lib.WordArray.create(
-      encryptedData.words.slice(0, BLOCK_SIZE / 4)
-    );
+    const iv = CryptoJS.lib.WordArray.create(encryptedData.words.slice(0, BLOCK_SIZE / 4));
     const ciphertext = CryptoJS.lib.WordArray.create(
       encryptedData.words.slice(BLOCK_SIZE / 4),
       encryptedData.sigBytes - BLOCK_SIZE
     );
     const decrypted = CryptoJS.AES.decrypt(
       { ciphertext },
-      getAesKey(),
+      CryptoJS.enc.Utf8.parse(AES_KEY),
       { iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 }
     );
     return decrypted.toString(CryptoJS.enc.Utf8);

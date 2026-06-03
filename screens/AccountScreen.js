@@ -23,7 +23,7 @@ import { getSessionProfile } from "../utils/sessionProfile";
 // import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
 import { parsePrice } from "../utils/priceUtils";
-import { encryptPayload, decryptResponse } from "../utils/encryption";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 
 /** 1 = compact: Purchases (Date, Type, Seller, Paid, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
@@ -724,7 +724,7 @@ export default function AccountScreen({ navigation }) {
       if (!response.ok) {
         throw new Error(`Failed to load receipt: ${response.status}`);
       }
-      const result = decryptResponse(await response.json());
+      const result = await response.json();
       let items = [];
       if (Array.isArray(result)) {
         items = result;
@@ -765,13 +765,13 @@ export default function AccountScreen({ navigation }) {
       const response = await fetch(TRANSACTIONS_RETURN_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(encryptPayload({
+        body: JSON.stringify({
           profile_id: profileId,
           transaction_uid: uid,
           transaction_return_requested: 1,
           transaction_return_note: allNotes,
           transaction_return_items: transactionReturnItems,
-        })),
+        }),
       });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -812,10 +812,10 @@ export default function AccountScreen({ navigation }) {
       await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(encryptPayload({
+        body: JSON.stringify({
           transaction_uid: transactionUid,
           transaction_return_status: "accepted",
-        })),
+        }),
       });
       setReturnStatuses((prev) => ({ ...prev, [transactionUid]: "accepted" }));
       await AsyncStorage.setItem(`return_status_${transactionUid}`, "accepted");
@@ -828,11 +828,11 @@ export default function AccountScreen({ navigation }) {
 
   const handleReturnDecline = async (transactionUid, note = "") => {
     try {
-      const body = JSON.stringify(encryptPayload({
+      const body = JSON.stringify({
         transaction_uid: transactionUid,
         action: "decline",
         transaction_return_seller_note: note,
-      }));
+      });
       console.log("=== DECLINE BODY BEING SENT:", body);
       const response = await fetch(TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, {
         method: "PUT",
@@ -840,7 +840,7 @@ export default function AccountScreen({ navigation }) {
         body,
       });
       console.log("=== DECLINE RESPONSE STATUS:", response.status);
-      const result = decryptResponse(await response.json());
+      const result = await response.json();
       console.log("=== DECLINE RESULT:", result);
       if (result.code === 200) {
         setReturnStatuses((prev) => ({ ...prev, [transactionUid]: "declined" }));
@@ -1014,7 +1014,7 @@ export default function AccountScreen({ navigation }) {
         if (!contentType || !contentType.includes("application/json")) {
           throw new Error("account-screen personal returned non-JSON");
         }
-        const json = decryptResponse(await response.json());
+        const json = await response.json();
         const mapped = mapAccountScreenPersonalResponse(json);
 
         const purchaseRows = Array.isArray(mapped.transactions) ? mapped.transactions : [];
@@ -1086,10 +1086,10 @@ export default function AccountScreen({ navigation }) {
       const response = await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(encryptPayload({
+        body: JSON.stringify({
           transaction_uid: transactionUid,
           transaction_in_escrow: 0,
-        })),
+        }),
       });
       if (!response.ok) {
         throw new Error(`Failed to update: ${response.status}`);
@@ -1206,7 +1206,7 @@ export default function AccountScreen({ navigation }) {
       });
 
       if (response.ok) {
-        const result = decryptResponse(await response.json());
+        const result = await response.json();
         if (result && result.code === 200 && Array.isArray(result.data)) {
           // Cache the data
           setTransactionServices((prev) => ({
@@ -1237,7 +1237,7 @@ export default function AccountScreen({ navigation }) {
         });
         let items = [];
         if (r.ok) {
-          const data = decryptResponse(await r.json());
+          const data = await r.json();
           items = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
         }
         setBusinessReceiptCache((prev) => ({ ...prev, [uid]: items }));
@@ -1305,7 +1305,7 @@ export default function AccountScreen({ navigation }) {
         return;
       }
 
-      const json = decryptResponse(await response.json());
+      const json = await response.json();
       const { bountyResult, sellerLines, businessForMiniCardRaw } = mapAccountScreenBusinessResponse(json);
 
       const selectedBusiness = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
@@ -1484,7 +1484,7 @@ export default function AccountScreen({ navigation }) {
       await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(encryptPayload({ transaction_uid: transactionUid, transaction_in_escrow: 0 })),
+        body: JSON.stringify({ transaction_uid: transactionUid, transaction_in_escrow: 0 }),
       });
       await refreshAccountScreenPersonal();
     } catch (error) {
