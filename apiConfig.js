@@ -50,6 +50,8 @@ export const BUSINESSES_ENDPOINT = `${API_BASE_URL}/businesses`;
 export const CATEGORY_LIST_ENDPOINT = `${API_BASE_URL}/category_list/all`;
 /** POST JSON `{ uids, profile_uid }` — same `result` shape as legacy GET businessavgratings */
 export const BUSINESS_DETAILS_ENDPOINT = `${API_BASE_URL}/api/v1/business_details`;
+/** POST JSON `{ profile_uid, uids: profile_personal_uid[] }` → referral-network degree per profile */
+export const PROFILE_CONNECTION_DEGREES_ENDPOINT = `${API_BASE_URL}/api/v1/profile_connection_degrees`;
 export const PROFILE_VIEWS_ENDPOINT = `${API_BASE_URL}/api/v1/profile_views`;
 export const BUSINESS_TAG_SEARCH_ENDPOINT = `${API_BASE_URL}/api/v1/businesstagsearch`;
 export const BUSINESS_SERVICE_PURCHASE_ENDPOINT = `${API_BASE_URL}/business/service/purchase`;
