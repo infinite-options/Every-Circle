@@ -1,12 +1,46 @@
 // ScannedProfilePopup.js - Popup to display scanned profile information
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ScrollView } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ScrollView, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
 import WebTextInput from "./WebTextInput";
+import { parseDateTime } from "../utils/profileDateTime";
 
 const REL_TYPES = ["friend", "colleague", "family"];
+const SCREEN_HEIGHT = Dimensions.get("window").height;
+const MOBILE_MODAL_MAX_HEIGHT = SCREEN_HEIGHT * 0.85;
+const MOBILE_SCROLL_MAX_HEIGHT = MOBILE_MODAL_MAX_HEIGHT - 76;
+
+let DateTimePicker = null;
+if (Platform.OS !== "web") {
+  try {
+    DateTimePicker = require("@react-native-community/datetimepicker").default;
+  } catch (e) {
+    console.warn("DateTimePicker not available:", e.message);
+  }
+}
+
+const getTodayCircleDate = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+};
+
+const formatCircleDateForDisplay = (dateStr) => {
+  const { date } = parseDateTime(dateStr || "");
+  if (!date) return "Select date";
+  return date.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+};
+
+const circleDateToDate = (dateStr) => {
+  const { date } = parseDateTime(dateStr || "");
+  return date || new Date();
+};
+
+const dateToCircleDate = (date) => {
+  if (!date || !(date instanceof Date) || isNaN(date.getTime())) return getTodayCircleDate();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+};
 
 const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, initialData = null, actionLabel = "Add to Network", title = "Connect With Me" }) => {
   const { darkMode } = useDarkMode();
@@ -16,6 +50,8 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [introducedBy, setIntroducedBy] = useState("");
+  const [date, setDate] = useState(getTodayCircleDate());
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   // QR flow: no initialData → default friend. Profile / edit flow: pass initialData; unknown/null → none selected.
   const normalizedRelationship = (() => {
@@ -34,6 +70,8 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
       setCity(initialData?.city || "");
       setState(initialData?.state || "");
       setIntroducedBy(initialData?.introducedBy || "");
+      setDate(initialData?.date || getTodayCircleDate());
+      setShowDatePicker(false);
     } else {
       setSelectedRelationship("friend");
       setEvent("");
@@ -41,6 +79,8 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
       setCity("");
       setState("");
       setIntroducedBy("");
+      setDate(getTodayCircleDate());
+      setShowDatePicker(false);
     }
   }, [visible, normalizedRelationship]);
 
@@ -56,6 +96,7 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
     if (onAddConnection) {
       onAddConnection({
         relationship: selectedRelationship,
+        date: date.trim() || getTodayCircleDate(),
         event: event.trim(),
         note: note.trim(),
         city: city.trim(),
@@ -68,7 +109,7 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
   return (
     <Modal visible={visible} transparent={true} animationType='fade' onRequestClose={onClose}>
       <View style={[styles.modalOverlay, darkMode && styles.darkModalOverlay]}>
-        <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
+        <View style={[styles.modalContent, Platform.OS !== "web" && styles.modalContentMobile, darkMode && styles.darkModalContent]}>
           <View style={styles.header}>
             <Text style={[styles.title, darkMode && styles.darkTitle]}>{title}</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
@@ -76,7 +117,12 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          <ScrollView
+            style={Platform.OS === "web" ? undefined : styles.scrollViewMobile}
+            contentContainerStyle={styles.scrollContent}
+            scrollEnabled={Platform.OS !== "web"}
+            showsVerticalScrollIndicator={Platform.OS !== "web"}
+          >
             <View style={styles.content}>
               <MiniCard user={profileData} />
             </View>
@@ -111,12 +157,50 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
             </View>
 
             <View style={styles.inputContainer}>
+              <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Date:</Text>
+              {Platform.OS === "web" ? (
+                <WebTextInput style={[styles.textInput, darkMode && styles.darkTextInput]} type='date' value={date} onChangeText={setDate} />
+              ) : DateTimePicker ? (
+                <>
+                  <TouchableOpacity style={[styles.dateButton, darkMode && styles.darkDateButton]} onPress={() => setShowDatePicker(true)}>
+                    <Text style={[styles.dateButtonText, darkMode && styles.darkDateButtonText]}>{formatCircleDateForDisplay(date)}</Text>
+                    <Ionicons name='calendar-outline' size={18} color={darkMode ? "#aaa" : "#666"} />
+                  </TouchableOpacity>
+                  {showDatePicker && (
+                    <DateTimePicker
+                      value={circleDateToDate(date)}
+                      mode='date'
+                      display={Platform.OS === "ios" ? "spinner" : "default"}
+                      onChange={(_, selectedDate) => {
+                        if (Platform.OS === "android") setShowDatePicker(false);
+                        if (selectedDate) setDate(dateToCircleDate(selectedDate));
+                      }}
+                    />
+                  )}
+                  {Platform.OS === "ios" && showDatePicker && (
+                    <TouchableOpacity style={styles.datePickerDone} onPress={() => setShowDatePicker(false)}>
+                      <Text style={styles.datePickerDoneText}>Done</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              ) : (
+                <WebTextInput
+                  style={[styles.textInput, darkMode && styles.darkTextInput]}
+                  value={date}
+                  onChangeText={setDate}
+                  placeholder='YYYY-MM-DD'
+                  placeholderTextColor={darkMode ? "#666" : "#999"}
+                />
+              )}
+            </View>
+
+            <View style={styles.inputContainer}>
               <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>Event:</Text>
               <WebTextInput
                 style={[styles.textInput, darkMode && styles.darkTextInput]}
                 value={event}
                 onChangeText={setEvent}
-                placeholder="Enter event name"
+                placeholder='Enter event name'
                 placeholderTextColor={darkMode ? "#666" : "#999"}
               />
             </View>
@@ -127,7 +211,7 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
                 style={[styles.textInput, styles.textArea, darkMode && styles.darkTextInput]}
                 value={note}
                 onChangeText={setNote}
-                placeholder="Enter notes or comments"
+                placeholder='Enter notes or comments'
                 placeholderTextColor={darkMode ? "#666" : "#999"}
                 multiline
                 numberOfLines={3}
@@ -137,13 +221,7 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
             <View style={styles.inputRow}>
               <View style={[styles.inputContainer, styles.inputHalf]}>
                 <Text style={[styles.inputLabel, darkMode && styles.darkInputLabel]}>City:</Text>
-                <WebTextInput
-                  style={[styles.textInput, darkMode && styles.darkTextInput]}
-                  value={city}
-                  onChangeText={setCity}
-                  placeholder="City"
-                  placeholderTextColor={darkMode ? "#666" : "#999"}
-                />
+                <WebTextInput style={[styles.textInput, darkMode && styles.darkTextInput]} value={city} onChangeText={setCity} placeholder='City' placeholderTextColor={darkMode ? "#666" : "#999"} />
               </View>
 
               <View style={[styles.inputContainer, styles.inputHalf]}>
@@ -152,7 +230,7 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
                   style={[styles.textInput, darkMode && styles.darkTextInput]}
                   value={state}
                   onChangeText={setState}
-                  placeholder="State"
+                  placeholder='State'
                   placeholderTextColor={darkMode ? "#666" : "#999"}
                 />
               </View>
@@ -164,20 +242,20 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
                 style={[styles.textInput, darkMode && styles.darkTextInput]}
                 value={introducedBy}
                 onChangeText={setIntroducedBy}
-                placeholder="Who introduced you?"
+                placeholder='Who introduced you?'
                 placeholderTextColor={darkMode ? "#666" : "#999"}
               />
             </View>
-          </ScrollView>
 
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
-              <Text style={styles.addButtonText}>{actionLabel}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.viewButton} onPress={onClose}>
-              <Text style={[styles.viewButtonText, darkMode && styles.darkViewButtonText]}>Close</Text>
-            </TouchableOpacity>
-          </View>
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
+                <Text style={styles.addButtonText}>{actionLabel}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.viewButton} onPress={onClose}>
+                <Text style={[styles.viewButtonText, darkMode && styles.darkViewButtonText]}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -201,15 +279,17 @@ const styles = StyleSheet.create({
     padding: 20,
     width: "100%",
     maxWidth: 400,
-    maxHeight: "85%",
     boxShadow: "0px 2px 4px 0px rgba(0,0,0,0.25)",
     ...(Platform.OS !== "web" && { elevation: 5 }),
   },
-  scrollView: {
-    maxHeight: 400,
+  modalContentMobile: {
+    maxHeight: MOBILE_MODAL_MAX_HEIGHT,
+  },
+  scrollViewMobile: {
+    maxHeight: MOBILE_SCROLL_MAX_HEIGHT,
   },
   scrollContent: {
-    paddingBottom: 10,
+    paddingBottom: 4,
   },
   darkModalContent: {
     backgroundColor: "#2a2a2a",
@@ -236,6 +316,7 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     gap: 12,
+    marginTop: 4,
   },
   addButton: {
     backgroundColor: "#AF52DE",
@@ -360,7 +441,38 @@ const styles = StyleSheet.create({
   textArea: {
     minHeight: 80,
     textAlignVertical: "top",
-    
+  },
+  dateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: "#fff",
+  },
+  darkDateButton: {
+    borderColor: "#555",
+    backgroundColor: "#333",
+  },
+  dateButtonText: {
+    fontSize: 14,
+    color: "#333",
+  },
+  darkDateButtonText: {
+    color: "#fff",
+  },
+  datePickerDone: {
+    alignSelf: "flex-end",
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  datePickerDoneText: {
+    color: "#AF52DE",
+    fontSize: 16,
+    fontWeight: "600",
   },
 });
 

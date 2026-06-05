@@ -17,7 +17,8 @@ export async function addScannedCircleConnection(relatedPersonProfileUid, connec
   }
 
   const now = new Date();
-  const circleDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const defaultCircleDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const circleDate = typeof connectionData === "object" && connectionData?.date?.trim() ? connectionData.date.trim() : defaultCircleDate;
 
   const relationship = typeof connectionData === "string" ? connectionData : (connectionData?.relationship ?? null);
   const event = typeof connectionData === "object" ? connectionData.event || "" : "";

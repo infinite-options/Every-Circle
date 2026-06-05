@@ -1189,8 +1189,16 @@ const ProfileScreen = ({ route, navigation }) => {
       }
 
       const selectedRelationship = connectionData?.relationship !== undefined ? connectionData.relationship : null;
+      const circleDate =
+        connectionData?.date?.trim() ||
+        (() => {
+          const now = new Date();
+          return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        })();
+
       const payload = {
         circle_relationship: selectedRelationship,
+        circle_date: circleDate,
         circle_event: connectionData?.event?.trim() || null,
         circle_note: connectionData?.note?.trim() || null,
         circle_city: connectionData?.city?.trim() || null,
@@ -1209,12 +1217,6 @@ const ProfileScreen = ({ route, navigation }) => {
           throw new Error(result.message || "Failed to update connection");
         }
       } else {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, "0");
-        const day = String(now.getDate()).padStart(2, "0");
-        const circleDate = `${year}-${month}-${day}`;
-
         // Calculate circle_num_nodes
         let circleNumNodes = null;
         try {
@@ -2520,6 +2522,7 @@ const ProfileScreen = ({ route, navigation }) => {
         title='Connection Details'
         initialData={{
           relationship: relationshipType,
+          date: existingRelationship?.circle_date || "",
           event: existingRelationship?.circle_event || "",
           note: existingRelationship?.circle_note || "",
           city: existingRelationship?.circle_city || "",
