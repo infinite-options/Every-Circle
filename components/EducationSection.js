@@ -262,6 +262,7 @@ const EducationSection = ({
           <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
             <ProfileItemImageColumn
               darkMode={darkMode}
+              defaultSection="education"
               displayUri={getEducationDisplayUri(item)}
               imageError={!!item._eduImageError}
               onImageError={() => handleInputChange(index, "_eduImageError", true)}

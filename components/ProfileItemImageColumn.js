@@ -1,13 +1,13 @@
 import React, { useRef } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Image, Platform } from "react-native";
-
-const DEFAULT_ITEM_IMAGE = require("../assets/profile.png");
+import ProfileSectionItemImage from "./ProfileSectionItemImage";
 
 /**
- * Left column for Offering / Seeking cards — matches EditBusinessProfile product image pattern.
+ * Left column for Education / Experience / Offering / Seeking cards — matches EditBusinessProfile product image pattern.
  */
 const ProfileItemImageColumn = ({
   darkMode = false,
+  defaultSection,
   displayUri,
   imageError,
   onImageError,
@@ -20,8 +20,7 @@ const ProfileItemImageColumn = ({
   showRemove,
 }) => {
   const webInputRef = useRef(null);
-
-  const source = displayUri && !imageError ? { uri: displayUri } : DEFAULT_ITEM_IMAGE;
+  const showCustomImage = displayUri && !imageError;
 
   const triggerUpload = () => {
     if (Platform.OS === "web") {
@@ -33,7 +32,11 @@ const ProfileItemImageColumn = ({
 
   return (
     <View style={styles.left}>
-      <Image source={source} style={[styles.image, darkMode && styles.imageDark]} onError={onImageError} />
+      {showCustomImage ? (
+        <Image source={{ uri: displayUri }} style={[styles.image, darkMode && styles.imageDark]} onError={onImageError} />
+      ) : (
+        <ProfileSectionItemImage section={defaultSection} size={64} darkMode={darkMode} />
+      )}
       <View style={styles.showHideRow}>
         <TouchableOpacity
           onPress={onShowTools}

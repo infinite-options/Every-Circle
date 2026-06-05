@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
@@ -19,6 +19,7 @@ const ExperienceSection = ({
   const cardRefs = useRef({});
   // Tracks which index was just added via "+".
   const pendingNewIndexRef = useRef(null);
+  const [descriptionHeights, setDescriptionHeights] = useState({});
   // Helper function to format date input
   const formatDateInput = (text) => {
     // If the user manually entered a slash after 2 digits, preserve it
@@ -278,6 +279,7 @@ const ExperienceSection = ({
           <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
             <ProfileItemImageColumn
               darkMode={darkMode}
+              defaultSection="experience"
               displayUri={getExperienceDisplayUri(item)}
               imageError={!!item._jobImageError}
               onImageError={() => handleInputChange(index, "_jobImageError", true)}
@@ -297,13 +299,17 @@ const ExperienceSection = ({
               <TextInput style={styles.input} placeholder='Company' value={item.company} onChangeText={(text) => handleInputChange(index, "company", text)} />
               <TextInput style={styles.input} placeholder='Job Title' value={item.title} onChangeText={(text) => handleInputChange(index, "title", text)} />
               <TextInput
-                style={styles.descriptionInput}
+                style={[styles.descriptionInput, { height: Math.max(40, descriptionHeights[index] || 40) }]}
                 placeholder='Description'
                 value={item.description}
                 onChangeText={(text) => handleInputChange(index, "description", text)}
                 multiline={true}
                 textAlignVertical='top'
                 scrollEnabled={false}
+                onContentSizeChange={(event) => {
+                  const height = event.nativeEvent.contentSize.height;
+                  setDescriptionHeights((prev) => (prev[index] === height ? prev : { ...prev, [index]: height }));
+                }}
               />
             </View>
           </View>
@@ -368,7 +374,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     marginBottom: 8,
     minHeight: 40,
-    maxHeight: 120,
   },
   dateContainer: {
     flexDirection: "row",

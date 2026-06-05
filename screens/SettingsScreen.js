@@ -1163,6 +1163,15 @@ export default function SettingsScreen() {
                 <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
               </TouchableOpacity>
 
+              {/* Contact Us */}
+              <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ContactUs")}>
+                <View style={styles.itemLabel}>
+                  <MaterialIcons name='contact-mail' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Contact Us</Text>
+                </View>
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
+              </TouchableOpacity>
+
               {/* Terms and Conditions */}
               <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("TermsAndConditions")}>
                 <View style={styles.itemLabel}>
