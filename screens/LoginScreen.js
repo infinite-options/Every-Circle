@@ -8,7 +8,7 @@ import AppleSignIn from "../AppleSignIn";
 import GoogleBrandedSignInButton from "../components/GoogleBrandedSignInButton";
 import * as Crypto from "expo-crypto";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { Ionicons } from "@expo/vector-icons";
 import { ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";

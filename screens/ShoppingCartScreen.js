@@ -25,6 +25,7 @@ if (!isWeb) {
 
 import { REACT_APP_STRIPE_PUBLIC_KEY } from "@env";
 import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, STRIPE_KEY_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, GET_STRIPE_PUBLIC_KEY_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 
 // Web Stripe imports (only load on web)
 let loadStripe = null;

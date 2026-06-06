@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE_URL, CIRCLES_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "./httpMiddleware";
 
 /**
  * Add a circle connection from a scanned / connect modal flow.

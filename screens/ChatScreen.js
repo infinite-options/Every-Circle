@@ -11,6 +11,7 @@ import MiniCard from "../components/MiniCard";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { CHAT_CONVERSATIONS_ENDPOINT, CHAT_MESSAGES_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { createAblyRealtimeClient } from "../utils/ablyClient";
 import { normalizeMessageForUi, orderMessagesForChatList } from "../utils/chatConversations";
 import { sanitizeText } from "../utils/textSanitizer";

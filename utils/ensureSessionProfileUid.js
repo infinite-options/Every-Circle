@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "./httpMiddleware";
 
 /** Extract profile_personal_uid / profile_uid from a userprofileinfo API payload. */
 export function profileUidFromUserProfileResponse(apiUser) {

@@ -9,6 +9,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, RATINGS_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
 import {
   bountyPickerRequiresSelection,

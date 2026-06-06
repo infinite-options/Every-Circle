@@ -3,6 +3,7 @@ import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, ActivityInd
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { storeUserEmail, getUserEmail } from "../utils/emailStorage";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";

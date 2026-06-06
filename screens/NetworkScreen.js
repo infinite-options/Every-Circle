@@ -9,6 +9,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { useFocusEffect, useRoute } from "@react-navigation/native";
 import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT, CHAT_CONVERSATIONS_ENDPOINT, NEARBY_USERS_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import MiniCard from "../components/MiniCard";
 import WebTextInput from "../components/WebTextInput";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";

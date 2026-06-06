@@ -14,6 +14,7 @@ import BusinessFooter from "../components/BusinessFooter";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;

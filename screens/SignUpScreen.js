@@ -7,6 +7,7 @@ import GoogleBrandedSignInButton from "../components/GoogleBrandedSignInButton";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { ACCOUNT_SALT_ENDPOINT, CREATE_ACCOUNT_ENDPOINT, GOOGLE_SOCIAL_AUTH_ENDPOINT, REFERRAL_API_ENDPOINT, LOGIN_ENDPOINT, USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import * as Crypto from "expo-crypto";
 import ReferralSearch from "../components/ReferralSearch";
 import AppHeader from "../components/AppHeader";

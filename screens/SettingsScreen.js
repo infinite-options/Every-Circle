@@ -14,6 +14,7 @@ import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, BUSINESS_CLAIM_ENDPOINT} from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;

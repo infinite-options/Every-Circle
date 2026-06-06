@@ -21,6 +21,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { getBusinessSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import { BUSINESS_INFO_ENDPOINT, BUSINESS_RESULTS_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 
 export default function AddReviewSearchScreen() {
   const navigation = useNavigation();

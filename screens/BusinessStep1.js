@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import config from "../config";
 import { Dropdown } from "react-native-element-dropdown";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";

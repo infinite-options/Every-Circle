@@ -11,6 +11,7 @@ import AppHeader from "../components/AppHeader";
 import { getHeaderColors, getHeaderColor, getDarkModeHeaderColor } from "../config/headerColors";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { TRANSACTIONS_ENDPOINT, PROFILE_WISH_INFO_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 
 const WishDetailScreenContent = ({ route, navigation }) => {

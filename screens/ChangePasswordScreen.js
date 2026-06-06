@@ -7,6 +7,7 @@ import * as Crypto from "expo-crypto";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import { USER_PROFILE_INFO_ENDPOINT, ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, UPDATE_EMAIL_PASSWORD_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { getHeaderColors } from "../config/headerColors";
 
 export default function ChangePasswordScreen() {

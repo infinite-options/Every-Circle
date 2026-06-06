@@ -6,6 +6,7 @@ import * as FileSystem from "expo-file-system";
 import { Dropdown } from "react-native-element-dropdown";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CATEGORY_LIST_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
 const { width } = Dimensions.get("window");
