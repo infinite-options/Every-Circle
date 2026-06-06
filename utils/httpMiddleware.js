@@ -6,7 +6,10 @@
 import axios from "axios";
 import { API_BASE_URL } from "../apiConfig";
 import { encryptPayload, decryptResponse } from "./encryption";
-// Key is set in encryption.js — both sides use "IO95120secretkey" (16 bytes)
+import { isPrivacyModeEnabled, loadPrivacyMode } from "./privacyMode";
+
+// Restore persisted privacy-mode preference as soon as the module loads
+loadPrivacyMode().catch(() => {});
 
 function isLocalBackend(url) {
   if (!url || typeof url !== "string") return false;
@@ -41,7 +44,7 @@ class DecryptingResponse {
 
   async json() {
     const raw = await this._res.json();
-    return this._local ? (decryptResponse(raw) ?? raw) : raw;
+    return this._local && isPrivacyModeEnabled() ? (decryptResponse(raw) ?? raw) : raw;
   }
 
   text() { return this._res.text(); }
@@ -52,12 +55,16 @@ class DecryptingResponse {
 
 export async function fetchMiddleware(url, options = {}) {
   const local = isLocalBackend(url);
+  const privacy = local && isPrivacyModeEnabled();
   let opts = { ...options };
 
-  if (local && opts.body && typeof opts.body === "string" && !alreadyEncrypted(opts.body)) {
-    try {
-      opts = { ...opts, body: JSON.stringify(encryptPayload(JSON.parse(opts.body))) };
-    } catch { /* FormData or non-JSON — pass through unchanged */ }
+  if (privacy) {
+    opts.headers = { ...(opts.headers || {}), "X-Privacy-Mode": "true" };
+    if (opts.body && typeof opts.body === "string" && !alreadyEncrypted(opts.body)) {
+      try {
+        opts = { ...opts, body: JSON.stringify(encryptPayload(JSON.parse(opts.body))) };
+      } catch { /* FormData or non-JSON — pass through unchanged */ }
+    }
   }
 
   const response = await fetch(url, opts);
@@ -69,19 +76,17 @@ export async function fetchMiddleware(url, options = {}) {
 export const axiosMiddleware = axios.create();
 
 axiosMiddleware.interceptors.request.use((config) => {
-  if (
-    isLocalBackend(config.url) &&
-    config.data &&
-    typeof config.data === "object" &&
-    !config.data.encrypted_data
-  ) {
-    config.data = encryptPayload(config.data);
+  if (isLocalBackend(config.url) && isPrivacyModeEnabled()) {
+    config.headers = { ...config.headers, "X-Privacy-Mode": "true" };
+    if (config.data && typeof config.data === "object" && !config.data.encrypted_data) {
+      config.data = encryptPayload(config.data);
+    }
   }
   return config;
 });
 
 axiosMiddleware.interceptors.response.use((response) => {
-  if (isLocalBackend(response.config?.url ?? "")) {
+  if (isLocalBackend(response.config?.url ?? "") && isPrivacyModeEnabled()) {
     response.data = decryptResponse(response.data) ?? response.data;
   }
   return response;

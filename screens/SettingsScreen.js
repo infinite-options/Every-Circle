@@ -15,6 +15,7 @@ import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyCl
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, BUSINESS_CLAIM_ENDPOINT} from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -165,6 +166,7 @@ export default function SettingsScreen() {
   const [showInformation, setShowInformation] = useState(true);
   const [showSettings, setShowSettings] = useState(true);
   const [networkDebugMode, setNetworkDebugMode] = useState(false);
+  const [privacyModeEnabled, setPrivacyModeEnabled] = useState(false);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
 
@@ -241,6 +243,9 @@ export default function SettingsScreen() {
       } catch (_) {
         setNetworkDebugMode(false);
       }
+
+      const pm = await loadPrivacyMode();
+      setPrivacyModeEnabled(pm);
 
       // Restore ignored nearby UIDs (survives page refresh within a session)
       try {
@@ -348,6 +353,11 @@ export default function SettingsScreen() {
     } catch (e) {
       console.warn("Settings: failed to persist network debug mode", e);
     }
+  };
+
+  const handlePrivacyModeToggle = async (value) => {
+    setPrivacyModeEnabled(value);
+    await setPrivacyMode(value);
   };
 
   const handleLogout = async () => {
@@ -1057,6 +1067,17 @@ export default function SettingsScreen() {
                   </Text>
                 </View>
                 <SettingsBoolPills value={darkMode} onValueChange={(v) => toggleDarkMode(v)} leftLabel='Light' rightLabel='Dark' darkMode={darkMode} variant='background' />
+              </View>
+
+              {/* Privacy Mode */}
+              <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+                <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
+                  <MaterialIcons name='lock' size={20} style={styles.icon} color={privacyModeEnabled ? COLORS.primary : settingsMenuIconColor} />
+                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Privacy Mode</Text>
+                  </Text>
+                </View>
+                <SettingsBoolPills value={privacyModeEnabled} onValueChange={handlePrivacyModeToggle} leftLabel='Off' rightLabel='On' darkMode={darkMode} />
               </View>
 
               {SHOW_NETWORK_DEBUG_UI !== 0 && (
