@@ -44,6 +44,7 @@ import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
 import LoginScreen from "./screens/LoginScreen";
 import SignUpScreen from "./screens/SignUpScreen";
 import HowItWorksScreen from "./screens/HowItWorksScreen";
+import ContactUsScreen from "./screens/ContactUsScreen";
 import UserInfoScreen from "./screens/UserInfoScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 import EditProfileScreen from "./screens/EditProfileScreen";
@@ -1009,6 +1010,7 @@ export default function App() {
                   )}
                 />
                 <Stack.Screen name='HowItWorksScreen' component={HowItWorksScreen} />
+                <Stack.Screen name='ContactUs' component={ContactUsScreen} />
                 <Stack.Screen name='UserInfo' component={UserInfoScreen} />
                 {/* <Stack.Screen name="UserProfile" component={UserProfile} /> */}
                 <Stack.Screen name='AccountType' component={AccountTypeScreen} />

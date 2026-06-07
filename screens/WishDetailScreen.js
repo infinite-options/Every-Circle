@@ -13,6 +13,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { TRANSACTIONS_ENDPOINT, PROFILE_WISH_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
+import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 
 const WishDetailScreenContent = ({ route, navigation }) => {
   const { wishData, profileData, profile_uid, searchState, returnTo, profileState } = route.params;
@@ -275,17 +276,15 @@ const WishDetailScreenContent = ({ route, navigation }) => {
         <View style={[styles.card, darkMode && styles.darkCard]}>
           <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Seeking Description</Text>
 
-          {wishData?.profile_wish_image &&
-          String(wishData.profile_wish_image).trim() &&
-          (wishData?.profile_wish_image_is_public === 1 ||
-            wishData?.profile_wish_image_is_public === "1" ||
-            wishData?.profile_wish_image_is_public === undefined) ? (
-            <Image
-              source={{ uri: resolveProfileItemImageUri(wishData.profile_wish_image, profile_uid) }}
-              style={[styles.wishHeroImage, { backgroundColor: darkMode ? "#333" : "#eee" }]}
-              resizeMode='cover'
-            />
-          ) : null}
+          <ProfileSectionItemImage
+            section="seeking"
+            imageUri={resolveProfileItemImageUri(wishData?.profile_wish_image, profile_uid)}
+            imageIsPublic={wishData?.profile_wish_image_is_public}
+            size={180}
+            darkMode={darkMode}
+            style={styles.wishHeroImage}
+            resizeMode="cover"
+          />
 
           {wishData?.title && <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wishData.title}</Text>}
 

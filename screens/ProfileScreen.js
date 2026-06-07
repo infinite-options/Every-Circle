@@ -43,6 +43,7 @@ import { sanitizeText } from "../utils/textSanitizer";
 import { getBusinessSuggestions as fetchGooglePlaces, getPlaceDetails } from "../utils/googlePlaces";
 import { isWishEnded } from "../utils/wishUtils";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
+import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
@@ -1189,8 +1190,16 @@ const ProfileScreen = ({ route, navigation }) => {
       }
 
       const selectedRelationship = connectionData?.relationship !== undefined ? connectionData.relationship : null;
+      const circleDate =
+        connectionData?.date?.trim() ||
+        (() => {
+          const now = new Date();
+          return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        })();
+
       const payload = {
         circle_relationship: selectedRelationship,
+        circle_date: circleDate,
         circle_event: connectionData?.event?.trim() || null,
         circle_note: connectionData?.note?.trim() || null,
         circle_city: connectionData?.city?.trim() || null,
@@ -1209,12 +1218,6 @@ const ProfileScreen = ({ route, navigation }) => {
           throw new Error(result.message || "Failed to update connection");
         }
       } else {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, "0");
-        const day = String(now.getDate()).padStart(2, "0");
-        const circleDate = `${year}-${month}-${day}`;
-
         // Calculate circle_num_nodes
         let circleNumNodes = null;
         try {
@@ -1682,29 +1685,16 @@ const ProfileScreen = ({ route, navigation }) => {
                     .filter((exp) => exp.isPublic)
                     .map((exp, index) => {
                       const expImageUri = resolveProfileItemImageUri(exp.profile_expertise_image, profileUID);
-                      // Same rule as detail screens: explicit 0/"0"/false hides; 1, "1", true, or undefined (legacy) shows.
-                      const expertiseImageIsHidden =
-                        exp.profile_expertise_image_is_public === 0 ||
-                        exp.profile_expertise_image_is_public === "0" ||
-                        exp.profile_expertise_image_is_public === false;
-                      const showExpImage =
-                        exp.profile_expertise_image &&
-                        String(exp.profile_expertise_image).trim() !== "" &&
-                        !expertiseImageIsHidden;
                       const offeringBody = (
                         <>
                           <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 8, gap: 10 }}>
-                            {showExpImage ? (
-                              <Image
-                                source={{ uri: expImageUri }}
-                                style={{
-                                  width: 56,
-                                  height: 56,
-                                  borderRadius: 8,
-                                  backgroundColor: darkMode ? "#333" : "#eee",
-                                }}
-                              />
-                            ) : null}
+                            <ProfileSectionItemImage
+                              section="offering"
+                              imageUri={expImageUri}
+                              imageIsPublic={exp.profile_expertise_image_is_public}
+                              size={56}
+                              darkMode={darkMode}
+                            />
                             <View style={{ flex: 1, minWidth: 0 }}>
                               <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
                                 {sanitizeText(exp.name) ? (
@@ -1842,31 +1832,19 @@ const ProfileScreen = ({ route, navigation }) => {
                     .filter((wish) => wish.isPublic && !isWishEnded(wish))
                     .map((wish, index) => {
                       const wishImageUri = resolveProfileItemImageUri(wish.profile_wish_image, profileUID);
-                      const wishImageIsHidden =
-                        wish.profile_wish_image_is_public === 0 ||
-                        wish.profile_wish_image_is_public === "0" ||
-                        wish.profile_wish_image_is_public === false;
-                      const showWishImage =
-                        wish.profile_wish_image &&
-                        String(wish.profile_wish_image).trim() !== "" &&
-                        !wishImageIsHidden;
                       const wishKey = wish.profile_wish_uid || String(index);
                       const shellStyle = [styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }];
 
                       const wishCardContent = (
                         <>
                           <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 2 }}>
-                            {showWishImage ? (
-                              <Image
-                                source={{ uri: wishImageUri }}
-                                style={{
-                                  width: 56,
-                                  height: 56,
-                                  borderRadius: 8,
-                                  backgroundColor: darkMode ? "#333" : "#eee",
-                                }}
-                              />
-                            ) : null}
+                            <ProfileSectionItemImage
+                              section="seeking"
+                              imageUri={wishImageUri}
+                              imageIsPublic={wish.profile_wish_image_is_public}
+                              size={56}
+                              darkMode={darkMode}
+                            />
                             <View style={{ flex: 1, minWidth: 0 }}>
                               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
                                 <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500", flex: 1 }]}>{wish.helpNeeds || ""}</Text>
@@ -2083,28 +2061,16 @@ const ProfileScreen = ({ route, navigation }) => {
                     .filter((exp) => exp.isPublic)
                     .map((exp, index) => {
                       const expImageUri = resolveProfileItemImageUri(exp.profile_experience_image, profileUID);
-                      const experienceImageIsHidden =
-                        exp.profile_experience_image_is_public === 0 ||
-                        exp.profile_experience_image_is_public === "0" ||
-                        exp.profile_experience_image_is_public === false;
-                      const showExpCardImage =
-                        exp.profile_experience_image &&
-                        String(exp.profile_experience_image).trim() !== "" &&
-                        !experienceImageIsHidden;
                       return (
                         <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
                           <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
-                            {showExpCardImage ? (
-                              <Image
-                                source={{ uri: expImageUri }}
-                                style={{
-                                  width: 56,
-                                  height: 56,
-                                  borderRadius: 8,
-                                  backgroundColor: darkMode ? "#333" : "#eee",
-                                }}
-                              />
-                            ) : null}
+                            <ProfileSectionItemImage
+                              section="experience"
+                              imageUri={expImageUri}
+                              imageIsPublic={exp.profile_experience_image_is_public}
+                              size={56}
+                              darkMode={darkMode}
+                            />
                             <View style={{ flex: 1, minWidth: 0 }}>
                               {exp.title ? (
                                 <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.title}</Text>
@@ -2143,28 +2109,16 @@ const ProfileScreen = ({ route, navigation }) => {
                     .filter((edu) => edu.isPublic)
                     .map((edu, index) => {
                       const eduImageUri = resolveProfileItemImageUri(edu.profile_education_image, profileUID);
-                      const educationImageIsHidden =
-                        edu.profile_education_image_is_public === 0 ||
-                        edu.profile_education_image_is_public === "0" ||
-                        edu.profile_education_image_is_public === false;
-                      const showEduCardImage =
-                        edu.profile_education_image &&
-                        String(edu.profile_education_image).trim() !== "" &&
-                        !educationImageIsHidden;
                       return (
                         <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
                           <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
-                            {showEduCardImage ? (
-                              <Image
-                                source={{ uri: eduImageUri }}
-                                style={{
-                                  width: 56,
-                                  height: 56,
-                                  borderRadius: 8,
-                                  backgroundColor: darkMode ? "#333" : "#eee",
-                                }}
-                              />
-                            ) : null}
+                            <ProfileSectionItemImage
+                              section="education"
+                              imageUri={eduImageUri}
+                              imageIsPublic={edu.profile_education_image_is_public}
+                              size={56}
+                              darkMode={darkMode}
+                            />
                             <View style={{ flex: 1, minWidth: 0 }}>
                               {edu.degree ? (
                                 <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{edu.degree}</Text>
@@ -2520,6 +2474,7 @@ const ProfileScreen = ({ route, navigation }) => {
         title='Connection Details'
         initialData={{
           relationship: relationshipType,
+          date: existingRelationship?.circle_date || "",
           event: existingRelationship?.circle_event || "",
           note: existingRelationship?.circle_note || "",
           city: existingRelationship?.circle_city || "",

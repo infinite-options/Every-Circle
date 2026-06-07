@@ -467,6 +467,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
           <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
             <ProfileItemImageColumn
               darkMode={darkMode}
+              defaultSection="offering"
               displayUri={getExpertiseDisplayUri(item)}
               imageError={!!item._expImageError}
               onImageError={() => handleInputChange(index, "_expImageError", true)}
