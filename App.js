@@ -20,6 +20,7 @@ import { NavigationContainer, getStateFromPath as parsePathToNavigationState } f
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { clearUserProfileCacheStorage } from "./utils/sessionProfile";
+import { persistOrBootstrapAuthTokens, ensureAwsAuthTokens } from "./utils/authToken";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -203,6 +204,7 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
       console.warn("App.js - AppleAuth: no user_uid in response:", result);
       throw new Error("Apple auth did not return a user id");
     }
+    await persistOrBootstrapAuthTokens(result, String(userUid));
     await AsyncStorage.setItem("user_uid", String(userUid));
     await AsyncStorage.setItem("user_email_id", userEmail || "");
     await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
@@ -288,6 +290,8 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
     throw new Error("Failed to create account");
   }
 
+  await persistOrBootstrapAuthTokens(result, String(userUid));
+
   const existingAccount = isExistingSocialAccountApiResult(result);
 
   await AsyncStorage.setItem("user_uid", String(userUid));
@@ -347,6 +351,9 @@ export default function App() {
         console.log("App.js - Checking if user in AsyncStorage...");
         const uid = await AsyncStorage.getItem("user_uid");
         console.log("App.js - User UID:", uid);
+        if (uid) {
+          await ensureAwsAuthTokens(uid);
+        }
 
         // Check terms acceptance status
         const termsStatus = await AsyncStorage.getItem("termsAccepted");

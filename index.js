@@ -1,6 +1,10 @@
 import "react-native-gesture-handler";
 import { registerRootComponent } from "expo";
 import * as WebBrowser from "expo-web-browser";
+import { installHttpEncryption } from "./utils/httpMiddleware";
+
+installHttpEncryption();
+
 import App from "./App";
 
 const isWeb = typeof window !== "undefined" && typeof document !== "undefined";

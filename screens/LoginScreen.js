@@ -8,11 +8,11 @@ import AppleSignIn from "../AppleSignIn";
 import GoogleBrandedSignInButton from "../components/GoogleBrandedSignInButton";
 import * as Crypto from "expo-crypto";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
 import { Ionicons } from "@expo/vector-icons";
 import { ACCOUNT_SALT_ENDPOINT, LOGIN_ENDPOINT, SET_TEMP_PASSWORD_ENDPOINT } from "../apiConfig";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { ensureSessionProfileUid } from "../utils/ensureSessionProfileUid";
+import { persistOrBootstrapAuthTokens, ensureAwsAuthTokens } from "../utils/authToken";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
@@ -116,6 +116,8 @@ export default function LoginScreen({ navigation, route, onGoogleSignIn, onApple
 
       const user_uid = loginObject.result.user_uid;
       const user_email = loginObject.result.user_email_id;
+
+      await persistOrBootstrapAuthTokens(loginObject, user_uid);
 
       // Store user_uid and user_email_id in AsyncStorage
       await AsyncStorage.setItem("user_uid", user_uid);

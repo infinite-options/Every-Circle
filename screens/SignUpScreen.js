@@ -15,6 +15,7 @@ import { useUnread } from "../contexts/UnreadContext";
 import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
 import { saveSessionProfilePayload, clearUserProfileCacheStorage } from "../utils/sessionProfile";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
+import { persistOrBootstrapAuthTokens } from "../utils/authToken";
 
 function authContinuationParams(route) {
   const p = route?.params || {};
@@ -303,6 +304,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
         if (result.user_uid) {
           // Clear AsyncStorage before storing new user data
           await AsyncStorage.clear();
+          await persistOrBootstrapAuthTokens(result, result.user_uid);
           await AsyncStorage.setItem("user_uid", result.user_uid);
           await AsyncStorage.setItem("user_email_id", googleUserInfo.email);
           setPendingGoogleUserInfo(googleUserInfo);
@@ -380,6 +382,8 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             if (loginObject.code === 200 && loginObject.result && loginObject.result.user_uid) {
               const user_uid = loginObject.result.user_uid;
               const user_email = loginObject.result.user_email_id;
+
+              await persistOrBootstrapAuthTokens(loginObject, user_uid);
 
               // Store user credentials
               await AsyncStorage.setItem("user_uid", user_uid);

@@ -7,6 +7,7 @@ import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";
 import { goToNetworkForScanConnect } from "../utils/goToNetworkForScanConnect";
 import { profileUidFromUserProfileResponse } from "../utils/ensureSessionProfileUid";
+import { ensureAwsAuthTokens } from "../utils/authToken";
 
 export default function UserInfoScreen({ navigation, route }) {
   // console.log("UserInfoScreen - route.params:", route.params);
@@ -67,11 +68,20 @@ export default function UserInfoScreen({ navigation, route }) {
         // Check if profile exists
         if (userUid) {
           console.log("Checking for existing profile with userUid:", userUid);
+          await ensureAwsAuthTokens(userUid);
           const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${userUid}`);
           const data = await response.json();
           console.log("Profile check response:", JSON.stringify(data, null, 2));
 
-          if (data.message !== "Profile not found for this user") {
+          const profileNotFound =
+            !response.ok ||
+            data.message === "Profile not found for this user" ||
+            data.message === "Missing token!" ||
+            data.message === "Invalid token!" ||
+            data.message === "Token is expired!" ||
+            !data.personal_info;
+
+          if (!profileNotFound) {
             console.log("Profile exists, setting profile data");
             setProfileExists(true);
             setProfilePersonalUid(data.personal_info?.profile_personal_uid);

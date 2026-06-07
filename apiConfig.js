@@ -1,8 +1,13 @@
 // API Configuration - Centralized location for all API endpoints
-// Uncomment the appropriate line for your environment
+// EXPO_PUBLIC_ENCRYPTION_ON=true switches API_BASE_URL to AWS dev (auth endpoints stay plain — see httpMiddleware.js).
 
-// Production/Development Environment
-export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
+import { encryptionON } from "./config/encryptionEnv";
+
+export const AWS_DEV_API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
+export const LOCAL_API_BASE_URL = "http://127.0.0.1:4090";
+
+export const API_BASE_URL = encryptionON ? AWS_DEV_API_BASE_URL : LOCAL_API_BASE_URL;
+
 // export const SEARCH_BASE_URL = "http://54.183.12.163:5001";
 // export const SEARCH_BASE_URL = "http://13.52.244.236:5001";
 // export const SEARCH_BASE_URL = "http://13.52.82.86:5001";
@@ -12,23 +17,12 @@ export const SEARCH_BASE_URL = "https://ioec2vrecsearch.infiniteoptions.com";
 // Legacy API Base URL (infiniteoptions domain)
 // export const API_BASE_URL = "https://ioec2ecaspm.infiniteoptions.com";
 
-// Local Development (commented out by default)
-//  export const API_BASE_URL = "http://localhost:4090";
-// export const API_BASE_URL = "http://127.0.0.1:4090";
-
-// Google and Apple Authentication Endpoints
+// Google and Apple Authentication Endpoints (always plain JSON — not encrypted)
 /** Google Sign in + Sign up (App.js `completeGoogleSocialAuth`, SignUpScreen) — one endpoint for both. */
 export const GOOGLE_SOCIAL_AUTH_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialAuth/EVERY-CIRCLE";
-// export const GOOGLE_SIGNUP_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialSignUp/EVERY-CIRCLE";
-/** Same URL as `GOOGLE_SIGNUP_ENDPOINT`: POST with token for unified Google sign-in or sign-up (backend upserts). */
-// export const GOOGLE_SOCIAL_AUTH_ENDPOINT = GOOGLE_SIGNUP_ENDPOINT;
-// export const GOOGLE_SIGNIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UserSocialLogin/EVERY-CIRCLE";
-
-/** Apple Sign in + Sign up — POST JSON `code`, `id_token`, `sub`, `email`, `first_name`, `last_name` */
 export const APPLE_AUTH_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AppleAuth/EVERY-CIRCLE";
-// export const APPLE_SIGNIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AppleLogin/EVERY-CIRCLE";
 
-// Account Management Endpoints
+// Account Management Endpoints (always plain JSON — not encrypted)
 export const ACCOUNT_SALT_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/AccountSalt/EVERY-CIRCLE";
 export const CREATE_ACCOUNT_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/CreateAccount/EVERY-CIRCLE";
 export const LOGIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/Login/EVERY-CIRCLE";
@@ -56,7 +50,6 @@ export const BUSINESS_SERVICE_PURCHASE_ENDPOINT = `${API_BASE_URL}/business/serv
 export const BUSINESS_CLAIM_ENDPOINT = `${API_BASE_URL}/api/v1/business_claim`;
 
 // Search and Network Endpoints
-// export const BUSINESS_RESULTS_ENDPOINT = `${API_BASE_URL}/api/businessresults`;
 export const BUSINESS_RESULTS_ENDPOINT = `${SEARCH_BASE_URL}/search_business`;
 export const EXPERTISE_RESULTS_ENDPOINT = `${SEARCH_BASE_URL}/search_expertise`;
 export const WISHES_RESULTS_ENDPOINT = `${SEARCH_BASE_URL}/search_wishes`;
@@ -97,14 +90,4 @@ export const CHAT_CONVERSATIONS_ENDPOINT = `${API_BASE_URL}/api/v1/chat/conversa
 export const CHAT_MESSAGES_ENDPOINT = `${API_BASE_URL}/api/v1/chat/messages`;
 export const ABLY_TOKEN_ENDPOINT = `${API_BASE_URL}/api/v1/ably/token`;
 
-console.log("API Configuration loaded");
-// console.log("Base URL:", API_BASE_URL);
-// console.log("Legacy Base URL:", API_BASE_URL);
-// console.log("Legacy Base URL:", API_BASE_URL);
-// console.log("Google social auth:", GOOGLE_SOCIAL_AUTH_ENDPOINT);
-// console.log("Google Signup:", GOOGLE_SIGNUP_ENDPOINT);
-// console.log("Google Signin:", GOOGLE_SIGNIN_ENDPOINT);
-// console.log("Apple Auth:", APPLE_AUTH_ENDPOINT);
-// console.log("Apple Signin:", APPLE_SIGNIN_ENDPOINT);
-// console.log("Stripe Key:", STRIPE_KEY_ENDPOINT);
-// console.log("Payment Intent:", CREATE_PAYMENT_INTENT_ENDPOINT);
+console.log(`API Configuration loaded (encryption: ${encryptionON}, API_BASE_URL: ${API_BASE_URL})`);

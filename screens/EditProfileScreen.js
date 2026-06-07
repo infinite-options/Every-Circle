@@ -1,7 +1,7 @@
 //EditProfileScreen.js
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Modal, ActivityIndicator, Keyboard, UIManager, findNodeHandle, Platform, BackHandler } from "react-native";
-import axios from "axios";
+import { axiosMiddleware as axios } from "../utils/httpMiddleware";
 import MiniCard from "../components/MiniCard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";

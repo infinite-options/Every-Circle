@@ -13,6 +13,7 @@ import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
+import { AUTH_TOKEN_KEY, REFRESH_TOKEN_KEY } from "../utils/authToken";
 import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, BUSINESS_CLAIM_ENDPOINT} from "../apiConfig";
 
 // Only import GoogleSignin on native platforms (not web)
@@ -450,6 +451,9 @@ export default function SettingsScreen() {
 
         // Apple authentication data
         ...appleKeys,
+
+        AUTH_TOKEN_KEY,
+        REFRESH_TOKEN_KEY,
       ];
 
       // console.log("SettingsScreen.js - Clearing AsyncStorage keys:", keysToRemove);

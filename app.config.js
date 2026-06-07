@@ -138,6 +138,9 @@ module.exports = ({ config: expoConfig }) => ({
       appleServicesId: process.env.EXPO_PUBLIC_APPLE_SERVICES_ID || "com.infiniteoptions.everycircle.signin",
 
       ablyApiKey: process.env.EXPO_PUBLIC_ABLY_API_KEY,
+
+      EXPO_PUBLIC_ENCRYPTION_ON: process.env.EXPO_PUBLIC_ENCRYPTION_ON,
+      encryptionOn: process.env.EXPO_PUBLIC_ENCRYPTION_ON === "true",
     },
   },
 });

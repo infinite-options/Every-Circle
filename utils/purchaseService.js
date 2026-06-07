@@ -1,4 +1,4 @@
-import axios from "axios";
+import { axiosMiddleware as axios } from "./httpMiddleware";
 import { BUSINESS_SERVICE_PURCHASE_ENDPOINT } from "../apiConfig";
 
 /**
