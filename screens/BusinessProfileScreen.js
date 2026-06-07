@@ -26,7 +26,6 @@ import {
   getDefaultBountyRecipient,
   isBountyReviewDisabled,
   mergeBountyEligibleReviews,
-  productHasBounty,
   resolveBountyRecommenderProfileId,
 } from "../utils/bountyRecipientUtils";
 
@@ -156,9 +155,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       try {
         const profileId = await AsyncStorage.getItem("profile_uid");
         if (!profileId) return;
-        const pendingRes = await fetch(
-          `${BUSINESS_CLAIM_ENDPOINT}?profile_uid=${profileId}&business_uid=${business_uid}&status=pending`
-        );
+        const pendingRes = await fetch(`${BUSINESS_CLAIM_ENDPOINT}?profile_uid=${profileId}&business_uid=${business_uid}&status=pending`);
         const pendingResult = await pendingRes.json();
         if (pendingResult?.result?.length > 0) {
           const claim = pendingResult.result[0];
@@ -166,10 +163,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
           setClaimSubmittedAt(new Date(claim.claim_created_at));
           return;
         }
-        // Check approved 
-        const approvedRes = await fetch(
-          `${BUSINESS_CLAIM_ENDPOINT}?profile_uid=${profileId}&business_uid=${business_uid}&status=approved`
-        );
+        // Check approved
+        const approvedRes = await fetch(`${BUSINESS_CLAIM_ENDPOINT}?profile_uid=${profileId}&business_uid=${business_uid}&status=approved`);
         const approvedResult = await approvedRes.json();
         if (approvedResult?.result?.length > 0) {
           setClaimStatus("approved");
@@ -630,7 +625,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
     }
 
     setSelectedService(service);
-    setQuantity(1);setSelectedChoices({});
+    setQuantity(1);
+    setSelectedChoices({});
     setSpecialInstructions("");
     setServiceOptions([]);
     console.log("🛒 handleProductPress - service.bs_uid:", service.bs_uid);
@@ -651,14 +647,13 @@ export default function BusinessProfileScreen({ route, navigation }) {
     setBountySearch("");
 
     const eligible = mergeBountyEligibleReviews(allReviews, userReview);
-    const defaultRecipient = getDefaultBountyRecipient(eligible, currentUserProfileId);
-    if (defaultRecipient) {
-      setSelectedBountyRecipient(defaultRecipient);
-    } else if (
-      selectedBountyRecipient &&
-      isBountyReviewDisabled(selectedBountyRecipient, eligible, currentUserProfileId)
-    ) {
+    if (selectedBountyRecipient && isBountyReviewDisabled(selectedBountyRecipient, eligible, currentUserProfileId)) {
       setSelectedBountyRecipient(null);
+    } else if (!selectedBountyRecipient) {
+      const defaultRecipient = getDefaultBountyRecipient(eligible, currentUserProfileId);
+      if (defaultRecipient) {
+        setSelectedBountyRecipient(defaultRecipient);
+      }
     }
 
     setQuantityModalVisible(true);
@@ -679,10 +674,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
         return;
       }
     }
-    // If there are verified reviews, bounty assignment is mandatory
-    const verifiedReviews = allReviews.filter((r) => r.is_verified && r.circle_num_nodes !== null && r.circle_num_nodes !== undefined).slice(0, 5);
-
-    if (verifiedReviews.length > 0 && !selectedBountyRecipient) {
+    const bountyEligible = mergeBountyEligibleReviews(allReviews, userReview);
+    if (bountyPickerRequiresSelection(bountyEligible, currentUserProfileId, selectedBountyRecipient)) {
       Alert.alert("Select a Reviewer", "Please select who referred you before adding to cart.");
       return;
     }
@@ -693,16 +686,14 @@ export default function BusinessProfileScreen({ route, navigation }) {
       eligibleReviews: bountyEligible,
     });
     try {
-      const ccPayer = canonicalBusinessCcFeePayer(business.business_cc_fee_payer ?? business.bs_cc_fee_payer);
+      const ccPayer = canonicalBusinessCcFeePayer(business?.business_cc_fee_payer ?? business?.bs_cc_fee_payer);
 
       // Calculate extra cost from selected choice group options
       const choicesExtraCost = serviceOptions.reduce((sum, group) => {
         const sel = selectedChoices[group.title];
         if (!sel) return sum;
         const selectedIds = Array.isArray(sel) ? sel : [sel];
-        return sum + (group.options || [])
-          .filter((opt) => selectedIds.includes(opt.id))
-          .reduce((s, opt) => s + (parseFloat(opt.extra_cost) || 0), 0);
+        return sum + (group.options || []).filter((opt) => selectedIds.includes(opt.id)).reduce((s, opt) => s + (parseFloat(opt.extra_cost) || 0), 0);
       }, 0);
 
       const unitPrice = parsePrice(selectedService.bs_cost) + choicesExtraCost;
@@ -712,9 +703,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         const sel = selectedChoices[group.title];
         if (!sel) return;
         const selectedIds = Array.isArray(sel) ? sel : [sel];
-        const matchingLabels = (group.options || [])
-          .filter((opt) => selectedIds.includes(opt.id))
-          .map((opt) => opt.label);
+        const matchingLabels = (group.options || []).filter((opt) => selectedIds.includes(opt.id)).map((opt) => opt.label);
         if (matchingLabels.length > 0) {
           selectedChoiceLabels[group.title] = matchingLabels.join(", ");
         }
@@ -724,9 +713,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
         ...selectedService,
         quantity: quantity,
         totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
-        bounty_recommender_profile_id: selectedBountyRecipient?.rating_profile_id || null,
+        bounty_recommender_profile_id: bountyRecommenderProfileId,
         business_uid: business_uid,
-        business_name: sanitizeText(business.business_name || "") || "",
+        business_name: sanitizeText(business?.business_name || "") || "",
         business_cc_fee_payer: ccPayer,
       };
 
@@ -737,7 +726,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         newCartItems = [...cartItems];
         const existingItem = newCartItems[existingItemIndex];
         const newQuantity = (existingItem.quantity || 1) + quantity;
-        const existingUnitPrice = (existingItem.unitPrice != null) ? existingItem.unitPrice : parsePrice(existingItem.bs_cost);
+        const existingUnitPrice = existingItem.unitPrice != null ? existingItem.unitPrice : parsePrice(existingItem.bs_cost);
         newCartItems[existingItemIndex] = {
           ...existingItem,
           quantity: newQuantity,
@@ -748,12 +737,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
         newCartItems = [...cartItems, serviceWithQuantity];
       }
 
-      // Always update ALL items from this business to use the latest selected reviewer
-      if (selectedBountyRecipient?.rating_profile_id) {
+      if (bountyRecommenderProfileId) {
         newCartItems = newCartItems.map((item) => {
           if (item.business_uid === business_uid || item.bs_business_id === business_uid) {
-            console.log("Updating bounty recipient for item:", item.bs_uid, "to:", selectedBountyRecipient.rating_profile_id);
-            return { ...item, bounty_recommender_profile_id: selectedBountyRecipient.rating_profile_id };
+            return { ...item, bounty_recommender_profile_id: bountyRecommenderProfileId };
           }
           return item;
         });
@@ -875,11 +862,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
       const picked = result.assets.map((asset) => ({
         name: asset.name,
-        size: asset.size
-          ? asset.size > 1024 * 1024
-            ? `${(asset.size / (1024 * 1024)).toFixed(1)} MB`
-            : `${Math.round(asset.size / 1024)} KB`
-          : "Unknown size",
+        size: asset.size ? (asset.size > 1024 * 1024 ? `${(asset.size / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(asset.size / 1024)} KB`) : "Unknown size",
         uri: asset.uri,
         mimeType: asset.mimeType,
         _file: asset.file || null, // web only — raw File object from the browser
@@ -896,65 +879,65 @@ export default function BusinessProfileScreen({ route, navigation }) {
   };
 
   const handleClaimSubmit = async () => {
-  if (claimFiles.length === 0) {
-    Alert.alert("Documents required", "Please upload at least one verification document.");
-    return;
-  }
-
-  setClaimSubmitting(true);
-  try {
-    const profileId = await AsyncStorage.getItem("profile_uid");
-    if (!profileId) {
-      Alert.alert("Error", "No profile found. Please log in again.");
+    if (claimFiles.length === 0) {
+      Alert.alert("Documents required", "Please upload at least one verification document.");
       return;
     }
 
-    const formData = new FormData();
-    formData.append("profile_uid", profileId);
-    formData.append("business_uid", business_uid);
-    formData.append("claim_role", claimRole);
-    formData.append("claim_note", claimNote);
-
-    claimFiles.forEach((file, index) => {
-      if (Platform.OS === "web") {
-        // On web, expo-document-picker gives us a blob URI — fetch it and append as a Blob
-        formData.append(`document_${index}`, file._file || file, file.name);
-      } else {
-        // On native, append as RN file object
-        formData.append(`document_${index}`, {
-          uri: file.uri,
-          name: file.name,
-          type: file.mimeType || "application/octet-stream",
-        });
+    setClaimSubmitting(true);
+    try {
+      const profileId = await AsyncStorage.getItem("profile_uid");
+      if (!profileId) {
+        Alert.alert("Error", "No profile found. Please log in again.");
+        return;
       }
-    });
 
-    const response = await fetch(BUSINESS_CLAIM_ENDPOINT, {
-      method: "POST",
-      // headers: { "Content-Type": "multipart/form-data" },
-      body: formData,
-    });
+      const formData = new FormData();
+      formData.append("profile_uid", profileId);
+      formData.append("business_uid", business_uid);
+      formData.append("claim_role", claimRole);
+      formData.append("claim_note", claimNote);
 
-    const result = await response.json();
+      claimFiles.forEach((file, index) => {
+        if (Platform.OS === "web") {
+          // On web, expo-document-picker gives us a blob URI — fetch it and append as a Blob
+          formData.append(`document_${index}`, file._file || file, file.name);
+        } else {
+          // On native, append as RN file object
+          formData.append(`document_${index}`, {
+            uri: file.uri,
+            name: file.name,
+            type: file.mimeType || "application/octet-stream",
+          });
+        }
+      });
 
-    if (result.code === 200) {
-      setClaimStatus("pending");
-      setClaimSubmittedAt(new Date());
-      setClaimModalVisible(false);
-      setClaimStep(1);
-      Alert.alert("Submitted", "Your claim has been submitted for admin review.");
-    } else if (result.code === 409) {
-      Alert.alert("Already Submitted", "You have already submitted a claim for this business.");
-      setClaimModalVisible(false);
-    } else {
-      Alert.alert("Error", result.message || "Submission failed. Please try again.");
+      const response = await fetch(BUSINESS_CLAIM_ENDPOINT, {
+        method: "POST",
+        // headers: { "Content-Type": "multipart/form-data" },
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (result.code === 200) {
+        setClaimStatus("pending");
+        setClaimSubmittedAt(new Date());
+        setClaimModalVisible(false);
+        setClaimStep(1);
+        Alert.alert("Submitted", "Your claim has been submitted for admin review.");
+      } else if (result.code === 409) {
+        Alert.alert("Already Submitted", "You have already submitted a claim for this business.");
+        setClaimModalVisible(false);
+      } else {
+        Alert.alert("Error", result.message || "Submission failed. Please try again.");
+      }
+    } catch (e) {
+      console.error("Claim submit error:", e);
+      Alert.alert("Error", "Network error. Please check your connection.");
+    } finally {
+      setClaimSubmitting(false);
     }
-  } catch (e) {
-    console.error("Claim submit error:", e);
-    Alert.alert("Error", "Network error. Please check your connection.");
-  } finally {
-    setClaimSubmitting(false);
-  }
   };
 
   const renderStars = (rating) => {
@@ -1443,25 +1426,25 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 onPress={() => setClaimModalVisible(true)}
                 activeOpacity={0.85}
               >
-                <Ionicons name="shield-checkmark-outline" size={20} color="#fff" />
+                <Ionicons name='shield-checkmark-outline' size={20} color='#fff' />
                 <Text style={{ color: "#fff", fontSize: 15, fontWeight: "bold" }}>Claim This Business</Text>
               </TouchableOpacity>
-              <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", textAlign: "center", marginTop: 6 }}>
-                Are you the owner? Verify your identity to manage this listing.
-              </Text>
+              <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", textAlign: "center", marginTop: 6 }}>Are you the owner? Verify your identity to manage this listing.</Text>
             </View>
           )}
 
           {!isOwner && claimStatus === "pending" && (
-            <View style={{ marginTop: 16, backgroundColor: "rgba(75,46,131,0.08)", borderWidth: 0.5, borderColor: "rgba(75,46,131,0.3)", borderRadius: 10, padding: 14, flexDirection: "row", gap: 10 }}>
-              <Ionicons name="time-outline" size={22} color="#4B2E83" style={{ marginTop: 1 }} />
+            <View
+              style={{ marginTop: 16, backgroundColor: "rgba(75,46,131,0.08)", borderWidth: 0.5, borderColor: "rgba(75,46,131,0.3)", borderRadius: 10, padding: 14, flexDirection: "row", gap: 10 }}
+            >
+              <Ionicons name='time-outline' size={22} color='#4B2E83' style={{ marginTop: 1 }} />
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 14, fontWeight: "bold", color: "#4B2E83", marginBottom: 4 }}>Claim under review</Text>
                 <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#555", lineHeight: 18 }}>
                   Submitted on {claimSubmittedAt?.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}. Admin review takes 2–3 business days.
                 </Text>
                 <TouchableOpacity onPress={() => setClaimModalVisible(true)} style={{ marginTop: 10, flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Ionicons name="add-circle-outline" size={16} color="#4B2E83" />
+                  <Ionicons name='add-circle-outline' size={16} color='#4B2E83' />
                   <Text style={{ fontSize: 13, fontWeight: "bold", color: "#4B2E83" }}>Add more documents</Text>
                 </TouchableOpacity>
               </View>
@@ -1469,12 +1452,12 @@ export default function BusinessProfileScreen({ route, navigation }) {
           )}
 
           {/* Claim Modal */}
-          <Modal visible={claimModalVisible} transparent animationType="slide" onRequestClose={() => setClaimModalVisible(false)}>
+          <Modal visible={claimModalVisible} transparent animationType='slide' onRequestClose={() => setClaimModalVisible(false)}>
             <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
               <View style={{ backgroundColor: darkMode ? "#1e1e1e" : "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingBottom: 32, maxHeight: "92%" }}>
                 <View style={{ width: 36, height: 4, backgroundColor: "#ddd", borderRadius: 2, alignSelf: "center", marginTop: 12, marginBottom: 16 }} />
 
-                <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps='handled'>
                   <Text style={{ fontSize: 18, fontWeight: "bold", color: darkMode ? "#fff" : "#000", marginBottom: 6 }}>Claim this business</Text>
                   <Text style={{ fontSize: 13, color: darkMode ? "#aaa" : "#666", lineHeight: 19, marginBottom: 20 }}>
                     Submit ownership documents for admin review. We'll verify and grant access within 2–3 business days.
@@ -1489,12 +1472,22 @@ export default function BusinessProfileScreen({ route, navigation }) {
                       return (
                         <React.Fragment key={label}>
                           <View style={{ alignItems: "center" }}>
-                            <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: isActive || isDone ? "#4B2E83" : "#eee", borderWidth: 1.5, borderColor: isActive || isDone ? "#4B2E83" : "#ccc", alignItems: "center", justifyContent: "center", marginBottom: 4 }}>
-                              {isDone
-                                ? <Ionicons name="checkmark" size={13} color="#fff" />
-                                : <Text style={{ fontSize: 12, fontWeight: "bold", color: isActive ? "#fff" : "#999" }}>{stepNum}</Text>}
+                            <View
+                              style={{
+                                width: 28,
+                                height: 28,
+                                borderRadius: 14,
+                                backgroundColor: isActive || isDone ? "#4B2E83" : "#eee",
+                                borderWidth: 1.5,
+                                borderColor: isActive || isDone ? "#4B2E83" : "#ccc",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                marginBottom: 4,
+                              }}
+                            >
+                              {isDone ? <Ionicons name='checkmark' size={13} color='#fff' /> : <Text style={{ fontSize: 12, fontWeight: "bold", color: isActive ? "#fff" : "#999" }}>{stepNum}</Text>}
                             </View>
-                            <Text style={{ fontSize: 10, color: isActive ? "#4B2E83" : (darkMode ? "#aaa" : "#999"), fontWeight: isActive ? "bold" : "normal" }}>{label}</Text>
+                            <Text style={{ fontSize: 10, color: isActive ? "#4B2E83" : darkMode ? "#aaa" : "#999", fontWeight: isActive ? "bold" : "normal" }}>{label}</Text>
                           </View>
                           {i < 2 && <View style={{ flex: 1, height: 1.5, backgroundColor: isDone ? "#4B2E83" : "#ddd", marginBottom: 18 }} />}
                         </React.Fragment>
@@ -1506,18 +1499,32 @@ export default function BusinessProfileScreen({ route, navigation }) {
                   {claimStep === 1 && (
                     <View>
                       <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 10 }}>Your relationship to this business</Text>
-                      {[{ key: "owner", label: "Owner" }, { key: "co_owner", label: "Co-owner" }, { key: "manager", label: "Authorized manager" }].map(({ key, label }) => (
+                      {[
+                        { key: "owner", label: "Owner" },
+                        { key: "co_owner", label: "Co-owner" },
+                        { key: "manager", label: "Authorized manager" },
+                      ].map(({ key, label }) => (
                         <TouchableOpacity key={key} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 }} onPress={() => setClaimRole(key)}>
-                          <Ionicons name={claimRole === key ? "radio-button-on" : "radio-button-off"} size={18} color="#4B2E83" />
+                          <Ionicons name={claimRole === key ? "radio-button-on" : "radio-button-off"} size={18} color='#4B2E83' />
                           <Text style={{ fontSize: 15, color: darkMode ? "#fff" : "#333" }}>{label}</Text>
                         </TouchableOpacity>
                       ))}
                       <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginTop: 16, marginBottom: 8 }}>Additional context (optional)</Text>
                       <TextInput
-                        style={{ borderWidth: 0.5, borderColor: darkMode ? "#555" : "#ccc", borderRadius: 8, padding: 10, fontSize: 14, color: darkMode ? "#fff" : "#333", minHeight: 80, textAlignVertical: "top", backgroundColor: darkMode ? "#2a2a2a" : "#fafafa" }}
+                        style={{
+                          borderWidth: 0.5,
+                          borderColor: darkMode ? "#555" : "#ccc",
+                          borderRadius: 8,
+                          padding: 10,
+                          fontSize: 14,
+                          color: darkMode ? "#fff" : "#333",
+                          minHeight: 80,
+                          textAlignVertical: "top",
+                          backgroundColor: darkMode ? "#2a2a2a" : "#fafafa",
+                        }}
                         value={claimNote}
                         onChangeText={setClaimNote}
-                        placeholder="E.g. I opened this business in 2018..."
+                        placeholder='E.g. I opened this business in 2018...'
                         placeholderTextColor={darkMode ? "#888" : "#aaa"}
                         multiline
                         maxLength={500}
@@ -1532,26 +1539,64 @@ export default function BusinessProfileScreen({ route, navigation }) {
                       <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 8 }}>Upload verification documents</Text>
                       <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginBottom: 8 }}>Accepted: Business license, Gov. ID, Tax filing, Articles of incorporation</Text>
                       <TouchableOpacity
-                        style={{ borderWidth: 1.5, borderStyle: "dashed", borderColor: darkMode ? "#555" : "#ccc", borderRadius: 10, padding: 24, alignItems: "center", backgroundColor: darkMode ? "#2a2a2a" : "#fafafa", marginBottom: 12 }}
+                        style={{
+                          borderWidth: 1.5,
+                          borderStyle: "dashed",
+                          borderColor: darkMode ? "#555" : "#ccc",
+                          borderRadius: 10,
+                          padding: 24,
+                          alignItems: "center",
+                          backgroundColor: darkMode ? "#2a2a2a" : "#fafafa",
+                          marginBottom: 12,
+                        }}
                         onPress={handlePickDocument}
                       >
-                        <Ionicons name="cloud-upload-outline" size={36} color={darkMode ? "#aaa" : "#888"} />
+                        <Ionicons name='cloud-upload-outline' size={36} color={darkMode ? "#aaa" : "#888"} />
                         <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginTop: 8, marginBottom: 4 }}>Tap to upload files</Text>
                         <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#999" }}>PDF, JPG, PNG · max 10 MB each</Text>
                       </TouchableOpacity>
                       {claimFiles.map((file, i) => (
-                        <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: darkMode ? "#2d2d2d" : "#f5f5f5", borderWidth: 0.5, borderColor: darkMode ? "#444" : "#ddd", borderRadius: 8, padding: 10, marginBottom: 8 }}>
-                          <Ionicons name="document-text-outline" size={20} color="#4B2E83" />
-                          <Text style={{ flex: 1, fontSize: 13, color: darkMode ? "#fff" : "#333" }} numberOfLines={1}>{file.name}</Text>
+                        <View
+                          key={i}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 10,
+                            backgroundColor: darkMode ? "#2d2d2d" : "#f5f5f5",
+                            borderWidth: 0.5,
+                            borderColor: darkMode ? "#444" : "#ddd",
+                            borderRadius: 8,
+                            padding: 10,
+                            marginBottom: 8,
+                          }}
+                        >
+                          <Ionicons name='document-text-outline' size={20} color='#4B2E83' />
+                          <Text style={{ flex: 1, fontSize: 13, color: darkMode ? "#fff" : "#333" }} numberOfLines={1}>
+                            {file.name}
+                          </Text>
                           <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>{file.size}</Text>
                           <TouchableOpacity onPress={() => handleRemoveFile(i)}>
-                            <Ionicons name="close-outline" size={20} color={darkMode ? "#aaa" : "#888"} />
+                            <Ionicons name='close-outline' size={20} color={darkMode ? "#aaa" : "#888"} />
                           </TouchableOpacity>
                         </View>
                       ))}
-                      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-start", backgroundColor: "rgba(75,46,131,0.07)", borderWidth: 0.5, borderColor: "rgba(75,46,131,0.2)", borderRadius: 8, padding: 10, marginTop: 4 }}>
-                        <Ionicons name="information-circle-outline" size={16} color="#4B2E83" style={{ marginTop: 1 }} />
-                        <Text style={{ flex: 1, fontSize: 12, color: darkMode ? "#aaa" : "#555", lineHeight: 18 }}>Your documents are encrypted and only reviewed by admins. They will not be shared publicly.</Text>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          gap: 8,
+                          alignItems: "flex-start",
+                          backgroundColor: "rgba(75,46,131,0.07)",
+                          borderWidth: 0.5,
+                          borderColor: "rgba(75,46,131,0.2)",
+                          borderRadius: 8,
+                          padding: 10,
+                          marginTop: 4,
+                        }}
+                      >
+                        <Ionicons name='information-circle-outline' size={16} color='#4B2E83' style={{ marginTop: 1 }} />
+                        <Text style={{ flex: 1, fontSize: 12, color: darkMode ? "#aaa" : "#555", lineHeight: 18 }}>
+                          Your documents are encrypted and only reviewed by admins. They will not be shared publicly.
+                        </Text>
                       </View>
                     </View>
                   )}
@@ -1561,7 +1606,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
                     <View>
                       <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 12 }}>Review your submission</Text>
                       <View style={{ backgroundColor: darkMode ? "#2d2d2d" : "#f5f5f5", borderRadius: 10, padding: 14, marginBottom: 12 }}>
-                        {[{ k: "Role", v: claimRole === "owner" ? "Owner" : claimRole === "co_owner" ? "Co-owner" : "Authorized manager" }, { k: "Documents", v: `${claimFiles.length} file${claimFiles.length !== 1 ? "s" : ""}` }].map(({ k, v }, i) => (
+                        {[
+                          { k: "Role", v: claimRole === "owner" ? "Owner" : claimRole === "co_owner" ? "Co-owner" : "Authorized manager" },
+                          { k: "Documents", v: `${claimFiles.length} file${claimFiles.length !== 1 ? "s" : ""}` },
+                        ].map(({ k, v }, i) => (
                           <View key={k}>
                             {i > 0 && <View style={{ height: 0.5, backgroundColor: darkMode ? "#444" : "#ddd", marginVertical: 8 }} />}
                             <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
@@ -1572,15 +1620,44 @@ export default function BusinessProfileScreen({ route, navigation }) {
                         ))}
                       </View>
                       {claimFiles.map((file, i) => (
-                        <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: darkMode ? "#2d2d2d" : "#f5f5f5", borderWidth: 0.5, borderColor: darkMode ? "#444" : "#ddd", borderRadius: 8, padding: 10, marginBottom: 8 }}>
-                          <Ionicons name="document-text-outline" size={20} color="#4B2E83" />
-                          <Text style={{ flex: 1, fontSize: 13, color: darkMode ? "#fff" : "#333" }} numberOfLines={1}>{file.name}</Text>
+                        <View
+                          key={i}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 10,
+                            backgroundColor: darkMode ? "#2d2d2d" : "#f5f5f5",
+                            borderWidth: 0.5,
+                            borderColor: darkMode ? "#444" : "#ddd",
+                            borderRadius: 8,
+                            padding: 10,
+                            marginBottom: 8,
+                          }}
+                        >
+                          <Ionicons name='document-text-outline' size={20} color='#4B2E83' />
+                          <Text style={{ flex: 1, fontSize: 13, color: darkMode ? "#fff" : "#333" }} numberOfLines={1}>
+                            {file.name}
+                          </Text>
                           <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>{file.size}</Text>
                         </View>
                       ))}
-                      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-start", backgroundColor: "rgba(75,46,131,0.07)", borderWidth: 0.5, borderColor: "rgba(75,46,131,0.2)", borderRadius: 8, padding: 10, marginTop: 4 }}>
-                        <Ionicons name="time-outline" size={16} color="#4B2E83" style={{ marginTop: 1 }} />
-                        <Text style={{ flex: 1, fontSize: 12, color: darkMode ? "#aaa" : "#555", lineHeight: 18 }}>Once submitted, you'll be notified when review is complete (2–3 business days).</Text>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          gap: 8,
+                          alignItems: "flex-start",
+                          backgroundColor: "rgba(75,46,131,0.07)",
+                          borderWidth: 0.5,
+                          borderColor: "rgba(75,46,131,0.2)",
+                          borderRadius: 8,
+                          padding: 10,
+                          marginTop: 4,
+                        }}
+                      >
+                        <Ionicons name='time-outline' size={16} color='#4B2E83' style={{ marginTop: 1 }} />
+                        <Text style={{ flex: 1, fontSize: 12, color: darkMode ? "#aaa" : "#555", lineHeight: 18 }}>
+                          Once submitted, you'll be notified when review is complete (2–3 business days).
+                        </Text>
                       </View>
                     </View>
                   )}
@@ -1589,19 +1666,21 @@ export default function BusinessProfileScreen({ route, navigation }) {
                   <View style={{ flexDirection: "row", gap: 10, marginTop: 20 }}>
                     <TouchableOpacity
                       style={{ flex: 1, paddingVertical: 13, borderRadius: 10, borderWidth: 0.5, borderColor: darkMode ? "#555" : "#ccc", alignItems: "center" }}
-                      onPress={() => claimStep === 1 ? setClaimModalVisible(false) : setClaimStep((s) => s - 1)}
+                      onPress={() => (claimStep === 1 ? setClaimModalVisible(false) : setClaimStep((s) => s - 1))}
                       disabled={claimSubmitting}
                     >
                       <Text style={{ fontSize: 14, fontWeight: "bold", color: darkMode ? "#fff" : "#333" }}>{claimStep === 1 ? "Cancel" : "Back"}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={{ flex: 2, paddingVertical: 13, borderRadius: 10, backgroundColor: "#4B2E83", alignItems: "center", opacity: claimSubmitting ? 0.6 : 1 }}
-                      onPress={() => claimStep < 3 ? setClaimStep((s) => s + 1) : handleClaimSubmit()}
+                      onPress={() => (claimStep < 3 ? setClaimStep((s) => s + 1) : handleClaimSubmit())}
                       disabled={claimSubmitting}
                     >
-                      {claimSubmitting
-                        ? <ActivityIndicator color="#fff" size="small" />
-                        : <Text style={{ fontSize: 14, fontWeight: "bold", color: "#fff" }}>{claimStep < 3 ? "Next →" : "Submit for Review"}</Text>}
+                      {claimSubmitting ? (
+                        <ActivityIndicator color='#fff' size='small' />
+                      ) : (
+                        <Text style={{ fontSize: 14, fontWeight: "bold", color: "#fff" }}>{claimStep < 3 ? "Next →" : "Submit for Review"}</Text>
+                      )}
                     </TouchableOpacity>
                   </View>
                 </ScrollView>
@@ -1844,209 +1923,204 @@ export default function BusinessProfileScreen({ route, navigation }) {
           <View style={[styles.modalContent, styles.quantityModalContent]}>
             <ScrollView style={styles.quantityModalScroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.quantityModalScrollContent}>
               <View style={styles.quantityModalHeader}>
-              <Text style={styles.modalTitle}>Add to Cart</Text>
-              <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
-              {(() => {
-                const stock = selectedService?.bs_quantity;
-                const isLimited = stock != null && String(stock).toLowerCase() !== "unlimited" && selectedService?.bs_qty_unlimited !== 1 && selectedService?.bs_qty_unlimited !== "1";
-                if (!isLimited) return null;
-                const num = parseInt(stock, 10);
-                if (isNaN(num)) return null;
-                const isSoldOut = num === 0;
-                const isLow = num > 0 && num <= 5;
-                return (
-                  <View
-                    style={{
-                      backgroundColor: isSoldOut ? "#fee2e2" : isLow ? "#fef9c3" : "#dcfce7",
-                      borderRadius: 10,
-                      paddingHorizontal: 12,
-                      paddingVertical: 4,
-                      marginBottom: 12,
-                    }}
-                  >
-                    <Text
+                <Text style={styles.modalTitle}>Add to Cart</Text>
+                <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
+                {(() => {
+                  const stock = selectedService?.bs_quantity;
+                  const isLimited = stock != null && String(stock).toLowerCase() !== "unlimited" && selectedService?.bs_qty_unlimited !== 1 && selectedService?.bs_qty_unlimited !== "1";
+                  if (!isLimited) return null;
+                  const num = parseInt(stock, 10);
+                  if (isNaN(num)) return null;
+                  const isSoldOut = num === 0;
+                  const isLow = num > 0 && num <= 5;
+                  return (
+                    <View
                       style={{
-                        fontSize: 13,
-                        fontWeight: "600",
-                        color: isSoldOut ? "#dc2626" : isLow ? "#b45309" : "#166534",
+                        backgroundColor: isSoldOut ? "#fee2e2" : isLow ? "#fef9c3" : "#dcfce7",
+                        borderRadius: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 4,
+                        marginBottom: 12,
                       }}
                     >
-                      {isSoldOut ? "Out of stock" : `${num} available`}
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: "600",
+                          color: isSoldOut ? "#dc2626" : isLow ? "#b45309" : "#166534",
+                        }}
+                      >
+                        {isSoldOut ? "Out of stock" : `${num} available`}
+                      </Text>
+                    </View>
+                  );
+                })()}
+
+                {/* Choice Groups */}
+                {serviceOptionsLoading ? (
+                  <ActivityIndicator size='small' color='#9C45F7' style={{ marginVertical: 10 }} />
+                ) : serviceOptions.length > 0 ? (
+                  <View style={{ width: "100%", marginBottom: 12 }}>
+                    {serviceOptions.map((group, gIdx) => (
+                      <View key={gIdx} style={{ marginBottom: 14 }}>
+                        {/* Group Header */}
+                        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                          <Text style={{ fontSize: 15, fontWeight: "700", color: "#333" }}>{group.title}</Text>
+                          <View
+                            style={{
+                              backgroundColor: group.required ? "#fee2e2" : "#f0fdf4",
+                              borderRadius: 10,
+                              paddingHorizontal: 8,
+                              paddingVertical: 2,
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 11,
+                                fontWeight: "600",
+                                color: group.required ? "#dc2626" : "#16a34a",
+                              }}
+                            >
+                              {group.required ? "REQUIRED" : group.type === "multi" ? `OPTIONAL (UP TO ${group.max_selections || 1})` : "OPTIONAL (UP TO 1)"}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Options */}
+                        {(group.options || []).map((opt, oIdx) => {
+                          const isSelected = group.type === "multi" ? (selectedChoices[group.title] || []).includes(opt.id) : selectedChoices[group.title] === opt.id;
+
+                          return (
+                            <TouchableOpacity
+                              key={oIdx}
+                              onPress={() => {
+                                setSelectedChoices((prev) => {
+                                  if (group.type === "multi") {
+                                    const current = prev[group.title] || [];
+                                    const max = group.max_selections || 1;
+                                    if (current.includes(opt.id)) {
+                                      return { ...prev, [group.title]: current.filter((id) => id !== opt.id) };
+                                    }
+                                    if (current.length >= max) return prev;
+                                    return { ...prev, [group.title]: [...current, opt.id] };
+                                  }
+                                  // single
+                                  return { ...prev, [group.title]: isSelected ? null : opt.id };
+                                });
+                              }}
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                paddingVertical: 10,
+                                borderBottomWidth: 1,
+                                borderBottomColor: "#f0f0f0",
+                              }}
+                              activeOpacity={0.7}
+                            >
+                              <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                                {/* Checkbox or Radio */}
+                                <View
+                                  style={{
+                                    width: 22,
+                                    height: 22,
+                                    borderRadius: group.type === "multi" ? 4 : 11,
+                                    borderWidth: 2,
+                                    borderColor: isSelected ? "#9C45F7" : "#ccc",
+                                    backgroundColor: isSelected ? "#9C45F7" : "transparent",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    marginRight: 10,
+                                  }}
+                                >
+                                  {isSelected &&
+                                    (group.type === "multi" ? (
+                                      <Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold" }}>✓</Text>
+                                    ) : (
+                                      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#fff" }} />
+                                    ))}
+                                </View>
+                                <Text style={{ fontSize: 15, color: "#333" }}>{opt.label}</Text>
+                              </View>
+                              {parseFloat(opt.extra_cost) > 0 && <Text style={{ fontSize: 14, color: "#666" }}>+${parseFloat(opt.extra_cost).toFixed(2)}</Text>}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+
+                {/* Special Instructions */}
+                {selectedService?.bs_special_instructions_enabled === 1 || selectedService?.bs_special_instructions_enabled === "1" ? (
+                  <View style={{ width: "100%", marginBottom: 12 }}>
+                    <Text style={{ fontSize: 15, fontWeight: "700", color: "#333", marginBottom: 6 }}>Special Instructions</Text>
+                    <TextInput
+                      style={{
+                        borderWidth: 1,
+                        borderColor: "#ddd",
+                        borderRadius: 8,
+                        padding: 10,
+                        fontSize: 14,
+                        color: "#333",
+                        minHeight: 80,
+                        textAlignVertical: "top",
+                        backgroundColor: "#fafafa",
+                        width: "100%",
+                      }}
+                      value={specialInstructions}
+                      onChangeText={(t) => {
+                        const max = parseInt(selectedService?.bs_special_instructions_max_chars || 80, 10);
+                        if (t.length <= max) setSpecialInstructions(t);
+                      }}
+                      placeholder='Add special instructions...'
+                      placeholderTextColor='#aaa'
+                      multiline
+                      maxLength={parseInt(selectedService?.bs_special_instructions_max_chars || 80, 10)}
+                    />
+                    <Text style={{ fontSize: 11, color: "#999", textAlign: "right", marginTop: 4 }}>
+                      {specialInstructions.length}/{selectedService?.bs_special_instructions_max_chars || 80}
                     </Text>
                   </View>
-                );
-              })()}
+                ) : null}
 
-              {/* Choice Groups */}
-              {serviceOptionsLoading ? (
-                <ActivityIndicator size="small" color="#9C45F7" style={{ marginVertical: 10 }} />
-              ) : serviceOptions.length > 0 ? (
-                <View style={{ width: "100%", marginBottom: 12 }}>
-                  {serviceOptions.map((group, gIdx) => (
-                    <View key={gIdx} style={{ marginBottom: 14 }}>
-                      {/* Group Header */}
-                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                        <Text style={{ fontSize: 15, fontWeight: "700", color: "#333" }}>
-                          {group.title}
-                        </Text>
-                        <View style={{
-                          backgroundColor: group.required ? "#fee2e2" : "#f0fdf4",
-                          borderRadius: 10,
-                          paddingHorizontal: 8,
-                          paddingVertical: 2,
-                        }}>
-                          <Text style={{
-                            fontSize: 11,
-                            fontWeight: "600",
-                            color: group.required ? "#dc2626" : "#16a34a",
-                          }}>
-                            {group.required
-                              ? "REQUIRED"
-                              : group.type === "multi"
-                                ? `OPTIONAL (UP TO ${group.max_selections || 1})`
-                                : "OPTIONAL (UP TO 1)"}
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Options */}
-                      {(group.options || []).map((opt, oIdx) => {
-                        const isSelected = group.type === "multi"
-                          ? (selectedChoices[group.title] || []).includes(opt.id)
-                          : selectedChoices[group.title] === opt.id;
-
-                        return (
-                          <TouchableOpacity
-                            key={oIdx}
-                            onPress={() => {
-                              setSelectedChoices((prev) => {
-                                if (group.type === "multi") {
-                                  const current = prev[group.title] || [];
-                                  const max = group.max_selections || 1;
-                                  if (current.includes(opt.id)) {
-                                    return { ...prev, [group.title]: current.filter((id) => id !== opt.id) };
-                                  }
-                                  if (current.length >= max) return prev;
-                                  return { ...prev, [group.title]: [...current, opt.id] };
-                                }
-                                // single
-                                return { ...prev, [group.title]: isSelected ? null : opt.id };
-                              });
-                            }}
-                            style={{
-                              flexDirection: "row",
-                              alignItems: "center",
-                              justifyContent: "space-between",
-                              paddingVertical: 10,
-                              borderBottomWidth: 1,
-                              borderBottomColor: "#f0f0f0",
-                            }}
-                            activeOpacity={0.7}
-                          >
-                            <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                              {/* Checkbox or Radio */}
-                              <View style={{
-                                width: 22,
-                                height: 22,
-                                borderRadius: group.type === "multi" ? 4 : 11,
-                                borderWidth: 2,
-                                borderColor: isSelected ? "#9C45F7" : "#ccc",
-                                backgroundColor: isSelected ? "#9C45F7" : "transparent",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                marginRight: 10,
-                              }}>
-                                {isSelected && (
-                                  group.type === "multi"
-                                    ? <Text style={{ color: "#fff", fontSize: 13, fontWeight: "bold" }}>✓</Text>
-                                    : <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: "#fff" }} />
-                                )}
-                              </View>
-                              <Text style={{ fontSize: 15, color: "#333" }}>{opt.label}</Text>
-                            </View>
-                            {parseFloat(opt.extra_cost) > 0 && (
-                              <Text style={{ fontSize: 14, color: "#666" }}>+${parseFloat(opt.extra_cost).toFixed(2)}</Text>
-                            )}
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  ))}
-                </View>
-              ) : null}
-
-              {/* Special Instructions */}
-              {selectedService?.bs_special_instructions_enabled === 1 || selectedService?.bs_special_instructions_enabled === "1" ? (
-                <View style={{ width: "100%", marginBottom: 12 }}>
-                  <Text style={{ fontSize: 15, fontWeight: "700", color: "#333", marginBottom: 6 }}>
-                    Special Instructions
-                  </Text>
-                  <TextInput
-                    style={{
-                      borderWidth: 1,
-                      borderColor: "#ddd",
-                      borderRadius: 8,
-                      padding: 10,
-                      fontSize: 14,
-                      color: "#333",
-                      minHeight: 80,
-                      textAlignVertical: "top",
-                      backgroundColor: "#fafafa",
-                      width: "100%",
-                    }}
-                    value={specialInstructions}
-                    onChangeText={(t) => {
-                      const max = parseInt(selectedService?.bs_special_instructions_max_chars || 80, 10);
-                      if (t.length <= max) setSpecialInstructions(t);
-                    }}
-                    placeholder="Add special instructions..."
-                    placeholderTextColor="#aaa"
-                    multiline
-                    maxLength={parseInt(selectedService?.bs_special_instructions_max_chars || 80, 10)}
-                  />
-                  <Text style={{ fontSize: 11, color: "#999", textAlign: "right", marginTop: 4 }}>
-                    {specialInstructions.length}/{selectedService?.bs_special_instructions_max_chars || 80}
-                  </Text>
-                </View>
-              ) : null}
-
-              {/* Quantity selector */}
-              <View style={styles.quantityContainer}>
-                <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => Math.max(1, prev - 1))}>
-                  <Ionicons name='remove' size={24} color='#9C45F7' />
-                </TouchableOpacity>
-                <Text style={styles.quantityText}>{quantity}</Text>
-                <TouchableOpacity
-                  style={styles.quantityButton}
-                  onPress={() => {
-                    // Validate required choice groups
-                    const missingRequired = serviceOptions.filter((group) => {
-                      if (!group.required) return false;
-                      const sel = selectedChoices[group.title];
-                      if (group.type === "multi") return !sel || sel.length === 0;
-                      return !sel;
-                    });
-                    if (missingRequired.length > 0) {
-                      Alert.alert("Selection Required", `Please make a selection for: ${missingRequired.map((g) => g.title).join(", ")}`);
-                      return;
-                    }
-                    const stock = selectedService?.bs_quantity;
-                    const isLimited = stock != null && String(stock).toLowerCase() !== "unlimited" && selectedService?.bs_qty_unlimited !== 1 && selectedService?.bs_qty_unlimited !== "1";
-                    if (isLimited) {
-                      const max = parseInt(stock, 10);
-                      if (!isNaN(max) && quantity >= max) {
-                        Alert.alert("Stock limit", `Only ${max} available for this item.`);
+                {/* Quantity selector */}
+                <View style={styles.quantityContainer}>
+                  <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => Math.max(1, prev - 1))}>
+                    <Ionicons name='remove' size={24} color='#9C45F7' />
+                  </TouchableOpacity>
+                  <Text style={styles.quantityText}>{quantity}</Text>
+                  <TouchableOpacity
+                    style={styles.quantityButton}
+                    onPress={() => {
+                      // Validate required choice groups
+                      const missingRequired = serviceOptions.filter((group) => {
+                        if (!group.required) return false;
+                        const sel = selectedChoices[group.title];
+                        if (group.type === "multi") return !sel || sel.length === 0;
+                        return !sel;
+                      });
+                      if (missingRequired.length > 0) {
+                        Alert.alert("Selection Required", `Please make a selection for: ${missingRequired.map((g) => g.title).join(", ")}`);
                         return;
                       }
-                    }
-                    setQuantity((prev) => prev + 1);
-                  }}
-                >
-                  <Ionicons name='add' size={24} color='#9C45F7' />
-                </TouchableOpacity>
-              </View>
+                      const stock = selectedService?.bs_quantity;
+                      const isLimited = stock != null && String(stock).toLowerCase() !== "unlimited" && selectedService?.bs_qty_unlimited !== 1 && selectedService?.bs_qty_unlimited !== "1";
+                      if (isLimited) {
+                        const max = parseInt(stock, 10);
+                        if (!isNaN(max) && quantity >= max) {
+                          Alert.alert("Stock limit", `Only ${max} available for this item.`);
+                          return;
+                        }
+                      }
+                      setQuantity((prev) => prev + 1);
+                    }}
+                  >
+                    <Ionicons name='add' size={24} color='#9C45F7' />
+                  </TouchableOpacity>
+                </View>
 
-              <Text style={styles.totalPrice}>Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
+                <Text style={styles.totalPrice}>Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
               </View>
 
               <BountyRecipientPicker

@@ -44,7 +44,7 @@ class DecryptingResponse {
 
   async json() {
     const raw = await this._res.json();
-    return this._local && isPrivacyModeEnabled() ? (decryptResponse(raw) ?? raw) : raw;
+    return this._local ? (decryptResponse(raw) ?? raw) : raw;
   }
 
   text() { return this._res.text(); }
@@ -86,7 +86,7 @@ axiosMiddleware.interceptors.request.use((config) => {
 });
 
 axiosMiddleware.interceptors.response.use((response) => {
-  if (isLocalBackend(response.config?.url ?? "") && isPrivacyModeEnabled()) {
+  if (isLocalBackend(response.config?.url ?? "")) {
     response.data = decryptResponse(response.data) ?? response.data;
   }
   return response;

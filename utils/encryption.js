@@ -1,7 +1,13 @@
 import CryptoJS from "crypto-js";
+import { EXPO_PUBLIC_ENCRYPTION_KEY } from "@env";
 
-const AES_KEY = "InfiniteOptions0"; // Must match backend ENCRYPTION_KEY (16 chars)
 const BLOCK_SIZE = 16;
+
+// Match backend data_ec.py: key[:16].ljust(16, b'\0') — AWS dev uses empty ENCRYPTION_KEY (16 null bytes).
+function getAesKey() {
+  const raw = EXPO_PUBLIC_ENCRYPTION_KEY || "";
+  return CryptoJS.enc.Utf8.parse(raw.slice(0, 16).padEnd(16, "\0"));
+}
 
 // ── Core encrypt / decrypt (CBC mode with IV — matches backend) ──────────────
 
@@ -10,7 +16,7 @@ function encrypt(plainText) {
   try {
     const jsonString = typeof plainText === "string" ? plainText : JSON.stringify(plainText);
     const iv = CryptoJS.lib.WordArray.random(BLOCK_SIZE);
-    const encrypted = CryptoJS.AES.encrypt(jsonString, CryptoJS.enc.Utf8.parse(AES_KEY), {
+    const encrypted = CryptoJS.AES.encrypt(jsonString, getAesKey(), {
       iv,
       mode: CryptoJS.mode.CBC,
       padding: CryptoJS.pad.Pkcs7,
@@ -34,7 +40,7 @@ function decrypt(encryptedBlob) {
     );
     const decrypted = CryptoJS.AES.decrypt(
       { ciphertext },
-      CryptoJS.enc.Utf8.parse(AES_KEY),
+      getAesKey(),
       { iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 }
     );
     return decrypted.toString(CryptoJS.enc.Utf8);

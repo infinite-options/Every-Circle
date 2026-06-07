@@ -16,7 +16,6 @@ import {
   getDefaultBountyRecipient,
   isBountyReviewDisabled,
   mergeBountyEligibleReviews,
-  productHasBounty,
   resolveBountyRecommenderProfileId,
 } from "../utils/bountyRecipientUtils";
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
@@ -378,10 +377,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
 
   const handleQuantityConfirm = async () => {
     const bountyEligible = mergeBountyEligibleReviews(allReviews, userReview);
-    if (
-      productHasBounty(selectedService, parsePrice) &&
-      bountyPickerRequiresSelection(bountyEligible, currentUserProfileId, selectedBountyRecipient)
-    ) {
+    if (bountyPickerRequiresSelection(bountyEligible, currentUserProfileId, selectedBountyRecipient)) {
       Alert.alert("Select a Reviewer", "Please select who referred you before adding to cart.");
       return;
     }
