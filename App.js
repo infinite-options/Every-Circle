@@ -779,7 +779,7 @@ export default function App() {
             <Text style={[styles.tagline, { fontSize: taglineFontSize }]} numberOfLines={1} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.72}>
               Connecting Circles of Influence
             </Text>
-            {/* <Text style={styles.tagline}>It Pays to Be Connected</Text> */}
+            {/* <Text style={styles.tagline}>Connecting Circles of Influence</Text> */}
 
             {SHOW_HOME_BUILD_INFO && (
               <Text style={[styles.dateTimeText, { fontSize: buildInfoFontSize }]} numberOfLines={1} adjustsFontSizeToFit={Platform.OS === "ios"} minimumFontScale={0.7}>
@@ -848,56 +848,56 @@ export default function App() {
   // Configure linking for web URL routing (include stack screens that are used on web so history / popstate
   // does not dispatch RESET with a state missing `routes` — see BaseRouter RESET / useLinking).
   const linkingScreensConfig = {
-        Home: "",
-        NewConnection: {
-          path: "newconnection/:profile_uid?",
-          parse: {
-            profile_uid: (profile_uid) => profile_uid,
-          },
-        },
-        ScanLanding: {
-          path: "scan/:profile_uid",
-          parse: {
-            profile_uid: (profile_uid) => profile_uid,
-          },
-        },
-        Connect: {
-          path: "connect",
-          parse: {
-            profile_uid: (profile_uid) => profile_uid,
-          },
-        },
-        Login: "login",
-        SignUp: "signup",
-        Profile: {
-          path: "profile",
-          parse: {
-            profile_uid: (v) => v,
-          },
-        },
-        Network: "network",
-        Search: "search",
-        Settings: "settings",
-        Inbox: "inbox",
-        Chat: {
-          path: "chat",
-          parse: {
-            conversation_uid: (v) => v,
-            other_uid: (v) => v,
-            other_name: (v) => v,
-            other_image: (v) => v,
-          },
-        },
-        BusinessProfile: {
-          path: "business/:business_uid",
-          parse: {
-            business_uid: (v) => (v != null ? String(v) : ""),
-          },
-        },
-        BusinessSetup: "business-setup",
-        EditProfile: "edit-profile",
-        ShoppingCart: "cart",
-      };
+    Home: "",
+    NewConnection: {
+      path: "newconnection/:profile_uid?",
+      parse: {
+        profile_uid: (profile_uid) => profile_uid,
+      },
+    },
+    ScanLanding: {
+      path: "scan/:profile_uid",
+      parse: {
+        profile_uid: (profile_uid) => profile_uid,
+      },
+    },
+    Connect: {
+      path: "connect",
+      parse: {
+        profile_uid: (profile_uid) => profile_uid,
+      },
+    },
+    Login: "login",
+    SignUp: "signup",
+    Profile: {
+      path: "profile",
+      parse: {
+        profile_uid: (v) => v,
+      },
+    },
+    Network: "network",
+    Search: "search",
+    Settings: "settings",
+    Inbox: "inbox",
+    Chat: {
+      path: "chat",
+      parse: {
+        conversation_uid: (v) => v,
+        other_uid: (v) => v,
+        other_name: (v) => v,
+        other_image: (v) => v,
+      },
+    },
+    BusinessProfile: {
+      path: "business/:business_uid",
+      parse: {
+        business_uid: (v) => (v != null ? String(v) : ""),
+      },
+    },
+    BusinessSetup: "business-setup",
+    EditProfile: "edit-profile",
+    ShoppingCart: "cart",
+  };
 
   const linking = {
     prefixes: ["everycircle://", "https://everycircle.com", "http://everycircle.com", "http://localhost:8081", "http://127.0.0.1:8081"],

@@ -13,7 +13,7 @@ import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
-import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, BUSINESS_CLAIM_ENDPOINT} from "../apiConfig";
+import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, BUSINESS_CLAIM_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 
@@ -1074,7 +1074,7 @@ export default function SettingsScreen() {
                 <View style={[styles.itemLabel, styles.itemLabelWithToggle]}>
                   <MaterialIcons name='lock' size={20} style={styles.icon} color={privacyModeEnabled ? COLORS.primary : settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Privacy Mode</Text>
+                    <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Encryption Mode</Text>
                   </Text>
                 </View>
                 <SettingsBoolPills value={privacyModeEnabled} onValueChange={handlePrivacyModeToggle} leftLabel='Off' rightLabel='On' darkMode={darkMode} />
@@ -1373,18 +1373,16 @@ export default function SettingsScreen() {
                 }}
               >
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <MaterialIcons name="verified" size={16} color="#B71C1C" />
-                  <Text style={[styles.informationSectionHeaderText, { color: "#B71C1C" }]}>
-                    BUSINESS CLAIMS {adminClaims.length > 0 ? `(${adminClaims.length})` : ""}
-                  </Text>
+                  <MaterialIcons name='verified' size={16} color='#B71C1C' />
+                  <Text style={[styles.informationSectionHeaderText, { color: "#B71C1C" }]}>BUSINESS CLAIMS {adminClaims.length > 0 ? `(${adminClaims.length})` : ""}</Text>
                 </View>
-                <Ionicons name={showClaimsSection ? "chevron-up" : "chevron-down"} size={20} color="#B71C1C" />
+                <Ionicons name={showClaimsSection ? "chevron-up" : "chevron-down"} size={20} color='#B71C1C' />
               </TouchableOpacity>
 
               {showClaimsSection && (
                 <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#B71C1C" }]}>
                   {claimsLoading ? (
-                    <ActivityIndicator size="small" color="#B71C1C" style={{ margin: 16 }} />
+                    <ActivityIndicator size='small' color='#B71C1C' style={{ margin: 16 }} />
                   ) : adminClaims.length === 0 ? (
                     <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No pending claims.</Text>
                   ) : (
@@ -1398,28 +1396,18 @@ export default function SettingsScreen() {
                           backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#fff5f5") : "transparent",
                         }}
                       >
-                        <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>
-                          {claim.business_name || claim.claim_business_id}
-                        </Text>
+                        <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>{claim.business_name || claim.claim_business_id}</Text>
                         <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>
                           Claimant: {claim.profile_personal_first_name} {claim.profile_personal_last_name}
                         </Text>
-                        <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>
-                          Role: {claim.claim_role}
-                        </Text>
-                        {claim.claim_note ? (
-                          <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginBottom: 2 }}>
-                            Note: {claim.claim_note}
-                          </Text>
-                        ) : null}
+                        <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Role: {claim.claim_role}</Text>
+                        {claim.claim_note ? <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginBottom: 2 }}>Note: {claim.claim_note}</Text> : null}
                         {claim.claim_documents ? (
                           <Text style={{ fontSize: 11, color: "#4B2E83", marginBottom: 8 }} numberOfLines={2}>
                             Docs: {claim.claim_documents}
                           </Text>
                         ) : null}
-                        <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999", marginBottom: 10 }}>
-                          Submitted: {claim.claim_created_at}
-                        </Text>
+                        <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999", marginBottom: 10 }}>Submitted: {claim.claim_created_at}</Text>
                         <View style={{ flexDirection: "row", gap: 10 }}>
                           <TouchableOpacity
                             style={{ flex: 1, backgroundColor: "#18884A", padding: 10, borderRadius: 8, alignItems: "center" }}
@@ -1429,14 +1417,10 @@ export default function SettingsScreen() {
                                   handleResolveClaim(claim.claim_uid, "approved");
                                 }
                               } else {
-                                Alert.alert(
-                                  "Approve Claim",
-                                  `Grant ${claim.profile_personal_first_name} ownership of ${claim.business_name}?`,
-                                  [
-                                    { text: "Cancel", style: "cancel" },
-                                    { text: "Approve", onPress: () => handleResolveClaim(claim.claim_uid, "approved") },
-                                  ]
-                                );
+                                Alert.alert("Approve Claim", `Grant ${claim.profile_personal_first_name} ownership of ${claim.business_name}?`, [
+                                  { text: "Cancel", style: "cancel" },
+                                  { text: "Approve", onPress: () => handleResolveClaim(claim.claim_uid, "approved") },
+                                ]);
                               }
                             }}
                           >
@@ -1450,14 +1434,10 @@ export default function SettingsScreen() {
                                   handleResolveClaim(claim.claim_uid, "rejected");
                                 }
                               } else {
-                                Alert.alert(
-                                  "Reject Claim",
-                                  "Are you sure you want to reject this claim?",
-                                  [
-                                    { text: "Cancel", style: "cancel" },
-                                    { text: "Reject", style: "destructive", onPress: () => handleResolveClaim(claim.claim_uid, "rejected") },
-                                  ]
-                                );
+                                Alert.alert("Reject Claim", "Are you sure you want to reject this claim?", [
+                                  { text: "Cancel", style: "cancel" },
+                                  { text: "Reject", style: "destructive", onPress: () => handleResolveClaim(claim.claim_uid, "rejected") },
+                                ]);
                               }
                             }}
                           >

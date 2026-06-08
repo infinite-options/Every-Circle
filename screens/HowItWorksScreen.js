@@ -51,7 +51,7 @@ export default function HowItWorksScreen({ navigation, route }) {
                 <Text style={styles.smallMaroon}>Circle</Text>
                 <Text style={styles.smallBlack}>.com</Text>
               </Text>
-              <Text style={styles.smallSubtitle}>It Pays to be Connected</Text>
+              <Text style={styles.smallSubtitle}>Connecting Circles of Influence</Text>
               {/* <Text style={styles.smallSubtitle}>Connecting Circles of Influence</Text> */}
             </View>
           </View>

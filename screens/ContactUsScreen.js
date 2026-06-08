@@ -37,7 +37,7 @@ export default function ContactUsScreen() {
                 <Text style={styles.smallMaroon}>Circle</Text>
                 <Text style={[styles.smallBlack, darkMode && styles.darkText]}>.com</Text>
               </Text>
-              <Text style={[styles.smallSubtitle, darkMode && styles.darkSubtitle]}>It Pays to be Connected</Text>
+              <Text style={[styles.smallSubtitle, darkMode && styles.darkSubtitle]}>Connecting Circles of Influence</Text>
             </View>
           </View>
         </View>
