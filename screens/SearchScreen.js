@@ -29,6 +29,7 @@ import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
 import { getHeaderColors } from "../config/headerColors";
 import { isWishEnded } from "../utils/wishUtils";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
+import { fetchSearchSuggestions, SEARCH_SUGGEST_MIN_LENGTH } from "../utils/searchSuggestions";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
 function NoBountyIcon({ darkMode, muted }) {
   return (
@@ -78,6 +79,46 @@ function getBusinessBountySortValue(item) {
   ].filter((v) => v != null);
   if (candidates.length === 0) return null;
   return Math.max(...candidates);
+}
+
+/** Bold/highlight the query substring inside an autocomplete suggestion. */
+function renderHighlightedSuggestion(text, query, darkMode) {
+  const source = String(text || "");
+  const needle = String(query || "").trim();
+  const baseStyle = [styles.suggestionMain, darkMode && styles.darkSuggestionMain];
+  const highlightStyle = [styles.suggestionHighlight, darkMode && styles.darkSuggestionHighlight];
+
+  if (!needle) {
+    return (
+      <Text style={baseStyle} numberOfLines={1}>
+        {source}
+      </Text>
+    );
+  }
+
+  const lowerSource = source.toLowerCase();
+  const lowerNeedle = needle.toLowerCase();
+  const matchIndex = lowerSource.indexOf(lowerNeedle);
+
+  if (matchIndex === -1) {
+    return (
+      <Text style={baseStyle} numberOfLines={1}>
+        {source}
+      </Text>
+    );
+  }
+
+  const before = source.slice(0, matchIndex);
+  const match = source.slice(matchIndex, matchIndex + needle.length);
+  const after = source.slice(matchIndex + needle.length);
+
+  return (
+    <Text style={baseStyle} numberOfLines={1}>
+      {before}
+      <Text style={highlightStyle}>{match}</Text>
+      {after}
+    </Text>
+  );
 }
 
 function getBusinessDetailsRow(result, businessId) {
@@ -320,6 +361,10 @@ export default function SearchScreen({ route }) {
 
   // Declare all state variables first
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchSuggestions, setSearchSuggestions] = useState([]);
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const suggestDebounceRef = useRef(null);
   const [results, setResults] = useState(initialResults);
   const [loading, setLoading] = useState(false);
 
@@ -352,6 +397,59 @@ export default function SearchScreen({ route }) {
   useEffect(() => {
     AsyncStorage.getItem("profile_uid").then((uid) => setCurrentProfileUid(uid));
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
+    };
+  }, []);
+
+  const onSearchQueryChange = (text) => {
+    setSearchQuery(text);
+    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
+
+    if (!text.trim()) {
+      setSearchSuggestions([]);
+      setShowSearchSuggestions(false);
+      setSuggestionsLoading(false);
+      return;
+    }
+
+    if (text.trim().length < SEARCH_SUGGEST_MIN_LENGTH) {
+      setSearchSuggestions([]);
+      setShowSearchSuggestions(false);
+      setSuggestionsLoading(false);
+      return;
+    }
+
+    setShowSearchSuggestions(true);
+    setSuggestionsLoading(true);
+
+    suggestDebounceRef.current = setTimeout(async () => {
+      try {
+        const items = await fetchSearchSuggestions(text);
+        setSearchSuggestions(items);
+        setShowSearchSuggestions(true);
+      } catch (e) {
+        console.warn("[SearchScreen] suggestion fetch failed:", e);
+        setSearchSuggestions([]);
+        setShowSearchSuggestions(true);
+      } finally {
+        setSuggestionsLoading(false);
+      }
+    }, 300);
+  };
+
+  const handleSuggestionSelect = (text) => {
+    setSearchQuery(text);
+    setSearchSuggestions([]);
+    setShowSearchSuggestions(false);
+    performSearch(text, searchType);
+  };
+
+  const dismissSearchSuggestions = () => {
+    setShowSearchSuggestions(false);
+  };
 
   const loadUserHomeCoords = useCallback(async () => {
     try {
@@ -1242,6 +1340,7 @@ export default function SearchScreen({ route }) {
   };
 
   const onSearch = async () => {
+    dismissSearchSuggestions();
     await performSearch(searchQuery, searchType);
   };
 
@@ -2089,25 +2188,57 @@ export default function SearchScreen({ route }) {
           </View>
 
           {/* Search bar */}
-          <View style={styles.searchContainer}>
-            <TextInput
-              style={[styles.searchInput, darkMode && styles.darkSearchInput]}
-              placeholder='What are you looking for?'
-              placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              returnKeyType='search'
-              onSubmitEditing={onSearch}
-              accessibilitylabel='Search'
-              accessibilityHint='Enter text to search'
-              accessibilityRole='search'
-            />
-            <TouchableOpacity style={[styles.searchButton, darkMode && styles.darkSearchButton]} onPress={onSearch}>
-              <Ionicons name='search' size={22} color={darkMode ? "#ffffff" : "#000000"} />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.filterButton, darkMode && styles.darkFilterButton]} onPress={() => setShowFilters(!showFilters)}>
-              <MaterialIcons name='filter-list' size={22} color={darkMode ? "#ffffff" : "#000000"} />
-            </TouchableOpacity>
+          <View style={styles.searchBarWrap}>
+            <View style={styles.searchContainer}>
+              <TextInput
+                style={[styles.searchInput, darkMode && styles.darkSearchInput]}
+                placeholder='What are you looking for?'
+                placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                value={searchQuery}
+                onChangeText={onSearchQueryChange}
+                onFocus={() => {
+                  if (searchQuery.trim().length >= SEARCH_SUGGEST_MIN_LENGTH) {
+                    setShowSearchSuggestions(true);
+                  }
+                }}
+                onBlur={() => {
+                  setTimeout(dismissSearchSuggestions, 150);
+                }}
+                returnKeyType='search'
+                onSubmitEditing={onSearch}
+                accessibilitylabel='Search'
+                accessibilityHint='Enter text to search'
+                accessibilityRole='search'
+              />
+              <TouchableOpacity style={[styles.searchButton, darkMode && styles.darkSearchButton]} onPress={onSearch}>
+                <Ionicons name='search' size={22} color={darkMode ? "#ffffff" : "#000000"} />
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.filterButton, darkMode && styles.darkFilterButton]} onPress={() => setShowFilters(!showFilters)}>
+                <MaterialIcons name='filter-list' size={22} color={darkMode ? "#ffffff" : "#000000"} />
+              </TouchableOpacity>
+            </View>
+
+            {showSearchSuggestions && searchQuery.trim().length >= SEARCH_SUGGEST_MIN_LENGTH && (
+              <View style={[styles.suggestionsList, darkMode && styles.darkSuggestionsList]}>
+                {suggestionsLoading ? null : searchSuggestions.length > 0 ? (
+                  searchSuggestions.map((item, idx) => (
+                    <TouchableOpacity
+                      key={`${item.text}-${idx}`}
+                      style={[styles.suggestionRow, darkMode && styles.darkSuggestionRow, idx === searchSuggestions.length - 1 && styles.suggestionRowLast]}
+                      onPress={() => handleSuggestionSelect(item.text)}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons name='search-outline' size={16} color={darkMode ? "#aaa" : "#666"} style={styles.suggestionIcon} />
+                      {renderHighlightedSuggestion(item.text, searchQuery, darkMode)}
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <View style={[styles.suggestionRow, styles.suggestionRowLast, darkMode && styles.darkSuggestionRow]}>
+                    <Text style={[styles.suggestionEmpty, darkMode && styles.darkSuggestionEmpty]}>No suggestions found</Text>
+                  </View>
+                )}
+              </View>
+            )}
           </View>
 
           {/* Distance, Network, Bounty, Rating filters - TOGGLE BELOW SEARCH BAR */}
@@ -2441,7 +2572,73 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   contentContainer: { flex: 1, padding: 20, paddingTop: 30, paddingBottom: 100 },
-  searchContainer: { flexDirection: "row", alignItems: "center", marginBottom: 25 },
+  searchBarWrap: { position: "relative", marginBottom: 25, zIndex: 100, elevation: 100 },
+  searchContainer: { flexDirection: "row", alignItems: "center" },
+  suggestionsList: {
+    position: "absolute",
+    top: "100%",
+    left: 0,
+    right: 0,
+    marginTop: 4,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    maxHeight: 220,
+    overflow: "hidden",
+    zIndex: 101,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+  },
+  darkSuggestionsList: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  suggestionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  suggestionEmpty: {
+    fontSize: 15,
+    color: "#666",
+    fontStyle: "italic",
+  },
+  darkSuggestionEmpty: {
+    color: "#aaa",
+  },
+  suggestionRowLast: {
+    borderBottomWidth: 0,
+  },
+  darkSuggestionRow: {
+    borderBottomColor: "#404040",
+  },
+  suggestionIcon: {
+    marginRight: 10,
+  },
+  suggestionMain: {
+    flex: 1,
+    fontSize: 16,
+    color: "#333",
+    fontWeight: "600",
+  },
+  darkSuggestionMain: {
+    color: "#fff",
+  },
+  suggestionHighlight: {
+    fontWeight: "700",
+    color: "#1565C0",
+    backgroundColor: "#E3F2FD",
+  },
+  darkSuggestionHighlight: {
+    color: "#90CAF9",
+    backgroundColor: "#1E3A5F",
+  },
   searchInput: {
     flex: 1,
     backgroundColor: "#f0f0f0",
