@@ -365,6 +365,7 @@ export default function SearchScreen({ route }) {
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const suggestDebounceRef = useRef(null);
+  const suggestPressRef = useRef(false);
   const [results, setResults] = useState(initialResults);
   const [loading, setLoading] = useState(false);
 
@@ -441,6 +442,8 @@ export default function SearchScreen({ route }) {
   };
 
   const handleSuggestionSelect = (text) => {
+    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
+    suggestPressRef.current = false;
     setSearchQuery(text);
     setSearchSuggestions([]);
     setShowSearchSuggestions(false);
@@ -449,6 +452,21 @@ export default function SearchScreen({ route }) {
 
   const dismissSearchSuggestions = () => {
     setShowSearchSuggestions(false);
+  };
+
+  const onSearchInputBlur = () => {
+    // TextInput blur fires before suggestion onPress on web; defer dismiss so tap can land.
+    setTimeout(() => {
+      if (suggestPressRef.current) {
+        suggestPressRef.current = false;
+        return;
+      }
+      dismissSearchSuggestions();
+    }, 200);
+  };
+
+  const onSuggestionPressIn = () => {
+    suggestPressRef.current = true;
   };
 
   const loadUserHomeCoords = useCallback(async () => {
@@ -2201,9 +2219,7 @@ export default function SearchScreen({ route }) {
                     setShowSearchSuggestions(true);
                   }
                 }}
-                onBlur={() => {
-                  setTimeout(dismissSearchSuggestions, 150);
-                }}
+                onBlur={onSearchInputBlur}
                 returnKeyType='search'
                 onSubmitEditing={onSearch}
                 accessibilitylabel='Search'
@@ -2225,7 +2241,15 @@ export default function SearchScreen({ route }) {
                     <TouchableOpacity
                       key={`${item.text}-${idx}`}
                       style={[styles.suggestionRow, darkMode && styles.darkSuggestionRow, idx === searchSuggestions.length - 1 && styles.suggestionRowLast]}
+                      onPressIn={onSuggestionPressIn}
                       onPress={() => handleSuggestionSelect(item.text)}
+                      {...(Platform.OS === "web"
+                        ? {
+                            onMouseDown: (e) => {
+                              e.preventDefault();
+                            },
+                          }
+                        : {})}
                       activeOpacity={0.75}
                     >
                       <Ionicons name='search-outline' size={16} color={darkMode ? "#aaa" : "#666"} style={styles.suggestionIcon} />

@@ -6,8 +6,8 @@ export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.
 // export const SEARCH_BASE_URL = "http://54.183.12.163:5001";
 // export const SEARCH_BASE_URL = "http://13.52.244.236:5001";
 // export const SEARCH_BASE_URL = "http://13.52.82.86:5001";
-// export const SEARCH_BASE_URL = "https://ioec2vrecsearch.infiniteoptions.com";
-export const SEARCH_BASE_URL = "http://127.0.0.1:5001";
+export const SEARCH_BASE_URL = "https://ioec2vrecsearch.infiniteoptions.com";
+// export const SEARCH_BASE_URL = "http://127.0.0.1:5001";
 
 // Legacy API Base URL (infiniteoptions domain)
 // export const API_BASE_URL = "https://ioec2ecaspm.infiniteoptions.com";
@@ -62,6 +62,8 @@ export const BUSINESS_RESULTS_ENDPOINT = `${SEARCH_BASE_URL}/search_business`;
 export const EXPERTISE_RESULTS_ENDPOINT = `${SEARCH_BASE_URL}/search_expertise`;
 export const WISHES_RESULTS_ENDPOINT = `${SEARCH_BASE_URL}/search_wishes`;
 export const SEARCH_GLOBAL_ENDPOINT = `${SEARCH_BASE_URL}/search_global`;
+/** GET ?q=...&limit=8 — autocomplete suggestions (tags by default; source swappable server-side) */
+export const SEARCH_SUGGEST_ENDPOINT = `${SEARCH_BASE_URL}/search_suggest`;
 
 /** Default max rows returned per search request when the client does not override `limit`. */
 export const SEARCH_RESULT_LIMIT = 120;
