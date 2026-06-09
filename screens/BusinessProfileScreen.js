@@ -978,6 +978,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
     );
   }
 
+  const hasBusinessOwner = businessUsers.some(
+    (bu) => (bu.bu_role || bu.business_role || bu.role || "").toLowerCase() === "owner",
+  );
+
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]} key={Platform.OS === "web" ? `viewport-${viewportWidth}` : undefined}>
       <AppHeader
@@ -1419,7 +1423,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
             </TouchableOpacity>
           )}
 
-          {!isOwner && claimStatus === null && (
+          {!isOwner && claimStatus === null && !hasBusinessOwner && (
             <View style={{ marginTop: 16, marginBottom: 4 }}>
               <TouchableOpacity
                 style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, backgroundColor: "#4B2E83", paddingVertical: 14, borderRadius: 10 }}

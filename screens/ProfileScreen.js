@@ -48,6 +48,7 @@ import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
+import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
 import { getHeaderColors } from "../config/headerColors";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -195,6 +196,7 @@ const ProfileScreen = ({ route, navigation }) => {
   const [profileUID, setProfileUID] = useState("");
   const [businessesData, setBusinessesData] = useState([]);
   const [isCurrentUserProfile, setIsCurrentUserProfile] = useState(false);
+  const [offeringCartModalItem, setOfferingCartModalItem] = useState(null);
   const [showRelationshipDropdown, setShowRelationshipDropdown] = useState(false);
   const [showConnectPopup, setShowConnectPopup] = useState(false);
   const [existingRelationship, setExistingRelationship] = useState(null);
@@ -1268,6 +1270,55 @@ const ProfileScreen = ({ route, navigation }) => {
     }
   };
 
+  const handleOfferingAddToCartConfirm = async (modalData) => {
+    const row = offeringCartModalItem;
+    if (!row?.expertiseData?.expertise_uid || !row.profile_uid) {
+      Alert.alert("Error", "Missing offering or seller information.");
+      setOfferingCartModalItem(null);
+      return;
+    }
+    try {
+      const { expertiseData, profileData, profile_uid } = row;
+      const { quantity: qty, escrow, subtotal, totalWithFee } = modalData;
+      const cartKey = `cart_expertise_${expertiseData.expertise_uid}`;
+      const sellerDisplayName = [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim();
+      const cartItem = {
+        expertise_uid: expertiseData.expertise_uid,
+        title: expertiseData.title,
+        description: expertiseData.description,
+        cost: expertiseData.cost,
+        bounty: expertiseData.bounty,
+        profile_uid,
+        profileData,
+        business_name: sellerDisplayName || "",
+        itemType: "expertise",
+        quantity: qty,
+        escrow,
+        subtotal,
+        totalWithFee,
+        cart_key: cartKey,
+        addedAt: new Date().toISOString(),
+      };
+      await AsyncStorage.setItem(cartKey, JSON.stringify(cartItem));
+      setOfferingCartModalItem(null);
+      Alert.alert("Added to Cart", `${expertiseData?.title || "Item"} (x${qty}) has been added to your cart.`, [
+        { text: "Continue Browsing", style: "cancel" },
+        {
+          text: "View Cart",
+          onPress: () =>
+            navigation.navigate("ShoppingCart", {
+              cartItems: [cartItem],
+              businessName: sellerDisplayName || "Offering",
+              business_uid: profile_uid,
+            }),
+        },
+      ]);
+    } catch (error) {
+      console.error("ProfileScreen - Error adding offering to cart:", error);
+      Alert.alert("Error", "Failed to add to cart. Please try again.");
+    }
+  };
+
   if (loading) {
     return (
       <View style={[styles.pageContainer, darkMode && styles.darkPageContainer, { flex: 1, justifyContent: "center", alignItems: "center" }]}>
@@ -1779,23 +1830,49 @@ const ProfileScreen = ({ route, navigation }) => {
                       );
                       const messageAboutOfferingBtn =
                         routeProfileUID && !isCurrentUserProfile ? (
-                          <TouchableOpacity
-                            style={[styles.contextChatButton, darkMode && styles.darkContextChatButton]}
-                            activeOpacity={0.8}
-                            onPress={() =>
-                              navigation.navigate("Chat", {
-                                other_uid: routeProfileUID || profileUID,
-                                other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
-                                other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
-                                reply_context: {
-                                  label: `Offering: ${sanitizeText(exp.name) || "Offering"}`,
-                                },
-                              })
-                            }
-                          >
-                            <Ionicons name='chatbubble-ellipses-outline' size={14} color='#fff' style={{ marginRight: 6 }} />
-                            <Text style={styles.contextChatButtonText}>Message about this offering</Text>
-                          </TouchableOpacity>
+                          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                            <TouchableOpacity
+                              style={[styles.contextChatButton, darkMode && styles.darkContextChatButton]}
+                              activeOpacity={0.8}
+                              onPress={() =>
+                                navigation.navigate("Chat", {
+                                  other_uid: routeProfileUID || profileUID,
+                                  other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
+                                  other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
+                                  reply_context: {
+                                    label: `Offering: ${sanitizeText(exp.name) || "Offering"}`,
+                                  },
+                                })
+                              }
+                            >
+                              <Ionicons name='chatbubble-ellipses-outline' size={14} color='#fff' style={{ marginRight: 6 }} />
+                              <Text style={styles.contextChatButtonText}>Message about this offering</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.contextChatButton, { backgroundColor: "#2D6A4F" }, darkMode && { backgroundColor: "#1B4332" }]}
+                              activeOpacity={0.8}
+                              onPress={() =>
+                                setOfferingCartModalItem({
+                                  expertiseData: {
+                                    expertise_uid: exp.profile_expertise_uid || exp.expertise_uid || "",
+                                    title: exp.name || "",
+                                    description: exp.description || "",
+                                    cost: exp.cost || "",
+                                    bounty: exp.bounty || "",
+                                  },
+                                  profileData: {
+                                    firstName: user.firstName,
+                                    lastName: user.lastName,
+                                    profileImage: user.profileImage,
+                                  },
+                                  profile_uid: routeProfileUID,
+                                })
+                              }
+                            >
+                              <Ionicons name='cart-outline' size={14} color='#fff' style={{ marginRight: 6 }} />
+                              <Text style={styles.contextChatButtonText}>Add to Cart</Text>
+                            </TouchableOpacity>
+                          </View>
                         ) : null;
                       const cardShellStyle = [styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }];
                       if (routeProfileUID && !isCurrentUserProfile) {
@@ -2487,6 +2564,14 @@ const ProfileScreen = ({ route, navigation }) => {
         onAddConnection={handleConnectPopupSave}
       />
       <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Profile' instructions={profileFeedbackInstructions} questions={profileFeedbackQuestions} />
+      <AddToCartDetailsModal
+        show={offeringCartModalItem != null}
+        setShow={(v) => { if (!v) setOfferingCartModalItem(null); }}
+        expertiseData={offeringCartModalItem?.expertiseData}
+        profileData={offeringCartModalItem?.profileData}
+        onAddToCart={handleOfferingAddToCartConfirm}
+        onCancel={() => setOfferingCartModalItem(null)}
+      />
       {/* Full-screen spinner while saving a Google Place business to DB */}
       {savingGooglePlace && (
         <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "center", alignItems: "center", zIndex: 9999 }}>
