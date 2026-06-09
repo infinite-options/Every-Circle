@@ -21,6 +21,7 @@ import {
   USER_PROFILE_INFO_ENDPOINT,
   PROFILE_WISH_INFO_ENDPOINT,
 } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";

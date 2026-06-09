@@ -34,6 +34,7 @@ import {
   BUSINESS_DETAILS_ENDPOINT,
   // BUSINESS_TAG_SEARCH_ENDPOINT, // disabled for testing without businesstagsearch
 } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import config from "../config";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { reinitializeUnreadFromOutside } from "../contexts/UnreadContext";
