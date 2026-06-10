@@ -122,7 +122,7 @@ export default function BusinessStep4({ formData, setFormData, navigation }) {
             style={[styles.input, darkMode && styles.darkInput]}
             value={serviceForm.bs_sku}
             onChangeText={(t) => handleChange("bs_sku", t)}
-            placeholder='SKU'
+            placeholder='Optional'
             placeholderTextColor={darkMode ? "#ffffff" : "#666"}
           />
 

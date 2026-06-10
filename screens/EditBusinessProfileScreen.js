@@ -22,6 +22,8 @@ import {
   canonicalBusinessCcFeePayer,
 } from "../utils/normalizeBusinessServiceFromApi";
 import { parsePrice } from "../utils/priceUtils";
+import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
+import { getBusinessSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 
 const BusinessProfileAPI = BUSINESS_INFO_ENDPOINT;
 const DEFAULT_BUSINESS_IMAGE = require("../assets/profile.png");
@@ -405,6 +407,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     state: business?.business_state || "",
     country: business?.business_country || "",
     zip: business?.business_zip_code || "",
+    coordinates: formatCoordinatePairForInput(business?.business_latitude, business?.business_longitude),
     phone: business?.business_phone_number || "",
     email: business?.business_email_id || business?.business_email || "",
     category: business?.business_category || "",
@@ -495,6 +498,11 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [isOwner, setIsOwner] = useState(false);
   const [isChanged, setIsChanged] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [coordinatesError, setCoordinatesError] = useState("");
+  const [placeSearchText, setPlaceSearchText] = useState("");
+  const [placeSuggestions, setPlaceSuggestions] = useState([]);
+  const [placeSearchLoading, setPlaceSearchLoading] = useState(false);
+  const placesDebounceRef = useRef(null);
   const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState(null);
 
@@ -541,6 +549,53 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const handleFieldChange = (fieldName, value) => {
     setFormData((prev) => ({ ...prev, [fieldName]: value }));
     setIsChanged(true);
+  };
+
+  const onPlaceSearchChange = (text) => {
+    setPlaceSearchText(text);
+    if (placesDebounceRef.current) clearTimeout(placesDebounceRef.current);
+    if (!text.trim()) {
+      setPlaceSuggestions([]);
+      return;
+    }
+    placesDebounceRef.current = setTimeout(async () => {
+      try {
+        const results = await getBusinessSuggestions(text);
+        setPlaceSuggestions(results);
+      } catch (err) {
+        console.error("EditBusinessProfile place suggestions error:", err);
+      }
+    }, 350);
+  };
+
+  const handleGooglePlaceSelect = async (place) => {
+    setPlaceSuggestions([]);
+    setPlaceSearchText(place.structured_formatting?.main_text || place.description || "");
+    setPlaceSearchLoading(true);
+    try {
+      const pd = await getPlaceDetails(place.place_id);
+      setFormData((prev) => {
+        const coordsStr =
+          pd.lat != null && pd.lng != null ? formatCoordinatePairForInput(pd.lat, pd.lng) : prev.coordinates;
+        return {
+          ...prev,
+          location: pd.formatted_address || prev.location,
+          addressLine2: pd.address_line_1 || pd.formatted_address || prev.addressLine2,
+          city: pd.city || prev.city,
+          state: pd.state || prev.state,
+          country: pd.country || prev.country,
+          zip: pd.zip || prev.zip,
+          coordinates: coordsStr,
+        };
+      });
+      setCoordinatesError("");
+      setIsChanged(true);
+    } catch (err) {
+      console.error("EditBusinessProfile place select error:", err);
+      Alert.alert("Error", "Could not load place details. Please try again.");
+    } finally {
+      setPlaceSearchLoading(false);
+    }
   };
 
   // Update all toggles to set isChanged to true
@@ -855,6 +910,14 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       return;
     }
 
+    const businessCoords = parseCoordinatePairInput(formData.coordinates);
+    if (businessCoords.error) {
+      setCoordinatesError(businessCoords.error);
+      Alert.alert("Invalid coordinates", businessCoords.error);
+      return;
+    }
+    setCoordinatesError("");
+
     // New product form is open but nothing was added to the list — block submit (not the generic "leave" modal).
     if (showServiceForm && editingServiceIndex === null) {
       const f = serviceForm;
@@ -978,6 +1041,13 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_state", formData.state);
       payload.append("business_country", formData.country);
       payload.append("business_zip_code", formData.zip);
+      if (businessCoords.lat != null && businessCoords.lng != null) {
+        payload.append("business_latitude", String(businessCoords.lat));
+        payload.append("business_longitude", String(businessCoords.lng));
+      } else {
+        payload.append("business_latitude", "");
+        payload.append("business_longitude", "");
+      }
       payload.append("business_phone_number", formData.phone);
       payload.append("business_email_id", formData.email);
       const categoryIds = [selectedMain, selectedSub, selectedSubSub].filter(Boolean);
@@ -1374,6 +1444,65 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           handleFieldChange(key, formattedText);
         }}
       />
+    </View>
+  );
+
+  const renderUpdateLocationFromGoogle = () => (
+    <View style={[styles.fieldContainer, styles.placesSearchContainer]}>
+      <Text style={[styles.label, darkMode && styles.darkLabel]}>Update Location from Google</Text>
+      <TextInput
+        style={[styles.input, darkMode && styles.darkInput]}
+        placeholder='Search for a place on Google Maps'
+        placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+        value={placeSearchText}
+        onChangeText={onPlaceSearchChange}
+        autoCapitalize='words'
+        autoCorrect={false}
+      />
+      {placeSearchLoading ? <ActivityIndicator size='small' color='#4B2E83' style={{ marginTop: 8 }} /> : null}
+      {placeSuggestions.length > 0 && (
+        <View style={[styles.placesSuggestionsList, darkMode && styles.darkPlacesSuggestionsList]}>
+          {placeSuggestions.map((item) => (
+            <TouchableOpacity
+              key={item.place_id}
+              style={[styles.placesSuggestionRow, darkMode && styles.darkPlacesSuggestionRow]}
+              onPress={() => handleGooglePlaceSelect(item)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.placesSuggestionMain, darkMode && styles.darkLabel]}>
+                {item.structured_formatting?.main_text || item.description}
+              </Text>
+              {item.structured_formatting?.secondary_text ? (
+                <Text style={[styles.placesSuggestionSub, darkMode && styles.darkCoordHint]}>
+                  {item.structured_formatting.secondary_text}
+                </Text>
+              ) : null}
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+
+  const renderCoordinatesField = () => (
+    <View style={styles.fieldContainer}>
+      <Text style={[styles.label, darkMode && styles.darkLabel]}>Coordinates</Text>
+      <Text style={[styles.coordHint, darkMode && styles.darkCoordHint]}>
+        Decimal degrees (WGS84). Format: latitude, longitude. Leave empty to clear.
+      </Text>
+      <TextInput
+        style={[styles.input, darkMode && styles.darkInput, coordinatesError ? styles.inputError : null]}
+        value={formData.coordinates}
+        onChangeText={(text) => {
+          handleFieldChange("coordinates", text);
+          if (coordinatesError) setCoordinatesError("");
+        }}
+        placeholder='e.g. 37.7893, -122.3966'
+        placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+        autoCapitalize='none'
+        autoCorrect={false}
+      />
+      {coordinatesError ? <Text style={styles.coordErrorText}>{coordinatesError}</Text> : null}
     </View>
   );
 
@@ -2331,6 +2460,21 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       </View>
 
       <View style={styles.serviceFormCompactRow}>
+        <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>SKU</Text>
+        <View style={styles.serviceFormRowBody}>
+          <TextInput
+            style={[styles.serviceFormRowInput, darkMode && styles.darkServiceFormRowInput]}
+            value={serviceForm.bs_sku || ""}
+            onChangeText={(t) => handleServiceChange("bs_sku", t)}
+            placeholder='Optional'
+            placeholderTextColor={darkMode ? "#888" : "#999"}
+            autoCapitalize='characters'
+            autoCorrect={false}
+          />
+        </View>
+      </View>
+
+      <View style={styles.serviceFormCompactRow}>
         <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Cost</Text>
         <View style={styles.serviceFormRowBody}>
           <Dropdown
@@ -2793,12 +2937,14 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         {renderBusinessImageSection()}
 
         {renderField("Business Name", formData.name, "name")}
+        {renderUpdateLocationFromGoogle()}
         {renderField("Location", formData.location, "location", "", "locationIsPublic")}
         {renderField("Address", formData.addressLine2, "addressLine2", "", "locationIsPublic")}
         {renderField("City", formData.city, "city", "", "locationIsPublic")}
         {renderField("State", formData.state, "state", "", "locationIsPublic")}
         {renderField("Country", formData.country, "country", "", "locationIsPublic")}
         {renderField("Zip Code", formData.zip, "zip", "", "locationIsPublic")}
+        {renderCoordinatesField()}
         {renderField("Phone Number", formData.phone, "phone", "", "phoneIsPublic")}
         {renderField("Email", formData.email, "email", "", "emailIsPublic")}
         {renderCategoryField()}
@@ -3898,6 +4044,57 @@ const styles = StyleSheet.create({
   },
   darkModalButtonText: {
     color: "#ffffff",
+  },
+  coordHint: {
+    fontSize: 13,
+    color: "#666",
+    marginBottom: 8,
+    lineHeight: 18,
+  },
+  darkCoordHint: {
+    color: "#aaa",
+  },
+  inputError: {
+    borderColor: "#c62828",
+  },
+  coordErrorText: {
+    marginTop: 6,
+    fontSize: 13,
+    color: "#c62828",
+  },
+  placesSearchContainer: {
+    zIndex: 10,
+  },
+  placesSuggestionsList: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    maxHeight: 220,
+    overflow: "hidden",
+  },
+  darkPlacesSuggestionsList: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  placesSuggestionRow: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  darkPlacesSuggestionRow: {
+    borderBottomColor: "#404040",
+  },
+  placesSuggestionMain: {
+    fontSize: 15,
+    color: "#333",
+    fontWeight: "600",
+  },
+  placesSuggestionSub: {
+    fontSize: 13,
+    color: "#666",
+    marginTop: 2,
   },
 });
 
