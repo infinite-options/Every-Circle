@@ -26,6 +26,7 @@
     "@stripe/stripe-react-native": "0.63.0",
     "ably": "^2.17.1",
     "axios": "^1.5.1",
+    "babel-preset-expo": "~55.0.22",
     "crypto-js": "^4.2.0",
     "dotenv": "^16.6.1",
     "expo": "^55.0.0",
@@ -60,7 +61,6 @@
   "devDependencies": {
     "@babel/core": "^7.20.0",
     "@react-native-community/cli": "latest",
-    "babel-preset-expo": "^56.0.11",
     "metro": "^0.83.1",
     "patch-package": "^8.0.1",
     "react-native-dotenv": "^3.4.11"
