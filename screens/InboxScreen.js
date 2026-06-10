@@ -8,6 +8,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { CHAT_CONVERSATIONS_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { getSessionProfile } from "../utils/sessionProfile";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 

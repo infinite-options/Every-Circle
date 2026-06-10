@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Alert, Platform, Image, ScrollView } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getUserEmail } from "../utils/emailStorage";
-import axios from "axios";
+import { axiosMiddleware as axios } from "../utils/httpMiddleware";
 import { REFERRAL_API_ENDPOINT } from "../apiConfig";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors } from "../config/headerColors";

@@ -23,6 +23,7 @@ import { getSessionProfile } from "../utils/sessionProfile";
 // import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
 import { parsePrice } from "../utils/priceUtils";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 
 /** 1 = compact: Purchases (Date, Type, Seller, Paid, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;

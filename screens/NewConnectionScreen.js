@@ -7,6 +7,7 @@ import AppHeader from "../components/AppHeader";
 import MiniCard from "../components/MiniCard";
 import BottomNavBar from "../components/BottomNavBar";
 import { USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { sanitizeText } from "../utils/textSanitizer";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import WebTextInput from "../components/WebTextInput";

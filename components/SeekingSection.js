@@ -517,6 +517,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
           <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
             <ProfileItemImageColumn
               darkMode={darkMode}
+              defaultSection="seeking"
               displayUri={getWishDisplayUri(item)}
               imageError={!!item._wishImageError}
               onImageError={() => handleInputChange(index, "_wishImageError", true)}

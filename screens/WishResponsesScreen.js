@@ -25,6 +25,7 @@ if (!isWeb) {
 import { REACT_APP_STRIPE_PUBLIC_KEY } from "@env";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PROFILE_WISH_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, TRANSACTIONS_ENDPOINT, GET_STRIPE_PUBLIC_KEY_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 
 // Web Stripe imports (only load on web)
 let loadStripe = null;

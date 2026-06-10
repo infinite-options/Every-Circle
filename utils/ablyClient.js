@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import { ABLY_TOKEN_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "./httpMiddleware";
 
 let sharedClient = null;
 let sharedClientId = null;

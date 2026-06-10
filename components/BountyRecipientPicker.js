@@ -2,10 +2,10 @@ import React from "react";
 import { View, Text, TouchableOpacity, Image, TextInput } from "react-native";
 import { parsePrice } from "../utils/priceUtils";
 import {
+  getSelectableBountyReviews,
   isBountyReviewDisabled,
   isCurrentUserBountyReview,
   mergeBountyEligibleReviews,
-  productHasBounty,
   sortReviewsForBountyPicker,
 } from "../utils/bountyRecipientUtils";
 
@@ -25,12 +25,20 @@ export default function BountyRecipientPicker({
   onBountySearchChange,
 }) {
   const eligible = mergeBountyEligibleReviews(reviews, userReview);
-  if (!productHasBounty(selectedService, parsePrice) || eligible.length === 0) {
+  const selectable = getSelectableBountyReviews(eligible, currentUserProfileId);
+
+  // No verified reviewers — parent uses current user as default recommender.
+  if (eligible.length === 0) {
     return null;
   }
 
-  // Only the current user's verified review — no picker; parent uses current user as recommender.
+  // Only the current user's verified review — parent uses current user as recommender.
   if (eligible.length === 1 && isCurrentUserBountyReview(eligible[0], currentUserProfileId)) {
+    return null;
+  }
+
+  // One selectable reviewer — auto-selected by parent; no picker step.
+  if (selectable.length <= 1) {
     return null;
   }
 

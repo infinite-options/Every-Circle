@@ -55,6 +55,7 @@ export const PROFILE_CONNECTION_DEGREES_ENDPOINT = `${API_BASE_URL}/api/v1/profi
 export const PROFILE_VIEWS_ENDPOINT = `${API_BASE_URL}/api/v1/profile_views`;
 export const BUSINESS_TAG_SEARCH_ENDPOINT = `${API_BASE_URL}/api/v1/businesstagsearch`;
 export const BUSINESS_SERVICE_PURCHASE_ENDPOINT = `${API_BASE_URL}/business/service/purchase`;
+export const BUSINESS_CLAIM_ENDPOINT = `${API_BASE_URL}/api/v1/business_claim`;
 
 // Search and Network Endpoints
 // export const BUSINESS_RESULTS_ENDPOINT = `${API_BASE_URL}/api/businessresults`;

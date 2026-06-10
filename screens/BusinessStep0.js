@@ -3,6 +3,7 @@ import { View, Text, TextInput, StyleSheet, Dimensions, ActivityIndicator, Keybo
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getBusinessSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
 const { width } = Dimensions.get("window");

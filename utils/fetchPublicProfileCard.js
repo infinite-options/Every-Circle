@@ -1,4 +1,5 @@
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "./httpMiddleware";
 import { sanitizeText } from "./textSanitizer";
 
 /** Public mini-card fields for a profile (QR scan / connect modal). */

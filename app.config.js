@@ -5,8 +5,8 @@ config({ path: path.resolve(__dirname, ".env") });
 
 module.exports = ({ config: expoConfig }) => ({
   expo: {
-    name: process.env.EXPO_PUBLIC_APP_NAME || "EveryCircle",
-    slug: process.env.EXPO_PUBLIC_APP_SLUG || "everycircle",
+    name: process.env.EXPO_PUBLIC_APP_NAME,
+    slug: process.env.EXPO_PUBLIC_APP_SLUG,
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/icon.png",
@@ -23,13 +23,13 @@ module.exports = ({ config: expoConfig }) => ({
 
     ios: {
       supportsTablet: true,
-      bundleIdentifier: process.env.EXPO_PUBLIC_BUNDLE_IDENTIFIER || "com.infiniteoptions.everycircle",
+      bundleIdentifier: process.env.EXPO_PUBLIC_BUNDLE_IDENTIFIER,
 
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         CFBundleURLTypes: [
           {
-            CFBundleURLSchemes: [process.env.EXPO_PUBLIC_GOOGLE_URL_SCHEME || "com.googleusercontent.apps.255320444536-fjgkn445u968bhsp7i57fpqquemqbmn5"],
+            CFBundleURLSchemes: [process.env.EXPO_PUBLIC_GOOGLE_URL_SCHEME],
             CFBundleURLName: "google",
           },
         ],
@@ -48,7 +48,7 @@ module.exports = ({ config: expoConfig }) => ({
     },
 
     android: {
-      package: process.env.EXPO_PUBLIC_BUNDLE_IDENTIFIER || "com.infiniteoptions.everycircle",
+      package: process.env.EXPO_PUBLIC_BUNDLE_IDENTIFIER,
 
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
@@ -59,7 +59,7 @@ module.exports = ({ config: expoConfig }) => ({
 
       config: {
         googleMaps: {
-          apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "AIzaSyAPoq8L-jM4diZmj80ayQj6_8Gd8z5XwJY",
+          apiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
         },
       },
     },
@@ -69,13 +69,13 @@ module.exports = ({ config: expoConfig }) => ({
       // bundler: "metro", // Let Expo choose the bundler
     },
 
-    scheme: process.env.EXPO_PUBLIC_GOOGLE_URL_SCHEME || "com.googleusercontent.apps.255320444536-fjgkn445u968bhsp7i57fpqquemqbmn5",
+    scheme: process.env.EXPO_PUBLIC_GOOGLE_URL_SCHEME,
 
     plugins: [
       [
         "@react-native-google-signin/google-signin",
         {
-          iosUrlScheme: process.env.EXPO_PUBLIC_GOOGLE_URL_SCHEME || "com.googleusercontent.apps.255320444536-fjgkn445u968bhsp7i57fpqquemqbmn5",
+          iosUrlScheme: process.env.EXPO_PUBLIC_GOOGLE_URL_SCHEME,
         },
       ],
 
@@ -96,7 +96,7 @@ module.exports = ({ config: expoConfig }) => ({
           },
 
           gradleProperties: {
-            MAPS_API_KEY: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "AIzaSyAPoq8L-jM4diZmj80ayQj6_8Gd8z5XwJY",
+            MAPS_API_KEY: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
             "android.builder.sdkDownload": "true",
           },
         },
@@ -126,16 +126,15 @@ module.exports = ({ config: expoConfig }) => ({
         projectId: "41f75dab-7e42-4a6c-99dd-afa123482c34",
       },
 
-      // Keeping only needed ones
-      androidClientId: process.env.EXPO_PUBLIC_ANDROID_CLIENT_ID || "255320444536-4qnfvi5bl76dq5gih0qo6dg580sb5g6j.apps.googleusercontent.com",
+      androidClientId: process.env.EXPO_PUBLIC_ANDROID_CLIENT_ID_DEBUG || process.env.EXPO_PUBLIC_ANDROID_CLIENT_ID_RELEASE,
 
-      iosClientId: process.env.EXPO_PUBLIC_IOS_CLIENT_ID || "255320444536-fjgkn445u968bhsp7i57fpqquemqbmn5.apps.googleusercontent.com",
+      iosClientId: process.env.EXPO_PUBLIC_IOS_CLIENT_ID,
 
-      webClientId: process.env.EXPO_PUBLIC_WEB_CLIENT_ID || "255320444536-hg6bgpsso4gn08mefu87qpti02fmd0s2.apps.googleusercontent.com",
+      webClientId: process.env.EXPO_PUBLIC_WEB_CLIENT_ID,
 
-      googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "AIzaSyAPoq8L-jM4diZmj80ayQj6_8Gd8z5XwJY",
+      googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
 
-      appleServicesId: process.env.EXPO_PUBLIC_APPLE_SERVICES_ID || "com.infiniteoptions.everycircle.signin",
+      appleServicesId: process.env.EXPO_PUBLIC_APPLE_SERVICES_ID,
 
       ablyApiKey: process.env.EXPO_PUBLIC_ABLY_API_KEY,
     },

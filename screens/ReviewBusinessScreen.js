@@ -5,6 +5,7 @@ import * as DocumentPicker from "expo-document-picker";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import BottomNavBar from "../components/BottomNavBar";
 import { RATINGS_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { appendReviewImagesToFormData } from "../utils/reviewImageFormData";
 
 function resolveRatingUid(reviewData, routeParams) {
