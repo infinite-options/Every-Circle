@@ -129,6 +129,30 @@ function getBusinessDetailsRow(result, businessId) {
   return matchKey != null ? result[matchKey] : null;
 }
 
+function locationFieldsFromApi(row) {
+  if (!row || typeof row !== "object") return { location_boosted: false, distance_miles: null };
+  return {
+    location_boosted: !!row.location_boosted,
+    distance_miles: Number.isFinite(row.distance_miles) ? row.distance_miles : null,
+  };
+}
+
+function LocationBoostIcon({ darkMode, distanceMiles }) {
+  const label =
+    distanceMiles != null
+      ? `Boosted: within ${distanceMiles.toFixed(1)} miles of your home`
+      : "Boosted: near your home address";
+  return (
+    <Ionicons
+      name='navigate'
+      size={14}
+      color={darkMode ? "#7DD3FC" : "#0EA5E9"}
+      style={{ marginLeft: 6 }}
+      accessibilityLabel={label}
+    />
+  );
+}
+
 /** Merge API business_details bounty with any values already on the search row (never drop the higher amount). */
 function mergeBountyFieldsFromRow(existing, detailsRow) {
   const fromApi = detailsRow
@@ -787,11 +811,18 @@ export default function SearchScreen({ route }) {
     return (items || []).filter((item) => itemPassesNetworkFilter(item, maxDegree));
   };
 
-  /** Append Qdrant distance params (user home → result coordinates). */
+  /** Send home coords for proximity ranking (independent of distance filter). */
+  const appendHomeCoordsParams = (baseUrl, coords) => {
+    if (coords?.lat == null || coords?.lng == null) return baseUrl;
+    const sep = baseUrl.includes("?") ? "&" : "?";
+    return `${baseUrl}${sep}user_lat=${encodeURIComponent(coords.lat)}&user_lon=${encodeURIComponent(coords.lng)}`;
+  };
+
+  /** Append Qdrant distance filter params (user home → result coordinates). */
   const appendDistanceParams = (baseUrl, miles, coords) => {
     if (miles == null || coords?.lat == null || coords?.lng == null) return baseUrl;
     const sep = baseUrl.includes("?") ? "&" : "?";
-    return `${baseUrl}${sep}user_lat=${encodeURIComponent(coords.lat)}&user_lon=${encodeURIComponent(coords.lng)}&max_distance=${encodeURIComponent(miles)}`;
+    return `${baseUrl}${sep}max_distance=${encodeURIComponent(miles)}`;
   };
   const bountyOptions = ["Ascending", "Descending"];
   const ratingOptions = ["> 1", "> 2", "> 3", "> 4", "> 4.5", "> 4.6", "> 4.8"];
@@ -803,6 +834,7 @@ export default function SearchScreen({ route }) {
     if (applyRatingFilter && ratingValue !== null) {
       apiUrl += `&min_rating=${ratingValue}`;
     }
+    apiUrl = appendHomeCoordsParams(apiUrl, userHomeCoords);
     apiUrl = appendDistanceParams(apiUrl, distanceMiles, userHomeCoords);
 
     const fetchOptions =
@@ -898,6 +930,7 @@ export default function SearchScreen({ route }) {
           score_breakdown: b.score_breakdown || null,
           itemType: "businesses",
           profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
+          ...locationFieldsFromApi(b),
         }));
 
         const mappedExpertise = expertiseResults
@@ -916,6 +949,7 @@ export default function SearchScreen({ route }) {
             score_breakdown: item.score_breakdown || null,
             itemType: "expertise",
             profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
+            ...locationFieldsFromApi(item),
             expertiseData: {
               title: item.profile_expertise_title,
               description: item.profile_expertise_description,
@@ -989,6 +1023,7 @@ export default function SearchScreen({ route }) {
       if (effectiveRating !== null) {
         apiUrl += `&min_rating=${effectiveRating}`;
       }
+      apiUrl = appendHomeCoordsParams(apiUrl, userHomeCoords);
       apiUrl = appendDistanceParams(apiUrl, effectiveDistance, userHomeCoords);
 
       console.log("🎯 EXACT ENDPOINT BEING CALLED:", apiUrl);
@@ -1137,6 +1172,7 @@ export default function SearchScreen({ route }) {
             itemType: "seeking",
             profile_uid: item.profile_wish_profile_personal_id,
             profile_wish_end: item.profile_wish_end || "",
+            ...locationFieldsFromApi(item),
             // Store wish data
             wishData: {
               title: item.profile_wish_title,
@@ -1216,6 +1252,7 @@ export default function SearchScreen({ route }) {
           score_breakdown: item.score_breakdown || null,
           itemType: "expertise",
           profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
+          ...locationFieldsFromApi(item),
           expertiseData: {
             title: item.profile_expertise_title,
             description: item.profile_expertise_description,
@@ -1278,6 +1315,7 @@ export default function SearchScreen({ route }) {
             score_breakdown: b.score_breakdown || null,
             itemType: "businesses",
             profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
+            ...locationFieldsFromApi(b),
           };
         });
 
@@ -1677,7 +1715,10 @@ export default function SearchScreen({ route }) {
 
         {/* Wish Information */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
-          <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+            <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
+            {item.location_boosted && <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} />}
+          </View>
           {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
           {renderScoreBreakdown(item)}
           {(wish.profile_wish_start || wish.profile_wish_end) && (
@@ -1801,7 +1842,10 @@ export default function SearchScreen({ route }) {
 
         {/* Expertise Information (no tap-through to expertise detail) */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
-          <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+            <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
+            {item.location_boosted && <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} />}
+          </View>
           {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
           {renderScoreBreakdown(item)}
           {expertise.description && String(expertise.description).trim() && String(expertise.description).trim() !== "." && (
@@ -1953,7 +1997,10 @@ export default function SearchScreen({ route }) {
               defaultSource={require("../assets/profile.png")}
             />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+                <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
+                {item.location_boosted && <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} />}
+              </View>
               {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
               {renderScoreBreakdown(item)}
               {/* Badge approach (kept commented until finalized)

@@ -2460,6 +2460,21 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       </View>
 
       <View style={styles.serviceFormCompactRow}>
+        <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>SKU</Text>
+        <View style={styles.serviceFormRowBody}>
+          <TextInput
+            style={[styles.serviceFormRowInput, darkMode && styles.darkServiceFormRowInput]}
+            value={serviceForm.bs_sku || ""}
+            onChangeText={(t) => handleServiceChange("bs_sku", t)}
+            placeholder='Optional'
+            placeholderTextColor={darkMode ? "#888" : "#999"}
+            autoCapitalize='characters'
+            autoCorrect={false}
+          />
+        </View>
+      </View>
+
+      <View style={styles.serviceFormCompactRow}>
         <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Cost</Text>
         <View style={styles.serviceFormRowBody}>
           <Dropdown

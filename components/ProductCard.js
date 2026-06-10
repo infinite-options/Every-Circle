@@ -84,6 +84,11 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
   }, [service.bs_free_shipping, service.bs_buyer_pays_shipping, service.bs_shipping]);
 
   /** When bs_is_taxable is on, show bs_tax_rate as a percent (e.g. "4.00" → "Tax rate: 4.00%"). */
+  const skuLine = useMemo(() => {
+    const s = service.bs_sku != null ? String(service.bs_sku).trim() : "";
+    return s ? `SKU: ${s}` : null;
+  }, [service.bs_sku]);
+
   const taxRateLine = useMemo(() => {
     const v = service.bs_is_taxable;
     const taxable = v === true || v === 1 || v === "1" || (typeof v === "string" && ["true", "yes"].includes(v.trim().toLowerCase()));
@@ -128,6 +133,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
           tagChipTextStyle,
           tags,
           quantityLine,
+          skuLine,
           conditionLine,
           shippingLine,
           taxRateLine,
@@ -149,6 +155,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
         tagChipTextStyle,
         tags,
         quantityLine,
+        skuLine,
         conditionLine,
         shippingLine,
         taxRateLine,
@@ -211,6 +218,7 @@ function renderProductCardBody({
   tagChipTextStyle,
   tags,
   quantityLine,
+  skuLine,
   conditionLine,
   shippingLine,
   taxRateLine,
@@ -307,6 +315,7 @@ function renderProductCardBody({
             </View>
           );
         })()}
+        {skuLine ? <Text style={metaTextStyle}>{skuLine}</Text> : null}
         {conditionLine ? <Text style={metaTextStyle}>{conditionLine}</Text> : null}
         {shippingLine ? <Text style={metaTextStyle}>{shippingLine}</Text> : null}
         {taxRateLine ? <Text style={metaTextStyle}>{taxRateLine}</Text> : null}
