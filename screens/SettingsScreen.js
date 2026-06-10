@@ -216,7 +216,7 @@ export default function SettingsScreen() {
   const [adminClaims, setAdminClaims] = useState([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [showClaimsSection, setShowClaimsSection] = useState(false);
-
+  const [hideChangePassword, setHideChangePassword] = useState(false);
   const [userEmail, setUserEmail] = useState("");
 
   console.log("In SettingsScreen");
@@ -228,11 +228,14 @@ export default function SettingsScreen() {
       const p = await AsyncStorage.getItem("displayPhone");
       const t = await AsyncStorage.getItem("termsAccepted");
       const c = await AsyncStorage.getItem("allowCookies");
+      const isThirdPartyAuth = await AsyncStorage.getItem("isThirdPartyAuth");
+
       if (e !== null) setDisplayEmail(JSON.parse(e));
       if (p !== null) setDisplayPhoneNumber(JSON.parse(p));
       if (t !== null) setTermsAccepted(JSON.parse(t));
       if (c !== null) setAllowCookies(JSON.parse(c));
-
+      if(isThirdPartyAuth !== null) setHideChangePassword(JSON.parse(isThirdPartyAuth));
+      
       // Load email quickly from AsyncStorage for admin check
       const storedEmail = await AsyncStorage.getItem("user_email");
       if (storedEmail) setUserEmail(storedEmail);
@@ -443,6 +446,7 @@ export default function SettingsScreen() {
         "displayEmail",
         "displayPhone",
         "darkMode",
+        "isThirdPartyAuth",
 
         // Business data
         "businessFormData",
@@ -1213,13 +1217,13 @@ export default function SettingsScreen() {
               </TouchableOpacity>
 
               {/* Change Password */}
-              <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
+              {!hideChangePassword && <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
                 <View style={styles.itemLabel}>
                   <MaterialIcons name='lock' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
                 </View>
                 <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
-              </TouchableOpacity>
+              </TouchableOpacity>} 
             </View>
           )}
 
