@@ -1849,7 +1849,7 @@ const ProfileScreen = ({ route, navigation }) => {
                               <Text style={styles.contextChatButtonText}>Message about this offering</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                              style={[styles.contextChatButton, { backgroundColor: "#2D6A4F" }, darkMode && { backgroundColor: "#1B4332" }]}
+                              style={[styles.contextChatButton, { backgroundColor: "#009e98" }, darkMode && { backgroundColor: "#009e98" }]}
                               activeOpacity={0.8}
                               onPress={() =>
                                 setOfferingCartModalItem({
