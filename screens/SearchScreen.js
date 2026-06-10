@@ -15,7 +15,9 @@ import {
   TAG_CATEGORY_DISTINCT_ENDPOINT,
   SEARCH_BASE_URL,
   SEARCH_GLOBAL_ENDPOINT,
+  SEARCH_RESULT_LIMIT,
   BUSINESS_DETAILS_ENDPOINT,
+  PROFILE_CONNECTION_DEGREES_ENDPOINT,
   // BUSINESS_TAG_SEARCH_ENDPOINT, // disabled for testing without businesstagsearch
   BUSINESS_INFO_ENDPOINT,
   USER_PROFILE_INFO_ENDPOINT,
@@ -28,6 +30,7 @@ import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
 import { getHeaderColors } from "../config/headerColors";
 import { isWishEnded } from "../utils/wishUtils";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
+import { fetchSearchSuggestions, SEARCH_SUGGEST_MIN_LENGTH } from "../utils/searchSuggestions";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
 function NoBountyIcon({ darkMode, muted }) {
   return (
@@ -47,11 +50,154 @@ function NoBountyIcon({ darkMode, muted }) {
 /** Normalize API bounty fields: "", null, NaN, or non‑positive → null so results row shows NoBountyIcon. */
 function parseSearchMaxBounty(raw) {
   if (raw == null) return null;
-  const s = String(raw).trim();
+  const s = String(raw).trim().replace(/[$,]/g, "");
   if (s === "") return null;
   const n = parseFloat(s);
   if (!Number.isFinite(n) || n <= 0) return null;
   return n;
+}
+
+function resolveBusinessUid(item) {
+  const uid = item?.business_uid ?? item?.id;
+  if (uid == null) return null;
+  const s = String(uid).trim();
+  return s === "" ? null : s;
+}
+
+/** True when a business row has any positive bounty from business_details enrichment. */
+function businessHasBounty(item) {
+  if (item?.itemType !== "businesses") return false;
+  return getBusinessBountySortValue(item) != null;
+}
+
+/** Highest bounty dollar amount for ranking — no per-item vs total priority, just the max number. */
+function getBusinessBountySortValue(item) {
+  if (item?.itemType !== "businesses") return null;
+  const candidates = [
+    parseSearchMaxBounty(item.max_per_item_bounty),
+    parseSearchMaxBounty(item.max_total_bounty),
+    parseSearchMaxBounty(item.max_bounty),
+  ].filter((v) => v != null);
+  if (candidates.length === 0) return null;
+  return Math.max(...candidates);
+}
+
+/** Bold/highlight the query substring inside an autocomplete suggestion. */
+function renderHighlightedSuggestion(text, query, darkMode) {
+  const source = String(text || "");
+  const needle = String(query || "").trim();
+  const baseStyle = [styles.suggestionMain, darkMode && styles.darkSuggestionMain];
+  const highlightStyle = [styles.suggestionHighlight, darkMode && styles.darkSuggestionHighlight];
+
+  if (!needle) {
+    return (
+      <Text style={baseStyle} numberOfLines={1}>
+        {source}
+      </Text>
+    );
+  }
+
+  const lowerSource = source.toLowerCase();
+  const lowerNeedle = needle.toLowerCase();
+  const matchIndex = lowerSource.indexOf(lowerNeedle);
+
+  if (matchIndex === -1) {
+    return (
+      <Text style={baseStyle} numberOfLines={1}>
+        {source}
+      </Text>
+    );
+  }
+
+  const before = source.slice(0, matchIndex);
+  const match = source.slice(matchIndex, matchIndex + needle.length);
+  const after = source.slice(matchIndex + needle.length);
+
+  return (
+    <Text style={baseStyle} numberOfLines={1}>
+      {before}
+      <Text style={highlightStyle}>{match}</Text>
+      {after}
+    </Text>
+  );
+}
+
+function getBusinessDetailsRow(result, businessId) {
+  if (!result || businessId == null) return null;
+  const key = String(businessId).trim();
+  if (Object.prototype.hasOwnProperty.call(result, key)) return result[key];
+  const matchKey = Object.keys(result).find((k) => String(k).trim() === key);
+  return matchKey != null ? result[matchKey] : null;
+}
+
+function locationFieldsFromApi(row) {
+  if (!row || typeof row !== "object") return { location_boosted: false, distance_miles: null };
+  return {
+    location_boosted: !!row.location_boosted,
+    distance_miles: Number.isFinite(row.distance_miles) ? row.distance_miles : null,
+  };
+}
+
+function LocationBoostIcon({ darkMode, distanceMiles }) {
+  const label =
+    distanceMiles != null
+      ? `Boosted: within ${distanceMiles.toFixed(1)} miles of your home`
+      : "Boosted: near your home address";
+  return (
+    <Ionicons
+      name='navigate'
+      size={14}
+      color={darkMode ? "#7DD3FC" : "#0EA5E9"}
+      style={{ marginLeft: 6 }}
+      accessibilityLabel={label}
+    />
+  );
+}
+
+/** Merge API business_details bounty with any values already on the search row (never drop the higher amount). */
+function mergeBountyFieldsFromRow(existing, detailsRow) {
+  const fromApi = detailsRow
+    ? {
+        per: parseSearchMaxBounty(detailsRow.max_per_item_bounty),
+        total: parseSearchMaxBounty(detailsRow.max_total_bounty),
+        max: parseSearchMaxBounty(detailsRow.max_bounty),
+      }
+    : { per: null, total: null, max: null };
+  const fromExisting = {
+    per: parseSearchMaxBounty(existing.max_per_item_bounty),
+    total: parseSearchMaxBounty(existing.max_total_bounty),
+    max: parseSearchMaxBounty(existing.max_bounty),
+  };
+  const best = (a, b) => {
+    if (a == null) return b;
+    if (b == null) return a;
+    return Math.max(a, b);
+  };
+  return {
+    max_per_item_bounty: best(fromApi.per, fromExisting.per),
+    max_total_bounty: best(fromApi.total, fromExisting.total),
+    max_bounty: best(fromApi.max, fromExisting.max),
+  };
+}
+
+/** Ascending / Descending: drop zero-bounty businesses, sort the rest by bounty amount (numeric). */
+function applyBountyFilterAndSort(items, bountyMode) {
+  if (bountyMode !== "Ascending" && bountyMode !== "Descending") {
+    return items;
+  }
+  const dir = bountyMode === "Ascending" ? 1 : -1;
+  const pruned = items.filter((item) => item.itemType !== "businesses" || businessHasBounty(item));
+  const others = pruned.filter((item) => item.itemType !== "businesses");
+  const businesses = pruned.filter((item) => item.itemType === "businesses");
+  businesses.sort((a, b) => {
+    const aVal = getBusinessBountySortValue(a) ?? 0;
+    const bVal = getBusinessBountySortValue(b) ?? 0;
+    if (aVal !== bVal) return dir * (aVal - bVal);
+    const aScore = Number(a.globalScore ?? a.score) || 0;
+    const bScore = Number(b.globalScore ?? b.score) || 0;
+    return bScore - aScore;
+  });
+  return [...businesses, ...others];
 }
 
 // Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
@@ -67,12 +213,43 @@ const formatDateTimeForDisplay = (value) => {
   return value;
 };
 
+function parseConnectionDegree(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Closest referral-network degree via review path and/or owner path (lower = closer). */
+function getClosestNetworkDegree(item) {
+  const reviewDeg = parseConnectionDegree(item.review_connection_degree);
+  const ownerDeg = parseConnectionDegree(item.owner_connection_degree);
+  const parts = [];
+  if (reviewDeg != null) parts.push(reviewDeg);
+  if (ownerDeg != null) parts.push(ownerDeg);
+  if (parts.length) return Math.min(...parts);
+  return parseConnectionDegree(item.connection_degree);
+}
+
+/**
+ * Cumulative network filter: level 1 appears when max is 2+, but level 2 does not when max is 1.
+ * Row passes if closest connection (review or owner) is within maxDegree hops.
+ */
+function itemPassesNetworkFilter(item, maxDegree) {
+  if (maxDegree == null) return true;
+  const max = Number(maxDegree);
+  if (!Number.isFinite(max)) return true;
+  const closest = getClosestNetworkDegree(item);
+  return closest != null && closest <= max;
+}
+
 /**
  * POSTs to `/api/v1/business_details` (ratings, connection degree, max bounty fields, product_count) and merges into rows with `itemType === "businesses"`.
  * Used for accurate stars, review count, connection degree, and bounty vs search-index guesses.
  */
 async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
-  const businessIds = [...new Set(items.filter((b) => b.itemType === "businesses" && b.id != null && String(b.id).trim() !== "").map((b) => String(b.id)))];
+  const businessIds = [
+    ...new Set(items.filter((b) => b.itemType === "businesses").map((b) => resolveBusinessUid(b)).filter(Boolean)),
+  ];
   if (businessIds.length === 0) return items;
 
   let profileUid = null;
@@ -85,27 +262,39 @@ async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
   let merged = items;
 
   try {
-    const ratingsRes = await fetch(BUSINESS_DETAILS_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({
-        uids: businessIds,
-        profile_uid: profileUid || null,
-      }),
-    });
-    const ratingsJson = await ratingsRes.json();
-    if (ratingsJson.result) {
+    const DETAILS_BATCH_SIZE = 40;
+    const detailsByUid = {};
+    for (let i = 0; i < businessIds.length; i += DETAILS_BATCH_SIZE) {
+      const chunk = businessIds.slice(i, i + DETAILS_BATCH_SIZE);
+      const ratingsRes = await fetch(BUSINESS_DETAILS_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          uids: chunk,
+          profile_uid: profileUid || null,
+        }),
+      });
+      const ratingsJson = await ratingsRes.json();
+      if (ratingsJson.result && typeof ratingsJson.result === "object") {
+        Object.assign(detailsByUid, ratingsJson.result);
+      }
+    }
+    if (Object.keys(detailsByUid).length > 0) {
       merged = merged.map((b) => {
         if (b.itemType !== "businesses") return b;
-        const row = ratingsJson.result[b.id];
+        const row = getBusinessDetailsRow(detailsByUid, resolveBusinessUid(b) || b.id);
+        const reviewDeg = parseConnectionDegree(row?.review_connection_degree);
+        const ownerDeg = parseConnectionDegree(row?.owner_connection_degree);
+        const nearestDeg = parseConnectionDegree(row?.nearest_connection);
+        const badgeDegrees = [reviewDeg, ownerDeg, nearestDeg].filter((d) => d != null);
         const next = {
           ...b,
+          ...mergeBountyFieldsFromRow(b, row),
           rating: row && Number.isFinite(parseFloat(row.avg_rating)) ? parseFloat(row.avg_rating) : null,
           ratingCount: row ? row.rating_count : 0,
-          connection_degree: row?.nearest_connection ?? null,
-          max_bounty: row ? parseSearchMaxBounty(row.max_bounty) : null,
-          max_per_item_bounty: row ? parseSearchMaxBounty(row.max_per_item_bounty) : null,
-          max_total_bounty: row ? parseSearchMaxBounty(row.max_total_bounty) : null,
+          review_connection_degree: reviewDeg,
+          owner_connection_degree: ownerDeg,
+          connection_degree: badgeDegrees.length ? Math.min(...badgeDegrees) : null,
         };
         if (row != null) {
           const raw = row.product_count;
@@ -124,6 +313,49 @@ async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
   }
 
   return merged;
+}
+
+/** Owner profile degree for offering/seeking rows (review path not used for those item types yet). */
+async function enrichOfferingOwnerConnectionDegrees(items) {
+  const profileUids = [
+    ...new Set(
+      items
+        .filter((i) => (i.itemType === "expertise" || i.itemType === "seeking") && i.profile_uid)
+        .map((i) => String(i.profile_uid).trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (profileUids.length === 0) return items;
+
+  let profileUid = null;
+  try {
+    profileUid = await AsyncStorage.getItem("profile_uid");
+  } catch (_) {
+    /* ignore */
+  }
+  if (!profileUid) return items;
+
+  try {
+    const res = await fetch(PROFILE_CONNECTION_DEGREES_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ profile_uid: profileUid, uids: profileUids }),
+    });
+    const json = await res.json();
+    const degreeMap = json.result || {};
+    return items.map((item) => {
+      if (item.itemType !== "expertise" && item.itemType !== "seeking") return item;
+      const ownerDeg = parseConnectionDegree(degreeMap[item.profile_uid]);
+      return {
+        ...item,
+        owner_connection_degree: ownerDeg,
+        connection_degree: ownerDeg,
+      };
+    });
+  } catch (e) {
+    console.log("Could not fetch profile connection degrees:", e);
+    return items;
+  }
 }
 
 export default function SearchScreen({ route }) {
@@ -154,11 +386,18 @@ export default function SearchScreen({ route }) {
 
   // Declare all state variables first
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchSuggestions, setSearchSuggestions] = useState([]);
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const suggestDebounceRef = useRef(null);
+  const suggestPressRef = useRef(false);
   const [results, setResults] = useState(initialResults);
   const [loading, setLoading] = useState(false);
 
   // Filter states
   const [distance, setDistance] = useState(null);
+  /** Home address from profile_personal_latitude/longitude (Settings → Home Address Coordinates) */
+  const [userHomeCoords, setUserHomeCoords] = useState({ lat: null, lng: null });
   const [network, setNetwork] = useState(null);
   const [bounty, setBounty] = useState(null);
   const [rating, setRating] = useState(null);
@@ -171,10 +410,113 @@ export default function SearchScreen({ route }) {
   const connectionDegreeMapRef = useRef({});
   // Stores unsorted results so bounty filter can re-sort without re-fetching
   const rawResultsRef = useRef([]);
+  const bountyRef = useRef(bounty);
+  useEffect(() => {
+    bountyRef.current = bounty;
+  }, [bounty]);
+
+  const commitSearchResults = useCallback((list) => {
+    rawResultsRef.current = [...list];
+    setResults(applyBountyFilterAndSort(list, bountyRef.current));
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem("profile_uid").then((uid) => setCurrentProfileUid(uid));
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
+    };
+  }, []);
+
+  const onSearchQueryChange = (text) => {
+    setSearchQuery(text);
+    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
+
+    if (!text.trim()) {
+      setSearchSuggestions([]);
+      setShowSearchSuggestions(false);
+      setSuggestionsLoading(false);
+      return;
+    }
+
+    if (text.trim().length < SEARCH_SUGGEST_MIN_LENGTH) {
+      setSearchSuggestions([]);
+      setShowSearchSuggestions(false);
+      setSuggestionsLoading(false);
+      return;
+    }
+
+    setShowSearchSuggestions(true);
+    setSuggestionsLoading(true);
+
+    suggestDebounceRef.current = setTimeout(async () => {
+      try {
+        const items = await fetchSearchSuggestions(text);
+        setSearchSuggestions(items);
+        setShowSearchSuggestions(true);
+      } catch (e) {
+        console.warn("[SearchScreen] suggestion fetch failed:", e);
+        setSearchSuggestions([]);
+        setShowSearchSuggestions(true);
+      } finally {
+        setSuggestionsLoading(false);
+      }
+    }, 300);
+  };
+
+  const handleSuggestionSelect = (text) => {
+    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
+    suggestPressRef.current = false;
+    setSearchQuery(text);
+    setSearchSuggestions([]);
+    setShowSearchSuggestions(false);
+    performSearch(text, searchType);
+  };
+
+  const dismissSearchSuggestions = () => {
+    setShowSearchSuggestions(false);
+  };
+
+  const onSearchInputBlur = () => {
+    // TextInput blur fires before suggestion onPress on web; defer dismiss so tap can land.
+    setTimeout(() => {
+      if (suggestPressRef.current) {
+        suggestPressRef.current = false;
+        return;
+      }
+      dismissSearchSuggestions();
+    }, 200);
+  };
+
+  const onSuggestionPressIn = () => {
+    suggestPressRef.current = true;
+  };
+
+  const loadUserHomeCoords = useCallback(async () => {
+    try {
+      const { getSessionProfile } = require("../utils/sessionProfile");
+      const session = await getSessionProfile({ forceRefresh: true });
+      const pi = session?.personalInfo || session?.rawProfile?.personal_info;
+      const lat = pi?.profile_personal_latitude;
+      const lng = pi?.profile_personal_longitude;
+      if (lat != null && lng != null && !Number.isNaN(parseFloat(lat)) && !Number.isNaN(parseFloat(lng))) {
+        setUserHomeCoords({ lat: parseFloat(lat), lng: parseFloat(lng) });
+      } else {
+        setUserHomeCoords({ lat: null, lng: null });
+      }
+    } catch (e) {
+      console.warn("[SearchScreen] loadUserHomeCoords failed:", e);
+      setUserHomeCoords({ lat: null, lng: null });
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadUserHomeCoords();
+    }, [loadUserHomeCoords]),
+  );
 
   // Restore search state when returning from Profile
   useFocusEffect(
@@ -184,7 +526,14 @@ export default function SearchScreen({ route }) {
         console.log("🔄 Restoring Search screen state:", state);
         if (state.searchQuery !== undefined) setSearchQuery(state.searchQuery);
         if (state.searchType !== undefined) setSearchType(state.searchType);
-        if (state.results !== undefined) setResults(state.results);
+        const raw = state.rawResults?.length ? state.rawResults : state.results;
+        if (raw?.length) {
+          rawResultsRef.current = [...raw];
+          const mode = state.bounty !== undefined ? state.bounty : bountyRef.current;
+          setResults(mode ? applyBountyFilterAndSort(raw, mode) : [...raw]);
+        } else if (state.results !== undefined) {
+          setResults(state.results);
+        }
         if (state.distance !== undefined) setDistance(state.distance);
         if (state.network !== undefined) setNetwork(state.network);
         if (state.bounty !== undefined) setBounty(state.bounty);
@@ -275,6 +624,7 @@ export default function SearchScreen({ route }) {
             item.itemType === "businesses"
               ? {
                   ...item,
+                  business_uid: item.business_uid || (item.id != null ? String(item.id).trim() : null),
                   rating: null,
                   ratingCount: 0,
                   connection_degree: null,
@@ -291,8 +641,11 @@ export default function SearchScreen({ route }) {
           if (bizItems.length > 0) {
             enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(parsedResults)
               .then((updated) => {
-                setResults(updated);
-                rawResultsRef.current = [...updated];
+                if (bountyRef.current) commitSearchResults(updated);
+                else {
+                  rawResultsRef.current = [...updated];
+                  setResults(updated);
+                }
               })
               .catch((e) => {
                 console.error("Could not fetch ratings/bounty from cache:", e);
@@ -334,29 +687,11 @@ export default function SearchScreen({ route }) {
     }
   }, [hasLoadedInitialSearch]);
 
-  // Re-sort results reactively when bounty filter changes
+  // Re-apply bounty prune/sort when filter changes (full list kept in rawResultsRef for Reset)
   useEffect(() => {
     const base = rawResultsRef.current;
     if (base.length === 0) return;
-
-    if (!bounty) {
-      // Reset: restore original search order
-      setResults([...base]);
-      return;
-    }
-
-    const dir = bounty === "Ascending" ? 1 : -1;
-    const sorted = [...base].sort((a, b) => {
-      if (a.itemType !== "businesses" || b.itemType !== "businesses") return 0;
-      const aTier = a.max_per_item_bounty ? 0 : a.max_total_bounty ? 1 : 2;
-      const bTier = b.max_per_item_bounty ? 0 : b.max_total_bounty ? 1 : 2;
-      if (aTier !== bTier) return aTier - bTier;
-      if (aTier === 2) return 0;
-      const aVal = aTier === 0 ? a.max_per_item_bounty : a.max_total_bounty;
-      const bVal = bTier === 0 ? b.max_per_item_bounty : b.max_total_bounty;
-      return dir * (aVal - bVal);
-    });
-    setResults(sorted);
+    setResults(bountyRef.current ? applyBountyFilterAndSort(base, bountyRef.current) : [...base]);
   }, [bounty]);
 
   // Save search state whenever results change (but not on initial load)
@@ -376,7 +711,8 @@ export default function SearchScreen({ route }) {
           // Save with user-specific keys
           await AsyncStorage.setItem(`last_search_query_${userUid}`, searchQuery);
           await AsyncStorage.setItem(`last_search_type_${userUid}`, searchType);
-          await AsyncStorage.setItem(`last_search_results_${userUid}`, JSON.stringify(results));
+          const resultsToSave = rawResultsRef.current.length > 0 ? rawResultsRef.current : results;
+          await AsyncStorage.setItem(`last_search_results_${userUid}`, JSON.stringify(resultsToSave));
           console.log("💾 Saved search state for user:", userUid, "Query:", searchQuery);
         } catch (error) {
           console.error("Error saving search state:", error);
@@ -427,18 +763,80 @@ export default function SearchScreen({ route }) {
 
   // Filter options (same as FilterScreen)
   const distanceOptions = [5, 10, 15, 25, 50, 100];
+  /** First modal row: omit user_lat / max_distance on Qdrant search. */
+  const distanceModalOptions = [
+    { key: "any", label: "Any distance (no filter)", miles: null },
+    ...distanceOptions.map((d) => ({ key: String(d), label: `${d} mi`, miles: d })),
+  ];
   const networkOptions = [1, 2, 3, 4, 5];
+
+  const clearDistanceFilter = (reRunSearch = true) => {
+    setDistance(null);
+    setDistanceModalVisible(false);
+    if (reRunSearch && searchQuery.trim()) {
+      performSearch(searchQuery, searchType, { distanceMiles: null });
+    }
+  };
+
+  const applyRatingFilter = (ratingValue) => {
+    setRating(ratingValue);
+    setRatingModalVisible(false);
+    if (searchQuery.trim()) {
+      performSearch(searchQuery, searchType, { ratingValue });
+    }
+  };
+
+  const applyNetworkFilter = (networkValue) => {
+    setNetwork(networkValue);
+    setNetworkModalVisible(false);
+    if (searchQuery.trim()) {
+      performSearch(searchQuery, searchType, { networkValue });
+    }
+  };
+
+  /**
+   * When a min rating is selected, exclude unrated businesses and those below threshold.
+   * Non-business rows are left untouched.
+   */
+  const applyBusinessMinRatingFilter = (items, minRating) => {
+    if (minRating == null) return items;
+    return (items || []).filter((item) => {
+      if (item?.itemType !== "businesses") return true;
+      const r = item?.rating;
+      return Number.isFinite(r) && r >= minRating;
+    });
+  };
+
+  const filterResultsByNetwork = (items, maxDegree) => {
+    if (maxDegree == null) return items;
+    return (items || []).filter((item) => itemPassesNetworkFilter(item, maxDegree));
+  };
+
+  /** Send home coords for proximity ranking (independent of distance filter). */
+  const appendHomeCoordsParams = (baseUrl, coords) => {
+    if (coords?.lat == null || coords?.lng == null) return baseUrl;
+    const sep = baseUrl.includes("?") ? "&" : "?";
+    return `${baseUrl}${sep}user_lat=${encodeURIComponent(coords.lat)}&user_lon=${encodeURIComponent(coords.lng)}`;
+  };
+
+  /** Append Qdrant distance filter params (user home → result coordinates). */
+  const appendDistanceParams = (baseUrl, miles, coords) => {
+    if (miles == null || coords?.lat == null || coords?.lng == null) return baseUrl;
+    const sep = baseUrl.includes("?") ? "&" : "?";
+    return `${baseUrl}${sep}max_distance=${encodeURIComponent(miles)}`;
+  };
   const bountyOptions = ["Ascending", "Descending"];
   const ratingOptions = ["> 1", "> 2", "> 3", "> 4", "> 4.5", "> 4.6", "> 4.8"];
 
   const globalBusinessResults = searchType === "global" ? results.filter((item) => (item?.itemType || "businesses") === "businesses") : [];
   const globalOfferingResults = searchType === "global" ? results.filter((item) => item?.itemType === "expertise") : [];
-
-  const fetchSearchJson = async (endpoint, q, applyRatingFilter = false) => {
-    let apiUrl = `${endpoint}?q=${encodeURIComponent(q)}`;
-    if (applyRatingFilter && rating !== null) {
-      apiUrl += `&min_rating=${rating}`;
+  const fetchSearchJson = async (endpoint, q, applyRatingFilter = false, distanceMiles = distance, ratingValue = rating) => {
+    let apiUrl = `${endpoint}?q=${encodeURIComponent(q)}&limit=${SEARCH_RESULT_LIMIT}`;
+    if (applyRatingFilter && ratingValue !== null) {
+      apiUrl += `&min_rating=${ratingValue}`;
     }
+    apiUrl = appendHomeCoordsParams(apiUrl, userHomeCoords);
+    apiUrl = appendDistanceParams(apiUrl, distanceMiles, userHomeCoords);
 
     const fetchOptions =
       Platform.OS === "web"
@@ -470,20 +868,37 @@ export default function SearchScreen({ route }) {
   };
 
   // Extracted search function that can be called programmatically
-  const performSearch = async (query, type = searchType) => {
+  const performSearch = async (query, type = searchType, opts = {}) => {
     const q = query.trim();
     if (!q) return;
+    const effectiveDistance = opts.distanceMiles !== undefined ? opts.distanceMiles : distance;
+    const effectiveRating = opts.ratingValue !== undefined ? opts.ratingValue : rating;
+    const effectiveNetwork = opts.networkValue !== undefined ? opts.networkValue : network;
+    if (effectiveDistance != null && (userHomeCoords.lat == null || userHomeCoords.lng == null)) {
+      Alert.alert(
+        "Home address needed",
+        "Set your home address coordinates in Settings to filter search results by distance.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => navigation.navigate("Settings") },
+        ],
+      );
+      return;
+    }
 
     console.log("🔍 Performing search for:", q);
     console.log("🔍 Search type:", type);
     console.log("🔍 Search query length:", q.length);
     console.log("🔍 Search query type:", typeof q);
-    console.log("🔍 Rating filter:", rating);
+    console.log("🔍 Rating filter:", effectiveRating);
+    console.log("🔍 Network filter:", effectiveNetwork);
+    console.log("🔍 Distance filter (mi):", effectiveDistance);
+    console.log("🔍 User home coords:", userHomeCoords);
 
     setLoading(true);
     try {
       if (type === "global") {
-        const globalJsonRaw = await fetchSearchJson(SEARCH_GLOBAL_ENDPOINT, q, true);
+        const globalJsonRaw = await fetchSearchJson(SEARCH_GLOBAL_ENDPOINT, q, true, effectiveDistance, effectiveRating);
         const globalJson = sanitizeEmptyStrings(globalJsonRaw);
         const globalResults = Array.isArray(globalJson) ? globalJson : globalJson.results || globalJson.result || [];
         const businessResults = globalResults.filter((item) => item.itemType === "businesses");
@@ -497,6 +912,7 @@ export default function SearchScreen({ route }) {
 
         const mappedBusinesses = businessResults.map((b, i) => ({
           id: `${b.business_uid || i}`,
+          business_uid: b.business_uid ? String(b.business_uid).trim() : null,
           company: sanitizeText(b.business_name || b.company) || "Unknown Business",
           business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
           rating: null,
@@ -515,6 +931,7 @@ export default function SearchScreen({ route }) {
           score_breakdown: b.score_breakdown || null,
           itemType: "businesses",
           profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
+          ...locationFieldsFromApi(b),
         }));
 
         const mappedExpertise = expertiseResults
@@ -533,6 +950,7 @@ export default function SearchScreen({ route }) {
             score_breakdown: item.score_breakdown || null,
             itemType: "expertise",
             profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
+            ...locationFieldsFromApi(item),
             expertiseData: {
               title: item.profile_expertise_title,
               description: item.profile_expertise_description,
@@ -575,8 +993,10 @@ export default function SearchScreen({ route }) {
 
         const list = [...normalizeByType(mappedBusinesses), ...normalizeByType(mappedExpertise)].sort((a, b) => b.globalScore - a.globalScore);
         const enriched = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(list);
-        rawResultsRef.current = [...enriched];
-        setResults(enriched);
+        const withOfferingDegrees = await enrichOfferingOwnerConnectionDegrees(enriched);
+        let filteredEnriched = applyBusinessMinRatingFilter(withOfferingDegrees, effectiveRating);
+        filteredEnriched = filterResultsByNetwork(filteredEnriched, effectiveNetwork);
+        commitSearchResults(filteredEnriched);
         setHasLoadedInitialSearch(true);
         setLoading(false);
         return;
@@ -598,12 +1018,14 @@ export default function SearchScreen({ route }) {
       }
 
       // Build the API URL with query parameter
-      let apiUrl = `${baseEndpoint}?q=${encodeURIComponent(q)}`;
+      let apiUrl = `${baseEndpoint}?q=${encodeURIComponent(q)}&limit=${SEARCH_RESULT_LIMIT}`;
 
       // Add min_rating parameter if rating filter is set
-      if (rating !== null) {
-        apiUrl += `&min_rating=${rating}`;
+      if (effectiveRating !== null) {
+        apiUrl += `&min_rating=${effectiveRating}`;
       }
+      apiUrl = appendHomeCoordsParams(apiUrl, userHomeCoords);
+      apiUrl = appendDistanceParams(apiUrl, effectiveDistance, userHomeCoords);
 
       console.log("🎯 EXACT ENDPOINT BEING CALLED:", apiUrl);
 
@@ -751,6 +1173,7 @@ export default function SearchScreen({ route }) {
             itemType: "seeking",
             profile_uid: item.profile_wish_profile_personal_id,
             profile_wish_end: item.profile_wish_end || "",
+            ...locationFieldsFromApi(item),
             // Store wish data
             wishData: {
               title: item.profile_wish_title,
@@ -830,6 +1253,7 @@ export default function SearchScreen({ route }) {
           score_breakdown: item.score_breakdown || null,
           itemType: "expertise",
           profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
+          ...locationFieldsFromApi(item),
           expertiseData: {
             title: item.profile_expertise_title,
             description: item.profile_expertise_description,
@@ -877,6 +1301,7 @@ export default function SearchScreen({ route }) {
           console.log("Business profile img:", b.business_profile_img, b.business_name);
           return {
             id: `${b.business_uid || i}`,
+            business_uid: b.business_uid ? String(b.business_uid).trim() : null,
             company: sanitizeText(b.business_name || b.company) || "Unknown Business",
             business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
             rating: typeof b.rating_star === "number" ? b.rating_star : null,
@@ -891,6 +1316,7 @@ export default function SearchScreen({ route }) {
             score_breakdown: b.score_breakdown || null,
             itemType: "businesses",
             profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
+            ...locationFieldsFromApi(b),
           };
         });
 
@@ -934,32 +1360,22 @@ export default function SearchScreen({ route }) {
         */
 
         list = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(list);
+        list = applyBusinessMinRatingFilter(list, effectiveRating);
+        list = filterResultsByNetwork(list, effectiveNetwork);
 
         // Sort by highest rating if rating filter is active
-        if (rating !== null) {
+        if (effectiveRating !== null) {
           list = [...list].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
-        }
-
-        // Save unsorted snapshot BEFORE bounty sort so reset can restore original order
-        rawResultsRef.current = [...list];
-
-        // Sort by bounty — tier 1: per_item bounty, tier 2: total bounty, tier 3: no bounty (always last)
-        if (bounty === "Ascending" || bounty === "Descending") {
-          const dir = bounty === "Ascending" ? 1 : -1;
-          list = [...list].sort((a, b) => {
-            const aTier = a.max_per_item_bounty ? 0 : a.max_total_bounty ? 1 : 2;
-            const bTier = b.max_per_item_bounty ? 0 : b.max_total_bounty ? 1 : 2;
-            if (aTier !== bTier) return aTier - bTier; // tier ordering is always ascending
-            if (aTier === 2) return 0; // both have no bounty
-            const aVal = aTier === 0 ? a.max_per_item_bounty : a.max_total_bounty;
-            const bVal = bTier === 0 ? b.max_per_item_bounty : b.max_total_bounty;
-            return dir * (aVal - bVal);
-          });
         }
       }
 
+      if (type === "expertise" || type === "seeking") {
+        list = await enrichOfferingOwnerConnectionDegrees(list);
+        list = filterResultsByNetwork(list, effectiveNetwork);
+      }
+
       console.log("Processed search results:", list.length, "items");
-      setResults(list);
+      commitSearchResults(list);
       setHasLoadedInitialSearch(true);
     } catch (err) {
       console.error(" Search failed for query:", q, "Error:", err);
@@ -981,6 +1397,7 @@ export default function SearchScreen({ route }) {
   };
 
   const onSearch = async () => {
+    dismissSearchSuggestions();
     await performSearch(searchQuery, searchType);
   };
 
@@ -1114,7 +1531,9 @@ export default function SearchScreen({ route }) {
     const breakdown = item?.score_breakdown;
     if (!breakdown || typeof breakdown !== "object") return null;
     const sem = Number.isFinite(breakdown.semantic_score) ? Number(breakdown.semantic_score).toFixed(3) : null;
-    const lex = Number.isFinite(breakdown.total_lexical_boost) ? Number(breakdown.total_lexical_boost).toFixed(3) : null;
+    // Fuzzy lexical score used for RRF / legacy ranking (not total_lexical_boost token bonuses).
+    const lexFuzzy = Number(breakdown.lexical_fuzzy_score);
+    const lex = Number.isFinite(lexFuzzy) ? lexFuzzy.toFixed(3) : null;
     const g = Number.isFinite(item?.global_score) ? Number(item.global_score).toFixed(3) : null;
     const parts = [];
     if (sem !== null) parts.push(`Sem: ${sem}`);
@@ -1139,7 +1558,17 @@ export default function SearchScreen({ route }) {
       phrase_tag: "Tag Phrase",
     };
 
-    const ignoredKeys = new Set(["semantic_score", "total_lexical_boost", "final_score"]);
+    const ignoredKeys = new Set([
+      "semantic_score",
+      "lexical_fuzzy_score",
+      "total_lexical_boost",
+      "final_score",
+      "rescore_mode",
+      "rrf_k",
+      "rrf_rank_semantic",
+      "rrf_rank_lexical",
+      "rrf_raw",
+    ]);
     const detailParts = Object.entries(breakdown)
       .filter(([key, value]) => detailKeyToLabel[key] && !ignoredKeys.has(key) && Number.isFinite(value) && Number(value) > 0)
       .sort((a, b) => Number(b[1]) - Number(a[1]))
@@ -1156,6 +1585,7 @@ export default function SearchScreen({ route }) {
     searchQuery,
     searchType,
     results,
+    rawResults: rawResultsRef.current.length > 0 ? rawResultsRef.current : results,
     distance,
     network,
     bounty,
@@ -1233,15 +1663,7 @@ export default function SearchScreen({ route }) {
               wishData: wish,
               profileData: profile,
               profile_uid: item.profile_uid,
-              searchState: {
-                searchQuery,
-                searchType,
-                results,
-                distance,
-                network,
-                bounty,
-                rating,
-              },
+              searchState: getSearchStateForRestore(),
             });
           } else {
             console.warn("No profile_uid or wish data found for wish item");
@@ -1258,15 +1680,7 @@ export default function SearchScreen({ route }) {
               navigation.navigate("Profile", {
                 profile_uid: item.profile_uid,
                 returnTo: "Search",
-                searchState: {
-                  searchQuery,
-                  searchType,
-                  results,
-                  distance,
-                  network,
-                  bounty,
-                  rating,
-                },
+                searchState: getSearchStateForRestore(),
               });
             } else {
               console.warn("No profile_uid found for wish item");
@@ -1302,7 +1716,10 @@ export default function SearchScreen({ route }) {
 
         {/* Wish Information */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
-          <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+            <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
+            {item.location_boosted && <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} />}
+          </View>
           {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
           {renderScoreBreakdown(item)}
           {(wish.profile_wish_start || wish.profile_wish_end) && (
@@ -1426,7 +1843,10 @@ export default function SearchScreen({ route }) {
 
         {/* Expertise Information (no tap-through to expertise detail) */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
-          <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+            <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
+            {item.location_boosted && <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} />}
+          </View>
           {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
           {renderScoreBreakdown(item)}
           {expertise.description && String(expertise.description).trim() && String(expertise.description).trim() !== "." && (
@@ -1550,17 +1970,9 @@ export default function SearchScreen({ route }) {
           console.log("🏢 Navigating to profile for:", item.company, "ID:", item.id, "Type:", item.itemType);
           if (item.itemType === "businesses") {
             navigation.navigate("BusinessProfile", {
-              business_uid: item.id,
+              business_uid: resolveBusinessUid(item) || item.id,
               returnTo: "Search",
-              searchState: {
-                searchQuery,
-                searchType,
-                results,
-                distance,
-                network,
-                bounty,
-                rating,
-              },
+              searchState: getSearchStateForRestore(),
             });
           } else if (item.itemType === "expertise" || item.itemType === "seeking") {
             // Navigate to user profile if we have profile_uid
@@ -1568,15 +1980,7 @@ export default function SearchScreen({ route }) {
               navigation.navigate("Profile", {
                 profile_uid: item.profile_uid,
                 returnTo: "Search",
-                searchState: {
-                  searchQuery,
-                  searchType,
-                  results,
-                  distance,
-                  network,
-                  bounty,
-                  rating,
-                },
+                searchState: getSearchStateForRestore(),
               });
             } else {
               console.warn("No profile_uid found for expertise/seeking item");
@@ -1594,7 +1998,10 @@ export default function SearchScreen({ route }) {
               defaultSource={require("../assets/profile.png")}
             />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+                <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
+                {item.location_boosted && <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} />}
+              </View>
               {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
               {renderScoreBreakdown(item)}
               {/* Badge approach (kept commented until finalized)
@@ -1634,7 +2041,7 @@ export default function SearchScreen({ route }) {
               if (noProducts) {
                 return <NoBountyIcon darkMode={darkMode} muted />;
               }
-              const hasBounty = item.max_bounty != null && Number.isFinite(item.max_bounty) && item.max_bounty > 0;
+              const hasBounty = getBusinessBountySortValue(item) != null;
               return hasBounty ? <Text style={[styles.bountyEmojiIcon, styles.bountyEmojiIconCompact]}>💰</Text> : <NoBountyIcon darkMode={darkMode} />;
             })()}
           </View>
@@ -1847,25 +2254,63 @@ export default function SearchScreen({ route }) {
           </View>
 
           {/* Search bar */}
-          <View style={styles.searchContainer}>
-            <TextInput
-              style={[styles.searchInput, darkMode && styles.darkSearchInput]}
-              placeholder='What are you looking for?'
-              placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              returnKeyType='search'
-              onSubmitEditing={onSearch}
-              accessibilitylabel='Search'
-              accessibilityHint='Enter text to search'
-              accessibilityRole='search'
-            />
-            <TouchableOpacity style={[styles.searchButton, darkMode && styles.darkSearchButton]} onPress={onSearch}>
-              <Ionicons name='search' size={22} color={darkMode ? "#ffffff" : "#000000"} />
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.filterButton, darkMode && styles.darkFilterButton]} onPress={() => setShowFilters(!showFilters)}>
-              <MaterialIcons name='filter-list' size={22} color={darkMode ? "#ffffff" : "#000000"} />
-            </TouchableOpacity>
+          <View style={styles.searchBarWrap}>
+            <View style={styles.searchContainer}>
+              <TextInput
+                style={[styles.searchInput, darkMode && styles.darkSearchInput]}
+                placeholder='What are you looking for?'
+                placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                value={searchQuery}
+                onChangeText={onSearchQueryChange}
+                onFocus={() => {
+                  if (searchQuery.trim().length >= SEARCH_SUGGEST_MIN_LENGTH) {
+                    setShowSearchSuggestions(true);
+                  }
+                }}
+                onBlur={onSearchInputBlur}
+                returnKeyType='search'
+                onSubmitEditing={onSearch}
+                accessibilitylabel='Search'
+                accessibilityHint='Enter text to search'
+                accessibilityRole='search'
+              />
+              <TouchableOpacity style={[styles.searchButton, darkMode && styles.darkSearchButton]} onPress={onSearch}>
+                <Ionicons name='search' size={22} color={darkMode ? "#ffffff" : "#000000"} />
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.filterButton, darkMode && styles.darkFilterButton]} onPress={() => setShowFilters(!showFilters)}>
+                <MaterialIcons name='filter-list' size={22} color={darkMode ? "#ffffff" : "#000000"} />
+              </TouchableOpacity>
+            </View>
+
+            {showSearchSuggestions && searchQuery.trim().length >= SEARCH_SUGGEST_MIN_LENGTH && (
+              <View style={[styles.suggestionsList, darkMode && styles.darkSuggestionsList]}>
+                {suggestionsLoading ? null : searchSuggestions.length > 0 ? (
+                  searchSuggestions.map((item, idx) => (
+                    <TouchableOpacity
+                      key={`${item.text}-${idx}`}
+                      style={[styles.suggestionRow, darkMode && styles.darkSuggestionRow, idx === searchSuggestions.length - 1 && styles.suggestionRowLast]}
+                      onPressIn={onSuggestionPressIn}
+                      onPress={() => handleSuggestionSelect(item.text)}
+                      {...(Platform.OS === "web"
+                        ? {
+                            onMouseDown: (e) => {
+                              e.preventDefault();
+                            },
+                          }
+                        : {})}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons name='search-outline' size={16} color={darkMode ? "#aaa" : "#666"} style={styles.suggestionIcon} />
+                      {renderHighlightedSuggestion(item.text, searchQuery, darkMode)}
+                    </TouchableOpacity>
+                  ))
+                ) : (
+                  <View style={[styles.suggestionRow, styles.suggestionRowLast, darkMode && styles.darkSuggestionRow]}>
+                    <Text style={[styles.suggestionEmpty, darkMode && styles.darkSuggestionEmpty]}>No suggestions found</Text>
+                  </View>
+                )}
+              </View>
+            )}
           </View>
 
           {/* Distance, Network, Bounty, Rating filters - TOGGLE BELOW SEARCH BAR */}
@@ -2011,36 +2456,38 @@ export default function SearchScreen({ route }) {
                   <Ionicons name='close' size={28} color={darkMode ? "#ffffff" : "#333"} />
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={[styles.resetOption, darkMode && styles.darkResetOption]}
-                onPress={() => {
-                  setDistance(null);
-                  setDistanceModalVisible(false);
-                }}
-              >
-                <Text style={[styles.resetOptionText, darkMode && styles.darkResetOptionText]}>Reset</Text>
-              </TouchableOpacity>
+              <Text style={[styles.distanceModalHint, darkMode && styles.darkDistanceModalHint]}>
+                {distance == null
+                  ? "Showing all results regardless of location."
+                  : "Results are limited to your home address coordinates in Settings."}
+              </Text>
               <FlatList
-                data={distanceOptions.map((d) => `${d} mi`)}
+                data={distanceModalOptions}
                 renderItem={({ item }) => {
-                  const isSelected = distance !== null && item === `${distance} mi`;
+                  const isSelected = item.miles == null ? distance == null : distance === item.miles;
                   return (
                     <TouchableOpacity
                       style={[styles.optionItem, isSelected && styles.selectedOption, darkMode && styles.darkOptionItem, darkMode && isSelected && styles.darkSelectedOption]}
                       onPress={() => {
-                        const value = parseInt(item.replace(" mi", ""));
-                        setDistance(value);
+                        if (item.miles == null) {
+                          clearDistanceFilter(true);
+                          return;
+                        }
+                        setDistance(item.miles);
                         setDistanceModalVisible(false);
+                        if (searchQuery.trim()) {
+                          performSearch(searchQuery, searchType, { distanceMiles: item.miles });
+                        }
                       }}
                     >
                       <Text style={[styles.optionText, isSelected && styles.selectedOptionText, darkMode && styles.darkOptionText, darkMode && isSelected && styles.darkSelectedOptionText]}>
-                        {item}
+                        {item.label}
                       </Text>
-                      {isSelected && <Ionicons name='checkmark' size={24} color={darkMode ? "#9C45F7" : "#9C45F7"} />}
+                      {isSelected && <Ionicons name='checkmark' size={24} color='#9C45F7' />}
                     </TouchableOpacity>
                   );
                 }}
-                keyExtractor={(item) => item.toString()}
+                keyExtractor={(item) => item.key}
                 style={styles.optionsList}
               />
             </View>
@@ -2059,19 +2506,13 @@ export default function SearchScreen({ route }) {
               </View>
               <TouchableOpacity
                 style={[styles.resetOption, darkMode && styles.darkResetOption]}
-                onPress={() => {
-                  setNetwork(null);
-                  setNetworkModalVisible(false);
-                }}
+                onPress={() => applyNetworkFilter(null)}
               >
                 <Text style={[styles.resetOptionText, darkMode && styles.darkResetOptionText]}>Reset</Text>
               </TouchableOpacity>
               <FlatList
                 data={networkOptions}
-                renderItem={renderOptionItem(networkOptions, network, (value) => {
-                  setNetwork(value);
-                  setNetworkModalVisible(false);
-                })}
+                renderItem={renderOptionItem(networkOptions, network, (value) => applyNetworkFilter(value))}
                 keyExtractor={(item) => item.toString()}
                 style={styles.optionsList}
               />
@@ -2123,10 +2564,7 @@ export default function SearchScreen({ route }) {
               </View>
               <TouchableOpacity
                 style={[styles.resetOption, darkMode && styles.darkResetOption]}
-                onPress={() => {
-                  setRating(null);
-                  setRatingModalVisible(false);
-                }}
+                onPress={() => applyRatingFilter(null)}
               >
                 <Text style={[styles.resetOptionText, darkMode && styles.darkResetOptionText]}>Reset</Text>
               </TouchableOpacity>
@@ -2135,10 +2573,7 @@ export default function SearchScreen({ route }) {
                 renderItem={renderOptionItem(
                   ratingOptions,
                   rating !== null ? `> ${rating}` : null,
-                  (value) => {
-                    setRating(value);
-                    setRatingModalVisible(false);
-                  },
+                  (value) => applyRatingFilter(value),
                   true,
                 )}
                 keyExtractor={(item) => item.toString()}
@@ -2209,7 +2644,73 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   contentContainer: { flex: 1, padding: 20, paddingTop: 30, paddingBottom: 100 },
-  searchContainer: { flexDirection: "row", alignItems: "center", marginBottom: 25 },
+  searchBarWrap: { position: "relative", marginBottom: 25, zIndex: 100, elevation: 100 },
+  searchContainer: { flexDirection: "row", alignItems: "center" },
+  suggestionsList: {
+    position: "absolute",
+    top: "100%",
+    left: 0,
+    right: 0,
+    marginTop: 4,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    maxHeight: 220,
+    overflow: "hidden",
+    zIndex: 101,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+  },
+  darkSuggestionsList: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  suggestionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  suggestionEmpty: {
+    fontSize: 15,
+    color: "#666",
+    fontStyle: "italic",
+  },
+  darkSuggestionEmpty: {
+    color: "#aaa",
+  },
+  suggestionRowLast: {
+    borderBottomWidth: 0,
+  },
+  darkSuggestionRow: {
+    borderBottomColor: "#404040",
+  },
+  suggestionIcon: {
+    marginRight: 10,
+  },
+  suggestionMain: {
+    flex: 1,
+    fontSize: 16,
+    color: "#333",
+    fontWeight: "600",
+  },
+  darkSuggestionMain: {
+    color: "#fff",
+  },
+  suggestionHighlight: {
+    fontWeight: "700",
+    color: "#1565C0",
+    backgroundColor: "#E3F2FD",
+  },
+  darkSuggestionHighlight: {
+    color: "#90CAF9",
+    backgroundColor: "#1E3A5F",
+  },
   searchInput: {
     flex: 1,
     backgroundColor: "#f0f0f0",
@@ -2437,6 +2938,16 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#9C45F7",
     textAlign: "center",
+  },
+  distanceModalHint: {
+    fontSize: 13,
+    color: "#666",
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    lineHeight: 18,
+  },
+  darkDistanceModalHint: {
+    color: "#aaa",
   },
   optionsList: {
     paddingHorizontal: 20,

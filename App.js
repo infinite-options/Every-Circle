@@ -205,6 +205,7 @@ async function completeAppleAuthSession(navigation, userInfo, options) {
     }
     await AsyncStorage.setItem("user_uid", String(userUid));
     await AsyncStorage.setItem("user_email_id", userEmail || "");
+    await AsyncStorage.setItem("isThirdPartyAuth", true);
     await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
     await clearUserProfileCacheStorage();
 
@@ -292,6 +293,7 @@ async function completeGoogleSocialAuth(navigation, userInfo, googleAuthToken, o
 
   await AsyncStorage.setItem("user_uid", String(userUid));
   await AsyncStorage.setItem("user_email_id", userInfo.user.email);
+  await AsyncStorage.setItem("isThirdPartyAuth", true);
   await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
   await clearUserProfileCacheStorage();
 

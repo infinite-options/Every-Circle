@@ -1184,8 +1184,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* Custom Tags - Only visible to owners/editors */}
-          {isOwner && business.customTags && business.customTags.length > 0 && (
+          {/* Custom Tags */}
+          {business.customTags && business.customTags.length > 0 && (
             <View style={styles.fieldContainer}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Tags:</Text>
               <View style={styles.tagsContainer}>
@@ -1883,7 +1883,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
                     service={service}
                     businessUid={business_uid}
                     showEditButton={isOwner}
-                    showOwnerTags={isOwner}
                     darkMode={darkMode}
                     onPress={() => handleProductPress(service)}
                   />

@@ -537,6 +537,15 @@ const ProfileScreen = ({ route, navigation }) => {
         tagLine: apiUser.personal_info?.profile_personal_tag_line || "",
         city: apiUser.personal_info?.profile_personal_city || "",
         state: apiUser.personal_info?.profile_personal_state || "",
+        homeCoordinates: (() => {
+          const lat = apiUser.personal_info?.profile_personal_latitude;
+          const lng = apiUser.personal_info?.profile_personal_longitude;
+          if (lat == null || lat === "" || lng == null || lng === "") return "";
+          const la = parseFloat(lat);
+          const lo = parseFloat(lng);
+          if (!Number.isFinite(la) || !Number.isFinite(lo)) return "";
+          return `${la}, ${lo}`;
+        })(),
         shortBio: apiUser.personal_info?.profile_personal_short_bio || "",
         emailIsPublic: apiUser.personal_info?.profile_personal_email_is_public === 1,
         phoneIsPublic: apiUser.personal_info?.profile_personal_phone_number_is_public === 1,
