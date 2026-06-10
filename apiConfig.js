@@ -50,6 +50,8 @@ export const BUSINESSES_ENDPOINT = `${API_BASE_URL}/businesses`;
 export const CATEGORY_LIST_ENDPOINT = `${API_BASE_URL}/category_list/all`;
 /** POST JSON `{ uids, profile_uid }` — same `result` shape as legacy GET businessavgratings */
 export const BUSINESS_DETAILS_ENDPOINT = `${API_BASE_URL}/api/v1/business_details`;
+/** POST JSON `{ profile_uid, uids: profile_personal_uid[] }` → referral-network degree per profile */
+export const PROFILE_CONNECTION_DEGREES_ENDPOINT = `${API_BASE_URL}/api/v1/profile_connection_degrees`;
 export const PROFILE_VIEWS_ENDPOINT = `${API_BASE_URL}/api/v1/profile_views`;
 export const BUSINESS_TAG_SEARCH_ENDPOINT = `${API_BASE_URL}/api/v1/businesstagsearch`;
 export const BUSINESS_SERVICE_PURCHASE_ENDPOINT = `${API_BASE_URL}/business/service/purchase`;
@@ -61,6 +63,11 @@ export const BUSINESS_RESULTS_ENDPOINT = `${SEARCH_BASE_URL}/search_business`;
 export const EXPERTISE_RESULTS_ENDPOINT = `${SEARCH_BASE_URL}/search_expertise`;
 export const WISHES_RESULTS_ENDPOINT = `${SEARCH_BASE_URL}/search_wishes`;
 export const SEARCH_GLOBAL_ENDPOINT = `${SEARCH_BASE_URL}/search_global`;
+/** GET ?q=...&limit=8 — autocomplete suggestions (tags by default; source swappable server-side) */
+export const SEARCH_SUGGEST_ENDPOINT = `${SEARCH_BASE_URL}/search_suggest`;
+
+/** Default max rows returned per search request when the client does not override `limit`. */
+export const SEARCH_RESULT_LIMIT = 120;
 
 export const BOUNTY_RESULTS_ENDPOINT = `${API_BASE_URL}/api/bountyresults`;
 export const BUSINESS_BOUNTY_RESULTS_ENDPOINT = `${API_BASE_URL}/api/business-bountyresults`;

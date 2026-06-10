@@ -13,7 +13,7 @@ import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
-import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, BUSINESS_CLAIM_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 
@@ -123,6 +123,30 @@ const DUMMY_LOCATIONS = [
   { name: "Dummy C — Golden Gate Park, SF", lat: 37.7694, lng: -122.4862 }, // ~5.1 mi from A ✗
 ];
 
+const LOCATION_PICKER_OPTIONS = [...DUMMY_LOCATIONS, { name: "Live GPS" }];
+
+/** Resolve lat/lng from a picker option (preset or Live GPS). */
+async function resolveLocationOptionCoords(option) {
+  if (option.name === "Live GPS") {
+    if (isWeb) {
+      return new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          (err) => reject(err),
+          { timeout: 10000 },
+        );
+      });
+    }
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== "granted") {
+      throw new Error("Location permission denied");
+    }
+    const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    return { lat: loc.coords.latitude, lng: loc.coords.longitude };
+  }
+  return { lat: option.lat, lng: option.lng };
+}
+
 /** Two tappable labels (Edit Profile–style) instead of a Switch. */
 function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMode, variant = "yesNo" }) {
   const leftOn = !value;
@@ -174,6 +198,11 @@ export default function SettingsScreen() {
   const [locationPickerVisible, setLocationPickerVisible] = useState(false);
   const [locationUpdating, setLocationUpdating] = useState(null); // key of option being saved
   const [storedCoords, setStoredCoords] = useState({ lat: null, lng: null, updatedAt: null });
+
+  // Home address coordinates (profile_personal_latitude / profile_personal_longitude)
+  const [homeAddressPickerVisible, setHomeAddressPickerVisible] = useState(false);
+  const [homeAddressUpdating, setHomeAddressUpdating] = useState(null);
+  const [homeAddressCoords, setHomeAddressCoords] = useState({ lat: null, lng: null });
   const [nearbyPrivacyModalVisible, setNearbyPrivacyModalVisible] = useState(false);
 
   // Live location sharing refs (stable across renders — no state needed)
@@ -584,6 +613,11 @@ export default function SettingsScreen() {
           if (nearbyLat != null && nearbyLng != null) {
             setStoredCoords({ lat: nearbyLat, lng: nearbyLng, updatedAt: nearbyAt });
           }
+          const homeLat = result.personal_info.profile_personal_latitude;
+          const homeLng = result.personal_info.profile_personal_longitude;
+          if (homeLat != null && homeLng != null) {
+            setHomeAddressCoords({ lat: homeLat, lng: homeLng });
+          }
         }
       } catch (e) {
         console.error("Error loading cached profile for settings:", e);
@@ -895,37 +929,7 @@ export default function SettingsScreen() {
 
     setLocationUpdating(option.name);
     try {
-      let lat, lng;
-
-      if (option.name === "Live GPS") {
-        if (isWeb) {
-          await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(
-              (pos) => {
-                lat = pos.coords.latitude;
-                lng = pos.coords.longitude;
-                resolve();
-              },
-              (err) => reject(err),
-              { timeout: 10000 },
-            );
-          });
-        } else {
-          const { status } = await Location.requestForegroundPermissionsAsync();
-          if (status !== "granted") {
-            Alert.alert("Permission Denied", "Location permission is required to use Live GPS.");
-            setLocationUpdating(null);
-            return;
-          }
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          lat = loc.coords.latitude;
-          lng = loc.coords.longitude;
-        }
-      } else {
-        lat = option.lat;
-        lng = option.lng;
-      }
-
+      const { lat, lng } = await resolveLocationOptionCoords(option);
       const success = await patchNearbyLocation(profileId, lat, lng, true);
       if (success) {
         setLocationPickerVisible(false);
@@ -934,9 +938,64 @@ export default function SettingsScreen() {
       }
     } catch (err) {
       console.error("updateLocation error:", err);
-      Alert.alert("Error", "Could not update location. Please try again.");
+      const msg = err?.message === "Location permission denied" ? "Location permission is required to use Live GPS." : "Could not update location. Please try again.";
+      Alert.alert("Error", msg);
     } finally {
       setLocationUpdating(null);
+    }
+  };
+
+  const patchHomeAddressCoordinates = async (profileId, lat, lng) => {
+    try {
+      const formData = new FormData();
+      formData.append("profile_uid", profileId);
+      formData.append("profile_personal_latitude", String(lat));
+      formData.append("profile_personal_longitude", String(lng));
+
+      const response = await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(profileId)}`, {
+        method: "PUT",
+        body: formData,
+      });
+      const result = await response.json();
+      if (response.ok && (result.code === 200 || result.code === undefined)) {
+        setHomeAddressCoords({ lat, lng });
+        try {
+          const { refreshSessionProfileFromNetwork } = require("../utils/sessionProfile");
+          await refreshSessionProfileFromNetwork(profileId);
+        } catch (e) {
+          console.warn("patchHomeAddressCoordinates: cache refresh failed", e);
+        }
+        return true;
+      }
+    } catch (err) {
+      console.error("patchHomeAddressCoordinates error:", err);
+    }
+    return false;
+  };
+
+  const updateHomeAddressLocation = async (option) => {
+    const profileId = await AsyncStorage.getItem("profile_uid");
+    if (!profileId) {
+      Alert.alert("Error", "No profile found. Please log in again.");
+      return;
+    }
+
+    setHomeAddressUpdating(option.name);
+    try {
+      const { lat, lng } = await resolveLocationOptionCoords(option);
+      const success = await patchHomeAddressCoordinates(profileId, lat, lng);
+      if (success) {
+        setHomeAddressPickerVisible(false);
+        Alert.alert("Success", "Home address coordinates updated.");
+      } else {
+        Alert.alert("Error", "Failed to update home address coordinates.");
+      }
+    } catch (err) {
+      console.error("updateHomeAddressLocation error:", err);
+      const msg = err?.message === "Location permission denied" ? "Location permission is required to use Live GPS." : "Could not update home address. Please try again.";
+      Alert.alert("Error", msg);
+    } finally {
+      setHomeAddressUpdating(null);
     }
   };
 
@@ -1159,10 +1218,27 @@ export default function SettingsScreen() {
                   <MaterialIcons name='my-location' size={20} style={styles.icon} color={COLORS.primary} />
                   <View>
                     <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
-                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Update My Location</Text>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Update Nearby Location</Text>
                     </Text>
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
                       {storedCoords.lat != null ? `${parseFloat(storedCoords.lat).toFixed(5)}, ${parseFloat(storedCoords.lng).toFixed(5)}` : "No location set"}
+                    </Text>
+                  </View>
+                </View>
+                <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setHomeAddressPickerVisible(true)} activeOpacity={0.8}>
+                <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
+                  <MaterialIcons name='home' size={20} style={styles.icon} color={COLORS.primary} />
+                  <View>
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                      <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Home Address Coordinates</Text>
+                    </Text>
+                    <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
+                      {homeAddressCoords.lat != null
+                        ? `${parseFloat(homeAddressCoords.lat).toFixed(5)}, ${parseFloat(homeAddressCoords.lng).toFixed(5)}`
+                        : "No home coordinates set"}
                     </Text>
                   </View>
                 </View>
@@ -1480,14 +1556,16 @@ export default function SettingsScreen() {
         </ScrollView>
       </SafeAreaView>
 
-      {/* Location Picker Modal */}
+      {/* Nearby location picker modal */}
       <Modal visible={locationPickerVisible} transparent={true} animationType='slide' onRequestClose={() => setLocationPickerVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox]}>
-            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Choose a Location</Text>
-            <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>Dummy A &amp; B are within 1 mile of each other.{"\n"}Dummy C is ~5 miles away.</Text>
+            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Choose Nearby Location</Text>
+            <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>
+              Updates your temporary nearby location (expires in 1 hour).{"\n"}Dummy A &amp; B are within 1 mile; Dummy C is ~5 miles away.
+            </Text>
 
-            {[...DUMMY_LOCATIONS, { name: "Live GPS" }].map((option) => (
+            {LOCATION_PICKER_OPTIONS.map((option) => (
               <TouchableOpacity
                 key={option.name}
                 style={[styles.locationOptionRow, darkMode && styles.darkLocationOptionRow]}
@@ -1501,6 +1579,35 @@ export default function SettingsScreen() {
             ))}
 
             <TouchableOpacity onPress={() => setLocationPickerVisible(false)} style={[styles.closeModalButton, { marginTop: 16, alignSelf: "stretch" }]} disabled={locationUpdating !== null}>
+              <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Home address coordinates picker modal */}
+      <Modal visible={homeAddressPickerVisible} transparent={true} animationType='slide' onRequestClose={() => setHomeAddressPickerVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox]}>
+            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Choose Home Address</Text>
+            <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>
+              Saves permanent profile coordinates used for search and distance.{"\n"}Separate from nearby live location sharing.
+            </Text>
+
+            {LOCATION_PICKER_OPTIONS.map((option) => (
+              <TouchableOpacity
+                key={`home-${option.name}`}
+                style={[styles.locationOptionRow, darkMode && styles.darkLocationOptionRow]}
+                onPress={() => updateHomeAddressLocation(option)}
+                disabled={homeAddressUpdating !== null}
+              >
+                <MaterialIcons name={option.name === "Live GPS" ? "gps-fixed" : "home"} size={20} color={COLORS.primary} style={{ marginRight: 10 }} />
+                <Text style={[styles.locationOptionText, darkMode && styles.darkItemText]}>{option.name}</Text>
+                {homeAddressUpdating === option.name && <ActivityIndicator size='small' color={COLORS.primary} style={{ marginLeft: "auto" }} />}
+              </TouchableOpacity>
+            ))}
+
+            <TouchableOpacity onPress={() => setHomeAddressPickerVisible(false)} style={[styles.closeModalButton, { marginTop: 16, alignSelf: "stretch" }]} disabled={homeAddressUpdating !== null}>
               <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Cancel</Text>
             </TouchableOpacity>
           </View>

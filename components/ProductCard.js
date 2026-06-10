@@ -15,7 +15,7 @@ const parseTags = (raw) => {
     .filter(Boolean);
 };
 
-const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, darkMode, businessUid }) => {
+const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, businessUid }) => {
   const tags = useMemo(() => parseTags(service.bs_tags), [service.bs_tags]);
 
   const productImageUri = useMemo(() => {
@@ -84,6 +84,11 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
   }, [service.bs_free_shipping, service.bs_buyer_pays_shipping, service.bs_shipping]);
 
   /** When bs_is_taxable is on, show bs_tax_rate as a percent (e.g. "4.00" → "Tax rate: 4.00%"). */
+  const skuLine = useMemo(() => {
+    const s = service.bs_sku != null ? String(service.bs_sku).trim() : "";
+    return s ? `SKU: ${s}` : null;
+  }, [service.bs_sku]);
+
   const taxRateLine = useMemo(() => {
     const v = service.bs_is_taxable;
     const taxable = v === true || v === 1 || v === "1" || (typeof v === "string" && ["true", "yes"].includes(v.trim().toLowerCase()));
@@ -122,13 +127,13 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
           service,
           darkMode,
           showEditButton,
-          showOwnerTags,
           onEdit,
           thumbSource,
           metaTextStyle,
           tagChipTextStyle,
           tags,
           quantityLine,
+          skuLine,
           conditionLine,
           shippingLine,
           taxRateLine,
@@ -144,13 +149,13 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, showOwnerTags, 
         service,
         darkMode,
         showEditButton,
-        showOwnerTags,
         onEdit,
         thumbSource,
         metaTextStyle,
         tagChipTextStyle,
         tags,
         quantityLine,
+        skuLine,
         conditionLine,
         shippingLine,
         taxRateLine,
@@ -207,13 +212,13 @@ function renderProductCardBody({
   service,
   darkMode,
   showEditButton,
-  showOwnerTags,
   onEdit,
   thumbSource,
   metaTextStyle,
   tagChipTextStyle,
   tags,
   quantityLine,
+  skuLine,
   conditionLine,
   shippingLine,
   taxRateLine,
@@ -310,11 +315,12 @@ function renderProductCardBody({
             </View>
           );
         })()}
+        {skuLine ? <Text style={metaTextStyle}>{skuLine}</Text> : null}
         {conditionLine ? <Text style={metaTextStyle}>{conditionLine}</Text> : null}
         {shippingLine ? <Text style={metaTextStyle}>{shippingLine}</Text> : null}
         {taxRateLine ? <Text style={metaTextStyle}>{taxRateLine}</Text> : null}
         {ccFeeBuyerLine ? <Text style={metaTextStyle}>{ccFeeBuyerLine}</Text> : null}
-        {showOwnerTags && tags.length > 0 ? (
+        {tags.length > 0 ? (
           <View style={styles.tagsRow}>
             {tags.map((tag, i) => (
               <View key={`${tag}-${i}`} style={[styles.tagChip, darkMode && styles.tagChipDark]}>
