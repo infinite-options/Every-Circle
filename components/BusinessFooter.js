@@ -3,10 +3,11 @@ import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useDarkMode } from "../contexts/DarkModeContext";
 
-const BusinessFooter = ({ activeStep, onBack, onContinue, onSubmit, totalSteps = 5 }) => {
+const BusinessFooter = ({ activeStep, onBack, onContinue, onSubmit, totalSteps = 5, submitDisabled = false }) => {
   const { darkMode } = useDarkMode();
   const isFirstStep = activeStep === 0;
   const isLastStep = activeStep === totalSteps - 1;
+  const isSubmitBlocked = isLastStep && submitDisabled;
 
   return (
     <SafeAreaView edges={["bottom"]} style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
@@ -18,8 +19,18 @@ const BusinessFooter = ({ activeStep, onBack, onContinue, onSubmit, totalSteps =
             </TouchableOpacity>
           )}
           {isLastStep ? (
-            <TouchableOpacity style={[styles.submitButton, darkMode && styles.darkSubmitButton]} onPress={onSubmit}>
-              <Text style={[styles.buttonText, darkMode && styles.darkButtonText]}>Submit</Text>
+            <TouchableOpacity
+              style={[
+                styles.submitButton,
+                darkMode && styles.darkSubmitButton,
+                isSubmitBlocked && styles.submitButtonDisabled,
+                isSubmitBlocked && darkMode && styles.darkSubmitButtonDisabled,
+              ]}
+              onPress={isSubmitBlocked ? undefined : onSubmit}
+              disabled={isSubmitBlocked}
+              accessibilityState={{ disabled: isSubmitBlocked }}
+            >
+              <Text style={[styles.buttonText, darkMode && styles.darkButtonText, isSubmitBlocked && styles.buttonTextDisabled]}>Submit</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity style={[styles.continueButton, darkMode && styles.darkContinueButton]} onPress={onContinue}>
@@ -101,6 +112,16 @@ const styles = StyleSheet.create({
   },
   darkSubmitButton: {
     backgroundColor: "#800000",
+  },
+  submitButtonDisabled: {
+    backgroundColor: "#b0b0b0",
+    opacity: 0.7,
+  },
+  darkSubmitButtonDisabled: {
+    backgroundColor: "#555",
+  },
+  buttonTextDisabled: {
+    color: "#e8e8e8",
   },
   darkButtonText: {
     color: "#ffffff",

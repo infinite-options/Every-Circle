@@ -24,6 +24,7 @@ import {
 import { parsePrice } from "../utils/priceUtils";
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
 import { getBusinessSuggestions, getPlaceDetails } from "../utils/googlePlaces";
+import { parseBusinessGooglePhotos, resolveBusinessProfileImage } from "../utils/resolveBusinessProfileImage";
 
 const BusinessProfileAPI = BUSINESS_INFO_ENDPOINT;
 const DEFAULT_BUSINESS_IMAGE = require("../assets/profile.png");
@@ -289,15 +290,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   // Business profile image state (backend: business_profile_img, delete_business_profile_img, business_profile_img_is_public)
   // Profile image comes from business_profile_img; other images stay in business_images_url
-  const initialProfileImage = (() => {
-    if (business?.business_profile_img && String(business.business_profile_img).trim() !== "") {
-      return business.business_profile_img;
-    }
-    if (business?.images && Array.isArray(business.images) && business.images.length > 0) {
-      return business.images[0];
-    }
-    return business?.business_image || business?.business_profile_image || "";
-  })();
+  const initialProfileImage = resolveBusinessProfileImage(business) || "";
   const [originalBusinessImage, setOriginalBusinessImage] = useState(initialProfileImage);
   const [businessImage, setBusinessImage] = useState(initialProfileImage);
   const [businessImageUri, setBusinessImageUri] = useState(initialProfileImage);
@@ -443,7 +436,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       return [];
     })(),
     // Business image is now handled separately in state (like EditProfileScreen)
-    businessGooglePhotos: Array.isArray(business?.businessGooglePhotos) ? business.businessGooglePhotos : [],
+    businessGooglePhotos: Array.isArray(business?.businessGooglePhotos)
+      ? business.businessGooglePhotos
+      : parseBusinessGooglePhotos(business?.business_google_photos),
     // BUSINESS-SPECIFIC: Social links as object with nested properties (EditProfileScreen has separate fields: facebook, twitter, linkedin, youtube)
     socialLinks: {
       facebook: business?.facebook || "",

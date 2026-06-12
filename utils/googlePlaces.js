@@ -93,6 +93,14 @@ function _ac(components, type) {
   return c ? c.long_name : null;
 }
 
+const MAX_PLACE_PHOTOS = 10;
+
+function _photoUrlsFromReferences(photos) {
+  return (photos || [])
+    .slice(0, MAX_PLACE_PHOTOS)
+    .map((p) => `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${p.photo_reference}&key=${PLACES_KEY}`);
+}
+
 /** Parse address_components into the fields the DB expects */
 function _parseAddressComponents(components) {
   return {
@@ -106,49 +114,74 @@ function _parseAddressComponents(components) {
   };
 }
 
+async function _photoUrlsFromPlaceId(placeId) {
+  try {
+    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&key=${PLACES_KEY}&fields=photos`;
+    const res = await fetch(url);
+    const json = await res.json();
+    const refs = _photoUrlsFromReferences(json.result?.photos);
+    if (refs.length > 0) return refs;
+  } catch (e) {
+    console.warn("[Places] REST photo lookup failed:", e);
+  }
+  return [];
+}
+
 // ─── getPlaceDetails ──────────────────────────────────────────────────────────
 export async function getPlaceDetails(placeId) {
   if (Platform.OS === "web") {
     try {
       await loadGoogleMapsApi();
-      return await new Promise((resolve) => {
-        // PlacesService requires a DOM element attached to the page
+      const place = await new Promise((resolve) => {
         const dummy = document.createElement("div");
         document.body.appendChild(dummy);
         const svc = new window.google.maps.places.PlacesService(dummy);
         svc.getDetails(
-          { placeId, fields: ["name", "formatted_address", "address_components", "geometry", "formatted_phone_number", "website"] },
-          (place, status) => {
+          { placeId, fields: ["name", "formatted_address", "address_components", "geometry", "formatted_phone_number", "website", "photos", "rating"] },
+          (result, status) => {
             document.body.removeChild(dummy);
-            if (!place || status !== window.google.maps.places.PlacesServiceStatus.OK) {
+            if (!result || status !== window.google.maps.places.PlacesServiceStatus.OK) {
               console.warn("[Places] getDetails status:", status);
-              resolve({});
+              resolve(null);
               return;
             }
-            const addr = _parseAddressComponents(place.address_components);
-            resolve({
-              name: place.name,
-              formatted_address: place.formatted_address,
-              address_line_1: addr.number ? `${addr.number} ${addr.street}` : (addr.street || null),
-              city:    addr.city,
-              state:   addr.state,
-              country: addr.country,
-              zip:     addr.zip,
-              lat: place.geometry?.location?.lat(),
-              lng: place.geometry?.location?.lng(),
-              phone: place.formatted_phone_number,
-              website: place.website,
-            });
+            resolve(result);
           }
         );
       });
+
+      if (!place) return {};
+
+      const addr = _parseAddressComponents(place.address_components);
+      let photo_urls = await _photoUrlsFromPlaceId(placeId);
+      if (photo_urls.length === 0) {
+        photo_urls = (place.photos || [])
+          .slice(0, MAX_PLACE_PHOTOS)
+          .map((p) => p.getUrl({ maxWidth: 400 }));
+      }
+
+      return {
+        name: place.name,
+        formatted_address: place.formatted_address,
+        address_line_1: addr.number ? `${addr.number} ${addr.street}` : (addr.street || null),
+        city:    addr.city,
+        state:   addr.state,
+        country: addr.country,
+        zip:     addr.zip,
+        lat: place.geometry?.location?.lat(),
+        lng: place.geometry?.location?.lng(),
+        phone: place.formatted_phone_number,
+        website: place.website,
+        rating: place.rating ?? null,
+        photo_urls,
+      };
     } catch (e) {
       console.error("[Places] web getDetails error:", e);
       return {};
     }
   } else {
     try {
-      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&key=${PLACES_KEY}&fields=name,formatted_address,address_components,geometry,formatted_phone_number,website`;
+      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&key=${PLACES_KEY}&fields=name,formatted_address,address_components,geometry,formatted_phone_number,website,photos,rating`;
       const res = await fetch(url);
       const json = await res.json();
       const pd = json.result || {};
@@ -165,6 +198,8 @@ export async function getPlaceDetails(placeId) {
         lng: pd.geometry?.location?.lng,
         phone: pd.formatted_phone_number,
         website: pd.website,
+        rating: pd.rating ?? null,
+        photo_urls: _photoUrlsFromReferences(pd.photos),
       };
     } catch (e) {
       console.error("[Places] native getDetails error:", e);

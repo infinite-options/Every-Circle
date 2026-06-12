@@ -1,5 +1,5 @@
 // BusinessSetupController.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, Alert, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
@@ -91,6 +91,12 @@ export default function BusinessSetupController({ navigation, route }) {
   const [userUid, setUserUid] = useState(null);
   const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState(getInitialFormData());
+  const formDataRef = useRef(formData);
+  const [step2HasPendingTags, setStep2HasPendingTags] = useState(false);
+
+  useEffect(() => {
+    formDataRef.current = formData;
+  }, [formData]);
 
   // Reset form when screen is focused to ensure fresh start for new business
   useFocusEffect(
@@ -189,6 +195,11 @@ export default function BusinessSetupController({ navigation, route }) {
   };
 
   const handleContinue = () => {
+    if (activeStep === 2 && step2HasPendingTags) {
+      Alert.alert("Unsaved Tags", "Click Add to save your custom tags, or clear the tag field before submitting.");
+      return;
+    }
+
     if (validateCurrentStep()) {
       if (activeStep < 2) {
         setActiveStep((prev) => prev + 1);
@@ -212,105 +223,109 @@ export default function BusinessSetupController({ navigation, route }) {
     }
   };
 
+  const formatBusinessCategoryId = (categoryId) => {
+    if (Array.isArray(categoryId)) return categoryId.filter(Boolean).join(",");
+    return categoryId || "";
+  };
+
   const submitBusinessData = async () => {
     try {
+      const currentFormData = formDataRef.current;
+      const customTags = currentFormData.customTags || [];
+
       // Build payload object for logging
       const payloadData = {
         user_uid: userUid,
-        business_name: formData.businessName,
-        business_location: formData.location || formData.addressLine1 || "",
-        business_phone_number: formData.phoneNumber,
-        business_ein_number: formData.einNumber,
-        business_address_line_1: formData.addressLine1,
-        business_address_line_2: formData.addressLine2,
-        business_city: formData.city,
-        business_state: formData.state,
-        business_country: formData.country,
-        business_zip_code: formData.zip,
-        business_latitude: formData.latitude,
-        business_longitude: formData.longitude,
-        business_short_bio: formData.shortBio,
-        business_tag_line: formData.tagLine,
-        business_category_id: formData.businessCategoryId,
-        business_google_rating: formData.googleRating,
-        business_google_photos: JSON.stringify(formData.businessGooglePhotos),
-        business_price_level: formData.priceLevel,
-        business_google_id: formData.googleId,
-        business_yelp: formData.yelp,
-        business_website: formData.website,
-        business_is_active: formData.business_is_active,
-        business_email_id_is_public: formData.business_email_id_is_public,
-        business_phone_number_is_public: formData.business_phone_number_is_public,
-        business_tag_line_is_public: formData.business_tag_line_is_public,
-        business_short_bio_is_public: formData.business_short_bio_is_public,
-        business_images_is_public: formData.business_images_is_public,
-        business_banner_ads_is_public: formData.business_banner_ad_is_public,
-        business_services_is_public: formData.business_services_is_public,
-        business_owners_is_public: formData.business_owners_is_public,
-        business_services: JSON.stringify(formData.business_services || []),
-        business_images_url: formData.images && formData.images.length > 0 ? `[${formData.images.length} user-uploaded image(s)]` : "[]",
-        user_uploaded_images_count: formData.images ? formData.images.length : 0,
-        custom_tags: JSON.stringify(formData.customTags || []),
+        business_name: currentFormData.businessName,
+        business_location: currentFormData.location || currentFormData.addressLine1 || "",
+        business_phone_number: currentFormData.phoneNumber,
+        business_ein_number: currentFormData.einNumber,
+        business_address_line_1: currentFormData.addressLine1,
+        business_address_line_2: currentFormData.addressLine2,
+        business_city: currentFormData.city,
+        business_state: currentFormData.state,
+        business_country: currentFormData.country,
+        business_zip_code: currentFormData.zip,
+        business_latitude: currentFormData.latitude,
+        business_longitude: currentFormData.longitude,
+        business_short_bio: currentFormData.shortBio,
+        business_tag_line: currentFormData.tagLine,
+        business_category_id: formatBusinessCategoryId(currentFormData.businessCategoryId),
+        business_google_rating: currentFormData.googleRating,
+        business_google_photos: JSON.stringify(currentFormData.businessGooglePhotos),
+        business_favorite_image: currentFormData.favImage || "",
+        business_price_level: currentFormData.priceLevel,
+        business_google_id: currentFormData.googleId,
+        business_yelp: currentFormData.yelp,
+        business_website: currentFormData.website,
+        business_is_active: currentFormData.business_is_active,
+        business_email_id_is_public: currentFormData.business_email_id_is_public,
+        business_phone_number_is_public: currentFormData.business_phone_number_is_public,
+        business_tag_line_is_public: currentFormData.business_tag_line_is_public,
+        business_short_bio_is_public: currentFormData.business_short_bio_is_public,
+        business_images_is_public: currentFormData.business_images_is_public,
+        business_banner_ads_is_public: currentFormData.business_banner_ad_is_public,
+        business_services_is_public: currentFormData.business_services_is_public,
+        business_owners_is_public: currentFormData.business_owners_is_public,
+        business_services: JSON.stringify(currentFormData.business_services || []),
+        business_images_url: currentFormData.images && currentFormData.images.length > 0 ? `[${currentFormData.images.length} user-uploaded image(s)]` : "[]",
+        user_uploaded_images_count: currentFormData.images ? currentFormData.images.length : 0,
+        custom_tags: JSON.stringify(customTags),
       };
 
       // Create FormData and append all fields
       const data = new FormData();
       data.append("user_uid", userUid);
-      data.append("business_name", formData.businessName);
-      data.append("business_location", formData.location || formData.addressLine1 || "");
-      data.append("business_phone_number", formData.phoneNumber);
-      data.append("business_ein_number", formData.einNumber);
-      data.append("business_address_line_1", formData.addressLine1);
-      data.append("business_address_line_2", formData.addressLine2); // Optional
-      data.append("business_city", formData.city);
-      data.append("business_state", formData.state);
-      data.append("business_country", formData.country);
-      data.append("business_zip_code", formData.zip);
-      data.append("business_latitude", formData.latitude);
-      data.append("business_longitude", formData.longitude);
-      data.append("business_short_bio", formData.shortBio);
-      data.append("business_tag_line", formData.tagLine);
-      data.append("business_role", formData.businessRole);
-      data.append("business_category_id", formData.businessCategoryId);
-      // data.append('business_google_photos', JSON.stringify(formData.images));
-      data.append("custom_tags", JSON.stringify(formData.customTags || []));
-      // data.append('business_categories_id', JSON.stringify(formData.categories));
-      data.append("business_google_rating", formData.googleRating);
-      data.append("business_google_photos", JSON.stringify(formData.businessGooglePhotos));
-      // data.append('business_fav_image', formData.favImage);
-      data.append("business_price_level", formData.priceLevel);
-      data.append("business_google_id", formData.googleId);
-      data.append("business_yelp", formData.yelp);
-      data.append("business_website", formData.website);
-      // Facebook, Twitter, LinkedIn, Youtube
-      // data.append('business_facebook', formData.socialLinks.facebook);
-      // data.append('business_twitter', formData.socialLinks.twitter);
-      // data.append('business_linkedin', formData.socialLinks.linkedin);
-      // data.append('business_youtube', formData.socialLinks.youtube);
+      data.append("business_name", currentFormData.businessName);
+      data.append("business_location", currentFormData.location || currentFormData.addressLine1 || "");
+      data.append("business_phone_number", currentFormData.phoneNumber);
+      data.append("business_ein_number", currentFormData.einNumber);
+      data.append("business_address_line_1", currentFormData.addressLine1);
+      data.append("business_address_line_2", currentFormData.addressLine2); // Optional
+      data.append("business_city", currentFormData.city);
+      data.append("business_state", currentFormData.state);
+      data.append("business_country", currentFormData.country);
+      data.append("business_zip_code", currentFormData.zip);
+      data.append("business_latitude", currentFormData.latitude);
+      data.append("business_longitude", currentFormData.longitude);
+      data.append("business_short_bio", currentFormData.shortBio);
+      data.append("business_tag_line", currentFormData.tagLine);
+      data.append("business_role", currentFormData.businessRole);
+      data.append("business_category_id", formatBusinessCategoryId(currentFormData.businessCategoryId));
+      data.append("custom_tags", JSON.stringify(customTags));
+      data.append("business_google_rating", currentFormData.googleRating);
+      data.append("business_google_photos", JSON.stringify(currentFormData.businessGooglePhotos));
+      if (currentFormData.favImage) {
+        data.append("business_favorite_image", currentFormData.favImage);
+      }
+      data.append("business_price_level", currentFormData.priceLevel);
+      data.append("business_google_id", currentFormData.googleId);
+      data.append("business_yelp", currentFormData.yelp);
+      data.append("business_website", currentFormData.website);
 
-      data.append("business_is_active", formData.business_is_active);
+      data.append("business_is_active", currentFormData.business_is_active);
 
-      data.append("business_email_id_is_public", formData.business_email_id_is_public);
-      data.append("business_phone_number_is_public", formData.business_phone_number_is_public);
-      data.append("business_tag_line_is_public", formData.business_tag_line_is_public);
-      data.append("business_short_bio_is_public", formData.business_short_bio_is_public);
-      data.append("business_images_is_public", formData.business_images_is_public);
-      data.append("business_banner_ads_is_public", formData.business_banner_ad_is_public);
-      data.append("business_short_bio_is_public", formData.business_short_bio_is_public);
-      data.append("business_services_is_public", formData.business_services_is_public);
-      data.append("business_owners_is_public", formData.business_owners_is_public);
+      data.append("business_email_id_is_public", currentFormData.business_email_id_is_public);
+      data.append("business_phone_number_is_public", currentFormData.business_phone_number_is_public);
+      data.append("business_tag_line_is_public", currentFormData.business_tag_line_is_public);
+      data.append("business_short_bio_is_public", currentFormData.business_short_bio_is_public);
+      data.append("business_images_is_public", currentFormData.business_images_is_public);
+      data.append("business_banner_ads_is_public", currentFormData.business_banner_ad_is_public);
+      data.append("business_short_bio_is_public", currentFormData.business_short_bio_is_public);
+      data.append("business_services_is_public", currentFormData.business_services_is_public);
+      data.append("business_owners_is_public", currentFormData.business_owners_is_public);
 
       // Add business_services array as JSON string
-      data.append("business_services", JSON.stringify(formData.business_services || []));
+      data.append("business_services", JSON.stringify(currentFormData.business_services || []));
 
       // Append user-uploaded images as files (supports file://, content://, blob:, data: URIs)
-      if (formData.images && formData.images.length > 0) {
+      if (currentFormData.images && currentFormData.images.length > 0) {
         const userImageFilenames = [];
         const isWeb = Platform.OS === "web";
         const isBlobOrDataUri = (uri) => uri && (uri.startsWith("blob:") || uri.startsWith("data:"));
 
-        for (let index = 0; index < formData.images.length; index++) {
-          const imageUri = formData.images[index];
+        for (let index = 0; index < currentFormData.images.length; index++) {
+          const imageUri = currentFormData.images[index];
           if (!imageUri || typeof imageUri !== "string") continue;
 
           let fileType = "jpg";
@@ -355,9 +370,30 @@ export default function BusinessSetupController({ navigation, route }) {
         if (userImageFilenames.length > 0) {
           data.append("business_images_url", JSON.stringify(userImageFilenames));
         }
+      } else if (currentFormData.favImage) {
+        const isWeb = Platform.OS === "web";
+        try {
+          const response = await fetch(currentFormData.favImage);
+          const blob = await response.blob();
+          const mimeType = blob.type || "image/jpeg";
+          const fileType = mimeType.split("/")[1] === "jpeg" ? "jpg" : mimeType.split("/")[1] || "jpg";
+          const profileFileName = `business_profile_img.${fileType}`;
+
+          if (isWeb) {
+            data.append("business_profile_img", new File([blob], profileFileName, { type: mimeType }));
+          } else {
+            data.append("business_profile_img", {
+              uri: currentFormData.favImage,
+              type: mimeType,
+              name: profileFileName,
+            });
+          }
+        } catch (err) {
+          console.error("Failed to upload selected Google image as business profile image:", err);
+        }
       }
 
-      data.append("business_profile_img_is_public", formData.business_images_is_public);
+      data.append("business_profile_img_is_public", currentFormData.business_images_is_public);
 
       // ============================================
       // CONSOLE LOGS FOR DEBUGGING / POSTMAN TESTING
@@ -453,7 +489,14 @@ export default function BusinessSetupController({ navigation, route }) {
       case 1:
         return <BusinessStep1 formData={formData} setFormData={setFormData} navigation={navigation} />;
       case 2:
-        return <BusinessStep2 formData={formData} setFormData={setFormData} navigation={navigation} />;
+        return (
+          <BusinessStep2
+            formData={formData}
+            setFormData={setFormData}
+            navigation={navigation}
+            onPendingTagsChange={setStep2HasPendingTags}
+          />
+        );
       case 3:
         return <BusinessStep3 formData={formData} setFormData={setFormData} navigation={navigation} />;
       case 4:
@@ -467,7 +510,14 @@ export default function BusinessSetupController({ navigation, route }) {
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       <AppHeader title='Business Setup' backgroundColor='#FF9500' onBackPress={handleHeaderBack} />
       {renderStep()}
-      <BusinessFooter activeStep={activeStep} onBack={handleBack} onContinue={handleContinue} onSubmit={handleContinue} totalSteps={3} />
+      <BusinessFooter
+        activeStep={activeStep}
+        onBack={handleBack}
+        onContinue={handleContinue}
+        onSubmit={handleContinue}
+        totalSteps={3}
+        submitDisabled={activeStep === 2 && step2HasPendingTags}
+      />
       <BottomNavBar navigation={navigation} />
     </View>
   );

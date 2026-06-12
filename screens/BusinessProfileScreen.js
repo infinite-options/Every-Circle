@@ -17,6 +17,13 @@ import { parsePrice } from "../utils/priceUtils";
 import { getHeaderColors } from "../config/headerColors";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
+import { parseBusinessGooglePhotos, resolveBusinessProfileImage } from "../utils/resolveBusinessProfileImage";
+import { getPlaceDetails } from "../utils/googlePlaces";
+
+function isEphemeralGooglePhotoUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  return url.includes("PhotoService.GetPhoto") || url.includes("place/js/PhotoService");
+}
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import { getSessionProfile } from "../utils/sessionProfile";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
@@ -277,20 +284,19 @@ export default function BusinessProfileScreen({ route, navigation }) {
         }
       }
 
-      // Handle business_google_photos
-      let businessImages = [];
-      if (rawBusiness.business_google_photos) {
-        if (typeof rawBusiness.business_google_photos === "string") {
-          try {
-            businessImages = JSON.parse(rawBusiness.business_google_photos);
-          } catch (e) {
-            console.log("Failed to parse business_google_photos as JSON, treating as single URL");
-            businessImages = [rawBusiness.business_google_photos];
+      let googlePhotos = parseBusinessGooglePhotos(rawBusiness.business_google_photos);
+      const needsPhotoRefresh = googlePhotos.some(isEphemeralGooglePhotoUrl) || isEphemeralGooglePhotoUrl(rawBusiness.business_favorite_image);
+      if (needsPhotoRefresh && rawBusiness.business_google_id) {
+        try {
+          const pd = await getPlaceDetails(rawBusiness.business_google_id);
+          if (pd.photo_urls?.length > 0) {
+            googlePhotos = pd.photo_urls;
           }
-        } else if (Array.isArray(rawBusiness.business_google_photos)) {
-          businessImages = rawBusiness.business_google_photos;
+        } catch (e) {
+          console.warn("BusinessProfileScreen - could not refresh Google photo URLs:", e);
         }
       }
+      let businessImages = [...googlePhotos];
 
       // Handle business_images_url - other/gallery images only (profile image comes from business_profile_img)
       if (rawBusiness.business_images_url) {
@@ -319,19 +325,21 @@ export default function BusinessProfileScreen({ route, navigation }) {
         businessImages = [...uploadedImages, ...businessImages];
       }
 
-      // Profile image URL (backend business_profile_img) - separate from gallery; used for header and MiniCard
-      const businessProfileImgUrl = rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
+      let businessProfileImgUrl = resolveBusinessProfileImage({
+        ...rawBusiness,
+        business_google_photos: googlePhotos,
+      });
+      if (isEphemeralGooglePhotoUrl(businessProfileImgUrl) && googlePhotos.length > 0) {
+        const favorite = rawBusiness.business_favorite_image ? String(rawBusiness.business_favorite_image).trim() : "";
+        const favoriteIdx = favorite ? parseBusinessGooglePhotos(rawBusiness.business_google_photos).indexOf(favorite) : -1;
+        businessProfileImgUrl = googlePhotos[favoriteIdx >= 0 ? favoriteIdx : 0];
+      }
 
-      // Filter out problematic URLs
       businessImages = businessImages.filter((uri) => {
         if (!uri || typeof uri !== "string" || uri.trim() === "" || uri === "null" || uri === "undefined") {
           return false;
         }
-        if (uri.includes("maps.googleapis.com/maps/api/place/js/PhotoService") || uri.includes("PhotoService.GetPhoto") || uri.includes("callback=none")) {
-          return false;
-        }
-        const isValidImageUrl = uri.match(/\.(jpeg|jpg|gif|png|webp)(\?.*)?$/i) || uri.startsWith("http://") || uri.startsWith("https://");
-        return isValidImageUrl;
+        return uri.startsWith("http://") || uri.startsWith("https://");
       });
 
       // Handle custom tags
@@ -390,6 +398,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
         linkedin: socialLinksData.linkedin || "",
         youtube: socialLinksData.youtube || "",
         images: businessImages,
+        businessGooglePhotos: googlePhotos,
+        business_favorite_image: rawBusiness.business_favorite_image || null,
         customTags: customTags,
         business_category: categoryName || rawBusiness.business_category || null,
         business_category_id: rawBusiness.business_category_id || null,

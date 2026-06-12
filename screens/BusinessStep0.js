@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
-import { View, Text, TextInput, StyleSheet, Dimensions, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity } from "react-native";
+import { View, Text, TextInput, StyleSheet, Dimensions, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Image } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getBusinessSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
@@ -55,6 +55,10 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
     AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
   };
 
+  const selectBusinessImage = (uri) => {
+    updateFormData("favImage", uri);
+  };
+
   const onPlaceSearchChange = (text) => {
     setPlaceSearchText(text);
     if (placesDebounceRef.current) clearTimeout(placesDebounceRef.current);
@@ -79,6 +83,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
 
     try {
       const pd = await getPlaceDetails(place.place_id);
+      const photoUrls = pd.photo_urls || [];
       const updated = {
         ...formData,
         businessName: pd.name || place.structured_formatting?.main_text || "",
@@ -86,9 +91,9 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
         phoneNumber: pd.phone || "",
         website: pd.website || "",
         googleId: place.place_id || "",
-        googleRating: "",
-        businessGooglePhotos: [],
-        favImage: "",
+        googleRating: pd.rating != null ? String(pd.rating) : "",
+        businessGooglePhotos: photoUrls,
+        favImage: photoUrls[0] || "",
         priceLevel: "",
         addressLine1: pd.address_line_1 || pd.formatted_address || "",
         addressLine2: "",
@@ -307,6 +312,54 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                 aria-label='Zip code'
               />
 
+              {formData.googleRating ? (
+                <Text style={[styles.googleRatingText, darkMode && styles.darkSubtitle]}>
+                  Google Rating: {formData.googleRating} ★
+                </Text>
+              ) : null}
+
+              {(formData.businessGooglePhotos || []).length > 0 && (
+                <>
+                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Google Images</Text>
+                  <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>Tap an image to use as your business image</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.googlePhotosRow}
+                    contentContainerStyle={styles.googlePhotosContent}
+                  >
+                    {formData.businessGooglePhotos.map((uri, index) => {
+                      const isSelected = formData.favImage === uri;
+                      return (
+                        <TouchableOpacity
+                          key={`${uri}-${index}`}
+                          onPress={() => selectBusinessImage(uri)}
+                          activeOpacity={0.8}
+                          style={styles.googlePhotoWrapper}
+                          accessibilityLabel={`Google image ${index + 1}${isSelected ? ", selected as business image" : ""}`}
+                          accessibilityRole='button'
+                        >
+                          <Image
+                            source={{ uri }}
+                            style={[
+                              styles.googlePhoto,
+                              darkMode && styles.darkGooglePhoto,
+                              isSelected && styles.googlePhotoSelected,
+                            ]}
+                            resizeMode='cover'
+                          />
+                          {isSelected ? (
+                            <View style={styles.googlePhotoBadge}>
+                              <Text style={styles.googlePhotoBadgeText}>✓</Text>
+                            </View>
+                          ) : null}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </>
+              )}
+
               {/* <Text style={styles.label}>Business Role</Text>
               <Dropdown
                 style={styles.input}
@@ -406,6 +459,15 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     alignSelf: "flex-start",
   },
+  darkHelperText: {
+    color: "#cccccc",
+  },
+  googleRatingText: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 8,
+    alignSelf: "flex-start",
+  },
 
   // Missing styles
   orText: {
@@ -468,5 +530,46 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#666",
     marginTop: 2,
+  },
+  googlePhotosRow: {
+    width: "100%",
+    marginBottom: 12,
+  },
+  googlePhotosContent: {
+    flexDirection: "row",
+    paddingVertical: 4,
+  },
+  googlePhotoWrapper: {
+    position: "relative",
+    marginRight: 10,
+  },
+  googlePhoto: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    backgroundColor: "#f0f0f0",
+  },
+  googlePhotoSelected: {
+    borderWidth: 3,
+    borderColor: "#00C721",
+  },
+  googlePhotoBadge: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    backgroundColor: "#00C721",
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  googlePhotoBadgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  darkGooglePhoto: {
+    backgroundColor: "#404040",
   },
 });

@@ -11,7 +11,23 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 
 const { width } = Dimensions.get("window");
 
-export default function BusinessStep2({ formData, setFormData, navigation }) {
+function mergeCustomTags(existing, inputText) {
+  const pending = (inputText || "").trim();
+  if (!pending) return Array.isArray(existing) ? [...existing] : [];
+
+  const newTags = pending
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+
+  const merged = Array.isArray(existing) ? [...existing] : [];
+  newTags.forEach((tag) => {
+    if (!merged.includes(tag)) merged.push(tag);
+  });
+  return merged;
+}
+
+export default function BusinessStep2({ formData, setFormData, navigation, onPendingTagsChange }) {
   const { darkMode } = useDarkMode();
   useEffect(() => {
     console.log("BusinessStep2 - darkMode value:", darkMode);
@@ -25,7 +41,7 @@ export default function BusinessStep2({ formData, setFormData, navigation }) {
   const [selectedSub, setSelectedSub] = useState(null);
   const [selectedSubSub, setSelectedSubSub] = useState(null);
   const [customTag, setCustomTag] = useState("");
-  const [customTags, setCustomTags] = useState(formData.customTags || []);
+  const customTags = formData.customTags || [];
 
   const googlePhotos = formData.businessGooglePhotos || [];
   const userUploadedImages = formData.images || [];
@@ -76,14 +92,20 @@ export default function BusinessStep2({ formData, setFormData, navigation }) {
 
   useEffect(() => {
     const selectedIds = [selectedMain, selectedSub, selectedSubSub].filter(Boolean);
-    const updatedForm = {
-      ...formData,
-      businessCategoryId: selectedIds,
-      customTags,
-    };
-    setFormData(updatedForm);
-    AsyncStorage.setItem("businessFormData", JSON.stringify(updatedForm)).catch((err) => console.error("Save error", err));
-  }, [selectedMain, selectedSub, selectedSubSub, customTags]);
+    setFormData((prev) => {
+      const updated = { ...prev, businessCategoryId: selectedIds };
+      AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+      return updated;
+    });
+  }, [selectedMain, selectedSub, selectedSubSub, setFormData]);
+
+  useEffect(() => {
+    onPendingTagsChange?.(customTag.trim().length > 0);
+  }, [customTag, onPendingTagsChange]);
+
+  useEffect(() => {
+    return () => onPendingTagsChange?.(false);
+  }, [onPendingTagsChange]);
 
   const handleImagePick = async (index) => {
     try {
@@ -148,27 +170,23 @@ export default function BusinessStep2({ formData, setFormData, navigation }) {
   // };
 
   const addTag = () => {
-    if (customTag.trim()) {
-      // Split by comma and trim each tag
-      const newTags = customTag
-        .split(',')
-        .map(tag => tag.trim())
-        .filter(tag => tag.length > 0); // Remove empty strings
-      
-      const updatedTags = [...customTags, ...newTags];
-      setCustomTags(updatedTags);
-      setFormData((prev) => ({ ...prev, customTags: updatedTags }));
-      AsyncStorage.setItem("businessFormData", JSON.stringify({ ...formData, customTags: updatedTags })).catch((err) => console.error("Save error", err));
-      setCustomTag("");
-    }
+    if (!customTag.trim()) return;
+    const updatedTags = mergeCustomTags(customTags, customTag);
+    setFormData((prev) => {
+      const updated = { ...prev, customTags: updatedTags };
+      AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+      return updated;
+    });
+    setCustomTag("");
   };
 
   const removeTag = (tag) => {
     const updatedTags = customTags.filter((t) => t !== tag);
-    setCustomTags(updatedTags);
-    const newFormData = { ...formData, customTags: updatedTags };
-    setFormData(newFormData);
-    AsyncStorage.setItem("businessFormData", JSON.stringify(newFormData)).catch((err) => console.error("Save error", err));
+    setFormData((prev) => {
+      const updated = { ...prev, customTags: updatedTags };
+      AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+      return updated;
+    });
   };
 
   return (
@@ -276,6 +294,11 @@ export default function BusinessStep2({ formData, setFormData, navigation }) {
               />
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Custom Tags (comma separated) (Optional)</Text>
+              {customTag.trim().length > 0 ? (
+                <Text style={[styles.pendingTagsHint, darkMode && styles.darkPendingTagsHint]}>
+                  Click Add to save your tags before submitting.
+                </Text>
+              ) : null}
               <View style={styles.tagRow}>
                 <TextInput
                   style={[styles.tagInput, darkMode && styles.darkTagInput]}
@@ -406,6 +429,15 @@ const styles = StyleSheet.create({
     width: "100%",
     borderWidth: 1,
     borderColor: "#ddd",
+  },
+  pendingTagsHint: {
+    fontSize: 12,
+    color: "#b45309",
+    marginBottom: 6,
+    alignSelf: "flex-start",
+  },
+  darkPendingTagsHint: {
+    color: "#fbbf24",
   },
   tagRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   tagInput: {

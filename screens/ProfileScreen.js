@@ -2234,10 +2234,24 @@ const ProfileScreen = ({ route, navigation }) => {
 
           {user.businessIsPublic && (
             <View style={styles.fieldContainer}>
-              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBusiness(!showBusiness)}>
-                <Text style={styles.sectionHeaderText}>BUSINESSES / ORGANIZATIONS</Text>
-                <Ionicons name={showBusiness ? "chevron-up" : "chevron-down"} size={20} color='#000' />
-              </TouchableOpacity>
+              <View style={[styles.sectionHeader, { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }]}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <TouchableOpacity onPress={() => setShowBusiness(!showBusiness)} activeOpacity={0.7}>
+                    <Text style={styles.sectionHeaderText}>BUSINESSES / ORGANIZATIONS</Text>
+                  </TouchableOpacity>
+                  {isCurrentUserProfile && (
+                    <TouchableOpacity
+                      onPress={() => navigation.navigate("BusinessSetup")}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={[styles.sectionHeaderText, { fontSize: 28, lineHeight: 28 }]}>+</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <TouchableOpacity onPress={() => setShowBusiness(!showBusiness)} activeOpacity={0.7}>
+                  <Ionicons name={showBusiness ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+                </TouchableOpacity>
+              </View>
               {showBusiness &&
                 (() => {
                   const businessesToShow = Array.isArray(businessesData)
