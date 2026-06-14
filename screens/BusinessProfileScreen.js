@@ -476,14 +476,15 @@ export default function BusinessProfileScreen({ route, navigation }) {
         console.log("Could not fetch verified ratings:", e);
       }
 
-      if (result.business_users && Array.isArray(result.business_users)) {
-        setBusinessUsers(result.business_users);
+      const businessUsersData = result.business_users ?? rawBusiness.business_users;
+      if (businessUsersData && Array.isArray(businessUsersData)) {
+        setBusinessUsers(businessUsersData);
 
         // Record profile view for each business owner — skip if viewer is an owner
         try {
           const viewerProfileId = await AsyncStorage.getItem("profile_uid");
           if (viewerProfileId) {
-            const ownerProfileIds = result.business_users.map((bu) => bu.profile_id).filter(Boolean);
+            const ownerProfileIds = businessUsersData.map((bu) => bu.profile_id).filter(Boolean);
             const viewerIsOwner = ownerProfileIds.includes(viewerProfileId);
             if (!viewerIsOwner) {
               // Record view against the business_uid so business owners can see who visited
@@ -988,9 +989,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
     );
   }
 
-  const hasBusinessOwner = businessUsers.some(
-    (bu) => (bu.bu_role || bu.business_role || bu.role || "").toLowerCase() === "owner",
-  );
+  const hasBusinessOwner = businessUsers.length > 0;
 
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]} key={Platform.OS === "web" ? `viewport-${viewportWidth}` : undefined}>
