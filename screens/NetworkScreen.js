@@ -2263,7 +2263,7 @@ const NetworkScreen = ({ navigation }) => {
 
                     <TouchableOpacity style={[styles.formSwitchContainer, darkMode && styles.darkFormSwitchContainer]} onPress={() => setConnectDirectlyVisible(true)} activeOpacity={0.7}>
                       <View style={styles.formSwitchTextContainer}>
-                        <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>Connect Directly</Text>
+                        <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>Connect & Follow</Text>
                       </View>
                       <Ionicons name='person-add-outline' size={28} color={darkMode ? "#ffffff" : "#000000"} />
                     </TouchableOpacity>

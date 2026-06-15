@@ -4,6 +4,7 @@ import { BUSINESSES_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import MiniCard from "./MiniCard";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
+import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 
 const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic, navigation, handleDelete, preFetchedBusinessesData, onInputFocus }) => {
   const { darkMode } = useDarkMode();
@@ -198,24 +199,18 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
           console.log(`For business ${businessUid}, found originalBusiness:`, originalBusiness);
           console.log(`individualIsPublic value:`, originalBusiness?.individualIsPublic);
           return {
-            business_name: rawBusiness.business_name || "",
-            business_address_line_1: rawBusiness.business_address_line_1 || "",
-            business_zip_code: rawBusiness.business_zip_code || "",
-            business_phone_number: rawBusiness.business_phone_number || "",
-            business_email: rawBusiness.business_email_id || "",
-            business_website: rawBusiness.business_website || "",
-            first_image: businessImages && businessImages.length > 0 ? businessImages[0] : null,
-            phoneIsPublic:
-              rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1 || rawBusiness.phone_is_public === "1" || rawBusiness.phone_is_public === 1,
-            emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1 || rawBusiness.email_is_public === "1" || rawBusiness.email_is_public === 1,
+            ...mapBusinessToMiniCard({
+              ...rawBusiness,
+              images: businessImages,
+              businessGooglePhotos: businessImages,
+            }),
             business_uid: rawBusiness.business_uid || "",
             profile_business_uid: bus.profile_business_uid || "",
             role: sanitizeText(originalBusiness?.role, ""),
             isApproved: originalBusiness?.isApproved || false,
-            // Get individualIsPublic from the businesses prop (which has the latest data from backend)
             individualIsPublic:
               originalBusiness?.individualIsPublic ?? (bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === true),
-            index: businesses.indexOf(bus), // Store original index for editing/deleting
+            index: businesses.indexOf(bus),
           };
         } catch (error) {
           console.error(`Error fetching business ${bus.profile_business_uid || bus.business_uid}:`, error);

@@ -98,7 +98,36 @@ const MAX_PLACE_PHOTOS = 10;
 function _photoUrlsFromReferences(photos) {
   return (photos || [])
     .slice(0, MAX_PLACE_PHOTOS)
-    .map((p) => `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${p.photo_reference}&key=${PLACES_KEY}`);
+    .filter((p) => p && p.photo_reference)
+    .map((p) => `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${encodeURIComponent(p.photo_reference)}&key=${PLACES_KEY}`);
+}
+
+/** Build photo URLs from JS SDK PlacePhoto objects (web fallback when REST is blocked). */
+function _photoUrlsFromJsSdkPhotos(photos) {
+  return (photos || [])
+    .slice(0, MAX_PLACE_PHOTOS)
+    .map((p) => {
+      if (!p) return null;
+      const ref = p.photo_reference || (typeof p.getReference === "function" ? p.getReference() : null);
+      if (ref) {
+        return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${encodeURIComponent(ref)}&key=${PLACES_KEY}`;
+      }
+      if (typeof p.getUrl === "function") {
+        return p.getUrl({ maxWidth: 400 });
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+/** Neighborhood / area label (e.g. South Valley), not the full street address */
+function _locationFromAddressComponents(components) {
+  const areaTypes = ["neighborhood", "sublocality_level_1", "sublocality", "sublocality_level_2"];
+  for (const type of areaTypes) {
+    const value = _ac(components, type);
+    if (value) return value;
+  }
+  return null;
 }
 
 /** Parse address_components into the fields the DB expects */
@@ -111,6 +140,7 @@ function _parseAddressComponents(components) {
     zip:     _ac(components, "postal_code")                || null,
     street:  _ac(components, "route")                      || null,
     number:  _ac(components, "street_number")              || null,
+    area_location: _locationFromAddressComponents(components),
   };
 }
 
@@ -155,15 +185,14 @@ export async function getPlaceDetails(placeId) {
       const addr = _parseAddressComponents(place.address_components);
       let photo_urls = await _photoUrlsFromPlaceId(placeId);
       if (photo_urls.length === 0) {
-        photo_urls = (place.photos || [])
-          .slice(0, MAX_PLACE_PHOTOS)
-          .map((p) => p.getUrl({ maxWidth: 400 }));
+        photo_urls = _photoUrlsFromJsSdkPhotos(place.photos);
       }
 
       return {
         name: place.name,
         formatted_address: place.formatted_address,
         address_line_1: addr.number ? `${addr.number} ${addr.street}` : (addr.street || null),
+        area_location: addr.area_location,
         city:    addr.city,
         state:   addr.state,
         country: addr.country,
@@ -190,6 +219,7 @@ export async function getPlaceDetails(placeId) {
         name: pd.name,
         formatted_address: pd.formatted_address,
         address_line_1: addr.number ? `${addr.number} ${addr.street}` : (addr.street || null),
+        area_location: addr.area_location,
         city:    addr.city,
         state:   addr.state,
         country: addr.country,

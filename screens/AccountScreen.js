@@ -22,6 +22,7 @@ import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../confi
 import { getSessionProfile } from "../utils/sessionProfile";
 // import { Picker } from '@react-native-picker/picker';
 import MiniCard from "../components/MiniCard";
+import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { parsePrice } from "../utils/priceUtils";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 
@@ -404,64 +405,20 @@ function extractBusinessRawFromAccountScreenPayload(root, payload) {
   return null;
 }
 
-/** Maps API `business` object (businessinfo or account-screen) to MiniCard `business` prop shape */
 function mapRawBusinessToSelectedBusinessFullData(rawBusiness) {
-  if (!rawBusiness || typeof rawBusiness !== "object") return null;
-  const businessProfileImg = rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
-  const imageIsPublic =
-    rawBusiness.business_profile_img_is_public === "1" ||
-    rawBusiness.business_profile_img_is_public === 1 ||
-    rawBusiness.business_image_is_public === "1" ||
-    rawBusiness.business_image_is_public === 1;
-  return {
-    business_name: rawBusiness.business_name,
-    business_location: rawBusiness.business_location,
-    business_address_line_1: rawBusiness.business_address_line_1,
-    business_city: rawBusiness.business_city,
-    business_state: rawBusiness.business_state,
-    business_zip_code: rawBusiness.business_zip_code,
-    business_phone_number: rawBusiness.business_phone_number,
-    business_email_id: rawBusiness.business_email_id,
-    business_website: rawBusiness.business_website,
-    business_tag_line: rawBusiness.business_tag_line,
-    tagline: rawBusiness.business_tag_line,
-    first_image: businessProfileImg || rawBusiness.business_images_url?.[0] || rawBusiness.business_google_photos?.[0],
-    business_profile_img: businessProfileImg,
-    imageIsPublic,
-    phoneIsPublic: rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1,
-    emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1,
-    taglineIsPublic: rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1,
-    locationIsPublic: rawBusiness.business_location_is_public === "1" || rawBusiness.business_location_is_public === 1,
-  };
+  return mapBusinessToMiniCard(rawBusiness);
 }
 
-/** Session `business_info` row — enough for name/tagline until account-screen includes full `business` */
 function mapSessionBusinessRowToMiniCard(row) {
   if (!row || typeof row !== "object") return null;
-  const name = row.business_name || row.profile_business_name || "";
-  const tag = row.business_tag_line || row.profile_business_tag_line || row.tag_line || "";
-  const img = row.business_profile_img || row.profile_business_image || null;
-  const imgStr = img && String(img).trim() !== "" ? String(img).trim() : null;
-  return {
-    business_name: name,
+  return mapBusinessToMiniCard({
+    ...row,
+    business_name: row.business_name || row.profile_business_name || "",
+    business_tag_line: row.business_tag_line || row.profile_business_tag_line || row.tag_line || "",
     business_location: row.business_location || row.profile_business_location || "",
-    business_address_line_1: row.business_address_line_1 || "",
-    business_city: row.business_city || "",
-    business_state: row.business_state || "",
-    business_zip_code: row.business_zip_code || "",
     business_phone_number: row.business_phone_number || row.profile_business_phone_number || "",
-    business_email_id: row.business_email_id || row.business_email || "",
-    business_website: row.business_website || "",
-    business_tag_line: tag,
-    tagline: tag,
-    first_image: imgStr,
-    business_profile_img: imgStr,
-    imageIsPublic: row.business_profile_img_is_public === "1" || row.business_profile_img_is_public === 1 || row.profile_business_image_is_public === "1" || row.profile_business_image_is_public === 1,
-    phoneIsPublic: row.business_phone_number_is_public === "1" || row.business_phone_number_is_public === 1,
-    emailIsPublic: row.business_email_id_is_public === "1" || row.business_email_id_is_public === 1,
-    taglineIsPublic: row.business_tag_line_is_public === "1" || row.business_tag_line_is_public === 1,
-    locationIsPublic: row.business_location_is_public === "1" || row.business_location_is_public === 1,
-  };
+    business_profile_img: row.business_profile_img || row.profile_business_image || null,
+  });
 }
 
 function mapAccountScreenBusinessResponse(json) {

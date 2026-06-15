@@ -1,193 +1,121 @@
-import React, { useEffect, useState, useRef } from "react";
-import { View, Text, TextInput, StyleSheet, Dimensions, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Image, Alert } from "react-native";
+import React, { useEffect, useState, useMemo } from "react";
+import { View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import config from "../config";
 import { Dropdown } from "react-native-element-dropdown";
-import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
+import { CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
-import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system";
+import MiniCard from "../components/MiniCard";
+import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 
-const { width } = Dimensions.get("window");
+function mergeCustomTags(existing, inputText) {
+  const pending = (inputText || "").trim();
+  if (!pending) return Array.isArray(existing) ? [...existing] : [];
 
-export default function BusinessStep1({ formData, setFormData, navigation }) {
+  const newTags = pending
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+
+  const merged = Array.isArray(existing) ? [...existing] : [];
+  newTags.forEach((tag) => {
+    if (!merged.includes(tag)) merged.push(tag);
+  });
+  return merged;
+}
+
+export default function BusinessStep1({ formData, setFormData, onPendingTagsChange }) {
   const { darkMode } = useDarkMode();
-  const [loading, setLoading] = useState(false);
-
-  const googlePhotos = formData.businessGooglePhotos || [];
-  const userUploadedImages = formData.images || [];
-  const combinedImages = [...googlePhotos, ...userUploadedImages];
-
-  const handleImagePick = async (index) => {
-    try {
-      // Request permission
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission required", "Permission to access media library is required!");
-        return;
-      }
-      // Launch picker with new API
-      let result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: "images",
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.7,
-      });
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        let fileSize = asset.fileSize;
-        if (!fileSize && asset.uri) {
-          try {
-            const fileInfo = await FileSystem.getInfoAsync(asset.uri);
-            fileSize = fileInfo.size;
-          } catch (e) {
-            console.log("Could not get file size from FileSystem", e);
-          }
-        }
-        if (fileSize && fileSize > 2 * 1024 * 1024) {
-          Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
-          return;
-        }
-        const newImageUri = asset.uri;
-        const updated = [...userUploadedImages];
-        updated[index] = newImageUri;
-        const newFormData = { ...formData, images: updated };
-        setFormData(newFormData);
-        AsyncStorage.setItem("businessFormData", JSON.stringify(newFormData)).catch((err) => console.error("Save error", err));
-      }
-    } catch (error) {
-      let errorMessage = "Failed to pick image. ";
-      if (error.name === "PermissionDenied") {
-        errorMessage += "Permission was denied.";
-      } else if (error.name === "ImagePickerError") {
-        errorMessage += "There was an error with the image picker.";
-      } else if (error.message && error.message.includes("permission")) {
-        errorMessage += "Permission issue detected.";
-      } else if (error.message && error.message.includes("canceled")) {
-        errorMessage += "Operation was canceled.";
-      }
-      Alert.alert("Error", errorMessage);
-    }
-  };
+  const [allCategories, setAllCategories] = useState([]);
+  const [mainCategories, setMainCategories] = useState([]);
+  const [subCategories, setSubCategories] = useState([]);
+  const [subSubCategories, setSubSubCategories] = useState([]);
+  const [selectedMain, setSelectedMain] = useState(null);
+  const [selectedSub, setSelectedSub] = useState(null);
+  const [selectedSubSub, setSelectedSubSub] = useState(null);
+  const [customTag, setCustomTag] = useState("");
+  const customTags = formData.customTags || [];
 
   useEffect(() => {
-    console.log("In BusinessStep1");
-    console.log("BusinessStep1 - darkMode value:", darkMode);
-    // Don't load saved form data - start fresh for new business
-    // const loadSavedForm = async () => {
-    //   try {
-    //     const stored = await AsyncStorage.getItem('businessFormData');
-    //     if (stored) {
-    //       const parsed = JSON.parse(stored);
-    //       setFormData(prev => ({ ...prev, ...parsed }));
-    //     }
-    //   } catch (err) {
-    //     console.error('Error loading saved form data:', err);
-    //   }
-    // };
-    // loadSavedForm();
+    const fetchCategories = async () => {
+      try {
+        const res = await fetch(CATEGORY_LIST_ENDPOINT);
+        const json = await res.json();
+        setAllCategories(json.result);
+        setMainCategories(json.result.filter((cat) => cat.category_parent_id === null));
+      } catch (e) {
+        console.error("Fetch category error:", e);
+      }
+    };
+    fetchCategories();
   }, []);
 
+  useEffect(() => {
+    const updated = allCategories.filter((c) => c.category_parent_id === selectedMain);
+    setSubCategories(updated);
+    setSelectedSub(null);
+    setSelectedSubSub(null);
+    setSubSubCategories([]);
+  }, [selectedMain, allCategories]);
+
+  useEffect(() => {
+    const updated = allCategories.filter((c) => c.category_parent_id === selectedSub);
+    setSubSubCategories(updated);
+    setSelectedSubSub(null);
+  }, [selectedSub, allCategories]);
+
+  useEffect(() => {
+    const selectedIds = [selectedMain, selectedSub, selectedSubSub].filter(Boolean);
+    setFormData((prev) => {
+      const updated = { ...prev, businessCategoryId: selectedIds };
+      AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+      return updated;
+    });
+  }, [selectedMain, selectedSub, selectedSubSub, setFormData]);
+
+  useEffect(() => {
+    onPendingTagsChange?.(customTag.trim().length > 0);
+  }, [customTag, onPendingTagsChange]);
+
+  useEffect(() => {
+    return () => onPendingTagsChange?.(false);
+  }, [onPendingTagsChange]);
+
+  const updateFormData = (field, value) => {
+    setFormData((prev) => {
+      const updated = { ...prev, [field]: value };
+      AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+      return updated;
+    });
+  };
+
   const formatEINNumber = (text) => {
-    // Remove all non-numeric characters
     const cleaned = text.replace(/\D/g, "");
-
-    // Limit to 9 digits (2 + 7)
-    if (cleaned.length > 9) {
-      return text.slice(0, -1);
-    }
-
-    // Format based on length: ##-#######
+    if (cleaned.length > 9) return text.slice(0, -1);
     if (cleaned.length === 0) return "";
     if (cleaned.length <= 2) return cleaned;
     if (cleaned.length <= 9) return `${cleaned.slice(0, 2)}-${cleaned.slice(2)}`;
     return text;
   };
 
-  const updateFormData = (field, value) => {
+  const addTag = () => {
+    if (!customTag.trim()) return;
+    const updatedTags = mergeCustomTags(customTags, customTag);
     setFormData((prev) => {
-      const updated = { ...prev, [field]: value };
-      // Save to AsyncStorage asynchronously without blocking
+      const updated = { ...prev, customTags: updatedTags };
       AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
       return updated;
     });
+    setCustomTag("");
   };
 
-  const handleGooglePlaceSelect = async (data, details = null) => {
-    if (!details) return;
-
-    console.log("handleGooglePlaceSelect Data: ", data);
-    // console.log("handleGooglePlaceSelect Details: ", details);
-
-    const addressComponents = details.address_components || [];
-    const getComponent = (type) => addressComponents.find((comp) => comp.types.includes(type))?.long_name || "";
-
-    const addressLine1 = `${getComponent("street_number")} ${getComponent("route")}`.trim();
-    const addressLine2 = getComponent("subpremise");
-    const city = getComponent("locality");
-    const state = getComponent("administrative_area_level_1");
-    const country = getComponent("country");
-    const zip = getComponent("postal_code");
-
-    const latFn = details.geometry?.location?.lat;
-    const lngFn = details.geometry?.location?.lng;
-    const latitude = typeof latFn === "function" ? latFn() : latFn ?? "";
-    const longitude = typeof lngFn === "function" ? lngFn() : lngFn ?? "";
-
-    const photoReferences = details.photos?.map((photo) => photo.photo_reference) || [];
-    const photoUrls = photoReferences.map((ref) => `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${ref}&key=${config.googleMapsApiKey}`);
-
-    const updated = {
-      ...formData,
-      businessName: details.name || "", // Only the name
-      location: details.vicinity || details.formatted_address || "", // Just the address
-      phoneNumber: details.formatted_phone_number || "", // Phone
-      website: details.website || "",
-      googleId: details.place_id || "",
-      googleRating: details.rating || "",
-      businessGooglePhotos: photoUrls,
-      favImage: photoUrls[0] || "",
-      priceLevel: details.price_level || "",
-      addressLine1: details.vicinity || details.formatted_address || "",
-      addressLine2,
-      city,
-      state,
-      country,
-      zip,
-      latitude,
-      longitude,
-      types: details.types || [],
-    };
-
-    setFormData(updated);
-    await AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
-
-    fetchProfile(details.place_id);
-  };
-
-  const fetchProfile = async (googlePlaceId) => {
-    try {
-      console.log("Fetching business for Place ID:", googlePlaceId);
-      setLoading(true);
-      const response = await fetch(`${BUSINESS_INFO_ENDPOINT}/${googlePlaceId}`);
-      console.log("Business Fetch Response:", response);
-      if (response.ok) {
-        const result = await response.json();
-        console.log("here 3");
-        console.log("Business Fetch Result:", result);
-        const business = result?.result?.[0];
-        if (business) {
-          console.log("Business claimed:", business);
-        } else {
-          console.log("Business not claimed.");
-        }
-      }
-    } catch (error) {
-      console.error("Error fetching business profile:", error);
-    } finally {
-      setLoading(false);
-    }
+  const removeTag = (tag) => {
+    const updatedTags = customTags.filter((t) => t !== tag);
+    setFormData((prev) => {
+      const updated = { ...prev, customTags: updatedTags };
+      AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+      return updated;
+    });
   };
 
   const businessRoles = [
@@ -198,138 +126,220 @@ export default function BusinessStep1({ formData, setFormData, navigation }) {
     { label: "Other", value: "other" },
   ];
 
+  const previewBusiness = useMemo(
+    () =>
+      mapBusinessToMiniCard(
+        {
+          ...formData,
+          business_name: formData.businessName,
+          favImage: formData.favImage,
+          images: formData.images,
+          businessGooglePhotos: formData.businessGooglePhotos,
+        },
+        { previewMode: true },
+      ),
+    [formData],
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: darkMode ? "#1a1a1a" : "#fff" }}>
-      <View style={{ flex: 1 }}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
-          <ScrollView
-            style={{ flex: 1, width: "100%" }}
-            contentContainerStyle={{
-              padding: Platform.OS === "web" ? 40 : 20,
-              alignItems: "center",
-              paddingBottom: 140,
-              minHeight: "100%",
-            }}
-            keyboardShouldPersistTaps='handled'
-            nestedScrollEnabled={true}
-          >
-            <View style={[styles.formCard, darkMode && styles.darkFormCard]}>
-              <Text style={[styles.title, darkMode && styles.darkTitle]}>Welcome to Every Circle!</Text>
-              <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Let's Build Your Business Page! Step 1</Text>
-
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Name</Text>
-              <Text style={[styles.businessNameDisplay, darkMode && styles.darkBusinessNameDisplay]}>
-                {formData.businessName || "No business name entered"}
-              </Text>
-
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Location (Optional)</Text>
-              <Text style={[styles.businessNameDisplay, darkMode && styles.darkBusinessNameDisplay]} accessibilityRole='text'>
-                {(formData.location || formData.addressLine1 || "").trim() || "No location entered"}
-              </Text>
-
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Role</Text>
-              <Dropdown
-                style={[styles.input, darkMode && styles.darkInput]}
-                data={businessRoles}
-                labelField='label'
-                valueField='value'
-                placeholder='Select your role'
-                placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-                value={formData.businessRole || ""}
-                onChange={(item) => updateFormData("businessRole", item.value)}
-                containerStyle={[{ borderRadius: 10, zIndex: 1000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
-                itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
-                selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
-                activeColor={darkMode ? "#404040" : "#f0f0f0"}
-                maxHeight={250}
-                renderItem={(item) => (
-                  <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
-                    <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}>{item.label}</Text>
-                  </View>
-                )}
-                flatListProps={{
-                  nestedScrollEnabled: true,
-                  ItemSeparatorComponent: () => <View style={{ height: 2 }} />,
-                }}
-              />
-
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>EIN Number (Optional)</Text>
-              <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>For verification purposes only</Text>
-              <TextInput
-                style={[styles.input, darkMode && styles.darkInput]}
-                value={formData.einNumber || ""}
-                placeholder='##-#######'
-                placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                keyboardType='numeric'
-                maxLength={10}
-                onChangeText={(text) => updateFormData("einNumber", formatEINNumber(text))}
-              />
-
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Upload Business Logo (Optional)</Text>
-              <View style={styles.carousel}>
-                <View style={styles.imageRow}>
-                  {combinedImages.map((img, index) => {
-                    return (
-                      <View key={index} style={[styles.imageWrapper, darkMode && styles.darkImageWrapper]}>
-                        <Image source={{ uri: img }} style={styles.uploadedImage} resizeMode='cover' />
-                        <TouchableOpacity
-                          style={styles.deleteIcon}
-                          onPress={() => {
-                            const isGoogle = index < googlePhotos.length;
-                            const updated = isGoogle
-                              ? [...googlePhotos.slice(0, index), ...googlePhotos.slice(index + 1)]
-                              : [...userUploadedImages.slice(0, index - googlePhotos.length), ...userUploadedImages.slice(index - googlePhotos.length + 1)];
-
-                            const newFormData = {
-                              ...formData,
-                              businessGooglePhotos: isGoogle ? updated : googlePhotos,
-                              images: !isGoogle ? updated : userUploadedImages,
-                            };
-                            setFormData(newFormData);
-                            AsyncStorage.setItem("businessFormData", JSON.stringify(newFormData)).catch((err) => console.error("Save error", err));
-                          }}
-                        >
-                          <Text style={styles.deleteText}>✕</Text>
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  })}
-
-                  <TouchableOpacity style={[styles.uploadBox, darkMode && styles.darkUploadBox]} onPress={() => handleImagePick(userUploadedImages.length)}>
-                    <Text style={[styles.uploadText, darkMode && styles.darkUploadText]}>Upload Logo</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
+        <ScrollView
+          style={{ flex: 1, width: "100%" }}
+          contentContainerStyle={{
+            padding: Platform.OS === "web" ? 40 : 20,
+            alignItems: "center",
+            paddingBottom: 140,
+            minHeight: "100%",
+          }}
+          keyboardShouldPersistTaps='handled'
+          nestedScrollEnabled={true}
+        >
+          <View style={[styles.formCard, darkMode && styles.darkFormCard]}>
+            <Text style={[styles.title, darkMode && styles.darkTitle]}>Welcome to Every Circle!</Text>
+            <View style={styles.subtitleBlock}>
+              <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Let's Build Your Business Page!</Text>
+              <Text style={[styles.stepHint, darkMode && styles.darkSubtitle]}>(Click Submit to go Live!)</Text>
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
 
-        {/* Loading indicator positioned outside ScrollView to avoid flickering */}
-        {loading && (
-          <View style={styles.loadingOverlay}>
-            <View style={[styles.loadingContent, darkMode && styles.darkLoadingContent]}>
-              <ActivityIndicator size='large' color='#00C721' />
-              <Text style={[styles.loadingText, darkMode && styles.darkLoadingText]}>Loading...</Text>
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Name</Text>
+            <Text style={[styles.businessNameDisplay, darkMode && styles.darkBusinessNameDisplay]}>{formData.businessName || "No business name entered"}</Text>
+
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Role *</Text>
+            <Dropdown
+              style={[styles.input, darkMode && styles.darkInput]}
+              data={businessRoles}
+              labelField='label'
+              valueField='value'
+              placeholder='Select your role'
+              placeholderTextColor={darkMode ? "#ffffff" : "#666"}
+              value={formData.businessRole || ""}
+              onChange={(item) => updateFormData("businessRole", item.value)}
+              containerStyle={[{ borderRadius: 10, zIndex: 1000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
+              itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+              selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+              activeColor={darkMode ? "#404040" : "#f0f0f0"}
+              maxHeight={250}
+              renderItem={(item) => (
+                <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
+                  <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}>{item.label}</Text>
+                </View>
+              )}
+              flatListProps={{
+                nestedScrollEnabled: true,
+                ItemSeparatorComponent: () => <View style={{ height: 2 }} />,
+              }}
+            />
+
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>EIN Number (Optional)</Text>
+            <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>For verification purposes only</Text>
+            <TextInput
+              style={[styles.input, darkMode && styles.darkInput]}
+              value={formData.einNumber || ""}
+              placeholder='##-#######'
+              placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+              keyboardType='numeric'
+              maxLength={10}
+              onChangeText={(text) => updateFormData("einNumber", formatEINNumber(text))}
+            />
+
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Main Category *</Text>
+            <Dropdown
+              style={[styles.input, darkMode && styles.darkInput, styles.categoryInput]}
+              data={mainCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
+              labelField='label'
+              valueField='value'
+              placeholder='Select Main Category'
+              placeholderTextColor={darkMode ? "#ffffff" : "#666"}
+              value={selectedMain}
+              onChange={(item) => setSelectedMain(item.value)}
+              containerStyle={[{ borderRadius: 10, zIndex: 1000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
+              itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+              selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+              activeColor={darkMode ? "#404040" : "#f0f0f0"}
+              maxHeight={250}
+              renderItem={(item) => (
+                <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
+                  <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}>{item.label}</Text>
+                </View>
+              )}
+              flatListProps={{
+                nestedScrollEnabled: true,
+                ItemSeparatorComponent: () => <View style={{ height: 2 }} />,
+              }}
+            />
+
+            <Text style={[styles.label, darkMode && styles.darkLabel, styles.subCategoryLabel]}>Sub Category (Optional)</Text>
+            <Dropdown
+              style={[styles.input, darkMode && styles.darkInput]}
+              data={subCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
+              labelField='label'
+              valueField='value'
+              placeholder={subCategories.length > 0 ? "Select Sub Category" : "Select Main Category first"}
+              placeholderTextColor={darkMode ? "#ffffff" : "#666"}
+              value={selectedSub}
+              onChange={(item) => setSelectedSub(item.value)}
+              disabled={subCategories.length === 0}
+              containerStyle={[{ borderRadius: 10, zIndex: 1000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
+              itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+              selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+              activeColor={darkMode ? "#404040" : "#f0f0f0"}
+              maxHeight={250}
+              renderItem={(item) => (
+                <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
+                  <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}>{item.label}</Text>
+                </View>
+              )}
+              flatListProps={{
+                nestedScrollEnabled: true,
+                ItemSeparatorComponent: () => <View style={{ height: 2 }} />,
+              }}
+            />
+
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Sub-Sub Category (Optional)</Text>
+            <Dropdown
+              style={[styles.input, darkMode && styles.darkInput]}
+              data={subSubCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
+              labelField='label'
+              valueField='value'
+              placeholder={subSubCategories.length > 0 ? "Select Sub-Sub Category" : "Select Sub Category first"}
+              placeholderTextColor={darkMode ? "#ffffff" : "#666"}
+              value={selectedSubSub}
+              onChange={(item) => setSelectedSubSub(item.value)}
+              disabled={subSubCategories.length === 0}
+              containerStyle={[{ borderRadius: 10, zIndex: 1000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
+              itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+              selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
+              activeColor={darkMode ? "#404040" : "#f0f0f0"}
+              maxHeight={250}
+              renderItem={(item) => (
+                <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
+                  <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}>{item.label}</Text>
+                </View>
+              )}
+              flatListProps={{
+                nestedScrollEnabled: true,
+                ItemSeparatorComponent: () => <View style={{ height: 2 }} />,
+              }}
+            />
+
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Custom Tags (comma separated) (Optional)</Text>
+            {customTag.trim().length > 0 ? <Text style={[styles.pendingTagsHint, darkMode && styles.darkPendingTagsHint]}>Click Add to save your tags before submitting.</Text> : null}
+            <View style={styles.tagRow}>
+              <TextInput
+                style={[styles.tagInput, darkMode && styles.darkTagInput]}
+                placeholder='Add tag'
+                placeholderTextColor={darkMode ? "#ffffff" : "#666"}
+                value={customTag}
+                onChangeText={setCustomTag}
+                onSubmitEditing={addTag}
+              />
+              <TouchableOpacity onPress={addTag} style={styles.tagButton}>
+                <Text style={styles.tagButtonText}>Add</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.tagList}>
+              {customTags.map((tag, i) => (
+                <TouchableOpacity key={i} onPress={() => removeTag(tag)} style={[styles.tagItem, darkMode && styles.darkTagItem]}>
+                  <Text style={darkMode && styles.darkTagItemText}>{tag} ✕</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Tag Line (Optional)</Text>
+            <TextInput
+              style={[styles.input, darkMode && styles.darkInput]}
+              placeholder='A short tagline for your business'
+              placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+              value={formData.tagLine || ""}
+              onChangeText={(text) => updateFormData("tagLine", text)}
+            />
+
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Brief Description (Optional)</Text>
+            <TextInput
+              style={[styles.textarea, darkMode && styles.darkTextarea]}
+              placeholder='Describe your business...'
+              placeholderTextColor={darkMode ? "#ffffff" : "#666"}
+              value={formData.shortBio || ""}
+              multiline
+              numberOfLines={4}
+              onChangeText={(text) => updateFormData("shortBio", text)}
+            />
+
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Mini Card Preview</Text>
+            <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>This is how your business will appear on mini cards throughout the app.</Text>
+            <View style={[styles.previewCard, darkMode && styles.darkPreviewCard]}>
+              <MiniCard business={previewBusiness} />
             </View>
           </View>
-        )}
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    alignSelf: "center",
-    width: width * 1.3,
-    flex: 1,
-    // borderRadius: width,
-    borderTopLeftRadius: width,
-    borderTopRightRadius: width,
-    padding: 90,
-    paddingTop: 80,
-    alignItems: "center",
-  },
   title: {
     fontSize: 24,
     fontWeight: "bold",
@@ -337,11 +347,20 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 10,
   },
+  subtitleBlock: {
+    marginBottom: 30,
+    width: "100%",
+  },
   subtitle: {
     fontSize: 14,
     color: "#666",
     textAlign: "center",
-    marginBottom: 30,
+    marginBottom: 4,
+  },
+  stepHint: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
   },
   label: {
     alignSelf: "flex-start",
@@ -371,42 +390,71 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#333",
   },
-  loadingOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.3)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 9999,
+  categoryInput: {
+    marginBottom: 5,
   },
-  loadingContent: {
+  subCategoryLabel: {
+    marginTop: 5,
+  },
+  helperText: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 10,
+    alignSelf: "flex-start",
+  },
+  textarea: {
     backgroundColor: "#fff",
     borderRadius: 10,
-    padding: 20,
-    alignItems: "center",
-  },
-  darkLoadingContent: {
-    backgroundColor: "#2d2d2d",
-  },
-  loadingText: {
-    marginTop: 10,
+    padding: 12,
+    height: 100,
+    textAlignVertical: "top",
+    marginBottom: 20,
+    width: "100%",
+    borderWidth: 1,
+    borderColor: "#ddd",
     fontSize: 16,
-    color: "#333",
   },
-  darkLoadingText: {
-    color: "#ffffff",
+  pendingTagsHint: {
+    fontSize: 12,
+    color: "#b45309",
+    marginBottom: 6,
+    alignSelf: "flex-start",
   },
-  loadingContainer: {
-    position: "absolute",
-    top: 20,
-    right: 20,
-    zIndex: 1000,
+  darkPendingTagsHint: {
+    color: "#fbbf24",
   },
-  loadingIndicator: {
-    marginTop: 20,
+  tagRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  tagInput: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    padding: 10,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    fontSize: 16,
+  },
+  tagButton: {
+    backgroundColor: "#FFA500",
+    padding: 10,
+    borderRadius: 10,
+  },
+  tagButtonText: { color: "#fff", fontWeight: "bold" },
+  tagList: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 10 },
+  tagItem: {
+    backgroundColor: "#fff",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+  },
+  previewCard: {
+    width: "100%",
+    backgroundColor: "#f8f8f8",
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#e5e5e5",
   },
   formCard: {
     backgroundColor: "#fff",
@@ -416,16 +464,7 @@ const styles = StyleSheet.create({
     maxWidth: Platform.OS === "web" ? "100%" : 420,
     alignSelf: "center",
     marginBottom: 16,
-    position: "relative",
   },
-  helperText: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 10,
-    alignSelf: "flex-start",
-  },
-
-  // Dark mode styles
   darkFormCard: {
     backgroundColor: "#2d2d2d",
   },
@@ -453,92 +492,26 @@ const styles = StyleSheet.create({
   darkHelperText: {
     color: "#cccccc",
   },
-  textarea: {
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 12,
-    height: 100,
-    textAlignVertical: "top",
-    marginBottom: 20,
-    width: "100%",
-    borderWidth: 1,
-    borderColor: "#ddd",
-  },
-  carousel: {
-    marginTop: 0,
-    marginBottom: 20,
-    width: "100%",
-    height: 120,
-  },
-  imageRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    flexWrap: "wrap",
-  },
-  imageWrapper: {
-    width: 80,
-    height: 80,
-    borderRadius: 10,
-    overflow: "hidden",
-    marginRight: 10,
-    marginBottom: 10,
-    backgroundColor: "#fff",
-    position: "relative",
-  },
-  darkImageWrapper: {
-    backgroundColor: "#404040",
-  },
-  deleteIcon: {
-    position: "absolute",
-    top: 2,
-    right: 2,
-    backgroundColor: "#ff3b30",
-    borderRadius: 10,
-    width: 20,
-    height: 20,
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 10,
-  },
-  deleteText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  uploadedImage: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 10,
-  },
-  uploadBox: {
-    width: 80,
-    height: 80,
-    borderRadius: 10,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 10,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "#ddd",
-  },
-  darkUploadBox: {
-    backgroundColor: "#404040",
-    borderColor: "#555",
-  },
-  uploadText: {
-    color: "#666",
-    fontSize: 12,
-    textAlign: "center",
-  },
-  darkUploadText: {
-    color: "#cccccc",
-  },
   darkTextarea: {
     backgroundColor: "#404040",
     color: "#ffffff",
     borderWidth: 1,
     borderColor: "#404040",
+  },
+  darkTagInput: {
+    backgroundColor: "#404040",
+    color: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#404040",
+  },
+  darkTagItem: {
+    backgroundColor: "#404040",
+  },
+  darkTagItemText: {
+    color: "#ffffff",
+  },
+  darkPreviewCard: {
+    backgroundColor: "#333",
+    borderColor: "#555",
   },
 });

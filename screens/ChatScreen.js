@@ -15,6 +15,7 @@ import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { createAblyRealtimeClient } from "../utils/ablyClient";
 import { normalizeMessageForUi, orderMessagesForChatList } from "../utils/chatConversations";
 import { sanitizeText } from "../utils/textSanitizer";
+import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -91,59 +92,6 @@ function mapUserProfileApiToMiniCardUser(apiUser) {
   };
 }
 
-function mapRawBusinessToMiniCardBusiness(raw) {
-  if (!raw || typeof raw !== "object") return null;
-  const tagline = raw.business_tag_line || raw.tagline || "";
-  const profileImg =
-    raw.business_profile_img && String(raw.business_profile_img).trim() !== "" ? String(raw.business_profile_img).trim() : null;
-  let firstGallery = null;
-  if (raw.images && Array.isArray(raw.images) && raw.images[0]) {
-    firstGallery = String(raw.images[0]);
-  }
-  const emailIsPublic =
-    raw.business_email_id_is_public === "1" ||
-    raw.business_email_id_is_public === 1 ||
-    raw.email_is_public === "1" ||
-    raw.email_is_public === 1;
-  const phoneIsPublic =
-    raw.business_phone_number_is_public === "1" ||
-    raw.business_phone_number_is_public === 1 ||
-    raw.phone_is_public === "1" ||
-    raw.phone_is_public === 1;
-  const taglineIsPublic =
-    raw.business_tag_line_is_public === "1" ||
-    raw.business_tag_line_is_public === 1 ||
-    raw.tagline_is_public === "1" ||
-    raw.tagline_is_public === 1;
-  const locationIsPublic = raw.business_location_is_public === "1" || raw.business_location_is_public === 1;
-  const imageIsPublic =
-    raw.business_profile_img_is_public === "1" ||
-    raw.business_profile_img_is_public === 1 ||
-    raw.business_image_is_public === "1" ||
-    raw.business_image_is_public === 1 ||
-    raw.image_is_public === "1" ||
-    raw.image_is_public === 1;
-
-  return {
-    business_name: sanitizeText(raw.business_name || ""),
-    tagline: sanitizeText(tagline),
-    business_location: sanitizeText(raw.business_location || ""),
-    business_address_line_1: sanitizeText(raw.business_address_line_1 || ""),
-    business_city: sanitizeText(raw.business_city || ""),
-    business_state: sanitizeText(raw.business_state || ""),
-    business_zip_code: sanitizeText(raw.business_zip_code || ""),
-    business_phone_number: sanitizeText(raw.business_phone_number || ""),
-    business_email: sanitizeText(raw.business_email_id || raw.business_email || ""),
-    business_website: sanitizeText(raw.business_website || ""),
-    first_image: profileImg || firstGallery,
-    business_profile_img: profileImg,
-    imageIsPublic,
-    phoneIsPublic,
-    emailIsPublic,
-    taglineIsPublic,
-    locationIsPublic,
-  };
-}
 
 // ─── component ───────────────────────────────────────────────────────────────
 
@@ -272,7 +220,7 @@ export default function ChatScreen() {
         if (busRes.ok) {
           const json = await busRes.json();
           const raw = json?.business;
-          const mapped = mapRawBusinessToMiniCardBusiness(raw);
+          const mapped = mapBusinessToMiniCard(raw);
           if (mapped && !cancelled) {
             setFetchedMiniCard({ business: mapped });
             return;

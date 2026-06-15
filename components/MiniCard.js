@@ -115,34 +115,27 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
           })()}
 
           <View style={styles.textContainer}>
-            {/* BUSINESS PHONE */}
+            {/* PHONE + AREA LOCATION (same line) */}
             {(() => {
-              if (phoneIsPublic && isSafeForConditional(phone) && phone !== "." && phone.trim() !== "") {
-                return <Text style={[styles.phone, darkMode && styles.darkText]}>{phone}</Text>;
-              }
-              return null;
+              const showPhone = phoneIsPublic && isSafeForConditional(phone) && phone !== "." && phone.trim() !== "";
+              const showAreaLocation =
+                locationIsPublic && isSafeForConditional(location) && location !== "." && location.trim() !== "";
+
+              if (!showPhone && !showAreaLocation) return null;
+
+              return (
+                <View style={styles.inlineRow}>
+                  {showPhone ? <Text style={[styles.phone, darkMode && styles.darkText]}>{phone}</Text> : null}
+                  {showPhone && showAreaLocation ? <Text style={[styles.inlineSeparator, darkMode && styles.darkText]}> · </Text> : null}
+                  {showAreaLocation ? <Text style={[styles.location, darkMode && styles.darkText]}>{location}</Text> : null}
+                </View>
+              );
             })()}
 
-            {/* BUSINESS EMAIL */}
+            {/* STREET ADDRESS (next line) */}
             {(() => {
-              if (emailIsPublic && isSafeForConditional(email) && email !== "." && email.trim() !== "") {
-                return <Text style={[styles.email, darkMode && styles.darkText]}>{email}</Text>;
-              }
-              return null;
-            })()}
-
-            {/* LOCATION (business_location and business_address_line_1 combined) */}
-            {(() => {
-              if (locationIsPublic && (isSafeForConditional(location) || isSafeForConditional(addressLine1))) {
-                const addressParts = [];
-                if (location && location !== "." && location.trim() !== "") addressParts.push(location);
-                if (addressLine1 && addressLine1 !== "." && addressLine1.trim() !== "") addressParts.push(addressLine1);
-
-                const fullAddress = addressParts.join(", ");
-
-                if (fullAddress && fullAddress.trim() !== "") {
-                  return <Text style={[styles.location, darkMode && styles.darkText]}>{fullAddress}</Text>;
-                }
+              if (locationIsPublic && isSafeForConditional(addressLine1) && addressLine1 !== "." && addressLine1.trim() !== "") {
+                return <Text style={[styles.address, darkMode && styles.darkText]}>{addressLine1}</Text>;
               }
               return null;
             })()}
@@ -159,6 +152,14 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
                 if (locationText && locationText.trim() !== "") {
                   return <Text style={[styles.city, darkMode && styles.darkText]}>{locationText}</Text>;
                 }
+              }
+              return null;
+            })()}
+
+            {/* BUSINESS EMAIL */}
+            {(() => {
+              if (emailIsPublic && isSafeForConditional(email) && email !== "." && email.trim() !== "") {
+                return <Text style={[styles.email, darkMode && styles.darkText]}>{email}</Text>;
               }
               return null;
             })()}
@@ -310,6 +311,16 @@ const styles = StyleSheet.create({
   textContainer: {
     flex: 1,
   },
+  inlineRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    marginBottom: 2,
+  },
+  inlineSeparator: {
+    fontSize: 14,
+    color: "#666",
+  },
   name: {
     fontSize: 16,
     fontWeight: "bold",
@@ -328,7 +339,7 @@ const styles = StyleSheet.create({
   phone: {
     fontSize: 14,
     color: "#666",
-    marginBottom: 2,
+    marginBottom: 0,
   },
   city: {
     fontSize: 14,
@@ -342,6 +353,11 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
   location: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 0,
+  },
+  address: {
     fontSize: 14,
     color: "#666",
     marginBottom: 2,

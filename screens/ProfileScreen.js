@@ -20,6 +20,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 // import axios from 'axios';
 import MiniCard from "../components/MiniCard";
+import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -667,33 +668,15 @@ const ProfileScreen = ({ route, navigation }) => {
       // console.log("ProfileScreen - userData.businessIsPublic:", userData.businessIsPublic);
 
       const rawBusinessInfo = parseProfileJsonArray(apiUser.business_info);
-      const mappedBusinesses = rawBusinessInfo.map((bus, index) => {
-        const businessProfileImg = bus.business_profile_img && String(bus.business_profile_img).trim() !== "" ? String(bus.business_profile_img).trim() : null;
-        const imageIsPublic = bus.business_profile_img_is_public === 1 || bus.business_profile_img_is_public === "1" || bus.business_image_is_public === 1 || bus.business_image_is_public === "1";
-        return {
-          business_name: bus.business_name || "",
-          business_city: bus.business_city || "",
-          business_state: bus.business_state || "",
-          business_zip_code: bus.business_zip_code || "",
-          business_phone_number: bus.business_phone_number || "",
-          business_address_line_1: bus.business_address_line_1 || "",
-          business_tag_line: bus.business_tag_line || bus.tagline || "",
-          business_email_id: bus.business_email_id || bus.business_email || "",
-          business_website: bus.business_website || "",
-          phoneIsPublic: bus.business_phone_number_is_public === 1 || bus.business_phone_number_is_public === "1" || bus.business_phone_number_is_public === true,
-          emailIsPublic: bus.business_email_id_is_public === 1 || bus.business_email_id_is_public === "1" || true,
-          taglineIsPublic: bus.business_tag_line_is_public === 1 || bus.business_tag_line_is_public === "1" || true,
-          business_uid: bus.business_uid || "",
-          profile_business_uid: bus.business_uid || bus.profile_business_uid || "",
-          role: bus.bu_role || "",
-          individualIsPublic: bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === true,
-          first_image: businessProfileImg || null,
-          business_profile_img: businessProfileImg,
-          imageIsPublic: !!imageIsPublic,
-          index,
-          business_updated_at: bus.business_updated_at ?? bus.updated_at,
-        };
-      });
+      const mappedBusinesses = rawBusinessInfo.map((bus, index) => ({
+        ...mapBusinessToMiniCard(bus),
+        business_uid: bus.business_uid || "",
+        profile_business_uid: bus.business_uid || bus.profile_business_uid || "",
+        role: bus.bu_role || "",
+        individualIsPublic: bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === true,
+        index,
+        business_updated_at: bus.business_updated_at ?? bus.updated_at,
+      }));
       // console.log("mappedBusinesses result:", JSON.stringify(mappedBusinesses, null, 2));
       setBusinessesData(mappedBusinesses);
       setLoading(false);
@@ -849,45 +832,20 @@ const ProfileScreen = ({ route, navigation }) => {
 
           // Profile image from business_profile_img; fallback to first of business_images_url for MiniCard
           const businessProfileImg = rawBusiness.business_profile_img && String(rawBusiness.business_profile_img).trim() !== "" ? String(rawBusiness.business_profile_img).trim() : null;
-          const firstImage = businessProfileImg || (businessImages && businessImages.length > 0 ? businessImages[0] : null);
-          const imageIsPublic =
-            rawBusiness.business_profile_img_is_public === "1" ||
-            rawBusiness.business_profile_img_is_public === 1 ||
-            rawBusiness.business_image_is_public === "1" ||
-            rawBusiness.business_image_is_public === 1 ||
-            rawBusiness.image_is_public === "1" ||
-            rawBusiness.image_is_public === 1;
-          // console.log("ProfileScreen - Business image data for", rawBusiness.business_name, ":", {
-          //   businessProfileImg: !!businessProfileImg,
-          //   businessImagesLength: businessImages?.length || 0,
-          //   firstImage: !!firstImage,
-          //   imageIsPublic,
-          // });
           return {
-            business_name: sanitizeText(rawBusiness.business_name, ""),
-            tagline: sanitizeText(rawBusiness.business_tag_line || rawBusiness.tagline || "", ""),
-            business_address_line_1: sanitizeText(rawBusiness.business_address_line_1, ""),
-            business_city: sanitizeText(rawBusiness.business_city || "", ""),
-            business_state: sanitizeText(rawBusiness.business_state || "", ""),
-            business_zip_code: sanitizeText(rawBusiness.business_zip_code, ""),
-            business_phone_number: sanitizeText(rawBusiness.business_phone_number, ""),
-            business_email: sanitizeText(rawBusiness.business_email_id, ""),
-            business_website: sanitizeText(rawBusiness.business_website, ""),
-            first_image: firstImage,
-            business_profile_img: businessProfileImg,
-            imageIsPublic,
-            phoneIsPublic:
-              rawBusiness.business_phone_number_is_public === "1" || rawBusiness.business_phone_number_is_public === 1 || rawBusiness.phone_is_public === "1" || rawBusiness.phone_is_public === 1,
-            emailIsPublic: rawBusiness.business_email_id_is_public === "1" || rawBusiness.business_email_id_is_public === 1 || rawBusiness.email_is_public === "1" || rawBusiness.email_is_public === 1,
-            taglineIsPublic:
-              rawBusiness.business_tag_line_is_public === "1" || rawBusiness.business_tag_line_is_public === 1 || rawBusiness.tagline_is_public === "1" || rawBusiness.tagline_is_public === 1,
+            ...mapBusinessToMiniCard({
+              ...rawBusiness,
+              business_profile_img: businessProfileImg,
+              images: businessImages,
+              businessGooglePhotos: businessImages,
+            }),
             business_uid: sanitizeText(rawBusiness.business_uid, ""),
             profile_business_uid: bus.profile_business_uid || "",
             role: sanitizeText(originalBusiness?.role, ""),
             isApproved: originalBusiness?.isApproved || false,
             individualIsPublic:
               originalBusiness?.bu_individual_business_is_public === 1 || originalBusiness?.bu_individual_business_is_public === "1" || originalBusiness?.bu_individual_business_is_public === true,
-            index: index, // Store original index for BusinessSection to map back to businesses array
+            index,
           };
         } catch (error) {
           console.error(`Error fetching business ${bus.profile_business_uid}:`, error);
@@ -2272,13 +2230,7 @@ const ProfileScreen = ({ route, navigation }) => {
                           }}
                           activeOpacity={0.7}
                         >
-                          <MiniCard
-                            business={{
-                              ...business,
-                              tagline: business.tagline || business.business_tag_line || "",
-                              taglineIsPublic: business.taglineIsPublic !== false,
-                            }}
-                          />
+                          <MiniCard business={mapBusinessToMiniCard(business)} />
                         </TouchableOpacity>
                         {business.role ? (
                           <View style={styles.roleContainer}>

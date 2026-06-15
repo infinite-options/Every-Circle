@@ -1,8 +1,10 @@
 //EditBusinessProfileScreen.js
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Keyboard, UIManager, findNodeHandle, ActivityIndicator, Platform, InteractionManager, Modal, BackHandler } from "react-native";
-import { axiosMiddleware as axios } from "../utils/httpMiddleware";
+import { useFocusEffect } from "@react-navigation/native";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import MiniCard from "../components/MiniCard";
+import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import * as ImagePicker from "expo-image-picker";
@@ -24,10 +26,75 @@ import {
 import { parsePrice } from "../utils/priceUtils";
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
 import { getBusinessSuggestions, getPlaceDetails } from "../utils/googlePlaces";
-import { parseBusinessGooglePhotos, resolveBusinessProfileImage } from "../utils/resolveBusinessProfileImage";
+import {
+  resolveBusinessProfileImage,
+  isGooglePhotoInList,
+  resolveGooglePhotoUrl,
+  dedupeGooglePhotoUrls,
+  mergeRefreshedGooglePhotos,
+  googlePhotoUrlsMatch,
+  resolveFavoriteGoogleImage,
+  isGoogleHostedPhotoUrl,
+  buildBusinessGalleryUploads,
+  resolveBusinessUploadUri,
+  normalizeBusinessUploadKey,
+  isBusinessUserUploadImage,
+  businessUploadUrisMatch,
+  businessGalleryIncludesUri,
+  coalesceBusinessProfileImg,
+  resolveGalleryItemDisplayUri,
+  reconcileGalleryUploadsWithProfile,
+} from "../utils/resolveBusinessProfileImage";
 
 const BusinessProfileAPI = BUSINESS_INFO_ENDPOINT;
 const DEFAULT_BUSINESS_IMAGE = require("../assets/profile.png");
+
+const parseInitialGalleryUploads = (business, businessUID) => buildBusinessGalleryUploads(business, businessUID);
+
+const pickNextProfileImage = (googlePhotos, galleryUploads, excludeUri = "") => {
+  const nextGoogle = (googlePhotos || []).find((photo) => photo !== excludeUri);
+  if (nextGoogle) return nextGoogle;
+  const nextUpload = (galleryUploads || []).find((item) => item.uri !== excludeUri);
+  return nextUpload?.uri || "";
+};
+
+const isRemoteImageUri = (uri) => uri && (uri.startsWith("http://") || uri.startsWith("https://"));
+const isLocalImageUri = (uri) => uri && !isRemoteImageUri(uri);
+
+/** Set profile from an already-uploaded gallery image (re-upload file or reference existing S3 object). */
+const appendExistingUploadAsProfile = async (payload, galleryItem, profileUri, uid) => {
+  const s3Key = galleryItem?.s3Key || normalizeBusinessUploadKey(profileUri, uid);
+  const fullUri = resolveBusinessUploadUri(s3Key || profileUri, uid) || profileUri;
+  const extRaw = (s3Key || fullUri).split(".").pop() || "jpg";
+  const fileType = extRaw.split("?")[0].toLowerCase().replace("jpeg", "jpg") || "jpg";
+  const mimeType = `image/${fileType === "jpg" ? "jpeg" : fileType}`;
+  const profileFileName = `business_profile_img.${fileType}`;
+
+  if (Platform.OS === "web" && galleryItem?.webFile) {
+    payload.append("business_profile_img", new File([galleryItem.webFile], profileFileName, { type: mimeType }));
+    return true;
+  }
+
+  if (isRemoteImageUri(fullUri) && !isGoogleHostedPhotoUrl(fullUri)) {
+    try {
+      const response = await fetch(fullUri);
+      if (response.ok) {
+        const blob = await response.blob();
+        if (Platform.OS === "web") {
+          payload.append("business_profile_img", new File([blob], profileFileName, { type: blob.type || mimeType }));
+        } else {
+          payload.append("business_profile_img", { uri: fullUri, type: mimeType, name: profileFileName });
+        }
+        return true;
+      }
+    } catch (err) {
+      console.warn("appendExistingUploadAsProfile fetch failed, using existing S3 reference:", err);
+    }
+  }
+
+  payload.append("business_profile_img", s3Key && !s3Key.startsWith("http") ? s3Key : fullUri);
+  return true;
+};
 
 const SERVICE_CURRENCY_OPTIONS = [
   { label: "USD", value: "USD" },
@@ -278,7 +345,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const { business, business_users } = route.params || {};
   const [businessUID, setBusinessUID] = useState(business?.business_uid || "");
   const scrollViewRef = useRef(null);
-  const fileInputRef = useRef(null); // For web file input
+  const fileInputRef = useRef(null); // For web gallery file input
   const serviceImageFileInputRef = useRef(null); // Product/service image (web)
   const serviceSalesTaxSectionRef = useRef(null);
   const serviceTaxRateInputRef = useRef(null);
@@ -287,6 +354,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const pendingRemoveActionRef = useRef(null);
   /** Skip unsaved `beforeRemove` while navigating away after a successful submit (isChanged clears async). */
   const suppressLeavePromptRef = useRef(false);
+  const googlePhotosUserEditedRef = useRef(false);
 
   // Business profile image state (backend: business_profile_img, delete_business_profile_img, business_profile_img_is_public)
   // Profile image comes from business_profile_img; other images stay in business_images_url
@@ -296,8 +364,25 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [businessImageUri, setBusinessImageUri] = useState(initialProfileImage);
   const [deleteBusinessProfileImg, setDeleteBusinessProfileImg] = useState(""); // Full S3 URL to remove (backend: delete_business_profile_img)
   const [imageError, setImageError] = useState(false);
-  const [webImageFile, setWebImageFile] = useState(null); // Store the actual File object for web uploads
+  const [webImageFile, setWebImageFile] = useState(null); // Legacy; gallery items store webFile per upload
   const [imageUpdateKey, setImageUpdateKey] = useState(0); // Key to force MiniCard re-render when image changes
+  const [galleryUploads, setGalleryUploads] = useState(() =>
+    reconcileGalleryUploadsWithProfile(
+      parseInitialGalleryUploads(business, business?.business_uid || ""),
+      resolveBusinessProfileImage(business) || "",
+      business?.business_uid || "",
+    ),
+  );
+  const [deletedGalleryImageUrls, setDeletedGalleryImageUrls] = useState([]);
+  const [refreshingGooglePhotos, setRefreshingGooglePhotos] = useState(false);
+  const [showGooglePhotosPanel, setShowGooglePhotosPanel] = useState(false);
+  const [googlePanelPhotos, setGooglePanelPhotos] = useState([]);
+  const googlePanelTouchedRef = useRef(false);
+  const galleryUserTouchedRef = useRef(false);
+  const galleryUploadsRef = useRef([]);
+  const businessImageUriRef = useRef("");
+
+  const businessGoogleId = business?.business_google_id || business?.googleId || "";
 
   // Product/service row image (multipart bs_service_image_{index} on save; bs_image_key in business_services JSON)
   const [serviceProductImageUri, setServiceProductImageUri] = useState("");
@@ -317,9 +402,88 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const hasInitializedSubSub = useRef(false);
 
   useEffect(() => {
-    // This useEffect is only used to log the screen being mounted
+    galleryUploadsRef.current = galleryUploads;
+  }, [galleryUploads]);
+
+  useEffect(() => {
+    businessImageUriRef.current = businessImageUri;
+  }, [businessImageUri]);
+
+  const loadGalleryFromBusiness = useCallback(
+    (sourceBusiness, uid, profileOverride = "") => {
+      const parsed = reconcileGalleryUploadsWithProfile(
+        buildBusinessGalleryUploads(sourceBusiness, uid),
+        profileOverride || resolveBusinessProfileImage(sourceBusiness) || "",
+        uid,
+      );
+      setGalleryUploads(parsed);
+      const profileUrl = profileOverride || resolveBusinessProfileImage(sourceBusiness) || "";
+      if (profileUrl) {
+        setBusinessImageUri(profileUrl);
+        setBusinessImage(profileUrl);
+        setOriginalBusinessImage(profileUrl);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
     console.log("EditBusinessProfileScreen - Screen Mounted");
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      const refreshGalleryFromApi = async () => {
+        if (!businessUID || galleryUserTouchedRef.current) return;
+        try {
+          const res = await fetch(`${BUSINESS_INFO_ENDPOINT}/${businessUID}`);
+          const result = await res.json();
+          const raw = result?.business;
+          if (!raw || cancelled || galleryUserTouchedRef.current) return;
+          const mergedBusiness = {
+            ...business,
+            ...raw,
+            business_uid: businessUID,
+            business_profile_img: coalesceBusinessProfileImg(raw?.business_profile_img, business?.business_profile_img),
+            business_images_url: raw?.business_images_url ?? business?.business_images_url,
+          };
+          loadGalleryFromBusiness(mergedBusiness, businessUID);
+        } catch (e) {
+          console.warn("EditBusinessProfileScreen - could not refresh gallery uploads:", e);
+        }
+      };
+      refreshGalleryFromApi();
+      return () => {
+        cancelled = true;
+      };
+    }, [businessUID, business, loadGalleryFromBusiness]),
+  );
+
+  useEffect(() => {
+    if (galleryUserTouchedRef.current) return;
+    const uid = businessUID || business?.business_uid || "";
+    if (!businessImageUri || !isBusinessUserUploadImage(businessImageUri)) return;
+    setGalleryUploads((prev) => {
+      const reconciled = reconcileGalleryUploadsWithProfile(prev, businessImageUri, uid);
+      const uriFixed = reconciled.some((item, index) => item.uri !== prev[index]?.uri);
+      if (uriFixed) return reconciled;
+      if (businessGalleryIncludesUri(prev, businessImageUri, uid)) return prev;
+      const uri = resolveBusinessUploadUri(businessImageUri, uid) || businessImageUri;
+      const s3Key = normalizeBusinessUploadKey(businessImageUri, uid);
+      if (!uri || !s3Key) return prev;
+      return [
+        ...prev,
+        {
+          id: `synced-${s3Key}`,
+          uri,
+          s3Key,
+          isNew: false,
+          webFile: null,
+        },
+      ];
+    });
+  }, [businessImageUri, businessUID, business?.business_uid]);
 
   // Fetch categories and initialize from business_category_id
   useEffect(() => {
@@ -436,9 +600,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       return [];
     })(),
     // Business image is now handled separately in state (like EditProfileScreen)
-    businessGooglePhotos: Array.isArray(business?.businessGooglePhotos)
-      ? business.businessGooglePhotos
-      : parseBusinessGooglePhotos(business?.business_google_photos),
     // BUSINESS-SPECIFIC: Social links as object with nested properties (EditProfileScreen has separate fields: facebook, twitter, linkedin, youtube)
     socialLinks: {
       facebook: business?.facebook || "",
@@ -599,86 +760,102 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     toggleVisibility(fieldName);
   };
 
-  // Web-specific image picker handler (identical to EditProfileScreen)
+  const selectProfileImage = (uri) => {
+    if (!uri) return;
+    galleryUserTouchedRef.current = true;
+    businessImageUriRef.current = uri;
+    setBusinessImageUri(uri);
+    setBusinessImage(uri);
+    setWebImageFile(null);
+    setImageError(false);
+    setImageUpdateKey((prev) => prev + 1);
+    setIsChanged(true);
+  };
+
+  const addGalleryUpload = (uri, webFile = null) => {
+    galleryUserTouchedRef.current = true;
+    const newItem = {
+      id: `new-${Date.now()}`,
+      uri,
+      s3Key: null,
+      isNew: true,
+      webFile,
+    };
+    setGalleryUploads((prev) => {
+      const next = [...prev, newItem];
+      galleryUploadsRef.current = next;
+      return next;
+    });
+    if (!businessImageUri || imageError) {
+      selectProfileImage(uri);
+    }
+    setIsChanged(true);
+  };
+
   const handleWebImagePick = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Check file size (2MB limit)
     if (file.size > 2 * 1024 * 1024) {
       Alert.alert("File not selectable", `Image size (${(file.size / 1024).toFixed(1)} KB) exceeds the 2MB upload limit.`);
       return;
     }
 
-    // Check if it's an image file
     if (!file.type.startsWith("image/")) {
       Alert.alert("Invalid file type", "Please select an image file.");
       return;
     }
 
-    // Store the actual File object for upload
-    setWebImageFile(file);
-
-    // Create a local URL for preview
     const reader = new FileReader();
+    const previewUri = URL.createObjectURL(file);
+    addGalleryUpload(previewUri, file);
     reader.onloadend = () => {
-      const imageUri = reader.result;
-      if (originalBusinessImage && originalBusinessImage !== imageUri && (originalBusinessImage.startsWith("http://") || originalBusinessImage.startsWith("https://"))) {
-        setDeleteBusinessProfileImg(originalBusinessImage);
+      if (reader.result) {
+        setGalleryUploads((prev) => {
+          const next = prev.map((item) =>
+            item.uri === previewUri ? { ...item, uri: reader.result, webFile: file } : item,
+          );
+          galleryUploadsRef.current = next;
+          return next;
+        });
+        if (businessImageUriRef.current === previewUri) {
+          businessImageUriRef.current = reader.result;
+          setBusinessImageUri(reader.result);
+          setBusinessImage(reader.result);
+        }
       }
-      setBusinessImageUri(imageUri);
-      setBusinessImage(imageUri);
-      setImageError(false);
-      setIsChanged(true);
-      setImageUpdateKey((prev) => prev + 1); // Increment key to force MiniCard re-render
     };
     reader.readAsDataURL(file);
 
-    // Reset the input so the same file can be selected again
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   };
 
-  // Image picker handler (identical to EditProfileScreen)
-  const handlePickImage = async () => {
-    console.log("handlePickImage called");
-
-    // On web, use file input instead of ImagePicker
+  const handlePickGalleryImage = async () => {
     if (Platform.OS === "web") {
-      if (fileInputRef.current) {
-        fileInputRef.current.click();
-      }
+      fileInputRef.current?.click();
       return;
     }
 
-    // Mobile implementation
     try {
-      console.log("Requesting media library permissions...");
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      console.log("Media library permission status:", status);
-
       if (status !== "granted") {
-        console.log("Permission not granted");
         Alert.alert("Permission required", "Permission to access media library is required!");
         return;
       }
 
-      console.log("Launching image library...");
-      let result = await ImagePicker.launchImageLibraryAsync({
+      const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: "images",
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.7,
       });
-      console.log("Image picker result:", JSON.stringify(result, null, 2));
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        // File size check (2MB = 2 * 1024 * 1024 = 2,097,152 bytes)
         const asset = result.assets[0];
         let fileSize = asset.fileSize;
         if (!fileSize && asset.uri) {
-          // Try to get file size using FileSystem
           try {
             const fileInfo = await FileSystem.getInfoAsync(asset.uri);
             fileSize = fileInfo.size;
@@ -690,39 +867,141 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           Alert.alert("File not selectable", `Image size (${(fileSize / 1024).toFixed(1)} KB) exceeds the 2MB upload limit.`);
           return;
         }
-        console.log("Image selected successfully");
-        if (originalBusinessImage && originalBusinessImage !== result.assets[0].uri && (originalBusinessImage.startsWith("http://") || originalBusinessImage.startsWith("https://"))) {
-          console.log("Setting deleteBusinessProfileImg to:", originalBusinessImage);
-          setDeleteBusinessProfileImg(originalBusinessImage);
-        }
-        console.log("Setting new business image URI:", result.assets[0].uri);
-        setBusinessImageUri(result.assets[0].uri);
-        setBusinessImage(result.assets[0].uri);
-        setImageError(false); // Reset error state when new image is selected
-        setIsChanged(true);
-        setImageUpdateKey((prev) => prev + 1); // Increment key to force MiniCard re-render
-      } else {
-        console.log("No image selected or picker was canceled");
+        addGalleryUpload(asset.uri);
+        selectProfileImage(asset.uri);
       }
     } catch (error) {
-      console.error("Error picking image - Full error:", error);
-      console.error("Error name:", error.name);
-      console.error("Error message:", error.message);
-      console.error("Error stack:", error.stack);
-
-      // More specific error messages based on error type
       let errorMessage = "Failed to pick image. ";
       if (error.name === "PermissionDenied") {
         errorMessage += "Permission was denied.";
-      } else if (error.name === "ImagePickerError") {
-        errorMessage += "There was an error with the image picker.";
-      } else if (error.message.includes("permission")) {
+      } else if (error.message?.includes("permission")) {
         errorMessage += "Permission issue detected.";
-      } else if (error.message.includes("canceled")) {
+      } else if (error.message?.includes("canceled")) {
         errorMessage += "Operation was canceled.";
       }
-
       Alert.alert("Error", errorMessage);
+    }
+  };
+
+  const removeGooglePhoto = (uri, index) => {
+    googlePhotosUserEditedRef.current = true;
+    googlePanelTouchedRef.current = true;
+    const photos = googlePanelPhotos || [];
+    const updatedPhotos = dedupeGooglePhotoUrls([...photos.slice(0, index), ...photos.slice(index + 1)]);
+    setGooglePanelPhotos(updatedPhotos);
+    if (updatedPhotos.length === 0) {
+      setShowGooglePhotosPanel(false);
+    }
+    if (googlePhotoUrlsMatch(businessImageUri, uri)) {
+      const next = pickNextProfileImage(updatedPhotos, galleryUploads, uri);
+      if (next) {
+        selectProfileImage(next);
+      } else {
+        if (originalBusinessImage === uri && isRemoteImageUri(uri)) {
+          setDeleteBusinessProfileImg(uri);
+        }
+        setBusinessImageUri("");
+        setBusinessImage("");
+        setImageUpdateKey((prev) => prev + 1);
+      }
+    }
+    setIsChanged(true);
+  };
+
+  const removeGalleryUpload = (index) => {
+    const item = galleryUploads[index];
+    if (!item) return;
+    galleryUserTouchedRef.current = true;
+    const removedUri = item.uri;
+    if (!item.isNew && isRemoteImageUri(removedUri)) {
+      setDeletedGalleryImageUrls((prev) => [...prev, removedUri]);
+      if (googlePhotoUrlsMatch(originalBusinessImage, removedUri)) {
+        setDeleteBusinessProfileImg(removedUri);
+      }
+    }
+    const updated = [...galleryUploads.slice(0, index), ...galleryUploads.slice(index + 1)];
+    setGalleryUploads(updated);
+    if (businessImageUri === removedUri) {
+      const next = pickNextProfileImage(googlePanelPhotos, updated, removedUri);
+      if (next) {
+        selectProfileImage(next);
+      } else {
+        if (originalBusinessImage === removedUri && isRemoteImageUri(removedUri)) {
+          setDeleteBusinessProfileImg(removedUri);
+        }
+        setBusinessImageUri("");
+        setBusinessImage("");
+        setImageUpdateKey((prev) => prev + 1);
+      }
+    }
+    setIsChanged(true);
+  };
+
+  const handleGalleryImageError = (item) => {
+    if (!item) return;
+    const uid = businessUID || business?.business_uid || "";
+    if (
+      businessUploadUrisMatch(item.uri, businessImageUri, uid) ||
+      businessUploadUrisMatch(item.uri, originalBusinessImage, uid)
+    ) {
+      return;
+    }
+    galleryUserTouchedRef.current = true;
+
+    if (!item.isNew && isRemoteImageUri(item.uri)) {
+      setDeletedGalleryImageUrls((deleted) => (deleted.includes(item.uri) ? deleted : [...deleted, item.uri]));
+    }
+
+    setGalleryUploads((prev) => {
+      if (!prev.some((entry) => entry.id === item.id)) return prev;
+      const updated = prev.filter((entry) => entry.id !== item.id);
+      if (googlePhotoUrlsMatch(businessImageUri, item.uri)) {
+        const next = pickNextProfileImage(googlePanelPhotos, updated, item.uri);
+        if (next) {
+          selectProfileImage(next);
+        } else {
+          setBusinessImageUri("");
+          setBusinessImage("");
+          setImageUpdateKey((prevKey) => prevKey + 1);
+        }
+      }
+      return updated;
+    });
+    setIsChanged(true);
+  };
+
+  const handleRefreshGooglePhotos = async () => {
+    if (!businessGoogleId) {
+      Alert.alert("No Google Business", "This business is not linked to a Google Maps listing.");
+      return;
+    }
+    setRefreshingGooglePhotos(true);
+    try {
+      const pd = await getPlaceDetails(businessGoogleId);
+      const freshPhotos = dedupeGooglePhotoUrls(pd.photo_urls || []);
+      if (freshPhotos.length === 0) {
+        Alert.alert("No Photos", "Google did not return any photos for this business.");
+        return;
+      }
+      const currentPhotos = googlePanelPhotos || [];
+      const mergedPhotos = mergeRefreshedGooglePhotos(currentPhotos, freshPhotos);
+      const photosToSet = mergedPhotos.length > 0 ? mergedPhotos : freshPhotos;
+      googlePhotosUserEditedRef.current = true;
+      googlePanelTouchedRef.current = true;
+      setGooglePanelPhotos(photosToSet);
+      setShowGooglePhotosPanel(true);
+      setBusinessImageUri((prev) => {
+        if (!prev) return photosToSet[0] || prev;
+        const favorite = resolveFavoriteGoogleImage(prev, photosToSet);
+        return favorite || prev;
+      });
+      setImageUpdateKey((k) => k + 1);
+      setIsChanged(true);
+    } catch (e) {
+      console.warn("EditBusinessProfileScreen - Google photo refresh failed:", e);
+      Alert.alert("Refresh Failed", "Could not load photos from Google. Please try again.");
+    } finally {
+      setRefreshingGooglePhotos(false);
     }
   };
 
@@ -732,19 +1011,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setImageError(true);
     setBusinessImageUri("");
     setBusinessImage("");
-  };
-
-  // Remove profile image: backend will delete when we send delete_business_profile_img (full S3 URL)
-  const handleRemoveProfileImage = () => {
-    if (originalBusinessImage && (originalBusinessImage.startsWith("http://") || originalBusinessImage.startsWith("https://"))) {
-      setDeleteBusinessProfileImg(originalBusinessImage);
-    }
-    setBusinessImageUri("");
-    setBusinessImage("");
-    setOriginalBusinessImage("");
-    setImageError(false);
-    setImageUpdateKey((prev) => prev + 1);
-    setIsChanged(true);
   };
 
   const resolveServiceImageDisplayUri = React.useCallback(
@@ -1055,36 +1321,98 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_website", formData.website);
       payload.append("custom_tags", JSON.stringify(formData.customTags));
 
-      // Business profile image (backend: business_profile_img file, delete_business_profile_img URL, business_profile_img_is_public 0/1)
-      if (businessImageUri && !imageError && businessImageUri !== originalBusinessImage) {
-        if (Platform.OS === "web" && webImageFile) {
-          imageFileSize = webImageFile.size || 0;
-          console.log("Business profile image file size (bytes):", imageFileSize);
-          payload.append("business_profile_img", webImageFile);
-        } else {
-          try {
-            const fileInfo = await FileSystem.getInfoAsync(businessImageUri);
-            imageFileSize = fileInfo.size || 0;
-            console.log("Business profile image file size (bytes):", imageFileSize);
-            const uriParts = businessImageUri.split(".");
-            const fileType = uriParts[uriParts.length - 1] || "jpg";
-            const imageFile = {
-              uri: businessImageUri,
-              name: `business_profile_img.${fileType}`,
-              type: `image/${fileType}`,
-            };
-            payload.append("business_profile_img", imageFile);
-          } catch (error) {
-            console.error("Error getting file info for business_profile_img:", error);
-            if (businessImageUri.startsWith("data:")) {
-              const response = await fetch(businessImageUri);
-              const blob = await response.blob();
-              imageFileSize = blob.size || 0;
-              const file = new File([blob], "business_profile_img.jpg", { type: blob.type });
-              payload.append("business_profile_img", file);
+      const googleImages = googlePanelTouchedRef.current ? dedupeGooglePhotoUrls(googlePanelPhotos) : null;
+      const currentGalleryUploads = galleryUploadsRef.current;
+      const currentBusinessImageUri = businessImageUriRef.current;
+      const selectedProfile = (currentBusinessImageUri || "").trim();
+      const isProfileGalleryItem = (item) =>
+        businessUploadUrisMatch(item.uri, currentBusinessImageUri, businessUID) ||
+        googlePhotoUrlsMatch(item.uri, currentBusinessImageUri);
+      const hasExplicitProfileMatch = currentGalleryUploads.some(isProfileGalleryItem);
+      const profileGalleryItem =
+        currentGalleryUploads.find(isProfileGalleryItem) ||
+        currentGalleryUploads.find((item) =>
+          businessUploadUrisMatch(
+            resolveGalleryItemDisplayUri(item, currentBusinessImageUri, businessUID),
+            currentBusinessImageUri,
+            businessUID,
+          ),
+        );
+      const profileFromNewUpload = Boolean(profileGalleryItem?.isNew);
+      const profileFromExistingUpload = Boolean(profileGalleryItem && !profileGalleryItem.isNew);
+      const favoriteUrl =
+        googleImages !== null && !profileFromExistingUpload && !profileFromNewUpload
+          ? resolveFavoriteGoogleImage(selectedProfile, googleImages)
+          : "";
+      const isGoogleProfileSelection = Boolean(favoriteUrl);
+
+      // Match Business Setup image field order and names
+      payload.append("business_google_rating", String(business?.business_google_rating ?? business?.googleRating ?? ""));
+      if (googleImages !== null) {
+        payload.append("business_google_photos", JSON.stringify(googleImages));
+        payload.append("business_favorite_image", favoriteUrl);
+      }
+      if (businessGoogleId) {
+        payload.append("business_google_id", businessGoogleId);
+      }
+
+      // Business profile image file — uploads only (Google logo uses business_favorite_image, same as setup)
+      const profileWebFile = webImageFile || profileGalleryItem?.webFile || null;
+      const profileSelectionChanged =
+        currentBusinessImageUri &&
+        !imageError &&
+        !businessUploadUrisMatch(currentBusinessImageUri, originalBusinessImage, businessUID);
+      let profileImageSent = false;
+
+      if (profileSelectionChanged && !isGoogleProfileSelection) {
+        if (profileFromExistingUpload && profileGalleryItem) {
+          profileImageSent = await appendExistingUploadAsProfile(
+            payload,
+            profileGalleryItem,
+            currentBusinessImageUri,
+            businessUID,
+          );
+        } else if (!profileFromNewUpload) {
+          if (Platform.OS === "web" && profileWebFile) {
+            imageFileSize = profileWebFile.size || 0;
+            payload.append("business_profile_img", profileWebFile);
+            profileImageSent = true;
+          } else if (isLocalImageUri(currentBusinessImageUri)) {
+            try {
+              const fileInfo = await FileSystem.getInfoAsync(currentBusinessImageUri);
+              imageFileSize = fileInfo.size || 0;
+              const uriParts = currentBusinessImageUri.split(".");
+              const fileType = uriParts[uriParts.length - 1]?.split(/[?#]/)[0] || "jpg";
+              payload.append("business_profile_img", {
+                uri: currentBusinessImageUri,
+                name: `business_profile_img.${fileType}`,
+                type: `image/${fileType}`,
+              });
+              profileImageSent = true;
+            } catch (error) {
+              console.error("Error getting file info for business_profile_img:", error);
+              if (currentBusinessImageUri.startsWith("data:") || currentBusinessImageUri.startsWith("blob:")) {
+                const response = await fetch(currentBusinessImageUri);
+                const blob = await response.blob();
+                imageFileSize = blob.size || 0;
+                const file = new File([blob], "business_profile_img.jpg", { type: blob.type || "image/jpeg" });
+                payload.append("business_profile_img", file);
+                profileImageSent = true;
+              }
             }
+          } else if (isRemoteImageUri(currentBusinessImageUri) && !isGoogleHostedPhotoUrl(currentBusinessImageUri)) {
+            profileImageSent = await appendExistingUploadAsProfile(
+              payload,
+              profileGalleryItem || { uri: currentBusinessImageUri, s3Key: normalizeBusinessUploadKey(currentBusinessImageUri, businessUID) },
+              currentBusinessImageUri,
+              businessUID,
+            );
           }
         }
+      }
+
+      if (profileSelectionChanged && !isGoogleProfileSelection && !profileImageSent && !profileFromNewUpload) {
+        console.warn("EditBusinessProfileScreen - profile selection changed but business_profile_img was not attached");
       }
 
       if (deleteBusinessProfileImg && !imageError) {
@@ -1094,16 +1422,86 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
       payload.append("business_profile_img_is_public", formData.imageIsPublic ? "1" : "0");
 
-      // Other business images (gallery) - business_images_url unchanged; profile image is separate
-      if (business?.business_images_url != null && business?.business_images_url !== "") {
-        const existing = typeof business.business_images_url === "string" ? business.business_images_url : JSON.stringify(business.business_images_url);
-        payload.append("business_images_url", existing);
+      deletedGalleryImageUrls.forEach((url, index) => {
+        payload.append(`delete_business_image_${index}`, url);
+      });
+
+      const isBlobOrDataUri = (uri) => uri && (uri.startsWith("blob:") || uri.startsWith("data:"));
+      const galleryFilenames = [];
+      let newFileIndex = 0;
+
+      for (const item of currentGalleryUploads) {
+        if (item.isNew) {
+          const imageUri = item.uri;
+          let fileType = "jpg";
+          if (imageUri.startsWith("data:")) {
+            const match = imageUri.match(/data:image\/(\w+)/);
+            fileType = match ? (match[1] === "jpeg" ? "jpg" : match[1]) : "jpg";
+          } else if (item.webFile?.name) {
+            const nameParts = item.webFile.name.split(".");
+            fileType = nameParts.length > 1 ? nameParts[nameParts.length - 1].toLowerCase() : "jpg";
+          } else {
+            const uriParts = imageUri.split(".");
+            fileType = uriParts.length > 1 ? uriParts[uriParts.length - 1].split(/[?#]/)[0] : "jpg";
+          }
+          const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase()) ? `image/${fileType === "jpg" ? "jpeg" : fileType}` : "image/jpeg";
+          const fileName = `business_image_${newFileIndex}.${fileType}`;
+          let fileToAppend = null;
+
+          if (Platform.OS === "web" && item.webFile) {
+            fileToAppend = item.webFile;
+          } else if (Platform.OS === "web" && isBlobOrDataUri(imageUri)) {
+            try {
+              const response = await fetch(imageUri);
+              const blob = await response.blob();
+              fileToAppend = new File([blob], fileName, { type: mimeType });
+            } catch (err) {
+              console.error("Failed to fetch gallery image for upload:", err);
+              continue;
+            }
+          } else {
+            fileToAppend = {
+              uri: imageUri,
+              type: mimeType,
+              name: fileName,
+            };
+          }
+
+          galleryFilenames.push(fileName);
+          payload.append(`business_img_${newFileIndex}`, fileToAppend);
+
+          if (
+            !isGoogleProfileSelection &&
+            item.isNew &&
+            (isProfileGalleryItem(item) ||
+              (!hasExplicitProfileMatch &&
+                profileSelectionChanged &&
+                currentGalleryUploads.filter((entry) => entry.isNew).length === 1))
+          ) {
+            const profileFileName = `business_profile_img.${fileType}`;
+            const profileFile =
+              fileToAppend instanceof File
+                ? new File([fileToAppend], profileFileName, { type: mimeType })
+                : { uri: imageUri, type: mimeType, name: profileFileName };
+            payload.append("business_profile_img", profileFile);
+            if (fileToAppend instanceof File) {
+              imageFileSize = fileToAppend.size || imageFileSize;
+            }
+          }
+          newFileIndex += 1;
+        } else if (item.s3Key) {
+          galleryFilenames.push(item.s3Key);
+        }
       }
 
-      // Append Google images as URLs (if any - these are separate from user-uploaded)
-      const googleImages = formData.businessGooglePhotos || [];
-      if (googleImages.length > 0) {
-        payload.append("business_google_photos", JSON.stringify(googleImages));
+      if (currentGalleryUploads.length > 0 && galleryFilenames.length === 0) {
+        Alert.alert("Error", "Could not prepare your uploaded image for save. Please try uploading again.");
+        setIsLoading(false);
+        return;
+      }
+
+      if (galleryFilenames.length > 0 || deletedGalleryImageUrls.length > 0) {
+        payload.append("business_images_url", JSON.stringify(galleryFilenames));
       }
 
       payload.append("business_email_id_is_public", formData.emailIsPublic ? "1" : "0");
@@ -1182,7 +1580,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         payload.append("delete_business_services", JSON.stringify(deletedBusinessServiceUids));
       }
 
-      const isBlobOrDataUri = (uri) => uri && (uri.startsWith("blob:") || uri.startsWith("data:"));
       for (let index = 0; index < servicesForPayload.length; index++) {
         const svc = servicesForPayload[index];
         if (svc._svcDeleteImageUrl) {
@@ -1267,12 +1664,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       // Note: Business profile doesn't have these sections, so deleted items handling is not needed
 
       // Standardized console log (same format as EditProfileScreen for easy comparison)
-      const businessImagesUrlValue =
-        business?.business_images_url != null && business?.business_images_url !== ""
-          ? typeof business.business_images_url === "string"
-            ? business.business_images_url
-            : JSON.stringify(business.business_images_url)
-          : "(not sent)";
+      const businessImagesUrlValue = JSON.stringify(galleryFilenames);
       console.log("============================================");
       console.log("📡 BUSINESS PROFILE – IMAGE PAYLOAD SENT TO BACKEND");
       console.log("============================================");
@@ -1280,20 +1672,40 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       console.log("📝 METHOD: PUT");
       console.log("--------------------------------------------");
       console.log("Image fields (compare with backend expectations):");
-      console.log("  business_profile_img (file):", businessImageUri && !imageError && businessImageUri !== originalBusinessImage ? "SENT (file)" : "not sent");
-      if (businessImageUri && !imageError && businessImageUri !== originalBusinessImage) {
+      console.log("  business_profile_img (file):", profileSelectionChanged && !isGoogleProfileSelection ? "SENT" : "not sent");
+      if (profileSelectionChanged && !isGoogleProfileSelection) {
         console.log("    -> file size (bytes):", imageFileSize);
         console.log("    -> (web) file name:", Platform.OS === "web" && webImageFile ? webImageFile.name : "N/A");
       }
       console.log("  delete_business_profile_img (URL):", deleteBusinessProfileImg || "(not sent)");
       console.log("  business_profile_img_is_public:", formData.imageIsPublic ? "1" : "0");
       console.log("  business_images_url (gallery only):", businessImagesUrlValue);
+      console.log("  delete_business_image_* count:", deletedGalleryImageUrls.length);
+      console.log("  business_google_id:", businessGoogleId || "(not sent)");
+      console.log("  business_google_photos:", googleImages !== null ? `sent (${googleImages.length})` : "not sent (panel not opened)");
+      console.log("  business_favorite_image:", googleImages !== null ? favoriteUrl || "(cleared)" : "(not sent)");
       console.log("--------------------------------------------");
       console.log("============================================");
       console.log("Custom tags being sent:", JSON.stringify(formData.customTags));
-      const response = await axios.put(`${BusinessProfileAPI}`, payload, {
-        headers: { Accept: "application/json" },
+      const response = await fetch(`${BusinessProfileAPI}`, {
+        method: "PUT",
+        body: payload,
       });
+
+      if (!response.ok) {
+        if (response.status === 413) {
+          Alert.alert("File Too Large", `The selected image (${(imageFileSize / 1024).toFixed(1)} KB) was too large to upload. Please select an image under 2MB.`);
+          return;
+        }
+        let errBody = "";
+        try {
+          const errJson = await response.json();
+          errBody = errJson?.message || JSON.stringify(errJson);
+        } catch {
+          /* ignore */
+        }
+        throw new Error(errBody || `Update failed (${response.status})`);
+      }
 
       if (response.status === 200) {
       // Fetch the saved services to get their bs_uid values
@@ -1386,6 +1798,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
       suppressLeavePromptRef.current = true;
       setIsChanged(false);
+      setOriginalBusinessImage(currentBusinessImageUri || originalBusinessImage);
       navigation.navigate("BusinessProfile", { business_uid: businessUID });
       Alert.alert("Success", "Business profile updated.");
       setTimeout(() => {
@@ -1393,13 +1806,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       }, 1500);
     }
     } catch (error) {
-      // Handle 413 Payload Too Large
       if (error.response && error.response.status === 413) {
         Alert.alert("File Too Large", `The selected image (${(imageFileSize / 1024).toFixed(1)} KB) was too large to upload. Please select an image under 2MB.`);
         return;
       }
       console.error("Update Error:", error);
-      let errorMsg = "Update failed. Please try again.";
+      let errorMsg = error.message || "Update failed. Please try again.";
       if (imageFileSize > 0) {
         errorMsg += ` (Image file size: ${(imageFileSize / 1024).toFixed(1)} KB)`;
       }
@@ -1608,10 +2020,15 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setIsChanged(true);
   };
 
-  // Business Image Section (identical to EditProfileScreen profile image section)
+  const googlePhotos = googlePanelPhotos;
+  const hasGooglePlace = Boolean(businessGoogleId);
+
   const renderBusinessImageSection = () => (
     <View style={[styles.imageSection, darkMode && styles.darkImageSection]}>
       <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Image</Text>
+      <Text style={[styles.imageHelperText, darkMode && styles.darkSublabel]}>
+        Tap any image to select your business profile. Tap ✕ to remove. Use Refresh Google Images to load photos from Google.
+      </Text>
       <Image
         source={businessImageUri && !imageError ? { uri: businessImageUri } : DEFAULT_BUSINESS_IMAGE}
         style={[styles.profileImage, darkMode && styles.darkProfileImage]}
@@ -1628,17 +2045,85 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
       </View>
-      <View style={{ flexDirection: "row", gap: 12, marginTop: 4 }}>
-        <TouchableOpacity onPress={handlePickImage}>
-          <Text style={[styles.uploadLink, darkMode && styles.darkUploadLink]}>Upload Image</Text>
-        </TouchableOpacity>
-        {businessImageUri || businessImage ? (
-          <TouchableOpacity onPress={handleRemoveProfileImage}>
-            <Text style={[styles.uploadLink, { color: darkMode ? "#f87171" : "red" }]}>Remove Image</Text>
+
+      <View style={styles.googleImagesHeaderRow}>
+        <Text style={[styles.sublabel, darkMode && styles.darkSublabel, styles.gallerySectionLabel, styles.googleImagesHeaderLabel]}>Your Uploads</Text>
+        {hasGooglePlace ? (
+          <TouchableOpacity
+            style={[styles.googleRefreshButton, darkMode && styles.darkGoogleRefreshButton, refreshingGooglePhotos && styles.googleRefreshButtonDisabled]}
+            onPress={handleRefreshGooglePhotos}
+            disabled={refreshingGooglePhotos}
+            accessibilityLabel='Refresh Google Images'
+            accessibilityRole='button'
+          >
+            {refreshingGooglePhotos ? (
+              <ActivityIndicator size='small' color={darkMode ? "#fff" : "#007AFF"} />
+            ) : (
+              <>
+                <Ionicons name='refresh' size={16} color={darkMode ? "#60a5fa" : "#007AFF"} />
+                <Text style={[styles.googleRefreshText, darkMode && styles.darkGoogleRefreshText]}>Refresh Google Images</Text>
+              </>
+            )}
           </TouchableOpacity>
         ) : null}
       </View>
-      {/* Hidden file input for web */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll} contentContainerStyle={styles.imageRow}>
+        {galleryUploads.map((item, index) => {
+          const displayUri = resolveGalleryItemDisplayUri(item, businessImageUri, businessUID);
+          const isSelected =
+            businessUploadUrisMatch(businessImageUri, displayUri, businessUID) || googlePhotoUrlsMatch(businessImageUri, displayUri);
+          return (
+            <View key={item.id} style={styles.galleryImageWrapper}>
+              <TouchableOpacity style={styles.galleryThumbTouchable} onPress={() => selectProfileImage(displayUri)} activeOpacity={0.8}>
+                <Image
+                  source={{ uri: displayUri }}
+                  style={[styles.galleryThumb, darkMode && styles.darkGalleryThumb, isSelected && styles.galleryImageSelected]}
+                  resizeMode='cover'
+                  onError={() => handleGalleryImageError(item)}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.deleteIcon} onPress={() => removeGalleryUpload(index)}>
+                <Text style={styles.deleteText}>✕</Text>
+              </TouchableOpacity>
+              {isSelected ? (
+                <View style={styles.gallerySelectedBadge}>
+                  <Text style={styles.gallerySelectedBadgeText}>✓</Text>
+                </View>
+              ) : null}
+            </View>
+          );
+        })}
+        <TouchableOpacity style={[styles.galleryUploadBox, darkMode && styles.darkGalleryUploadBox]} onPress={handlePickGalleryImage}>
+          <Text style={[styles.galleryUploadText, darkMode && styles.darkGalleryUploadText]}>Upload</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {showGooglePhotosPanel && googlePhotos.length > 0 ? (
+        <>
+          <Text style={[styles.sublabel, darkMode && styles.darkSublabel, styles.gallerySectionLabel, styles.googlePhotosPanelLabel]}>Google Images</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll} contentContainerStyle={styles.imageRow}>
+            {googlePhotos.filter((uri) => uri && String(uri).trim()).map((uri, index) => {
+              const isSelected = googlePhotoUrlsMatch(businessImageUri, uri);
+              return (
+                <View key={`google-${uri}-${index}`} style={styles.galleryImageWrapper}>
+                  <TouchableOpacity style={styles.galleryThumbTouchable} onPress={() => selectProfileImage(uri)} activeOpacity={0.8}>
+                    <Image source={{ uri }} style={[styles.galleryThumb, darkMode && styles.darkGalleryThumb, isSelected && styles.galleryImageSelected]} resizeMode='cover' />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.deleteIcon} onPress={() => removeGooglePhoto(uri, index)}>
+                    <Text style={styles.deleteText}>✕</Text>
+                  </TouchableOpacity>
+                  {isSelected ? (
+                    <View style={styles.gallerySelectedBadge}>
+                      <Text style={styles.gallerySelectedBadgeText}>✓</Text>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
+          </ScrollView>
+        </>
+      ) : null}
+
       {Platform.OS === "web" &&
         React.createElement("input", {
           ref: fileInputRef,
@@ -1767,26 +2252,32 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   );
 
   // BUSINESS-SPECIFIC: previewBusiness object (EditProfileScreen has previewUser with more fields)
-  const previewBusiness = {
-    business_name: formData.name,
-    tagline: formData.tagline,
-    business_location: formData.location,
-    business_address_line_1: formData.addressLine2,
-    business_city: formData.city,
-    business_state: formData.state,
-    business_short_bio: formData.shortBio,
-    business_phone_number: formData.phone,
-    business_email: formData.email,
-    business_email_id: formData.email,
-    phoneIsPublic: formData.phoneIsPublic,
-    emailIsPublic: formData.emailIsPublic,
-    taglineIsPublic: formData.taglineIsPublic,
-    shortBioIsPublic: formData.shortBioIsPublic,
-    locationIsPublic: formData.locationIsPublic,
-    imageIsPublic: formData.imageIsPublic,
-    // Include the business image - MiniCard checks first_image field
-    first_image: businessImageUri || "",
-  };
+  const previewBusiness = mapBusinessToMiniCard(
+    {
+      business_name: formData.name,
+      tagline: formData.tagline,
+      location: formData.location,
+      addressLine2: formData.addressLine2,
+      city: formData.city,
+      state: formData.state,
+      phone: formData.phone,
+      email: formData.email,
+      business_profile_img: businessImageUri || "",
+      phoneIsPublic: formData.phoneIsPublic,
+      emailIsPublic: formData.emailIsPublic,
+      taglineIsPublic: formData.taglineIsPublic,
+      locationIsPublic: formData.locationIsPublic,
+      imageIsPublic: formData.imageIsPublic,
+    },
+    {
+      previewMode: true,
+      phoneIsPublic: formData.phoneIsPublic,
+      emailIsPublic: formData.emailIsPublic,
+      taglineIsPublic: formData.taglineIsPublic,
+      locationIsPublic: formData.locationIsPublic,
+      imageIsPublic: formData.imageIsPublic,
+    },
+  );
 
   // MISSING: toggleProfileImageVisibility function (EditProfileScreen has this)
   // Note: Business profile doesn't have single profile image visibility toggle
@@ -3571,7 +4062,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   saveText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  imageSection: { alignItems: "center", marginBottom: 20 },
+  imageSection: { alignItems: "center", marginBottom: 20, width: "100%" },
   profileImage: { width: 100, height: 100, borderRadius: 50, marginBottom: 10, backgroundColor: "#eee" },
   uploadLink: { color: "#007AFF", textDecorationLine: "underline", marginBottom: 10 },
   previewSection: { marginBottom: 20 },
@@ -3611,9 +4102,133 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
+  imageHelperText: {
+    fontSize: 13,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 10,
+    paddingHorizontal: 8,
+  },
+  gallerySectionLabel: {
+    alignSelf: "flex-start",
+    width: "100%",
+    marginTop: 4,
+  },
+  googleImagesHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  googleImagesHeaderLabel: {
+    marginTop: 0,
+    width: undefined,
+    flex: 1,
+  },
+  googleRefreshButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#007AFF",
+    backgroundColor: "#f0f8ff",
+    flexShrink: 1,
+    maxWidth: "58%",
+  },
+  darkGoogleRefreshButton: {
+    borderColor: "#60a5fa",
+    backgroundColor: "#1e3a5f",
+  },
+  googleRefreshButtonDisabled: {
+    opacity: 0.6,
+  },
+  googleRefreshText: {
+    color: "#007AFF",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  darkGoogleRefreshText: {
+    color: "#60a5fa",
+  },
+  googlePhotosPanelLabel: {
+    marginTop: 12,
+  },
+  galleryImageWrapper: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    marginRight: 10,
+    backgroundColor: "#fff",
+    position: "relative",
+    overflow: "hidden",
+    flexShrink: 0,
+  },
+  galleryThumbTouchable: {
+    width: 80,
+    height: 80,
+  },
+  galleryThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    backgroundColor: "#f0f0f0",
+  },
+  darkGalleryThumb: {
+    backgroundColor: "#404040",
+  },
+  galleryImageSelected: {
+    borderWidth: 3,
+    borderColor: "#00C721",
+    borderRadius: 10,
+  },
+  gallerySelectedBadge: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    backgroundColor: "#00C721",
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  gallerySelectedBadgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  galleryUploadBox: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderStyle: "dashed",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f9f9f9",
+  },
+  darkGalleryUploadBox: {
+    borderColor: "#555",
+    backgroundColor: "#404040",
+  },
+  galleryUploadText: {
+    color: "#007AFF",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  darkGalleryUploadText: {
+    color: "#60a5fa",
+  },
   imageScroll: {
     marginTop: 10,
     height: 120,
+    width: "100%",
   },
   imageRow: {
     flexDirection: "row",

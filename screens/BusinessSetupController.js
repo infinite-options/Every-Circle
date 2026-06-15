@@ -5,17 +5,13 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import BusinessStep0 from "./BusinessStep0";
 import BusinessStep1 from "./BusinessStep1";
-import BusinessStep2 from "./BusinessStep2";
-// NOTE: BusinessStep3 and BusinessStep4 are no longer in the flow as of Jan 21, 2026.
-// They can be deleted in the future once confirmed they're no longer needed.
-import BusinessStep3 from "./BusinessStep3";
-import BusinessStep4 from "./BusinessStep4";
 import BusinessFooter from "../components/BusinessFooter";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import { googlePhotoUrlsMatch, dedupeGooglePhotoUrls } from "../utils/resolveBusinessProfileImage";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 
@@ -65,12 +61,13 @@ export default function BusinessSetupController({ navigation, route }) {
     business_is_active: 1,
     business_email_id_is_public: 1,
     business_phone_number_is_public: 1,
+    business_location_is_public: 1,
     // business_address_line_1_is_public: 1,
     // business_address_line_2_is_public: 1,
     // business_city_is_public: 1,
     // business_state_is_public: 1,
     // business_country_is_public: 1,
-    business_tag_line_is_public: 1,
+    business_tag_line_is_public: 0,
     business_short_bio_is_public: 1,
     // business_google_rating_is_public: 1,
     // business_google_photos_is_public: 1,
@@ -92,7 +89,7 @@ export default function BusinessSetupController({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [formData, setFormData] = useState(getInitialFormData());
   const formDataRef = useRef(formData);
-  const [step2HasPendingTags, setStep2HasPendingTags] = useState(false);
+  const [step1HasPendingTags, setStep1HasPendingTags] = useState(false);
 
   useEffect(() => {
     formDataRef.current = formData;
@@ -145,14 +142,12 @@ export default function BusinessSetupController({ navigation, route }) {
     initializeBusinessSetup();
   }, []);
 
-  const handleNext = () => {
-    console.log("activeStep", activeStep);
-    if (activeStep < 2) {
-      setActiveStep((prev) => prev + 1);
-    } else {
-      submitBusinessData();
-    }
+  const hasMainCategory = () => {
+    const categoryIds = Array.isArray(formData.businessCategoryId) ? formData.businessCategoryId : [];
+    return Boolean(categoryIds[0]);
   };
+
+  const canSubmitStep1 = () => Boolean(formData.businessRole) && hasMainCategory();
 
   const handleBack = () => {
     if (activeStep > 0) {
@@ -178,43 +173,36 @@ export default function BusinessSetupController({ navigation, route }) {
         // Step 0: Must have Business Name
         return formData.businessName && formData.businessName.trim() !== "";
       case 1:
-        // Step 1: No required fields
-        return true;
-      case 2:
-        // Step 2: Must select at least a Main Category
-        return formData.businessCategoryId && formData.businessCategoryId.length > 0;
-      case 3:
-        // Step 3: No required fields
-        return true;
-      case 4:
-        // Step 4: No required fields
-        return true;
+        return canSubmitStep1();
       default:
         return false;
     }
   };
 
   const handleContinue = () => {
-    if (activeStep === 2 && step2HasPendingTags) {
+    if (activeStep === 1 && step1HasPendingTags) {
       Alert.alert("Unsaved Tags", "Click Add to save your custom tags, or clear the tag field before submitting.");
       return;
     }
 
     if (validateCurrentStep()) {
-      if (activeStep < 2) {
+      if (activeStep < 1) {
         setActiveStep((prev) => prev + 1);
       } else {
         submitBusinessData();
       }
     } else {
-      // Show validation error
       let errorMessage = "";
       switch (activeStep) {
         case 0:
           errorMessage = "Please enter a Business Name to continue.";
           break;
-        case 2:
-          errorMessage = "Please select at least a Main Category to continue.";
+        case 1:
+          if (!formData.businessRole) {
+            errorMessage = "Please select a Business Role to submit.";
+          } else {
+            errorMessage = "Please select a Main Category to submit.";
+          }
           break;
         default:
           errorMessage = "Please complete all required fields to continue.";
@@ -232,6 +220,8 @@ export default function BusinessSetupController({ navigation, route }) {
     try {
       const currentFormData = formDataRef.current;
       const customTags = currentFormData.customTags || [];
+      const tagLine = (currentFormData.tagLine || "").trim();
+      const tagLineIsPublic = tagLine ? 1 : 0;
 
       // Build payload object for logging
       const payloadData = {
@@ -249,11 +239,11 @@ export default function BusinessSetupController({ navigation, route }) {
         business_latitude: currentFormData.latitude,
         business_longitude: currentFormData.longitude,
         business_short_bio: currentFormData.shortBio,
-        business_tag_line: currentFormData.tagLine,
+        business_tag_line: tagLine,
         business_category_id: formatBusinessCategoryId(currentFormData.businessCategoryId),
         business_google_rating: currentFormData.googleRating,
         business_google_photos: JSON.stringify(currentFormData.businessGooglePhotos),
-        business_favorite_image: currentFormData.favImage || "",
+        business_favorite_image: (currentFormData.businessGooglePhotos || []).includes(currentFormData.favImage) ? currentFormData.favImage : "",
         business_price_level: currentFormData.priceLevel,
         business_google_id: currentFormData.googleId,
         business_yelp: currentFormData.yelp,
@@ -261,7 +251,8 @@ export default function BusinessSetupController({ navigation, route }) {
         business_is_active: currentFormData.business_is_active,
         business_email_id_is_public: currentFormData.business_email_id_is_public,
         business_phone_number_is_public: currentFormData.business_phone_number_is_public,
-        business_tag_line_is_public: currentFormData.business_tag_line_is_public,
+        business_location_is_public: currentFormData.business_location_is_public,
+        business_tag_line_is_public: tagLineIsPublic,
         business_short_bio_is_public: currentFormData.business_short_bio_is_public,
         business_images_is_public: currentFormData.business_images_is_public,
         business_banner_ads_is_public: currentFormData.business_banner_ad_is_public,
@@ -289,15 +280,21 @@ export default function BusinessSetupController({ navigation, route }) {
       data.append("business_latitude", currentFormData.latitude);
       data.append("business_longitude", currentFormData.longitude);
       data.append("business_short_bio", currentFormData.shortBio);
-      data.append("business_tag_line", currentFormData.tagLine);
+      data.append("business_tag_line", tagLine);
       data.append("business_role", currentFormData.businessRole);
       data.append("business_category_id", formatBusinessCategoryId(currentFormData.businessCategoryId));
       data.append("custom_tags", JSON.stringify(customTags));
       data.append("business_google_rating", currentFormData.googleRating);
-      data.append("business_google_photos", JSON.stringify(currentFormData.businessGooglePhotos));
-      if (currentFormData.favImage) {
-        data.append("business_favorite_image", currentFormData.favImage);
-      }
+      const googlePhotos = dedupeGooglePhotoUrls(currentFormData.businessGooglePhotos || []);
+      data.append("business_google_photos", JSON.stringify(googlePhotos));
+      const userImages = currentFormData.images || [];
+      const selectedLogo = (currentFormData.favImage || "").trim();
+      const isGoogleLogo = Boolean(selectedLogo && googlePhotos.some((url) => googlePhotoUrlsMatch(url, selectedLogo)));
+      const uploadLogoIndex = selectedLogo ? userImages.indexOf(selectedLogo) : -1;
+      const favoriteUrl = isGoogleLogo
+        ? googlePhotos.find((url) => googlePhotoUrlsMatch(url, selectedLogo)) || selectedLogo
+        : "";
+      data.append("business_favorite_image", favoriteUrl);
       data.append("business_price_level", currentFormData.priceLevel);
       data.append("business_google_id", currentFormData.googleId);
       data.append("business_yelp", currentFormData.yelp);
@@ -307,7 +304,8 @@ export default function BusinessSetupController({ navigation, route }) {
 
       data.append("business_email_id_is_public", currentFormData.business_email_id_is_public);
       data.append("business_phone_number_is_public", currentFormData.business_phone_number_is_public);
-      data.append("business_tag_line_is_public", currentFormData.business_tag_line_is_public);
+      data.append("business_location_is_public", currentFormData.business_location_is_public);
+      data.append("business_tag_line_is_public", tagLineIsPublic);
       data.append("business_short_bio_is_public", currentFormData.business_short_bio_is_public);
       data.append("business_images_is_public", currentFormData.business_images_is_public);
       data.append("business_banner_ads_is_public", currentFormData.business_banner_ad_is_public);
@@ -318,14 +316,15 @@ export default function BusinessSetupController({ navigation, route }) {
       // Add business_services array as JSON string
       data.append("business_services", JSON.stringify(currentFormData.business_services || []));
 
-      // Append user-uploaded images as files (supports file://, content://, blob:, data: URIs)
-      if (currentFormData.images && currentFormData.images.length > 0) {
-        const userImageFilenames = [];
-        const isWeb = Platform.OS === "web";
-        const isBlobOrDataUri = (uri) => uri && (uri.startsWith("blob:") || uri.startsWith("data:"));
+      // Append user-uploaded images; profile image follows favImage selection (Google or upload).
+      const isWeb = Platform.OS === "web";
+      const isBlobOrDataUri = (uri) => uri && (uri.startsWith("blob:") || uri.startsWith("data:"));
 
-        for (let index = 0; index < currentFormData.images.length; index++) {
-          const imageUri = currentFormData.images[index];
+      if (userImages.length > 0) {
+        const userImageFilenames = [];
+
+        for (let index = 0; index < userImages.length; index++) {
+          const imageUri = userImages[index];
           if (!imageUri || typeof imageUri !== "string") continue;
 
           let fileType = "jpg";
@@ -360,7 +359,7 @@ export default function BusinessSetupController({ navigation, route }) {
 
           userImageFilenames.push(fileName);
           data.append(`business_img_${index}`, fileToAppend);
-          if (index === 0) {
+          if (index === uploadLogoIndex) {
             const profileFileName = `business_profile_img.${fileType}`;
             const profileFile = fileToAppend instanceof File ? new File([fileToAppend], profileFileName, { type: mimeType }) : { uri: imageUri, type: mimeType, name: profileFileName };
             data.append("business_profile_img", profileFile);
@@ -369,27 +368,6 @@ export default function BusinessSetupController({ navigation, route }) {
 
         if (userImageFilenames.length > 0) {
           data.append("business_images_url", JSON.stringify(userImageFilenames));
-        }
-      } else if (currentFormData.favImage) {
-        const isWeb = Platform.OS === "web";
-        try {
-          const response = await fetch(currentFormData.favImage);
-          const blob = await response.blob();
-          const mimeType = blob.type || "image/jpeg";
-          const fileType = mimeType.split("/")[1] === "jpeg" ? "jpg" : mimeType.split("/")[1] || "jpg";
-          const profileFileName = `business_profile_img.${fileType}`;
-
-          if (isWeb) {
-            data.append("business_profile_img", new File([blob], profileFileName, { type: mimeType }));
-          } else {
-            data.append("business_profile_img", {
-              uri: currentFormData.favImage,
-              type: mimeType,
-              name: profileFileName,
-            });
-          }
-        } catch (err) {
-          console.error("Failed to upload selected Google image as business profile image:", err);
         }
       }
 
@@ -487,20 +465,13 @@ export default function BusinessSetupController({ navigation, route }) {
       case 0:
         return <BusinessStep0 formData={formData} setFormData={setFormData} navigation={navigation} />;
       case 1:
-        return <BusinessStep1 formData={formData} setFormData={setFormData} navigation={navigation} />;
-      case 2:
         return (
-          <BusinessStep2
+          <BusinessStep1
             formData={formData}
             setFormData={setFormData}
-            navigation={navigation}
-            onPendingTagsChange={setStep2HasPendingTags}
+            onPendingTagsChange={setStep1HasPendingTags}
           />
         );
-      case 3:
-        return <BusinessStep3 formData={formData} setFormData={setFormData} navigation={navigation} />;
-      case 4:
-        return <BusinessStep4 formData={formData} setFormData={setFormData} navigation={navigation} />;
       default:
         return null;
     }
@@ -515,8 +486,8 @@ export default function BusinessSetupController({ navigation, route }) {
         onBack={handleBack}
         onContinue={handleContinue}
         onSubmit={handleContinue}
-        totalSteps={3}
-        submitDisabled={activeStep === 2 && step2HasPendingTags}
+        totalSteps={2}
+        submitDisabled={activeStep === 1 && (!canSubmitStep1() || step1HasPendingTags)}
       />
       <BottomNavBar navigation={navigation} />
     </View>

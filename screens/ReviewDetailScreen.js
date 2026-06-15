@@ -21,6 +21,7 @@ import {
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
+import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { parsePrice } from "../utils/priceUtils";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
@@ -591,27 +592,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
               });
             return (
               <View style={styles.card}>
-                <MiniCard
-                  business={{
-                    business_name: sanitizeText(business.business_name),
-                    tagline: sanitizeText(business.tagline || business.business_tag_line || ""),
-                    business_location: sanitizeText(business.business_location || ""),
-                    business_address_line_1: sanitizeText(business.business_address_line_1),
-                    business_city: sanitizeText(business.business_city || ""),
-                    business_state: sanitizeText(business.business_state || ""),
-                    business_zip_code: sanitizeText(business.business_zip_code),
-                    business_phone_number: sanitizeText(business.business_phone_number),
-                    business_email_id: sanitizeText(business.business_email_id || business.business_email || ""),
-                    business_website: sanitizeText(business.business_website),
-                    first_image: business.business_profile_img || (business.images && business.images.length > 0 ? business.images[0] : null),
-                    business_profile_img: business.business_profile_img || null,
-                    imageIsPublic: business.imageIsPublic,
-                    phoneIsPublic: business.phoneIsPublic,
-                    emailIsPublic: business.emailIsPublic,
-                    taglineIsPublic: business.taglineIsPublic,
-                    locationIsPublic: business.locationIsPublic,
-                  }}
-                />
+                <MiniCard business={mapBusinessToMiniCard(business)} />
               </View>
             );
           })()}

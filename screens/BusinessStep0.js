@@ -1,10 +1,13 @@
 import React, { useEffect, useState, useRef } from "react";
-import { View, Text, TextInput, StyleSheet, Dimensions, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Image } from "react-native";
+import { View, Text, TextInput, StyleSheet, Dimensions, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Image, Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getBusinessSuggestions, getPlaceDetails } from "../utils/googlePlaces";
+import { googlePhotoUrlsMatch, dedupeGooglePhotoUrls } from "../utils/resolveBusinessProfileImage";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
 
 const { width } = Dimensions.get("window");
 
@@ -15,6 +18,9 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
   const [placeSearchText, setPlaceSearchText] = useState("");
   const [placeSuggestions, setPlaceSuggestions] = useState([]);
   const placesDebounceRef = useRef(null);
+  const userUploadedImages = formData.images || [];
+  const hasGooglePlace = Boolean(formData.googleId);
+  const googlePhotos = hasGooglePlace ? formData.businessGooglePhotos || [] : [];
 
   useEffect(() => {
     console.log("In BusinessStep0");
@@ -55,8 +61,96 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
     AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
   };
 
+  const addressIsPublic = formData.business_location_is_public === 1 || formData.business_location_is_public === "1";
+
+  const toggleAddressVisibility = () => {
+    updateFormData("business_location_is_public", addressIsPublic ? 0 : 1);
+  };
+
   const selectBusinessImage = (uri) => {
     updateFormData("favImage", uri);
+  };
+
+  const pickNextLogo = (photos, uploads, excludeUri = "") => {
+    const nextGoogle = photos.find((photo) => photo !== excludeUri);
+    if (nextGoogle) return nextGoogle;
+    const nextUpload = uploads.find((upload) => upload !== excludeUri);
+    return nextUpload || "";
+  };
+
+  const removeBusinessImage = (uri, index) => {
+    const photos = formData.businessGooglePhotos || [];
+    const updatedPhotos = [...photos.slice(0, index), ...photos.slice(index + 1)];
+    const updatedFavImage = googlePhotoUrlsMatch(formData.favImage, uri) ? pickNextLogo(updatedPhotos, userUploadedImages) : formData.favImage;
+    const updated = {
+      ...formData,
+      businessGooglePhotos: updatedPhotos,
+      favImage: updatedFavImage,
+    };
+    setFormData(updated);
+    AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+  };
+
+  const handleImagePick = async (index) => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission required", "Permission to access media library is required!");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: "images",
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        let fileSize = asset.fileSize;
+        if (!fileSize && asset.uri) {
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+            fileSize = fileInfo.size;
+          } catch (e) {
+            console.log("Could not get file size from FileSystem", e);
+          }
+        }
+        if (fileSize && fileSize > 2 * 1024 * 1024) {
+          Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
+          return;
+        }
+        const updated = [...userUploadedImages];
+        updated[index] = asset.uri;
+        const newFormData = {
+          ...formData,
+          images: updated,
+          favImage: formData.favImage || asset.uri,
+        };
+        setFormData(newFormData);
+        AsyncStorage.setItem("businessFormData", JSON.stringify(newFormData)).catch((err) => console.error("Save error", err));
+      }
+    } catch (error) {
+      let errorMessage = "Failed to pick image. ";
+      if (error.name === "PermissionDenied") {
+        errorMessage += "Permission was denied.";
+      } else if (error.name === "ImagePickerError") {
+        errorMessage += "There was an error with the image picker.";
+      } else if (error.message && error.message.includes("permission")) {
+        errorMessage += "Permission issue detected.";
+      } else if (error.message && error.message.includes("canceled")) {
+        errorMessage += "Operation was canceled.";
+      }
+      Alert.alert("Error", errorMessage);
+    }
+  };
+
+  const removeUploadedImage = (index) => {
+    const removedUri = userUploadedImages[index];
+    const updated = [...userUploadedImages.slice(0, index), ...userUploadedImages.slice(index + 1)];
+    const updatedFavImage = formData.favImage === removedUri ? pickNextLogo(googlePhotos, updated, removedUri) : formData.favImage;
+    const newFormData = { ...formData, images: updated, favImage: updatedFavImage };
+    setFormData(newFormData);
+    AsyncStorage.setItem("businessFormData", JSON.stringify(newFormData)).catch((err) => console.error("Save error", err));
   };
 
   const onPlaceSearchChange = (text) => {
@@ -83,11 +177,11 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
 
     try {
       const pd = await getPlaceDetails(place.place_id);
-      const photoUrls = pd.photo_urls || [];
+      const photoUrls = dedupeGooglePhotoUrls(pd.photo_urls || []);
       const updated = {
         ...formData,
         businessName: pd.name || place.structured_formatting?.main_text || "",
-        location: pd.formatted_address || "",
+        location: pd.area_location || "",
         phoneNumber: pd.phone || "",
         website: pd.website || "",
         googleId: place.place_id || "",
@@ -95,7 +189,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
         businessGooglePhotos: photoUrls,
         favImage: photoUrls[0] || "",
         priceLevel: "",
-        addressLine1: pd.address_line_1 || pd.formatted_address || "",
+        addressLine1: pd.address_line_1 || "",
         addressLine2: "",
         city: pd.city || "",
         state: pd.state || "",
@@ -165,7 +259,10 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
           >
             <View style={[styles.formCard, darkMode && styles.darkFormCard, Platform.OS === "web" && styles.formCardWeb]}>
               <Text style={[styles.title, darkMode && styles.darkTitle]}>Welcome to Every Circle!</Text>
-              <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Let's Start Building Your Business Page!</Text>
+              <View style={styles.subtitleBlock}>
+                <Text style={[styles.subtitle, darkMode && styles.darkSubtitle]}>Let's Start Building Your Business Page!</Text>
+                <Text style={[styles.stepHint, darkMode && styles.darkSubtitle]}>(Step 1 of 2)</Text>
+              </View>
 
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Search for Google Maps Business or Organization</Text>
               <View style={{ width: "100%", marginBottom: 20, zIndex: 1000 }}>
@@ -182,12 +279,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                 {placeSuggestions.length > 0 && (
                   <View style={[styles.suggestionsList, darkMode && styles.darkSuggestionsList]}>
                     {placeSuggestions.map((item) => (
-                      <TouchableOpacity
-                        key={item.place_id}
-                        style={[styles.suggestionRow, darkMode && styles.darkSuggestionRow]}
-                        onPress={() => handleGooglePlaceSelect(item)}
-                        activeOpacity={0.7}
-                      >
+                      <TouchableOpacity key={item.place_id} style={[styles.suggestionRow, darkMode && styles.darkSuggestionRow]} onPress={() => handleGooglePlaceSelect(item)} activeOpacity={0.7}>
                         <Text style={[styles.suggestionMain, darkMode && styles.darkLabel]} numberOfLines={1}>
                           {item.structured_formatting?.main_text || item.description}
                         </Text>
@@ -229,7 +321,30 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                 aria-label='Phone number'
               />
 
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Address</Text>
+              <View style={styles.addressHeaderRow}>
+                <Text style={[styles.label, darkMode && styles.darkLabel, styles.addressLabel]}>Address</Text>
+                <View style={styles.toggleContainer}>
+                  <TouchableOpacity
+                    onPress={toggleAddressVisibility}
+                    style={[styles.togglePill, addressIsPublic && styles.togglePillActiveGreen]}
+                    accessibilityRole='button'
+                    accessibilityLabel={addressIsPublic ? "Address is visible on mini card" : "Show address on mini card"}
+                  >
+                    <Text style={[styles.togglePillText, addressIsPublic && styles.togglePillTextActive]}>{addressIsPublic ? "Visible" : "Show"}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={toggleAddressVisibility}
+                    style={[styles.togglePill, !addressIsPublic && styles.togglePillActiveRed]}
+                    accessibilityRole='button'
+                    accessibilityLabel={!addressIsPublic ? "Address is hidden on mini card" : "Hide address on mini card"}
+                  >
+                    <Text style={[styles.togglePillText, !addressIsPublic && styles.togglePillTextActive]}>{!addressIsPublic ? "Hidden" : "Hide"}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>
+                Controls whether location and address appear on your Business Mini Card.
+              </Text>
               <TextInput
                 style={[styles.input, darkMode && styles.darkInput]}
                 value={formData.addressLine1 || ""}
@@ -312,53 +427,86 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                 aria-label='Zip code'
               />
 
-              {formData.googleRating ? (
-                <Text style={[styles.googleRatingText, darkMode && styles.darkSubtitle]}>
-                  Google Rating: {formData.googleRating} ★
-                </Text>
-              ) : null}
+              {hasGooglePlace && formData.googleRating ? <Text style={[styles.googleRatingText, darkMode && styles.darkSubtitle]}>Google Rating: {formData.googleRating} ★</Text> : null}
 
-              {(formData.businessGooglePhotos || []).length > 0 && (
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Business Logo (Optional)</Text>
+              <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>Tap any image to select your business logo. Tap ✕ to remove.</Text>
+              {hasGooglePlace && googlePhotos.length > 0 ? (
                 <>
-                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Google Images</Text>
-                  <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>Tap an image to use as your business image</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.googlePhotosRow}
-                    contentContainerStyle={styles.googlePhotosContent}
-                  >
-                    {formData.businessGooglePhotos.map((uri, index) => {
-                      const isSelected = formData.favImage === uri;
+                  <Text style={[styles.sublabel, darkMode && styles.darkSubtitle]}>Google Images</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.googlePhotosRow} contentContainerStyle={styles.googlePhotosContent}>
+                    {googlePhotos.map((uri, index) => {
+                      const isSelected = googlePhotoUrlsMatch(formData.favImage, uri);
                       return (
-                        <TouchableOpacity
-                          key={`${uri}-${index}`}
-                          onPress={() => selectBusinessImage(uri)}
-                          activeOpacity={0.8}
-                          style={styles.googlePhotoWrapper}
-                          accessibilityLabel={`Google image ${index + 1}${isSelected ? ", selected as business image" : ""}`}
-                          accessibilityRole='button'
-                        >
-                          <Image
-                            source={{ uri }}
-                            style={[
-                              styles.googlePhoto,
-                              darkMode && styles.darkGooglePhoto,
-                              isSelected && styles.googlePhotoSelected,
-                            ]}
-                            resizeMode='cover'
-                          />
+                        <View key={`${uri}-${index}`} style={styles.googlePhotoWrapper}>
+                          <TouchableOpacity
+                            onPress={() => selectBusinessImage(uri)}
+                            activeOpacity={0.8}
+                            accessibilityLabel={`Google image ${index + 1}${isSelected ? ", selected as business logo" : ""}`}
+                            accessibilityRole='button'
+                          >
+                            <Image source={{ uri }} style={[styles.googlePhoto, darkMode && styles.darkGooglePhoto, isSelected && styles.googlePhotoSelected]} resizeMode='cover' />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.googlePhotoDeleteIcon}
+                            onPress={() => removeBusinessImage(uri, index)}
+                            accessibilityLabel={`Remove Google image ${index + 1}`}
+                            accessibilityRole='button'
+                          >
+                            <Text style={styles.googlePhotoDeleteText}>✕</Text>
+                          </TouchableOpacity>
                           {isSelected ? (
                             <View style={styles.googlePhotoBadge}>
                               <Text style={styles.googlePhotoBadgeText}>✓</Text>
                             </View>
                           ) : null}
-                        </TouchableOpacity>
+                        </View>
                       );
                     })}
                   </ScrollView>
                 </>
-              )}
+              ) : null}
+              {userUploadedImages.length > 0 ? <Text style={[styles.sublabel, darkMode && styles.darkSubtitle]}>Your Uploads (Optional)</Text> : null}
+              <View style={styles.carousel}>
+                <View style={styles.imageRow}>
+                  {userUploadedImages.map((img, index) => {
+                    const isSelected = formData.favImage === img;
+                    return (
+                      <View key={index} style={styles.googlePhotoWrapper}>
+                        <TouchableOpacity
+                          onPress={() => selectBusinessImage(img)}
+                          activeOpacity={0.8}
+                          accessibilityLabel={`Uploaded image ${index + 1}${isSelected ? ", selected as business logo" : ""}`}
+                          accessibilityRole='button'
+                        >
+                          <Image source={{ uri: img }} style={[styles.googlePhoto, darkMode && styles.darkGooglePhoto, isSelected && styles.googlePhotoSelected]} resizeMode='cover' />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.googlePhotoDeleteIcon}
+                          onPress={() => removeUploadedImage(index)}
+                          accessibilityLabel={`Remove uploaded logo ${index + 1}`}
+                          accessibilityRole='button'
+                        >
+                          <Text style={styles.googlePhotoDeleteText}>✕</Text>
+                        </TouchableOpacity>
+                        {isSelected ? (
+                          <View style={styles.googlePhotoBadge}>
+                            <Text style={styles.googlePhotoBadgeText}>✓</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                  <TouchableOpacity
+                    style={[styles.uploadBox, darkMode && styles.darkUploadBox]}
+                    onPress={() => handleImagePick(userUploadedImages.length)}
+                    accessibilityLabel='Upload business logo'
+                    accessibilityRole='button'
+                  >
+                    <Text style={[styles.uploadText, darkMode && styles.darkUploadText]}>Upload Logo</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
 
               {/* <Text style={styles.label}>Business Role</Text>
               <Dropdown
@@ -409,11 +557,20 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 10,
   },
+  subtitleBlock: {
+    marginBottom: 30,
+    width: "100%",
+  },
   subtitle: {
     fontSize: 14,
     color: "#666",
     textAlign: "center",
-    marginBottom: 30,
+    marginBottom: 4,
+  },
+  stepHint: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
   },
   label: {
     alignSelf: "flex-start",
@@ -421,6 +578,42 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 4,
     marginTop: 5,
+  },
+  addressHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    marginTop: 5,
+  },
+  addressLabel: {
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  toggleContainer: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  togglePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 20,
+    backgroundColor: "transparent",
+  },
+  togglePillActiveGreen: {
+    backgroundColor: "#4CAF50",
+  },
+  togglePillActiveRed: {
+    backgroundColor: "#ef9a9a",
+  },
+  togglePillText: {
+    fontSize: 13,
+    color: "#4e4e4e",
+    fontWeight: "500",
+  },
+  togglePillTextActive: {
+    color: "#fff",
+    fontWeight: "bold",
   },
   input: {
     backgroundColor: "#fff",
@@ -458,6 +651,48 @@ const styles = StyleSheet.create({
     color: "#666",
     marginBottom: 10,
     alignSelf: "flex-start",
+  },
+  sublabel: {
+    alignSelf: "flex-start",
+    color: "#666",
+    fontWeight: "600",
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  carousel: {
+    marginTop: 0,
+    marginBottom: 12,
+    width: "100%",
+    minHeight: 80,
+  },
+  imageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  uploadBox: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  darkUploadBox: {
+    backgroundColor: "#404040",
+    borderColor: "#555",
+  },
+  uploadText: {
+    color: "#666",
+    fontSize: 12,
+    textAlign: "center",
+  },
+  darkUploadText: {
+    color: "#cccccc",
   },
   darkHelperText: {
     color: "#cccccc",
@@ -542,6 +777,25 @@ const styles = StyleSheet.create({
   googlePhotoWrapper: {
     position: "relative",
     marginRight: 10,
+    width: 80,
+    height: 80,
+  },
+  googlePhotoDeleteIcon: {
+    position: "absolute",
+    top: 2,
+    right: 2,
+    backgroundColor: "#ff3b30",
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+  },
+  googlePhotoDeleteText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "bold",
   },
   googlePhoto: {
     width: 80,

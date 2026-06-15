@@ -17,13 +17,16 @@ import { parsePrice } from "../utils/priceUtils";
 import { getHeaderColors } from "../config/headerColors";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
-import { parseBusinessGooglePhotos, resolveBusinessProfileImage } from "../utils/resolveBusinessProfileImage";
+import {
+  parseBusinessGooglePhotos,
+  resolveBusinessProfileImage,
+  isEphemeralGooglePhotoUrl,
+  resolveGooglePhotosForDisplay,
+  resolveGooglePhotoUrl,
+  googlePhotoUrlsMatch,
+} from "../utils/resolveBusinessProfileImage";
+import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { getPlaceDetails } from "../utils/googlePlaces";
-
-function isEphemeralGooglePhotoUrl(url) {
-  if (!url || typeof url !== "string") return false;
-  return url.includes("PhotoService.GetPhoto") || url.includes("place/js/PhotoService");
-}
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import { getSessionProfile } from "../utils/sessionProfile";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
@@ -289,9 +292,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       if (needsPhotoRefresh && rawBusiness.business_google_id) {
         try {
           const pd = await getPlaceDetails(rawBusiness.business_google_id);
-          if (pd.photo_urls?.length > 0) {
-            googlePhotos = pd.photo_urls;
-          }
+          googlePhotos = resolveGooglePhotosForDisplay(googlePhotos, pd.photo_urls);
         } catch (e) {
           console.warn("BusinessProfileScreen - could not refresh Google photo URLs:", e);
         }
@@ -331,7 +332,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       });
       if (isEphemeralGooglePhotoUrl(businessProfileImgUrl) && googlePhotos.length > 0) {
         const favorite = rawBusiness.business_favorite_image ? String(rawBusiness.business_favorite_image).trim() : "";
-        const favoriteIdx = favorite ? parseBusinessGooglePhotos(rawBusiness.business_google_photos).indexOf(favorite) : -1;
+        const favoriteIdx = favorite ? googlePhotos.findIndex((url) => googlePhotoUrlsMatch(url, favorite)) : -1;
         businessProfileImgUrl = googlePhotos[favoriteIdx >= 0 ? favoriteIdx : 0];
       }
 
@@ -1073,28 +1074,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           </View>
 
           {/* MiniCard - uses business_profile_img; image only shown when set and Display */}
-          {(() => {
-            const miniCardData = {
-              business_name: sanitizeText(business.business_name),
-              tagline: sanitizeText(business.tagline),
-              business_location: sanitizeText(business.business_location || ""),
-              business_address_line_1: sanitizeText(business.business_address_line_1),
-              business_city: sanitizeText(business.business_city),
-              business_state: sanitizeText(business.business_state),
-              business_zip_code: sanitizeText(business.business_zip_code),
-              business_phone_number: sanitizeText(business.business_phone_number),
-              business_email: sanitizeText(business.business_email_id),
-              business_website: sanitizeText(business.business_website),
-              first_image: business.business_profile_img || (business.images && business.images.length > 0 ? business.images[0] : null),
-              business_profile_img: business.business_profile_img || null,
-              imageIsPublic: business.imageIsPublic,
-              phoneIsPublic: business.phoneIsPublic,
-              emailIsPublic: business.emailIsPublic,
-              taglineIsPublic: business.taglineIsPublic,
-              locationIsPublic: business.locationIsPublic,
-            };
-            return <MiniCard business={miniCardData} />;
-          })()}
+          <MiniCard business={mapBusinessToMiniCard(business)} />
 
           {/* About Section */}
           {business.shortBioIsPublic && isSafeForConditional(business.business_short_bio) && (
