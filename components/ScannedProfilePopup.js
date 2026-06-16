@@ -1,6 +1,6 @@
 // ScannedProfilePopup.js - Popup to display scanned profile information
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ScrollView, Dimensions } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, ScrollView, Dimensions, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
@@ -42,7 +42,16 @@ const dateToCircleDate = (date) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
-const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, initialData = null, actionLabel = "Add to Network", title = "Connect With Me" }) => {
+const ScannedProfilePopup = ({
+  visible,
+  profileData,
+  onClose,
+  onAddConnection,
+  initialData = null,
+  actionLabel = "Add to Network",
+  title = "Connect With Me",
+  relationshipRequired = false,
+}) => {
   const { darkMode } = useDarkMode();
   const [selectedRelationship, setSelectedRelationship] = useState("friend");
   const [event, setEvent] = useState("");
@@ -92,7 +101,13 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
     { value: "family", label: "Family" },
   ];
 
+  const isRelationshipValid = selectedRelationship && REL_TYPES.includes(selectedRelationship);
+
   const handleAdd = () => {
+    if (relationshipRequired && !isRelationshipValid) {
+      Alert.alert("Required", "Please select a relationship type.");
+      return;
+    }
     if (onAddConnection) {
       onAddConnection({
         relationship: selectedRelationship,
@@ -128,7 +143,12 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
             </View>
 
             <View style={styles.relationshipContainer}>
-              <Text style={[styles.relationshipLabel, darkMode && styles.darkRelationshipLabel]}>Relationship:</Text>
+              <Text style={[styles.relationshipLabel, darkMode && styles.darkRelationshipLabel]}>
+                Relationship:{relationshipRequired ? " *" : ""}
+              </Text>
+              {relationshipRequired && !isRelationshipValid ? (
+                <Text style={styles.relationshipError}>Please select Friend, Colleague, or Family.</Text>
+              ) : null}
               <View style={styles.relationshipButtons}>
                 {relationships.map((rel) => (
                   <TouchableOpacity
@@ -139,7 +159,12 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
                       darkMode && styles.darkRelationshipButton,
                       selectedRelationship === rel.value && darkMode && styles.darkRelationshipButtonActive,
                     ]}
-                    onPress={() => setSelectedRelationship((prev) => (prev === rel.value ? null : rel.value))}
+                    onPress={() =>
+                      setSelectedRelationship((prev) => {
+                        if (relationshipRequired) return rel.value;
+                        return prev === rel.value ? null : rel.value;
+                      })
+                    }
                   >
                     <Text
                       style={[
@@ -248,7 +273,11 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
             </View>
 
             <View style={styles.buttonContainer}>
-              <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
+              <TouchableOpacity
+                style={[styles.addButton, relationshipRequired && !isRelationshipValid && styles.addButtonDisabled]}
+                onPress={handleAdd}
+                disabled={relationshipRequired && !isRelationshipValid}
+              >
                 <Text style={styles.addButtonText}>{actionLabel}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.viewButton} onPress={onClose}>
@@ -325,6 +354,15 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
+  },
+  addButtonDisabled: {
+    backgroundColor: "#c9a0e8",
+    opacity: 0.7,
+  },
+  relationshipError: {
+    fontSize: 12,
+    color: "#c62828",
+    marginBottom: 8,
   },
   addButtonText: {
     color: "#fff",

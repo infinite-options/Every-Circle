@@ -1145,7 +1145,6 @@ const ProfileScreen = ({ route, navigation }) => {
 
   const handleConnectPopupSave = async (connectionData) => {
     try {
-      setShowConnectPopup(false);
 
       const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
       if (!loggedInProfileUID) {
@@ -1160,6 +1159,11 @@ const ProfileScreen = ({ route, navigation }) => {
       }
 
       const selectedRelationship = connectionData?.relationship !== undefined ? connectionData.relationship : null;
+      const validRelationships = ["friend", "colleague", "family"];
+      if (!selectedRelationship || !validRelationships.includes(selectedRelationship)) {
+        Alert.alert("Required", "Please select a relationship type.");
+        return;
+      }
       const circleDate =
         connectionData?.date?.trim() ||
         (() => {
@@ -1219,12 +1223,15 @@ const ProfileScreen = ({ route, navigation }) => {
         });
         const result = await response.json();
         if (!response.ok) {
+          console.error("ProfileScreen - Error saving connection from popup:", result);
           throw new Error(result.message || "Failed to save connection");
         }
         if (result?.data?.circle_uid) {
           setCircleUid(result.data.circle_uid);
+          setShowConnectPopup(false);
         } else if (result?.circle_uid) {
           setCircleUid(result.circle_uid);
+          setShowConnectPopup(false);
         }
       }
 
@@ -2525,6 +2532,7 @@ const ProfileScreen = ({ route, navigation }) => {
         visible={showConnectPopup}
         profileData={user}
         title='Connection Details'
+        relationshipRequired
         initialData={{
           relationship: relationshipType,
           date: existingRelationship?.circle_date || "",
