@@ -99,7 +99,26 @@ function _photoUrlsFromReferences(photos) {
   return (photos || [])
     .slice(0, MAX_PLACE_PHOTOS)
     .filter((p) => p && p.photo_reference)
-    .map((p) => `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${encodeURIComponent(p.photo_reference)}&key=${PLACES_KEY}`);
+    .map((p) => buildRestGooglePhotoUrl(p.photo_reference));
+}
+
+/** Stable REST photo URL for save payloads and blob download (not PhotoService.GetPhoto). */
+export function buildRestGooglePhotoUrl(photoReference) {
+  const ref = String(photoReference || "").trim();
+  if (!ref) return "";
+  return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${encodeURIComponent(ref)}&key=${PLACES_KEY}`;
+}
+
+/** Convert JS SDK ephemeral PhotoService URL to REST place/photo URL when possible. */
+export function resolveRestGooglePhotoUrl(url) {
+  const u = String(url || "").trim();
+  if (!u) return "";
+  if (u.includes("/maps/api/place/photo?") && u.includes("photo_reference=")) return u;
+  const refParam = u.match(/[?&]photo_reference=([^&]+)/);
+  if (refParam?.[1]) return buildRestGooglePhotoUrl(decodeURIComponent(refParam[1]));
+  const oneS = u.match(/[?&]1s([^&]+)/);
+  if (oneS?.[1]) return buildRestGooglePhotoUrl(decodeURIComponent(oneS[1]));
+  return u;
 }
 
 /** Build photo URLs from JS SDK PlacePhoto objects (web fallback when REST is blocked). */
@@ -109,11 +128,10 @@ function _photoUrlsFromJsSdkPhotos(photos) {
     .map((p) => {
       if (!p) return null;
       const ref = p.photo_reference || (typeof p.getReference === "function" ? p.getReference() : null);
-      if (ref) {
-        return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${encodeURIComponent(ref)}&key=${PLACES_KEY}`;
-      }
+      if (ref) return buildRestGooglePhotoUrl(ref);
       if (typeof p.getUrl === "function") {
-        return p.getUrl({ maxWidth: 400 });
+        const ephemeral = p.getUrl({ maxWidth: 400 });
+        return resolveRestGooglePhotoUrl(ephemeral) || ephemeral;
       }
       return null;
     })
@@ -144,19 +162,6 @@ function _parseAddressComponents(components) {
   };
 }
 
-async function _photoUrlsFromPlaceId(placeId) {
-  try {
-    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&key=${PLACES_KEY}&fields=photos`;
-    const res = await fetch(url);
-    const json = await res.json();
-    const refs = _photoUrlsFromReferences(json.result?.photos);
-    if (refs.length > 0) return refs;
-  } catch (e) {
-    console.warn("[Places] REST photo lookup failed:", e);
-  }
-  return [];
-}
-
 // ─── getPlaceDetails ──────────────────────────────────────────────────────────
 export async function getPlaceDetails(placeId) {
   if (Platform.OS === "web") {
@@ -183,10 +188,8 @@ export async function getPlaceDetails(placeId) {
       if (!place) return {};
 
       const addr = _parseAddressComponents(place.address_components);
-      let photo_urls = await _photoUrlsFromPlaceId(placeId);
-      if (photo_urls.length === 0) {
-        photo_urls = _photoUrlsFromJsSdkPhotos(place.photos);
-      }
+      // Web: use photos from JS SDK getDetails (REST Place Details is not CORS-accessible in browser).
+      const photo_urls = _photoUrlsFromJsSdkPhotos(place.photos);
 
       return {
         name: place.name,
