@@ -43,6 +43,9 @@ import {
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 
+// Module-level cache so category list is fetched at most once per app session
+let _categoryListCache = null;
+
 export default function BusinessProfileScreen({ route, navigation }) {
   const { darkMode } = useDarkMode();
   const { business_uid, returnTo, searchState } = route.params || {};
@@ -160,24 +163,23 @@ export default function BusinessProfileScreen({ route, navigation }) {
     getCurrentUserProfileId();
   }, []);
 
-  // Check if current user already has a pending claim for this business
+  // Check if current user already has a pending or approved claim for this business
   useEffect(() => {
     const checkExistingClaim = async () => {
       try {
         const profileId = await AsyncStorage.getItem("profile_uid");
         if (!profileId) return;
-        const pendingRes = await fetch(`${BUSINESS_CLAIM_ENDPOINT}?profile_uid=${profileId}&business_uid=${business_uid}&status=pending`);
-        const pendingResult = await pendingRes.json();
-        if (pendingResult?.result?.length > 0) {
-          const claim = pendingResult.result[0];
+        const res = await fetch(`${BUSINESS_CLAIM_ENDPOINT}?profile_uid=${profileId}&business_uid=${business_uid}`);
+        const data = await res.json();
+        const claims = data?.result ?? [];
+        const pending = claims.find((c) => (c.claim_status || c.status || "").toLowerCase() === "pending");
+        if (pending) {
           setClaimStatus("pending");
-          setClaimSubmittedAt(new Date(claim.claim_created_at));
+          setClaimSubmittedAt(new Date(pending.claim_created_at));
           return;
         }
-        // Check approved
-        const approvedRes = await fetch(`${BUSINESS_CLAIM_ENDPOINT}?profile_uid=${profileId}&business_uid=${business_uid}&status=approved`);
-        const approvedResult = await approvedRes.json();
-        if (approvedResult?.result?.length > 0) {
+        const approved = claims.find((c) => (c.claim_status || c.status || "").toLowerCase() === "approved");
+        if (approved) {
           setClaimStatus("approved");
         }
       } catch (e) {
@@ -253,11 +255,19 @@ export default function BusinessProfileScreen({ route, navigation }) {
         await clearUserProfileCacheStorage();
       } catch (_) {}
       console.log("[BusinessProfileScreen] fetchBusinessInfo - business_uid from route params:", business_uid);
-      // Read viewer UID directly so it's available for the ratings call
-      const viewerUid = (await AsyncStorage.getItem("profile_uid")) || "";
       const endpoint = `${BusinessProfileApi}/${business_uid}`;
       console.log("BusinessProfileScreen GET endpoint:", endpoint);
-      const response = await fetch(endpoint);
+
+      // Fire businessinfo and profile_views in parallel
+      const [response, viewersResponse] = await Promise.all([
+        fetch(endpoint),
+        fetch(`${PROFILE_VIEWS_ENDPOINT}/${business_uid}`).catch(() => null),
+      ]);
+
+      if (viewersResponse?.ok) {
+        viewersResponse.json().then((d) => setBusinessViewers(d.viewers || [])).catch(() => {});
+      }
+
       const result = await response.json();
 
       if (!result || !result.business) {
@@ -369,17 +379,20 @@ export default function BusinessProfileScreen({ route, navigation }) {
         }
       }
 
-      // Fetch category name if business_category_id is present
+      // Fetch category name if business_category_id is present (cached per session)
       let categoryName = rawBusiness.business_category || null;
       if (rawBusiness.business_category_id && !categoryName) {
         try {
-          const categoryResponse = await fetch(CATEGORY_LIST_ENDPOINT);
-          const categoryResult = await categoryResponse.json();
-          if (categoryResult && categoryResult.result) {
+          if (!_categoryListCache) {
+            const categoryResponse = await fetch(CATEGORY_LIST_ENDPOINT);
+            const categoryResult = await categoryResponse.json();
+            _categoryListCache = categoryResult?.result ?? null;
+          }
+          if (_categoryListCache) {
             const categoryIds = rawBusiness.business_category_id.split(",").map((id) => id.trim());
             const categoryNames = categoryIds
               .map((id) => {
-                const category = categoryResult.result.find((cat) => cat.category_uid === id);
+                const category = _categoryListCache.find((cat) => cat.category_uid === id);
                 return category ? category.category_name : null;
               })
               .filter(Boolean);
@@ -461,40 +474,15 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
       setBusiness(businessWithRatings);
 
-      // Fetch is_verified flags from Ratings endpoint
-      try {
-        // const ratingsRes = await fetch(`${RATINGS_ENDPOINT}/${business_uid}`);
-        const ratingsRes = await fetch(`${RATINGS_ENDPOINT}/${business_uid}?viewer_uid=${viewerUid}`);
-        const ratingsData = await ratingsRes.json();
-        if (ratingsData?.result) {
-          const ratingsMap = {};
-          ratingsData.result.forEach((r) => {
-            ratingsMap[r.rating_uid] = {
-              is_verified: r.is_verified,
-              circle_num_nodes: r.circle_num_nodes ?? null,
-            };
-          });
-          setBusiness((prev) => ({
-            ...prev,
-            ratings: (prev.ratings || []).map((r) => ({
-              ...r,
-              is_verified: ratingsMap[r.rating_uid]?.is_verified || false,
-              circle_num_nodes: ratingsMap[r.rating_uid]?.circle_num_nodes ?? null,
-            })),
-          }));
-        }
-      } catch (e) {
-        console.log("Could not fetch verified ratings:", e);
-      }
-
-      if (result.business_users && Array.isArray(result.business_users)) {
-        setBusinessUsers(result.business_users);
+      const businessUsersData = result.business_users ?? rawBusiness.business_users;
+      if (businessUsersData && Array.isArray(businessUsersData)) {
+        setBusinessUsers(businessUsersData);
 
         // Record profile view for each business owner — skip if viewer is an owner
         try {
           const viewerProfileId = await AsyncStorage.getItem("profile_uid");
           if (viewerProfileId) {
-            const ownerProfileIds = result.business_users.map((bu) => bu.profile_id).filter(Boolean);
+            const ownerProfileIds = businessUsersData.map((bu) => bu.profile_id).filter(Boolean);
             const viewerIsOwner = ownerProfileIds.includes(viewerProfileId);
             if (!viewerIsOwner) {
               // Record view against the business_uid so business owners can see who visited
@@ -516,6 +504,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       } else {
         setBusinessUsers([]);
       }
+
     } catch (err) {
       console.error("Error fetching business data:", err);
     } finally {
@@ -598,25 +587,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
       checkBusinessOwnership();
     }
   }, [business_uid, business, businessUsers]);
-
-  const fetchBusinessViewers = async () => {
-    try {
-      const response = await fetch(`${PROFILE_VIEWS_ENDPOINT}/${business_uid}`);
-      if (response.ok) {
-        const data = await response.json();
-        setBusinessViewers(data.viewers || []);
-      }
-    } catch (e) {
-      console.warn("BusinessProfileScreen - Failed to fetch business viewers:", e);
-    }
-  };
-
-  // Fetch viewers whenever this screen is focused and user is the owner
-  useEffect(() => {
-    if (isOwner) {
-      fetchBusinessViewers();
-    }
-  }, [isOwner, business_uid]);
 
   // Use useFocusEffect like ProfileScreen
   useFocusEffect(
@@ -1004,9 +974,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
     );
   }
 
-  const hasBusinessOwner = businessUsers.some(
-    (bu) => (bu.bu_role || bu.business_role || bu.role || "").toLowerCase() === "owner",
-  );
+  const hasBusinessOwner = businessUsers.length > 0;
 
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]} key={Platform.OS === "web" ? `viewport-${viewportWidth}` : undefined}>
