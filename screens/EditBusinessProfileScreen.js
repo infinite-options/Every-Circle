@@ -28,6 +28,9 @@ import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils
 import { getBusinessSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import {
   resolveBusinessProfileImage,
+  resolveBusinessProfileImgUrl,
+  profileImgMatchesUri,
+  galleryItemMatchesProfileImg,
   isGooglePhotoInList,
   resolveGooglePhotoUrl,
   dedupeGooglePhotoUrls,
@@ -44,6 +47,17 @@ import {
   coalesceBusinessProfileImg,
   resolveGalleryItemDisplayUri,
   reconcileGalleryUploadsWithProfile,
+  parseBusinessGooglePhotos,
+  filterFreshGooglePhotoUrls,
+  buildGooglePhotosForSave,
+  collectKeptUserUploadS3Urls,
+  resolveFavoriteImageForSave,
+  favoritesMatch,
+  isPersistedGoogleS3Url,
+  isPermanentS3Url,
+  parseGalleryS3Urls,
+  findNewGalleryS3Urls,
+  dedupeGalleryUploadsByS3Key,
 } from "../utils/resolveBusinessProfileImage";
 
 const BusinessProfileAPI = BUSINESS_INFO_ENDPOINT;
@@ -51,11 +65,18 @@ const DEFAULT_BUSINESS_IMAGE = require("../assets/profile.png");
 
 const parseInitialGalleryUploads = (business, businessUID) => buildBusinessGalleryUploads(business, businessUID);
 
-const pickNextProfileImage = (googlePhotos, galleryUploads, excludeUri = "") => {
-  const nextGoogle = (googlePhotos || []).find((photo) => photo !== excludeUri);
-  if (nextGoogle) return nextGoogle;
-  const nextUpload = (galleryUploads || []).find((item) => item.uri !== excludeUri);
-  return nextUpload?.uri || "";
+const pickNextProfileImage = (googlePhotos, galleryUploads, excludeUri = "", uid = "") => {
+  const nextInGallery = (galleryUploads || []).find(
+    (item) =>
+      item?.uri &&
+      !businessUploadUrisMatch(item.uri, excludeUri, uid) &&
+      !googlePhotoUrlsMatch(item.uri, excludeUri),
+  );
+  if (nextInGallery?.uri) return nextInGallery.uri;
+  const nextGoogle = (googlePhotos || []).find(
+    (photo) => photo && !googlePhotoUrlsMatch(photo, excludeUri) && photo !== excludeUri,
+  );
+  return nextGoogle || "";
 };
 
 const isRemoteImageUri = (uri) => uri && (uri.startsWith("http://") || uri.startsWith("https://"));
@@ -358,7 +379,10 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   // Business profile image state (backend: business_profile_img, delete_business_profile_img, business_profile_img_is_public)
   // Profile image comes from business_profile_img; other images stay in business_images_url
-  const initialProfileImage = resolveBusinessProfileImage(business) || "";
+  const initialProfileImage = resolveBusinessProfileImgUrl(business, business?.business_uid || "") || "";
+  const [originalFavoriteImage, setOriginalFavoriteImage] = useState(
+    business?.business_favorite_image || initialProfileImage,
+  );
   const [originalBusinessImage, setOriginalBusinessImage] = useState(initialProfileImage);
   const [businessImage, setBusinessImage] = useState(initialProfileImage);
   const [businessImageUri, setBusinessImageUri] = useState(initialProfileImage);
@@ -367,9 +391,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [webImageFile, setWebImageFile] = useState(null); // Legacy; gallery items store webFile per upload
   const [imageUpdateKey, setImageUpdateKey] = useState(0); // Key to force MiniCard re-render when image changes
   const [galleryUploads, setGalleryUploads] = useState(() =>
-    reconcileGalleryUploadsWithProfile(
-      parseInitialGalleryUploads(business, business?.business_uid || ""),
-      resolveBusinessProfileImage(business) || "",
+    dedupeGalleryUploadsByS3Key(
+      reconcileGalleryUploadsWithProfile(
+        parseInitialGalleryUploads(business, business?.business_uid || ""),
+        resolveBusinessProfileImgUrl(business, business?.business_uid || "") || "",
+        business?.business_uid || "",
+      ),
       business?.business_uid || "",
     ),
   );
@@ -378,6 +405,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [showGooglePhotosPanel, setShowGooglePhotosPanel] = useState(false);
   const [googlePanelPhotos, setGooglePanelPhotos] = useState([]);
   const googlePanelTouchedRef = useRef(false);
+  const googlePanelPhotosRef = useRef([]);
   const galleryUserTouchedRef = useRef(false);
   const galleryUploadsRef = useRef([]);
   const businessImageUriRef = useRef("");
@@ -409,19 +437,28 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     businessImageUriRef.current = businessImageUri;
   }, [businessImageUri]);
 
+  useEffect(() => {
+    googlePanelPhotosRef.current = googlePanelPhotos;
+  }, [googlePanelPhotos]);
+
   const loadGalleryFromBusiness = useCallback(
     (sourceBusiness, uid, profileOverride = "") => {
-      const parsed = reconcileGalleryUploadsWithProfile(
-        buildBusinessGalleryUploads(sourceBusiness, uid),
-        profileOverride || resolveBusinessProfileImage(sourceBusiness) || "",
+      const profileImgUrl = profileOverride || resolveBusinessProfileImgUrl(sourceBusiness, uid) || "";
+      const parsed = dedupeGalleryUploadsByS3Key(
+        reconcileGalleryUploadsWithProfile(
+          buildBusinessGalleryUploads(sourceBusiness, uid),
+          profileImgUrl,
+          uid,
+        ),
         uid,
       );
       setGalleryUploads(parsed);
-      const profileUrl = profileOverride || resolveBusinessProfileImage(sourceBusiness) || "";
+      const profileUrl = profileImgUrl;
       if (profileUrl) {
         setBusinessImageUri(profileUrl);
         setBusinessImage(profileUrl);
         setOriginalBusinessImage(profileUrl);
+        setOriginalFavoriteImage(sourceBusiness?.business_favorite_image || profileUrl);
       }
     },
     [],
@@ -447,6 +484,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             business_uid: businessUID,
             business_profile_img: coalesceBusinessProfileImg(raw?.business_profile_img, business?.business_profile_img),
             business_images_url: raw?.business_images_url ?? business?.business_images_url,
+            business_google_photos: raw?.business_google_photos ?? business?.business_google_photos,
+            business_favorite_image: raw?.business_favorite_image ?? business?.business_favorite_image,
           };
           loadGalleryFromBusiness(mergedBusiness, businessUID);
         } catch (e) {
@@ -463,25 +502,10 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   useEffect(() => {
     if (galleryUserTouchedRef.current) return;
     const uid = businessUID || business?.business_uid || "";
-    if (!businessImageUri || !isBusinessUserUploadImage(businessImageUri)) return;
+    if (!businessImageUri) return;
     setGalleryUploads((prev) => {
       const reconciled = reconcileGalleryUploadsWithProfile(prev, businessImageUri, uid);
-      const uriFixed = reconciled.some((item, index) => item.uri !== prev[index]?.uri);
-      if (uriFixed) return reconciled;
-      if (businessGalleryIncludesUri(prev, businessImageUri, uid)) return prev;
-      const uri = resolveBusinessUploadUri(businessImageUri, uid) || businessImageUri;
-      const s3Key = normalizeBusinessUploadKey(businessImageUri, uid);
-      if (!uri || !s3Key) return prev;
-      return [
-        ...prev,
-        {
-          id: `synced-${s3Key}`,
-          uri,
-          s3Key,
-          isNew: false,
-          webFile: null,
-        },
-      ];
+      return dedupeGalleryUploadsByS3Key(reconciled, uid);
     });
   }, [businessImageUri, businessUID, business?.business_uid]);
 
@@ -983,7 +1007,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         Alert.alert("No Photos", "Google did not return any photos for this business.");
         return;
       }
-      const currentPhotos = googlePanelPhotos || [];
+      const currentPhotos = filterFreshGooglePhotoUrls(googlePanelPhotos || []);
       const mergedPhotos = mergeRefreshedGooglePhotos(currentPhotos, freshPhotos);
       const photosToSet = mergedPhotos.length > 0 ? mergedPhotos : freshPhotos;
       googlePhotosUserEditedRef.current = true;
@@ -1321,14 +1345,21 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_website", formData.website);
       payload.append("custom_tags", JSON.stringify(formData.customTags));
 
-      const googleImages = googlePanelTouchedRef.current ? dedupeGooglePhotoUrls(googlePanelPhotos) : null;
+      const imagesTouched = galleryUserTouchedRef.current || googlePanelTouchedRef.current;
       const currentGalleryUploads = galleryUploadsRef.current;
       const currentBusinessImageUri = businessImageUriRef.current;
-      const selectedProfile = (currentBusinessImageUri || "").trim();
+      const currentGooglePanel = googlePanelPhotosRef.current;
+      const galleryS3UrlsBeforeSave = parseGalleryS3Urls(business, businessUID);
+
       const isProfileGalleryItem = (item) =>
         businessUploadUrisMatch(item.uri, currentBusinessImageUri, businessUID) ||
-        googlePhotoUrlsMatch(item.uri, currentBusinessImageUri);
-      const hasExplicitProfileMatch = currentGalleryUploads.some(isProfileGalleryItem);
+        googlePhotoUrlsMatch(item.uri, currentBusinessImageUri) ||
+        businessUploadUrisMatch(
+          resolveGalleryItemDisplayUri(item, currentBusinessImageUri, businessUID),
+          currentBusinessImageUri,
+          businessUID,
+        );
+
       const profileGalleryItem =
         currentGalleryUploads.find(isProfileGalleryItem) ||
         currentGalleryUploads.find((item) =>
@@ -1338,170 +1369,121 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             businessUID,
           ),
         );
-      const profileFromNewUpload = Boolean(profileGalleryItem?.isNew);
-      const profileFromExistingUpload = Boolean(profileGalleryItem && !profileGalleryItem.isNew);
-      const favoriteUrl =
-        googleImages !== null && !profileFromExistingUpload && !profileFromNewUpload
-          ? resolveFavoriteGoogleImage(selectedProfile, googleImages)
-          : "";
-      const isGoogleProfileSelection = Boolean(favoriteUrl);
 
-      // Match Business Setup image field order and names
+      const googlePhotosToSend = buildGooglePhotosForSave(
+        currentGalleryUploads,
+        currentGooglePanel,
+        deletedGalleryImageUrls,
+        businessUID,
+      );
+      const sendGooglePhotos = imagesTouched && Boolean(businessGoogleId);
+
+      const { favoriteUrl: favoriteForSave, deferFavoriteAfterUpload } = resolveFavoriteImageForSave({
+        selectedUri: currentBusinessImageUri,
+        googlePhotosToSend,
+        googlePanelPhotos: currentGooglePanel,
+        galleryItem: profileGalleryItem,
+        uid: businessUID,
+      });
+
+      const favoriteChanged =
+        deferFavoriteAfterUpload ||
+        (favoriteForSave && !favoritesMatch(favoriteForSave, originalFavoriteImage, businessUID));
+
+      const hasNewFileUploads = currentGalleryUploads.some((item) => item.isNew);
+      let deferFavoriteToSecondPut =
+        deferFavoriteAfterUpload ||
+        (hasNewFileUploads && favoriteChanged && Boolean(favoriteForSave)) ||
+        (sendGooglePhotos && favoriteChanged && favoriteForSave && isPermanentS3Url(favoriteForSave));
+
       payload.append("business_google_rating", String(business?.business_google_rating ?? business?.googleRating ?? ""));
-      if (googleImages !== null) {
-        payload.append("business_google_photos", JSON.stringify(googleImages));
-        payload.append("business_favorite_image", favoriteUrl);
+      if (sendGooglePhotos) {
+        payload.append("business_google_photos", JSON.stringify(googlePhotosToSend));
+        if (
+          favoriteForSave &&
+          isGoogleHostedPhotoUrl(favoriteForSave) &&
+          favoriteChanged &&
+          !deferFavoriteToSecondPut
+        ) {
+          payload.append("business_favorite_image", favoriteForSave);
+        }
+      } else if (favoriteChanged && favoriteForSave && !deferFavoriteToSecondPut) {
+        payload.append("business_favorite_image", favoriteForSave);
       }
       if (businessGoogleId) {
         payload.append("business_google_id", businessGoogleId);
       }
 
-      // Business profile image file — uploads only (Google logo uses business_favorite_image, same as setup)
-      const profileWebFile = webImageFile || profileGalleryItem?.webFile || null;
-      const profileSelectionChanged =
-        currentBusinessImageUri &&
-        !imageError &&
-        !businessUploadUrisMatch(currentBusinessImageUri, originalBusinessImage, businessUID);
-      let profileImageSent = false;
-
-      if (profileSelectionChanged && !isGoogleProfileSelection) {
-        if (profileFromExistingUpload && profileGalleryItem) {
-          profileImageSent = await appendExistingUploadAsProfile(
-            payload,
-            profileGalleryItem,
-            currentBusinessImageUri,
-            businessUID,
-          );
-        } else if (!profileFromNewUpload) {
-          if (Platform.OS === "web" && profileWebFile) {
-            imageFileSize = profileWebFile.size || 0;
-            payload.append("business_profile_img", profileWebFile);
-            profileImageSent = true;
-          } else if (isLocalImageUri(currentBusinessImageUri)) {
-            try {
-              const fileInfo = await FileSystem.getInfoAsync(currentBusinessImageUri);
-              imageFileSize = fileInfo.size || 0;
-              const uriParts = currentBusinessImageUri.split(".");
-              const fileType = uriParts[uriParts.length - 1]?.split(/[?#]/)[0] || "jpg";
-              payload.append("business_profile_img", {
-                uri: currentBusinessImageUri,
-                name: `business_profile_img.${fileType}`,
-                type: `image/${fileType}`,
-              });
-              profileImageSent = true;
-            } catch (error) {
-              console.error("Error getting file info for business_profile_img:", error);
-              if (currentBusinessImageUri.startsWith("data:") || currentBusinessImageUri.startsWith("blob:")) {
-                const response = await fetch(currentBusinessImageUri);
-                const blob = await response.blob();
-                imageFileSize = blob.size || 0;
-                const file = new File([blob], "business_profile_img.jpg", { type: blob.type || "image/jpeg" });
-                payload.append("business_profile_img", file);
-                profileImageSent = true;
-              }
-            }
-          } else if (isRemoteImageUri(currentBusinessImageUri) && !isGoogleHostedPhotoUrl(currentBusinessImageUri)) {
-            profileImageSent = await appendExistingUploadAsProfile(
-              payload,
-              profileGalleryItem || { uri: currentBusinessImageUri, s3Key: normalizeBusinessUploadKey(currentBusinessImageUri, businessUID) },
-              currentBusinessImageUri,
-              businessUID,
-            );
-          }
-        }
-      }
-
-      if (profileSelectionChanged && !isGoogleProfileSelection && !profileImageSent && !profileFromNewUpload) {
-        console.warn("EditBusinessProfileScreen - profile selection changed but business_profile_img was not attached");
-      }
-
-      if (deleteBusinessProfileImg && !imageError) {
-        console.log("Adding delete_business_profile_img to payload:", deleteBusinessProfileImg);
-        payload.append("delete_business_profile_img", deleteBusinessProfileImg);
-      }
-
       payload.append("business_profile_img_is_public", formData.imageIsPublic ? "1" : "0");
 
-      deletedGalleryImageUrls.forEach((url, index) => {
-        payload.append(`delete_business_image_${index}`, url);
-      });
-
-      const isBlobOrDataUri = (uri) => uri && (uri.startsWith("blob:") || uri.startsWith("data:"));
-      const galleryFilenames = [];
-      let newFileIndex = 0;
-
-      for (const item of currentGalleryUploads) {
-        if (item.isNew) {
-          const imageUri = item.uri;
-          let fileType = "jpg";
-          if (imageUri.startsWith("data:")) {
-            const match = imageUri.match(/data:image\/(\w+)/);
-            fileType = match ? (match[1] === "jpeg" ? "jpg" : match[1]) : "jpg";
-          } else if (item.webFile?.name) {
-            const nameParts = item.webFile.name.split(".");
-            fileType = nameParts.length > 1 ? nameParts[nameParts.length - 1].toLowerCase() : "jpg";
-          } else {
-            const uriParts = imageUri.split(".");
-            fileType = uriParts.length > 1 ? uriParts[uriParts.length - 1].split(/[?#]/)[0] : "jpg";
-          }
-          const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase()) ? `image/${fileType === "jpg" ? "jpeg" : fileType}` : "image/jpeg";
-          const fileName = `business_image_${newFileIndex}.${fileType}`;
-          let fileToAppend = null;
-
-          if (Platform.OS === "web" && item.webFile) {
-            fileToAppend = item.webFile;
-          } else if (Platform.OS === "web" && isBlobOrDataUri(imageUri)) {
-            try {
-              const response = await fetch(imageUri);
-              const blob = await response.blob();
-              fileToAppend = new File([blob], fileName, { type: mimeType });
-            } catch (err) {
-              console.error("Failed to fetch gallery image for upload:", err);
-              continue;
-            }
-          } else {
-            fileToAppend = {
-              uri: imageUri,
-              type: mimeType,
-              name: fileName,
-            };
-          }
-
-          galleryFilenames.push(fileName);
-          payload.append(`business_img_${newFileIndex}`, fileToAppend);
-
-          if (
-            !isGoogleProfileSelection &&
-            item.isNew &&
-            (isProfileGalleryItem(item) ||
-              (!hasExplicitProfileMatch &&
-                profileSelectionChanged &&
-                currentGalleryUploads.filter((entry) => entry.isNew).length === 1))
-          ) {
-            const profileFileName = `business_profile_img.${fileType}`;
-            const profileFile =
-              fileToAppend instanceof File
-                ? new File([fileToAppend], profileFileName, { type: mimeType })
-                : { uri: imageUri, type: mimeType, name: profileFileName };
-            payload.append("business_profile_img", profileFile);
-            if (fileToAppend instanceof File) {
-              imageFileSize = fileToAppend.size || imageFileSize;
-            }
-          }
-          newFileIndex += 1;
-        } else if (item.s3Key) {
-          galleryFilenames.push(item.s3Key);
-        }
+      const deleteUserUrls = deletedGalleryImageUrls.filter((url) => !isPersistedGoogleS3Url(url));
+      if (deleteUserUrls.length > 0) {
+        payload.append("delete_business_images", JSON.stringify(deleteUserUrls));
       }
 
-      if (currentGalleryUploads.length > 0 && galleryFilenames.length === 0) {
+      const isBlobOrDataUri = (uri) => uri && (uri.startsWith("blob:") || uri.startsWith("data:"));
+      const keptUserUploadS3Urls = collectKeptUserUploadS3Urls(
+        currentGalleryUploads,
+        deletedGalleryImageUrls,
+        businessUID,
+      );
+      let newFileIndex = 0;
+      let newUploadCount = 0;
+
+      for (const item of currentGalleryUploads) {
+        if (!item.isNew) continue;
+        const imageUri = item.uri;
+        let fileType = "jpg";
+        if (imageUri.startsWith("data:")) {
+          const match = imageUri.match(/data:image\/(\w+)/);
+          fileType = match ? (match[1] === "jpeg" ? "jpg" : match[1]) : "jpg";
+        } else if (item.webFile?.name) {
+          const nameParts = item.webFile.name.split(".");
+          fileType = nameParts.length > 1 ? nameParts[nameParts.length - 1].toLowerCase() : "jpg";
+        } else {
+          const uriParts = imageUri.split(".");
+          fileType = uriParts.length > 1 ? uriParts[uriParts.length - 1].split(/[?#]/)[0] : "jpg";
+        }
+        const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase())
+          ? `image/${fileType === "jpg" ? "jpeg" : fileType}`
+          : "image/jpeg";
+        let fileToAppend = null;
+
+        if (Platform.OS === "web" && item.webFile) {
+          fileToAppend = item.webFile;
+        } else if (Platform.OS === "web" && isBlobOrDataUri(imageUri)) {
+          try {
+            const response = await fetch(imageUri);
+            const blob = await response.blob();
+            fileToAppend = new File([blob], `business_img_${newFileIndex}.${fileType}`, { type: mimeType });
+          } catch (err) {
+            console.error("Failed to fetch gallery image for upload:", err);
+            continue;
+          }
+        } else {
+          fileToAppend = {
+            uri: imageUri,
+            type: mimeType,
+            name: `business_img_${newFileIndex}.${fileType}`,
+          };
+        }
+
+        payload.append(`business_img_${newFileIndex}`, fileToAppend);
+        if (fileToAppend instanceof File) {
+          imageFileSize = fileToAppend.size || imageFileSize;
+        }
+        newFileIndex += 1;
+        newUploadCount += 1;
+      }
+
+      if (newUploadCount > 0 && newFileIndex === 0) {
         Alert.alert("Error", "Could not prepare your uploaded image for save. Please try uploading again.");
         setIsLoading(false);
         return;
       }
 
-      if (galleryFilenames.length > 0 || deletedGalleryImageUrls.length > 0) {
-        payload.append("business_images_url", JSON.stringify(galleryFilenames));
+      if (imagesTouched && keptUserUploadS3Urls.length > 0) {
+        payload.append("business_images_url", JSON.stringify(keptUserUploadS3Urls));
       }
 
       payload.append("business_email_id_is_public", formData.emailIsPublic ? "1" : "0");
@@ -1664,26 +1646,28 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       // Note: Business profile doesn't have these sections, so deleted items handling is not needed
 
       // Standardized console log (same format as EditProfileScreen for easy comparison)
-      const businessImagesUrlValue = JSON.stringify(galleryFilenames);
+      const businessImagesUrlValue =
+        imagesTouched && keptUserUploadS3Urls.length > 0 ? JSON.stringify(keptUserUploadS3Urls) : "(not sent)";
       console.log("============================================");
       console.log("📡 BUSINESS PROFILE – IMAGE PAYLOAD SENT TO BACKEND");
       console.log("============================================");
       console.log("🔗 ENDPOINT:", BusinessProfileAPI);
       console.log("📝 METHOD: PUT");
       console.log("--------------------------------------------");
-      console.log("Image fields (compare with backend expectations):");
-      console.log("  business_profile_img (file):", profileSelectionChanged && !isGoogleProfileSelection ? "SENT" : "not sent");
-      if (profileSelectionChanged && !isGoogleProfileSelection) {
-        console.log("    -> file size (bytes):", imageFileSize);
-        console.log("    -> (web) file name:", Platform.OS === "web" && webImageFile ? webImageFile.name : "N/A");
-      }
-      console.log("  delete_business_profile_img (URL):", deleteBusinessProfileImg || "(not sent)");
-      console.log("  business_profile_img_is_public:", formData.imageIsPublic ? "1" : "0");
-      console.log("  business_images_url (gallery only):", businessImagesUrlValue);
-      console.log("  delete_business_image_* count:", deletedGalleryImageUrls.length);
+      console.log("Image fields (backend contract):");
+      console.log("  business_img_* count:", newFileIndex);
+      console.log("  business_images_url:", businessImagesUrlValue);
+      console.log("  delete_business_images:", deleteUserUrls.length > 0 ? JSON.stringify(deleteUserUrls) : "(not sent)");
       console.log("  business_google_id:", businessGoogleId || "(not sent)");
-      console.log("  business_google_photos:", googleImages !== null ? `sent (${googleImages.length})` : "not sent (panel not opened)");
-      console.log("  business_favorite_image:", googleImages !== null ? favoriteUrl || "(cleared)" : "(not sent)");
+      console.log(
+        "  business_google_photos:",
+        sendGooglePhotos ? `sent (${googlePhotosToSend.length}: kept S3 + fresh Google)` : "not sent",
+      );
+      console.log(
+        "  business_favorite_image:",
+        deferFavoriteToSecondPut ? "(deferred – step 2)" : favoriteForSave || "(not sent)",
+      );
+      console.log("  business_profile_img_is_public:", formData.imageIsPublic ? "1" : "0");
       console.log("--------------------------------------------");
       console.log("============================================");
       console.log("Custom tags being sent:", JSON.stringify(formData.customTags));
@@ -1796,9 +1780,43 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       
       await Promise.all(optionSavePromises);
 
+      if (deferFavoriteToSecondPut) {
+        try {
+          let favoriteS3 = "";
+          if (deferFavoriteAfterUpload) {
+            const bizRes = await fetch(`${BUSINESS_INFO_ENDPOINT}/${businessUID}`);
+            const bizData = await bizRes.json();
+            const afterUrls = parseGalleryS3Urls(bizData?.business, businessUID);
+            const newUrls = findNewGalleryS3Urls(galleryS3UrlsBeforeSave, afterUrls, businessUID);
+            const newItems = currentGalleryUploads.filter((item) => item.isNew);
+            const favNewIdx = newItems.findIndex((item) => isProfileGalleryItem(item));
+            favoriteS3 = newUrls[favNewIdx >= 0 ? favNewIdx : newUrls.length - 1] || "";
+          } else if (favoriteForSave) {
+            favoriteS3 = favoriteForSave;
+          }
+          if (favoriteS3) {
+            const favPayload = new FormData();
+            favPayload.append("user_uid", userUid);
+            favPayload.append("business_uid", businessUID);
+            favPayload.append("business_favorite_image", favoriteS3);
+            const favRes = await fetch(`${BusinessProfileAPI}`, { method: "PUT", body: favPayload });
+            if (!favRes.ok) {
+              console.warn("EditBusinessProfileScreen - step-2 favorite save failed:", favRes.status);
+            } else {
+              setOriginalFavoriteImage(favoriteS3);
+            }
+          }
+        } catch (e) {
+          console.warn("EditBusinessProfileScreen - step-2 favorite save error:", e);
+        }
+      }
+
       suppressLeavePromptRef.current = true;
       setIsChanged(false);
       setOriginalBusinessImage(currentBusinessImageUri || originalBusinessImage);
+      if (favoriteForSave && !deferFavoriteToSecondPut) {
+        setOriginalFavoriteImage(favoriteForSave);
+      }
       navigation.navigate("BusinessProfile", { business_uid: businessUID });
       Alert.alert("Success", "Business profile updated.");
       setTimeout(() => {
@@ -2070,8 +2088,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll} contentContainerStyle={styles.imageRow}>
         {galleryUploads.map((item, index) => {
           const displayUri = resolveGalleryItemDisplayUri(item, businessImageUri, businessUID);
-          const isSelected =
-            businessUploadUrisMatch(businessImageUri, displayUri, businessUID) || googlePhotoUrlsMatch(businessImageUri, displayUri);
+          const isSelected = galleryItemMatchesProfileImg(item, businessImageUri, businessUID);
           return (
             <View key={item.id} style={styles.galleryImageWrapper}>
               <TouchableOpacity style={styles.galleryThumbTouchable} onPress={() => selectProfileImage(displayUri)} activeOpacity={0.8}>
@@ -2103,7 +2120,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           <Text style={[styles.sublabel, darkMode && styles.darkSublabel, styles.gallerySectionLabel, styles.googlePhotosPanelLabel]}>Google Images</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll} contentContainerStyle={styles.imageRow}>
             {googlePhotos.filter((uri) => uri && String(uri).trim()).map((uri, index) => {
-              const isSelected = googlePhotoUrlsMatch(businessImageUri, uri);
+              const isSelected = profileImgMatchesUri(businessImageUri, uri, businessUID);
               return (
                 <View key={`google-${uri}-${index}`} style={styles.galleryImageWrapper}>
                   <TouchableOpacity style={styles.galleryThumbTouchable} onPress={() => selectProfileImage(uri)} activeOpacity={0.8}>

@@ -132,7 +132,7 @@ export default function BusinessStep1({ formData, setFormData, onPendingTagsChan
         {
           ...formData,
           business_name: formData.businessName,
-          favImage: formData.favImage,
+          business_favorite_image: formData.favImage || "",
           images: formData.images,
           businessGooglePhotos: formData.businessGooglePhotos,
         },

@@ -1,6 +1,6 @@
 /**
  * Resolve the best available business profile / header image URL from API or mapped business data.
- * Priority: business_profile_img → business_favorite_image → first Google photo → gallery image.
+ * Priority: business_profile_img → business_favorite_image / favImage → first Google photo → gallery image.
  */
 
 export const S3_BUSINESS_IMAGE_BASE = "https://s3-us-west-1.amazonaws.com/every-circle/business_personal";
@@ -17,19 +17,52 @@ export function normalizeBusinessUploadKey(rawKey, uid) {
   if (!trimmed) return "";
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
     if (uid) {
-      const marker = `/business_personal/${uid}/`;
-      const idx = trimmed.indexOf(marker);
-      if (idx >= 0) return decodeURIComponent(trimmed.slice(idx + marker.length).split("?")[0]);
+      const markers = [`/business_personal/${uid}/`, `/business_profile/${uid}/`];
+      for (const marker of markers) {
+        const idx = trimmed.indexOf(marker);
+        if (idx >= 0) return decodeURIComponent(trimmed.slice(idx + marker.length).split("?")[0]);
+      }
     }
-    return trimmed.split("/").pop()?.split("?")[0] || trimmed;
+    return decodeURIComponent(trimmed.split("?")[0].split("/").pop() || "");
   }
   return trimmed.split("?")[0];
+}
+
+export function filenameFromS3Url(urlOrKey) {
+  const trimmed = String(urlOrKey || "").trim();
+  if (!trimmed) return "";
+  const key = trimmed.split("?")[0];
+  return key.split("/").pop() || key;
+}
+
+/** Upload batch suffix e.g. 20260616171216Z from business_img_0_20260616171216Z */
+export function extractBusinessUploadTimestamp(urlOrKey, uid) {
+  const key = normalizeBusinessUploadKey(urlOrKey, uid) || filenameFromS3Url(urlOrKey);
+  const match = key.match(/(\d{14}Z)$/i);
+  return match ? match[1] : "";
+}
+
+function isProfileGalleryUploadPair(fileA, fileB) {
+  return (
+    (/^business_profile_img_/i.test(fileA) && /^business_img_/i.test(fileB)) ||
+    (/^business_profile_img_/i.test(fileB) && /^business_img_/i.test(fileA))
+  );
 }
 
 export function businessUploadUrisMatch(a, b, uid) {
   if (!a || !b) return false;
   if (a === b) return true;
-  return normalizeBusinessUploadKey(a, uid) === normalizeBusinessUploadKey(b, uid);
+  const keyA = normalizeBusinessUploadKey(a, uid);
+  const keyB = normalizeBusinessUploadKey(b, uid);
+  if (keyA && keyB && keyA === keyB) return true;
+  const tsA = extractBusinessUploadTimestamp(a, uid);
+  const tsB = extractBusinessUploadTimestamp(b, uid);
+  if (tsA && tsB && tsA === tsB) {
+    const fileA = filenameFromS3Url(keyA || a);
+    const fileB = filenameFromS3Url(keyB || b);
+    if (isProfileGalleryUploadPair(fileA, fileB)) return true;
+  }
+  return false;
 }
 
 export function isBusinessUserUploadImage(value) {
@@ -39,7 +72,10 @@ export function isBusinessUserUploadImage(value) {
   if (isGoogleHostedPhotoUrl(raw)) return false;
   if (raw.startsWith("blob:") || raw.startsWith("data:") || raw.startsWith("file:")) return true;
   if (raw.startsWith("http://") || raw.startsWith("https://")) {
-    return raw.includes("amazonaws.com") || /business_personal|business_profile_img|business_image_/i.test(raw);
+    return (
+      raw.includes("amazonaws.com") ||
+      /business_personal|business_profile\/|business_profile_img|business_image_/i.test(raw)
+    );
   }
   return /\.(jpe?g|png|gif|webp)$/i.test(raw) || /^business_image_/i.test(raw) || /^business_profile_img/i.test(raw);
 }
@@ -67,6 +103,36 @@ export function coalesceBusinessProfileImg(...candidates) {
   return fullUrl || cleaned[0];
 }
 
+/**
+ * Profile image URL from business_profile_img only (not business_favorite_image).
+ * Used for gallery checkmark / header preview on edit.
+ */
+export function resolveBusinessProfileImgUrl(raw, uid) {
+  if (!raw || typeof raw !== "object") return "";
+  const businessUid = uid || raw.business_uid || "";
+  const profileImg = coalesceBusinessProfileImg(raw.business_profile_img);
+  if (!profileImg || profileImg === "null" || profileImg === "undefined") return "";
+  if (profileImg.startsWith("http://") || profileImg.startsWith("https://")) return profileImg;
+  return resolveBusinessUploadUri(profileImg, businessUid) || profileImg;
+}
+
+/** True when candidateUri is the same gallery object as profileImgUri (S3 key or Google ref). */
+export function profileImgMatchesUri(profileImgUri, candidateUri, uid) {
+  if (!profileImgUri || !candidateUri) return false;
+  return (
+    businessUploadUrisMatch(profileImgUri, candidateUri, uid) ||
+    googlePhotoUrlsMatch(profileImgUri, candidateUri)
+  );
+}
+
+export function galleryItemMatchesProfileImg(item, profileImgUri, uid) {
+  if (!item || !profileImgUri) return false;
+  return (
+    profileImgMatchesUri(profileImgUri, item.uri, uid) ||
+    profileImgMatchesUri(profileImgUri, item.s3Key, uid)
+  );
+}
+
 /** User-uploaded profile image only (excludes Google/favorite fallbacks). */
 export function resolveBusinessProfileUploadImage(raw, uid) {
   if (!raw || typeof raw !== "object") return "";
@@ -77,6 +143,22 @@ export function resolveBusinessProfileUploadImage(raw, uid) {
 
 function isGalleryShadowUploadKey(key) {
   return /^business_image_\d+\.[a-z0-9]+$/i.test(key);
+}
+
+export function isPersistedGoogleS3Url(url) {
+  if (!url || typeof url !== "string") return false;
+  const key = normalizeBusinessUploadKey(url, "");
+  return /^google_photo_/i.test(key);
+}
+
+function isPersistedGalleryS3Url(url, uid) {
+  const raw = String(url || "").trim();
+  if (!raw) return false;
+  if (isGoogleHostedPhotoUrl(raw)) return true;
+  if (raw.startsWith("http://") || raw.startsWith("https://")) {
+    return raw.includes("amazonaws.com") || /business_personal/i.test(raw);
+  }
+  return isBusinessUserUploadImage(raw) || isPersistedGoogleS3Url(resolveBusinessUploadUri(raw, uid));
 }
 
 function buildGalleryUploadItem(rawKey, uid, index, idSuffix = "") {
@@ -124,47 +206,61 @@ function pruneStaleGalleryShadowUploads(items, profileUri, uid) {
 
 /**
  * Build Your Uploads gallery items from business API / route data.
- * Always includes the user-uploaded profile image when one exists.
+ * Includes user uploads (business_images_url) and persisted Google photos (business_google_photos).
  */
 export function buildBusinessGalleryUploads(business, businessUID) {
   const uid = businessUID || business?.business_uid || "";
-  const profileUri = resolveBusinessProfileUploadImage(business, uid);
-  const canonicalProfileUri = coalesceBusinessProfileImg(
-    profileUri,
-    business?.business_profile_img,
-    isBusinessUserUploadImage(resolveBusinessProfileImage(business) || "") ? resolveBusinessProfileImage(business) : "",
-  );
-  const resolvedProfileUri =
-    canonicalProfileUri && isBusinessUserUploadImage(canonicalProfileUri)
-      ? resolveBusinessUploadUri(canonicalProfileUri, uid) || canonicalProfileUri
-      : profileUri;
+  const resolvedProfileUri = resolveBusinessProfileImgUrl(business, uid);
   const items = [];
   const seenKeys = new Set();
 
-  const appendUpload = (rawKey, idSuffix = "") => {
-    const sourceKey =
-      resolvedProfileUri && businessUploadUrisMatch(rawKey, resolvedProfileUri, uid) ? resolvedProfileUri : rawKey;
-    if (!isBusinessUserUploadImage(sourceKey)) return;
-    const item = buildGalleryUploadItem(sourceKey, uid, items.length, idSuffix);
-    if (!item || seenKeys.has(item.s3Key)) return;
-    seenKeys.add(item.s3Key);
-    items.push(item);
+  const appendGalleryUrl = (rawKey, idSuffix = "") => {
+    const trimmed = String(rawKey || "").trim();
+    if (!trimmed || !isPersistedGalleryS3Url(trimmed, uid)) return;
+    const uri = resolveBusinessUploadUri(trimmed, uid) || trimmed;
+    const s3Key = normalizeBusinessUploadKey(trimmed, uid);
+    if (!uri || !s3Key || seenKeys.has(s3Key)) return;
+    seenKeys.add(s3Key);
+    items.push({
+      id: `existing-${items.length}-${s3Key}${idSuffix}`,
+      uri,
+      s3Key,
+      isNew: false,
+      isGooglePhoto: isPersistedGoogleS3Url(uri),
+      webFile: null,
+    });
   };
 
-  parseBusinessImagesUrl(business?.business_images_url).forEach((k) => appendUpload(k));
-
-  if (resolvedProfileUri) appendUpload(resolvedProfileUri, "-profile");
+  parseBusinessImagesUrl(business?.business_images_url).forEach((k) => {
+    if (!isPersistedGoogleS3Url(k)) appendGalleryUrl(k);
+  });
+  parseBusinessGooglePhotos(business?.business_google_photos).forEach((k) => appendGalleryUrl(k));
 
   let result = pruneStaleGalleryShadowUploads(items, resolvedProfileUri, uid);
-  if (resolvedProfileUri) {
-    result = ensureUploadInGallery(result, resolvedProfileUri, uid);
-  }
-  return reconcileGalleryUploadsWithProfile(result, resolvedProfileUri || resolveBusinessProfileImage(business) || "", uid);
+  result = dedupeGalleryUploadsByS3Key(result, uid);
+  return reconcileGalleryUploadsWithProfile(result, resolvedProfileUri, uid);
 }
 
 export function businessGalleryIncludesUri(galleryUploads, uri, uid) {
   if (!uri) return false;
-  return (galleryUploads || []).some((item) => businessUploadUrisMatch(item.uri, uri, uid));
+  return (galleryUploads || []).some(
+    (item) =>
+      businessUploadUrisMatch(item.uri, uri, uid) ||
+      businessUploadUrisMatch(item.s3Key, uri, uid),
+  );
+}
+
+/** Collapse duplicate gallery rows that refer to the same S3 object. */
+export function dedupeGalleryUploadsByS3Key(galleryUploads, uid) {
+  const seen = new Set();
+  const result = [];
+  for (const item of galleryUploads || []) {
+    const key = normalizeBusinessUploadKey(item.s3Key || item.uri, uid);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
 }
 
 /** Prefer the known-working profile URL when a gallery item refers to the same upload. */
@@ -191,6 +287,122 @@ export function reconcileGalleryUploadsWithProfile(galleryUploads, profileUri, u
     }
     return item;
   });
+}
+
+export function isPermanentS3Url(url) {
+  const u = String(url || "").trim();
+  return (u.startsWith("http://") || u.startsWith("https://")) && u.includes("amazonaws.com");
+}
+
+export function resolveGalleryItemS3Url(item, uid) {
+  if (!item || item.isNew) return "";
+  const raw = item.uri || item.s3Key || "";
+  if (isPermanentS3Url(raw)) return raw;
+  const resolved = resolveBusinessUploadUri(raw, uid);
+  return isPermanentS3Url(resolved) ? resolved : "";
+}
+
+export function favoritesMatch(a, b, uid) {
+  if (!a || !b) return false;
+  return businessUploadUrisMatch(a, b, uid) || googlePhotoUrlsMatch(a, b);
+}
+
+/** Google Images panel: only live Google URLs (not persisted S3 copies). */
+export function filterFreshGooglePhotoUrls(urls) {
+  return dedupeGooglePhotoUrls((urls || []).map((u) => String(u).trim()).filter(isGoogleHostedPhotoUrl));
+}
+
+/**
+ * business_google_photos payload: kept persisted Google S3 from Your Uploads + fresh Google URLs from panel.
+ */
+export function buildGooglePhotosForSave(galleryUploads, googlePanelPhotos, deletedUrls, uid) {
+  const deletedKeys = new Set((deletedUrls || []).map((u) => normalizeBusinessUploadKey(u, uid)));
+  const notDeleted = (url) => {
+    const key = normalizeBusinessUploadKey(url, uid);
+    return key && !deletedKeys.has(key);
+  };
+
+  const keptPersistedGoogle = (galleryUploads || [])
+    .filter((item) => !item.isNew && item.isGooglePhoto)
+    .map((item) => resolveGalleryItemS3Url(item, uid))
+    .filter((url) => url && isPermanentS3Url(url) && notDeleted(url));
+
+  const keptFreshGoogle = filterFreshGooglePhotoUrls(googlePanelPhotos).filter(notDeleted);
+
+  return dedupeGooglePhotoUrls([...keptPersistedGoogle, ...keptFreshGoogle]);
+}
+
+/** Kept user-upload S3 URLs for business_images_url (excludes Google photos). */
+export function collectKeptUserUploadS3Urls(galleryUploads, deletedUrls, uid) {
+  const deletedKeys = new Set((deletedUrls || []).map((u) => normalizeBusinessUploadKey(u, uid)));
+  const urls = [];
+  const seen = new Set();
+  for (const item of galleryUploads || []) {
+    if (item.isNew || item.isGooglePhoto) continue;
+    const url = resolveGalleryItemS3Url(item, uid);
+    if (!url || !isPermanentS3Url(url) || isPersistedGoogleS3Url(url)) continue;
+    const key = normalizeBusinessUploadKey(url, uid);
+    if (!key || deletedKeys.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    urls.push(url);
+  }
+  return urls;
+}
+
+export function parseGalleryS3Urls(business, uid) {
+  const urls = [];
+  const seen = new Set();
+  for (const raw of parseBusinessImagesUrl(business?.business_images_url)) {
+    if (isPersistedGoogleS3Url(raw)) continue;
+    const full = isPermanentS3Url(raw) ? raw : resolveBusinessUploadUri(raw, uid);
+    if (!isPermanentS3Url(full)) continue;
+    const key = normalizeBusinessUploadKey(full, uid);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    urls.push(full);
+  }
+  return urls;
+}
+
+export function findNewGalleryS3Urls(beforeUrls, afterUrls, uid) {
+  const beforeKeys = new Set((beforeUrls || []).map((u) => normalizeBusinessUploadKey(u, uid)));
+  return (afterUrls || []).filter((u) => !beforeKeys.has(normalizeBusinessUploadKey(u, uid)));
+}
+
+export function resolveFavoriteImageForSave({ selectedUri, googlePhotosToSend, googlePanelPhotos, galleryItem, uid }) {
+  const selected = String(selectedUri || "").trim();
+  if (!selected) return { favoriteUrl: "", deferFavoriteAfterUpload: false };
+
+  if (galleryItem?.isNew) {
+    return { favoriteUrl: "", deferFavoriteAfterUpload: true };
+  }
+
+  const freshGoogle = filterFreshGooglePhotoUrls(googlePanelPhotos);
+
+  if (isGoogleHostedPhotoUrl(selected) && isGooglePhotoInList(selected, freshGoogle)) {
+    const googleFavorite = resolveFavoriteGoogleImage(
+      selected,
+      googlePhotosToSend.filter((url) => isGoogleHostedPhotoUrl(url)),
+    );
+    return { favoriteUrl: googleFavorite || selected, deferFavoriteAfterUpload: false };
+  }
+
+  const s3FromItem = galleryItem ? resolveGalleryItemS3Url(galleryItem, uid) : "";
+  if (s3FromItem) return { favoriteUrl: s3FromItem, deferFavoriteAfterUpload: false };
+
+  if (isPermanentS3Url(selected)) return { favoriteUrl: selected, deferFavoriteAfterUpload: false };
+
+  if (isGooglePhotoInList(selected, googlePhotosToSend)) {
+    const googleFavorite = resolveFavoriteGoogleImage(selected, googlePhotosToSend);
+    if (googleFavorite && isGoogleHostedPhotoUrl(googleFavorite)) {
+      return { favoriteUrl: googleFavorite, deferFavoriteAfterUpload: false };
+    }
+    if (isPermanentS3Url(googleFavorite)) {
+      return { favoriteUrl: googleFavorite, deferFavoriteAfterUpload: false };
+    }
+  }
+
+  return { favoriteUrl: "", deferFavoriteAfterUpload: false };
 }
 
 export function isEphemeralGooglePhotoUrl(url) {
@@ -378,8 +590,13 @@ export function resolveBusinessProfileImage(raw) {
     return profileImg;
   }
 
-  const favoriteImg = raw.business_favorite_image != null ? String(raw.business_favorite_image).trim() : "";
-  if (favoriteImg) return favoriteImg;
+  const favoriteImg = String(raw.business_favorite_image ?? raw.favImage ?? "").trim();
+  if (favoriteImg) {
+    if (isBusinessUserUploadImage(favoriteImg)) {
+      return resolveBusinessUploadUri(favoriteImg, uid) || favoriteImg;
+    }
+    return favoriteImg;
+  }
 
   const googlePhotos = parseBusinessGooglePhotos(raw.business_google_photos);
   if (googlePhotos.length > 0) return googlePhotos[0];
