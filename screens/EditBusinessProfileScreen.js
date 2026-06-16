@@ -1386,29 +1386,39 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         uid: businessUID,
       });
 
+      const profileSelectionChanged =
+        currentBusinessImageUri &&
+        !imageError &&
+        !profileImgMatchesUri(currentBusinessImageUri, originalBusinessImage, businessUID);
+
       const favoriteChanged =
         deferFavoriteAfterUpload ||
+        profileSelectionChanged ||
         (favoriteForSave && !favoritesMatch(favoriteForSave, originalFavoriteImage, businessUID));
 
       const hasNewFileUploads = currentGalleryUploads.some((item) => item.isNew);
       let deferFavoriteToSecondPut =
-        deferFavoriteAfterUpload ||
-        (hasNewFileUploads && favoriteChanged && Boolean(favoriteForSave)) ||
-        (sendGooglePhotos && favoriteChanged && favoriteForSave && isPermanentS3Url(favoriteForSave));
+        deferFavoriteAfterUpload || (hasNewFileUploads && favoriteChanged && Boolean(favoriteForSave));
 
       payload.append("business_google_rating", String(business?.business_google_rating ?? business?.googleRating ?? ""));
       if (sendGooglePhotos) {
         payload.append("business_google_photos", JSON.stringify(googlePhotosToSend));
-        if (
-          favoriteForSave &&
-          isGoogleHostedPhotoUrl(favoriteForSave) &&
-          favoriteChanged &&
-          !deferFavoriteToSecondPut
-        ) {
-          payload.append("business_favorite_image", favoriteForSave);
-        }
-      } else if (favoriteChanged && favoriteForSave && !deferFavoriteToSecondPut) {
+      }
+      if (favoriteChanged && favoriteForSave && !deferFavoriteToSecondPut) {
         payload.append("business_favorite_image", favoriteForSave);
+      }
+
+      let profileImageSent = false;
+      if (profileSelectionChanged && !deferFavoriteAfterUpload && !isGoogleHostedPhotoUrl(currentBusinessImageUri)) {
+        profileImageSent = await appendExistingUploadAsProfile(
+          payload,
+          profileGalleryItem || {
+            uri: currentBusinessImageUri,
+            s3Key: normalizeBusinessUploadKey(currentBusinessImageUri, businessUID),
+          },
+          currentBusinessImageUri,
+          businessUID,
+        );
       }
       if (businessGoogleId) {
         payload.append("business_google_id", businessGoogleId);
@@ -1656,6 +1666,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       console.log("--------------------------------------------");
       console.log("Image fields (backend contract):");
       console.log("  business_img_* count:", newFileIndex);
+      console.log("  business_profile_img:", profileSelectionChanged ? (profileImageSent ? "SENT" : "attempted") : "not sent");
       console.log("  business_images_url:", businessImagesUrlValue);
       console.log("  delete_business_images:", deleteUserUrls.length > 0 ? JSON.stringify(deleteUserUrls) : "(not sent)");
       console.log("  business_google_id:", businessGoogleId || "(not sent)");

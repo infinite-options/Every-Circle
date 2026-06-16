@@ -296,10 +296,16 @@ export function isPermanentS3Url(url) {
 
 export function resolveGalleryItemS3Url(item, uid) {
   if (!item || item.isNew) return "";
-  const raw = item.uri || item.s3Key || "";
-  if (isPermanentS3Url(raw)) return raw;
+  if (item.s3Key) {
+    const fromKey = resolveBusinessUploadUri(item.s3Key, uid);
+    if (isPermanentS3Url(fromKey) && !fromKey.includes("/business_profile/")) {
+      return fromKey;
+    }
+  }
+  const raw = item.uri || "";
+  if (isPermanentS3Url(raw) && !raw.includes("/business_profile/")) return raw;
   const resolved = resolveBusinessUploadUri(raw, uid);
-  return isPermanentS3Url(resolved) ? resolved : "";
+  return isPermanentS3Url(resolved) && !resolved.includes("/business_profile/") ? resolved : "";
 }
 
 export function favoritesMatch(a, b, uid) {
@@ -341,6 +347,7 @@ export function collectKeptUserUploadS3Urls(galleryUploads, deletedUrls, uid) {
     if (item.isNew || item.isGooglePhoto) continue;
     const url = resolveGalleryItemS3Url(item, uid);
     if (!url || !isPermanentS3Url(url) || isPersistedGoogleS3Url(url)) continue;
+    if (url.includes("/business_profile/")) continue;
     const key = normalizeBusinessUploadKey(url, uid);
     if (!key || deletedKeys.has(key) || seen.has(key)) continue;
     seen.add(key);
