@@ -1,5 +1,5 @@
 import { sanitizeText } from "./textSanitizer";
-import { resolveBusinessProfileImage } from "./resolveBusinessProfileImage";
+import { resolveBusinessProfileImage, resolveBusinessProfileImgUrl, coalesceBusinessProfileImg } from "./resolveBusinessProfileImage";
 
 export function isBusinessFieldPublic(value) {
   return value === 1 || value === "1" || value === true;
@@ -15,7 +15,10 @@ export function mapBusinessToMiniCard(raw, options = {}) {
   const tagLine = sanitizeText(
     raw.business_tag_line || raw.tagline || raw.tagLine || raw.profile_business_tag_line || "",
   );
-  const profileImage = resolveBusinessProfileImage(raw);
+  const profileImage =
+    resolveBusinessProfileImgUrl(raw, raw.business_uid) ||
+    coalesceBusinessProfileImg(raw.business_profile_img) ||
+    resolveBusinessProfileImage(raw);
   const previewMode = options.previewMode === true;
 
   const taglineIsPublicFromApi =
@@ -68,4 +71,46 @@ export function mapBusinessToMiniCard(raw, options = {}) {
         (raw.business_location_is_public !== undefined ? isBusinessFieldPublic(raw.business_location_is_public) : true))
       : locationIsPublicFromApi,
   };
+}
+
+/**
+ * Shared MiniCard input for Edit Business Profile preview and Business Profile screen.
+ */
+export function buildBusinessMiniCardBusiness(source, uid = "", overrides = {}) {
+  const raw = source || {};
+  const businessUid = uid || raw.business_uid || "";
+  const profileImage =
+    overrides.profileImageUri ??
+    (resolveBusinessProfileImgUrl(raw, businessUid) ||
+      coalesceBusinessProfileImg(raw.business_profile_img) ||
+      "");
+
+  return mapBusinessToMiniCard(
+    {
+      ...raw,
+      business_uid: businessUid,
+      business_name: raw.business_name || raw.name || "",
+      tagline: raw.tagline || raw.business_tag_line || "",
+      location: raw.business_location || raw.location || "",
+      addressLine2: raw.business_address_line_1 || raw.addressLine1 || raw.addressLine2 || "",
+      city: raw.business_city || raw.city || "",
+      state: raw.business_state || raw.state || "",
+      zip: raw.business_zip_code || raw.zip || "",
+      phone: raw.business_phone_number || raw.phoneNumber || raw.phone || "",
+      email: raw.business_email_id || raw.business_email || raw.email || "",
+      website: raw.business_website || raw.website || "",
+      business_profile_img: profileImage,
+      phoneIsPublic: raw.phoneIsPublic,
+      emailIsPublic: raw.emailIsPublic,
+      taglineIsPublic: raw.taglineIsPublic,
+      locationIsPublic: raw.locationIsPublic,
+      imageIsPublic: raw.imageIsPublic,
+      business_phone_number_is_public: raw.business_phone_number_is_public,
+      business_email_id_is_public: raw.business_email_id_is_public,
+      business_tag_line_is_public: raw.business_tag_line_is_public,
+      business_location_is_public: raw.business_location_is_public,
+      business_profile_img_is_public: raw.business_profile_img_is_public,
+    },
+    overrides.miniCardOptions || {},
+  );
 }

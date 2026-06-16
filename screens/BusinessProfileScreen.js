@@ -1,5 +1,5 @@
 // BusinessProfileScreen.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TouchableOpacity, Alert, Modal, Platform, Linking, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,12 +20,13 @@ import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "..
 import {
   parseBusinessGooglePhotos,
   resolveBusinessProfileImage,
+  resolveBusinessProfileImgUrl,
   isEphemeralGooglePhotoUrl,
   resolveGooglePhotosForDisplay,
   resolveGooglePhotoUrl,
   googlePhotoUrlsMatch,
 } from "../utils/resolveBusinessProfileImage";
-import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
+import { buildBusinessMiniCardBusiness } from "../utils/mapBusinessToMiniCard";
 import { getPlaceDetails } from "../utils/googlePlaces";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import { getSessionProfile } from "../utils/sessionProfile";
@@ -326,10 +327,19 @@ export default function BusinessProfileScreen({ route, navigation }) {
         businessImages = [...uploadedImages, ...businessImages];
       }
 
-      let businessProfileImgUrl = resolveBusinessProfileImage({
-        ...rawBusiness,
-        business_google_photos: googlePhotos,
-      });
+      let businessProfileImgUrl = resolveBusinessProfileImgUrl(
+        {
+          ...rawBusiness,
+          business_google_photos: googlePhotos,
+        },
+        rawBusiness.business_uid,
+      );
+      if (!businessProfileImgUrl) {
+        businessProfileImgUrl = resolveBusinessProfileImage({
+          ...rawBusiness,
+          business_google_photos: googlePhotos,
+        });
+      }
       if (isEphemeralGooglePhotoUrl(businessProfileImgUrl) && googlePhotos.length > 0) {
         const favorite = rawBusiness.business_favorite_image ? String(rawBusiness.business_favorite_image).trim() : "";
         const favoriteIdx = favorite ? googlePhotos.findIndex((url) => googlePhotoUrlsMatch(url, favorite)) : -1;
@@ -614,6 +624,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
       console.log("BusinessProfileScreen - useFocusEffect triggered, reloading business data");
       fetchBusinessInfo();
     }, [business_uid]),
+  );
+
+  const miniCardBusiness = useMemo(
+    () => (business ? buildBusinessMiniCardBusiness(business, business_uid) : null),
+    [business, business_uid],
   );
 
   const handleProductPress = (service) => {
@@ -1048,33 +1063,15 @@ export default function BusinessProfileScreen({ route, navigation }) {
             style: [styles.scrollContainer, darkMode && styles.darkScrollContainer, { zIndex: 1 }],
           })}
         >
-          {/* Business Header Card - profile image always shown here; Hide/Display status shown */}
-          <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
-            <View style={styles.profileHeaderContainer}>
-              <Image
-                source={
-                  business.business_profile_img && String(business.business_profile_img).trim() !== ""
-                    ? { uri: String(business.business_profile_img) }
-                    : business.images && business.images.length > 0 && business.images[0] !== "" && String(business.images[0]).trim() !== ""
-                      ? { uri: String(business.images[0]) }
-                      : require("../assets/profile.png")
-                }
-                style={styles.profileImage}
-                onError={(error) => {
-                  console.log("BusinessProfileScreen image failed to load:", error.nativeEvent.error);
-                  console.log("Problematic business image URI:", business.business_profile_img || (business.images && business.images[0]));
-                }}
-                defaultSource={require("../assets/profile.png")}
-              />
-              <Text style={[styles.nameText, darkMode && styles.darkNameText]}>{sanitizeText(business.business_name)}</Text>
+          {/* Business MiniCard — same presentation as Edit Business Profile */}
+          {miniCardBusiness ? (
+            <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
+              <View style={[styles.previewCard, darkMode && styles.darkPreviewCard]}>
+                <MiniCard business={miniCardBusiness} />
+              </View>
               <Text style={[styles.profileId, darkMode && styles.darkProfileId]}>Business ID: {business_uid}</Text>
-              {/* Hide/Display status always shown on Business Profile */}
-              <Text style={[styles.profileId, darkMode && styles.darkProfileId, { marginTop: 4, fontSize: 12 }]}>Profile image: {business.imageIsPublic ? "Display" : "Hide"}</Text>
             </View>
-          </View>
-
-          {/* MiniCard - uses business_profile_img; image only shown when set and Display */}
-          <MiniCard business={mapBusinessToMiniCard(business)} />
+          ) : null}
 
           {/* About Section */}
           {business.shortBioIsPublic && isSafeForConditional(business.business_short_bio) && (
@@ -2177,22 +2174,21 @@ const styles = StyleSheet.create({
       maxWidth: "100%",
     }),
   },
-  cardContainer: {
-    padding: 0,
-    alignItems: "flex-start",
-    marginBottom: 0,
+  previewSection: {
+    marginBottom: 20,
   },
-  profileHeaderContainer: {
-    width: "100%",
-    alignItems: "center",
-    marginBottom: 8,
+  previewCard: {
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 5,
   },
-  nameText: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: "#000",
-    marginBottom: 8,
-    textAlign: "center",
+  darkPreviewCard: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  darkPreviewSection: {
+    backgroundColor: "#1a1a1a",
   },
   profileId: {
     fontSize: 14,
