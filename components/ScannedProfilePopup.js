@@ -42,7 +42,16 @@ const dateToCircleDate = (date) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
-const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, initialData = null, actionLabel = "Add to Network", title = "Connect With Me" }) => {
+const ScannedProfilePopup = ({
+  visible,
+  profileData,
+  onClose,
+  onAddConnection,
+  initialData = null,
+  actionLabel = "Add to Network",
+  title = "Connect With Me",
+  requireRelationship = false,
+}) => {
   const { darkMode } = useDarkMode();
   const [selectedRelationship, setSelectedRelationship] = useState("friend");
   const [event, setEvent] = useState("");
@@ -93,6 +102,9 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
   ];
 
   const handleAdd = () => {
+    if (requireRelationship && !selectedRelationship) {
+      return;
+    }
     if (onAddConnection) {
       onAddConnection({
         relationship: selectedRelationship,
@@ -128,7 +140,9 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
             </View>
 
             <View style={styles.relationshipContainer}>
-              <Text style={[styles.relationshipLabel, darkMode && styles.darkRelationshipLabel]}>Relationship:</Text>
+              <Text style={[styles.relationshipLabel, darkMode && styles.darkRelationshipLabel]}>
+                Relationship{requireRelationship ? " *" : ""}:
+              </Text>
               <View style={styles.relationshipButtons}>
                 {relationships.map((rel) => (
                   <TouchableOpacity
@@ -139,7 +153,11 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
                       darkMode && styles.darkRelationshipButton,
                       selectedRelationship === rel.value && darkMode && styles.darkRelationshipButtonActive,
                     ]}
-                    onPress={() => setSelectedRelationship((prev) => (prev === rel.value ? null : rel.value))}
+                    onPress={() =>
+                      requireRelationship
+                        ? setSelectedRelationship(rel.value)
+                        : setSelectedRelationship((prev) => (prev === rel.value ? null : rel.value))
+                    }
                   >
                     <Text
                       style={[
@@ -154,6 +172,9 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
                   </TouchableOpacity>
                 ))}
               </View>
+              {requireRelationship && !selectedRelationship ? (
+                <Text style={styles.relationshipErrorText}>Please select a relationship type.</Text>
+              ) : null}
             </View>
 
             <View style={styles.inputContainer}>
@@ -248,7 +269,11 @@ const ScannedProfilePopup = ({ visible, profileData, onClose, onAddConnection, i
             </View>
 
             <View style={styles.buttonContainer}>
-              <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
+              <TouchableOpacity
+                style={[styles.addButton, requireRelationship && !selectedRelationship && styles.addButtonDisabled]}
+                onPress={handleAdd}
+                disabled={requireRelationship && !selectedRelationship}
+              >
                 <Text style={styles.addButtonText}>{actionLabel}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.viewButton} onPress={onClose}>
@@ -331,6 +356,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
+  addButtonDisabled: {
+    opacity: 0.5,
+  },
   viewButton: {
     backgroundColor: "transparent",
     paddingVertical: 14,
@@ -365,6 +393,12 @@ const styles = StyleSheet.create({
   relationshipButtons: {
     flexDirection: "row",
     gap: 8,
+  },
+  relationshipErrorText: {
+    marginTop: 8,
+    fontSize: 13,
+    color: "#d32f2f",
+    fontWeight: "500",
   },
   relationshipButton: {
     flex: 1,

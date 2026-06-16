@@ -1144,9 +1144,13 @@ const ProfileScreen = ({ route, navigation }) => {
   };
 
   const handleConnectPopupSave = async (connectionData) => {
-    try {
-      setShowConnectPopup(false);
+    const selectedRelationship = connectionData?.relationship !== undefined ? connectionData.relationship : null;
+    if (!selectedRelationship || !["friend", "colleague", "family"].includes(selectedRelationship)) {
+      Alert.alert("Required", "Please select a relationship type.");
+      return;
+    }
 
+    try {
       const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
       if (!loggedInProfileUID) {
         Alert.alert("Error", "User profile not found. Please try again.");
@@ -1158,8 +1162,6 @@ const ProfileScreen = ({ route, navigation }) => {
         Alert.alert("Error", "Profile information not found.");
         return;
       }
-
-      const selectedRelationship = connectionData?.relationship !== undefined ? connectionData.relationship : null;
       const circleDate =
         connectionData?.date?.trim() ||
         (() => {
@@ -1230,6 +1232,7 @@ const ProfileScreen = ({ route, navigation }) => {
 
       setRelationshipType(selectedRelationship);
       await fetchRelationship(loggedInProfileUID, viewedProfileUID);
+      setShowConnectPopup(false);
       Alert.alert("Success", "Connection details saved.");
     } catch (error) {
       console.error("ProfileScreen - Error saving connection from popup:", error);
@@ -2525,6 +2528,7 @@ const ProfileScreen = ({ route, navigation }) => {
         visible={showConnectPopup}
         profileData={user}
         title='Connection Details'
+        requireRelationship
         initialData={{
           relationship: relationshipType,
           date: existingRelationship?.circle_date || "",
