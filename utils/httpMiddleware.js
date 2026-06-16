@@ -78,7 +78,7 @@ export const axiosMiddleware = axios.create();
 axiosMiddleware.interceptors.request.use((config) => {
   if (isLocalBackend(config.url) && isPrivacyModeEnabled()) {
     config.headers = { ...config.headers, "X-Privacy-Mode": "true" };
-    if (config.data && typeof config.data === "object" && !config.data.encrypted_data) {
+    if (config.data && typeof config.data === "object" && !config.data.encrypted_data && !(config.data instanceof FormData)) {
       config.data = encryptPayload(config.data);
     }
   }
