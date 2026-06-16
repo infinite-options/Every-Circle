@@ -2444,6 +2444,15 @@ export default function SearchScreen({ route }) {
           <View style={[styles.bannerAd, darkMode && styles.darkBannerAd]}>
             <Text style={[styles.bannerAdText, darkMode && styles.darkBannerAdText]}>Relevant Banner Ad</Text>
           </View>
+          <TouchableOpacity
+            style={[styles.mapLinkButton, darkMode && styles.darkMapLinkButton]}
+            onPress={() => navigation.navigate("EveryCircleMap")}
+            accessibilityLabel="View businesses on map"
+            accessibilityRole="button"
+          >
+            <Ionicons name="map-outline" size={18} color="#fff" />
+            <Text style={styles.mapLinkButtonText}>View businesses on map</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Distance Selection Modal */}
@@ -2867,9 +2876,26 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-    marginVertical: 15,
+    marginTop: 15,
+    marginBottom: 10,
   },
   bannerAdText: { fontSize: 16, fontWeight: "bold" },
+  mapLinkButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#4F8A8B",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 15,
+    gap: 8,
+  },
+  mapLinkButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
+  },
 
   // Filter buttons container
   filterButtonsContainer: {
@@ -3032,6 +3058,9 @@ const styles = StyleSheet.create({
   },
   darkBannerAdText: {
     color: "#ffffff",
+  },
+  darkMapLinkButton: {
+    backgroundColor: "#3D6B6C",
   },
   // Dark mode filter button styles
   darkFilterButtonOption: {

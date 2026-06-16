@@ -76,6 +76,7 @@ import QRScannerScreen from "./screens/QRScannerScreen";
 import InboxScreen from "./screens/InboxScreen";
 import ChatScreen from "./screens/ChatScreen";
 import AddReviewSearchScreen from "./screens/AddReviewSearchScreen";
+import EveryCircleMapScreen from "./screens/EveryCircleMapScreen";
 import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFromEnv } from "./utils/clearAppAsyncStorage";
 
 const Stack = createNativeStackNavigator();
@@ -899,6 +900,7 @@ export default function App() {
     BusinessSetup: "business-setup",
     EditProfile: "edit-profile",
     ShoppingCart: "cart",
+    EveryCircleMap: "map",
   };
 
   const linking = {
@@ -948,10 +950,10 @@ export default function App() {
     const cookiesAllowedValue = cookiesStatus !== null ? JSON.parse(cookiesStatus) : true;
 
     // Allowed screens when cookies are not allowed (only Settings)
-    const cookiesAllowedScreens = ["Settings", "ScanLanding"];
+    const cookiesAllowedScreens = ["Settings", "ScanLanding", "EveryCircleMap"];
 
     // Allowed screens when terms are not accepted
-    const termsAllowedScreens = ["Home", "Login", "SignUp", "Settings", "TermsAndConditions", "ScanLanding"];
+    const termsAllowedScreens = ["Home", "Login", "SignUp", "Settings", "TermsAndConditions", "ScanLanding", "EveryCircleMap", "BusinessProfile"];
 
     // If cookies not allowed and trying to access any screen except Settings
     if (!cookiesAllowedValue && !cookiesAllowedScreens.includes(currentRouteName)) {
@@ -1043,6 +1045,7 @@ export default function App() {
                 <Stack.Screen name='Inbox' component={InboxScreen} />
                 <Stack.Screen name='Chat' component={ChatScreen} />
                 <Stack.Screen name='AddReviewSearch' component={AddReviewSearchScreen} options={{ headerShown: false }} />
+                <Stack.Screen name='EveryCircleMap' component={EveryCircleMapScreen} options={{ headerShown: false }} />
               </Stack.Navigator>
             </NavigationContainer>
             <MessageNotificationBanner
