@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import AppHeader from "../components/AppHeader";
+import BottomNavBar from "../components/BottomNavBar";
 import EveryCircleMapView from "../components/EveryCircleMapView";
 import { BUSINESS_MAP_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
@@ -80,6 +81,10 @@ export default function EveryCircleMapScreen() {
     };
   }, []);
 
+  const handleBack = useCallback(() => {
+    navigation.navigate("Search");
+  }, [navigation]);
+
   const handleBusinessPress = useCallback(
     (business) => {
       if (!business?.business_uid) return;
@@ -101,7 +106,7 @@ export default function EveryCircleMapScreen() {
       <AppHeader
         title="Every Circle Map"
         backgroundColor="#4F8A8B"
-        onBackPress={navigation.canGoBack() ? () => navigation.goBack() : undefined}
+        onBackPress={handleBack}
       />
 
       <View style={styles.summaryBar}>
@@ -214,6 +219,8 @@ export default function EveryCircleMapScreen() {
           </Text>
         </View>
       )}
+
+      <BottomNavBar navigation={navigation} />
     </SafeAreaView>
   );
 }
@@ -352,6 +359,7 @@ const styles = StyleSheet.create({
   hintBar: {
     paddingHorizontal: 16,
     paddingVertical: 10,
+    marginBottom: 52,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: "#ddd",
   },

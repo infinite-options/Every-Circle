@@ -73,11 +73,7 @@ function businessHasBounty(item) {
 /** Highest bounty dollar amount for ranking — no per-item vs total priority, just the max number. */
 function getBusinessBountySortValue(item) {
   if (item?.itemType !== "businesses") return null;
-  const candidates = [
-    parseSearchMaxBounty(item.max_per_item_bounty),
-    parseSearchMaxBounty(item.max_total_bounty),
-    parseSearchMaxBounty(item.max_bounty),
-  ].filter((v) => v != null);
+  const candidates = [parseSearchMaxBounty(item.max_per_item_bounty), parseSearchMaxBounty(item.max_total_bounty), parseSearchMaxBounty(item.max_bounty)].filter((v) => v != null);
   if (candidates.length === 0) return null;
   return Math.max(...candidates);
 }
@@ -139,19 +135,8 @@ function locationFieldsFromApi(row) {
 }
 
 function LocationBoostIcon({ darkMode, distanceMiles }) {
-  const label =
-    distanceMiles != null
-      ? `Boosted: within ${distanceMiles.toFixed(1)} miles of your home`
-      : "Boosted: near your home address";
-  return (
-    <Ionicons
-      name='navigate'
-      size={14}
-      color={darkMode ? "#7DD3FC" : "#0EA5E9"}
-      style={{ marginLeft: 6 }}
-      accessibilityLabel={label}
-    />
-  );
+  const label = distanceMiles != null ? `Boosted: within ${distanceMiles.toFixed(1)} miles of your home` : "Boosted: near your home address";
+  return <Ionicons name='navigate' size={14} color={darkMode ? "#7DD3FC" : "#0EA5E9"} style={{ marginLeft: 6 }} accessibilityLabel={label} />;
 }
 
 /** Merge API business_details bounty with any values already on the search row (never drop the higher amount). */
@@ -248,7 +233,12 @@ function itemPassesNetworkFilter(item, maxDegree) {
  */
 async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
   const businessIds = [
-    ...new Set(items.filter((b) => b.itemType === "businesses").map((b) => resolveBusinessUid(b)).filter(Boolean)),
+    ...new Set(
+      items
+        .filter((b) => b.itemType === "businesses")
+        .map((b) => resolveBusinessUid(b))
+        .filter(Boolean),
+    ),
   ];
   if (businessIds.length === 0) return items;
 
@@ -764,10 +754,7 @@ export default function SearchScreen({ route }) {
   // Filter options (same as FilterScreen)
   const distanceOptions = [5, 10, 15, 25, 50, 100];
   /** First modal row: omit user_lat / max_distance on Qdrant search. */
-  const distanceModalOptions = [
-    { key: "any", label: "Any distance (no filter)", miles: null },
-    ...distanceOptions.map((d) => ({ key: String(d), label: `${d} mi`, miles: d })),
-  ];
+  const distanceModalOptions = [{ key: "any", label: "Any distance (no filter)", miles: null }, ...distanceOptions.map((d) => ({ key: String(d), label: `${d} mi`, miles: d }))];
   const networkOptions = [1, 2, 3, 4, 5];
 
   const clearDistanceFilter = (reRunSearch = true) => {
@@ -875,14 +862,10 @@ export default function SearchScreen({ route }) {
     const effectiveRating = opts.ratingValue !== undefined ? opts.ratingValue : rating;
     const effectiveNetwork = opts.networkValue !== undefined ? opts.networkValue : network;
     if (effectiveDistance != null && (userHomeCoords.lat == null || userHomeCoords.lng == null)) {
-      Alert.alert(
-        "Home address needed",
-        "Set your home address coordinates in Settings to filter search results by distance.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open Settings", onPress: () => navigation.navigate("Settings") },
-        ],
-      );
+      Alert.alert("Home address needed", "Set your home address coordinates in Settings to filter search results by distance.", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Open Settings", onPress: () => navigation.navigate("Settings") },
+      ]);
       return;
     }
 
@@ -1558,17 +1541,7 @@ export default function SearchScreen({ route }) {
       phrase_tag: "Tag Phrase",
     };
 
-    const ignoredKeys = new Set([
-      "semantic_score",
-      "lexical_fuzzy_score",
-      "total_lexical_boost",
-      "final_score",
-      "rescore_mode",
-      "rrf_k",
-      "rrf_rank_semantic",
-      "rrf_rank_lexical",
-      "rrf_raw",
-    ]);
+    const ignoredKeys = new Set(["semantic_score", "lexical_fuzzy_score", "total_lexical_boost", "final_score", "rescore_mode", "rrf_k", "rrf_rank_semantic", "rrf_rank_lexical", "rrf_raw"]);
     const detailParts = Object.entries(breakdown)
       .filter(([key, value]) => detailKeyToLabel[key] && !ignoredKeys.has(key) && Number.isFinite(value) && Number(value) > 0)
       .sort((a, b) => Number(b[1]) - Number(a[1]))
@@ -2158,98 +2131,108 @@ export default function SearchScreen({ route }) {
         {/* Main Content */}
         <View style={styles.contentContainer}>
           {/* Search type buttons - ALWAYS VISIBLE ABOVE SEARCH BAR */}
-          <View style={[styles.filterButtonsContainer, { marginBottom: 10 }]}>
-            <TouchableOpacity
-              style={[
-                styles.filterButtonOption,
-                darkMode && styles.darkFilterButtonOption,
-                searchType === "global" && styles.searchTypeButtonGlobal,
-                darkMode && searchType === "global" && styles.darkSearchTypeButtonGlobal,
-              ]}
-              onPress={() => {
-                setSearchType("global");
-                performSearch(searchQuery, "global");
-              }}
-            >
-              <Text
+          <View style={[styles.searchTypeRow, { marginBottom: 10 }]}>
+            <View style={styles.searchTypeButtonsGroup}>
+              <TouchableOpacity
                 style={[
-                  styles.filterButtonText,
-                  darkMode && styles.darkFilterButtonText,
-                  searchType === "global" && styles.searchTypeButtonTextGlobal,
-                  darkMode && searchType === "global" && styles.darkSearchTypeButtonTextGlobal,
+                  styles.filterButtonOption,
+                  darkMode && styles.darkFilterButtonOption,
+                  searchType === "global" && styles.searchTypeButtonGlobal,
+                  darkMode && searchType === "global" && styles.darkSearchTypeButtonGlobal,
                 ]}
+                onPress={() => {
+                  setSearchType("global");
+                  performSearch(searchQuery, "global");
+                }}
               >
-                Global
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.filterButtonOption,
-                darkMode && styles.darkFilterButtonOption,
-                searchType === "businesses" && styles.searchTypeButtonBusinesses,
-                darkMode && searchType === "businesses" && styles.darkSearchTypeButtonBusinesses,
-              ]}
-              onPress={() => {
-                setSearchType("businesses");
-                performSearch(searchQuery, "businesses");
-              }}
-            >
-              <Text
+                <Text
+                  style={[
+                    styles.filterButtonText,
+                    darkMode && styles.darkFilterButtonText,
+                    searchType === "global" && styles.searchTypeButtonTextGlobal,
+                    darkMode && searchType === "global" && styles.darkSearchTypeButtonTextGlobal,
+                  ]}
+                >
+                  Global
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={[
-                  styles.filterButtonText,
-                  darkMode && styles.darkFilterButtonText,
-                  searchType === "businesses" && styles.searchTypeButtonTextBusinesses,
-                  darkMode && searchType === "businesses" && styles.darkSearchTypeButtonTextBusinesses,
+                  styles.filterButtonOption,
+                  darkMode && styles.darkFilterButtonOption,
+                  searchType === "businesses" && styles.searchTypeButtonBusinesses,
+                  darkMode && searchType === "businesses" && styles.darkSearchTypeButtonBusinesses,
                 ]}
+                onPress={() => {
+                  setSearchType("businesses");
+                  performSearch(searchQuery, "businesses");
+                }}
               >
-                Businesses
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.filterButtonOption,
-                darkMode && styles.darkFilterButtonOption,
-                searchType === "expertise" && styles.searchTypeButtonExpertise,
-                darkMode && searchType === "expertise" && styles.darkSearchTypeButtonExpertise,
-              ]}
-              onPress={() => {
-                setSearchType("expertise");
-                performSearch(searchQuery, "expertise");
-              }}
-            >
-              <Text
+                <Text
+                  style={[
+                    styles.filterButtonText,
+                    darkMode && styles.darkFilterButtonText,
+                    searchType === "businesses" && styles.searchTypeButtonTextBusinesses,
+                    darkMode && searchType === "businesses" && styles.darkSearchTypeButtonTextBusinesses,
+                  ]}
+                >
+                  Businesses
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={[
-                  styles.filterButtonText,
-                  darkMode && styles.darkFilterButtonText,
-                  searchType === "expertise" && styles.searchTypeButtonTextExpertise,
-                  darkMode && searchType === "expertise" && styles.darkSearchTypeButtonTextExpertise,
+                  styles.filterButtonOption,
+                  darkMode && styles.darkFilterButtonOption,
+                  searchType === "expertise" && styles.searchTypeButtonExpertise,
+                  darkMode && searchType === "expertise" && styles.darkSearchTypeButtonExpertise,
                 ]}
+                onPress={() => {
+                  setSearchType("expertise");
+                  performSearch(searchQuery, "expertise");
+                }}
               >
-                Offering
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.filterButtonOption,
-                darkMode && styles.darkFilterButtonOption,
-                searchType === "seeking" && styles.searchTypeButtonSeeking,
-                darkMode && searchType === "seeking" && styles.darkSearchTypeButtonSeeking,
-              ]}
-              onPress={() => {
-                setSearchType("seeking");
-                performSearch(searchQuery, "seeking");
-              }}
-            >
-              <Text
+                <Text
+                  style={[
+                    styles.filterButtonText,
+                    darkMode && styles.darkFilterButtonText,
+                    searchType === "expertise" && styles.searchTypeButtonTextExpertise,
+                    darkMode && searchType === "expertise" && styles.darkSearchTypeButtonTextExpertise,
+                  ]}
+                >
+                  Offering
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={[
-                  styles.filterButtonText,
-                  darkMode && styles.darkFilterButtonText,
-                  searchType === "seeking" && styles.searchTypeButtonTextSeeking,
-                  darkMode && searchType === "seeking" && styles.darkSearchTypeButtonTextSeeking,
+                  styles.filterButtonOption,
+                  darkMode && styles.darkFilterButtonOption,
+                  searchType === "seeking" && styles.searchTypeButtonSeeking,
+                  darkMode && searchType === "seeking" && styles.darkSearchTypeButtonSeeking,
                 ]}
+                onPress={() => {
+                  setSearchType("seeking");
+                  performSearch(searchQuery, "seeking");
+                }}
               >
-                Seeking
-              </Text>
+                <Text
+                  style={[
+                    styles.filterButtonText,
+                    darkMode && styles.darkFilterButtonText,
+                    searchType === "seeking" && styles.searchTypeButtonTextSeeking,
+                    darkMode && searchType === "seeking" && styles.darkSearchTypeButtonTextSeeking,
+                  ]}
+                >
+                  Seeking
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={[styles.filterButtonOption, styles.mapButtonRight, darkMode && styles.darkFilterButtonOption]}
+              onPress={() => navigation.navigate("EveryCircleMap")}
+              accessibilityLabel="View on map"
+              accessibilityRole="button"
+            >
+              <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText]}>View on Map</Text>
             </TouchableOpacity>
           </View>
 
@@ -2444,15 +2427,6 @@ export default function SearchScreen({ route }) {
           <View style={[styles.bannerAd, darkMode && styles.darkBannerAd]}>
             <Text style={[styles.bannerAdText, darkMode && styles.darkBannerAdText]}>Relevant Banner Ad</Text>
           </View>
-          <TouchableOpacity
-            style={[styles.mapLinkButton, darkMode && styles.darkMapLinkButton]}
-            onPress={() => navigation.navigate("EveryCircleMap")}
-            accessibilityLabel="View businesses on map"
-            accessibilityRole="button"
-          >
-            <Ionicons name="map-outline" size={18} color="#fff" />
-            <Text style={styles.mapLinkButtonText}>View businesses on map</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Distance Selection Modal */}
@@ -2466,9 +2440,7 @@ export default function SearchScreen({ route }) {
                 </TouchableOpacity>
               </View>
               <Text style={[styles.distanceModalHint, darkMode && styles.darkDistanceModalHint]}>
-                {distance == null
-                  ? "Showing all results regardless of location."
-                  : "Results are limited to your home address coordinates in Settings."}
+                {distance == null ? "Showing all results regardless of location." : "Results are limited to your home address coordinates in Settings."}
               </Text>
               <FlatList
                 data={distanceModalOptions}
@@ -2513,10 +2485,7 @@ export default function SearchScreen({ route }) {
                   <Ionicons name='close' size={28} color={darkMode ? "#ffffff" : "#333"} />
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={[styles.resetOption, darkMode && styles.darkResetOption]}
-                onPress={() => applyNetworkFilter(null)}
-              >
+              <TouchableOpacity style={[styles.resetOption, darkMode && styles.darkResetOption]} onPress={() => applyNetworkFilter(null)}>
                 <Text style={[styles.resetOptionText, darkMode && styles.darkResetOptionText]}>Reset</Text>
               </TouchableOpacity>
               <FlatList
@@ -2571,20 +2540,12 @@ export default function SearchScreen({ route }) {
                   <Ionicons name='close' size={28} color={darkMode ? "#ffffff" : "#333"} />
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={[styles.resetOption, darkMode && styles.darkResetOption]}
-                onPress={() => applyRatingFilter(null)}
-              >
+              <TouchableOpacity style={[styles.resetOption, darkMode && styles.darkResetOption]} onPress={() => applyRatingFilter(null)}>
                 <Text style={[styles.resetOptionText, darkMode && styles.darkResetOptionText]}>Reset</Text>
               </TouchableOpacity>
               <FlatList
                 data={ratingOptions}
-                renderItem={renderOptionItem(
-                  ratingOptions,
-                  rating !== null ? `> ${rating}` : null,
-                  (value) => applyRatingFilter(value),
-                  true,
-                )}
+                renderItem={renderOptionItem(ratingOptions, rating !== null ? `> ${rating}` : null, (value) => applyRatingFilter(value), true)}
                 keyExtractor={(item) => item.toString()}
                 style={styles.optionsList}
               />
@@ -2880,24 +2841,25 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   bannerAdText: { fontSize: 16, fontWeight: "bold" },
-  mapLinkButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#4F8A8B",
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 15,
-    gap: 8,
-  },
-  mapLinkButtonText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "600",
-  },
 
   // Filter buttons container
+  searchTypeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  searchTypeButtonsGroup: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    flex: 1,
+    gap: 6,
+    marginRight: 8,
+  },
+  mapButtonRight: {
+    flexShrink: 0,
+    marginRight: 0,
+    marginBottom: 4,
+  },
   filterButtonsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -3058,9 +3020,6 @@ const styles = StyleSheet.create({
   },
   darkBannerAdText: {
     color: "#ffffff",
-  },
-  darkMapLinkButton: {
-    backgroundColor: "#3D6B6C",
   },
   // Dark mode filter button styles
   darkFilterButtonOption: {
