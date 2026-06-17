@@ -44,6 +44,10 @@ class DecryptingResponse {
 
   async json() {
     const raw = await this._res.json();
+    if (this._local) {
+      const hasEncrypted = raw && typeof raw === "object" && "encrypted_data" in raw;
+      console.log("[httpMiddleware] raw keys:", raw ? Object.keys(raw) : null, "| has encrypted_data:", hasEncrypted, "| privacy:", isPrivacyModeEnabled());
+    }
     return this._local ? (decryptResponse(raw) ?? raw) : raw;
   }
 
