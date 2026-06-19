@@ -974,7 +974,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
     );
   }
 
-  const hasBusinessOwner = businessUsers.length > 0;
+  const hasBusinessOwner = businessUsers.some(
+    (bu) => (bu.bu_role || bu.business_role || bu.role || "").trim() !== "",
+  );
 
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]} key={Platform.OS === "web" ? `viewport-${viewportWidth}` : undefined}>

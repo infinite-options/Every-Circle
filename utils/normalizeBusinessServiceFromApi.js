@@ -119,6 +119,28 @@ export function normalizeBusinessServiceFromApi(service) {
     bs_condition_detail,
     bs_free_shipping,
     bs_buyer_pays_shipping,
+    bs_is_returnable:
+      service.bs_is_returnable === 1 ||
+      service.bs_is_returnable === "1" ||
+      service.bs_is_returnable === true ||
+      service.is_returnable === 1 ||
+      service.is_returnable === "1" ||
+      service.is_returnable === true
+        ? 1
+        : 0,
+    bs_return_window_days: (() => {
+      const returnable =
+        service.bs_is_returnable === 1 ||
+        service.bs_is_returnable === "1" ||
+        service.bs_is_returnable === true ||
+        service.is_returnable === 1 ||
+        service.is_returnable === "1" ||
+        service.is_returnable === true;
+      if (!returnable) return "0";
+      const d = String(service.bs_return_window_days ?? service.return_window_days ?? "").trim();
+      if (!d || d === "0" || !/^\d+$/.test(d) || parseInt(d, 10) < 1) return "5";
+      return d;
+    })(),
     // CC fee payer is business-level only; strip legacy per-product values for UI.
     bs_cc_fee_payer: "",
     bs_qty_unlimited,

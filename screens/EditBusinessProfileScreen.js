@@ -34,9 +34,18 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Dropdown } from "react-native-element-dropdown";
 import { Ionicons } from "@expo/vector-icons";
 import ProductCard from "../components/ProductCard";
+import TagSectionLabel from "../components/TagSectionLabel";
 import { API_BASE_URL, BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 import { normalizeBusinessServiceFromApi as normalizeBusinessServiceRow, businessPaysCcFeeFromApiPayer, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
-import { parsePrice } from "../utils/priceUtils";
+import { parsePrice, formatCostValue } from "../utils/priceUtils";
+import { mergeCustomTags, parseTagList, serializeTagList } from "../utils/tagListUtils";
+import {
+  buildBusinessServiceForApi,
+  DEFAULT_RETURN_WINDOW_DAYS,
+  normServiceReturnable,
+  normServiceReturnWindowDays,
+  normServiceTags,
+} from "../utils/buildBusinessServiceForApi";
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
 import { getBusinessSuggestions, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
 import {
@@ -290,6 +299,50 @@ const SERVICE_CURRENCY_OPTIONS = [
   { label: "INR", value: "INR" },
   { label: "MXN", value: "MXN" },
 ];
+
+const SERVICE_COST_UNIT_OPTIONS = [
+  { label: "total", value: "total" },
+  { label: "/hr", value: "hr" },
+  { label: "/day", value: "day" },
+  { label: "/week", value: "week" },
+  { label: "/2 weeks", value: "2 weeks" },
+  { label: "/month", value: "month" },
+  { label: "/quarter", value: "quarter" },
+  { label: "/year", value: "year" },
+];
+
+const parseServiceCost = (cost) => {
+  if (!cost || String(cost).trim() === "") {
+    return { amount: "", unit: "" };
+  }
+  if (String(cost).toLowerCase() === "free") {
+    return { amount: "Free", unit: "" };
+  }
+  const cleaned = String(cost).replace(/\$/g, "").trim();
+  if (cleaned.toLowerCase().endsWith("total")) {
+    const amount = cleaned.replace(/total$/i, "").trim();
+    return { amount: amount || "Free", unit: "total" };
+  }
+  const parts = cleaned.split("/");
+  if (parts.length >= 2) {
+    const amount = parts[0].trim();
+    const unit = parts.slice(1).join("/").trim();
+    return { amount, unit };
+  }
+  return { amount: cleaned, unit: "" };
+};
+
+const serviceCostHasUnit = (cost) => {
+  if (!cost || String(cost).trim() === "") return true;
+  const unit = String(cost).match(/\/(hr|day|week|2 weeks|month|quarter|year)$|(\btotal\b)/i);
+  return !!unit;
+};
+
+const returnWindowDaysForForm = (service) => {
+  if (!normServiceReturnable(service)) return "0";
+  const days = normServiceReturnWindowDays(service);
+  return days > 0 ? String(days) : DEFAULT_RETURN_WINDOW_DAYS;
+};
 
 const ChoiceGroupsEditor = ({ groups = [], onChange, darkMode }) => {
   const addGroup = () => {
@@ -791,6 +844,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   // BUSINESS-SPECIFIC: Additional state for business-specific features
   const [customTagInput, setCustomTagInput] = useState("");
+  const [productTagInput, setProductTagInput] = useState("");
   const [additionalBusinessUsers, setAdditionalBusinessUsers] = useState([]);
   const [existingBusinessUsers, setExistingBusinessUsers] = useState(Array.isArray(business_users) ? business_users : []);
   const [deletedBusinessUsers, setDeletedBusinessUsers] = useState([]);
@@ -1274,22 +1328,18 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   };
 
   // BUSINESS-SPECIFIC: Custom tags management functions (not in EditProfileScreen)
-  const addCustomTag = () => {
-    const tags = customTagInput
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
-    if (tags.length === 0) return;
+  const alertUnsavedTags = (message) => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.alert(message);
+    } else {
+      Alert.alert("Unsaved Tags", message);
+    }
+  };
 
-    setFormData((prev) => {
-      const existing = prev.customTags || [];
-      const newTags = tags.filter((t) => !existing.includes(t));
-      if (newTags.length === 0) return prev;
-      return {
-        ...prev,
-        customTags: [...existing, ...newTags],
-      };
-    });
+  const addCustomTag = () => {
+    if (!customTagInput.trim()) return;
+    const updatedTags = mergeCustomTags(formData.customTags || [], customTagInput);
+    setFormData((prev) => ({ ...prev, customTags: updatedTags }));
     setCustomTagInput("");
     setIsChanged(true);
   };
@@ -1299,6 +1349,51 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setFormData({ ...formData, customTags: updatedTags });
     setIsChanged(true);
   };
+
+  const addProductTag = () => {
+    if (!productTagInput.trim()) return;
+    const updatedTags = mergeCustomTags(parseTagList(serviceForm.bs_tags), productTagInput);
+    handleServiceChange("bs_tags", serializeTagList(updatedTags));
+    setProductTagInput("");
+    setIsChanged(true);
+  };
+
+  const removeProductTag = (tagToRemove) => {
+    const updatedTags = parseTagList(serviceForm.bs_tags).filter((tag) => tag !== tagToRemove);
+    handleServiceChange("bs_tags", serializeTagList(updatedTags));
+    setIsChanged(true);
+  };
+
+  const renderTagEditor = ({ inputValue, onChangeInput, onAdd, tags, onRemove }) => (
+    <View style={styles.tagEditorBlock}>
+      {inputValue.trim().length > 0 ? (
+        <Text style={[styles.pendingTagsHint, darkMode && styles.darkPendingTagsHint]}>Click Add to save your tags before submitting.</Text>
+      ) : null}
+      <View style={styles.tagRow}>
+        <TextInput
+          style={[styles.tagInput, darkMode && styles.darkTagInput]}
+          placeholder='Add tag'
+          placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+          value={inputValue}
+          onChangeText={onChangeInput}
+          onSubmitEditing={onAdd}
+        />
+        <TouchableOpacity onPress={onAdd} style={styles.tagAddButton} activeOpacity={0.8}>
+          <Text style={styles.tagAddButtonText}>Add</Text>
+        </TouchableOpacity>
+      </View>
+      {tags.length > 0 ? (
+        <View style={styles.tagsContainer}>
+          {tags.map((tag, index) => (
+            <TouchableOpacity key={`${tag}-${index}`} onPress={() => onRemove(tag)} style={[styles.tagChip, darkMode && styles.darkTagChip]} activeOpacity={0.7}>
+              <Text style={[styles.tagText, darkMode && styles.darkTagText]}>{tag}</Text>
+              <Text style={styles.removeTagText}> ✕</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
 
   // MISSING: handleImageError function (EditProfileScreen has this)
   // Note: Could be added if image error handling is needed for business images
@@ -1318,6 +1413,17 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       return;
     }
     setCoordinatesError("");
+
+    const customTagsForSave = customTagInput.trim() ? mergeCustomTags(formData.customTags || [], customTagInput) : formData.customTags || [];
+    const editingOpenProduct = showServiceForm && editingServiceIndex !== null;
+    const resolvedServiceForm = editingOpenProduct
+      ? productTagInput.trim()
+        ? {
+            ...serviceForm,
+            bs_tags: serializeTagList(mergeCustomTags(parseTagList(serviceForm.bs_tags), productTagInput)),
+          }
+        : serviceForm
+      : null;
 
     // New product form is open but nothing was added to the list — block submit (not the generic "leave" modal).
     if (showServiceForm && editingServiceIndex === null) {
@@ -1340,10 +1446,13 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         f.bs_free_shipping === "1" ||
         f.bs_buyer_pays_shipping === 1 ||
         f.bs_buyer_pays_shipping === "1" ||
+        f.bs_is_returnable === 1 ||
+        f.bs_is_returnable === "1" ||
         String(f.bs_refund_policy || "").trim() !== "" ||
         (String(f.bs_return_window_days || "").trim() !== "" && String(f.bs_return_window_days).trim() !== "0") ||
         f.bs_condition_type === "used" ||
         f.bs_condition_type === "new" ||
+        productTagInput.trim() !== "" ||
         (serviceProductImageUri && String(serviceProductImageUri).trim() !== "" && !serviceProductImageError) ||
         !!serviceProductWebFile;
       if (hasDraftContent) {
@@ -1357,6 +1466,21 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       }
     }
 
+    if (editingOpenProduct) {
+      const costSave = String(resolvedServiceForm.bs_cost || "").trim();
+      if (costSave && parsePrice(costSave) > 0 && !serviceCostHasUnit(costSave)) {
+        setServiceFormCostUnitError(true);
+        setServiceFormTaxRateError(false);
+        setServiceFormQuantityError(false);
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          window.alert("Fix the product cost unit before saving — select total, /hr, /day, etc.");
+        } else {
+          Alert.alert("Validation", "Fix the product cost unit before saving — select total, /hr, /day, etc.");
+        }
+        return;
+      }
+    }
+
     setIsLoading(true);
     // Declare imageFileSize outside try block so it's accessible in catch block
     let imageFileSize = 0;
@@ -1364,8 +1488,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       // Merge open product form into payload (same row as "Update Product") so Submit cannot omit
       // edits if the user saves without tapping Update again.
       let servicesForPayload = services;
-      if (showServiceForm && editingServiceIndex !== null) {
-        const pendingRow = buildServiceRowForList();
+      if (editingOpenProduct) {
+        const pendingRow = buildServiceRowForList(resolvedServiceForm);
         if (pendingRow) {
           servicesForPayload = [...services];
           servicesForPayload[editingServiceIndex] = pendingRow;
@@ -1456,7 +1580,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_ein_number", formData.einNumber);
       payload.append("business_cc_fee_payer", formData.businessPaysCcFee ? "seller" : "buyer");
       payload.append("business_website", formData.website);
-      payload.append("custom_tags", JSON.stringify(formData.customTags));
+      const customTagsJson = JSON.stringify(customTagsForSave);
+      payload.append("custom_tags", customTagsJson);
+      payload.append("tags", customTagsJson);
 
       const imagesTouched = galleryUserTouchedRef.current || googlePanelTouchedRef.current;
       const currentGalleryUploads = galleryUploadsRef.current;
@@ -1605,75 +1731,26 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       payload.append("business_short_bio_is_public", formData.shortBioIsPublic ? "1" : "0");
 
       // BUSINESS-SPECIFIC: Services/products handling (EditProfileScreen handles experience, education, expertise, wishes, businesses arrays)
-      const norm01 = (v) => (v === 1 || v === "1" || v === true ? 1 : 0);
-      const fullServiceSchema = (service, idx) => {
-        const condRaw = service.bs_condition_type;
-        const condType = condRaw === "used" ? "used" : "new";
-        const bountyNone = service.bs_bounty_type === "none" || !String(service.bs_bounty || "").trim();
-        const bountyTypeOut = bountyNone ? "per_item" : service.bs_bounty_type === "total" ? "total" : "per_item";
-        const bountyOut = bountyNone ? "" : service.bs_bounty || "";
-        const baseSchema = {
-          bs_service_name: service.bs_service_name || "",
-          bs_service_desc: service.bs_service_desc || "",
-          bs_notes: service.bs_notes || "",
-          bs_sku: service.bs_sku || "",
-          bs_bounty: bountyOut,
-          bs_bounty_currency: service.bs_bounty_currency || "USD",
-          bs_bounty_type: bountyTypeOut,
-          bs_is_taxable: (() => {
-            if (service.bs_is_taxable === 1 || service.bs_is_taxable === "1" || service.bs_is_taxable === true) return 1;
-            if (service.bs_is_taxable === 0 || service.bs_is_taxable === "0" || service.bs_is_taxable === false) return 0;
-            return parsePrice(service.bs_tax_rate) > 0 ? 1 : 0;
-          })(),
-          bs_tax_rate: (() => {
-            const taxable =
-              service.bs_is_taxable === 1 ||
-              service.bs_is_taxable === "1" ||
-              service.bs_is_taxable === true ||
-              (!(service.bs_is_taxable === 0 || service.bs_is_taxable === "0" || service.bs_is_taxable === false) && parsePrice(service.bs_tax_rate) > 0);
-            if (!taxable) return "0";
-            const s = String(service.bs_tax_rate ?? "").trim();
-            return s !== "" ? s : "0";
-          })(),
-          bs_discount_allowed: typeof service.bs_discount_allowed === "undefined" ? 1 : service.bs_discount_allowed,
-          bs_refund_policy: service.bs_refund_policy || "",
-          bs_return_window_days: service.bs_return_window_days || "0",
-          bs_display_order: typeof service.bs_display_order === "undefined" ? idx + 1 : service.bs_display_order,
-          bs_tags: service.bs_tags || "",
-          bs_duration_minutes: service.bs_duration_minutes || "",
-          bs_cost: service.bs_cost || "",
-          bs_cost_currency: service.bs_cost_currency || "USD",
-          bs_is_visible: typeof service.bs_is_visible === "undefined" ? 1 : service.bs_is_visible,
-          bs_status: service.bs_status || "active",
-          bs_image_key: service.bs_image_key || "",
-          bs_qty_unlimited: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? 0 : 1,
-          bs_available_quantity: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? String(service.bs_available_quantity || "").trim() : "",
-          bs_condition_type: condType,
-          bs_condition_detail: condType === "used" ? (service.bs_condition_detail || "").trim() : "",
-          bs_free_shipping: norm01(service.bs_free_shipping),
-          bs_buyer_pays_shipping: norm01(service.bs_buyer_pays_shipping),
-          bs_service_image_is_public: norm01(service.bs_service_image_is_public),
-          bs_choice_groups: service.bs_choice_groups || [],
-          bs_special_instructions_enabled: service.bs_special_instructions_enabled || 0,
-          bs_special_instructions_max_chars: service.bs_special_instructions_max_chars || 80,
-        };
-
-        if (service.bs_uid && service.bs_uid.trim() !== "") {
-          return {
-            ...baseSchema,
-            bs_uid: service.bs_uid,
-          };
-        }
-
-        return baseSchema;
-      };
-
-      const servicesToSend = servicesForPayload.map(fullServiceSchema);
+      const servicesToSend = servicesForPayload.map((service, idx) => buildBusinessServiceForApi(service, idx));
       payload.append("business_services", JSON.stringify(servicesToSend));
 
       if (deletedBusinessServiceUids.length > 0) {
         payload.append("delete_business_services", JSON.stringify(deletedBusinessServiceUids));
       }
+
+      console.log("EditBusinessProfileScreen - custom_tags/tags payload:", customTagsJson);
+      console.log(
+        "EditBusinessProfileScreen - business_services payload sample:",
+        JSON.stringify(
+          servicesToSend.map((s) => ({
+            bs_uid: s.bs_uid,
+            bs_service_name: s.bs_service_name,
+            bs_tags: s.bs_tags,
+            bs_is_returnable: s.bs_is_returnable,
+            bs_return_window_days: s.bs_return_window_days,
+          })),
+        ),
+      );
 
       for (let index = 0; index < servicesForPayload.length; index++) {
         const svc = servicesForPayload[index];
@@ -1777,7 +1854,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       console.log("  business_profile_img_is_public:", formData.imageIsPublic ? "1" : "0");
       console.log("--------------------------------------------");
       console.log("============================================");
-      console.log("Custom tags being sent:", JSON.stringify(formData.customTags));
+      console.log("Custom tags being sent:", customTagsJson);
       const response = await fetch(`${BusinessProfileAPI}`, {
         method: "PUT",
         body: payload,
@@ -1953,6 +2030,15 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
         suppressLeavePromptRef.current = true;
         setIsChanged(false);
+        if (JSON.stringify(formData.customTags || []) !== JSON.stringify(customTagsForSave)) {
+          setFormData((prev) => ({ ...prev, customTags: customTagsForSave }));
+        }
+        if (customTagInput.trim()) {
+          setCustomTagInput("");
+        }
+        if (productTagInput.trim()) {
+          setProductTagInput("");
+        }
         if (!deferProfileToSecondPut) {
           setOriginalBusinessImage(currentBusinessImageUri || originalBusinessImage);
         }
@@ -2130,31 +2216,17 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   // BUSINESS-SPECIFIC: renderCustomTagsSection function (not in EditProfileScreen)
   const renderCustomTagsSection = () => (
     <View style={styles.fieldContainer}>
-      <View style={styles.labelRow}>
-        <Text style={[styles.label, darkMode && styles.darkLabel]}>Custom Tags</Text>
-        <TouchableOpacity onPress={addCustomTag}>
-          <Text style={[styles.addText, darkMode && styles.darkAddText]}>+</Text>
-        </TouchableOpacity>
-      </View>
-      <View style={styles.tagInputContainer}>
-        <TextInput
-          style={[styles.input, { flex: 1, marginBottom: 0 }, darkMode && styles.darkInput]}
-          value={customTagInput}
-          placeholder='Add a custom tag'
-          placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-          onChangeText={setCustomTagInput}
-        />
-      </View>
-      <View style={styles.tagsContainer}>
-        {(formData.customTags || []).map((tag, index) => (
-          <View key={index} style={[styles.tagChip, darkMode && styles.darkTagChip]}>
-            <Text style={[styles.tagText, darkMode && styles.darkTagText]}>{tag}</Text>
-            <TouchableOpacity onPress={() => removeCustomTag(tag)}>
-              <Text style={styles.removeTagText}>×</Text>
-            </TouchableOpacity>
-          </View>
-        ))}
-      </View>
+      <TagSectionLabel title='Custom Tags' style={[styles.label, darkMode && styles.darkLabel]} darkMode={darkMode} />
+      {renderTagEditor({
+        inputValue: customTagInput,
+        onChangeInput: (text) => {
+          setCustomTagInput(text);
+          if (text.trim()) setIsChanged(true);
+        },
+        onAdd: addCustomTag,
+        tags: formData.customTags || [],
+        onRemove: removeCustomTag,
+      })}
     </View>
   );
 
@@ -2469,6 +2541,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_discount_allowed: 1,
     bs_refund_policy: "",
     bs_return_window_days: "0",
+    bs_is_returnable: 0,
     bs_display_order: 1,
     bs_tags: "",
     bs_duration_minutes: "",
@@ -2495,9 +2568,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [serviceFormTaxRateError, setServiceFormTaxRateError] = useState(false);
   /** Highlight quantity row when Limited is selected but count is missing or invalid. */
   const [serviceFormQuantityError, setServiceFormQuantityError] = useState(false);
+  /** Highlight cost unit when cost is set but unit is missing. */
+  const [serviceFormCostUnitError, setServiceFormCostUnitError] = useState(false);
 
   const handleServiceChange = (field, value) => {
     setServiceForm((prev) => ({ ...prev, [field]: value }));
+    setIsChanged(true);
   };
 
   const toggleFreeShipping = () => {
@@ -2525,27 +2601,73 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setIsChanged(true);
   };
 
+  const handleServiceCostAmountChange = (value) => {
+    const parsed = parseServiceCost(serviceForm.bs_cost || "");
+    const newAmount = value.replace(/\$/g, "");
+    if (newAmount.toLowerCase() === "free") {
+      handleServiceChange("bs_cost", "Free");
+      return;
+    }
+    if (parsed.unit === "total") {
+      handleServiceChange("bs_cost", newAmount ? `${newAmount} total` : "total");
+    } else if (parsed.unit) {
+      handleServiceChange("bs_cost", `${newAmount}/${parsed.unit}`);
+    } else {
+      handleServiceChange("bs_cost", newAmount);
+    }
+    setServiceFormCostUnitError(false);
+    setIsChanged(true);
+  };
+
+  const handleServiceCostAmountBlur = () => {
+    const parsed = parseServiceCost(serviceForm.bs_cost || "");
+    if (parsed.amount.toLowerCase() === "free") return;
+    const formattedAmount = formatCostValue(parsed.amount);
+    if (parsed.unit === "total") {
+      handleServiceChange("bs_cost", formattedAmount ? `${formattedAmount} total` : "total");
+    } else if (parsed.unit) {
+      handleServiceChange("bs_cost", `${formattedAmount}/${parsed.unit}`);
+    } else {
+      handleServiceChange("bs_cost", formattedAmount);
+    }
+    setIsChanged(true);
+  };
+
+  const handleServiceCostUnitChange = (selectedItem) => {
+    const parsed = parseServiceCost(serviceForm.bs_cost || "");
+    if (parsed.amount.toLowerCase() === "free") return;
+    if (!selectedItem || !selectedItem.value) {
+      handleServiceChange("bs_cost", parsed.amount);
+    } else if (selectedItem.value === "total") {
+      handleServiceChange("bs_cost", parsed.amount ? `${parsed.amount} total` : "total");
+    } else {
+      handleServiceChange("bs_cost", `${parsed.amount}/${selectedItem.value}`);
+    }
+    setServiceFormCostUnitError(false);
+    setIsChanged(true);
+  };
+
   const isShippingNotApplicable = (form) => !(form.bs_free_shipping === 1 || form.bs_free_shipping === "1") && !(form.bs_buyer_pays_shipping === 1 || form.bs_buyer_pays_shipping === "1");
 
-  const buildServiceRowForList = () => {
+  const buildServiceRowForList = (formSource = serviceForm) => {
     const existingService = editingServiceIndex !== null ? services[editingServiceIndex] : null;
-    const isUnlimited = serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1" || serviceForm.bs_qty_unlimited === true;
+    const isUnlimited = formSource.bs_qty_unlimited === 1 || formSource.bs_qty_unlimited === "1" || formSource.bs_qty_unlimited === true;
     if (!isUnlimited) {
-      const q = String(serviceForm.bs_available_quantity || "").trim();
+      const q = String(formSource.bs_available_quantity || "").trim();
       if (!q || !/^\d+$/.test(q) || parseInt(q, 10) < 1) {
         return null;
       }
     }
 
-    const formTaxable = serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1" || serviceForm.bs_is_taxable === true;
+    const formTaxable = formSource.bs_is_taxable === 1 || formSource.bs_is_taxable === "1" || formSource.bs_is_taxable === true;
     if (formTaxable) {
-      const rate = parsePrice(serviceForm.bs_tax_rate);
+      const rate = parsePrice(formSource.bs_tax_rate);
       if (!Number.isFinite(rate) || rate <= 0) {
         return null;
       }
     }
 
-    let nextBsImageKey = existingService?.bs_image_key ?? serviceForm.bs_image_key ?? "";
+    let nextBsImageKey = existingService?.bs_image_key ?? formSource.bs_image_key ?? "";
     let _svcNewImageUri = null;
     let _svcWebImageFile = null;
     let _svcDeleteImageUrl = null;
@@ -2570,29 +2692,32 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       }
     }
 
-    const bountyTypeForList = serviceForm.bs_bounty_type === "none" ? "per_item" : serviceForm.bs_bounty_type === "total" ? "total" : "per_item";
-    const bountyAmtForList = serviceForm.bs_bounty_type === "none" ? "" : serviceForm.bs_bounty || "";
+    const bountyTypeForList = formSource.bs_bounty_type === "none" ? "per_item" : formSource.bs_bounty_type === "total" ? "total" : "per_item";
+    const bountyAmtForList = formSource.bs_bounty_type === "none" ? "" : formSource.bs_bounty || "";
 
-    const condForm = serviceForm.bs_condition_type;
+    const condForm = formSource.bs_condition_type;
     const conditionTypeForList = condForm === "used" ? "used" : "new";
-    const conditionDetailForList = condForm === "used" ? String(serviceForm.bs_condition_detail || "").trim() : "";
+    const conditionDetailForList = condForm === "used" ? String(formSource.bs_condition_detail || "").trim() : "";
 
     return {
-      ...serviceForm,
+      ...formSource,
       business_cc_fee_payer: formData.businessPaysCcFee ? "seller" : "buyer",
       bs_qty_unlimited: isUnlimited ? 1 : 0,
-      bs_available_quantity: isUnlimited ? "" : String(serviceForm.bs_available_quantity || "").trim(),
+      bs_available_quantity: isUnlimited ? "" : String(formSource.bs_available_quantity || "").trim(),
       bs_bounty_type: bountyTypeForList,
       bs_bounty: bountyAmtForList,
       bs_condition_type: conditionTypeForList,
       bs_condition_detail: conditionDetailForList,
       bs_is_taxable: formTaxable ? 1 : 0,
-      bs_tax_rate: formTaxable ? String(parsePrice(serviceForm.bs_tax_rate) || "0") : "0",
+      bs_tax_rate: formTaxable ? String(parsePrice(formSource.bs_tax_rate) || "0") : "0",
+      bs_is_returnable: normServiceReturnable(formSource),
+      bs_return_window_days: returnWindowDaysForForm(formSource),
+      bs_tags: normServiceTags(formSource),
       bs_image_key: nextBsImageKey,
       bs_uid: existingService?.bs_uid || "",
-      bs_choice_groups: serviceForm.bs_choice_groups || [],
-      bs_special_instructions_enabled: serviceForm.bs_special_instructions_enabled || 0,
-      bs_special_instructions_max_chars: serviceForm.bs_special_instructions_max_chars || 80,
+      bs_choice_groups: formSource.bs_choice_groups || [],
+      bs_special_instructions_enabled: formSource.bs_special_instructions_enabled || 0,
+      bs_special_instructions_max_chars: formSource.bs_special_instructions_max_chars || 80,
       _svcNewImageUri,
       _svcWebImageFile,
       _svcDeleteImageUrl,
@@ -2612,8 +2737,14 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       return;
     }
 
+    if (productTagInput.trim()) {
+      alertUnsavedTags('Click Add to save your product tags, or clear the tag field before adding/updating the product.');
+      return;
+    }
+
     if (!affirmServiceQuantityOrHighlight()) return;
     if (!affirmServiceTaxRateOrHighlight()) return;
+    if (!affirmServiceCostUnitOrHighlight()) return;
 
     const row = buildServiceRowForList();
     if (!row) return;
@@ -2635,6 +2766,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setEditingServiceIndex(null);
     setServiceFormTaxRateError(false);
     setServiceFormQuantityError(false);
+    setServiceFormCostUnitError(false);
+    setProductTagInput("");
     resetServiceProductImageState();
   };
 
@@ -2678,6 +2811,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           (!(service.bs_is_taxable === 0 || service.bs_is_taxable === "0" || service.bs_is_taxable === false) && parsePrice(service.bs_tax_rate) > 0);
         return taxable ? String(service.bs_tax_rate ?? "").trim() || "0" : "0";
       })(),
+      bs_is_returnable: normServiceReturnable(service),
+      bs_return_window_days: returnWindowDaysForForm(service),
     });
     const remoteDisplay = resolveServiceImageDisplayUri(service.bs_image_key);
     const pendingUri = service._svcNewImageUri && String(service._svcNewImageUri).trim() !== "" ? String(service._svcNewImageUri).trim() : "";
@@ -2689,6 +2824,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setEditingServiceIndex(index);
     setServiceFormTaxRateError(false);
     setServiceFormQuantityError(false);
+    setServiceFormCostUnitError(false);
+    setProductTagInput("");
     setShowServiceForm(true);
 
     // Load choice groups from backend only if not already set locally
@@ -2714,6 +2851,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setEditingServiceIndex(null);
     setServiceFormTaxRateError(false);
     setServiceFormQuantityError(false);
+    setServiceFormCostUnitError(false);
+    setProductTagInput("");
     resetServiceProductImageState();
   };
 
@@ -2740,6 +2879,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           setShowServiceForm(false);
           setEditingServiceIndex(null);
           setServiceForm({ ...defaultService });
+          setProductTagInput("");
           resetServiceProductImageState();
         } else if (editingServiceIndex !== null && editingServiceIndex > index) {
           setEditingServiceIndex(editingServiceIndex - 1);
@@ -2961,6 +3101,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     if (!q || !/^\d+$/.test(q) || parseInt(q, 10) < 1) {
       setServiceFormQuantityError(true);
       setServiceFormTaxRateError(false);
+      setServiceFormCostUnitError(false);
       focusServiceFormQuantitySection();
       setTimeout(() => serviceQuantityInputRef.current?.focus(), 120);
       if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -2972,6 +3113,27 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     }
     setServiceFormQuantityError(false);
     return true;
+  };
+
+  const affirmServiceCostUnitOrHighlight = () => {
+    const costStr = String(serviceForm.bs_cost || "").trim();
+    if (!costStr || parsePrice(costStr) <= 0) {
+      setServiceFormCostUnitError(false);
+      return true;
+    }
+    if (serviceCostHasUnit(costStr)) {
+      setServiceFormCostUnitError(false);
+      return true;
+    }
+    setServiceFormCostUnitError(true);
+    setServiceFormTaxRateError(false);
+    setServiceFormQuantityError(false);
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.alert("Please select a cost unit (total, /hr, /day, etc.) when a cost is entered.");
+    } else {
+      Alert.alert("Validation", "Please select a cost unit (total, /hr, /day, etc.) when a cost is entered.");
+    }
+    return false;
   };
 
   // Handle keyboard show/hide to scroll to focused input
@@ -2993,7 +3155,10 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     const isUnlimitedFlag = serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1" || serviceForm.bs_qty_unlimited === true;
     const qFlag = String(serviceForm.bs_available_quantity || "").trim();
     const quantityAddBlocked = !isUnlimitedFlag && (!qFlag || !/^\d+$/.test(qFlag) || parseInt(qFlag, 10) < 1);
-    const addServiceBlocked = taxAddBlocked || quantityAddBlocked;
+    const costStrFlag = String(serviceForm.bs_cost || "").trim();
+    const costUnitAddBlocked = costStrFlag !== "" && parsePrice(costStrFlag) > 0 && !serviceCostHasUnit(costStrFlag);
+    const parsedServiceCost = parseServiceCost(serviceForm.bs_cost || "");
+    const addServiceBlocked = taxAddBlocked || quantityAddBlocked || costUnitAddBlocked;
     return (
       <View style={[styles.serviceFormContainer, darkMode && styles.darkServiceFormContainer]}>
         <Text style={[styles.formTitle, darkMode && styles.darkFormTitle]}>{editingServiceIndex !== null ? "Edit Product/Service" : "Add New Product/Service"}</Text>
@@ -3104,8 +3269,26 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           </View>
         </View>
 
+        <View style={{ marginBottom: 8 }}>
+          <TagSectionLabel
+            title='Product Tags'
+            style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle, { width: "100%", marginBottom: 4 }]}
+            darkMode={darkMode}
+          />
+          {renderTagEditor({
+            inputValue: productTagInput,
+            onChangeInput: (text) => {
+              setProductTagInput(text);
+              if (text.trim()) setIsChanged(true);
+            },
+            onAdd: addProductTag,
+            tags: parseTagList(serviceForm.bs_tags),
+            onRemove: removeProductTag,
+          })}
+        </View>
+
         <View style={styles.serviceFormCompactRow}>
-          <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Cost</Text>
+          <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle, serviceFormCostUnitError && { color: "#FF3B30" }]}>Cost</Text>
           <View style={styles.serviceFormRowBody}>
             <Dropdown
               style={[
@@ -3138,12 +3321,40 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
               flatListProps={{ nestedScrollEnabled: true }}
             />
             <TextInput
-              style={[styles.input, styles.serviceAmountInput, styles.serviceAmountInputCompact, darkMode && styles.darkInput]}
-              value={serviceForm.bs_cost}
-              onChangeText={(t) => handleServiceChange("bs_cost", t)}
+              style={[styles.input, styles.serviceAmountInput, styles.serviceAmountInputCompact, darkMode && styles.darkInput, serviceFormCostUnitError && { borderWidth: 2, borderColor: "#FF3B30" }]}
+              value={(() => {
+                const parsed = parsedServiceCost;
+                const amount = parsed.amount;
+                if (!amount) return "";
+                if (amount.toLowerCase() === "free") return "Free";
+                return amount;
+              })()}
+              onChangeText={handleServiceCostAmountChange}
+              onBlur={handleServiceCostAmountBlur}
               placeholder='0.00'
               keyboardType='decimal-pad'
               placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+            />
+            <Dropdown
+              style={[
+                styles.serviceCostUnitDropdown,
+                darkMode && styles.darkServiceCostUnitDropdown,
+                serviceFormCostUnitError && { borderWidth: 2, borderColor: "#FF3B30" },
+                !parsedServiceCost.unit && parsePrice(serviceForm.bs_cost) > 0 && styles.serviceCostUnitDropdownRequired,
+              ]}
+              data={SERVICE_COST_UNIT_OPTIONS}
+              labelField='label'
+              valueField='value'
+              placeholder='Unit *'
+              placeholderStyle={{ color: serviceFormCostUnitError || (parsePrice(serviceForm.bs_cost) > 0 && !parsedServiceCost.unit) ? "#FF3B30" : darkMode ? "#999" : "#666" }}
+              value={parsedServiceCost.unit || null}
+              onChange={handleServiceCostUnitChange}
+              containerStyle={[{ borderRadius: 10, minWidth: 88 }, darkMode && { backgroundColor: "#2d2d2d" }]}
+              itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 14 }}
+              selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 14 }}
+              activeColor={darkMode ? "#404040" : "#f0f0f0"}
+              maxHeight={220}
+              flatListProps={{ nestedScrollEnabled: true }}
             />
           </View>
         </View>
@@ -3324,6 +3535,69 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           </View>
         </View>
 
+        <View style={styles.serviceFormCompactRow}>
+          <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Returnable</Text>
+          <View style={styles.serviceFormRowBody}>
+            <TouchableOpacity
+              style={[styles.bountyTypeBtn, styles.bountyTypeBtnCompact, !(serviceForm.bs_is_returnable === 1 || serviceForm.bs_is_returnable === "1") && styles.bountyTypeBtnActive]}
+              onPress={() => {
+                setServiceForm((prev) => ({ ...prev, bs_is_returnable: 0, bs_return_window_days: "0" }));
+                setIsChanged(true);
+              }}
+            >
+              <Text
+                style={[
+                  styles.bountyTypeBtnText,
+                  styles.bountyTypeBtnTextCompact,
+                  !(serviceForm.bs_is_returnable === 1 || serviceForm.bs_is_returnable === "1") && styles.bountyTypeBtnTextActive,
+                ]}
+              >
+                No
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.bountyTypeBtn, styles.bountyTypeBtnCompact, (serviceForm.bs_is_returnable === 1 || serviceForm.bs_is_returnable === "1") && styles.bountyTypeBtnActive]}
+              onPress={() => {
+                setServiceForm((prev) => ({
+                  ...prev,
+                  bs_is_returnable: 1,
+                  bs_return_window_days:
+                    prev.bs_return_window_days != null && String(prev.bs_return_window_days).trim() !== "" && String(prev.bs_return_window_days).trim() !== "0"
+                      ? String(prev.bs_return_window_days).trim()
+                      : DEFAULT_RETURN_WINDOW_DAYS,
+                }));
+                setIsChanged(true);
+              }}
+            >
+              <Text
+                style={[
+                  styles.bountyTypeBtnText,
+                  styles.bountyTypeBtnTextCompact,
+                  (serviceForm.bs_is_returnable === 1 || serviceForm.bs_is_returnable === "1") && styles.bountyTypeBtnTextActive,
+                ]}
+              >
+                Yes
+              </Text>
+            </TouchableOpacity>
+            {serviceForm.bs_is_returnable === 1 || serviceForm.bs_is_returnable === "1" ? (
+              <>
+                <TextInput
+                  style={[styles.serviceFormRowInput, darkMode && styles.darkServiceFormRowInput, { flex: 0, width: 56 }]}
+                  value={String(serviceForm.bs_return_window_days ?? DEFAULT_RETURN_WINDOW_DAYS)}
+                  onChangeText={(t) => {
+                    handleServiceChange("bs_return_window_days", t.replace(/\D/g, ""));
+                    setIsChanged(true);
+                  }}
+                  placeholder={DEFAULT_RETURN_WINDOW_DAYS}
+                  keyboardType='number-pad'
+                  placeholderTextColor={darkMode ? "#888" : "#999"}
+                />
+                <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>days</Text>
+              </>
+            ) : null}
+          </View>
+        </View>
+
         <View ref={serviceQuantitySectionRef} collapsable={false} style={styles.serviceFormCompactRow}>
           <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle, serviceFormQuantityError && { color: "#FF3B30" }]}>Quantity</Text>
           <View style={styles.serviceFormRowBody}>
@@ -3486,18 +3760,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           </View>
         </View>
 
-        <View style={styles.serviceFormCompactRow}>
-          <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Tags</Text>
-          <View style={styles.serviceFormRowBody}>
-            <TextInput
-              style={[styles.serviceFormRowInput, darkMode && styles.darkServiceFormRowInput]}
-              value={serviceForm.bs_tags}
-              onChangeText={(t) => handleServiceChange("bs_tags", t)}
-              placeholder='Comma separated'
-              placeholderTextColor={darkMode ? "#888" : "#999"}
-            />
-          </View>
-        </View>
         <View style={styles.formButtons}>
           <TouchableOpacity style={[styles.formButton, styles.cancelButton, darkMode && styles.darkCancelButton]} onPress={handleCancelEdit}>
             <Text style={[styles.cancelButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
@@ -3717,6 +3979,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                   setEditingServiceIndex(null);
                   setServiceFormTaxRateError(false);
                   setServiceFormQuantityError(false);
+                  setServiceFormCostUnitError(false);
+                  setProductTagInput("");
                   setShowServiceForm(true);
                   resetServiceProductImageState();
                 }}
@@ -4129,6 +4393,25 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontSize: 14,
   },
+  serviceCostUnitDropdown: {
+    width: 88,
+    height: 40,
+    minHeight: 40,
+    maxHeight: 40,
+    paddingVertical: 0,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    backgroundColor: "#f0f0f0",
+  },
+  darkServiceCostUnitDropdown: {
+    backgroundColor: "#404040",
+    borderColor: "#555",
+  },
+  serviceCostUnitDropdownRequired: {
+    borderColor: "#f44336",
+  },
   serviceCheckboxRowInline: {
     flexDirection: "row",
     alignItems: "center",
@@ -4188,6 +4471,59 @@ const styles = StyleSheet.create({
   previewSection: { marginBottom: 20 },
   previewCard: { padding: 10, borderWidth: 1, borderColor: "#ccc", borderRadius: 5 },
   // BUSINESS-SPECIFIC: Additional styles for business-specific features
+  tagEditorBlock: {
+    marginTop: 4,
+  },
+  tagEditorLabel: {
+    fontSize: 13,
+    color: "#666",
+    marginBottom: 6,
+  },
+  darkTagEditorLabel: {
+    color: "#bbb",
+  },
+  pendingTagsHint: {
+    fontSize: 13,
+    color: "#b45309",
+    marginBottom: 6,
+  },
+  darkPendingTagsHint: {
+    color: "#fbbf24",
+  },
+  tagRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 8,
+  },
+  tagInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 25,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === "ios" ? 10 : 8,
+    fontSize: 14,
+    backgroundColor: "#f0f0f0",
+    color: "#000",
+    marginBottom: 0,
+  },
+  darkTagInput: {
+    borderColor: "#555",
+    backgroundColor: "#2d2d2d",
+    color: "#fff",
+  },
+  tagAddButton: {
+    backgroundColor: "#FFA500",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+  },
+  tagAddButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 14,
+  },
   tagInputContainer: { flexDirection: "row", alignItems: "center" },
   addTagButton: {
     backgroundColor: "#00C721",
