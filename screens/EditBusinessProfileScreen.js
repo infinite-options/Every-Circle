@@ -3637,11 +3637,11 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                     <Text style={[styles.existingBusinessUserRole, darkMode && styles.darkExistingBusinessUserRole]}>Role: {businessUser.business_role || "N/A"}</Text>
                   </View>
                   <View style={styles.toggleContainer}>
-                    <TouchableOpacity onPress={toggleBusinessImageVisibility} style={[styles.togglePill, formData.imageIsPublic && styles.togglePillActiveGreen]}>
-                      <Text style={[styles.togglePillText, formData.imageIsPublic && styles.togglePillTextActive]}>{formData.imageIsPublic ? "Visible" : "Show"}</Text>
+                    <TouchableOpacity onPress={() => toggleBusinessUserIndividualPublic(businessUser)} style={[styles.togglePill, isIndividualPublic && styles.togglePillActiveGreen]}>
+                      <Text style={[styles.togglePillText, isIndividualPublic && styles.togglePillTextActive]}>{isIndividualPublic ? "Visible" : "Show"}</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={toggleBusinessImageVisibility} style={[styles.togglePill, !formData.imageIsPublic && styles.togglePillActiveRed]}>
-                      <Text style={[styles.togglePillText, !formData.imageIsPublic && styles.togglePillTextActive]}>{!formData.imageIsPublic ? "Hidden" : "Hide"}</Text>
+                    <TouchableOpacity onPress={() => toggleBusinessUserIndividualPublic(businessUser)} style={[styles.togglePill, !isIndividualPublic && styles.togglePillActiveRed]}>
+                      <Text style={[styles.togglePillText, !isIndividualPublic && styles.togglePillTextActive]}>{!isIndividualPublic ? "Hidden" : "Hide"}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
