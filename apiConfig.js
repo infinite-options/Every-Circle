@@ -36,9 +36,8 @@ export const UPDATE_EMAIL_PASSWORD_ENDPOINT = "https://mrle52rri4.execute-api.us
 export const SET_TEMP_PASSWORD_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/SetTempPassword/EVERY-CIRCLE";
 
 // Stripe Payment Endpoints
-export const STRIPE_KEY_ENDPOINT = "https://l0h6a9zi1e.execute-api.us-west-1.amazonaws.com/dev/stripe_key/ECTEST";
 export const CREATE_PAYMENT_INTENT_ENDPOINT = "https://huo8rhh76i.execute-api.us-west-1.amazonaws.com/dev/api/v2/createPaymentIntent";
-export const GET_STRIPE_PUBLIC_KEY_ENDPOINT = "https://huo8rhh76i.execute-api.us-west-1.amazonaws.com/dev/api/v2/getCorrectKeys";
+export const GET_STRIPE_PUBLIC_KEY_ENDPOINT = "https://huo8rhh76i.execute-api.us-west-1.amazonaws.com/dev/api/v2/stripe_key";
 
 // User Profile Endpoints
 export const USER_PROFILE_INFO_ENDPOINT = `${API_BASE_URL}/api/v1/userprofileinfo`;
@@ -114,5 +113,4 @@ console.log("API Configuration loaded");
 // console.log("Google Signin:", GOOGLE_SIGNIN_ENDPOINT);
 // console.log("Apple Auth:", APPLE_AUTH_ENDPOINT);
 // console.log("Apple Signin:", APPLE_SIGNIN_ENDPOINT);
-// console.log("Stripe Key:", STRIPE_KEY_ENDPOINT);
 // console.log("Payment Intent:", CREATE_PAYMENT_INTENT_ENDPOINT);
