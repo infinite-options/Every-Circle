@@ -16,6 +16,8 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
   // console.log("BusinessStep0 - darkMode value:", darkMode);
   const [loading, setLoading] = useState(false);
   const [placeSearchText, setPlaceSearchText] = useState("");
+  const [placeSearchError, setPlaceSearchError] = useState("");
+  const [existingBusinessUid, setExistingBusinessUid] = useState("");
   const [placeSuggestions, setPlaceSuggestions] = useState([]);
   const placesDebounceRef = useRef(null);
   const userUploadedImages = formData.images || [];
@@ -155,6 +157,8 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
 
   const onPlaceSearchChange = (text) => {
     setPlaceSearchText(text);
+    if (placeSearchError) setPlaceSearchError("");
+    if (existingBusinessUid) setExistingBusinessUid("");
     if (placesDebounceRef.current) clearTimeout(placesDebounceRef.current);
     if (!text.trim()) {
       setPlaceSuggestions([]);
@@ -172,6 +176,8 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
 
   const handleGooglePlaceSelect = async (place) => {
     setPlaceSuggestions([]);
+    setPlaceSearchError("");
+    setExistingBusinessUid("");
     setPlaceSearchText(place.structured_formatting?.main_text || place.description || "");
     setLoading(true);
 
@@ -200,9 +206,13 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
         types: [],
       };
 
+      const canContinue = await fetchProfile(place.place_id);
+      if (!canContinue) return;
+
+      setPlaceSearchError("");
+      setExistingBusinessUid("");
       setFormData(updated);
       await AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
-      fetchProfile(place.place_id);
     } catch (err) {
       console.error("BusinessStep0 place select error:", err);
     } finally {
@@ -210,27 +220,37 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
     }
   };
 
+  const getBusinessUidFromResult = (result) =>
+    result?.business?.business_uid || result?.business_uid || result?.result?.[0]?.business_uid || "";
+
+  const goToExistingBusinessProfile = (businessUid) => {
+    if (!businessUid || !navigation) return;
+    navigation.navigate("BusinessProfile", { business_uid: businessUid });
+  };
+
   const fetchProfile = async (googlePlaceId) => {
     try {
       console.log("Fetching business for Place ID:", googlePlaceId);
-      setLoading(true);
       const response = await fetch(`${BUSINESS_INFO_ENDPOINT}/${googlePlaceId}`);
-      console.log("Business Fetch Response:", response);
-      if (response.ok) {
-        const result = await response.json();
-        console.log("here 3");
-        console.log("Business Fetch Result:", result);
-        const business = result?.result?.[0];
-        if (business) {
-          console.log("Business claimed:", business);
-        } else {
-          console.log("Business not claimed.");
-        }
+      let result = null;
+      try {
+        result = await response.json();
+      } catch (_) {}
+
+      const isNotFound = response.status === 404 || result?.code === 404;
+      if (isNotFound) {
+        console.log("Business not found — continuing setup.");
+        return true;
       }
+
+      const businessUid = getBusinessUidFromResult(result) || googlePlaceId;
+      setExistingBusinessUid(businessUid);
+      setPlaceSearchText("");
+      return false;
     } catch (error) {
       console.error("Error fetching business profile:", error);
-    } finally {
-      setLoading(false);
+      setPlaceSearchError("Could not verify business. Please try again.");
+      return false;
     }
   };
 
@@ -291,6 +311,25 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                       </TouchableOpacity>
                     ))}
                   </View>
+                )}
+                {(!!existingBusinessUid || !!placeSearchError) && (
+                  <Text style={[styles.placeSearchErrorText, darkMode && styles.darkPlaceSearchErrorText]} accessibilityRole='alert'>
+                    {existingBusinessUid ? (
+                      <>
+                        Business Already Exists. Go to{" "}
+                        <Text
+                          style={[styles.placeSearchErrorLink, darkMode && styles.darkPlaceSearchErrorLink]}
+                          onPress={() => goToExistingBusinessProfile(existingBusinessUid)}
+                          accessibilityRole='link'
+                          accessibilityLabel='Go to Business Profile'
+                        >
+                          Business Profile
+                        </Text>
+                      </>
+                    ) : (
+                      placeSearchError
+                    )}
+                  </Text>
                 )}
               </View>
 
@@ -734,6 +773,23 @@ const styles = StyleSheet.create({
   },
   darkOrText: {
     color: "#cccccc",
+  },
+  placeSearchErrorText: {
+    color: "#ff3b30",
+    fontSize: 14,
+    marginTop: 8,
+    alignSelf: "flex-start",
+  },
+  darkPlaceSearchErrorText: {
+    color: "#ff6b6b",
+  },
+  placeSearchErrorLink: {
+    color: "#007AFF",
+    textDecorationLine: "underline",
+    fontWeight: "600",
+  },
+  darkPlaceSearchErrorLink: {
+    color: "#4da3ff",
   },
   suggestionsList: {
     backgroundColor: "#fff",
