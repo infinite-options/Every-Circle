@@ -1204,6 +1204,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
               (u) => u.bu_individual_business_is_public === 1 || u.bu_individual_business_is_public === "1" || u.bu_individual_business_is_public === true,
             );
             if (!isOwner || visibleBusinessUsers.length === 0) return null;
+            console.log("businessUsers", businessUsers);
             return (
               <View style={styles.fieldContainer}>
                 <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowEditors(!showEditors)}>
@@ -1255,11 +1256,21 @@ export default function BusinessProfileScreen({ route, navigation }) {
                         businessUser.profile_personal_location_is_public === "1" ||
                         false,
                     };
+                    const profileUid = businessUser.profile_id || businessUser.profile_uid || businessUser.profile_personal_uid;
                     return (
-                      <View key={businessUser.business_user_id || index} style={[styles.businessUserCard, darkMode && styles.darkBusinessUserCard]}>
+                      <TouchableOpacity
+                        key={businessUser.business_user_id || index}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          if (profileUid) {
+                            navigation.navigate("Profile", { profile_uid: profileUid, returnTo: "BusinessProfile" });
+                          }
+                        }}
+                        style={[styles.businessUserCard, darkMode && styles.darkBusinessUserCard]}
+                      >
                         <MiniCard user={userForMiniCard} />
                         <Text style={[styles.businessUserRole, darkMode && styles.darkBusinessUserRole]}>Role: {role && role !== "." && role.trim() !== "" ? role : "N/A"}</Text>
-                      </View>
+                      </TouchableOpacity>
                     );
                   })}
               </View>
