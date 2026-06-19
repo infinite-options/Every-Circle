@@ -6,23 +6,9 @@ import { CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "../components/MiniCard";
+import TagSectionLabel from "../components/TagSectionLabel";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
-
-function mergeCustomTags(existing, inputText) {
-  const pending = (inputText || "").trim();
-  if (!pending) return Array.isArray(existing) ? [...existing] : [];
-
-  const newTags = pending
-    .split(",")
-    .map((tag) => tag.trim())
-    .filter(Boolean);
-
-  const merged = Array.isArray(existing) ? [...existing] : [];
-  newTags.forEach((tag) => {
-    if (!merged.includes(tag)) merged.push(tag);
-  });
-  return merged;
-}
+import { mergeCustomTags } from "../utils/tagListUtils";
 
 export default function BusinessStep1({ formData, setFormData, onPendingTagsChange }) {
   const { darkMode } = useDarkMode();
@@ -283,7 +269,7 @@ export default function BusinessStep1({ formData, setFormData, onPendingTagsChan
               }}
             />
 
-            <Text style={[styles.label, darkMode && styles.darkLabel]}>Custom Tags (comma separated) (Optional)</Text>
+            <TagSectionLabel title='Custom Tags' style={[styles.label, darkMode && styles.darkLabel]} darkMode={darkMode} />
             {customTag.trim().length > 0 ? <Text style={[styles.pendingTagsHint, darkMode && styles.darkPendingTagsHint]}>Click Add to save your tags before submitting.</Text> : null}
             <View style={styles.tagRow}>
               <TextInput
