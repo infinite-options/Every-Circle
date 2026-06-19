@@ -917,9 +917,7 @@ export default function SearchScreen({ route }) {
           ...locationFieldsFromApi(b),
         }));
 
-        const mappedExpertise = expertiseResults
-          .filter((item) => item.profile_expertise_is_public !== 0 && item.profile_expertise_is_public !== "0")
-          .map((item, i) => ({
+        const mappedExpertise = expertiseResults.map((item, i) => ({
             id: `${item.profile_expertise_uid || i}`,
             company: item.profile_expertise_title || "Untitled Expertise",
             rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
@@ -1007,8 +1005,10 @@ export default function SearchScreen({ route }) {
       if (effectiveRating !== null) {
         apiUrl += `&min_rating=${effectiveRating}`;
       }
-      apiUrl = appendHomeCoordsParams(apiUrl, userHomeCoords);
-      apiUrl = appendDistanceParams(apiUrl, effectiveDistance, userHomeCoords);
+      if (type === "businesses") {
+        apiUrl = appendHomeCoordsParams(apiUrl, userHomeCoords);
+        apiUrl = appendDistanceParams(apiUrl, effectiveDistance, userHomeCoords);
+      }
 
       console.log("🎯 EXACT ENDPOINT BEING CALLED:", apiUrl);
 
@@ -1136,9 +1136,7 @@ export default function SearchScreen({ route }) {
       let list;
       if (type === "seeking") {
         // For seeking/wishes, the response includes profile data directly
-        // Filter out non-public wishes (profile_wish_is_public === 0)
-        const publicSeekingResults = resultsArray.filter((item) => item.profile_wish_is_public !== 0 && item.profile_wish_is_public !== "0");
-        list = publicSeekingResults
+        list = resultsArray
           .map((item, i) => ({
             id: `${item.profile_wish_uid || i}`,
             company: item.profile_wish_title || "Untitled Wish",
@@ -1220,9 +1218,7 @@ export default function SearchScreen({ route }) {
         // }
       } else if (type === "expertise") {
         // For expertise, the response includes profile data directly
-        // Filter out non-public expertise (profile_expertise_is_public === 0)
-        const publicExpertiseResults = resultsArray.filter((item) => item.profile_expertise_is_public !== 0 && item.profile_expertise_is_public !== "0");
-        list = publicExpertiseResults.map((item, i) => ({
+        list = resultsArray.map((item, i) => ({
           id: `${item.profile_expertise_uid || i}`,
           company: item.profile_expertise_title || "Untitled Expertise",
           rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
@@ -1691,7 +1687,6 @@ export default function SearchScreen({ route }) {
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
           <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
             <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
-            {item.location_boosted && <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} />}
           </View>
           {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
           {renderScoreBreakdown(item)}
@@ -1818,7 +1813,6 @@ export default function SearchScreen({ route }) {
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
           <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
             <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
-            {item.location_boosted && <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} />}
           </View>
           {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
           {renderScoreBreakdown(item)}
@@ -1973,7 +1967,9 @@ export default function SearchScreen({ route }) {
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
                 <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
-                {item.location_boosted && <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} />}
+                {item.location_boosted && (item.itemType === "businesses" || !item.itemType) && (
+                  <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} />
+                )}
               </View>
               {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
               {renderScoreBreakdown(item)}
