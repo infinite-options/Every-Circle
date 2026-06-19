@@ -2,21 +2,13 @@ import React, { useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { parsePrice, formatCostValue } from "../utils/priceUtils";
+import { parseTagList } from "../utils/tagListUtils";
 import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 
 const DEFAULT_PRODUCT_IMAGE = require("../assets/profile.png");
 
-const parseTags = (raw) => {
-  if (raw == null || raw === "") return [];
-  const s = typeof raw === "string" ? raw : String(raw);
-  return s
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
-};
-
 const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, businessUid }) => {
-  const tags = useMemo(() => parseTags(service.bs_tags), [service.bs_tags]);
+  const tags = useMemo(() => parseTagList(service.bs_tags), [service.bs_tags]);
 
   const productImageUri = useMemo(() => {
     const pending = service._svcNewImageUri;
@@ -98,6 +90,20 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
     return `Tax rate: ${n.toFixed(2)}%`;
   }, [service.bs_is_taxable, service.bs_tax_rate]);
 
+  const returnableLine = useMemo(() => {
+    const returnable =
+      service.bs_is_returnable === 1 ||
+      service.bs_is_returnable === "1" ||
+      service.bs_is_returnable === true ||
+      service.is_returnable === 1 ||
+      service.is_returnable === "1" ||
+      service.is_returnable === true;
+    if (!returnable) return "Returnable: No";
+    const days = String(service.bs_return_window_days ?? "").trim();
+    const daysLabel = days && days !== "0" ? days : "5";
+    return `Returnable: Yes (${daysLabel} days)`;
+  }, [service.bs_is_returnable, service.is_returnable, service.bs_return_window_days]);
+
   const metaTextStyle = darkMode ? styles.metaTextDark : styles.metaText;
   const tagChipTextStyle = darkMode ? styles.tagChipTextDark : styles.tagChipText;
 
@@ -135,6 +141,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
           quantityLine,
           skuLine,
           conditionLine,
+          returnableLine,
           shippingLine,
           taxRateLine,
           isSoldOut,
@@ -157,6 +164,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
         quantityLine,
         skuLine,
         conditionLine,
+        returnableLine,
         shippingLine,
         taxRateLine,
         isSoldOut,
@@ -173,12 +181,22 @@ function creditCardFeeBuyerMetaLine(service) {
 }
 
 function formatProductCostLabel(service) {
-  const formatted = formatCostValue(service.bs_cost);
+  const costStr = String(service.bs_cost || "").trim();
+  let unitSuffix = "";
+  if (costStr.toLowerCase().endsWith("total")) {
+    unitSuffix = " total";
+  } else {
+    const unitMatch = costStr.match(/\/(hr|day|week|2 weeks|month|quarter|year)$/i);
+    if (unitMatch) {
+      unitSuffix = `/${unitMatch[1]}`;
+    }
+  }
+  const formatted = formatCostValue(parsePrice(service.bs_cost));
   const amount = formatted === "" ? "0" : formatted;
   if (!service.bs_cost_currency || service.bs_cost_currency === "USD") {
-    return `Cost: $${amount}`;
+    return `Cost: $${amount}${unitSuffix}`;
   }
-  return `Cost: ${service.bs_cost_currency} ${amount}`;
+  return `Cost: ${service.bs_cost_currency} ${amount}${unitSuffix}`;
 }
 
 function renderCostBountyFooter(service, darkMode) {
@@ -220,6 +238,7 @@ function renderProductCardBody({
   quantityLine,
   skuLine,
   conditionLine,
+  returnableLine,
   shippingLine,
   taxRateLine,
   isSoldOut,
@@ -317,6 +336,7 @@ function renderProductCardBody({
         })()}
         {skuLine ? <Text style={metaTextStyle}>{skuLine}</Text> : null}
         {conditionLine ? <Text style={metaTextStyle}>{conditionLine}</Text> : null}
+        {returnableLine ? <Text style={metaTextStyle}>{returnableLine}</Text> : null}
         {shippingLine ? <Text style={metaTextStyle}>{shippingLine}</Text> : null}
         {taxRateLine ? <Text style={metaTextStyle}>{taxRateLine}</Text> : null}
         {ccFeeBuyerLine ? <Text style={metaTextStyle}>{ccFeeBuyerLine}</Text> : null}
