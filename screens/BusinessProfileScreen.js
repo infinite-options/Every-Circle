@@ -30,15 +30,10 @@ import { buildBusinessMiniCardBusiness } from "../utils/mapBusinessToMiniCard";
 import { getPlaceDetails } from "../utils/googlePlaces";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import { getSessionProfile } from "../utils/sessionProfile";
+import { enrichReviewWithConnectionDegree } from "../utils/profilePathConnectionDegree";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
 import * as DocumentPicker from "expo-document-picker";
-import {
-  bountyPickerRequiresSelection,
-  getDefaultBountyRecipient,
-  isBountyReviewDisabled,
-  mergeBountyEligibleReviews,
-  resolveBountyRecommenderProfileId,
-} from "../utils/bountyRecipientUtils";
+import { bountyPickerRequiresSelection, getDefaultBountyRecipient, isBountyReviewDisabled, mergeBountyEligibleReviews, resolveBountyRecommenderProfileId } from "../utils/bountyRecipientUtils";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -59,6 +54,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [userReview, setUserReview] = useState(null);
   const [allReviews, setAllReviews] = useState([]);
   const [currentUserProfileId, setCurrentUserProfileId] = useState(null);
+  const [viewerProfilePath, setViewerProfilePath] = useState(null);
   const [businessUsers, setBusinessUsers] = useState([]);
   const [reviewerProfiles, setReviewerProfiles] = useState({});
   const [viewportWidth, setViewportWidth] = useState(null);
@@ -163,31 +159,14 @@ export default function BusinessProfileScreen({ route, navigation }) {
     getCurrentUserProfileId();
   }, []);
 
-  // Check if current user already has a pending or approved claim for this business
   useEffect(() => {
-    const checkExistingClaim = async () => {
-      try {
-        const profileId = await AsyncStorage.getItem("profile_uid");
-        if (!profileId) return;
-        const res = await fetch(`${BUSINESS_CLAIM_ENDPOINT}?profile_uid=${profileId}&business_uid=${business_uid}`);
-        const data = await res.json();
-        const claims = data?.result ?? [];
-        const pending = claims.find((c) => (c.claim_status || c.status || "").toLowerCase() === "pending");
-        if (pending) {
-          setClaimStatus("pending");
-          setClaimSubmittedAt(new Date(pending.claim_created_at));
-          return;
-        }
-        const approved = claims.find((c) => (c.claim_status || c.status || "").toLowerCase() === "approved");
-        if (approved) {
-          setClaimStatus("approved");
-        }
-      } catch (e) {
-        console.warn("Could not check existing claim:", e);
-      }
-    };
-    checkExistingClaim();
-  }, [business_uid]);
+    getSessionProfile()
+      .then((session) => {
+        const path = session?.personalInfo?.profile_personal_path ?? session?.rawProfile?.personal_info?.profile_personal_path ?? null;
+        if (path) setViewerProfilePath(path);
+      })
+      .catch(() => {});
+  }, []);
 
   // Fetch reviewer profile data
   const fetchReviewerProfile = async (profileId) => {
@@ -226,10 +205,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
       let otherReviews = [];
 
       business.ratings.forEach((rating) => {
-        if (rating.rating_profile_id === currentUserProfileId) {
-          userReviewFromAPI = rating;
+        const enriched = enrichReviewWithConnectionDegree(rating, viewerProfilePath);
+        if (enriched.rating_profile_id === currentUserProfileId) {
+          userReviewFromAPI = enriched;
         } else {
-          otherReviews.push(rating);
+          otherReviews.push(enriched);
         }
       });
 
@@ -244,11 +224,86 @@ export default function BusinessProfileScreen({ route, navigation }) {
       setUserReview(userReviewFromAPI);
       setAllReviews(otherReviews);
     }
-  }, [currentUserProfileId, business]);
+  }, [currentUserProfileId, business, viewerProfilePath]);
+
+  const businessUserMatchesViewer = (bu, userUid, profileUid) => {
+    if (!bu || (userUid == null && profileUid == null)) return false;
+    const userOk =
+      userUid &&
+      (String(bu.user_uid || "").trim() === String(userUid).trim() ||
+        String(bu.bu_user_id || "").trim() === String(userUid).trim() ||
+        String(bu.business_user_id || "").trim() === String(userUid).trim());
+
+    const profileOk =
+      profileUid &&
+      (String(bu.profile_id || "").trim() === String(profileUid).trim() ||
+        String(bu.profile_uid || "").trim() === String(profileUid).trim() ||
+        String(bu.profile_personal_uid || "").trim() === String(profileUid).trim());
+
+    return !!(userOk || profileOk);
+  };
+
+  const resolveIsOwnerForBusiness = async (businessUsersData) => {
+    const userUid = await AsyncStorage.getItem("user_uid");
+    const profileUid = await AsyncStorage.getItem("profile_uid");
+    if (!userUid && !profileUid) return false;
+
+    const list = Array.isArray(businessUsersData) ? businessUsersData : [];
+    const matchInBusinessUsers = list.some((bu) => businessUserMatchesViewer(bu, userUid, profileUid));
+    if (matchInBusinessUsers) return true;
+
+    if (!profileUid) return false;
+
+    const parseBusinessInfoList = (raw) => {
+      if (!raw) return [];
+      if (Array.isArray(raw)) return raw;
+      if (typeof raw === "string") {
+        try {
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+      return [];
+    };
+
+    const session = await getSessionProfile();
+    const rawBiz = session?.rawProfile?.business_info ?? session?.businessInfo;
+    const businessInfo = parseBusinessInfoList(rawBiz);
+    const uidStr = String(business_uid || "");
+    let isInProfileBusinesses = businessInfo.some((biz) => String(biz?.business_uid || biz?.profile_business_uid || biz?.profile_business_business_id || "") === uidStr);
+    if (!isInProfileBusinesses && Array.isArray(session?.businessUids) && session.businessUids.length > 0) {
+      isInProfileBusinesses = session.businessUids.some((id) => String(id) === uidStr);
+    }
+    if (!isInProfileBusinesses) {
+      try {
+        const rawUids = await AsyncStorage.getItem("my_business_uids");
+        const arr = JSON.parse(rawUids || "[]");
+        if (Array.isArray(arr)) {
+          isInProfileBusinesses = arr.some((id) => String(id) === uidStr);
+        }
+      } catch (_) {}
+    }
+
+    return !!isInProfileBusinesses;
+  };
 
   const fetchBusinessInfo = async () => {
     try {
       setLoading(true);
+      setBusinessViewers([]);
+      setClaimStatus(null);
+      setClaimSubmittedAt(null);
+
+      let cachedViewerPath = viewerProfilePath;
+      try {
+        const session = await getSessionProfile();
+        cachedViewerPath =
+          session?.personalInfo?.profile_personal_path ?? session?.rawProfile?.personal_info?.profile_personal_path ?? cachedViewerPath;
+        if (cachedViewerPath) setViewerProfilePath(cachedViewerPath);
+      } catch (_) {}
+
       // Clear session cache so ownership check picks up any newly approved claims
       try {
         const { clearUserProfileCacheStorage } = require("../utils/sessionProfile");
@@ -258,20 +313,18 @@ export default function BusinessProfileScreen({ route, navigation }) {
       const endpoint = `${BusinessProfileApi}/${business_uid}`;
       console.log("BusinessProfileScreen GET endpoint:", endpoint);
 
-      // Fire businessinfo and profile_views in parallel
-      const [response, viewersResponse] = await Promise.all([
-        fetch(endpoint),
-        fetch(`${PROFILE_VIEWS_ENDPOINT}/${business_uid}`).catch(() => null),
-      ]);
-
-      if (viewersResponse?.ok) {
-        viewersResponse.json().then((d) => setBusinessViewers(d.viewers || [])).catch(() => {});
-      }
-
+      // Always fetch businessinfo first
+      const response = await fetch(endpoint);
       const result = await response.json();
 
       if (!result || !result.business) {
         throw new Error("Business not found or malformed response");
+      }
+
+      if (Array.isArray(result.ratings) && result.ratings.length > 0) {
+        const sample = result.ratings[0];
+        console.log("[BusinessProfileScreen] businessinfo rating profile_personal_path:", sample.profile_personal_path ?? "(missing)");
+        console.log("[BusinessProfileScreen] viewer profile_personal_path:", cachedViewerPath ?? "(missing)");
       }
 
       const rawBusiness = result.business;
@@ -477,20 +530,63 @@ export default function BusinessProfileScreen({ route, navigation }) {
       const businessUsersData = result.business_users ?? rawBusiness.business_users;
       if (businessUsersData && Array.isArray(businessUsersData)) {
         setBusinessUsers(businessUsersData);
+      } else {
+        setBusinessUsers([]);
+      }
 
-        // Record profile view for each business owner — skip if viewer is an owner
+      // Determine ownership immediately (so we can gate follow-up endpoints deterministically)
+      let owner = false;
+      try {
+        owner = await resolveIsOwnerForBusiness(businessUsersData);
+      } catch (e) {
+        console.warn("BusinessProfileScreen - could not resolve ownership inline:", e);
+      }
+      setIsOwner(owner);
+
+      if (owner) {
+        // Owners only: fetch viewers list
+        try {
+          const viewersResponse = await fetch(`${PROFILE_VIEWS_ENDPOINT}/${business_uid}`);
+          if (viewersResponse.ok) {
+            const d = await viewersResponse.json();
+            setBusinessViewers(d.viewers || []);
+          }
+        } catch (e) {
+          console.warn("BusinessProfileScreen - could not load business viewers:", e);
+        }
+      } else {
+        // Non-owners: check claim status (if logged in)
+        try {
+          const profileId = await AsyncStorage.getItem("profile_uid");
+          if (profileId) {
+            const res = await fetch(`${BUSINESS_CLAIM_ENDPOINT}?profile_uid=${profileId}&business_uid=${business_uid}`);
+            const data = await res.json();
+            const claims = data?.result ?? [];
+            const pending = claims.find((c) => (c.claim_status || c.status || "").toLowerCase() === "pending");
+            if (pending) {
+              setClaimStatus("pending");
+              setClaimSubmittedAt(pending.claim_created_at ? new Date(pending.claim_created_at) : new Date());
+            } else {
+              const approved = claims.find((c) => (c.claim_status || c.status || "").toLowerCase() === "approved");
+              if (approved) setClaimStatus("approved");
+            }
+          }
+        } catch (e) {
+          console.warn("BusinessProfileScreen - could not check existing claim:", e);
+        }
+
+        // Non-owners: record profile view if viewer is not one of the owners
         try {
           const viewerProfileId = await AsyncStorage.getItem("profile_uid");
-          if (viewerProfileId) {
-            const ownerProfileIds = businessUsersData.map((bu) => bu.profile_id).filter(Boolean);
-            const viewerIsOwner = ownerProfileIds.includes(viewerProfileId);
+          const viewerUserId = await AsyncStorage.getItem("user_uid");
+          if (viewerProfileId || viewerUserId) {
+            const list = Array.isArray(businessUsersData) ? businessUsersData : [];
+            const viewerIsOwner = list.some((bu) => businessUserMatchesViewer(bu, viewerUserId, viewerProfileId));
             if (!viewerIsOwner) {
-              // Record view against the business_uid so business owners can see who visited
               const viewPayload = {
                 profile_view_profile_id: business_uid,
                 profile_view_viewer_id: viewerProfileId,
               };
-              console.log("BusinessProfileScreen - Recording view payload:", viewPayload);
               fetch(PROFILE_VIEWS_ENDPOINT, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -501,10 +597,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         } catch (e) {
           console.warn("BusinessProfileScreen - error recording profile view:", e);
         }
-      } else {
-        setBusinessUsers([]);
       }
-
     } catch (err) {
       console.error("Error fetching business data:", err);
     } finally {
@@ -514,69 +607,13 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
   useEffect(() => {
     const checkBusinessOwnership = async () => {
-      console.log("checkBusinessOwnership - businessUsers:", businessUsers.length, "business:", !!business);
       try {
         if (!business) {
           setIsOwner(false);
           return;
         }
-        const userUid = await AsyncStorage.getItem("user_uid");
-        const profileUid = await AsyncStorage.getItem("profile_uid");
-        if (!userUid && !profileUid) {
-          setIsOwner(false);
-          return;
-        }
-        // Check business_users array: API may use user_uid, bu_user_id, business_user_id, or profile identifiers
-        const matchInBusinessUsers = businessUsers.some(
-          (bu) =>
-            (userUid && (bu.user_uid === userUid || bu.bu_user_id === userUid || bu.business_user_id === userUid)) ||
-            (profileUid &&
-              (bu.profile_id === profileUid ||
-                bu.profile_uid === profileUid ||
-                bu.profile_personal_uid === profileUid ||
-                String(bu.profile_id || bu.profile_uid || bu.profile_personal_uid || "").trim() === String(profileUid || "").trim())),
-        );
-        if (matchInBusinessUsers) {
-          setIsOwner(true);
-          return;
-        }
-        // Fallback: same data as GET userprofileinfo — from session cache (Profile load / login) + my_business_uids.
-        // Avoids duplicate network calls here (effect can re-run when `business` updates after ratings merge).
-        if (profileUid) {
-          const parseBusinessInfoList = (raw) => {
-            if (!raw) return [];
-            if (Array.isArray(raw)) return raw;
-            if (typeof raw === "string") {
-              try {
-                const parsed = JSON.parse(raw);
-                return Array.isArray(parsed) ? parsed : [];
-              } catch {
-                return [];
-              }
-            }
-            return [];
-          };
-          const session = await getSessionProfile();
-          const rawBiz = session?.rawProfile?.business_info ?? session?.businessInfo;
-          const businessInfo = parseBusinessInfoList(rawBiz);
-          const uidStr = String(business_uid || "");
-          let isInProfileBusinesses = businessInfo.some((biz) => String(biz?.business_uid || biz?.profile_business_uid || biz?.profile_business_business_id || "") === uidStr);
-          if (!isInProfileBusinesses && Array.isArray(session?.businessUids) && session.businessUids.length > 0) {
-            isInProfileBusinesses = session.businessUids.some((id) => String(id) === uidStr);
-          }
-          if (!isInProfileBusinesses) {
-            try {
-              const rawUids = await AsyncStorage.getItem("my_business_uids");
-              const arr = JSON.parse(rawUids || "[]");
-              if (Array.isArray(arr)) {
-                isInProfileBusinesses = arr.some((id) => String(id) === uidStr);
-              }
-            } catch (_) {}
-          }
-          setIsOwner(isInProfileBusinesses);
-          return;
-        }
-        setIsOwner(false);
+        const owner = await resolveIsOwnerForBusiness(businessUsers);
+        setIsOwner(!!owner);
       } catch (error) {
         console.error("Error checking business ownership:", error);
         setIsOwner(false);
@@ -596,10 +633,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
     }, [business_uid]),
   );
 
-  const miniCardBusiness = useMemo(
-    () => (business ? buildBusinessMiniCardBusiness(business, business_uid) : null),
-    [business, business_uid],
-  );
+  const miniCardBusiness = useMemo(() => (business ? buildBusinessMiniCardBusiness(business, business_uid) : null), [business, business_uid]);
 
   const handleProductPress = (service) => {
     // Block sold-out items from being added to cart
@@ -974,9 +1008,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
     );
   }
 
-  const hasBusinessOwner = businessUsers.some(
-    (bu) => (bu.bu_role || bu.business_role || bu.role || "").trim() !== "",
-  );
+  const hasBusinessOwner = businessUsers.some((bu) => (bu.bu_role || bu.business_role || bu.role || "").trim() !== "");
 
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]} key={Platform.OS === "web" ? `viewport-${viewportWidth}` : undefined}>
@@ -1846,14 +1878,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
               </TouchableOpacity>
               {showServices &&
                 business.business_services.map((service, idx) => (
-                  <ProductCard
-                    key={idx}
-                    service={service}
-                    businessUid={business_uid}
-                    showEditButton={isOwner}
-                    darkMode={darkMode}
-                    onPress={() => handleProductPress(service)}
-                  />
+                  <ProductCard key={idx} service={service} businessUid={business_uid} showEditButton={isOwner} darkMode={darkMode} onPress={() => handleProductPress(service)} />
                 ))}
             </View>
           )}

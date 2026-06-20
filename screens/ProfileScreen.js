@@ -40,7 +40,7 @@ import config from "../config";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { reinitializeUnreadFromOutside } from "../contexts/UnreadContext";
 import { persistMyBusinessUidsFromProfile } from "../utils/myBusinessUids";
-import { saveSessionProfilePayload, clearUserProfileCacheStorage } from "../utils/sessionProfile";
+import { saveSessionProfilePayload, clearUserProfileCacheStorage, getSessionProfile } from "../utils/sessionProfile";
 import { sanitizeText } from "../utils/textSanitizer";
 import { getBusinessSuggestions as fetchGooglePlaces, getPlaceDetails } from "../utils/googlePlaces";
 import { isWishEnded } from "../utils/wishUtils";
@@ -525,7 +525,14 @@ const ProfileScreen = ({ route, navigation }) => {
       if (bizListChanged) reinitializeUnreadFromOutside().catch(() => {});
       try {
         await saveSessionProfilePayload(apiUser);
-      } catch (_) {}
+        const session = await getSessionProfile({ forceRefresh: true });
+        const path =
+          session?.personalInfo?.profile_personal_path ??
+          session?.rawProfile?.personal_info?.profile_personal_path;
+        console.log("[ProfileScreen] profile_personal_path:", path ?? "(not in cache)");
+      } catch (e) {
+        console.warn("[ProfileScreen] profile_personal_path read failed:", e?.message || e);
+      }
     }
 
     try {

@@ -511,87 +511,91 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           </View>
 
           {!blockingOAuthReferral && (
-          <View style={styles.inputContainer}>
-            <View style={styles.fieldContainer}>
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                style={styles.input}
-                placeholder='Email'
-                value={email}
-                onChangeText={handleEmailChange}
-                keyboardType='email-address'
-                autoCapitalize='none'
-                editable={!isGoogleSignUp}
-                accessibilitylabel='Email'
-                accessibilityHint='Enter your email address'
-              />
+            <View style={styles.inputContainer}>
+              <View style={styles.fieldContainer}>
+                <Text style={styles.label}>Email</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder='Email'
+                  value={email}
+                  onChangeText={handleEmailChange}
+                  keyboardType='email-address'
+                  autoCapitalize='none'
+                  editable={!isGoogleSignUp}
+                  accessibilitylabel='Email'
+                  accessibilityHint='Enter your email address'
+                />
+              </View>
+              {!isGoogleSignUp && (
+                <>
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.label}>Password</Text>
+                    <View style={styles.passwordInputContainer}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder='Password'
+                        value={password}
+                        onChangeText={handlePasswordChange}
+                        secureTextEntry={!isPasswordVisible}
+                        autoCapitalize='none'
+                        accessibilitylabel='Password'
+                        accessibilityHint='Enter your password'
+                      />
+                      <TouchableOpacity
+                        style={styles.passwordVisibilityToggle}
+                        onPress={() => setIsPasswordVisible(!isPasswordVisible)}
+                        accessibilityRole='button'
+                        accessibilitylabel={isPasswordVisible ? "Hide password" : "Show password"}
+                        accessibilityHint='Toggles password visibility'
+                      >
+                        <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.label}>Confirm Password</Text>
+                    <View style={styles.passwordInputContainer}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder='Confirm Password'
+                        value={confirmPassword}
+                        onChangeText={handleConfirmPasswordChange}
+                        secureTextEntry={!isConfirmPasswordVisible}
+                        autoCapitalize='none'
+                        accessibilitylabel='Confirm password'
+                        accessibilityHint='Re-enter your password'
+                      />
+                      <TouchableOpacity
+                        style={styles.passwordVisibilityToggle}
+                        onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}
+                        accessibilityRole='button'
+                        accessibilitylabel={isConfirmPasswordVisible ? "Hide confirm password" : "Show confirm password"}
+                        accessibilityHint='Toggles confirm password visibility'
+                      >
+                        <Ionicons name={isConfirmPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  {!!userExistsError && <Text style={styles.userExistsErrorText}>{userExistsError}</Text>}
+                </>
+              )}
             </View>
-            {!isGoogleSignUp && (
-              <>
-                <View style={styles.fieldContainer}>
-                  <Text style={styles.label}>Password</Text>
-                  <View style={styles.passwordInputContainer}>
-                    <TextInput
-                      style={styles.input}
-                      placeholder='Password'
-                      value={password}
-                      onChangeText={handlePasswordChange}
-                      secureTextEntry={!isPasswordVisible}
-                      autoCapitalize='none'
-                      accessibilitylabel='Password'
-                      accessibilityHint='Enter your password'
-                    />
-                    <TouchableOpacity
-                      style={styles.passwordVisibilityToggle}
-                      onPress={() => setIsPasswordVisible(!isPasswordVisible)}
-                      accessibilityRole='button'
-                      accessibilitylabel={isPasswordVisible ? "Hide password" : "Show password"}
-                      accessibilityHint='Toggles password visibility'
-                    >
-                      <Ionicons name={isPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                <View style={styles.fieldContainer}>
-                  <Text style={styles.label}>Confirm Password</Text>
-                  <View style={styles.passwordInputContainer}>
-                    <TextInput
-                      style={styles.input}
-                      placeholder='Confirm Password'
-                      value={confirmPassword}
-                      onChangeText={handleConfirmPasswordChange}
-                      secureTextEntry={!isConfirmPasswordVisible}
-                      autoCapitalize='none'
-                      accessibilitylabel='Confirm password'
-                      accessibilityHint='Re-enter your password'
-                    />
-                    <TouchableOpacity
-                      style={styles.passwordVisibilityToggle}
-                      onPress={() => setIsConfirmPasswordVisible(!isConfirmPasswordVisible)}
-                      accessibilityRole='button'
-                      accessibilitylabel={isConfirmPasswordVisible ? "Hide confirm password" : "Show confirm password"}
-                      accessibilityHint='Toggles confirm password visibility'
-                    >
-                      <Ionicons name={isConfirmPasswordVisible ? "eye-off" : "eye"} size={24} color='#666' />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                {!!userExistsError && <Text style={styles.userExistsErrorText}>{userExistsError}</Text>}
-              </>
-            )}
-          </View>
           )}
 
           {!blockingOAuthReferral && (
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]} onPress={handleContinue} disabled={!isValid || isAttemptingLogin}>
-              {isAttemptingLogin ? (
-                <ActivityIndicator color='#fff' />
-              ) : (
-                <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : styles.continueButtonTextDisabled]}>{isGoogleSignUp ? "Complete Sign Up" : "Continue"}</Text>
-              )}
-            </TouchableOpacity>
-          </View>
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]}
+                onPress={handleContinue}
+                disabled={!isValid || isAttemptingLogin}
+              >
+                {isAttemptingLogin ? (
+                  <ActivityIndicator color='#fff' />
+                ) : (
+                  <Text style={[styles.continueButtonText, isValid ? styles.continueButtonTextActive : styles.continueButtonTextDisabled]}>{isGoogleSignUp ? "Complete Sign Up" : "Continue"}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           )}
 
           {!blockingOAuthReferral && !isGoogleSignUp && (
@@ -610,14 +614,14 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           )}
 
           {!blockingOAuthReferral && (
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              Already have an account?{" "}
-              <Text style={styles.logInText} onPress={() => navigation.navigate("Login")}>
-                Log In
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>
+                Already have an account?{" "}
+                <Text style={styles.logInText} onPress={() => navigation.navigate("Login")}>
+                  Log In
+                </Text>
               </Text>
-            </Text>
-          </View>
+            </View>
           )}
 
           {/* Referral Modal */}

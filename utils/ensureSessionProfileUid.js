@@ -9,13 +9,7 @@ export function profileUidFromUserProfileResponse(apiUser) {
     return null;
   }
   const p = apiUser.personal_info || apiUser.profile_info || {};
-  const profileId =
-    apiUser.profile_uid ||
-    apiUser.profile_personal_uid ||
-    p.profile_personal_uid ||
-    p.profile_uid ||
-    apiUser.data?.personal_info?.profile_personal_uid ||
-    null;
+  const profileId = apiUser.profile_uid || apiUser.profile_personal_uid || p.profile_personal_uid || p.profile_uid || apiUser.data?.personal_info?.profile_personal_uid || null;
   return profileId ? String(profileId) : null;
 }
 
