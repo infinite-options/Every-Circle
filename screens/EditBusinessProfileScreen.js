@@ -302,6 +302,7 @@ const SERVICE_CURRENCY_OPTIONS = [
 
 const SERVICE_COST_UNIT_OPTIONS = [
   { label: "total", value: "total" },
+  { label: "/each", value: "each" },
   { label: "/hr", value: "hr" },
   { label: "/day", value: "day" },
   { label: "/week", value: "week" },
@@ -334,7 +335,7 @@ const parseServiceCost = (cost) => {
 
 const serviceCostHasUnit = (cost) => {
   if (!cost || String(cost).trim() === "") return true;
-  const unit = String(cost).match(/\/(hr|day|week|2 weeks|month|quarter|year)$|(\btotal\b)/i);
+  const unit = String(cost).match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$|(\btotal\b)/i);
   return !!unit;
 };
 

@@ -28,6 +28,7 @@ const parseCost = (costStr) => {
 const getQuantityLabelSuffix = (units) => {
   if (!units) return "";
   const u = units.replace(/^\//, "").toLowerCase();
+  if (u === "each") return "number of items";
   if (u === "hr") return "number of hrs";
   if (u === "day") return "number of days";
   if (u === "week") return "number of weeks";

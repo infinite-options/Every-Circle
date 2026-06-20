@@ -26,12 +26,6 @@ const formatDateForDisplay = (value) => {
   return trimmed;
 };
 
-const getRecommendedDisplayName = (response) => {
-  const first = String(response?.recommended_first_name || "").trim();
-  const last = String(response?.recommended_last_name || "").trim();
-  return [first, last].filter(Boolean).join(" ");
-};
-
 const WishDetailScreenContent = ({ route, navigation }) => {
   const { wishData, profileData, profile_uid, searchState, returnTo, profileState } = route.params;
   const { darkMode } = useDarkMode();
@@ -268,23 +262,6 @@ const WishDetailScreenContent = ({ route, navigation }) => {
     }
   };
 
-  const navigateToProfile = (targetProfileUid) => {
-    const uid = String(targetProfileUid || "").trim();
-    if (!uid) return;
-    navigation.push("Profile", {
-      profile_uid: uid,
-      returnTo: "WishDetail",
-      wishDetailState: {
-        wishData,
-        profileData,
-        profile_uid,
-        searchState,
-        returnTo,
-        profileState,
-      },
-    });
-  };
-
   const handleBack = () => {
     // Return to Profile screen if that's where we came from
     if (returnTo === "Profile" && profileState) {
@@ -314,9 +291,9 @@ const WishDetailScreenContent = ({ route, navigation }) => {
           onPress={() => {
             console.log("🏢 Navigating to Profile from MiniCard in WishDetail");
             if (profile_uid) {
-              navigation.push("Profile", {
+              navigation.navigate("Profile", {
                 profile_uid: profile_uid,
-                returnTo: "WishDetail",
+                returnTo: returnTo === "Profile" ? "WishDetail" : "WishDetail",
                 wishDetailState: {
                   wishData,
                   profileData,
@@ -400,28 +377,9 @@ const WishDetailScreenContent = ({ route, navigation }) => {
                 {existingResponses.length > 1 && response.wr_datetime ? (
                   <Text style={[styles.existingResponseDate, darkMode && styles.darkExistingResponseDate]}>{formatDateForDisplay(response.wr_datetime)}</Text>
                 ) : null}
-                {response.wr_type === "refer" ? (
-                  (() => {
-                    const recommendedUid = String(response.wr_recommended_id || "").trim();
-                    const recommendedName = getRecommendedDisplayName(response);
-                    if (recommendedUid && recommendedName) {
-                      return (
-                        <View style={styles.existingResponseTypeRow}>
-                          <Text style={[styles.existingResponseType, darkMode && styles.darkExistingResponseType]}>I am referring someone else (</Text>
-                          <TouchableOpacity activeOpacity={0.7} onPress={() => navigateToProfile(recommendedUid)} accessibilityRole="link">
-                            <Text style={[styles.existingResponseType, styles.existingResponseNameLink, darkMode && styles.darkExistingResponseType, darkMode && styles.darkExistingResponseNameLink]}>
-                              {recommendedName}
-                            </Text>
-                          </TouchableOpacity>
-                          <Text style={[styles.existingResponseType, darkMode && styles.darkExistingResponseType]}>)</Text>
-                        </View>
-                      );
-                    }
-                    return <Text style={[styles.existingResponseType, darkMode && styles.darkExistingResponseType]}>I am referring someone else</Text>;
-                  })()
-                ) : (
-                  <Text style={[styles.existingResponseType, darkMode && styles.darkExistingResponseType]}>I can help</Text>
-                )}
+                <Text style={[styles.existingResponseType, darkMode && styles.darkExistingResponseType]}>
+                  {response.wr_type === "refer" ? "I am referring someone else" : "I can help"}
+                </Text>
                 {response.wr_responder_note ? (
                   <Text style={[styles.existingResponseNote, darkMode && styles.darkExistingResponseNote]}>{response.wr_responder_note}</Text>
                 ) : (
@@ -712,15 +670,6 @@ const styles = StyleSheet.create({
     color: "#4F8A8B",
     marginBottom: 10,
   },
-  existingResponseTypeRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  existingResponseNameLink: {
-    textDecorationLine: "underline",
-  },
   existingResponseEntry: {
     marginBottom: 4,
   },
@@ -792,9 +741,6 @@ const styles = StyleSheet.create({
   },
   darkExistingResponseType: {
     color: "#7eb8b9",
-  },
-  darkExistingResponseNameLink: {
-    color: "#9dd4d5",
   },
   darkExistingResponseEntryBorder: {
     borderTopColor: "#404040",

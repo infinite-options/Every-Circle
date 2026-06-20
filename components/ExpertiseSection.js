@@ -38,6 +38,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
   // Cost unit options for dropdown
   const costUnitOptions = [
     { label: "total", value: "total" },
+    { label: "/each", value: "each" },
     { label: "/hr", value: "hr" },
     { label: "/day", value: "day" },
     { label: "/week", value: "week" },
@@ -428,13 +429,13 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
           </TouchableOpacity>
         </View>
         <View style={styles.toggleContainer}>
-                  <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
-                    <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
-                      <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
-                  </TouchableOpacity>
-                </View>
+          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
+            <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
+            <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {expertise.map((item, index) => (
@@ -449,33 +450,23 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
           <View style={styles.rowHeader}>
             <Text style={styles.label}>Offering #{index + 1}</Text>
             <View style={styles.toggleContainer}>
-                          <TouchableOpacity
-                            onPress={() => toggleEntryVisibility(index)}
-                            style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}
-                          >
-                            <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => toggleEntryVisibility(index)}
-                            style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}
-                          >
-                            <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
-                          </TouchableOpacity>
-                        </View>
+              <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
+                <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}>
+                <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
             <ProfileItemImageColumn
               darkMode={darkMode}
-              defaultSection="offering"
+              defaultSection='offering'
               displayUri={getExpertiseDisplayUri(item)}
               imageError={!!item._expImageError}
               onImageError={() => handleInputChange(index, "_expImageError", true)}
-              toolsVisible={
-                item.profile_expertise_image_is_public === 1 ||
-                item.profile_expertise_image_is_public === "1" ||
-                item.profile_expertise_image_is_public === true
-              }
+              toolsVisible={item.profile_expertise_image_is_public === 1 || item.profile_expertise_image_is_public === "1" || item.profile_expertise_image_is_public === true}
               onShowTools={() => handleInputChange(index, "profile_expertise_image_is_public", 1)}
               onHideTools={() => handleInputChange(index, "profile_expertise_image_is_public", 0)}
               onUploadNative={() => pickExpertiseImage(index)}
@@ -529,7 +520,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               ) : Platform.OS === "web" ? (
                 <View style={styles.webDateTimeInputWrapper}>
                   <input
-                    type="datetime-local"
+                    type='datetime-local'
                     style={styles.webDateTimeInput}
                     value={toDateTimeLocalValue(item.profile_expertise_start || "")}
                     onChange={(e) => handleDateTimeInputChange(index, "start", fromDateTimeLocalValue(e.target.value))}
@@ -538,7 +529,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               ) : (
                 <TextInput
                   style={styles.dateTimeTextInput}
-                  placeholder="mm-dd-yyyy hh:mm"
+                  placeholder='mm-dd-yyyy hh:mm'
                   value={item.profile_expertise_start ? formatDateTimeForDisplay(item.profile_expertise_start) : ""}
                   onChangeText={(text) => handleInputChange(index, "profile_expertise_start", text)}
                 />
@@ -575,7 +566,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               ) : Platform.OS === "web" ? (
                 <View style={styles.webDateTimeInputWrapper}>
                   <input
-                    type="datetime-local"
+                    type='datetime-local'
                     style={styles.webDateTimeInput}
                     value={toDateTimeLocalValue(item.profile_expertise_end || "")}
                     onChange={(e) => handleDateTimeInputChange(index, "end", fromDateTimeLocalValue(e.target.value))}
@@ -584,7 +575,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               ) : (
                 <TextInput
                   style={styles.dateTimeTextInput}
-                  placeholder="mm-dd-yyyy hh:mm"
+                  placeholder='mm-dd-yyyy hh:mm'
                   value={item.profile_expertise_end ? formatDateTimeForDisplay(item.profile_expertise_end) : ""}
                   onChangeText={(text) => handleInputChange(index, "profile_expertise_end", text)}
                 />
@@ -594,7 +585,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               <Text style={styles.dateTimeLabel}>Location</Text>
               <TextInput
                 style={styles.locationInput}
-                placeholder="Location"
+                placeholder='Location'
                 value={item.profile_expertise_location || ""}
                 onChangeText={(text) => handleInputChange(index, "profile_expertise_location", text)}
               />
@@ -606,16 +597,10 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
                   const { virtual, inPerson } = parseExpertiseModeFlags(item.profile_expertise_mode);
                   return (
                     <>
-                      <TouchableOpacity
-                        style={[styles.modeCheckbox, virtual && styles.modeCheckboxSelected]}
-                        onPress={() => toggleExpertiseMode(index, "virtual")}
-                      >
+                      <TouchableOpacity style={[styles.modeCheckbox, virtual && styles.modeCheckboxSelected]} onPress={() => toggleExpertiseMode(index, "virtual")}>
                         <Text style={[styles.modeCheckboxText, virtual && styles.modeCheckboxTextSelected]}>Virtual</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.modeCheckbox, inPerson && styles.modeCheckboxSelected]}
-                        onPress={() => toggleExpertiseMode(index, "inPerson")}
-                      >
+                      <TouchableOpacity style={[styles.modeCheckbox, inPerson && styles.modeCheckboxSelected]} onPress={() => toggleExpertiseMode(index, "inPerson")}>
                         <Text style={[styles.modeCheckboxText, inPerson && styles.modeCheckboxTextSelected]}>In-Person</Text>
                       </TouchableOpacity>
                     </>
@@ -642,74 +627,74 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
 
           {/* Cost Row */}
           <View style={styles.amountRow}>
-  <Text style={styles.costLabel}>Cost</Text>
-  <TextInput
-    ref={(ref) => {
-      if (ref) costInputRefs.current[index] = ref;
-    }}
-    style={styles.costAmountInput}
-    keyboardType={(() => {
-      const parsed = parseCost(item.cost);
-      const amount = parsed.amount;
-      return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "decimal-pad";
-    })()}
-    value={(() => {
-      const parsed = parseCost(item.cost);
-      const amount = parsed.amount;
-      if (!amount) return "";
-      if (amount.toLowerCase() === "free") return "Free";
-      return `$${amount}`;
-    })()}
-    onChangeText={(text) => {
-      const cleanedText = text.replace(/\$/g, "");
-      handleCostAmountChange(index, cleanedText);
-    }}
-    // Format cost only after editing is finished. This allows fluid typing of decimals without forcing formatting mid-edit.
-    onBlur={() => handleCostAmountBlur(index)}
-  />
-  <Dropdown
-    style={[styles.costUnitDropdown, !parseCost(item.cost).unit && styles.requiredDropdown]}
-    data={costUnitOptions}
-    labelField='label'
-    valueField='value'
-    placeholder='Unit *'
-    placeholderStyle={{ color: '#f44336' }}
-    value={parseCost(item.cost).unit || null}
-    onChange={(item) => handleCostUnitChange(index, item)}
-    containerStyle={styles.dropdownContainer}
-    itemTextStyle={styles.dropdownItemText}
-    selectedTextStyle={styles.dropdownSelectedText}
-    activeColor='#f0f0f0'
-  />
-  <Text style={styles.dollar}>💰</Text>
-  <TextInput
-    style={styles.bountyInput}
-    placeholder='Bounty'
-    keyboardType='decimal-pad'
-    value={(() => {
-      const parsed = parseBounty(item.bounty);
-      const amount = parsed.amount;
-      if (!amount) return "";
-      if (amount.toLowerCase() === "free") return "Free";
-      return `$${amount}`;
-    })()}
-    onChangeText={(text) => {
-      const cleanedText = text.replace(/\$/g, "");
-      handleBountyAmountChange(index, cleanedText);
-    }}
-    // Format bounty only after editing is finished
-    onBlur={() => handleBountyAmountBlur(index)}
-  />
-  <TextInput
-    style={styles.bountyInput}
-    placeholder="Qty"
-    keyboardType="numeric"
-    value={item.quantity || ""}
-    onChangeText={(text) => handleInputChange(index, "quantity", text)}
-  />
-  <TouchableOpacity onPress={() => deleteExpertise(index)}>
-    <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
-  </TouchableOpacity>
+            <Text style={styles.costLabel}>Cost</Text>
+            <TextInput
+              ref={(ref) => {
+                if (ref) costInputRefs.current[index] = ref;
+              }}
+              style={styles.costAmountInput}
+              keyboardType={(() => {
+                const parsed = parseCost(item.cost);
+                const amount = parsed.amount;
+                return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "decimal-pad";
+              })()}
+              value={(() => {
+                const parsed = parseCost(item.cost);
+                const amount = parsed.amount;
+                if (!amount) return "";
+                if (amount.toLowerCase() === "free") return "Free";
+                return `$${amount}`;
+              })()}
+              onChangeText={(text) => {
+                const cleanedText = text.replace(/\$/g, "");
+                handleCostAmountChange(index, cleanedText);
+              }}
+              // Format cost only after editing is finished. This allows fluid typing of decimals without forcing formatting mid-edit.
+              onBlur={() => handleCostAmountBlur(index)}
+            />
+            <Dropdown
+              style={[styles.costUnitDropdown, !parseCost(item.cost).unit && styles.requiredDropdown]}
+              data={costUnitOptions}
+              labelField='label'
+              valueField='value'
+              placeholder='Unit *'
+              placeholderStyle={{ color: "#f44336" }}
+              value={parseCost(item.cost).unit || null}
+              onChange={(item) => handleCostUnitChange(index, item)}
+              containerStyle={styles.dropdownContainer}
+              itemTextStyle={styles.dropdownItemText}
+              selectedTextStyle={styles.dropdownSelectedText}
+              activeColor='#f0f0f0'
+            />
+            <Text style={styles.dollar}>💰</Text>
+            <TextInput
+              style={styles.bountyInput}
+              placeholder='Total Bounty'
+              keyboardType='decimal-pad'
+              value={(() => {
+                const parsed = parseBounty(item.bounty);
+                const amount = parsed.amount;
+                if (!amount) return "";
+                if (amount.toLowerCase() === "free") return "Free";
+                return `$${amount}`;
+              })()}
+              onChangeText={(text) => {
+                const cleanedText = text.replace(/\$/g, "");
+                handleBountyAmountChange(index, cleanedText);
+              }}
+              // Format bounty only after editing is finished
+              onBlur={() => handleBountyAmountBlur(index)}
+            />
+            <TextInput
+              style={styles.bountyInput}
+              placeholder='Available Quantity'
+              keyboardType='numeric'
+              value={item.quantity || ""}
+              onChangeText={(text) => handleInputChange(index, "quantity", text)}
+            />
+            <TouchableOpacity onPress={() => deleteExpertise(index)}>
+              <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
+            </TouchableOpacity>
           </View>
         </View>
       ))}
@@ -970,7 +955,7 @@ const styles = StyleSheet.create({
 export const validateExpertise = (expertise) => {
   return expertise.every((e) => {
     if (!e.name) return true; // skip empty entries
-    const unit = e.cost ? e.cost.match(/\/(hr|day|week|2 weeks|month|quarter|year)$|(\btotal\b)/i) : null;
+    const unit = e.cost ? e.cost.match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$|(\btotal\b)/i) : null;
     return !!unit;
   });
 };

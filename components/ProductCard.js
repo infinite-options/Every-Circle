@@ -186,7 +186,7 @@ function formatProductCostLabel(service) {
   if (costStr.toLowerCase().endsWith("total")) {
     unitSuffix = " total";
   } else {
-    const unitMatch = costStr.match(/\/(hr|day|week|2 weeks|month|quarter|year)$/i);
+    const unitMatch = costStr.match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$/i);
     if (unitMatch) {
       unitSuffix = `/${unitMatch[1]}`;
     }

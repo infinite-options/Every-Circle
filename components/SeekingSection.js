@@ -38,6 +38,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
   // Bounty unit options for dropdown
   const bountyUnitOptions = [
     { label: "total", value: "total" },
+    { label: "/each", value: "each" },
     { label: "/hr", value: "hr" },
     { label: "/day", value: "day" },
     { label: "/week", value: "week" },
@@ -478,13 +479,13 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
           </TouchableOpacity>
         </View>
         <View style={styles.toggleContainer}>
-                  <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
-                    <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
-                      <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
-                  </TouchableOpacity>
-                </View>
+          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
+            <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
+            <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {wishes.map((item, index) => (
@@ -499,33 +500,23 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
           <View style={styles.rowHeader}>
             <Text style={styles.label}>Seeking #{index + 1}</Text>
             <View style={styles.toggleContainer}>
-                          <TouchableOpacity
-                            onPress={() => toggleEntryVisibility(index)}
-                            style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}
-                          >
-                            <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => toggleEntryVisibility(index)}
-                            style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}
-                          >
-                            <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
-                          </TouchableOpacity>
-                        </View>
+              <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
+                <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}>
+                <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
             <ProfileItemImageColumn
               darkMode={darkMode}
-              defaultSection="seeking"
+              defaultSection='seeking'
               displayUri={getWishDisplayUri(item)}
               imageError={!!item._wishImageError}
               onImageError={() => handleInputChange(index, "_wishImageError", true)}
-              toolsVisible={
-                item.profile_wish_image_is_public === 1 ||
-                item.profile_wish_image_is_public === "1" ||
-                item.profile_wish_image_is_public === true
-              }
+              toolsVisible={item.profile_wish_image_is_public === 1 || item.profile_wish_image_is_public === "1" || item.profile_wish_image_is_public === true}
               onShowTools={() => handleInputChange(index, "profile_wish_image_is_public", 1)}
               onHideTools={() => handleInputChange(index, "profile_wish_image_is_public", 0)}
               onUploadNative={() => pickWishImage(index)}
@@ -553,10 +544,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               <Text style={styles.dateTimeLabel}>Start Date and Time</Text>
               {DateTimePicker ? (
                 <>
-                  <TouchableOpacity
-                    style={styles.dateTimeButton}
-                    onPress={() => setActivePicker({ index, field: "start", mode: "date" })}
-                  >
+                  <TouchableOpacity style={styles.dateTimeButton} onPress={() => setActivePicker({ index, field: "start", mode: "date" })}>
                     <Text style={styles.dateTimeButtonText}>
                       {(() => {
                         const { date } = parseDateTime(item.profile_wish_start || "");
@@ -583,7 +571,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               ) : Platform.OS === "web" ? (
                 <View style={styles.webDateTimeInputWrapper}>
                   <input
-                    type="datetime-local"
+                    type='datetime-local'
                     style={styles.webDateTimeInput}
                     value={toDateTimeLocalValue(item.profile_wish_start || "")}
                     onChange={(e) => handleDateTimeInputChange(index, "start", fromDateTimeLocalValue(e.target.value))}
@@ -592,7 +580,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               ) : (
                 <TextInput
                   style={styles.dateTimeTextInput}
-                  placeholder="mm-dd-yyyy hh:mm"
+                  placeholder='mm-dd-yyyy hh:mm'
                   value={item.profile_wish_start ? formatDateTimeForDisplay(item.profile_wish_start) : ""}
                   onChangeText={(text) => handleInputChange(index, "profile_wish_start", text)}
                 />
@@ -602,10 +590,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               <Text style={styles.dateTimeLabel}>End Date and Time</Text>
               {DateTimePicker ? (
                 <>
-                  <TouchableOpacity
-                    style={styles.dateTimeButton}
-                    onPress={() => setActivePicker({ index, field: "end", mode: "date" })}
-                  >
+                  <TouchableOpacity style={styles.dateTimeButton} onPress={() => setActivePicker({ index, field: "end", mode: "date" })}>
                     <Text style={styles.dateTimeButtonText}>
                       {(() => {
                         const { date } = parseDateTime(item.profile_wish_end || "");
@@ -632,7 +617,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               ) : Platform.OS === "web" ? (
                 <View style={styles.webDateTimeInputWrapper}>
                   <input
-                    type="datetime-local"
+                    type='datetime-local'
                     style={styles.webDateTimeInput}
                     value={toDateTimeLocalValue(item.profile_wish_end || "")}
                     onChange={(e) => handleDateTimeInputChange(index, "end", fromDateTimeLocalValue(e.target.value))}
@@ -641,7 +626,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               ) : (
                 <TextInput
                   style={styles.dateTimeTextInput}
-                  placeholder="mm-dd-yyyy hh:mm"
+                  placeholder='mm-dd-yyyy hh:mm'
                   value={item.profile_wish_end ? formatDateTimeForDisplay(item.profile_wish_end) : ""}
                   onChangeText={(text) => handleInputChange(index, "profile_wish_end", text)}
                 />
@@ -663,105 +648,99 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
                   style={[styles.modeCheckbox, (item.profile_wish_mode || "").toLowerCase() === "virtual" && styles.modeCheckboxSelected]}
                   onPress={() => handleInputChange(index, "profile_wish_mode", item.profile_wish_mode === "Virtual" ? "" : "Virtual")}
                 >
-                  <Text style={[styles.modeCheckboxText, (item.profile_wish_mode || "").toLowerCase() === "virtual" && styles.modeCheckboxTextSelected]}>
-                    Virtual
-                  </Text>
+                  <Text style={[styles.modeCheckboxText, (item.profile_wish_mode || "").toLowerCase() === "virtual" && styles.modeCheckboxTextSelected]}>Virtual</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.modeCheckbox, (item.profile_wish_mode || "").toLowerCase() === "in-person" && styles.modeCheckboxSelected]}
                   onPress={() => handleInputChange(index, "profile_wish_mode", item.profile_wish_mode === "In-Person" ? "" : "In-Person")}
                 >
-                  <Text style={[styles.modeCheckboxText, (item.profile_wish_mode || "").toLowerCase() === "in-person" && styles.modeCheckboxTextSelected]}>
-                    In-Person
-                  </Text>
+                  <Text style={[styles.modeCheckboxText, (item.profile_wish_mode || "").toLowerCase() === "in-person" && styles.modeCheckboxTextSelected]}>In-Person</Text>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
 
           {/* DateTimePicker - only render when this wish's picker is active */}
-          {DateTimePicker &&
-            activePicker &&
-            activePicker.index === index && (
-              <DateTimePicker
-                value={getPickerValue(activePicker.index, activePicker.field)}
-                mode={activePicker.mode}
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                onChange={(_, selectedDate) => {
-                  if (selectedDate) {
-                    handleDateTimeChange(activePicker.index, activePicker.field, activePicker.mode, selectedDate);
-                  } else {
-                    setActivePicker(null);
-                  }
-                }}
-              />
-            )}
+          {DateTimePicker && activePicker && activePicker.index === index && (
+            <DateTimePicker
+              value={getPickerValue(activePicker.index, activePicker.field)}
+              mode={activePicker.mode}
+              display={Platform.OS === "ios" ? "spinner" : "default"}
+              onChange={(_, selectedDate) => {
+                if (selectedDate) {
+                  handleDateTimeChange(activePicker.index, activePicker.field, activePicker.mode, selectedDate);
+                } else {
+                  setActivePicker(null);
+                }
+              }}
+            />
+          )}
 
           {/*Cost Row*/}
           <View style={styles.amountRow}>
-  <Text style={styles.costLabel}>Cost</Text>
-  <TextInput
-    style={styles.costAmountInput}
-    keyboardType={(() => {
-      const parsed = parseCost(item.cost);
-      const amount = parsed.amount;
-      return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "decimal-pad";
-    })()}
-    value={(() => {
-      const parsed = parseCost(item.cost);
-      const amount = parsed.amount;
-      if (!amount) return "";
-      if (amount.toLowerCase() === "free") return "Free";
-      return `$${amount}`;
-    })()}
-    onChangeText={(text) => {
-      const cleanedText = text.replace(/\$/g, "");
-      handleCostAmountChange(index, cleanedText);
-    }}
-    onBlur={() => handleCostAmountBlur(index)}
-  />
-  <Dropdown
-    style={[styles.costUnitDropdown, !parseCost(item.cost).unit && styles.requiredDropdown]}
-    data={bountyUnitOptions}
-    labelField='label'
-    valueField='value'
-    placeholder='Unit *'
-    placeholderStyle={{ color: '#f44336', fontSize: 14 }}
-    value={parseCost(item.cost).unit || null}
-    onChange={(item) => handleCostUnitChange(index, item)}
-    containerStyle={styles.dropdownContainer}
-    itemTextStyle={styles.dropdownItemText}
-    selectedTextStyle={styles.dropdownSelectedText}
-    activeColor='#f0f0f0'
-  />
-  <Text style={styles.dollar}>💰</Text>
-  <TextInput
-    style={styles.bountyInput}
-    placeholder='Bounty'
-    keyboardType='decimal-pad'
-    value={(() => {
-      const parsed = parseBounty(item.amount);
-      const amount = parsed.amount;
-      if (!amount) return "";
-      if (amount.toLowerCase() === "free") return "Free";
-      return `$${amount}`;
-    })()}
-    onChangeText={(text) => {
-      const cleanedText = text.replace(/\$/g, "");
-      handleBountyAmountChange(index, cleanedText);
-    }}
-    onBlur={() => handleBountyAmountBlur(index)}
-  />
-  <TextInput
-    style={styles.bountyInput}
-    placeholder="Qty"
-    keyboardType="numeric"
-    value={item.profile_wish_quantity || ""}
-    onChangeText={(text) => handleInputChange(index, "profile_wish_quantity", text)}
-  />
-  <TouchableOpacity onPress={() => deleteWish(index)}>
-    <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
-  </TouchableOpacity>
+            <Text style={styles.costLabel}>Cost</Text>
+            <TextInput
+              style={styles.costAmountInput}
+              keyboardType={(() => {
+                const parsed = parseCost(item.cost);
+                const amount = parsed.amount;
+                return amount && (amount.toLowerCase() === "free" || !/^\d/.test(amount.trim())) ? "default" : "decimal-pad";
+              })()}
+              value={(() => {
+                const parsed = parseCost(item.cost);
+                const amount = parsed.amount;
+                if (!amount) return "";
+                if (amount.toLowerCase() === "free") return "Free";
+                return `$${amount}`;
+              })()}
+              onChangeText={(text) => {
+                const cleanedText = text.replace(/\$/g, "");
+                handleCostAmountChange(index, cleanedText);
+              }}
+              onBlur={() => handleCostAmountBlur(index)}
+            />
+            <Dropdown
+              style={[styles.costUnitDropdown, !parseCost(item.cost).unit && styles.requiredDropdown]}
+              data={bountyUnitOptions}
+              labelField='label'
+              valueField='value'
+              placeholder='Unit *'
+              placeholderStyle={{ color: "#f44336", fontSize: 14 }}
+              value={parseCost(item.cost).unit || null}
+              onChange={(item) => handleCostUnitChange(index, item)}
+              containerStyle={styles.dropdownContainer}
+              itemTextStyle={styles.dropdownItemText}
+              selectedTextStyle={styles.dropdownSelectedText}
+              activeColor='#f0f0f0'
+            />
+            <Text style={styles.dollar}>💰</Text>
+            <TextInput
+              style={styles.bountyInput}
+              placeholder='Total Bounty'
+              keyboardType='decimal-pad'
+              value={(() => {
+                const parsed = parseBounty(item.amount);
+                const amount = parsed.amount;
+                if (!amount) return "";
+                if (amount.toLowerCase() === "free") return "Free";
+                return `$${amount}`;
+              })()}
+              onChangeText={(text) => {
+                const cleanedText = text.replace(/\$/g, "");
+                handleBountyAmountChange(index, cleanedText);
+              }}
+              onBlur={() => handleBountyAmountBlur(index)}
+            />
+            <TextInput
+              style={styles.bountyInput}
+              placeholder='Desired Quantity'
+              keyboardType='numeric'
+              value={item.profile_wish_quantity || ""}
+              onChangeText={(text) => handleInputChange(index, "profile_wish_quantity", text)}
+            />
+            <TouchableOpacity onPress={() => deleteWish(index)}>
+              <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
+            </TouchableOpacity>
           </View>
         </View>
       ))}
@@ -986,7 +965,7 @@ const styles = StyleSheet.create({
   cardSpacing: {
     marginTop: 16,
   },
-  
+
   costInput: {
     borderWidth: 1,
     borderColor: "#ccc",
@@ -1001,20 +980,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginRight: 8,
   },
-  
+
   costLabel: {
     fontWeight: "bold",
     marginRight: 5,
   },
   costAmountInput: {
-  borderWidth: 1,
-  borderColor: "#ccc",
-  padding: 8,
-  borderRadius: 5,
-  backgroundColor: "#fff",
-  width: "25%",
-  height: 40,
-  textAlignVertical: "center",
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    width: "25%",
+    height: 40,
+    textAlignVertical: "center",
   },
   costUnitDropdown: {
     borderWidth: 1,
@@ -1027,9 +1006,9 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     minHeight: 40,
   },
-  dollar: { 
-    fontSize: 20, 
-    marginHorizontal: 5 
+  dollar: {
+    fontSize: 20,
+    marginHorizontal: 5,
   },
   bountyInput: {
     borderWidth: 1,
@@ -1052,7 +1031,7 @@ const styles = StyleSheet.create({
 export const validateSeeking = (wishes) => {
   return wishes.every((w) => {
     if (!w.helpNeeds) return true; // skip empty entries
-    const unit = w.cost ? w.cost.match(/\/(hr|day|week|2 weeks|month|quarter|year)$|(\btotal\b)/i) : null;
+    const unit = w.cost ? w.cost.match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$|(\btotal\b)/i) : null;
     return !!unit;
   });
 };

@@ -53,6 +53,13 @@ const formatDateTimeForDisplay = (value) => {
   return value;
 };
 
+/** Person who will fulfill the wish vs person who submitted the response. */
+function getWishResponseAcceptProfileIds(response) {
+  const recommendedProfileUid = String(response?.profile_personal_uid || response?.wr_recommended_id || "").trim();
+  const recommenderProfileUid = String(response?.wr_responder_id || response?.responder_id || "").trim();
+  return { recommendedProfileUid, recommenderProfileUid };
+}
+
 const WishResponsesScreenContent = ({ route, navigation }) => {
   const { wishData, profileData, profile_uid, profileState } = route.params;
   const { darkMode } = useDarkMode();
@@ -82,7 +89,7 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
   const [showPaymentFailure, setShowPaymentFailure] = useState(false);
   const [paymentError, setPaymentError] = useState(null);
   const [customerUid, setCustomerUid] = useState(null);
-  const [pendingAccept, setPendingAccept] = useState(null); // { responderProfileUid, wishResponseUid, subtotal }
+  const [pendingAccept, setPendingAccept] = useState(null); // { recommendedProfileUid, recommenderProfileUid, wishResponseUid, subtotal }
 
   // Create user object for MiniCard
   const userForMiniCard = {
@@ -141,12 +148,26 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
       if (!buyerUid) throw new Error("User ID not found");
       if (!pendingAccept) throw new Error("No pending acceptance found");
 
-      const { responderProfileUid, wishResponseUid, subtotal, escrow, bountyAmount, quantity, costAmount, costValue } = pendingAccept;
+      const { recommendedProfileUid, recommenderProfileUid, wishResponseUid, subtotal, escrow, bountyAmount, quantity, costAmount, costValue } = pendingAccept;
 
       const processingFee = subtotal * 0.03;
       const totalAmount = subtotal + processingFee;
 
-      await recordTransaction(buyerUid, paymentIntent, subtotal, responderProfileUid, wishResponseUid, processingFee, totalAmount, escrow, bountyAmount, quantity, costAmount, costValue);
+      await recordTransaction(
+        buyerUid,
+        paymentIntent,
+        subtotal,
+        recommendedProfileUid,
+        wishResponseUid,
+        processingFee,
+        totalAmount,
+        escrow,
+        bountyAmount,
+        quantity,
+        costAmount,
+        costValue,
+        recommenderProfileUid,
+      );
 
       Alert.alert("Success", "Response accepted and payment processed successfully!");
       await fetchWishResponses();
@@ -246,28 +267,45 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
     }
   };
 
-  const recordTransaction = async (buyerUid, paymentIntent, amount, responderProfileUid, wishResponseUid, processingFee = 0, totalAmountPaid = null, transactionInEscrow = false, bountyAmount = null, quantity = 1, costAmount = 0, costValue = 0) => {
+  const recordTransaction = async (
+    buyerUid,
+    paymentIntent,
+    amount,
+    recommendedProfileUid,
+    wishResponseUid,
+    processingFee = 0,
+    totalAmountPaid = null,
+    transactionInEscrow = false,
+    bountyAmount = null,
+    quantity = 1,
+    costAmount = 0,
+    costValue = 0,
+    recommenderProfileUid = null,
+  ) => {
     try {
       console.log("WishResponsesScreen - Recording transaction...");
       console.log("WishResponsesScreen - Buyer UID:", buyerUid);
-      console.log("WishResponsesScreen - Responder Profile UID (user_profile_id):", responderProfileUid);
+      console.log("WishResponsesScreen - Recommended Profile UID:", recommendedProfileUid);
+      console.log("WishResponsesScreen - Recommender Profile UID:", recommenderProfileUid);
       console.log("WishResponsesScreen - Payment Intent:", paymentIntent);
       console.log("WishResponsesScreen - Wish Response UID (ti_bs_id):", wishResponseUid);
       console.log("WishResponsesScreen - Amount (bounty):", amount);
       console.log("WishResponsesScreen - Transaction Type:", "wish_response_acceptance");
 
       // Format transaction data to match the API's expected format
-      // For wish response acceptance, use responder's profile UID as business_id
+      // For wish response acceptance, use recommended person's profile UID as business_id
       const subtotal = parseFloat(amount);
       const fee = parseFloat(processingFee) || 0;
       const totalPaid = totalAmountPaid !== null ? parseFloat(totalAmountPaid) : subtotal + fee;
 
       const roundedFee = Math.round(fee * 100) / 100;
       const roundedSubtotal = Math.round(subtotal * 100) / 100;
+      const recommendedId = String(recommendedProfileUid || "").trim();
+      const recommenderId = String(recommenderProfileUid || recommendedProfileUid || "").trim();
 
       const transactionData = {
         profile_id: buyerUid,
-        business_id: responderProfileUid, // Use responder's profile UID as business_id
+        business_id: recommendedId,
         stripe_payment_intent: paymentIntent,
         total_amount_paid: totalPaid,
         total_costs: roundedSubtotal,
@@ -288,7 +326,8 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
             quantity: Number(quantity) || 1,
             cost: costAmount != null ? parseFloat(costAmount) : 0,
             item_cost: costValue != null ? parseFloat(costValue) : 0,
-            recommender_profile_id: responderProfileUid, // Use responder's profile UID
+            recommended_profile_id: recommendedId,
+            recommender_profile_id: recommenderId,
             ti_bs_sales_tax: 0,
           },
         ],
@@ -397,9 +436,9 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
 
     const { subtotal, totalWithFee } = details;
     const wishResponseUid = response.wish_response_uid;
-    const responderProfileUid = response.profile_personal_uid;
+    const { recommendedProfileUid, recommenderProfileUid } = getWishResponseAcceptProfileIds(response);
 
-    if (!wishResponseUid || !responderProfileUid) {
+    if (!wishResponseUid || !recommendedProfileUid || !recommenderProfileUid) {
       Alert.alert("Error", "Invalid response data.");
       setAccepting(null);
       setAcceptModalResponse(null);
@@ -408,7 +447,8 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
     }
 
     setPendingAccept({
-      responderProfileUid,
+      recommendedProfileUid,
+      recommenderProfileUid,
       wishResponseUid,
       subtotal,
       totalWithFee,
@@ -474,24 +514,43 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         throw new Error("Invalid payment intent. Please try again.");
       }
 
-      // Get the wish response UID and responder profile UID
+      // Get the wish response UID and profile UIDs for recommended vs recommender
       const wishResponseUid = response.wish_response_uid;
-      const responderProfileUid = response.profile_personal_uid;
+      const { recommendedProfileUid, recommenderProfileUid } = getWishResponseAcceptProfileIds(response);
 
       console.log("WishResponsesScreen - Wish Response UID (ti_bs_id):", wishResponseUid);
-      console.log("WishResponsesScreen - Responder Profile UID (user_profile_id):", responderProfileUid);
+      console.log("WishResponsesScreen - Recommended Profile UID:", recommendedProfileUid);
+      console.log("WishResponsesScreen - Recommender Profile UID:", recommenderProfileUid);
 
       if (!wishResponseUid) {
         throw new Error("Wish Response ID not found");
       }
 
-      if (!responderProfileUid) {
-        throw new Error("Responder profile ID not found");
+      if (!recommendedProfileUid) {
+        throw new Error("Recommended profile ID not found");
+      }
+
+      if (!recommenderProfileUid) {
+        throw new Error("Recommender profile ID not found");
       }
 
       // Use subtotal for transaction record (totalWithFee includes 3% processing fee)
       const processingFee = subtotal * 0.03;
-      await recordTransaction(buyerUid, paymentIntentId, subtotal, responderProfileUid, wishResponseUid, processingFee, totalWithFee, details.escrow, details.bountyAmount, details.quantity, details.costAmount, details.costValue);
+      await recordTransaction(
+        buyerUid,
+        paymentIntentId,
+        subtotal,
+        recommendedProfileUid,
+        wishResponseUid,
+        processingFee,
+        totalWithFee,
+        details.escrow,
+        details.bountyAmount,
+        details.quantity,
+        details.costAmount,
+        details.costValue,
+        recommenderProfileUid,
+      );
 
       Alert.alert("Success", "Response accepted and payment processed successfully!");
 
