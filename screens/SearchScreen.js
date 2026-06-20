@@ -32,6 +32,8 @@ import { getHeaderColors } from "../config/headerColors";
 import { isWishEnded } from "../utils/wishUtils";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 import { fetchSearchSuggestions, SEARCH_SUGGEST_MIN_LENGTH } from "../utils/searchSuggestions";
+import MiniCard from "../components/MiniCard";
+import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
 function NoBountyIcon({ darkMode, muted }) {
   return (
@@ -138,6 +140,58 @@ function locationFieldsFromApi(row) {
 function LocationBoostIcon({ darkMode, distanceMiles }) {
   const label = distanceMiles != null ? `Boosted: within ${distanceMiles.toFixed(1)} miles of your home` : "Boosted: near your home address";
   return <Ionicons name='navigate' size={14} color={darkMode ? "#7DD3FC" : "#0EA5E9"} style={{ marginLeft: 6 }} accessibilityLabel={label} />;
+}
+
+const SEARCH_SCORE_DETAIL_LABELS = {
+  token_name: "Name Token",
+  token_tagline: "Tagline Token",
+  token_bio: "Bio Token",
+  token_tag: "Tag Token",
+  phrase_name: "Name Phrase",
+  phrase_tag: "Tag Phrase",
+};
+
+const SEARCH_SCORE_IGNORED_KEYS = new Set([
+  "semantic_score",
+  "lexical_fuzzy_score",
+  "total_lexical_boost",
+  "final_score",
+  "rescore_mode",
+  "rrf_k",
+  "rrf_rank_semantic",
+  "rrf_rank_lexical",
+  "rrf_raw",
+]);
+
+/** Inline score suffix for business search rows, e.g. "(Score 0.984 Sem: 0.222, Lex 0.273, Tag Token 0.220)". */
+function formatBusinessSearchScoreSuffix(item) {
+  const breakdown = item?.score_breakdown;
+  const segments = [];
+
+  if (Number.isFinite(item?.score)) {
+    segments.push(`Score ${Number(item.score).toFixed(3)}`);
+  } else if (breakdown && Number.isFinite(breakdown.final_score)) {
+    segments.push(`Score ${Number(breakdown.final_score).toFixed(3)}`);
+  }
+
+  if (breakdown && typeof breakdown === "object") {
+    if (Number.isFinite(breakdown.semantic_score)) {
+      segments.push(`Sem: ${Number(breakdown.semantic_score).toFixed(3)}`);
+    }
+    if (Number.isFinite(breakdown.lexical_fuzzy_score)) {
+      segments.push(`Lex ${Number(breakdown.lexical_fuzzy_score).toFixed(3)}`);
+    }
+
+    Object.entries(breakdown)
+      .filter(([key, value]) => SEARCH_SCORE_DETAIL_LABELS[key] && !SEARCH_SCORE_IGNORED_KEYS.has(key) && Number.isFinite(value) && Number(value) > 0)
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .forEach(([key, value]) => {
+        segments.push(`${SEARCH_SCORE_DETAIL_LABELS[key]} ${Number(value).toFixed(3)}`);
+      });
+  }
+
+  if (!segments.length) return null;
+  return `(${segments.join(", ")})`;
 }
 
 /** Merge API business_details bounty with any values already on the search row (never drop the higher amount). */
@@ -950,6 +1004,7 @@ export default function SearchScreen({ route }) {
         };
 
         const mappedBusinesses = businessResults.map((b, i) => ({
+          ...b,
           id: `${b.business_uid || i}`,
           business_uid: b.business_uid ? String(b.business_uid).trim() : null,
           company: sanitizeText(b.business_name || b.company) || "Unknown Business",
@@ -974,53 +1029,53 @@ export default function SearchScreen({ route }) {
         }));
 
         const mappedExpertise = expertiseResults.map((item, i) => ({
-            id: `${item.profile_expertise_uid || i}`,
-            company: item.profile_expertise_title || "Untitled Expertise",
-            rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
-            hasPriceTag: false,
-            hasX: false,
-            hasDollar: false,
-            business_short_bio: item.profile_expertise_description || "",
-            business_tag_line: item.profile_expertise_title || "",
-            tags: [],
-            score: item.score || 0,
-            score_breakdown: item.score_breakdown || null,
-            itemType: "expertise",
-            profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
-            ...locationFieldsFromApi(item),
-            expertiseData: {
-              title: item.profile_expertise_title,
-              description: item.profile_expertise_description,
-              details: item.profile_expertise_details,
-              bounty: item.profile_expertise_bounty,
-              cost: item.profile_expertise_cost,
-              quantity: item.profile_expertise_quantity || item.quantity,
-              profile_expertise_quantity: item.profile_expertise_quantity || item.quantity,
-              expertise_uid: item.profile_expertise_uid,
-              profile_expertise_start: item.profile_expertise_start || "",
-              profile_expertise_end: item.profile_expertise_end || "",
-              profile_expertise_location: item.profile_expertise_location || "",
-              profile_expertise_mode: item.profile_expertise_mode || "",
-              profile_expertise_image: item.profile_expertise_image || "",
-              profile_expertise_image_is_public: item.profile_expertise_image_is_public,
-              profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
-            },
-            profileData: {
-              firstName: item.profile_personal_first_name || "",
-              lastName: item.profile_personal_last_name || "",
-              email: item.user_email_id || "",
-              phone: item.profile_personal_phone_number || "",
-              image: item.profile_personal_image || "",
-              tagLine: item.profile_personal_tag_line || "",
-              city: item.profile_personal_city || "",
-              state: item.profile_personal_state || "",
-              emailIsPublic: item.profile_personal_email_is_public == 1,
-              phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
-              imageIsPublic: item.profile_personal_image_is_public == 1,
-              tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
-              locationIsPublic: item.profile_personal_location_is_public == 1,
-            },
-          }));
+          id: `${item.profile_expertise_uid || i}`,
+          company: item.profile_expertise_title || "Untitled Expertise",
+          rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
+          hasPriceTag: false,
+          hasX: false,
+          hasDollar: false,
+          business_short_bio: item.profile_expertise_description || "",
+          business_tag_line: item.profile_expertise_title || "",
+          tags: [],
+          score: item.score || 0,
+          score_breakdown: item.score_breakdown || null,
+          itemType: "expertise",
+          profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
+          ...locationFieldsFromApi(item),
+          expertiseData: {
+            title: item.profile_expertise_title,
+            description: item.profile_expertise_description,
+            details: item.profile_expertise_details,
+            bounty: item.profile_expertise_bounty,
+            cost: item.profile_expertise_cost,
+            quantity: item.profile_expertise_quantity || item.quantity,
+            profile_expertise_quantity: item.profile_expertise_quantity || item.quantity,
+            expertise_uid: item.profile_expertise_uid,
+            profile_expertise_start: item.profile_expertise_start || "",
+            profile_expertise_end: item.profile_expertise_end || "",
+            profile_expertise_location: item.profile_expertise_location || "",
+            profile_expertise_mode: item.profile_expertise_mode || "",
+            profile_expertise_image: item.profile_expertise_image || "",
+            profile_expertise_image_is_public: item.profile_expertise_image_is_public,
+            profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
+          },
+          profileData: {
+            firstName: item.profile_personal_first_name || "",
+            lastName: item.profile_personal_last_name || "",
+            email: item.user_email_id || "",
+            phone: item.profile_personal_phone_number || "",
+            image: item.profile_personal_image || "",
+            tagLine: item.profile_personal_tag_line || "",
+            city: item.profile_personal_city || "",
+            state: item.profile_personal_state || "",
+            emailIsPublic: item.profile_personal_email_is_public == 1,
+            phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
+            imageIsPublic: item.profile_personal_image_is_public == 1,
+            tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
+            locationIsPublic: item.profile_personal_location_is_public == 1,
+          },
+        }));
 
         const normalizeByType = (items) => {
           if (!items.length) return [];
@@ -1331,29 +1386,26 @@ export default function SearchScreen({ route }) {
           return str === "." ? "" : str;
         };
 
-        list = resultsArray.map((b, i) => {
-          console.log("All image fields:", b.business_profile_img, b.business_images_url, b.business_favorite_image, b.business_name);
-          console.log("Business profile img:", b.business_profile_img, b.business_name);
-          return {
-            id: `${b.business_uid || i}`,
-            business_uid: b.business_uid ? String(b.business_uid).trim() : null,
-            company: sanitizeText(b.business_name || b.company) || "Unknown Business",
-            business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
-            rating: typeof b.rating_star === "number" ? b.rating_star : null,
-            hasPriceTag: b.has_price_tag || false,
-            hasX: b.has_x || false,
-            hasDollar: b.has_dollar_sign || false,
-            max_bounty: parseSearchMaxBounty(b.max_bounty ?? b.business_max_bounty),
-            business_short_bio: sanitizeText(b.business_short_bio),
-            business_tag_line: sanitizeText(b.business_tag_line),
-            tags: b.tags || [],
-            score: b.score || 0,
-            score_breakdown: b.score_breakdown || null,
-            itemType: "businesses",
-            profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
-            ...locationFieldsFromApi(b),
-          };
-        });
+        list = resultsArray.map((b, i) => ({
+          ...b,
+          id: `${b.business_uid || i}`,
+          business_uid: b.business_uid ? String(b.business_uid).trim() : null,
+          company: sanitizeText(b.business_name || b.company) || "Unknown Business",
+          business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
+          rating: typeof b.rating_star === "number" ? b.rating_star : null,
+          hasPriceTag: b.has_price_tag || false,
+          hasX: b.has_x || false,
+          hasDollar: b.has_dollar_sign || false,
+          max_bounty: parseSearchMaxBounty(b.max_bounty ?? b.business_max_bounty),
+          business_short_bio: sanitizeText(b.business_short_bio),
+          business_tag_line: sanitizeText(b.business_tag_line),
+          tags: b.tags || [],
+          score: b.score || 0,
+          score_breakdown: b.score_breakdown || null,
+          itemType: "businesses",
+          profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
+          ...locationFieldsFromApi(b),
+        }));
 
         // Run tag search in parallel with main search — disabled for testing without businesstagsearch
         /*
@@ -1749,11 +1801,7 @@ export default function SearchScreen({ route }) {
             <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle, styles.wishTitleFlex]} numberOfLines={2}>
               {wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : ""}
             </Text>
-            {hasResponded && (
-              <Text style={[styles.wishRespondedFlag, darkMode && styles.darkWishRespondedFlag]}>
-                Responded{respondedDateLabel ? ` ${respondedDateLabel}` : ""}
-              </Text>
-            )}
+            {hasResponded && <Text style={[styles.wishRespondedFlag, darkMode && styles.darkWishRespondedFlag]}>Responded{respondedDateLabel ? ` ${respondedDateLabel}` : ""}</Text>}
           </View>
           {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
           {renderScoreBreakdown(item)}
@@ -1984,6 +2032,133 @@ export default function SearchScreen({ route }) {
     );
   };
 
+  const renderBusinessResultActions = (item) => (
+    <View style={styles.businessResultActions}>
+      <View style={styles.businessTableRatingCol}>
+        {Number.isFinite(item.rating) ? (
+          <View style={styles.ratingContainer}>
+            <Ionicons name='star' size={16} color='#FFCD3C' />
+            <Text style={[styles.ratingText, darkMode && styles.darkRatingText]}>
+              {item.rating.toFixed(1)}
+              {item.ratingCount > 0 ? ` (${item.ratingCount})` : ""}
+            </Text>
+          </View>
+        ) : (
+          <Text style={[styles.metricPlaceholder, darkMode && styles.darkMetricPlaceholder]}>—</Text>
+        )}
+      </View>
+
+      <View style={styles.businessTableBountyCol}>
+        {(() => {
+          const hasProductDetail = item.product_count !== undefined;
+          const noProducts = hasProductDetail && (item.product_count === 0 || item.product_count == null);
+          if (noProducts) {
+            return <NoBountyIcon darkMode={darkMode} muted />;
+          }
+          const hasBounty = getBusinessBountySortValue(item) != null;
+          return hasBounty ? <Text style={[styles.bountyEmojiIcon, styles.bountyEmojiIconCompact]}>💰</Text> : <NoBountyIcon darkMode={darkMode} />;
+        })()}
+      </View>
+
+      <View style={styles.businessTableLevelCol}>
+        {(() => {
+          const reviewCount = Number(item.ratingCount);
+          const hasBusinessReviews = Number.isFinite(reviewCount) && reviewCount > 0;
+          const iconTint = hasBusinessReviews ? (darkMode ? "#ffffff" : "#000000") : darkMode ? "#5a5a5a" : "#b0b0b0";
+          const wrapOpacity = hasBusinessReviews ? 1 : 0.5;
+          return (
+            <TouchableOpacity
+              style={[styles.levelButton, { opacity: wrapOpacity }]}
+              onPress={(e) => {
+                e.stopPropagation();
+                navigation.navigate("SearchTab", {
+                  centerCompany: {
+                    id: item.id,
+                    name: item.company,
+                    rating: item.rating,
+                  },
+                });
+              }}
+            >
+              <View style={{ position: "relative" }}>
+                <Image source={require("../assets/connect.png")} style={{ width: 22, height: 22, tintColor: iconTint }} />
+                {item.connection_degree != null && (
+                  <View style={[styles.connectionBadge, !hasBusinessReviews && { opacity: 0.85 }]}>
+                    <Text style={[styles.connectionBadgeText, !hasBusinessReviews && { color: darkMode ? "#888" : "#666" }]}>{item.connection_degree}</Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+          );
+        })()}
+      </View>
+
+      {(item.hasBounty || item.hasX || item.hasPriceTag || item.hasDollar) && (
+        <View style={styles.businessDemoExtras}>
+          {item.hasBounty && (
+            <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
+              <Text style={styles.bountyEmojiIcon}>💰</Text>
+            </TouchableOpacity>
+          )}
+          {item.hasX && (
+            <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
+              <NoBountyIcon darkMode={darkMode} />
+            </TouchableOpacity>
+          )}
+          {item.hasPriceTag && (
+            <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
+              <Text style={[styles.percentSymbol, darkMode && styles.darkPercentSymbol]}>:%</Text>
+            </TouchableOpacity>
+          )}
+          {item.hasDollar && (
+            <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
+              <View style={[styles.moneyBagContainer, darkMode && styles.darkMoneyBagContainer]}>
+                <Text style={[styles.dollarSymbol, darkMode && styles.darkDollarSymbol]}>$</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </View>
+  );
+
+  const renderBusinessResultItem = (item, idx) => {
+    const miniCardBusiness = mapBusinessToMiniCard(item);
+    const scoreSuffix = formatBusinessSearchScoreSuffix(item);
+    const locationBoost =
+      item.location_boosted ? <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} /> : null;
+
+    return (
+      <TouchableOpacity
+        key={`${item.id}-${idx}`}
+        style={[styles.resultItem, darkMode && styles.darkResultItem]}
+        activeOpacity={0.7}
+        onPress={() => {
+          console.log("🏢 Navigating to profile for:", item.company, "ID:", item.id);
+          navigation.navigate("BusinessProfile", {
+            business_uid: resolveBusinessUid(item) || item.id,
+            returnTo: "Search",
+            searchState: getSearchStateForRestore(),
+          });
+        }}
+      >
+        <View style={styles.searchMiniCardWrap}>
+          {miniCardBusiness ? (
+            <MiniCard
+              business={miniCardBusiness}
+              embedded
+              nameSuffix={scoreSuffix}
+              headerAccessory={locationBoost}
+            />
+          ) : (
+            <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
+          )}
+        </View>
+        {renderBusinessResultActions(item)}
+      </TouchableOpacity>
+    );
+  };
+
   const renderResultItem = (item, idx) => {
     // If it's a wish/seeking item, use the special wish renderer
     if (item.itemType === "seeking" && item.wishData) {
@@ -1992,6 +2167,10 @@ export default function SearchScreen({ route }) {
     // If it's an expertise item, use the special expertise renderer
     if (item.itemType === "expertise" && item.expertiseData) {
       return renderExpertiseItem(item, idx);
+    }
+    // Business search results use MiniCard with score suffix and table columns
+    if (item.itemType === "businesses") {
+      return renderBusinessResultItem(item, idx);
     }
 
     // console.log(`🎨 Rendering item ${idx}:`, item.company, "ID:", item.id);
@@ -2002,13 +2181,7 @@ export default function SearchScreen({ route }) {
         activeOpacity={0.7}
         onPress={() => {
           console.log("🏢 Navigating to profile for:", item.company, "ID:", item.id, "Type:", item.itemType);
-          if (item.itemType === "businesses") {
-            navigation.navigate("BusinessProfile", {
-              business_uid: resolveBusinessUid(item) || item.id,
-              returnTo: "Search",
-              searchState: getSearchStateForRestore(),
-            });
-          } else if (item.itemType === "expertise" || item.itemType === "seeking") {
+          if (item.itemType === "expertise" || item.itemType === "seeking") {
             // Navigate to user profile if we have profile_uid
             if (item.profile_uid) {
               navigation.navigate("Profile", {
@@ -2034,17 +2207,9 @@ export default function SearchScreen({ route }) {
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
                 <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
-                {item.location_boosted && (item.itemType === "businesses" || !item.itemType) && (
-                  <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} />
-                )}
               </View>
               {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
               {renderScoreBreakdown(item)}
-              {/* Badge approach (kept commented until finalized)
-              <Text style={[styles.resultTypeBadge, darkMode && styles.darkResultTypeBadge]}>
-                {item.itemType === "businesses" ? "Business" : item.itemType === "expertise" ? "Offering" : "Seeking"}
-              </Text>
-              */}
               {(() => {
                 const tagLine = item.business_tag_line ? String(item.business_tag_line).trim() : "";
                 if (tagLine && tagLine !== "." && tagLine.length > 0) {
@@ -2055,93 +2220,7 @@ export default function SearchScreen({ route }) {
             </View>
           </View>
         </View>
-        <View style={styles.businessResultActions}>
-          <View style={styles.businessTableRatingCol}>
-            {Number.isFinite(item.rating) ? (
-              <View style={styles.ratingContainer}>
-                <Ionicons name='star' size={16} color='#FFCD3C' />
-                <Text style={[styles.ratingText, darkMode && styles.darkRatingText]}>
-                  {item.rating.toFixed(1)}
-                  {item.ratingCount > 0 ? ` (${item.ratingCount})` : ""}
-                </Text>
-              </View>
-            ) : (
-              <Text style={[styles.metricPlaceholder, darkMode && styles.darkMetricPlaceholder]}>—</Text>
-            )}
-          </View>
-
-          <View style={styles.businessTableBountyCol}>
-            {(() => {
-              const hasProductDetail = item.product_count !== undefined;
-              const noProducts = hasProductDetail && (item.product_count === 0 || item.product_count == null);
-              if (noProducts) {
-                return <NoBountyIcon darkMode={darkMode} muted />;
-              }
-              const hasBounty = getBusinessBountySortValue(item) != null;
-              return hasBounty ? <Text style={[styles.bountyEmojiIcon, styles.bountyEmojiIconCompact]}>💰</Text> : <NoBountyIcon darkMode={darkMode} />;
-            })()}
-          </View>
-
-          <View style={styles.businessTableLevelCol}>
-            {(() => {
-              const reviewCount = Number(item.ratingCount);
-              const hasBusinessReviews = Number.isFinite(reviewCount) && reviewCount > 0;
-              const iconTint = hasBusinessReviews ? (darkMode ? "#ffffff" : "#000000") : darkMode ? "#5a5a5a" : "#b0b0b0";
-              const wrapOpacity = hasBusinessReviews ? 1 : 0.5;
-              return (
-                <TouchableOpacity
-                  style={[styles.levelButton, { opacity: wrapOpacity }]}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    navigation.navigate("SearchTab", {
-                      centerCompany: {
-                        id: item.id,
-                        name: item.company,
-                        rating: item.rating,
-                      },
-                    });
-                  }}
-                >
-                  <View style={{ position: "relative" }}>
-                    <Image source={require("../assets/connect.png")} style={{ width: 22, height: 22, tintColor: iconTint }} />
-                    {item.connection_degree != null && (
-                      <View style={[styles.connectionBadge, !hasBusinessReviews && { opacity: 0.85 }]}>
-                        <Text style={[styles.connectionBadgeText, !hasBusinessReviews && { color: darkMode ? "#888" : "#666" }]}>{item.connection_degree}</Text>
-                      </View>
-                    )}
-                  </View>
-                </TouchableOpacity>
-              );
-            })()}
-          </View>
-
-          {(item.hasBounty || item.hasX || item.hasPriceTag || item.hasDollar) && (
-            <View style={styles.businessDemoExtras}>
-              {item.hasBounty && (
-                <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
-                  <Text style={styles.bountyEmojiIcon}>💰</Text>
-                </TouchableOpacity>
-              )}
-              {item.hasX && (
-                <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
-                  <NoBountyIcon darkMode={darkMode} />
-                </TouchableOpacity>
-              )}
-              {item.hasPriceTag && (
-                <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
-                  <Text style={[styles.percentSymbol, darkMode && styles.darkPercentSymbol]}>:%</Text>
-                </TouchableOpacity>
-              )}
-              {item.hasDollar && (
-                <TouchableOpacity style={styles.actionButton} onPress={(e) => e.stopPropagation()}>
-                  <View style={[styles.moneyBagContainer, darkMode && styles.darkMoneyBagContainer]}>
-                    <Text style={[styles.dollarSymbol, darkMode && styles.darkDollarSymbol]}>$</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-            </View>
-          )}
-        </View>
+        {renderBusinessResultActions(item)}
       </TouchableOpacity>
     );
   };
@@ -2292,8 +2371,8 @@ export default function SearchScreen({ route }) {
             <TouchableOpacity
               style={[styles.filterButtonOption, styles.mapButtonRight, darkMode && styles.darkFilterButtonOption]}
               onPress={() => navigation.navigate("EveryCircleMap")}
-              accessibilityLabel="View on map"
-              accessibilityRole="button"
+              accessibilityLabel='View on map'
+              accessibilityRole='button'
             >
               <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText]}>View on Map</Text>
             </TouchableOpacity>
@@ -2799,6 +2878,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 8,
     marginVertical: 4,
+  },
+  searchMiniCardWrap: {
+    flex: 1,
+    marginRight: 8,
+    minWidth: 0,
   },
 
   resultContent: { flex: 1 },

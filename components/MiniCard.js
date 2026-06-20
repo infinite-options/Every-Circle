@@ -26,7 +26,7 @@ function getDefaultProfileImageSource() {
   }
 }
 
-const MiniCard = ({ user, business, showRelationship = false }) => {
+const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null, headerAccessory = null, embedded = false }) => {
   const { darkMode } = useDarkMode();
 
   // --------------------------
@@ -75,16 +75,22 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
     }
 
     return (
-      <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
+      <View style={[styles.cardContainer, embedded && styles.embeddedCardContainer, darkMode && styles.darkCardContainer, embedded && darkMode && styles.darkEmbeddedCardContainer]}>
         {/* HEADER: Name and Tagline above image */}
         <View style={styles.headerContainer}>
           {/* BUSINESS NAME */}
           {(() => {
             const name = businessName || "Business";
-            if (name === "." || name.trim() === "") {
-              return <Text style={[styles.name, darkMode && styles.darkName]}>Business</Text>;
-            }
-            return <Text style={[styles.name, darkMode && styles.darkName]}>{name}</Text>;
+            const displayName = name === "." || name.trim() === "" ? "Business" : name;
+            return (
+              <View style={styles.nameRow}>
+                <Text style={[styles.name, embedded && styles.embeddedName, darkMode && styles.darkName, nameSuffix ? styles.nameWithSuffix : null]}>
+                  {displayName}
+                  {nameSuffix ? <Text style={[styles.nameSuffix, darkMode && styles.darkNameSuffix]}>{` ${nameSuffix}`}</Text> : null}
+                </Text>
+                {headerAccessory}
+              </View>
+            );
           })()}
 
           {/* TAGLINE */}
@@ -118,8 +124,7 @@ const MiniCard = ({ user, business, showRelationship = false }) => {
             {/* PHONE + AREA LOCATION (same line) */}
             {(() => {
               const showPhone = phoneIsPublic && isSafeForConditional(phone) && phone !== "." && phone.trim() !== "";
-              const showAreaLocation =
-                locationIsPublic && isSafeForConditional(location) && location !== "." && location.trim() !== "";
+              const showAreaLocation = locationIsPublic && isSafeForConditional(location) && location !== "." && location.trim() !== "";
 
               if (!showPhone && !showAreaLocation) return null;
 
@@ -379,6 +384,37 @@ const styles = StyleSheet.create({
   },
   darkProfileImage: {
     // tintColor moved to Image prop
+  },
+  embeddedCardContainer: {
+    padding: 0,
+    backgroundColor: "transparent",
+    borderWidth: 0,
+    marginVertical: 0,
+    borderRadius: 0,
+  },
+  darkEmbeddedCardContainer: {
+    backgroundColor: "transparent",
+    borderWidth: 0,
+  },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+  },
+  embeddedName: {
+    flex: 1,
+    flexShrink: 1,
+  },
+  nameWithSuffix: {
+    flexWrap: "wrap",
+  },
+  nameSuffix: {
+    fontSize: 12,
+    fontWeight: "normal",
+    color: "#666",
+  },
+  darkNameSuffix: {
+    color: "#aaaaaa",
   },
 });
 
