@@ -1,5 +1,5 @@
 // WishDetailScreen.js
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -10,10 +10,27 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import AppHeader from "../components/AppHeader";
 import { getHeaderColors, getHeaderColor, getDarkModeHeaderColor } from "../config/headerColors";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { TRANSACTIONS_ENDPOINT, PROFILE_WISH_INFO_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_ENDPOINT, PROFILE_WISH_INFO_ENDPOINT, PROFILE_WISH_RESPONSE_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
+
+const formatDateForDisplay = (value) => {
+  if (!value || typeof value !== "string" || value.trim() === "") return "";
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, y, m, d] = match;
+    return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`;
+  }
+  return trimmed;
+};
+
+const getRecommendedDisplayName = (response) => {
+  const first = String(response?.recommended_first_name || "").trim();
+  const last = String(response?.recommended_last_name || "").trim();
+  return [first, last].filter(Boolean).join(" ");
+};
 
 const WishDetailScreenContent = ({ route, navigation }) => {
   const { wishData, profileData, profile_uid, searchState, returnTo, profileState } = route.params;
@@ -27,6 +44,34 @@ const WishDetailScreenContent = ({ route, navigation }) => {
   const [referralPhone, setReferralPhone] = useState("");
   const [referralNote, setReferralNote] = useState("");
   const [referredProfileUid, setReferredProfileUid] = useState(null); // Seller - the person being referred (can help)
+  const [existingResponses, setExistingResponses] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const wishId = String(wishData?.wish_uid || wishData?.profile_wish_id || "").trim();
+      const profileUid = (await AsyncStorage.getItem("profile_uid"))?.trim();
+      if (!wishId || !profileUid) {
+        if (!cancelled) setExistingResponses([]);
+        return;
+      }
+      try {
+        const res = await fetch(`${PROFILE_WISH_RESPONSE_ENDPOINT}/${encodeURIComponent(profileUid)}`);
+        const json = await res.json();
+        const rows = Array.isArray(json?.data) ? json.data : [];
+        const matches = rows
+          .filter((row) => String(row.wr_profile_wish_id || "").trim() === wishId)
+          .sort((a, b) => String(b.wr_datetime || "").localeCompare(String(a.wr_datetime || "")));
+        if (!cancelled) setExistingResponses(matches);
+      } catch (e) {
+        console.warn("[WishDetailScreen] fetchMyWishResponse failed:", e);
+        if (!cancelled) setExistingResponses([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [wishData?.wish_uid, wishData?.profile_wish_id]);
 
   // Create user object for MiniCard
   const userForMiniCard = {
@@ -223,6 +268,23 @@ const WishDetailScreenContent = ({ route, navigation }) => {
     }
   };
 
+  const navigateToProfile = (targetProfileUid) => {
+    const uid = String(targetProfileUid || "").trim();
+    if (!uid) return;
+    navigation.push("Profile", {
+      profile_uid: uid,
+      returnTo: "WishDetail",
+      wishDetailState: {
+        wishData,
+        profileData,
+        profile_uid,
+        searchState,
+        returnTo,
+        profileState,
+      },
+    });
+  };
+
   const handleBack = () => {
     // Return to Profile screen if that's where we came from
     if (returnTo === "Profile" && profileState) {
@@ -252,9 +314,9 @@ const WishDetailScreenContent = ({ route, navigation }) => {
           onPress={() => {
             console.log("🏢 Navigating to Profile from MiniCard in WishDetail");
             if (profile_uid) {
-              navigation.navigate("Profile", {
+              navigation.push("Profile", {
                 profile_uid: profile_uid,
-                returnTo: returnTo === "Profile" ? "WishDetail" : "WishDetail",
+                returnTo: "WishDetail",
                 wishDetailState: {
                   wishData,
                   profileData,
@@ -323,6 +385,52 @@ const WishDetailScreenContent = ({ route, navigation }) => {
             </View>
           )}
         </View>
+
+        {existingResponses.length > 0 && (
+          <View style={[styles.card, darkMode && styles.darkCard]}>
+            <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>
+              {existingResponses.length === 1 ? "Your Response" : "Your Responses"}
+              {existingResponses.length === 1 && existingResponses[0].wr_datetime ? ` · ${formatDateForDisplay(existingResponses[0].wr_datetime)}` : ""}
+            </Text>
+            {existingResponses.map((response, index) => (
+              <View
+                key={response.wish_response_uid || `${response.wr_datetime || "response"}-${index}`}
+                style={[styles.existingResponseEntry, index > 0 && styles.existingResponseEntryBorder, darkMode && index > 0 && styles.darkExistingResponseEntryBorder]}
+              >
+                {existingResponses.length > 1 && response.wr_datetime ? (
+                  <Text style={[styles.existingResponseDate, darkMode && styles.darkExistingResponseDate]}>{formatDateForDisplay(response.wr_datetime)}</Text>
+                ) : null}
+                {response.wr_type === "refer" ? (
+                  (() => {
+                    const recommendedUid = String(response.wr_recommended_id || "").trim();
+                    const recommendedName = getRecommendedDisplayName(response);
+                    if (recommendedUid && recommendedName) {
+                      return (
+                        <View style={styles.existingResponseTypeRow}>
+                          <Text style={[styles.existingResponseType, darkMode && styles.darkExistingResponseType]}>I am referring someone else (</Text>
+                          <TouchableOpacity activeOpacity={0.7} onPress={() => navigateToProfile(recommendedUid)} accessibilityRole="link">
+                            <Text style={[styles.existingResponseType, styles.existingResponseNameLink, darkMode && styles.darkExistingResponseType, darkMode && styles.darkExistingResponseNameLink]}>
+                              {recommendedName}
+                            </Text>
+                          </TouchableOpacity>
+                          <Text style={[styles.existingResponseType, darkMode && styles.darkExistingResponseType]}>)</Text>
+                        </View>
+                      );
+                    }
+                    return <Text style={[styles.existingResponseType, darkMode && styles.darkExistingResponseType]}>I am referring someone else</Text>;
+                  })()
+                ) : (
+                  <Text style={[styles.existingResponseType, darkMode && styles.darkExistingResponseType]}>I can help</Text>
+                )}
+                {response.wr_responder_note ? (
+                  <Text style={[styles.existingResponseNote, darkMode && styles.darkExistingResponseNote]}>{response.wr_responder_note}</Text>
+                ) : (
+                  <Text style={[styles.existingResponseNote, styles.existingResponseNoteMuted, darkMode && styles.darkExistingResponseNoteMuted]}>No note provided</Text>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Help Type Selection */}
         <View style={[styles.card, darkMode && styles.darkCard]}>
@@ -598,6 +706,45 @@ const styles = StyleSheet.create({
     color: "#666",
     lineHeight: 20,
   },
+  existingResponseType: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#4F8A8B",
+    marginBottom: 10,
+  },
+  existingResponseTypeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  existingResponseNameLink: {
+    textDecorationLine: "underline",
+  },
+  existingResponseEntry: {
+    marginBottom: 4,
+  },
+  existingResponseEntryBorder: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+  },
+  existingResponseDate: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#666",
+    marginBottom: 6,
+  },
+  existingResponseNote: {
+    fontSize: 15,
+    color: "#333",
+    lineHeight: 22,
+  },
+  existingResponseNoteMuted: {
+    color: "#888",
+    fontStyle: "italic",
+  },
   submitAtEnd: {
     marginTop: 4,
     marginBottom: 20,
@@ -642,6 +789,24 @@ const styles = StyleSheet.create({
   },
   darkDetailsText: {
     color: "#cccccc",
+  },
+  darkExistingResponseType: {
+    color: "#7eb8b9",
+  },
+  darkExistingResponseNameLink: {
+    color: "#9dd4d5",
+  },
+  darkExistingResponseEntryBorder: {
+    borderTopColor: "#404040",
+  },
+  darkExistingResponseDate: {
+    color: "#aaa",
+  },
+  darkExistingResponseNote: {
+    color: "#e0e0e0",
+  },
+  darkExistingResponseNoteMuted: {
+    color: "#888",
   },
   darkAcceptButton: {
     backgroundColor: "#3D6B6C",

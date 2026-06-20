@@ -22,6 +22,7 @@ import {
   BUSINESS_INFO_ENDPOINT,
   USER_PROFILE_INFO_ENDPOINT,
   PROFILE_WISH_INFO_ENDPOINT,
+  PROFILE_WISH_RESPONSE_ENDPOINT,
 } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
@@ -196,6 +197,18 @@ const formatDateTimeForDisplay = (value) => {
     return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}${timePart}`;
   }
   return value;
+};
+
+/** Date-only display for wish response badges, e.g. "6/29/2026". */
+const formatDateForDisplay = (value) => {
+  if (!value || typeof value !== "string" || value.trim() === "") return "";
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, y, m, d] = match;
+    return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`;
+  }
+  return trimmed;
 };
 
 function parseConnectionDegree(value) {
@@ -396,6 +409,8 @@ export default function SearchScreen({ route }) {
   const [searchType, setSearchType] = useState("global");
 
   const [currentProfileUid, setCurrentProfileUid] = useState(null);
+  /** profile_wish_uid → wr_datetime for wishes the logged-in user has responded to (Seeking tab). */
+  const [respondedWishesById, setRespondedWishesById] = useState({});
   const [connectionDegreeMap, setConnectionDegreeMap] = useState({});
   const connectionDegreeMapRef = useRef({});
   // Stores unsorted results so bounty filter can re-sort without re-fetching
@@ -507,6 +522,47 @@ export default function SearchScreen({ route }) {
       loadUserHomeCoords();
     }, [loadUserHomeCoords]),
   );
+
+  const fetchMyWishResponses = useCallback(async () => {
+    const uid = (currentProfileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
+    if (!uid) {
+      setRespondedWishesById({});
+      return;
+    }
+    try {
+      const res = await fetch(`${PROFILE_WISH_RESPONSE_ENDPOINT}/${encodeURIComponent(uid)}`);
+      const json = await res.json();
+      const rows = Array.isArray(json?.data) ? json.data : [];
+      const byId = {};
+      for (const row of rows) {
+        const wishId = String(row.wr_profile_wish_id || "").trim();
+        if (!wishId) continue;
+        const respondedAt = row.wr_datetime || "";
+        const prev = byId[wishId];
+        if (!prev || String(respondedAt) > String(prev)) {
+          byId[wishId] = respondedAt;
+        }
+      }
+      setRespondedWishesById(byId);
+    } catch (e) {
+      console.warn("[SearchScreen] fetchMyWishResponses failed:", e);
+      setRespondedWishesById({});
+    }
+  }, [currentProfileUid]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (searchType === "seeking") {
+        fetchMyWishResponses();
+      }
+    }, [searchType, fetchMyWishResponses]),
+  );
+
+  useEffect(() => {
+    if (searchType === "seeking") {
+      fetchMyWishResponses();
+    }
+  }, [searchType, fetchMyWishResponses]);
 
   // Restore search state when returning from Profile
   useFocusEffect(
@@ -1617,6 +1673,10 @@ export default function SearchScreen({ route }) {
     const wish = item.wishData || {};
 
     const isOwnWish = currentProfileUid && item.profile_uid === currentProfileUid;
+    const wishUid = String(wish.wish_uid || item.id || "").trim();
+    const respondedAt = wishUid ? respondedWishesById[wishUid] : null;
+    const hasResponded = !!respondedAt;
+    const respondedDateLabel = respondedAt ? formatDateForDisplay(respondedAt) : "";
 
     return (
       <TouchableOpacity
@@ -1685,8 +1745,15 @@ export default function SearchScreen({ route }) {
 
         {/* Wish Information */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
-          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
-            <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
+          <View style={styles.wishTitleRow}>
+            <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle, styles.wishTitleFlex]} numberOfLines={2}>
+              {wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : ""}
+            </Text>
+            {hasResponded && (
+              <Text style={[styles.wishRespondedFlag, darkMode && styles.darkWishRespondedFlag]}>
+                Responded{respondedDateLabel ? ` ${respondedDateLabel}` : ""}
+              </Text>
+            )}
           </View>
           {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
           {renderScoreBreakdown(item)}
@@ -3103,11 +3170,31 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#eee",
   },
+  wishTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+    gap: 8,
+  },
+  wishTitleFlex: {
+    flex: 1,
+    marginBottom: 0,
+  },
   wishTitle: {
     fontSize: 18,
     fontWeight: "bold",
     color: "#333",
     marginBottom: 4,
+  },
+  wishRespondedFlag: {
+    color: "#800000",
+    fontSize: 14,
+    fontWeight: "600",
+    flexShrink: 0,
+  },
+  darkWishRespondedFlag: {
+    color: "#c77dff",
   },
   wishDateTime: {
     fontSize: 13,

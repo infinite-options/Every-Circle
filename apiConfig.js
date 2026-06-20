@@ -91,6 +91,8 @@ export const RATINGS_ENDPOINT = `${API_BASE_URL}/ratings`;
 
 // Profile Wish Info Endpoint
 export const PROFILE_WISH_INFO_ENDPOINT = `${API_BASE_URL}/api/profilewishinfo`;
+/** GET /:profile_uid — wish responses submitted by the logged-in user */
+export const PROFILE_WISH_RESPONSE_ENDPOINT = `${API_BASE_URL}/api/profilewishresponse`;
 
 // Circles Endpoint
 export const CIRCLES_ENDPOINT = `${API_BASE_URL}/api/v1/circles`;

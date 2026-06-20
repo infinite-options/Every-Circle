@@ -1338,23 +1338,28 @@ const ProfileScreen = ({ route, navigation }) => {
           routeProfileUID && !isCurrentUserProfile
             ? () => {
                 // Navigate back to the screen we came from with preserved state
+                const wishDetailState = route.params?.wishDetailState;
+                if (wishDetailState) {
+                  console.log("🔙 Returning to WishDetail");
+                  if (navigation.canGoBack()) {
+                    navigation.goBack();
+                  } else {
+                    navigation.navigate("WishDetail", {
+                      wishData: wishDetailState.wishData,
+                      profileData: wishDetailState.profileData,
+                      profile_uid: wishDetailState.profile_uid,
+                      searchState: wishDetailState.searchState,
+                      returnTo: wishDetailState.returnTo,
+                      profileState: wishDetailState.profileState,
+                    });
+                  }
+                  return;
+                }
                 if (returnTo === "Search" && searchState) {
                   console.log("🔙 Returning to Search with preserved state:", searchState);
                   navigation.navigate("Search", {
                     restoreState: true,
                     searchState: searchState,
-                  });
-                } else if (returnTo === "WishDetail" && route.params?.wishDetailState) {
-                  // Navigate back to WishDetail screen
-                  console.log("🔙 Returning to WishDetail");
-                  const { wishData, profileData, profile_uid, searchState, returnTo: detailReturnTo, profileState: detailProfileState } = route.params.wishDetailState;
-                  navigation.navigate("WishDetail", {
-                    wishData,
-                    profileData,
-                    profile_uid,
-                    searchState,
-                    returnTo: detailReturnTo,
-                    profileState: detailProfileState,
                   });
                 } else if (returnTo === "WishResponses" && route.params?.wishResponsesState) {
                   // Navigate back to WishResponses screen
