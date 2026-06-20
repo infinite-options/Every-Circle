@@ -83,9 +83,7 @@ export function buildBusinessServiceForApi(service, idx = 0) {
     bs_free_shipping: norm01(service.bs_free_shipping),
     bs_buyer_pays_shipping: norm01(service.bs_buyer_pays_shipping),
     bs_service_image_is_public: norm01(service.bs_service_image_is_public),
-    bs_choice_groups: service.bs_choice_groups || [],
-    bs_special_instructions_enabled: service.bs_special_instructions_enabled || 0,
-    bs_special_instructions_max_chars: service.bs_special_instructions_max_chars || 80,
+    // Choice groups and special instructions are saved via /api/business_service_options only.
   };
 
   if (service.bs_uid && String(service.bs_uid).trim() !== "") {

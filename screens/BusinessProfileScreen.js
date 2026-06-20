@@ -46,6 +46,51 @@ const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 // Module-level cache so category list is fetched at most once per app session
 let _categoryListCache = null;
 
+const getServiceUid = (service) => String(service?.bs_uid ?? "").trim();
+
+const resolveServiceChoiceGroups = (service, idx, byUid, byIndex) => {
+  if (idx >= 0 && Array.isArray(byIndex[idx]) && byIndex[idx].length > 0) return byIndex[idx];
+  const uid = getServiceUid(service);
+  if (uid && Array.isArray(byUid[uid]) && byUid[uid].length > 0) return byUid[uid];
+  return Array.isArray(service?.bs_choice_groups) ? service.bs_choice_groups : [];
+};
+
+const calcChoicesExtraCost = (choiceGroups, selectedChoices) =>
+  (choiceGroups || []).reduce((sum, group) => {
+    const sel = selectedChoices[group.title];
+    if (!sel) return sum;
+    const selectedIds = Array.isArray(sel) ? sel : [sel];
+    return (
+      sum +
+      (group.options || [])
+        .filter((opt) => selectedIds.includes(opt.id))
+        .reduce((s, opt) => s + (parseFloat(opt.extra_cost) || 0), 0)
+    );
+  }, 0);
+
+const buildBusinessServicesList = (rawBusiness, resultServices, profileCcFeePayer) => {
+  let list = [];
+  // Prefer DB-backed services from businessinfo — they always include bs_uid.
+  if (Array.isArray(resultServices) && resultServices.length > 0) {
+    list = resultServices;
+  } else if (rawBusiness?.business_services) {
+    if (typeof rawBusiness.business_services === "string") {
+      try {
+        list = JSON.parse(rawBusiness.business_services);
+      } catch (e) {
+        list = [];
+      }
+    } else if (Array.isArray(rawBusiness.business_services)) {
+      list = rawBusiness.business_services;
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  return list.map((svc) => ({
+    ...normalizeBusinessServiceFromApi(svc),
+    business_cc_fee_payer: profileCcFeePayer,
+  }));
+};
+
 export default function BusinessProfileScreen({ route, navigation }) {
   const { darkMode } = useDarkMode();
   const { business_uid, returnTo, searchState } = route.params || {};
@@ -90,8 +135,17 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
   const [serviceOptions, setServiceOptions] = useState([]);
   const [serviceOptionsLoading, setServiceOptionsLoading] = useState(false);
+  const [serviceOptionsByUid, setServiceOptionsByUid] = useState({});
+  const [serviceOptionsByIndex, setServiceOptionsByIndex] = useState({});
   const [selectedChoices, setSelectedChoices] = useState({}); // { groupTitle: optionId }
   const [specialInstructions, setSpecialInstructions] = useState("");
+
+  const quantityModalTotal = useMemo(() => {
+    if (!selectedService) return "0.00";
+    const choicesExtraCost = calcChoicesExtraCost(serviceOptions, selectedChoices);
+    const unitPrice = parsePrice(selectedService.bs_cost) + choicesExtraCost;
+    return (unitPrice * quantity).toFixed(2);
+  }, [selectedService, serviceOptions, selectedChoices, quantity]);
 
   const [claimModalVisible, setClaimModalVisible] = useState(false);
   const [claimStep, setClaimStep] = useState(1);
@@ -149,6 +203,56 @@ export default function BusinessProfileScreen({ route, navigation }) {
     };
     loadCartItems();
   }, [business_uid]);
+
+  const servicesOptionsKey = useMemo(() => {
+    const services = business?.business_services;
+    if (!Array.isArray(services)) return "";
+    return services.map((s, i) => `${i}:${getServiceUid(s)}:${String(s?.bs_service_name ?? "").trim()}`).join("|");
+  }, [business?.business_services]);
+
+  // Load choice groups for all services shown in the Products & Services section
+  useEffect(() => {
+    const services = business?.business_services;
+    if (!Array.isArray(services) || services.length === 0) {
+      setServiceOptionsByUid({});
+      setServiceOptionsByIndex({});
+      return;
+    }
+
+    let cancelled = false;
+    Promise.all(
+      services.map((service, idx) => {
+        const uid = getServiceUid(service);
+        if (!uid) {
+          const local = service.bs_choice_groups;
+          return Promise.resolve({ idx, uid: null, groups: Array.isArray(local) ? local : [] });
+        }
+        return fetch(`${API_BASE_URL}/api/business_service_options/${encodeURIComponent(uid)}`)
+          .then((res) => res.json())
+          .then((data) => ({ idx, uid, groups: Array.isArray(data?.result) ? data.result : [] }))
+          .catch((e) => {
+            console.warn(`Failed to load service options for ${uid}:`, e);
+            return { idx, uid, groups: [] };
+          });
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      const byUid = {};
+      const byIndex = {};
+      results.forEach(({ idx, uid, groups }) => {
+        byIndex[idx] = groups;
+        if (uid) byUid[uid] = groups;
+      });
+      console.log("🔵 Service options by UID:", byUid);
+      console.log("🔵 Service options by index:", byIndex);
+      setServiceOptionsByUid(byUid);
+      setServiceOptionsByIndex(byIndex);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [servicesOptionsKey]);
 
   // Get current user's profile ID
   useEffect(() => {
@@ -446,29 +550,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         business_profile_img: businessProfileImgUrl,
         business_profile_img_is_public: rawBusiness.business_profile_img_is_public === "1" || rawBusiness.business_profile_img_is_public === 1,
         business_cc_fee_payer: profileCcFeePayer,
-        business_services: (() => {
-          let list = [];
-          if (rawBusiness.business_services) {
-            if (typeof rawBusiness.business_services === "string") {
-              try {
-                list = JSON.parse(rawBusiness.business_services);
-              } catch (e) {
-                list = [];
-              }
-            } else if (Array.isArray(rawBusiness.business_services)) {
-              list = rawBusiness.business_services;
-            }
-          }
-
-          if ((!Array.isArray(list) || list.length === 0) && Array.isArray(result.services)) {
-            list = result.services;
-          }
-          if (!Array.isArray(list)) return [];
-          return list.map((svc) => ({
-            ...normalizeBusinessServiceFromApi(svc),
-            business_cc_fee_payer: profileCcFeePayer,
-          }));
-        })(),
+        business_services: buildBusinessServicesList(rawBusiness, result.services, profileCcFeePayer),
         business_updated_at: rawBusiness.business_updated_at ?? rawBusiness.updated_at,
       };
 
@@ -601,7 +683,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
     [business, business_uid],
   );
 
-  const handleProductPress = (service) => {
+  const handleProductPress = (service, serviceIndex = -1) => {
     // Block sold-out items from being added to cart
     const unlimited = service.bs_qty_unlimited === 1 || service.bs_qty_unlimited === "1" || service.bs_qty_unlimited === true;
     if (!unlimited) {
@@ -624,11 +706,17 @@ export default function BusinessProfileScreen({ route, navigation }) {
     setQuantity(1);
     setSelectedChoices({});
     setSpecialInstructions("");
-    setServiceOptions([]);
+    const preloaded = resolveServiceChoiceGroups(service, serviceIndex, serviceOptionsByUid, serviceOptionsByIndex);
+    if (Array.isArray(preloaded) && preloaded.length > 0) {
+      setServiceOptions(preloaded);
+      setServiceOptionsLoading(false);
+    } else {
+      setServiceOptions([]);
+    }
     console.log("🛒 handleProductPress - service.bs_uid:", service.bs_uid);
     console.log("🛒 handleProductPress - full service:", JSON.stringify(service, null, 2));
-    // Fetch choice groups for this service
-    if (service.bs_uid && String(service.bs_uid).trim() !== "") {
+    // Fetch choice groups for this service (skip if already preloaded)
+    if (service.bs_uid && String(service.bs_uid).trim() !== "" && !(Array.isArray(preloaded) && preloaded.length > 0)) {
       setServiceOptionsLoading(true);
       fetch(`${API_BASE_URL}/api/business_service_options/${service.bs_uid}`)
         .then((res) => res.json())
@@ -684,14 +772,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
     try {
       const ccPayer = canonicalBusinessCcFeePayer(business?.business_cc_fee_payer ?? business?.bs_cc_fee_payer);
 
-      // Calculate extra cost from selected choice group options
-      const choicesExtraCost = serviceOptions.reduce((sum, group) => {
-        const sel = selectedChoices[group.title];
-        if (!sel) return sum;
-        const selectedIds = Array.isArray(sel) ? sel : [sel];
-        return sum + (group.options || []).filter((opt) => selectedIds.includes(opt.id)).reduce((s, opt) => s + (parseFloat(opt.extra_cost) || 0), 0);
-      }, 0);
-
+      const choicesExtraCost = calcChoicesExtraCost(serviceOptions, selectedChoices);
       const unitPrice = parsePrice(selectedService.bs_cost) + choicesExtraCost;
 
       const selectedChoiceLabels = {};
@@ -708,7 +789,12 @@ export default function BusinessProfileScreen({ route, navigation }) {
       const serviceWithQuantity = {
         ...selectedService,
         quantity: quantity,
-        totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
+        unitPrice,
+        choicesExtraCost,
+        selectedChoices: { ...selectedChoices },
+        selectedChoiceLabels,
+        specialInstructions: specialInstructions.trim(),
+        totalPrice: (unitPrice * quantity).toFixed(2),
         bounty_recommender_profile_id: bountyRecommenderProfileId,
         business_uid: business_uid,
         business_name: sanitizeText(business?.business_name || "") || "",
@@ -1847,12 +1933,13 @@ export default function BusinessProfileScreen({ route, navigation }) {
               {showServices &&
                 business.business_services.map((service, idx) => (
                   <ProductCard
-                    key={idx}
+                    key={getServiceUid(service) ? `${getServiceUid(service)}-${idx}` : `svc-${idx}`}
                     service={service}
                     businessUid={business_uid}
                     showEditButton={isOwner}
                     darkMode={darkMode}
-                    onPress={() => handleProductPress(service)}
+                    choiceGroups={resolveServiceChoiceGroups(service, idx, serviceOptionsByUid, serviceOptionsByIndex)}
+                    onPress={() => handleProductPress(service, idx)}
                   />
                 ))}
             </View>
@@ -2091,7 +2178,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                   </TouchableOpacity>
                 </View>
 
-                <Text style={styles.totalPrice}>Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
+                <Text style={styles.totalPrice}>Total: ${quantityModalTotal}</Text>
               </View>
 
               <BountyRecipientPicker

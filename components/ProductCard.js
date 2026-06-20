@@ -7,7 +7,7 @@ import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFr
 
 const DEFAULT_PRODUCT_IMAGE = require("../assets/profile.png");
 
-const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, businessUid }) => {
+const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, businessUid, choiceGroups }) => {
   const tags = useMemo(() => parseTagList(service.bs_tags), [service.bs_tags]);
 
   const productImageUri = useMemo(() => {
@@ -145,6 +145,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
           shippingLine,
           taxRateLine,
           isSoldOut,
+          choiceGroups,
         })}
       </View>
     );
@@ -168,6 +169,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
         shippingLine,
         taxRateLine,
         isSoldOut,
+        choiceGroups,
       })}
     </TouchableOpacity>
   );
@@ -226,6 +228,45 @@ function renderCostBountyFooter(service, darkMode) {
   );
 }
 
+function renderChoiceGroups(choiceGroups, metaTextStyle, darkMode) {
+  if (!Array.isArray(choiceGroups) || choiceGroups.length === 0) return null;
+
+  return (
+    <View style={styles.choiceGroupsContainer}>
+      {choiceGroups.map((group, gIdx) => {
+        const options = group.options || [];
+        if (!group.title && options.length === 0) return null;
+
+        const selectionHint =
+          group.required === true || group.required === 1 || group.required === "1"
+            ? "Required"
+            : group.type === "multi"
+              ? `Optional (up to ${group.max_selections || 1})`
+              : "Optional";
+
+        return (
+          <View key={`${gIdx}-${group.title || "group"}-${group.id ?? "id"}`} style={[styles.choiceGroup, darkMode && styles.choiceGroupDark]}>
+            <View style={styles.choiceGroupHeader}>
+              <Text style={[styles.choiceGroupTitle, darkMode && styles.choiceGroupTitleDark]}>{group.title || `Option ${gIdx + 1}`}</Text>
+              <Text style={[styles.choiceGroupBadge, group.required ? styles.choiceGroupBadgeRequired : styles.choiceGroupBadgeOptional]}>{selectionHint}</Text>
+            </View>
+            {options.map((opt, oIdx) => {
+              const extra = parseFloat(opt.extra_cost);
+              const extraLabel = Number.isFinite(extra) && extra > 0 ? ` (+$${extra.toFixed(2)})` : "";
+              return (
+                <Text key={`${gIdx}-${oIdx}-${opt.id ?? opt.label ?? "opt"}`} style={metaTextStyle}>
+                  {"\u2022"} {opt.label}
+                  {extraLabel}
+                </Text>
+              );
+            })}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 function renderProductCardBody({
   service,
   darkMode,
@@ -242,6 +283,7 @@ function renderProductCardBody({
   shippingLine,
   taxRateLine,
   isSoldOut,
+  choiceGroups,
 }) {
   const ccFeeBuyerLine = creditCardFeeBuyerMetaLine(service);
   return (
@@ -340,6 +382,7 @@ function renderProductCardBody({
         {shippingLine ? <Text style={metaTextStyle}>{shippingLine}</Text> : null}
         {taxRateLine ? <Text style={metaTextStyle}>{taxRateLine}</Text> : null}
         {ccFeeBuyerLine ? <Text style={metaTextStyle}>{ccFeeBuyerLine}</Text> : null}
+        {renderChoiceGroups(choiceGroups, metaTextStyle, darkMode)}
         {tags.length > 0 ? (
           <View style={styles.tagsRow}>
             {tags.map((tag, i) => (
@@ -429,6 +472,53 @@ const styles = StyleSheet.create({
   },
   metaTextDark: {
     color: "#c7c7cc",
+  },
+  choiceGroupsContainer: {
+    marginTop: 10,
+    gap: 8,
+  },
+  choiceGroup: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "#e5e5ea",
+    borderRadius: 8,
+    padding: 10,
+    backgroundColor: "#fafafa",
+  },
+  choiceGroupDark: {
+    borderColor: "#48484a",
+    backgroundColor: "#1c1c1e",
+  },
+  choiceGroupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 4,
+  },
+  choiceGroupTitle: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#333",
+  },
+  choiceGroupTitleDark: {
+    color: "#f2f2f7",
+  },
+  choiceGroupBadge: {
+    fontSize: 10,
+    fontWeight: "700",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  choiceGroupBadgeRequired: {
+    backgroundColor: "#fee2e2",
+    color: "#dc2626",
+  },
+  choiceGroupBadgeOptional: {
+    backgroundColor: "#f0fdf4",
+    color: "#16a34a",
   },
   tagsRow: {
     flexDirection: "row",
