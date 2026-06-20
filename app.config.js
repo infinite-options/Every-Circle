@@ -123,7 +123,7 @@ module.exports = ({ config: expoConfig }) => ({
 
     extra: {
       eas: {
-        projectId: "41f75dab-7e42-4a6c-99dd-afa123482c34",
+        projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
       },
 
       androidClientId: process.env.EXPO_PUBLIC_ANDROID_CLIENT_ID_DEBUG || process.env.EXPO_PUBLIC_ANDROID_CLIENT_ID_RELEASE,
@@ -136,7 +136,7 @@ module.exports = ({ config: expoConfig }) => ({
 
       appleServicesId: process.env.EXPO_PUBLIC_APPLE_SERVICES_ID,
 
-      ablyApiKey: process.env.EXPO_PUBLIC_ABLY_API_KEY,
+      // ablyApiKey: process.env.EXPO_PUBLIC_ABLY_API_KEY,
     },
   },
 });

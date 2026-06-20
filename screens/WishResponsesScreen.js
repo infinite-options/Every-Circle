@@ -9,23 +9,21 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import AppHeader from "../components/AppHeader";
 
 // Only import Stripe on native platforms (not web)
-let StripeProvider = null;
 let useStripe = null;
 const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
 if (!isWeb) {
   try {
-    const stripeModule = require("@stripe/stripe-react-native");
-    StripeProvider = stripeModule.StripeProvider;
-    useStripe = stripeModule.useStripe;
+    useStripe = require("@stripe/stripe-react-native").useStripe;
   } catch (e) {
     console.warn("Stripe not available:", e.message);
   }
 }
 
-import { REACT_APP_STRIPE_PUBLIC_KEY } from "@env";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { PROFILE_WISH_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, TRANSACTIONS_ENDPOINT, GET_STRIPE_PUBLIC_KEY_ENDPOINT } from "../apiConfig";
+import { PROFILE_WISH_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, TRANSACTIONS_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { fetchStripePublishableKey } from "../utils/stripePublishableKey";
+import StripeNativeProvider from "../components/StripeNativeProvider";
 
 // Web Stripe imports (only load on web)
 let loadStripe = null;
@@ -41,8 +39,6 @@ if (isWeb) {
 import StripePayment from "../components/StripePaymentWeb";
 import PaymentFailure from "../components/PaymentFailure";
 import AcceptDetailsModal from "../components/AcceptDetailsModal";
-
-const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
 
 // Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
 const formatDateTimeForDisplay = (value) => {
@@ -104,18 +100,8 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
 
   // Initialize Stripe on mount
   useEffect(() => {
-    // Initialize Stripe - for web, we load the key dynamically, for mobile we use env var
-    if (isWeb) {
-      console.log("WishResponsesScreen - Web platform detected - Stripe key will be loaded dynamically");
-      setStripeInitialized(true);
-    } else {
-      if (STRIPE_PUBLISHABLE_KEY) {
-        console.log("WishResponsesScreen - Initializing Stripe with publishable key");
-        setStripeInitialized(true);
-      } else {
-        console.error("WishResponsesScreen - Stripe publishable key not found");
-      }
-    }
+    // Native: mounts only after StripeNativeProvider loads the key; web loads key at checkout.
+    setStripeInitialized(true);
 
     // Get customer UID for web Stripe
     const getCustomerUid = async () => {
@@ -129,55 +115,17 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
     getCustomerUid();
   }, []);
 
-  // Load Stripe public key for web
   const loadStripePublicKey = async (businessCode = "ECTEST") => {
     try {
-      console.log("============================================");
-      console.log("WishResponsesScreen - Loading Stripe public key for business code:", businessCode);
-      // Determine environment: ECTEST → PMTEST, EC → PM
-      const environment = businessCode === "ECTEST" ? "PMTEST" : businessCode === "EC" ? "PM" : "PMTEST";
-      console.log("WishResponsesScreen - Mapped environment for Stripe key lookup:", environment);
-      const url = `${GET_STRIPE_PUBLIC_KEY_ENDPOINT}/${environment}`;
-
-      console.log("WishResponsesScreen - Fetching Stripe key from URL:", url);
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch Stripe key: ${response.statusText}`);
-      }
-
-      const responseData = await response.json();
-      console.log("WishResponsesScreen - Full response data:", JSON.stringify(responseData, null, 2));
-      console.log("WishResponsesScreen - Response keys:", Object.keys(responseData));
-
-      // Handle both camelCase (publicKey) and UPPERCASE (PUBLISHABLE_KEY) response formats
-      const publicKey = responseData.publicKey || responseData.PUBLISHABLE_KEY;
-      if (!publicKey) {
-        console.error("WishResponsesScreen - Response structure:", responseData);
-        console.error("WishResponsesScreen - Available keys:", Object.keys(responseData));
-        throw new Error("Public key not found in response. Expected 'publicKey' or 'PUBLISHABLE_KEY'");
-      }
-
-      const last4Digits = publicKey.length >= 4 ? publicKey.slice(-4) : "N/A";
-      console.log("WishResponsesScreen - Stripe public key received (last 4 digits):", last4Digits);
-
-      // Load Stripe with public key
+      const publicKey = await fetchStripePublishableKey(businessCode);
       if (loadStripe) {
         const stripe = await loadStripe(publicKey);
         setStripePromise(stripe);
-        console.log("WishResponsesScreen - Stripe loaded successfully with key ending in:", last4Digits);
-        console.log("============================================");
         return stripe;
       }
-
       throw new Error("Stripe loadStripe function not available");
     } catch (error) {
       console.error("WishResponsesScreen - Error loading Stripe public key:", error);
-      console.error("WishResponsesScreen - Error details:", error.message);
-      console.log("============================================");
       Alert.alert("Error", "Failed to initialize payment system. Please try again.");
       throw error;
     }
@@ -1053,13 +1001,10 @@ const styles = StyleSheet.create({
   },
 });
 
-export default function WishResponsesScreen({ route, navigation }) {
-  const content = <WishResponsesScreenContent route={route} navigation={navigation} />;
-
-  // Only wrap with StripeProvider on native platforms
-  if (StripeProvider && !isWeb && STRIPE_PUBLISHABLE_KEY) {
-    return <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>{content}</StripeProvider>;
-  }
-
-  return content;
+export default function WishResponsesScreen(props) {
+  return (
+    <StripeNativeProvider businessCode="ECTEST">
+      <WishResponsesScreenContent {...props} />
+    </StripeNativeProvider>
+  );
 }

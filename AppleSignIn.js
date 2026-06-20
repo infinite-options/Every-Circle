@@ -4,7 +4,7 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import * as WebBrowser from "expo-web-browser";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import AppleLogomarkWhite from "./components/AppleLogomarkWhite";
-import { EXPO_PUBLIC_APPLE_SERVICES_ID, EXPO_PUBLIC_APPLE_REDIRECT_URI, EXPO_PUBLIC_EXPO_ACCOUNT } from "@env";
+import { EXPO_PUBLIC_APPLE_SERVICES_ID, EXPO_PUBLIC_APPLE_REDIRECT_URI } from "@env";
 
 const AUTH_BTN_H = 48;
 

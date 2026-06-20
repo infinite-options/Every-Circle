@@ -10,22 +10,20 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 
 // Only import Stripe on native platforms (not web)
-let StripeProvider = null;
 let useStripe = null;
 const isWeb = typeof window !== "undefined" && typeof document !== "undefined";
 if (!isWeb) {
   try {
-    const stripeModule = require("@stripe/stripe-react-native");
-    StripeProvider = stripeModule.StripeProvider;
-    useStripe = stripeModule.useStripe;
+    useStripe = require("@stripe/stripe-react-native").useStripe;
   } catch (e) {
     console.warn("Stripe not available:", e.message);
   }
 }
 
-import { REACT_APP_STRIPE_PUBLIC_KEY } from "@env";
-import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, STRIPE_KEY_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT, GET_STRIPE_PUBLIC_KEY_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CREATE_PAYMENT_INTENT_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { fetchStripePublishableKey } from "../utils/stripePublishableKey";
+import StripeNativeProvider from "../components/StripeNativeProvider";
 
 // Web Stripe imports (only load on web)
 let loadStripe = null;
@@ -44,10 +42,6 @@ import PaymentFailure from "../components/PaymentFailure";
 import { parsePrice } from "../utils/priceUtils";
 import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { recordServicePurchase } from "../utils/purchaseService";
-
-// Use the publishable key from environment variables
-const STRIPE_PUBLISHABLE_KEY = REACT_APP_STRIPE_PUBLIC_KEY;
-// console.log("STRIPE_PUBLISHABLE_KEY:", STRIPE_PUBLISHABLE_KEY);
 
 const GENERIC_CART_TITLES = ["All Items", "My Cart", "Cart"];
 
@@ -234,7 +228,7 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
   });
 }
 
-const ShoppingCartScreen = ({ route, navigation }) => {
+const ShoppingCartScreenContent = ({ route, navigation }) => {
   const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id } = route.params;
   const [cartItems, setCartItems] = useState(Array.isArray(initialCartItems) ? initialCartItems : []);
 
@@ -583,24 +577,10 @@ const ShoppingCartScreen = ({ route, navigation }) => {
 
   useEffect(() => {
     console.log("ShoppingCartScreen mounted");
-    console.log("In shopping cart screen, STRIPE_PUBLISHABLE_KEY:", STRIPE_PUBLISHABLE_KEY);
     console.log("Initial cart items:", initialCartItems);
 
-    // Initialize Stripe - for web, we load the key dynamically, for mobile we use env var
-    if (isWeb) {
-      // Web: Don't require env var, we'll load Stripe key dynamically when needed
-      console.log("Web platform detected - Stripe key will be loaded dynamically");
-      setStripeInitialized(true);
-    } else {
-      // Mobile: Require env var for native Stripe
-      if (STRIPE_PUBLISHABLE_KEY) {
-        console.log("Initializing Stripe with publishable key");
-        setStripeInitialized(true);
-      } else {
-        console.error("Stripe publishable key not found");
-        Alert.alert("Error", "Payment system is not properly configured");
-      }
-    }
+    // Native: mounts only after StripeNativeProvider loads the key; web loads key at checkout.
+    setStripeInitialized(true);
 
     // Get customer UID for web Stripe
     const getCustomerUid = async () => {
@@ -635,57 +615,17 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     });
   }, [cartItems]);
 
-  // Load Stripe public key for web
   const loadStripePublicKey = async (businessCode = "ECTEST") => {
     try {
-      console.log("============================================");
-      console.log("Loading Stripe public key for business code:", businessCode);
-      // Determine environment: ECTEST → PMTEST, EC → PM
-      const environment = businessCode === "ECTEST" ? "PMTEST" : businessCode === "EC" ? "PM" : "PMTEST";
-      console.log("Mapped environment for Stripe key lookup:", environment);
-      const url = `${GET_STRIPE_PUBLIC_KEY_ENDPOINT}/${environment}`;
-
-      console.log("Fetching Stripe key from URL:", url);
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch Stripe key: ${response.statusText}`);
-      }
-
-      const responseData = await response.json();
-      console.log("Full response data:", JSON.stringify(responseData, null, 2));
-      console.log("Response keys:", Object.keys(responseData));
-
-      // Handle both camelCase (publicKey) and UPPERCASE (PUBLISHABLE_KEY) response formats
-      const publicKey = responseData.publicKey || responseData.PUBLISHABLE_KEY;
-
-      if (!publicKey) {
-        console.error("Response structure:", responseData);
-        console.error("Available keys:", Object.keys(responseData));
-        throw new Error("Public key not found in response. Expected 'publicKey' or 'PUBLISHABLE_KEY'");
-      }
-      const last4Digits = publicKey.length >= 4 ? publicKey.slice(-4) : "N/A";
-      console.log("Stripe public key received (last 4 digits):", last4Digits);
-      console.log("Full public key length:", publicKey.length);
-      console.log("Public key starts with:", publicKey.substring(0, 10) + "...");
-
-      // Load Stripe with public key
+      const publicKey = await fetchStripePublishableKey(businessCode);
       if (loadStripe) {
         const stripe = await loadStripe(publicKey);
         setStripePromise(stripe);
-        console.log("Stripe loaded successfully with key ending in:", last4Digits);
-        console.log("============================================");
         return stripe;
-      } else {
-        throw new Error("Stripe loadStripe function not available");
       }
+      throw new Error("Stripe loadStripe function not available");
     } catch (error) {
       console.error("Error loading Stripe public key:", error);
-      console.error("Error details:", error.message);
-      console.log("============================================");
       Alert.alert("Error", "Failed to initialize payment system. Please try again.");
       throw error;
     }
@@ -1348,13 +1288,16 @@ const ShoppingCartScreen = ({ route, navigation }) => {
     </View>
   );
 
-  // Only wrap with StripeProvider on native platforms
-  if (StripeProvider && !isWeb && STRIPE_PUBLISHABLE_KEY) {
-    return <StripeProvider publishableKey={STRIPE_PUBLISHABLE_KEY}>{content}</StripeProvider>;
-  }
-
   return content;
 };
+
+export default function ShoppingCartScreen(props) {
+  return (
+    <StripeNativeProvider businessCode="ECTEST">
+      <ShoppingCartScreenContent {...props} />
+    </StripeNativeProvider>
+  );
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -1688,5 +1631,3 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
-
-export default ShoppingCartScreen;
