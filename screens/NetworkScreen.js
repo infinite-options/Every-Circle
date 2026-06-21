@@ -11,6 +11,7 @@ import { useFocusEffect, useRoute } from "@react-navigation/native";
 import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT, CHAT_CONVERSATIONS_ENDPOINT, NEARBY_USERS_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import MiniCard from "../components/MiniCard";
+import MicroCard from "../components/MicroCard";
 import WebTextInput from "../components/WebTextInput";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 
@@ -108,6 +109,16 @@ function ConnectionFilterModal({ visible, title, options, selected, onSelect, on
 
 const RELATIONSHIP_FILTER_OPTIONS = ["All", "Colleagues", "Friends", "Family"];
 const DATE_FILTER_OPTIONS = ["All", "This Week", "This Month", "This Year"];
+const EVERY_CIRCLE_ZERO_NODE_UID = "110-000001";
+const NETWORK_GRAPH_PURPLE = "#9C45F7";
+const NETWORK_GRAPH_PURPLE_FILL_50 = "rgba(156, 69, 247, 0.5)";
+
+function escapeVisHtmlLabel(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
 
 /** Persist connections graph and circles separately so one fetch does not wipe the other. */
 const ASYNC_NETWORK_DATA_CONNECTIONS = "network_data_connections";
@@ -146,6 +157,100 @@ function groupNetworkByDegree(data) {
     grouped[deg].push(item);
   });
   return grouped;
+}
+
+function applyConnectionFilters(nodes, filters) {
+  const {
+    relationshipFilter,
+    dateFilter,
+    locationFilter,
+    eventFilter,
+    notesFilter,
+    introducedByFilter,
+    searchQuery = "",
+  } = filters;
+
+  let filtered = nodes || [];
+
+  if (relationshipFilter !== "All") {
+    filtered = filtered.filter((node) => {
+      const relationship = node.circle_relationship;
+      if (relationshipFilter === "Colleagues") return relationship === "colleague";
+      if (relationshipFilter === "Friends") return relationship === "friend";
+      if (relationshipFilter === "Family") return relationship === "family";
+      return true;
+    });
+  }
+
+  if (dateFilter !== "All") {
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+    const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+
+    filtered = filtered.filter((node) => {
+      const circleDateStr = node.circle_date || node.profile_personal_joined_timestamp;
+      if (!circleDateStr) return false;
+      try {
+        const circleDate = new Date(circleDateStr);
+        if (dateFilter === "This Week") return circleDate >= oneWeekAgo;
+        if (dateFilter === "This Month") return circleDate >= oneMonthAgo;
+        if (dateFilter === "This Year") return circleDate >= oneYearAgo;
+      } catch (e) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  if (locationFilter !== "All") {
+    filtered = filtered.filter((node) => {
+      const city = node.circle_city || "";
+      const state = node.circle_state || "";
+      let nodeLocation = "";
+      if (city && state) nodeLocation = `${city.trim()}, ${state.trim()}`;
+      else if (city) nodeLocation = city.trim();
+      else if (state) nodeLocation = state.trim();
+      return nodeLocation === locationFilter;
+    });
+  }
+
+  if (eventFilter !== "All") {
+    filtered = filtered.filter((node) => (node.circle_event || "").trim() === eventFilter);
+  }
+
+  if (notesFilter !== "All") {
+    filtered = filtered.filter((node) => (node.circle_note || "").trim() === notesFilter);
+  }
+
+  if (introducedByFilter !== "All") {
+    filtered = filtered.filter((node) => (node.circle_introduced_by || "").trim() === introducedByFilter);
+  }
+
+  if (searchQuery.trim() !== "") {
+    const query = searchQuery.toLowerCase();
+    filtered = filtered.filter((node) => {
+      const searchableText = [
+        node.__mc?.firstName || "",
+        node.__mc?.lastName || "",
+        node.__mc?.tagLine || "",
+        node.__mc?.city || "",
+        node.__mc?.state || "",
+        node.__mc?.phoneNumber || "",
+        node.circle_event || "",
+        node.circle_note || "",
+        node.circle_introduced_by || "",
+        node.circle_relationship || "",
+        node.network_profile_personal_uid || "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(query);
+    });
+  }
+
+  return filtered;
 }
 
 async function resolveProfileUidForNetwork(overrideUid, profileUidState) {
@@ -776,39 +881,28 @@ const NetworkScreen = ({ navigation }) => {
         console.warn("NetworkScreen - Could not fetch user_uid from AsyncStorage:", e);
       }
 
-      // Extract public miniCard information
       const p = apiUser?.personal_info || {};
-      const tagLineIsPublic = p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1;
-      const emailIsPublic = p.profile_personal_email_is_public === 1;
-      const phoneIsPublic = p.profile_personal_phone_number_is_public === 1;
-      const imageIsPublic = p.profile_personal_image_is_public === 1;
 
-      const city = p.profile_personal_city || "";
-      const state = p.profile_personal_state || "";
-      const locationIsPublic = p.profile_personal_location_is_public === 1;
-
-      // Sanitize all text fields when creating publicData
-      const publicData = {
+      // MiniCard data — same shape as Settings/Account (full fields + visibility flags)
+      const userData = {
         profile_uid: profileUID,
-        user_uid: userUid || "", // Add user_uid (the 110 number)
+        user_uid: userUid || "",
         firstName: sanitizeText(p.profile_personal_first_name),
         lastName: sanitizeText(p.profile_personal_last_name),
-        tagLine: tagLineIsPublic ? sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline) : "",
-        email: emailIsPublic ? sanitizeText(apiUser?.user_email) : "",
-        phoneNumber: phoneIsPublic ? sanitizeText(p.profile_personal_phone_number) : "",
-        profileImage: imageIsPublic ? sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : "") : "",
-        city: locationIsPublic ? sanitizeText(p.profile_personal_city || "") : "",
-        state: locationIsPublic ? sanitizeText(p.profile_personal_state || "") : "",
-        locationIsPublic: p.profile_personal_city_is_public === 1 || p.profile_personal_state_is_public === 1,
-        // Include visibility flags for MiniCard
-        tagLineIsPublic,
-        emailIsPublic,
-        phoneIsPublic,
-        imageIsPublic,
-        locationIsPublic,
+        email: sanitizeText(apiUser?.user_email),
+        phoneNumber: sanitizeText(p.profile_personal_phone_number),
+        tagLine: sanitizeText(p.profile_personal_tag_line || p.profile_personal_tagline),
+        city: sanitizeText(p.profile_personal_city || ""),
+        state: sanitizeText(p.profile_personal_state || ""),
+        profileImage: sanitizeText(p.profile_personal_image ? String(p.profile_personal_image) : ""),
+        emailIsPublic: p.profile_personal_email_is_public === 1,
+        phoneIsPublic: p.profile_personal_phone_number_is_public === 1,
+        tagLineIsPublic: p.profile_personal_tag_line_is_public === 1 || p.profile_personal_tagline_is_public === 1,
+        locationIsPublic: p.profile_personal_location_is_public === 1,
+        imageIsPublic: p.profile_personal_image_is_public === 1,
       };
 
-      setUserProfileData(publicData);
+      setUserProfileData(userData);
       // QR encodes a single HTTPS URL so phone cameras open the scan landing page in the browser.
       const scanUrl = `https://everycircle.com/scan/${profileUID}`;
       const qrMeta = {
@@ -1202,96 +1296,21 @@ const NetworkScreen = ({ navigation }) => {
 
   // Update graph HTML when network data or view mode or filters change (for web)
   useEffect(() => {
-    if (Platform.OS === "web" && viewMode === "graph" && networkData.length > 0 && profileUid) {
-      // Apply filters before generating HTML
-      let filtered = networkData;
-
-      if (relationshipFilter !== "All") {
-        filtered = filtered.filter((node) => {
-          const relationship = node.circle_relationship;
-          if (relationshipFilter === "Colleagues") return relationship === "colleague";
-          if (relationshipFilter === "Friends") return relationship === "friend";
-          if (relationshipFilter === "Family") return relationship === "family";
-          return true;
-        });
-      }
-
-      if (dateFilter !== "All") {
-        const now = new Date();
-        const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-        const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-
-        filtered = filtered.filter((node) => {
-          const circleDateStr = node.circle_date || node.profile_personal_joined_timestamp;
-          if (!circleDateStr) return false;
-          try {
-            const circleDate = new Date(circleDateStr);
-            if (dateFilter === "This Week") return circleDate >= oneWeekAgo;
-            if (dateFilter === "This Month") return circleDate >= oneMonthAgo;
-            if (dateFilter === "This Year") return circleDate >= oneYearAgo;
-          } catch (e) {
-            return false;
-          }
-          return true;
-        });
-      }
-
-      if (locationFilter !== "All") {
-        filtered = filtered.filter((node) => {
-          const city = node.circle_city || "";
-          const state = node.circle_state || "";
-          let nodeLocation = "";
-          if (city && state) nodeLocation = `${city.trim()}, ${state.trim()}`;
-          else if (city) nodeLocation = city.trim();
-          else if (state) nodeLocation = state.trim();
-          return nodeLocation === locationFilter;
-        });
-      }
-
-      if (eventFilter !== "All") {
-        filtered = filtered.filter((node) => {
-          const nodeEvent = (node.circle_event || "").trim();
-          return nodeEvent === eventFilter;
-        });
-      }
-
-      if (notesFilter !== "All") {
-        filtered = filtered.filter((node) => (node.circle_note || "").trim() === notesFilter);
-      }
-
-      if (introducedByFilter !== "All") {
-        filtered = filtered.filter((node) => (node.circle_introduced_by || "").trim() === introducedByFilter);
-      }
-
-      // SEARCH FILTER RIGHT HERE
-      if (searchQuery.trim() !== "") {
-        const query = searchQuery.toLowerCase();
-        filtered = filtered.filter((node) => {
-          const searchableText = [
-            node.__mc?.firstName || "",
-            node.__mc?.lastName || "",
-            node.__mc?.tagLine || "",
-            node.__mc?.city || "",
-            node.__mc?.state || "",
-            node.__mc?.phoneNumber || "",
-            node.circle_event || "",
-            node.circle_note || "",
-            node.circle_introduced_by || "",
-            node.circle_relationship || "",
-            node.network_profile_personal_uid || "",
-          ]
-            .join(" ")
-            .toLowerCase();
-
-          return searchableText.includes(query);
-        });
-      }
+    if (Platform.OS === "web" && viewMode === "graph" && profileUid) {
+      const filtered = applyConnectionFilters(networkData, {
+        relationshipFilter,
+        dateFilter,
+        locationFilter,
+        eventFilter,
+        notesFilter,
+        introducedByFilter,
+        searchQuery,
+      });
 
       const html = generateVisHTML(filtered, profileUid || "YOU");
       setGraphHtml(html);
     }
-  }, [viewMode, networkData, profileUid, relationshipFilter, dateFilter, locationFilter, eventFilter, notesFilter, introducedByFilter, searchQuery]);
+  }, [viewMode, networkData, profileUid, relationshipFilter, dateFilter, locationFilter, eventFilter, notesFilter, introducedByFilter, searchQuery, userProfileData]);
 
   // Create/update iframe element for web
   useEffect(() => {
@@ -1678,20 +1697,24 @@ const NetworkScreen = ({ navigation }) => {
 
     // User's node should be 150% of the max other node size
     const userNodeSize = Math.round(maxOtherSize * 1.5);
+    const userNodeBorderWidth = Math.round(userNodeSize * 0.15);
 
-    // Current user: red circle (border + fill); image nodes get a red ring via border
-    const userNodeColor = { border: "#b71c1c", background: "#e53935" };
+    const userDisplayName = [userProfileData?.firstName, userProfileData?.lastName].filter(Boolean).join(" ").trim() || "You";
+    const userNodeLabel = `<b>${escapeVisHtmlLabel(userDisplayName)}</b>`;
+
+    // Current user: purple border ring; image nodes get the ring via borderWidth
+    const userNodeColor = { border: NETWORK_GRAPH_PURPLE, background: "#e53935" };
 
     const nodes = [
       {
         id: youId || "YOU",
-        label: "You",
+        label: userNodeLabel,
         shape: hasUserImage ? "circularImage" : "dot",
         image: hasUserImage ? userImage : undefined,
         size: userNodeSize,
-        borderWidth: hasUserImage ? 3 : 2,
+        borderWidth: userNodeBorderWidth,
         color: userNodeColor,
-        font: { color: "#ffffff", size: 10 },
+        font: { multi: "html", color: "#000000", size: 10 },
         level: 0,
       },
     ];
@@ -1707,14 +1730,20 @@ const NetworkScreen = ({ navigation }) => {
       const img = n.__mc?.personal_info?.profile_personal_image || n.__mc?.profileImage || n.profile_image || "";
 
       const hasImg = img && String(img).trim() !== "";
+      const isZeroNode = n.network_profile_personal_uid === EVERY_CIRCLE_ZERO_NODE_UID;
 
       nodes.push({
         id: n.network_profile_personal_uid,
         label,
-        shape: hasImg ? "circularImage" : "dot",
-        image: hasImg ? img : undefined,
-        size: hasImg ? 18 : 10,
-        color: hasImg ? undefined : { border: "#FFFFFF", background: "#e9d4ff" },
+        shape: hasImg && !isZeroNode ? "circularImage" : "dot",
+        image: hasImg && !isZeroNode ? img : undefined,
+        size: isZeroNode ? userNodeSize : hasImg ? 18 : 10,
+        borderWidth: isZeroNode ? userNodeBorderWidth : undefined,
+        color: isZeroNode
+          ? { border: NETWORK_GRAPH_PURPLE, background: NETWORK_GRAPH_PURPLE_FILL_50 }
+          : hasImg
+            ? undefined
+            : { border: "#FFFFFF", background: "#e9d4ff" },
         font: { size: 11, color: "#444" },
         level: Number(n.degree) || 1,
       });
@@ -1978,83 +2007,17 @@ const NetworkScreen = ({ navigation }) => {
     // console.log("🔵 NetworkScreen - groupedNetwork keys:", Object.keys(groupedNetwork));
   }
 
-  // Apply filters to network data for graph view
-  let filteredNetworkData = networkData;
-
-  // Apply relationship filter
-  if (relationshipFilter !== "All") {
-    filteredNetworkData = filteredNetworkData.filter((node) => {
-      const relationship = node.circle_relationship;
-      if (relationshipFilter === "Colleagues") {
-        return relationship === "colleague";
-      } else if (relationshipFilter === "Friends") {
-        return relationship === "friend";
-      } else if (relationshipFilter === "Family") {
-        return relationship === "family";
-      }
-      return true;
-    });
-  }
-
-  // Apply date filter
-  if (dateFilter !== "All") {
-    const now = new Date();
-    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-    const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-
-    filteredNetworkData = filteredNetworkData.filter((node) => {
-      const circleDateStr = node.circle_date || node.profile_personal_joined_timestamp;
-      if (!circleDateStr) return false;
-
-      try {
-        const circleDate = new Date(circleDateStr);
-        if (dateFilter === "This Week") {
-          return circleDate >= oneWeekAgo;
-        } else if (dateFilter === "This Month") {
-          return circleDate >= oneMonthAgo;
-        } else if (dateFilter === "This Year") {
-          return circleDate >= oneYearAgo;
-        }
-      } catch (e) {
-        return false;
-      }
-      return true;
-    });
-  }
-
-  // Apply location filter
-  if (locationFilter !== "All") {
-    filteredNetworkData = filteredNetworkData.filter((node) => {
-      const city = node.circle_city || "";
-      const state = node.circle_state || "";
-      let nodeLocation = "";
-      if (city && state) {
-        nodeLocation = `${city.trim()}, ${state.trim()}`;
-      } else if (city) {
-        nodeLocation = city.trim();
-      } else if (state) {
-        nodeLocation = state.trim();
-      }
-      return nodeLocation === locationFilter;
-    });
-  }
-
-  // Apply event filter
-  if (eventFilter !== "All") {
-    filteredNetworkData = filteredNetworkData.filter((node) => {
-      const nodeEvent = (node.circle_event || "").trim();
-      return nodeEvent === eventFilter;
-    });
-  }
-
-  if (notesFilter !== "All") {
-    filteredNetworkData = filteredNetworkData.filter((node) => (node.circle_note || "").trim() === notesFilter);
-  }
-
-  if (introducedByFilter !== "All") {
-    filteredNetworkData = filteredNetworkData.filter((node) => (node.circle_introduced_by || "").trim() === introducedByFilter);
-  }
+  // Apply filters to network data for graph/list views
+  const filteredNetworkData = applyConnectionFilters(networkData, {
+    relationshipFilter,
+    dateFilter,
+    locationFilter,
+    eventFilter,
+    notesFilter,
+    introducedByFilter,
+    searchQuery,
+  });
+  const filteredGroupedNetwork = groupNetworkByDegree(filteredNetworkData);
 
   const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
   const NEARBY_SETTINGS_KEY = "nearby_share_settings";
@@ -2166,11 +2129,29 @@ const NetworkScreen = ({ navigation }) => {
       <SafeAreaView style={[styles.safeArea, darkMode && styles.darkSafeArea]}>
         <ScrollView
           style={[styles.scrollContainer, darkMode && styles.darkScrollContainer]}
-          contentContainerStyle={{ padding: 10, paddingBottom: 120 }}
+          contentContainerStyle={{ padding: 15, paddingBottom: 120 }}
           keyboardShouldPersistTaps='handled'
           showsVerticalScrollIndicator
           nestedScrollEnabled={true}
         >
+          {userProfileData && (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                const uid = userProfileData.profile_uid || profileUid;
+                if (uid) {
+                  navigation.navigate("Profile", { profile_uid: uid, returnTo: "Network" });
+                } else {
+                  navigation.navigate("Profile");
+                }
+              }}
+            >
+              <View style={{ marginBottom: 16 }}>
+                <MiniCard user={userProfileData} />
+              </View>
+            </TouchableOpacity>
+          )}
+
           {/* QR Code Section */}
           {(() => {
             // if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR Code Section");
@@ -2178,19 +2159,6 @@ const NetworkScreen = ({ navigation }) => {
               // if (__DEV__) console.log("🔵 NetworkScreen - QR Code data exists, rendering QR section");
               return (
                 <View style={styles.qrCodeContainer}>
-                  {/* Display MiniCard */}
-                  {(() => {
-                    // if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR MiniCard, userProfileData:", userProfileData);
-                    if (userProfileData) {
-                      return (
-                        <View style={styles.qrCodeMiniCardContainer}>
-                          <MiniCard user={userProfileData} />
-                        </View>
-                      );
-                    }
-                    return null;
-                  })()}
-
                   <Text accessibilityRole='header' style={[styles.qrCodeTitle, darkMode && styles.darkQrCodeTitle]}>
                     Connect with Me!
                   </Text>
@@ -2434,7 +2402,7 @@ const NetworkScreen = ({ navigation }) => {
                     {error && <Text style={[styles.errorText, darkMode && styles.darkErrorText]}>{error}</Text>}
 
                     {/* Graph View */}
-                    {viewMode === "graph" && filteredNetworkData.length > 0 && (
+                    {viewMode === "graph" && profileUid && (
                       <View
                         style={{
                           height: 400,
@@ -2500,167 +2468,56 @@ const NetworkScreen = ({ navigation }) => {
                       return (
                         <>
                           {/* List View */}
-                          {viewMode === "list" && Object.keys(groupedNetwork).length > 0 && (
+                          {viewMode === "list" && Object.keys(filteredGroupedNetwork).length > 0 && (
                             <View style={{ marginTop: 10 }}>
-                              {(() => {
-                                // if (__DEV__) console.log("🔵 NetworkScreen - Rendering network list items");
-                                return Object.keys(groupedNetwork)
-                                  .map((d) => Number(d))
-                                  .sort((a, b) => a - b)
-                                  .map((deg) => {
-                                    // if (__DEV__) console.log(`🔵 NetworkScreen - Processing degree ${deg}`);
-                                    // Filter the list based on relationship type
-                                    let list = groupedNetwork[deg];
-                                    if (relationshipFilter !== "All") {
-                                      list = list.filter((node) => {
-                                        const relationship = node.circle_relationship;
-                                        if (relationshipFilter === "Colleagues") {
-                                          return relationship === "colleague";
-                                        } else if (relationshipFilter === "Friends") {
-                                          return relationship === "friend";
-                                        } else if (relationshipFilter === "Family") {
-                                          return relationship === "family";
-                                        }
-                                        return true;
-                                      });
-                                    }
-                                    // Apply date filter
-                                    if (dateFilter !== "All") {
-                                      // console.log(`🔵 NetworkScreen - Applying date filter: ${dateFilter}`);
-                                      const now = new Date();
-                                      const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                                      const oneMonthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-                                      const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+                              {Object.keys(filteredGroupedNetwork)
+                                .map((d) => Number(d))
+                                .sort((a, b) => a - b)
+                                .map((deg) => {
+                                  const list = filteredGroupedNetwork[deg];
+                                  if (!list || list.length === 0) {
+                                    return null;
+                                  }
 
-                                      list = list.filter((node) => {
-                                        const circleDateStr = node.circle_date || node.profile_personal_joined_timestamp;
-                                        if (!circleDateStr) return false;
+                                  const label = activeView === "circles" ? "Circles" : degreeLabel(Number(deg));
+                                  const isExpanded = expandedDegrees[deg] !== false;
+                                  return (
+                                    <View key={deg} style={{ marginBottom: 12 }}>
+                                      <TouchableOpacity
+                                        style={[styles.degreeLevelHeader, darkMode && styles.darkDegreeLevelHeader]}
+                                        onPress={() => setExpandedDegrees((prev) => ({ ...prev, [deg]: !(prev[deg] !== false) }))}
+                                        activeOpacity={0.7}
+                                      >
+                                        <Text style={[styles.degreeLevelHeaderText, darkMode && styles.darkDegreeLevelHeaderText]}>{label}</Text>
+                                        <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+                                      </TouchableOpacity>
 
-                                        try {
-                                          const circleDate = new Date(circleDateStr);
-                                          if (dateFilter === "This Week") {
-                                            return circleDate >= oneWeekAgo;
-                                          } else if (dateFilter === "This Month") {
-                                            return circleDate >= oneMonthAgo;
-                                          } else if (dateFilter === "This Year") {
-                                            return circleDate >= oneYearAgo;
-                                          }
-                                        } catch (e) {
-                                          console.error("Error parsing date:", circleDateStr, e);
-                                          return false;
-                                        }
-                                        return true;
-                                      });
-                                    }
-
-                                    // Apply location filter
-                                    if (locationFilter !== "All") {
-                                      // console.log(`🔵 NetworkScreen - Applying location filter: ${locationFilter}`);
-                                      list = list.filter((node) => {
-                                        const city = node.circle_city || "";
-                                        const state = node.circle_state || "";
-                                        let nodeLocation = "";
-                                        if (city && state) {
-                                          nodeLocation = `${city.trim()}, ${state.trim()}`;
-                                        } else if (city) {
-                                          nodeLocation = city.trim();
-                                        } else if (state) {
-                                          nodeLocation = state.trim();
-                                        }
-                                        return nodeLocation === locationFilter;
-                                      });
-                                    }
-
-                                    // Apply event filter
-                                    if (eventFilter !== "All") {
-                                      // console.log(`🔵 NetworkScreen - Applying event filter: ${eventFilter}`);
-                                      list = list.filter((node) => {
-                                        const nodeEvent = (node.circle_event || "").trim();
-                                        return nodeEvent === eventFilter;
-                                      });
-                                    }
-
-                                    if (notesFilter !== "All") {
-                                      list = list.filter((node) => (node.circle_note || "").trim() === notesFilter);
-                                    }
-
-                                    if (introducedByFilter !== "All") {
-                                      list = list.filter((node) => (node.circle_introduced_by || "").trim() === introducedByFilter);
-                                    }
-
-                                    // Apply search filter
-                                    if (searchQuery.trim() !== "") {
-                                      const query = searchQuery.toLowerCase();
-                                      list = list.filter((node) => {
-                                        const searchableText = [
-                                          node.__mc?.firstName || "",
-                                          node.__mc?.lastName || "",
-                                          node.__mc?.tagLine || "",
-                                          node.__mc?.city || "",
-                                          node.__mc?.state || "",
-                                          node.__mc?.phoneNumber || "",
-                                          node.circle_event || "",
-                                          node.circle_note || "",
-                                          node.circle_introduced_by || "",
-                                          node.circle_relationship || "",
-                                          node.network_profile_personal_uid || "",
-                                        ]
-                                          .join(" ")
-                                          .toLowerCase();
-
-                                        return searchableText.includes(query);
-                                      });
-                                    }
-
-                                    if (list.length === 0) {
-                                      if (__DEV__) console.log(`🔵 NetworkScreen - Degree ${deg} has no items after filtering`);
-                                      return null;
-                                    }
-
-                                    // if (__DEV__) console.log(`🔵 NetworkScreen - Rendering degree ${deg} with ${list.length} items`);
-                                    const label = activeView === "circles" ? "Circles" : degreeLabel(Number(deg));
-                                    const isExpanded = expandedDegrees[deg] !== false;
-                                    return (
-                                      <View key={deg} style={{ marginBottom: 12 }}>
-                                        <TouchableOpacity
-                                          style={[styles.degreeLevelHeader, darkMode && styles.darkDegreeLevelHeader]}
-                                          onPress={() => setExpandedDegrees((prev) => ({ ...prev, [deg]: !(prev[deg] !== false) }))}
-                                          activeOpacity={0.7}
-                                        >
-                                          <Text style={[styles.degreeLevelHeaderText, darkMode && styles.darkDegreeLevelHeaderText]}>{label}</Text>
-                                          <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
-                                        </TouchableOpacity>
-
-                                        {isExpanded && (
-                                          <View style={{ marginTop: 8 }}>
-                                            {list.map((node, index) => {
-                                              // if (__DEV__) console.log(`🔵 NetworkScreen - Rendering node ${deg}-${index}, __mc:`, node.__mc);
-                                              if (!node.__mc) {
-                                                if (__DEV__) console.log(`🔵 NetworkScreen - Node ${deg}-${index} has no __mc, skipping`);
-                                                return null;
-                                              }
-                                              // if (__DEV__) console.log(`🔵 NetworkScreen - Rendering MiniCard for node ${deg}-${index}`);
-                                              return (
-                                                <TouchableOpacity
-                                                  key={`${deg}-${index}`}
-                                                  onPress={() =>
-                                                    navigation.navigate("Profile", {
-                                                      profile_uid: node.network_profile_personal_uid,
-                                                      returnTo: "Network",
-                                                    })
-                                                  }
-                                                  style={{ marginVertical: 6 }}
-                                                >
-                                                  <MiniCard user={node.__mc} showRelationship={true} />
-                                                </TouchableOpacity>
-                                              );
-                                            })}
-                                          </View>
-                                        )}
-                                      </View>
-                                    );
-                                  });
-                              })()}
+                                      {isExpanded && (
+                                        <View style={{ marginTop: 8 }}>
+                                          {list.map((node, index) => {
+                                            if (!node.__mc) {
+                                              return null;
+                                            }
+                                            return (
+                                              <TouchableOpacity
+                                                key={`${deg}-${index}`}
+                                                onPress={() =>
+                                                  navigation.navigate("Profile", {
+                                                    profile_uid: node.network_profile_personal_uid,
+                                                    returnTo: "Network",
+                                                  })
+                                                }
+                                                style={{ marginVertical: 6 }}
+                                              >
+                                                <MicroCard user={node.__mc} />
+                                              </TouchableOpacity>
+                                            );
+                                          })}
+                                        </View>
+                                      )}
+                                    </View>
+                                  );
+                                })}
                             </View>
                           )}
                         </>
@@ -2669,6 +2526,9 @@ const NetworkScreen = ({ navigation }) => {
 
                     {(() => {
                       // if (__DEV__) console.log("🔵 NetworkScreen - Rendering 'No connections' message");
+                      if (!loading && !error && viewMode === "list" && activeView === "connections" && networkData.length > 0 && filteredNetworkData.length === 0) {
+                        return <Text style={[styles.degreeLevelHeaderText, darkMode && styles.darkDegreeLevelHeaderText]}>No Connections</Text>;
+                      }
                       if (!loading && !error && Object.keys(groupedNetwork).length === 0) {
                         return <Text style={[styles.noDataText, darkMode && styles.darkNoDataText]}>{activeView === "circles" ? "No circles found." : "No network connections found."}</Text>;
                       }
@@ -3124,7 +2984,8 @@ const NetworkScreen = ({ navigation }) => {
           }
         }}
         showNewUserButton={false}
-        modalTitle='Connect Directly'
+        modalTitle='Connect & Follow'
+        helperText='Connecting with someone allows you to See and Follow their recommendations. They get added to your Circle and their recommendations, offers and wishes rank higher in your search results. Connecting with someone does not add you to their Circles. They must add you independently.'
         instructionText='Search by email, city, state, or name, then choose someone to open their profile.'
         searchPlaceholder='Email, location, or name'
         noResultsSubtext='Try another spelling, city, or email.'

@@ -576,9 +576,9 @@ export default function SettingsScreen() {
   };
 
   const handleNavigateProfile = async () => {
-    const user_uid = await AsyncStorage.getItem("user_uid");
-    if (user_uid) {
-      navigation.navigate("Profile", { profile_uid: user_uid });
+    const profileId = await AsyncStorage.getItem("profile_uid");
+    if (profileId) {
+      navigation.navigate("Profile", { profile_uid: profileId, returnTo: "Settings" });
     } else {
       navigation.navigate("Profile");
     }
@@ -1085,9 +1085,11 @@ export default function SettingsScreen() {
         <ScrollView contentContainerStyle={styles.settingsContainer}>
           {/* Profile MiniCard at top */}
           {personalProfileData && (
-            <View style={{ marginBottom: 16 }}>
-              <MiniCard user={personalProfileData} />
-            </View>
+            <TouchableOpacity activeOpacity={0.7} onPress={handleNavigateProfile}>
+              <View style={{ marginBottom: 16 }}>
+                <MiniCard user={personalProfileData} />
+              </View>
+            </TouchableOpacity>
           )}
 
           {/* SETTINGS Section Header - Outside Box */}

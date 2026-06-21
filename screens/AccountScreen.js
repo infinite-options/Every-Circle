@@ -613,6 +613,22 @@ export default function AccountScreen({ navigation }) {
   /** Settings → Debug Mode = Yes: show Transaction ID, Type, Purchased Item in PURCHASES (wide enough); Purchased Item on web also when width > 600. */
   const [settingsDebugModeEnabled, setSettingsDebugModeEnabled] = useState(false);
 
+  const handleAccountMiniCardPress = async () => {
+    if (selectedAccount === "personal") {
+      const profileId = (await getSessionProfile())?.profileUid || (await AsyncStorage.getItem("profile_uid"));
+      if (profileId) {
+        navigation.navigate("Profile", { profile_uid: profileId, returnTo: "Account" });
+      } else {
+        navigation.navigate("Profile");
+      }
+      return;
+    }
+
+    if (selectedAccount && selectedAccount !== "personal") {
+      navigation.navigate("BusinessProfile", { business_uid: selectedAccount, returnTo: "Account" });
+    }
+  };
+
   //for return message
   const [returnNote, setReturnNote] = useState("");
   const [showReturnNoteModal, setShowReturnNoteModal] = useState(false);
@@ -2085,9 +2101,23 @@ export default function AccountScreen({ navigation }) {
       {/* Main content */}
       <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContentContainer} showsVerticalScrollIndicator={true}>
         {/* MiniCard - shows personal or business depending on selection */}
-        <View style={styles.sectionContainer}>
-          {selectedAccount === "personal" ? personalProfileData && <MiniCard user={personalProfileData} /> : selectedBusinessFullData && <MiniCard business={selectedBusinessFullData} />}
-        </View>
+        {selectedAccount === "personal" ? (
+          personalProfileData && (
+            <TouchableOpacity activeOpacity={0.7} onPress={handleAccountMiniCardPress}>
+              <View style={{ marginBottom: 16 }}>
+                <MiniCard user={personalProfileData} />
+              </View>
+            </TouchableOpacity>
+          )
+        ) : (
+          selectedBusinessFullData && (
+            <TouchableOpacity activeOpacity={0.7} onPress={handleAccountMiniCardPress}>
+              <View style={{ marginBottom: 16 }}>
+                <MiniCard business={selectedBusinessFullData} />
+              </View>
+            </TouchableOpacity>
+          )
+        )}
         {/* Select Profile Dropdown Row */}
         <View style={styles.selectProfileRow}>
           <Text style={styles.selectProfileLabel}>Select Profile</Text>
@@ -3320,7 +3350,7 @@ const styles = StyleSheet.create({
   darkContainer: {
     backgroundColor: "#1a1a1a",
   },
-  contentContainer: { flex: 1, padding: 20 },
+  contentContainer: { flex: 1, padding: 15 },
   scrollContentContainer: {
     paddingBottom: 120, // Extra padding to ensure content is visible above BottomNavBar
   },

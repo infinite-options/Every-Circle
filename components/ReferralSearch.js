@@ -16,6 +16,7 @@ const ReferralSearch = ({
   hideEmptyState = false,
   searchButtonColor,
   modalTitle = "Who referred you?",
+  helperText,
   searchPlaceholder = "Search by name or city",
   noResultsSubtext = "Try a different name or location",
   networkData = [],
@@ -179,7 +180,10 @@ const ReferralSearch = ({
         <View style={styles.modalContainer}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>{modalTitle}</Text>
+            <View style={styles.headerTextContainer}>
+              <Text style={styles.title}>{modalTitle}</Text>
+              {helperText ? <Text style={styles.helperText}>{helperText}</Text> : null}
+            </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name='close' size={24} color='#333' />
             </TouchableOpacity>
@@ -263,13 +267,23 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     marginBottom: 20,
+  },
+  headerTextContainer: {
+    flex: 1,
+    paddingRight: 12,
   },
   title: {
     fontSize: 20,
     fontWeight: "bold",
     color: "#333",
+  },
+  helperText: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#666",
   },
   preparingBanner: {
     flexDirection: "row",
