@@ -20,6 +20,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 // import axios from 'axios';
 import MiniCard from "../components/MiniCard";
+import MicroCard from "../components/MicroCard";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
@@ -526,9 +527,7 @@ const ProfileScreen = ({ route, navigation }) => {
       try {
         await saveSessionProfilePayload(apiUser);
         const session = await getSessionProfile({ forceRefresh: true });
-        const path =
-          session?.personalInfo?.profile_personal_path ??
-          session?.rawProfile?.personal_info?.profile_personal_path;
+        const path = session?.personalInfo?.profile_personal_path ?? session?.rawProfile?.personal_info?.profile_personal_path;
         console.log("[ProfileScreen] profile_personal_path:", path ?? "(not in cache)");
       } catch (e) {
         console.warn("[ProfileScreen] profile_personal_path read failed:", e?.message || e);
@@ -579,8 +578,7 @@ const ProfileScreen = ({ route, navigation }) => {
             endDate: exp.profile_experience_end_date || "",
             isPublic: exp.profile_experience_is_public === 1 || exp.isPublic === true,
             profile_experience_image: exp.profile_experience_image || "",
-            profile_experience_image_is_public:
-              exp.profile_experience_image_is_public === 0 || exp.profile_experience_image_is_public === "0" ? 0 : 1,
+            profile_experience_image_is_public: exp.profile_experience_image_is_public === 0 || exp.profile_experience_image_is_public === "0" ? 0 : 1,
           }))
         : [];
       userData.education = apiUser.education_info
@@ -592,8 +590,7 @@ const ProfileScreen = ({ route, navigation }) => {
             endDate: edu.profile_education_end_date || "",
             isPublic: edu.profile_education_is_public === 1 || edu.isPublic === true,
             profile_education_image: edu.profile_education_image || "",
-            profile_education_image_is_public:
-              edu.profile_education_image_is_public === 0 || edu.profile_education_image_is_public === "0" ? 0 : 1,
+            profile_education_image_is_public: edu.profile_education_image_is_public === 0 || edu.profile_education_image_is_public === "0" ? 0 : 1,
           }))
         : [];
       // Log business_info from API
@@ -1152,7 +1149,6 @@ const ProfileScreen = ({ route, navigation }) => {
 
   const handleConnectPopupSave = async (connectionData) => {
     try {
-
       const loggedInProfileUID = await AsyncStorage.getItem("profile_uid");
       if (!loggedInProfileUID) {
         Alert.alert("Error", "User profile not found. Please try again.");
@@ -1640,7 +1636,21 @@ const ProfileScreen = ({ route, navigation }) => {
             </View>
           </View>
 
+          <View style={{ marginBottom: 12 }}>
+            <MicroCard
+              showRelationship={!!routeProfileUID && !isCurrentUserProfile}
+              user={{
+                ...user,
+                relationship: relationshipType || existingRelationship?.circle_relationship || null,
+                imageIsPublic: user.imageIsPublic,
+                profileImage: isCurrentUserProfile || user.imageIsPublic ? user.profileImage : "",
+                tagLineIsPublic: user.tagLineIsPublic,
+              }}
+            />
+          </View>
+
           <MiniCard
+            showRelationship={!!routeProfileUID && !isCurrentUserProfile}
             user={{
               ...user,
               imageIsPublic: user.imageIsPublic,
@@ -1649,51 +1659,51 @@ const ProfileScreen = ({ route, navigation }) => {
           />
 
           {/* Add / View Connection + Message — only when viewing someone else's profile */}
-          {routeProfileUID && !isCurrentUserProfile && (() => {
-            const relTypeTrim = relationshipType ? String(relationshipType).trim() : "";
-            const hasAssignedRelationship =
-              (existingRelationship && existingRelationship.circle_uid) ||
-              (!!relTypeTrim && relTypeTrim !== "." && relTypeTrim !== "null");
-            const connectionLabel = hasAssignedRelationship ? "View Connection" : "Add Connection";
-            const profileViewColors = getHeaderColors("profileView");
-            const connectionBtnBg = darkMode ? profileViewColors.darkModeBackgroundColor : profileViewColors.backgroundColor;
-            const openConnectionPopup = () => {
-              setShowRelationshipDropdown(false);
-              setShowConnectPopup(true);
-            };
-            return (
-              <View style={styles.profileActionsRow}>
-                <TouchableOpacity
-                  style={[styles.profileActionButtonPill, { backgroundColor: connectionBtnBg }]}
-                  activeOpacity={0.85}
-                  onPress={openConnectionPopup}
-                  accessibilityRole='button'
-                  accessibilityLabel={connectionLabel}
-                >
-                  <Ionicons name='add' size={20} color='#fff' style={{ marginRight: 6 }} />
-                  <Text style={styles.connectionActionButtonText} numberOfLines={1}>
-                    {connectionLabel}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.chatButton, styles.profileActionButtonPill]}
-                  activeOpacity={0.8}
-                  onPress={() =>
-                    navigation.navigate("Chat", {
-                      other_uid: routeProfileUID || profileUID,
-                      other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
-                      other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
-                    })
-                  }
-                  accessibilityRole='button'
-                  accessibilityLabel='Message'
-                >
-                  <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' style={{ marginRight: 7 }} />
-                  <Text style={styles.chatButtonText}>Message</Text>
-                </TouchableOpacity>
-              </View>
-            );
-          })()}
+          {routeProfileUID &&
+            !isCurrentUserProfile &&
+            (() => {
+              const relTypeTrim = relationshipType ? String(relationshipType).trim() : "";
+              const hasAssignedRelationship = (existingRelationship && existingRelationship.circle_uid) || (!!relTypeTrim && relTypeTrim !== "." && relTypeTrim !== "null");
+              const connectionLabel = hasAssignedRelationship ? "View Connection" : "Add Connection";
+              const profileViewColors = getHeaderColors("profileView");
+              const connectionBtnBg = darkMode ? profileViewColors.darkModeBackgroundColor : profileViewColors.backgroundColor;
+              const openConnectionPopup = () => {
+                setShowRelationshipDropdown(false);
+                setShowConnectPopup(true);
+              };
+              return (
+                <View style={styles.profileActionsRow}>
+                  <TouchableOpacity
+                    style={[styles.profileActionButtonPill, { backgroundColor: connectionBtnBg }]}
+                    activeOpacity={0.85}
+                    onPress={openConnectionPopup}
+                    accessibilityRole='button'
+                    accessibilityLabel={connectionLabel}
+                  >
+                    <Ionicons name='add' size={20} color='#fff' style={{ marginRight: 6 }} />
+                    <Text style={styles.connectionActionButtonText} numberOfLines={1}>
+                      {connectionLabel}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.chatButton, styles.profileActionButtonPill]}
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      navigation.navigate("Chat", {
+                        other_uid: routeProfileUID || profileUID,
+                        other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
+                        other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
+                      })
+                    }
+                    accessibilityRole='button'
+                    accessibilityLabel='Message'
+                  >
+                    <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' style={{ marginRight: 7 }} />
+                    <Text style={styles.chatButtonText}>Message</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
 
           {/* Bio section */}
           {user.shortBioIsPublic && (
@@ -1726,23 +1736,13 @@ const ProfileScreen = ({ route, navigation }) => {
                       const offeringBody = (
                         <>
                           <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 8, gap: 10 }}>
-                            <ProfileSectionItemImage
-                              section="offering"
-                              imageUri={expImageUri}
-                              imageIsPublic={exp.profile_expertise_image_is_public}
-                              size={56}
-                              darkMode={darkMode}
-                            />
+                            <ProfileSectionItemImage section='offering' imageUri={expImageUri} imageIsPublic={exp.profile_expertise_image_is_public} size={56} darkMode={darkMode} />
                             <View style={{ flex: 1, minWidth: 0 }}>
                               <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-                                {sanitizeText(exp.name) ? (
-                                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{sanitizeText(exp.name)}</Text>
-                                ) : null}
+                                {sanitizeText(exp.name) ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{sanitizeText(exp.name)}</Text> : null}
                               </View>
                               {sanitizeText(exp.description) ? (
-                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>
-                                  {sanitizeText(exp.description)}
-                                </Text>
+                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{sanitizeText(exp.description)}</Text>
                               ) : null}
                             </View>
                           </View>
@@ -1771,13 +1771,7 @@ const ProfileScreen = ({ route, navigation }) => {
                                   {formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
                                     <View style={styles.seekingMetaLine}>
                                       {getExpertiseModeIoniconNames(exp.profile_expertise_mode).map((iconName, iconIdx, arr) => (
-                                        <Ionicons
-                                          key={iconName}
-                                          name={iconName}
-                                          size={14}
-                                          color={darkMode ? "#999" : "#666"}
-                                          style={{ marginRight: iconIdx < arr.length - 1 ? 4 : 6 }}
-                                        />
+                                        <Ionicons key={iconName} name={iconName} size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: iconIdx < arr.length - 1 ? 4 : 6 }} />
                                       ))}
                                       <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
                                         {formatExpertiseModeForDisplay(exp.profile_expertise_mode)}
@@ -1801,9 +1795,7 @@ const ProfileScreen = ({ route, navigation }) => {
                                 </View>
                               ) : null}
                               <View style={{ flexDirection: "row", alignItems: "center", flex: 1, justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
-                                {exp.quantity ? (
-                                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(exp.quantity).trim()}</Text>
-                                ) : null}
+                                {exp.quantity ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(exp.quantity).trim()}</Text> : null}
                                 {exp.bounty ? (
                                   <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
                                     {exp.bounty.toLowerCase() !== "free" ? `💰 $${exp.bounty.replace(/^\$/, "")}` : `💰 ${exp.bounty}`}
@@ -1902,13 +1894,7 @@ const ProfileScreen = ({ route, navigation }) => {
                       const wishCardContent = (
                         <>
                           <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 2 }}>
-                            <ProfileSectionItemImage
-                              section="seeking"
-                              imageUri={wishImageUri}
-                              imageIsPublic={wish.profile_wish_image_is_public}
-                              size={56}
-                              darkMode={darkMode}
-                            />
+                            <ProfileSectionItemImage section='seeking' imageUri={wishImageUri} imageIsPublic={wish.profile_wish_image_is_public} size={56} darkMode={darkMode} />
                             <View style={{ flex: 1, minWidth: 0 }}>
                               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
                                 <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500", flex: 1 }]}>{wish.helpNeeds || ""}</Text>
@@ -1958,9 +1944,7 @@ const ProfileScreen = ({ route, navigation }) => {
                                   </TouchableOpacity>
                                 )}
                               </View>
-                              {wish.details ? (
-                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{wish.details}</Text>
-                              ) : null}
+                              {wish.details ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{wish.details}</Text> : null}
                             </View>
                           </View>
                           {wish.profile_wish_start || wish.profile_wish_end || wish.profile_wish_location || wish.profile_wish_mode ? (
@@ -2013,9 +1997,7 @@ const ProfileScreen = ({ route, navigation }) => {
                                 </View>
                               ) : null}
                               <View style={{ flexDirection: "row", alignItems: "center", flex: 1, justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
-                                {wish.profile_wish_quantity ? (
-                                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(wish.profile_wish_quantity).trim()}</Text>
-                                ) : null}
+                                {wish.profile_wish_quantity ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(wish.profile_wish_quantity).trim()}</Text> : null}
                                 {wish.amount ? (
                                   <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
                                     {wish.amount.toLowerCase() !== "free" ? `💰 $${wish.amount.replace(/^\$/, "")}` : `💰 ${wish.amount}`}
@@ -2128,20 +2110,10 @@ const ProfileScreen = ({ route, navigation }) => {
                       return (
                         <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
                           <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
-                            <ProfileSectionItemImage
-                              section="experience"
-                              imageUri={expImageUri}
-                              imageIsPublic={exp.profile_experience_image_is_public}
-                              size={56}
-                              darkMode={darkMode}
-                            />
+                            <ProfileSectionItemImage section='experience' imageUri={expImageUri} imageIsPublic={exp.profile_experience_image_is_public} size={56} darkMode={darkMode} />
                             <View style={{ flex: 1, minWidth: 0 }}>
-                              {exp.title ? (
-                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.title}</Text>
-                              ) : null}
-                              {exp.company ? (
-                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.company}</Text>
-                              ) : null}
+                              {exp.title ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.title}</Text> : null}
+                              {exp.company ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{exp.company}</Text> : null}
                             </View>
                           </View>
                           {exp.description ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{exp.description}</Text> : null}
@@ -2176,20 +2148,10 @@ const ProfileScreen = ({ route, navigation }) => {
                       return (
                         <View key={index} style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}>
                           <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
-                            <ProfileSectionItemImage
-                              section="education"
-                              imageUri={eduImageUri}
-                              imageIsPublic={edu.profile_education_image_is_public}
-                              size={56}
-                              darkMode={darkMode}
-                            />
+                            <ProfileSectionItemImage section='education' imageUri={eduImageUri} imageIsPublic={edu.profile_education_image_is_public} size={56} darkMode={darkMode} />
                             <View style={{ flex: 1, minWidth: 0 }}>
-                              {edu.degree ? (
-                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{edu.degree}</Text>
-                              ) : null}
-                              {edu.school ? (
-                                <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{edu.school}</Text>
-                              ) : null}
+                              {edu.degree ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{edu.degree}</Text> : null}
+                              {edu.school ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "bold" }]}>{edu.school}</Text> : null}
                             </View>
                           </View>
                           {edu.startDate || edu.endDate ? (
@@ -2217,10 +2179,7 @@ const ProfileScreen = ({ route, navigation }) => {
                     <Text style={styles.sectionHeaderText}>BUSINESSES / ORGANIZATIONS</Text>
                   </TouchableOpacity>
                   {isCurrentUserProfile && (
-                    <TouchableOpacity
-                      onPress={() => navigation.navigate("BusinessSetup")}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
+                    <TouchableOpacity onPress={() => navigation.navigate("BusinessSetup")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                       <Text style={[styles.sectionHeaderText, { fontSize: 28, lineHeight: 28 }]}>+</Text>
                     </TouchableOpacity>
                   )}
@@ -2231,9 +2190,7 @@ const ProfileScreen = ({ route, navigation }) => {
               </View>
               {showBusiness &&
                 (() => {
-                  const businessesToShow = Array.isArray(businessesData)
-                    ? businessesData.filter((b) => b.individualIsPublic === true)
-                    : [];
+                  const businessesToShow = Array.isArray(businessesData) ? businessesData.filter((b) => b.individualIsPublic === true) : [];
                   return businessesToShow.length > 0 ? (
                     businessesToShow.map((business, index) => (
                       <View
@@ -2257,25 +2214,25 @@ const ProfileScreen = ({ route, navigation }) => {
                           </View>
                         ) : null}
                         {routeProfileUID && !isCurrentUserProfile && (business.business_uid || business.profile_business_uid) ? (
-                        <TouchableOpacity
-                          style={[styles.contextChatButton, darkMode && styles.darkContextChatButton, { marginTop: 8 }]}
-                          activeOpacity={0.8}
-                          onPress={() =>
-                            navigation.navigate("Chat", {
-                              other_uid: business.business_uid || business.profile_business_uid,
-                              other_name: business.business_name || "Business",
-                              other_image: business.business_profile_img || null,
-                              reply_context: {
-                                label: `Business: ${sanitizeText(business.business_name || "Business")}`,
-                              },
-                            })
-                          }
-                        >
-                          <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" style={{ marginRight: 6 }} />
-                          <Text style={styles.contextChatButtonText}>Message this business</Text>
-                        </TouchableOpacity>
-                      ) : null}
-                    </View>
+                          <TouchableOpacity
+                            style={[styles.contextChatButton, darkMode && styles.darkContextChatButton, { marginTop: 8 }]}
+                            activeOpacity={0.8}
+                            onPress={() =>
+                              navigation.navigate("Chat", {
+                                other_uid: business.business_uid || business.profile_business_uid,
+                                other_name: business.business_name || "Business",
+                                other_image: business.business_profile_img || null,
+                                reply_context: {
+                                  label: `Business: ${sanitizeText(business.business_name || "Business")}`,
+                                },
+                              })
+                            }
+                          >
+                            <Ionicons name='chatbubble-ellipses-outline' size={14} color='#fff' style={{ marginRight: 6 }} />
+                            <Text style={styles.contextChatButtonText}>Message this business</Text>
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
                     ))
                   ) : (
                     <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No businesses added yet</Text>
@@ -2561,7 +2518,9 @@ const ProfileScreen = ({ route, navigation }) => {
       <FeedbackPopup visible={showFeedbackPopup} onClose={() => setShowFeedbackPopup(false)} pageName='Profile' instructions={profileFeedbackInstructions} questions={profileFeedbackQuestions} />
       <AddToCartDetailsModal
         show={offeringCartModalItem != null}
-        setShow={(v) => { if (!v) setOfferingCartModalItem(null); }}
+        setShow={(v) => {
+          if (!v) setOfferingCartModalItem(null);
+        }}
         expertiseData={offeringCartModalItem?.expertiseData}
         profileData={offeringCartModalItem?.profileData}
         onAddToCart={handleOfferingAddToCartConfirm}

@@ -33,57 +33,59 @@ function loadGoogleMapsApi() {
   return _sdkPromise;
 }
 
-// ─── getBusinessSuggestions ───────────────────────────────────────────────────
-export async function getBusinessSuggestions(input) {
+function _mapPredictions(predictions) {
+  return (predictions || []).map((p) => ({
+    place_id: p.place_id,
+    description: p.description,
+    structured_formatting: {
+      main_text: p.structured_formatting?.main_text || p.description,
+      secondary_text: p.structured_formatting?.secondary_text || "",
+    },
+  }));
+}
+
+async function _getPlacePredictions(input, types) {
   if (!input?.trim()) return [];
 
   if (Platform.OS === "web") {
-    // ── Web: JS SDK ──
     try {
       await loadGoogleMapsApi();
       return await new Promise((resolve) => {
         const svc = new window.google.maps.places.AutocompleteService();
-        svc.getPlacePredictions(
-          { input: input.trim(), types: ["establishment"] },
-          (predictions, status) => {
-            if (!predictions || status !== window.google.maps.places.PlacesServiceStatus.OK) {
-              resolve([]);
-              return;
-            }
-            resolve(predictions.map((p) => ({
-              place_id: p.place_id,
-              description: p.description,
-              structured_formatting: {
-                main_text: p.structured_formatting?.main_text || p.description,
-                secondary_text: p.structured_formatting?.secondary_text || "",
-              },
-            })));
+        svc.getPlacePredictions({ input: input.trim(), types }, (predictions, status) => {
+          if (!predictions || status !== window.google.maps.places.PlacesServiceStatus.OK) {
+            resolve([]);
+            return;
           }
-        );
+          resolve(_mapPredictions(predictions));
+        });
       });
     } catch (e) {
       console.error("[Places] web SDK error:", e);
       return [];
     }
-  } else {
-    // ── Native: REST ──
-    try {
-      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input.trim())}&key=${PLACES_KEY}&types=establishment&language=en`;
-      const res = await fetch(url);
-      const json = await res.json();
-      return (json.predictions || []).map((p) => ({
-        place_id: p.place_id,
-        description: p.description,
-        structured_formatting: {
-          main_text: p.structured_formatting?.main_text || p.description,
-          secondary_text: p.structured_formatting?.secondary_text || "",
-        },
-      }));
-    } catch (e) {
-      console.error("[Places] native REST error:", e);
-      return [];
-    }
   }
+
+  try {
+    const typesParam = Array.isArray(types) && types.length ? `&types=${encodeURIComponent(types.join("|"))}` : "";
+    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input.trim())}&key=${PLACES_KEY}${typesParam}&language=en`;
+    const res = await fetch(url);
+    const json = await res.json();
+    return _mapPredictions(json.predictions);
+  } catch (e) {
+    console.error("[Places] native REST error:", e);
+    return [];
+  }
+}
+
+// ─── getBusinessSuggestions ───────────────────────────────────────────────────
+export async function getBusinessSuggestions(input) {
+  return _getPlacePredictions(input, ["establishment"]);
+}
+
+/** Street/home address autocomplete (precise geocoded addresses). */
+export async function getAddressSuggestions(input) {
+  return _getPlacePredictions(input, ["address"]);
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────

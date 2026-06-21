@@ -31,7 +31,7 @@ function formatRelationship(user) {
   return "Relationship not Assigned";
 }
 
-const MicroCard = ({ user }) => {
+const MicroCard = ({ user, showRelationship = true }) => {
   const { darkMode } = useDarkMode();
 
   const firstName = sanitizeText(user?.firstName || user?.personal_info?.profile_personal_first_name);
@@ -74,9 +74,11 @@ const MicroCard = ({ user }) => {
         ) : null}
       </View>
 
-      <Text style={[styles.relationship, darkMode && styles.darkText]} numberOfLines={2}>
-        {relationshipText}
-      </Text>
+      {showRelationship ? (
+        <Text style={[styles.relationship, darkMode && styles.darkText]} numberOfLines={2}>
+          {relationshipText}
+        </Text>
+      ) : null}
     </View>
   );
 };
@@ -109,10 +111,10 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   name: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "bold",
     color: "#333",
-    marginBottom: 2,
+    marginBottom: 4,
   },
   darkName: {
     color: "#fff",

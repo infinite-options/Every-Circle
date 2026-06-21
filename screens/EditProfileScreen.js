@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Modal, ActivityIndicator, Keyboard, UIManager, findNodeHandle, Platform, BackHandler } from "react-native";
 import { axiosMiddleware as axios } from "../utils/httpMiddleware";
 import MiniCard from "../components/MiniCard";
+import MicroCard from "../components/MicroCard";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import * as ImagePicker from "expo-image-picker";
@@ -19,10 +20,29 @@ import BusinessSection from "../components/BusinessSection";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
-import { parseCoordinatePairInput } from "../utils/validateCoordinates";
+import { parseCoordinateValue } from "../utils/validateCoordinates";
+import { getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
+import { Ionicons } from "@expo/vector-icons";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 const DEFAULT_PROFILE_IMAGE = require("../assets/profile.png");
+
+function getInitialHomeLatLng(user) {
+  const pi = user?.personal_info;
+  let lat = parseCoordinateValue(pi?.profile_personal_latitude);
+  let lng = parseCoordinateValue(pi?.profile_personal_longitude);
+  if ((lat == null || lng == null) && user?.homeCoordinates) {
+    const parts = String(user.homeCoordinates)
+      .split(/[,;]+/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (parts.length === 2) {
+      lat = parseCoordinateValue(parts[0]);
+      lng = parseCoordinateValue(parts[1]);
+    }
+  }
+  return { lat, lng };
+}
 
 const EditProfileScreen = ({ route, navigation }) => {
   const { darkMode } = useDarkMode();
@@ -48,6 +68,14 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState(null);
 
+  const [showProfile, setShowProfile] = useState(true);
+  const [showBio, setShowBio] = useState(true);
+  const [showOffering, setShowOffering] = useState(true);
+  const [showSeeking, setShowSeeking] = useState(true);
+  const [showExperience, setShowExperience] = useState(true);
+  const [showEducation, setShowEducation] = useState(true);
+  const [showBusiness, setShowBusiness] = useState(true);
+
   useEffect(() => {
     // This useEffect is only used to log the screen being mounted
     console.log("EditProfileScreen - Screen Mounted");
@@ -59,6 +87,8 @@ const EditProfileScreen = ({ route, navigation }) => {
     console.log("user?.wishes:", JSON.stringify(user?.wishes, null, 2));
   }, []);
 
+  const initialHomeLatLng = getInitialHomeLatLng(user);
+
   const [formData, setFormData] = useState({
     email: user?.email || "",
     firstName: user?.firstName || "",
@@ -68,7 +98,8 @@ const EditProfileScreen = ({ route, navigation }) => {
     shortBio: user?.shortBio || "",
     city: user?.city || "",
     state: user?.state || "",
-    homeCoordinates: user?.homeCoordinates || "",
+    homeLatitude: initialHomeLatLng.lat,
+    homeLongitude: initialHomeLatLng.lng,
     locationIsPublic: user?.locationIsPublic || false,
     emailIsPublic: user?.emailIsPublic || false,
     phoneIsPublic: user?.phoneIsPublic || false,
@@ -110,8 +141,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             endDate: e.endDate || e.profile_experience_end_date || "",
             isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_experience_is_public === 1,
             profile_experience_image: rawImg,
-            profile_experience_image_is_public:
-              e.profile_experience_image_is_public === 0 || e.profile_experience_image_is_public === "0" ? 0 : 1,
+            profile_experience_image_is_public: e.profile_experience_image_is_public === 0 || e.profile_experience_image_is_public === "0" ? 0 : 1,
             _jobNewImageUri: "",
             _jobWebImageFile: null,
             _jobOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
@@ -151,8 +181,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             endDate: e.endDate || e.profile_education_end_date || "",
             isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_education_is_public === 1,
             profile_education_image: rawImg,
-            profile_education_image_is_public:
-              e.profile_education_image_is_public === 0 || e.profile_education_image_is_public === "0" ? 0 : 1,
+            profile_education_image_is_public: e.profile_education_image_is_public === 0 || e.profile_education_image_is_public === "0" ? 0 : 1,
             _eduNewImageUri: "",
             _eduWebImageFile: null,
             _eduOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
@@ -191,8 +220,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             cost: e.cost || e.profile_expertise_cost || "",
             bounty: e.bounty || e.profile_expertise_bounty || "",
             profile_expertise_image: rawImg,
-            profile_expertise_image_is_public:
-              e.profile_expertise_image_is_public === 0 || e.profile_expertise_image_is_public === "0" ? 0 : 1,
+            profile_expertise_image_is_public: e.profile_expertise_image_is_public === 0 || e.profile_expertise_image_is_public === "0" ? 0 : 1,
             profile_expertise_start: e.profile_expertise_start || "",
             profile_expertise_end: e.profile_expertise_end || "",
             profile_expertise_location: e.profile_expertise_location || "",
@@ -303,7 +331,10 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [shortBioHeight, setShortBioHeight] = useState(40); // Initial height for Short Bio
   const fileInputRef = useRef(null); // For web file input
   const [imageUpdateKey, setImageUpdateKey] = useState(0); // Key to force MiniCard re-render when image changes
-  const [homeCoordinatesError, setHomeCoordinatesError] = useState("");
+  const [homeAddress, setHomeAddress] = useState("");
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
+  const [addressSearchLoading, setAddressSearchLoading] = useState(false);
+  const addressDebounceRef = useRef(null);
 
   const toggleVisibility = (fieldName) => {
     setFormData((prev) => {
@@ -324,6 +355,87 @@ const EditProfileScreen = ({ route, navigation }) => {
   const handleFieldChange = (fieldName, value) => {
     setFormData((prev) => ({ ...prev, [fieldName]: value }));
     setIsChanged(true);
+  };
+
+  const onHomeAddressChange = (text) => {
+    setHomeAddress(text);
+    setIsChanged(true);
+    if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+
+    if (!text.trim()) {
+      setAddressSuggestions([]);
+      setFormData((prev) => ({ ...prev, homeLatitude: null, homeLongitude: null }));
+      return;
+    }
+
+    addressDebounceRef.current = setTimeout(async () => {
+      try {
+        const results = await getAddressSuggestions(text);
+        setAddressSuggestions(results);
+      } catch (err) {
+        console.error("EditProfileScreen address suggestions error:", err);
+      }
+    }, 350);
+  };
+
+  const handleHomeAddressSelect = async (place) => {
+    setAddressSuggestions([]);
+    setAddressSearchLoading(true);
+    try {
+      const pd = await getPlaceDetails(place.place_id);
+      if (pd.lat == null || pd.lng == null) {
+        Alert.alert("Error", "Could not determine coordinates for this address.");
+        return;
+      }
+      setHomeAddress(pd.formatted_address || place.description || "");
+      setFormData((prev) => ({
+        ...prev,
+        homeLatitude: pd.lat,
+        homeLongitude: pd.lng,
+      }));
+      setIsChanged(true);
+    } catch (err) {
+      console.error("EditProfileScreen address select error:", err);
+      Alert.alert("Error", "Could not load address details. Please try again.");
+    } finally {
+      setAddressSearchLoading(false);
+    }
+  };
+
+  const renderHomeAddressField = () => {
+    const hasRecordedLocation = formData.homeLatitude != null && formData.homeLongitude != null;
+    const addressPlaceholder = hasRecordedLocation ? "Location already recorded for location based features. Enter new address to change location." : "Start typing your home address";
+
+    return (
+      <View style={[styles.fieldContainer, styles.placesSearchContainer]}>
+        <View style={styles.labelRow}>
+          <Text style={[styles.label, darkMode && styles.darkLabel]}>Address (for location based services only)</Text>
+          <Text style={[styles.toggleText, styles.alwaysHiddenLabel, darkMode && styles.darkAlwaysHiddenLabel]}>Always Hidden</Text>
+        </View>
+        <TextInput
+          style={[styles.input, darkMode && styles.darkInput]}
+          placeholder={addressPlaceholder}
+          placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+          value={homeAddress}
+          onChangeText={onHomeAddressChange}
+          autoCapitalize='words'
+          autoCorrect={false}
+        />
+        {addressSearchLoading ? <ActivityIndicator size='small' color='#4B2E83' style={{ marginTop: 8 }} /> : null}
+        {addressSuggestions.length > 0 && (
+          <View style={[styles.placesSuggestionsList, darkMode && styles.darkPlacesSuggestionsList]}>
+            {addressSuggestions.map((item) => (
+              <TouchableOpacity key={item.place_id} style={[styles.placesSuggestionRow, darkMode && styles.darkPlacesSuggestionRow]} onPress={() => handleHomeAddressSelect(item)} activeOpacity={0.7}>
+                <Text style={[styles.placesSuggestionMain, darkMode && styles.darkLabel]}>{item.structured_formatting?.main_text || item.description}</Text>
+                {item.structured_formatting?.secondary_text ? (
+                  <Text style={[styles.placesSuggestionSub, darkMode && styles.darkHomeCoordHint]}>{item.structured_formatting.secondary_text}</Text>
+                ) : null}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
+    );
   };
 
   // Update all toggles to set isChanged to true
@@ -551,13 +663,8 @@ const EditProfileScreen = ({ route, navigation }) => {
       return;
     }
 
-    const homeCoords = parseCoordinatePairInput(formData.homeCoordinates);
-    if (homeCoords.error) {
-      setHomeCoordinatesError(homeCoords.error);
-      Alert.alert("Invalid coordinates", homeCoords.error);
-      return;
-    }
-    setHomeCoordinatesError("");
+    const homeLat = formData.homeLatitude;
+    const homeLng = formData.homeLongitude;
 
     const trimmedProfileUID = profileUID.trim();
     if (!trimmedProfileUID) {
@@ -578,9 +685,9 @@ const EditProfileScreen = ({ route, navigation }) => {
 
       payload.append("profile_personal_city", formData.city);
       payload.append("profile_personal_state", formData.state);
-      if (homeCoords.lat != null && homeCoords.lng != null) {
-        payload.append("profile_personal_latitude", String(homeCoords.lat));
-        payload.append("profile_personal_longitude", String(homeCoords.lng));
+      if (homeLat != null && homeLng != null) {
+        payload.append("profile_personal_latitude", String(homeLat));
+        payload.append("profile_personal_longitude", String(homeLng));
       } else {
         payload.append("profile_personal_latitude", "");
         payload.append("profile_personal_longitude", "");
@@ -613,9 +720,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         profile_wish_end: w.profile_wish_end || "",
         profile_wish_location: w.profile_wish_location || "",
         profile_wish_mode: w.profile_wish_mode || "",
-        ...(w.profile_wish_uid && (w.profile_wish_updated_at != null || w.updated_at != null)
-          ? { profile_wish_updated_at: w.profile_wish_updated_at ?? w.updated_at }
-          : {}),
+        ...(w.profile_wish_uid && (w.profile_wish_updated_at != null || w.updated_at != null) ? { profile_wish_updated_at: w.profile_wish_updated_at ?? w.updated_at } : {}),
         helpNeeds: w.helpNeeds || "",
         details: w.details || "",
         amount: w.amount || "",
@@ -633,8 +738,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           endDate: exp.endDate || "",
           isPublic: exp.isPublic ? 1 : 0,
           profile_experience_image: exp.profile_experience_image || "",
-          profile_experience_image_is_public:
-            exp.profile_experience_image_is_public === 0 || exp.profile_experience_image_is_public === "0" ? 0 : 1,
+          profile_experience_image_is_public: exp.profile_experience_image_is_public === 0 || exp.profile_experience_image_is_public === "0" ? 0 : 1,
         };
         if (exp.profile_experience_uid) {
           return { profile_experience_uid: exp.profile_experience_uid, ...base };
@@ -653,8 +757,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           endDate: edu.endDate || "",
           isPublic: edu.isPublic ? 1 : 0,
           profile_education_image: edu.profile_education_image || "",
-          profile_education_image_is_public:
-            edu.profile_education_image_is_public === 0 || edu.profile_education_image_is_public === "0" ? 0 : 1,
+          profile_education_image_is_public: edu.profile_education_image_is_public === 0 || edu.profile_education_image_is_public === "0" ? 0 : 1,
           profile_education_school_name: edu.school || "",
           profile_education_degree: edu.degree || "",
           profile_education_start_date: edu.startDate || "",
@@ -682,9 +785,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         profile_expertise_end: e.profile_expertise_end || "",
         profile_expertise_location: e.profile_expertise_location || "",
         profile_expertise_mode: e.profile_expertise_mode || "",
-        ...(e.profile_expertise_uid && (e.profile_expertise_updated_at != null || e.updated_at != null)
-          ? { profile_expertise_updated_at: e.profile_expertise_updated_at ?? e.updated_at }
-          : {}),
+        ...(e.profile_expertise_uid && (e.profile_expertise_updated_at != null || e.updated_at != null) ? { profile_expertise_updated_at: e.profile_expertise_updated_at ?? e.updated_at } : {}),
         name: e.name || "",
         description: e.description || "",
         quantity: e.quantity || "",
@@ -711,9 +812,7 @@ const EditProfileScreen = ({ route, navigation }) => {
               isApproved: biz.isApproved ? 1 : 0,
               // individualIsPublic: biz.individualIsPublic ? 1 : 0,
               individualIsPublic: biz.isPublic ? 1 : 0,
-              ...(biz.business_updated_at != null || biz.updated_at != null
-                ? { business_updated_at: biz.business_updated_at ?? biz.updated_at }
-                : {}),
+              ...(biz.business_updated_at != null || biz.updated_at != null ? { business_updated_at: biz.business_updated_at ?? biz.updated_at } : {}),
             };
           }
 
@@ -831,8 +930,7 @@ const EditProfileScreen = ({ route, navigation }) => {
 
       for (let index = 0; index < (formData.expertise || []).length; index++) {
         const e = formData.expertise[index];
-        const imgPublic =
-          e.profile_expertise_image_is_public === 1 || e.profile_expertise_image_is_public === "1" || e.profile_expertise_image_is_public === true;
+        const imgPublic = e.profile_expertise_image_is_public === 1 || e.profile_expertise_image_is_public === "1" || e.profile_expertise_image_is_public === true;
         payload.append(`profile_expertise_image_${index}_is_public`, imgPublic ? "1" : "0");
       }
 
@@ -905,9 +1003,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         } else if (newUri && (newUri.startsWith("file:") || newUri.startsWith("content:"))) {
           const uriParts = newUri.split(".");
           const fileType = uriParts.length > 1 ? uriParts[uriParts.length - 1].split(/[?#]/)[0] : "jpg";
-          const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase())
-            ? `image/${fileType === "jpg" ? "jpeg" : fileType}`
-            : "image/jpeg";
+          const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase()) ? `image/${fileType === "jpg" ? "jpeg" : fileType}` : "image/jpeg";
           fileToAppend = { uri: newUri, type: mimeType, name: `profile_experience_image_${index}.${fileType}` };
         } else if (newUri && newUri.startsWith("data:")) {
           try {
@@ -926,10 +1022,7 @@ const EditProfileScreen = ({ route, navigation }) => {
 
       for (let index = 0; index < (formData.experience || []).length; index++) {
         const exp = formData.experience[index];
-        const imgPublic =
-          exp.profile_experience_image_is_public === 1 ||
-          exp.profile_experience_image_is_public === "1" ||
-          exp.profile_experience_image_is_public === true;
+        const imgPublic = exp.profile_experience_image_is_public === 1 || exp.profile_experience_image_is_public === "1" || exp.profile_experience_image_is_public === true;
         payload.append(`profile_experience_image_${index}_is_public`, imgPublic ? "1" : "0");
       }
 
@@ -956,9 +1049,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         } else if (newUri && (newUri.startsWith("file:") || newUri.startsWith("content:"))) {
           const uriParts = newUri.split(".");
           const fileType = uriParts.length > 1 ? uriParts[uriParts.length - 1].split(/[?#]/)[0] : "jpg";
-          const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase())
-            ? `image/${fileType === "jpg" ? "jpeg" : fileType}`
-            : "image/jpeg";
+          const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase()) ? `image/${fileType === "jpg" ? "jpeg" : fileType}` : "image/jpeg";
           fileToAppend = { uri: newUri, type: mimeType, name: `profile_education_image_${index}.${fileType}` };
         } else if (newUri && newUri.startsWith("data:")) {
           try {
@@ -977,10 +1068,7 @@ const EditProfileScreen = ({ route, navigation }) => {
 
       for (let index = 0; index < (formData.education || []).length; index++) {
         const edu = formData.education[index];
-        const imgPublic =
-          edu.profile_education_image_is_public === 1 ||
-          edu.profile_education_image_is_public === "1" ||
-          edu.profile_education_image_is_public === true;
+        const imgPublic = edu.profile_education_image_is_public === 1 || edu.profile_education_image_is_public === "1" || edu.profile_education_image_is_public === true;
         payload.append(`profile_education_image_${index}_is_public`, imgPublic ? "1" : "0");
       }
 
@@ -1056,8 +1144,8 @@ const EditProfileScreen = ({ route, navigation }) => {
                 ...user.personal_info,
                 profile_personal_city: formData.city,
                 profile_personal_state: formData.state,
-                profile_personal_latitude: homeCoords.lat,
-                profile_personal_longitude: homeCoords.lng,
+                profile_personal_latitude: homeLat,
+                profile_personal_longitude: homeLng,
                 profile_personal_location_is_public: formData.locationIsPublic ? 1 : 0,
               },
             },
@@ -1090,21 +1178,11 @@ const EditProfileScreen = ({ route, navigation }) => {
       <View style={styles.labelRow}>
         <Text style={[styles.label, darkMode && styles.darkLabel]}>{label}</Text>
         <View style={styles.toggleContainer}>
-        <TouchableOpacity
-            onPress={() => handleToggleVisibility(visibilityFieldName)}
-            style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}
-          >
-            <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>
-              {isPublic ? "Visible" : "Show"}
-            </Text>
+          <TouchableOpacity onPress={() => handleToggleVisibility(visibilityFieldName)} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
+            <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => handleToggleVisibility(visibilityFieldName)}
-            style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}
-          >
-            <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>
-              {!isPublic ? "Hidden" : "Hide"}
-            </Text>
+          <TouchableOpacity onPress={() => handleToggleVisibility(visibilityFieldName)} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
+            <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1121,55 +1199,17 @@ const EditProfileScreen = ({ route, navigation }) => {
     </View>
   );
 
-  const renderHomeCoordinatesField = () => (
-    <View style={styles.fieldContainer}>
-      <Text style={[styles.label, darkMode && styles.darkLabel]}>Home coordinates</Text>
-      <Text style={[styles.homeCoordHint, darkMode && styles.darkHomeCoordHint]}>
-        Decimal degrees (WGS84). Format: latitude, longitude. Leave empty to clear.
-      </Text>
-      <TextInput
-        style={[
-          styles.input,
-          darkMode && styles.darkInput,
-          homeCoordinatesError ? styles.inputError : null,
-        ]}
-        value={formData.homeCoordinates}
-        onChangeText={(text) => {
-          handleFieldChange("homeCoordinates", text);
-          if (homeCoordinatesError) setHomeCoordinatesError("");
-        }}
-        placeholder='e.g. 37.7893, -122.3966'
-        placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
-        autoCapitalize='none'
-        autoCorrect={false}
-      />
-      {homeCoordinatesError ? (
-        <Text style={styles.homeCoordErrorText}>{homeCoordinatesError}</Text>
-      ) : null}
-    </View>
-  );
-
   const renderShortBioField = () => (
     <View style={styles.fieldContainer}>
       {/* Row: Label and Toggle */}
       <View style={styles.labelRow}>
         <Text style={[styles.label, darkMode && styles.darkLabel]}>Short Bio (max 500 characters)</Text>
         <View style={styles.toggleContainer}>
-          <TouchableOpacity
-            onPress={() => handleToggleVisibility("shortBioIsPublic")}
-            style={[styles.togglePill, formData.shortBioIsPublic && styles.togglePillActiveGreen]}
-          >
-            <Text style={[styles.togglePillText, formData.shortBioIsPublic && styles.togglePillTextActive]}>
-              {formData.shortBioIsPublic ? "Visible" : "Show"}
-            </Text>
+          <TouchableOpacity onPress={() => handleToggleVisibility("shortBioIsPublic")} style={[styles.togglePill, formData.shortBioIsPublic && styles.togglePillActiveGreen]}>
+            <Text style={[styles.togglePillText, formData.shortBioIsPublic && styles.togglePillTextActive]}>{formData.shortBioIsPublic ? "Visible" : "Show"}</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => handleToggleVisibility("shortBioIsPublic")}
-            style={[styles.togglePill, !formData.shortBioIsPublic && styles.togglePillActiveRed]}
-          >
-            <Text style={[styles.togglePillText, !formData.shortBioIsPublic && styles.togglePillTextActive]}>
-              {!formData.shortBioIsPublic ? "Hidden" : "Hide"}
-            </Text>
+          <TouchableOpacity onPress={() => handleToggleVisibility("shortBioIsPublic")} style={[styles.togglePill, !formData.shortBioIsPublic && styles.togglePillActiveRed]}>
+            <Text style={[styles.togglePillText, !formData.shortBioIsPublic && styles.togglePillTextActive]}>{!formData.shortBioIsPublic ? "Hidden" : "Hide"}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1314,14 +1354,13 @@ const EditProfileScreen = ({ route, navigation }) => {
     }, 100);
   };
 
+  // To get the new card’s exact on-screen position relative to the ScrollView.
 
-// To get the new card’s exact on-screen position relative to the ScrollView.
+  // We need that y + height to decide:
 
-// We need that y + height to decide:
-
-// Is the card already visible?
-// If not, how far should we scroll so it lands near center?
-// Without UIManager.measureLayout, scrollTo would be guesswork.
+  // Is the card already visible?
+  // If not, how far should we scroll so it lands near center?
+  // Without UIManager.measureLayout, scrollTo would be guesswork.
   // Handle keyboard show/hide to scroll to focused input
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener("keyboardDidShow", (e) => {
@@ -1399,21 +1438,11 @@ const EditProfileScreen = ({ route, navigation }) => {
           />
           <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
             <View style={styles.toggleContainer}>
-              <TouchableOpacity
-                onPress={toggleProfileImageVisibility}
-                style={[styles.togglePill, !formData.imageIsPublic && styles.togglePillActiveRed]}
-              >
-                <Text style={[styles.togglePillText, !formData.imageIsPublic && styles.togglePillTextActive]}>
-                  {!formData.imageIsPublic ? "Hidden" : "Hide"}
-                </Text>
+              <TouchableOpacity onPress={toggleProfileImageVisibility} style={[styles.togglePill, !formData.imageIsPublic && styles.togglePillActiveRed]}>
+                <Text style={[styles.togglePillText, !formData.imageIsPublic && styles.togglePillTextActive]}>{!formData.imageIsPublic ? "Hidden" : "Hide"}</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                onPress={toggleProfileImageVisibility}
-                style={[styles.togglePill, formData.imageIsPublic && styles.togglePillActiveGreen]}
-              >
-                <Text style={[styles.togglePillText, formData.imageIsPublic && styles.togglePillTextActive]}>
-                  {formData.imageIsPublic ? "Visible" : "Show"}
-                </Text>
+              <TouchableOpacity onPress={toggleProfileImageVisibility} style={[styles.togglePill, formData.imageIsPublic && styles.togglePillActiveGreen]}>
+                <Text style={[styles.togglePillText, formData.imageIsPublic && styles.togglePillTextActive]}>{formData.imageIsPublic ? "Visible" : "Show"}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1431,138 +1460,164 @@ const EditProfileScreen = ({ route, navigation }) => {
             })}
         </View>
 
-        {/* MiniCard Live Preview Section */}
+        {/* Card Live Preview Section */}
         <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
-          <Text style={[styles.label, darkMode && styles.darkLabel]}>Mini Card (how you'll appear in searches):</Text>
-          <View style={[styles.previewCard, darkMode && styles.darkPreviewCard]}>
-            <MiniCard key={`minicard-${imageUpdateKey}`} user={previewUser} />
+          <Text style={[styles.label, darkMode && styles.darkLabel]}>Micro Card (how you'll appear in Connections):</Text>
+          <View style={styles.previewCardSpacing}>
+            <MicroCard key={`microcard-${imageUpdateKey}`} user={previewUser} showRelationship={false} />
           </View>
+          <Text style={[styles.label, darkMode && styles.darkLabel]}>Mini Card (how you'll appear in Searches):</Text>
+          <MiniCard key={`minicard-${imageUpdateKey}`} user={previewUser} />
         </View>
 
         {/* PROFILE Section */}
-        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowProfile(!showProfile)} activeOpacity={0.7}>
           <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>PROFILE</Text>
-        </View>
-        {renderField("First Name (Public)", formData.firstName, true, "firstName", "firstNameIsPublic")}
-        {renderField("Last Name (Public)", formData.lastName, true, "lastName", "lastNameIsPublic")}
-        {renderField("Phone Number", formData.phoneNumber, formData.phoneIsPublic, "phoneNumber", "phoneIsPublic")}
-        {renderField("Email", formData.email, formData.emailIsPublic, "email", "emailIsPublic")}
-        {renderField("City", formData.city, formData.locationIsPublic, "city", "locationIsPublic")}
-        {renderField("State", formData.state, formData.locationIsPublic, "state", "locationIsPublic")}
-        {renderHomeCoordinatesField()}
-        {renderField("Tag Line", formData.tagLine, formData.tagLineIsPublic, "tagLine", "tagLineIsPublic")}
+          <Ionicons name={showProfile ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
+        </TouchableOpacity>
+        {showProfile && (
+          <>
+            {renderField("First Name (Public)", formData.firstName, true, "firstName", "firstNameIsPublic")}
+            {renderField("Last Name (Public)", formData.lastName, true, "lastName", "lastNameIsPublic")}
+            {renderField("Phone Number", formData.phoneNumber, formData.phoneIsPublic, "phoneNumber", "phoneIsPublic")}
+            {renderField("Email", formData.email, formData.emailIsPublic, "email", "emailIsPublic")}
+            {renderHomeAddressField()}
+            {renderField("City", formData.city, formData.locationIsPublic, "city", "locationIsPublic")}
+            {renderField("State", formData.state, formData.locationIsPublic, "state", "locationIsPublic")}
+          </>
+        )}
 
         {/* BIO Section */}
-        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowBio(!showBio)} activeOpacity={0.7}>
           <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>BIO</Text>
-        </View>
-        {renderShortBioField()}
+          <Ionicons name={showBio ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
+        </TouchableOpacity>
+        {showBio && (
+          <>
+            {renderField("Tag Line", formData.tagLine, formData.tagLineIsPublic, "tagLine", "tagLineIsPublic")}
+            {renderShortBioField()}
+          </>
+        )}
 
         {/* OFFERING Section */}
-        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowOffering(!showOffering)} activeOpacity={0.7}>
           <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>OFFERING</Text>
-        </View>
-        
-        <ExpertiseSection
-          expertise={formData.expertise}
-          setExpertise={(e) => {
-            setFormData((prev) => ({ ...prev, expertise: e }));
-            setIsChanged(true);
-          }}
-          toggleVisibility={() => handleToggleVisibility("expertiseIsPublic")}
-          isPublic={formData.expertiseIsPublic}
-          handleDelete={handleDeleteExpertise}
-          profileUid={profileUID.trim()}
-          darkMode={darkMode}
-          onInputFocus={(inputRef) => {
-            // Called by child after "+" render with new card ref.
-            scrollNewCardToMiddleIfNeeded(inputRef);
-          }}
-        />
+          <Ionicons name={showOffering ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
+        </TouchableOpacity>
+        {showOffering && (
+          <ExpertiseSection
+            expertise={formData.expertise}
+            setExpertise={(e) => {
+              setFormData((prev) => ({ ...prev, expertise: e }));
+              setIsChanged(true);
+            }}
+            toggleVisibility={() => handleToggleVisibility("expertiseIsPublic")}
+            isPublic={formData.expertiseIsPublic}
+            handleDelete={handleDeleteExpertise}
+            profileUid={profileUID.trim()}
+            darkMode={darkMode}
+            onInputFocus={(inputRef) => {
+              // Called by child after "+" render with new card ref.
+              scrollNewCardToMiddleIfNeeded(inputRef);
+            }}
+          />
+        )}
 
         {/* SEEKING Section */}
-        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowSeeking(!showSeeking)} activeOpacity={0.7}>
           <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>SEEKING</Text>
-        </View>
-        <SeekingSection
-          wishes={formData.wishes}
-          setWishes={(e) => {
-            setFormData((prev) => ({ ...prev, wishes: e }));
-            setIsChanged(true);
-          }}
-          toggleVisibility={() => handleToggleVisibility("wishesIsPublic")}
-          isPublic={formData.wishesIsPublic}
-          handleDelete={handleDeleteWish}
-          profileUid={profileUID.trim()}
-          darkMode={darkMode}
-          onInputFocus={(inputRef) => {
-            // Called by child after "+" render with new card ref.
-            scrollNewCardToMiddleIfNeeded(inputRef);
-          }}
-        />
+          <Ionicons name={showSeeking ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
+        </TouchableOpacity>
+        {showSeeking && (
+          <SeekingSection
+            wishes={formData.wishes}
+            setWishes={(e) => {
+              setFormData((prev) => ({ ...prev, wishes: e }));
+              setIsChanged(true);
+            }}
+            toggleVisibility={() => handleToggleVisibility("wishesIsPublic")}
+            isPublic={formData.wishesIsPublic}
+            handleDelete={handleDeleteWish}
+            profileUid={profileUID.trim()}
+            darkMode={darkMode}
+            onInputFocus={(inputRef) => {
+              // Called by child after "+" render with new card ref.
+              scrollNewCardToMiddleIfNeeded(inputRef);
+            }}
+          />
+        )}
 
         {/* EXPERIENCE Section */}
-        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowExperience(!showExperience)} activeOpacity={0.7}>
           <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>EXPERIENCE</Text>
-        </View>
-        <ExperienceSection
-          experience={formData.experience}
-          setExperience={(e) => {
-            setFormData((prev) => ({ ...prev, experience: e }));
-            setIsChanged(true);
-          }}
-          toggleVisibility={() => handleToggleVisibility("experienceIsPublic")}
-          isPublic={formData.experienceIsPublic}
-          handleDelete={handleDeleteExperience}
-          profileUid={profileUID.trim()}
-          darkMode={darkMode}
-          onInputFocus={(inputRef) => {
-            // Called by child after "+" render with new card ref.
-            scrollNewCardToMiddleIfNeeded(inputRef);
-          }}
-        />
+          <Ionicons name={showExperience ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
+        </TouchableOpacity>
+        {showExperience && (
+          <ExperienceSection
+            experience={formData.experience}
+            setExperience={(e) => {
+              setFormData((prev) => ({ ...prev, experience: e }));
+              setIsChanged(true);
+            }}
+            toggleVisibility={() => handleToggleVisibility("experienceIsPublic")}
+            isPublic={formData.experienceIsPublic}
+            handleDelete={handleDeleteExperience}
+            profileUid={profileUID.trim()}
+            darkMode={darkMode}
+            onInputFocus={(inputRef) => {
+              // Called by child after "+" render with new card ref.
+              scrollNewCardToMiddleIfNeeded(inputRef);
+            }}
+          />
+        )}
 
         {/* EDUCATION Section */}
-        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowEducation(!showEducation)} activeOpacity={0.7}>
           <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>EDUCATION</Text>
-        </View>
-        <EducationSection
-          education={formData.education}
-          setEducation={(e) => {
-            setFormData((prev) => ({ ...prev, education: e }));
-            setIsChanged(true);
-          }}
-          toggleVisibility={() => handleToggleVisibility("educationIsPublic")}
-          isPublic={formData.educationIsPublic}
-          handleDelete={handleDeleteEducation}
-          profileUid={profileUID.trim()}
-          darkMode={darkMode}
-          onInputFocus={(inputRef) => {
-            // Called by child after "+" render with new card ref.
-            scrollNewCardToMiddleIfNeeded(inputRef);
-          }}
-        />
+          <Ionicons name={showEducation ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
+        </TouchableOpacity>
+        {showEducation && (
+          <EducationSection
+            education={formData.education}
+            setEducation={(e) => {
+              setFormData((prev) => ({ ...prev, education: e }));
+              setIsChanged(true);
+            }}
+            toggleVisibility={() => handleToggleVisibility("educationIsPublic")}
+            isPublic={formData.educationIsPublic}
+            handleDelete={handleDeleteEducation}
+            profileUid={profileUID.trim()}
+            darkMode={darkMode}
+            onInputFocus={(inputRef) => {
+              // Called by child after "+" render with new card ref.
+              scrollNewCardToMiddleIfNeeded(inputRef);
+            }}
+          />
+        )}
 
         {/* BUSINESSES / ORGANIZATIONS Section */}
-        <View style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]}>
+        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowBusiness(!showBusiness)} activeOpacity={0.7}>
           <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>BUSINESSES / ORGANIZATIONS</Text>
-        </View>
-        <BusinessSection
-          businesses={formData.businesses}
-          setBusinesses={(e) => {
-            setFormData((prev) => ({ ...prev, businesses: e }));
-            setIsChanged(true);
-          }}
-          toggleVisibility={() => handleToggleVisibility("businessIsPublic")}
-          isPublic={formData.businessIsPublic}
-          handleDelete={handleDeleteBusiness}
-          navigation={navigation}
-          preFetchedBusinessesData={preFetchedBusinessesData}
-          onInputFocus={(inputRef) => {
-            // Called by child after "+" render with new card ref.
-            scrollNewCardToMiddleIfNeeded(inputRef);
-          }}
-        />
+          <Ionicons name={showBusiness ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
+        </TouchableOpacity>
+        {showBusiness && (
+          <BusinessSection
+            businesses={formData.businesses}
+            setBusinesses={(e) => {
+              setFormData((prev) => ({ ...prev, businesses: e }));
+              setIsChanged(true);
+            }}
+            toggleVisibility={() => handleToggleVisibility("businessIsPublic")}
+            isPublic={formData.businessIsPublic}
+            handleDelete={handleDeleteBusiness}
+            navigation={navigation}
+            preFetchedBusinessesData={preFetchedBusinessesData}
+            onInputFocus={(inputRef) => {
+              // Called by child after "+" render with new card ref.
+              scrollNewCardToMiddleIfNeeded(inputRef);
+            }}
+          />
+        )}
 
         <TouchableOpacity
           style={[styles.saveButton, !isChanged && (darkMode ? styles.darkDisabledButton : styles.disabledButton), darkMode && styles.darkSaveButton]}
@@ -1684,7 +1739,7 @@ const styles = StyleSheet.create({
   profileImage: { width: 100, height: 100, borderRadius: 50, marginBottom: 10, backgroundColor: "#eee" },
   uploadLink: { color: "#007AFF", textDecorationLine: "underline", marginBottom: 10 },
   previewSection: { marginBottom: 20 },
-  previewCard: { padding: 10, borderWidth: 1, borderColor: "#ccc", borderRadius: 5 },
+  previewCardSpacing: { marginBottom: 16 },
 
   // Dark mode styles
   darkPageContainer: {
@@ -1712,10 +1767,6 @@ const styles = StyleSheet.create({
   },
   darkUploadLink: {
     color: "#4a9eff",
-  },
-  darkPreviewCard: {
-    backgroundColor: "#2d2d2d",
-    borderColor: "#404040",
   },
   darkDisabledInput: {
     backgroundColor: "#404040",
@@ -1847,13 +1898,49 @@ const styles = StyleSheet.create({
   darkHomeCoordHint: {
     color: "#aaa",
   },
+  alwaysHiddenLabel: {
+    color: "#666666",
+    fontStyle: "italic",
+  },
+  darkAlwaysHiddenLabel: {
+    color: "#999999",
+  },
+  placesSearchContainer: {
+    zIndex: 10,
+  },
+  placesSuggestionsList: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    maxHeight: 220,
+    overflow: "hidden",
+  },
+  darkPlacesSuggestionsList: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  placesSuggestionRow: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  darkPlacesSuggestionRow: {
+    borderBottomColor: "#404040",
+  },
+  placesSuggestionMain: {
+    fontSize: 15,
+    color: "#333",
+    fontWeight: "600",
+  },
+  placesSuggestionSub: {
+    fontSize: 13,
+    color: "#666",
+    marginTop: 2,
+  },
   inputError: {
     borderColor: "#c62828",
-  },
-  homeCoordErrorText: {
-    marginTop: 6,
-    fontSize: 13,
-    color: "#c62828",
   },
 });
 
