@@ -24,6 +24,8 @@ import { getSessionProfile } from "../utils/sessionProfile";
 import MiniCard from "../components/MiniCard";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { parsePrice } from "../utils/priceUtils";
+import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines } from "../utils/selectedChoiceItems";
+import ProductOrderSummaryLines from "../components/ProductOrderSummaryLines";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 
 /** 1 = compact: Purchases (Date, Type, Seller, Paid, Amount) + Bounty Results (hide ID); 0 = full tables */
@@ -125,6 +127,57 @@ function isReturnReceipt(receiptRows) {
 
 function formatReceiptUsd(n) {
   return Number.isFinite(n) ? `$${n.toFixed(2)}` : "—";
+}
+
+function parseReceiptJsonField(value, fallback) {
+  if (value == null || value === "") return fallback;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+/** Build receipt line enrichment from a transaction-receipt API row when choices were stored server-side. */
+function enrichFromReceiptRow(row) {
+  if (!row || typeof row !== "object") return null;
+  const bsId =
+    row.ti_bs_id != null && String(row.ti_bs_id).trim() !== ""
+      ? String(row.ti_bs_id).trim()
+      : row.bs_uid != null && String(row.bs_uid).trim() !== ""
+        ? String(row.bs_uid).trim()
+        : "";
+  if (!bsId) return null;
+
+  const choicesExtraCost = parseFloat(row.choices_extra_cost ?? row.ti_choices_extra_cost ?? 0) || 0;
+  const selectedChoices = parseReceiptJsonField(row.selected_choices ?? row.ti_selected_choices, {});
+  const selectedChoiceLabels = parseReceiptJsonField(row.selected_choice_labels ?? row.ti_selected_choice_labels, {});
+  const selectedChoiceItems = parseReceiptJsonField(row.selected_choice_items ?? row.ti_selected_choice_items, []);
+  const specialInstructions = String(row.special_instructions ?? row.ti_special_instructions ?? "").trim();
+  const unitPriceRaw = row.unit_price ?? row.ti_unit_price;
+  const unitPrice = unitPriceRaw != null && unitPriceRaw !== "" ? parseFloat(unitPriceRaw) : undefined;
+  const itemizedLines = getItemizedChoiceLines({
+    selectedChoiceItems,
+    selectedChoiceLabels,
+    choicesExtraCost,
+  });
+  const hasLabels = selectedChoiceLabels && typeof selectedChoiceLabels === "object" && Object.keys(selectedChoiceLabels).length > 0;
+  const hasChoices = selectedChoices && typeof selectedChoices === "object" && Object.keys(selectedChoices).length > 0;
+  const hasItemized = itemizedLines.length > 0;
+
+  if (choicesExtraCost <= 0 && !hasLabels && !hasChoices && !hasItemized && !specialInstructions) return null;
+
+  return {
+    [bsId]: {
+      choicesExtraCost,
+      selectedChoiceLabels: hasLabels ? selectedChoiceLabels : {},
+      selectedChoiceItems: itemizedLines,
+      selectedChoices: hasChoices ? selectedChoices : {},
+      specialInstructions,
+      unitPrice,
+    },
+  };
 }
 
 /** Below receipt line items: merchandise, tax, fees, total, and arithmetic check vs amount paid. */
@@ -637,6 +690,7 @@ export default function AccountScreen({ navigation }) {
       });
 
       // Load enriched choices FIRST so they're ready when receipt data arrives
+      let localEnrichedItems = {};
       try {
         // 1. Persistent choices saved at checkout time
         const stored = await AsyncStorage.getItem("receipt_choices_by_bs_uid");
@@ -652,24 +706,19 @@ export default function AccountScreen({ navigation }) {
           try {
             const parsed = JSON.parse(val);
             (parsed.items || []).forEach((cartItem) => {
-              if (cartItem.bs_uid && (cartItem.selectedChoiceLabels || cartItem.choicesExtraCost)) {
-                cartEnrichMap[cartItem.bs_uid] = {
-                  choicesExtraCost: cartItem.choicesExtraCost || 0,
-                  selectedChoiceLabels: cartItem.selectedChoiceLabels || {},
-                  selectedChoices: cartItem.selectedChoices || {},
-                  specialInstructions: cartItem.specialInstructions || "",
-                  unitPrice: cartItem.unitPrice,
-                };
+              const enrichment = cartChoiceEnrichmentFromItem(cartItem);
+              if (enrichment) {
+                cartEnrichMap[cartItem.bs_uid] = enrichment;
               }
             });
           } catch {}
         });
 
         // Persisted data takes priority over active cart
-        const merged = { ...cartEnrichMap, ...persistedChoices };
-        console.log("fetchReceipt - enriched items loaded:", Object.keys(merged).length, "keys");
-        console.log("fetchReceipt - enriched items:", JSON.stringify(merged));
-        setReceiptEnrichedItems(merged);
+        localEnrichedItems = { ...cartEnrichMap, ...persistedChoices };
+        console.log("fetchReceipt - enriched items loaded:", Object.keys(localEnrichedItems).length, "keys");
+        console.log("fetchReceipt - enriched items:", JSON.stringify(localEnrichedItems));
+        setReceiptEnrichedItems(localEnrichedItems);
       } catch (e) {
         console.warn("fetchReceipt - failed to load enriched items:", e);
       }
@@ -693,6 +742,12 @@ export default function AccountScreen({ navigation }) {
         items = [result.data];
       }
 
+      const apiEnrichMap = {};
+      items.forEach((row) => {
+        const parsed = enrichFromReceiptRow(row);
+        if (parsed) Object.assign(apiEnrichMap, parsed);
+      });
+      setReceiptEnrichedItems({ ...localEnrichedItems, ...apiEnrichMap });
       setReceiptData(items);
     } catch (error) {
       console.error("Error fetching receipt:", error);
@@ -837,14 +892,9 @@ export default function AccountScreen({ navigation }) {
         try {
           const parsed = JSON.parse(val);
           (parsed.items || []).forEach((cartItem) => {
-            if (cartItem.bs_uid) {
-              cartEnrichMap[cartItem.bs_uid] = {
-                choicesExtraCost: cartItem.choicesExtraCost || 0,
-                selectedChoiceLabels: cartItem.selectedChoiceLabels || {},
-                selectedChoices: cartItem.selectedChoices || {},
-                specialInstructions: cartItem.specialInstructions || "",
-                unitPrice: cartItem.unitPrice,
-              };
+            const enrichment = cartChoiceEnrichmentFromItem(cartItem);
+            if (enrichment) {
+              cartEnrichMap[cartItem.bs_uid] = enrichment;
             }
           });
         } catch {}
@@ -2653,11 +2703,9 @@ export default function AccountScreen({ navigation }) {
               <ScrollView style={styles.receiptScrollView} horizontal>
                 <View>
                   <View style={styles.receiptTableHeader}>
-                    <Text style={[styles.receiptHeaderCell, { width: 140 }]}>Item</Text>
+                    <Text style={[styles.receiptHeaderCell, { width: 280 }]}>Item</Text>
                     <Text style={[styles.receiptHeaderCell, { width: 40 }]}>Qty</Text>
-                    <Text style={[styles.receiptHeaderCell, { width: 75 }]}>Base</Text>
-                    <Text style={[styles.receiptHeaderCell, { width: 130 }]}>Chosen Options</Text>
-                    <Text style={[styles.receiptHeaderCell, { width: 75 }]}>Total</Text>
+                    <Text style={[styles.receiptHeaderCell, { width: 80 }]}>Total</Text>
                   </View>
 
                   {receiptData.map((item, index) => {
@@ -2668,60 +2716,37 @@ export default function AccountScreen({ navigation }) {
                       || receiptEnrichedItems[item.bs_uid]
                       || {};
 
-                    const choiceLabels = enrich.selectedChoiceLabels || {};
                     const choicesExtraCost = parseFloat(enrich.choicesExtraCost || 0);
-                    const specialInstructions = enrich.specialInstructions || "";
-                    const hasChoices = Object.keys(choiceLabels).length > 0;
-
                     const unitPrice = baseCost + choicesExtraCost;
                     const lineTotal = unitPrice * qty;
+                    const summaryDescription =
+                      String(item.bs_service_desc || item.bs_service_name || "N/A").trim() || "N/A";
 
                     return (
                       <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
-                        {/* Item name */}
-                        <View style={{ width: 140, paddingHorizontal: 4, justifyContent: "center" }}>
-                          <Text style={{ fontSize: 12, color: "#333" }} numberOfLines={3}>
-                            {item.bs_service_name || "N/A"}
-                          </Text>
-                          {specialInstructions ? (
-                            <Text style={{ fontSize: 10, color: "#888", marginTop: 2, fontStyle: "italic" }}>
-                              Note: {specialInstructions}
-                            </Text>
-                          ) : null}
+                        <View style={{ width: 280, paddingHorizontal: 4, justifyContent: "center" }}>
+                          <ProductOrderSummaryLines
+                            description={summaryDescription}
+                            baseCost={baseCost}
+                            choiceSource={enrich}
+                            specialInstructions={enrich.specialInstructions}
+                            baseTextStyle={{ fontSize: 12, color: darkMode ? "#eee" : "#333", lineHeight: 18, marginBottom: 3 }}
+                            choiceTextStyle={{ fontSize: 11, color: darkMode ? "#ccc" : "#555", lineHeight: 16 }}
+                            noteTextStyle={{
+                              fontSize: 11,
+                              color: darkMode ? "#aaa" : "#888",
+                              fontStyle: "italic",
+                              lineHeight: 16,
+                              marginTop: 3,
+                            }}
+                          />
                         </View>
 
-                        {/* Qty */}
                         <Text style={[styles.receiptTableCell, { width: 40, textAlign: "center" }]}>
                           {qty}
                         </Text>
 
-                        {/* Base cost */}
-                        <Text style={[styles.receiptTableCell, { width: 75, textAlign: "right" }]}>
-                          ${baseCost.toFixed(2)}
-                        </Text>
-
-                        {/* Chosen options — only what the buyer selected, with extra cost if any */}
-                        <View style={{ width: 130, paddingHorizontal: 4, justifyContent: "center" }}>
-                          {hasChoices ? (
-                            <>
-                              {Object.entries(choiceLabels).map(([groupTitle, label]) => (
-                                <Text key={groupTitle} style={{ fontSize: 10, color: "#555", lineHeight: 15 }}>
-                                  {groupTitle}: {label}
-                                </Text>
-                              ))}
-                              {choicesExtraCost > 0 && (
-                                <Text style={{ fontSize: 10, color: "#18884A", fontWeight: "600", marginTop: 2 }}>
-                                  +${choicesExtraCost.toFixed(2)}
-                                </Text>
-                              )}
-                            </>
-                          ) : (
-                            <Text style={{ fontSize: 11, color: "#aaa" }}>—</Text>
-                          )}
-                        </View>
-
-                        {/* Line total (base + options) × qty */}
-                        <Text style={[styles.receiptTableCell, { width: 75, textAlign: "right", fontWeight: "600" }]}>
+                        <Text style={[styles.receiptTableCell, { width: 80, textAlign: "right", fontWeight: "600" }]}>
                           ${lineTotal.toFixed(2)}
                         </Text>
                       </View>
@@ -2745,16 +2770,14 @@ export default function AccountScreen({ navigation }) {
                         borderTopColor: "#18884A",
                         marginTop: 4,
                       }]}>
-                        <View style={{ width: 140 }} />
-                        <Text style={{ width: 40 }} />
-                        <Text style={{ width: 75 }} />
                         <Text style={[styles.receiptTableCell, {
-                          width: 130, fontWeight: "700", textAlign: "right"
+                          width: 280, fontWeight: "700", textAlign: "right", paddingRight: 8,
                         }]}>
                           Grand Total
                         </Text>
+                        <Text style={{ width: 40 }} />
                         <Text style={[styles.receiptTableCell, {
-                          width: 75, fontWeight: "700",
+                          width: 80, fontWeight: "700",
                           color: "#18884A", textAlign: "right"
                         }]}>
                           ${grandTotal.toFixed(2)}

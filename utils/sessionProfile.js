@@ -5,6 +5,8 @@ import { persistMyBusinessUidsFromProfile } from "./myBusinessUids";
 
 /** Full GET /api/v1/userprofileinfo/:id JSON for the logged-in user — persisted for offline reuse across screens */
 export const USER_PROFILE_JSON_CACHE_KEY = "user_profile_info_json_cache_v1";
+/** Lightweight fallback when profile JSON cache is cleared but viewer path is still needed (e.g. connection degree). */
+const VIEWER_PROFILE_PATH_KEY = "viewer_profile_personal_path_v1";
 
 let cachedSessionProfile = null;
 
@@ -96,6 +98,13 @@ export async function saveSessionProfilePayload(json) {
     console.warn("saveSessionProfilePayload: AsyncStorage failed", e);
   }
 
+  const path = json?.personal_info?.profile_personal_path;
+  if (path != null && String(path).trim() !== "") {
+    try {
+      await AsyncStorage.setItem(VIEWER_PROFILE_PATH_KEY, String(path).trim());
+    } catch (_) {}
+  }
+
   const session = buildSessionFromRaw(json, trimmed);
   cachedSessionProfile = session;
   try {
@@ -139,8 +148,30 @@ export async function clearStoredUserProfileJson() {
   } catch (_) {}
 }
 
+/** Logged-in viewer's profile_personal_path for referral-tree distance (session JSON, then dedicated fallback key). */
+export async function getViewerProfilePersonalPath() {
+  const session = await getSessionProfile();
+  const fromSession =
+    session?.personalInfo?.profile_personal_path ?? session?.rawProfile?.personal_info?.profile_personal_path ?? null;
+  if (fromSession != null && String(fromSession).trim() !== "") {
+    const trimmed = String(fromSession).trim();
+    try {
+      await AsyncStorage.setItem(VIEWER_PROFILE_PATH_KEY, trimmed);
+    } catch (_) {}
+    return trimmed;
+  }
+  try {
+    const cached = await AsyncStorage.getItem(VIEWER_PROFILE_PATH_KEY);
+    if (cached != null && String(cached).trim() !== "") return String(cached).trim();
+  } catch (_) {}
+  return null;
+}
+
 /** Call on logout / session reset alongside clearing profile_uid */
 export async function clearUserProfileCacheStorage() {
   await clearStoredUserProfileJson();
+  try {
+    await AsyncStorage.removeItem(VIEWER_PROFILE_PATH_KEY);
+  } catch (_) {}
   clearSessionProfileCache();
 }

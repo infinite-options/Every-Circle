@@ -39,7 +39,9 @@ if (isWeb) {
 import StripePayment from "../components/StripePaymentWeb";
 import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
+import ProductOrderSummaryLines, { resolveProductSummaryDescription } from "../components/ProductOrderSummaryLines";
 import { parsePrice } from "../utils/priceUtils";
+import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines } from "../utils/selectedChoiceItems";
 import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { recordServicePurchase } from "../utils/purchaseService";
 
@@ -372,14 +374,9 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       try {
         const choicesRecord = {};
         cartItems.forEach((item) => {
-          if (item.bs_uid && (item.selectedChoiceLabels || item.choicesExtraCost || item.specialInstructions)) {
-            choicesRecord[item.bs_uid] = {
-              choicesExtraCost: item.choicesExtraCost || 0,
-              selectedChoiceLabels: item.selectedChoiceLabels || {},
-              selectedChoices: item.selectedChoices || {},
-              specialInstructions: item.specialInstructions || "",
-              unitPrice: item.unitPrice,
-            };
+          const enrichment = cartChoiceEnrichmentFromItem(item);
+          if (enrichment) {
+            choicesRecord[item.bs_uid] = enrichment;
           }
         });
         if (Object.keys(choicesRecord).length > 0) {
@@ -517,14 +514,9 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       try {
         const choicesRecord = {};
         cartItems.forEach((item) => {
-          if (item.bs_uid && (item.selectedChoiceLabels || item.choicesExtraCost || item.specialInstructions)) {
-            choicesRecord[item.bs_uid] = {
-              choicesExtraCost: item.choicesExtraCost || 0,
-              selectedChoiceLabels: item.selectedChoiceLabels || {},
-              selectedChoices: item.selectedChoices || {},
-              specialInstructions: item.specialInstructions || "",
-              unitPrice: item.unitPrice,
-            };
+          const enrichment = cartChoiceEnrichmentFromItem(item);
+          if (enrichment) {
+            choicesRecord[item.bs_uid] = enrichment;
           }
         });
         if (Object.keys(choicesRecord).length > 0) {
@@ -678,10 +670,11 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         const cartKey = newCartItems[index].cart_key || `cart_expertise_${newCartItems[index].expertise_uid}`;
         await AsyncStorage.setItem(cartKey, JSON.stringify(newCartItems[index]));
       } else {
+        const itemUnitPrice = parsePrice(newCartItems[index].unitPrice ?? newCartItems[index].bs_cost_with_extras ?? newCartItems[index].bs_cost);
         newCartItems[index] = {
           ...newCartItems[index],
           quantity: newQuantity,
-          totalPrice: (parsePrice(newCartItems[index].bs_cost) * newQuantity).toFixed(2),
+          totalPrice: (itemUnitPrice * newQuantity).toFixed(2),
         };
         setCartItems(newCartItems);
         const businessUid = newCartItems[index].business_uid;
@@ -879,6 +872,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
           choices_extra_cost: item.choicesExtraCost || 0,
           unit_price: item.unitPrice || parsePrice(item.bs_cost),
           selected_choices: item.selectedChoices || {},
+          selected_choice_labels: item.selectedChoiceLabels || {},
+          selected_choice_items: getItemizedChoiceLines(item),
           special_instructions: item.specialInstructions || "",
         };
       });
@@ -1034,50 +1029,65 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       <Ionicons name='close-circle' size={24} color='#FF3B30' />
                     </TouchableOpacity>
                     <View style={styles.cartItemContent}>
-                      <Text style={styles.itemName}>{item.itemType === "expertise" ? item.title : item.bs_service_name}</Text>
-                      {/* Stock badge for limited-quantity items */}
-                      {item.itemType !== "expertise" &&
-                        (() => {
-                          const qty = item.bs_quantity;
-                          if (!qty || String(qty).toLowerCase() === "unlimited") return null;
-                          const num = parseInt(qty, 10);
-                          if (isNaN(num)) return null;
-                          const isSoldOut = num === 0;
-                          const isLow = num > 0 && num <= 5;
-                          return (
-                            <View
-                              style={{
-                                alignSelf: "flex-start",
-                                backgroundColor: isSoldOut ? "#fee2e2" : isLow ? "#fef9c3" : "#dcfce7",
-                                borderRadius: 10,
-                                paddingHorizontal: 8,
-                                paddingVertical: 2,
-                                marginBottom: 6,
-                              }}
-                            >
-                              <Text
+                      {item.itemType === "expertise" ? (
+                        <>
+                          <Text style={styles.itemName}>{item.title}</Text>
+                          <Text style={styles.itemDescription}>{item.description}</Text>
+                        </>
+                      ) : (
+                        <>
+                          {showLineBusiness ? <Text style={styles.itemBusinessName}>{lineBusiness}</Text> : null}
+                          {(() => {
+                            const qty = item.bs_quantity;
+                            if (!qty || String(qty).toLowerCase() === "unlimited") return null;
+                            const num = parseInt(qty, 10);
+                            if (isNaN(num)) return null;
+                            const isSoldOut = num === 0;
+                            const isLow = num > 0 && num <= 5;
+                            return (
+                              <View
                                 style={{
-                                  fontSize: 12,
-                                  fontWeight: "600",
-                                  color: isSoldOut ? "#dc2626" : isLow ? "#b45309" : "#166534",
+                                  alignSelf: "flex-start",
+                                  backgroundColor: isSoldOut ? "#fee2e2" : isLow ? "#fef9c3" : "#dcfce7",
+                                  borderRadius: 10,
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 2,
+                                  marginBottom: 6,
                                 }}
                               >
-                                {isSoldOut ? "Out of stock" : isLow ? `Only ${num} left` : `${num} in stock`}
-                              </Text>
-                            </View>
-                          );
-                        })()}
-                      {showLineBusiness ? <Text style={styles.itemBusinessName}>{lineBusiness}</Text> : null}
-                      <Text style={styles.itemDescription}>{item.itemType === "expertise" ? item.description : item.bs_service_desc}</Text>
+                                <Text
+                                  style={{
+                                    fontSize: 12,
+                                    fontWeight: "600",
+                                    color: isSoldOut ? "#dc2626" : isLow ? "#b45309" : "#166534",
+                                  }}
+                                >
+                                  {isSoldOut ? "Out of stock" : isLow ? `Only ${num} left` : `${num} in stock`}
+                                </Text>
+                              </View>
+                            );
+                          })()}
+                          <ProductOrderSummaryLines
+                            description={resolveProductSummaryDescription(item)}
+                            baseCost={item.bs_cost}
+                            currency={item.bs_cost_currency}
+                            choiceSource={item}
+                            specialInstructions={item.specialInstructions}
+                            containerStyle={{ marginBottom: 10 }}
+                            baseTextStyle={styles.orderSummaryBase}
+                            choiceTextStyle={styles.orderSummaryChoice}
+                            noteTextStyle={styles.orderSummaryNote}
+                          />
+                        </>
+                      )}
+                      {item.itemType === "expertise" && showLineBusiness ? <Text style={styles.itemBusinessName}>{lineBusiness}</Text> : null}
                       <View style={styles.priceContainer}>
-                        <View style={styles.priceRow}>
-                          <Text style={styles.priceLabel}>Price:</Text>
-                          <Text style={styles.priceValue}>
-                            {item.itemType === "expertise"
-                              ? `$${parsePrice(item.cost).toFixed(2)}`
-                              : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${parsePrice(item.bs_cost_with_extras || item.bs_cost).toFixed(2)}`}
-                          </Text>
-                        </View>
+                        {item.itemType === "expertise" ? (
+                          <View style={styles.priceRow}>
+                            <Text style={styles.priceLabel}>Price:</Text>
+                            <Text style={styles.priceValue}>${parsePrice(item.cost).toFixed(2)}</Text>
+                          </View>
+                        ) : null}
                         <View style={styles.quantityContainer}>
                           <Text style={styles.priceLabel}>Quantity:</Text>
                           <View style={styles.quantityControls}>
@@ -1095,7 +1105,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                           <Text style={styles.totalValue}>
                             {item.itemType === "expertise"
                               ? `$${(parsePrice(item.cost) * (item.quantity || 1)).toFixed(2)}`
-                              : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${(parsePrice(item.totalPrice) || parsePrice(item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
+                              : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${(parsePrice(item.totalPrice) || parsePrice(item.bs_cost_with_extras || item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
                           </Text>
                         </View>
                         {item.itemType === "expertise" ? (
@@ -1508,6 +1518,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
     marginBottom: 10,
+  },
+  orderSummaryBase: {
+    fontSize: 15,
+    color: "#333",
+    lineHeight: 22,
+    marginBottom: 4,
+  },
+  orderSummaryChoice: {
+    fontSize: 14,
+    color: "#444",
+    lineHeight: 20,
+  },
+  orderSummaryNote: {
+    fontSize: 14,
+    color: "#666",
+    fontStyle: "italic",
+    lineHeight: 20,
+    marginTop: 4,
   },
   lineTaxBlock: {
     marginTop: 8,

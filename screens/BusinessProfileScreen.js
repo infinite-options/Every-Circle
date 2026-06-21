@@ -14,6 +14,7 @@ import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { parsePrice } from "../utils/priceUtils";
+import { buildSelectedChoiceItems, sumChoiceExtraCost } from "../utils/selectedChoiceItems";
 import { getHeaderColors } from "../config/headerColors";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
@@ -29,7 +30,7 @@ import {
 import { buildBusinessMiniCardBusiness } from "../utils/mapBusinessToMiniCard";
 import { getPlaceDetails } from "../utils/googlePlaces";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
-import { getSessionProfile } from "../utils/sessionProfile";
+import { getSessionProfile, getViewerProfilePersonalPath, refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { enrichReviewWithConnectionDegree } from "../utils/profilePathConnectionDegree";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
 import * as DocumentPicker from "expo-document-picker";
@@ -160,9 +161,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
   }, []);
 
   useEffect(() => {
-    getSessionProfile()
-      .then((session) => {
-        const path = session?.personalInfo?.profile_personal_path ?? session?.rawProfile?.personal_info?.profile_personal_path ?? null;
+    getViewerProfilePersonalPath()
+      .then((path) => {
         if (path) setViewerProfilePath(path);
       })
       .catch(() => {});
@@ -296,19 +296,18 @@ export default function BusinessProfileScreen({ route, navigation }) {
       setClaimStatus(null);
       setClaimSubmittedAt(null);
 
-      let cachedViewerPath = viewerProfilePath;
-      try {
-        const session = await getSessionProfile();
-        cachedViewerPath =
-          session?.personalInfo?.profile_personal_path ?? session?.rawProfile?.personal_info?.profile_personal_path ?? cachedViewerPath;
-        if (cachedViewerPath) setViewerProfilePath(cachedViewerPath);
-      } catch (_) {}
+      let cachedViewerPath = await getViewerProfilePersonalPath();
+      if (!cachedViewerPath) {
+        try {
+          const refreshed = await refreshSessionProfileFromNetwork();
+          cachedViewerPath =
+            refreshed?.personalInfo?.profile_personal_path ??
+            refreshed?.rawProfile?.personal_info?.profile_personal_path ??
+            (await getViewerProfilePersonalPath());
+        } catch (_) {}
+      }
+      if (cachedViewerPath) setViewerProfilePath(cachedViewerPath);
 
-      // Clear session cache so ownership check picks up any newly approved claims
-      try {
-        const { clearUserProfileCacheStorage } = require("../utils/sessionProfile");
-        await clearUserProfileCacheStorage();
-      } catch (_) {}
       console.log("[BusinessProfileScreen] fetchBusinessInfo - business_uid from route params:", business_uid);
       const endpoint = `${BusinessProfileApi}/${business_uid}`;
       console.log("BusinessProfileScreen GET endpoint:", endpoint);
@@ -635,6 +634,16 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
   const miniCardBusiness = useMemo(() => (business ? buildBusinessMiniCardBusiness(business, business_uid) : null), [business, business_uid]);
 
+  const modalSelectedChoiceItems = useMemo(
+    () => buildSelectedChoiceItems(serviceOptions, selectedChoices),
+    [serviceOptions, selectedChoices],
+  );
+
+  const modalUnitPrice = useMemo(() => {
+    if (!selectedService) return 0;
+    return parsePrice(selectedService.bs_cost) + sumChoiceExtraCost(modalSelectedChoiceItems);
+  }, [selectedService, modalSelectedChoiceItems]);
+
   const handleProductPress = (service) => {
     // Block sold-out items from being added to cart
     const unlimited = service.bs_qty_unlimited === 1 || service.bs_qty_unlimited === "1" || service.bs_qty_unlimited === true;
@@ -718,45 +727,44 @@ export default function BusinessProfileScreen({ route, navigation }) {
     try {
       const ccPayer = canonicalBusinessCcFeePayer(business?.business_cc_fee_payer ?? business?.bs_cc_fee_payer);
 
-      // Calculate extra cost from selected choice group options
-      const choicesExtraCost = serviceOptions.reduce((sum, group) => {
-        const sel = selectedChoices[group.title];
-        if (!sel) return sum;
-        const selectedIds = Array.isArray(sel) ? sel : [sel];
-        return sum + (group.options || []).filter((opt) => selectedIds.includes(opt.id)).reduce((s, opt) => s + (parseFloat(opt.extra_cost) || 0), 0);
-      }, 0);
-
+      const selectedChoiceItems = buildSelectedChoiceItems(serviceOptions, selectedChoices);
+      const choicesExtraCost = sumChoiceExtraCost(selectedChoiceItems);
       const unitPrice = parsePrice(selectedService.bs_cost) + choicesExtraCost;
 
       const selectedChoiceLabels = {};
-      serviceOptions.forEach((group) => {
-        const sel = selectedChoices[group.title];
-        if (!sel) return;
-        const selectedIds = Array.isArray(sel) ? sel : [sel];
-        const matchingLabels = (group.options || []).filter((opt) => selectedIds.includes(opt.id)).map((opt) => opt.label);
-        if (matchingLabels.length > 0) {
-          selectedChoiceLabels[group.title] = matchingLabels.join(", ");
-        }
+      selectedChoiceItems.forEach((choiceItem) => {
+        const existing = selectedChoiceLabels[choiceItem.groupTitle];
+        selectedChoiceLabels[choiceItem.groupTitle] = existing ? `${existing}, ${choiceItem.label}` : choiceItem.label;
       });
 
       const serviceWithQuantity = {
         ...selectedService,
         quantity: quantity,
-        totalPrice: (parsePrice(selectedService.bs_cost) * quantity).toFixed(2),
+        unitPrice,
+        bs_cost_with_extras: unitPrice,
+        choicesExtraCost,
+        selectedChoiceLabels,
+        selectedChoiceItems,
+        selectedChoices: { ...selectedChoices },
+        specialInstructions: (specialInstructions || "").trim(),
+        totalPrice: (unitPrice * quantity).toFixed(2),
         bounty_recommender_profile_id: bountyRecommenderProfileId,
         business_uid: business_uid,
         business_name: sanitizeText(business?.business_name || "") || "",
         business_cc_fee_payer: ccPayer,
       };
 
-      const existingItemIndex = cartItems.findIndex((item) => item.bs_uid === selectedService.bs_uid);
+      const choicesKey = JSON.stringify(selectedChoices);
+      const existingItemIndex = cartItems.findIndex(
+        (item) => item.bs_uid === selectedService.bs_uid && JSON.stringify(item.selectedChoices || {}) === choicesKey,
+      );
 
       let newCartItems;
       if (existingItemIndex !== -1) {
         newCartItems = [...cartItems];
         const existingItem = newCartItems[existingItemIndex];
         const newQuantity = (existingItem.quantity || 1) + quantity;
-        const existingUnitPrice = existingItem.unitPrice != null ? existingItem.unitPrice : parsePrice(existingItem.bs_cost);
+        const existingUnitPrice = parsePrice(existingItem.unitPrice ?? existingItem.bs_cost_with_extras ?? existingItem.bs_cost);
         newCartItems[existingItemIndex] = {
           ...existingItem,
           quantity: newQuantity,
@@ -2116,7 +2124,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                   </TouchableOpacity>
                 </View>
 
-                <Text style={styles.totalPrice}>Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
+                <Text style={styles.totalPrice}>Total: ${selectedService ? (modalUnitPrice * quantity).toFixed(2) : "0.00"}</Text>
               </View>
 
               <BountyRecipientPicker
