@@ -34,6 +34,7 @@ import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../
 import { fetchSearchSuggestions, SEARCH_SUGGEST_MIN_LENGTH } from "../utils/searchSuggestions";
 import MiniCard from "../components/MiniCard";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
+import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
 function NoBountyIcon({ darkMode, muted }) {
   return (
@@ -927,6 +928,34 @@ export default function SearchScreen({ route }) {
 
   const globalBusinessResults = searchType === "global" ? results.filter((item) => (item?.itemType || "businesses") === "businesses") : [];
   const globalOfferingResults = searchType === "global" ? results.filter((item) => item?.itemType === "expertise") : [];
+
+  const handleOpenSearchMap = useCallback(() => {
+    const visibleBusinessResults =
+      searchType === "global"
+        ? globalBusinessResults
+        : searchType === "businesses"
+          ? results.filter((item) => item?.itemType === "businesses")
+          : [];
+
+    const mapBusinesses = searchResultsToMapBusinesses(visibleBusinessResults);
+
+    if (mapBusinesses.length === 0) {
+      Alert.alert(
+        "No mappable results",
+        visibleBusinessResults.length === 0
+          ? "Run a business search first, or switch to Businesses or Global to see companies on the map."
+          : "None of the current search results have coordinates to show on the map."
+      );
+      return;
+    }
+
+    navigation.navigate("EveryCircleMap", {
+      fromSearch: true,
+      searchQuery: searchQuery.trim(),
+      searchMapBusinesses: mapBusinesses,
+      searchResultCount: visibleBusinessResults.length,
+    });
+  }, [globalBusinessResults, navigation, results, searchQuery, searchType]);
   const fetchSearchJson = async (endpoint, q, applyRatingFilter = false, distanceMiles = distance, ratingValue = rating) => {
     let apiUrl = `${endpoint}?q=${encodeURIComponent(q)}&limit=${SEARCH_RESULT_LIMIT}`;
     if (applyRatingFilter && ratingValue !== null) {
@@ -1025,6 +1054,7 @@ export default function SearchScreen({ route }) {
           score_breakdown: b.score_breakdown || null,
           itemType: "businesses",
           profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
+          ...searchBusinessLocationFieldsFromApi(b),
           ...locationFieldsFromApi(b),
         }));
 
@@ -1386,26 +1416,30 @@ export default function SearchScreen({ route }) {
           return str === "." ? "" : str;
         };
 
-        list = resultsArray.map((b, i) => ({
-          ...b,
-          id: `${b.business_uid || i}`,
-          business_uid: b.business_uid ? String(b.business_uid).trim() : null,
-          company: sanitizeText(b.business_name || b.company) || "Unknown Business",
-          business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
-          rating: typeof b.rating_star === "number" ? b.rating_star : null,
-          hasPriceTag: b.has_price_tag || false,
-          hasX: b.has_x || false,
-          hasDollar: b.has_dollar_sign || false,
-          max_bounty: parseSearchMaxBounty(b.max_bounty ?? b.business_max_bounty),
-          business_short_bio: sanitizeText(b.business_short_bio),
-          business_tag_line: sanitizeText(b.business_tag_line),
-          tags: b.tags || [],
-          score: b.score || 0,
-          score_breakdown: b.score_breakdown || null,
-          itemType: "businesses",
-          profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
-          ...locationFieldsFromApi(b),
-        }));
+        list = resultsArray.map((b, i) => {
+          console.log("All image fields:", b.business_profile_img, b.business_images_url, b.business_favorite_image, b.business_name);
+          console.log("Business profile img:", b.business_profile_img, b.business_name);
+          return {
+            id: `${b.business_uid || i}`,
+            business_uid: b.business_uid ? String(b.business_uid).trim() : null,
+            company: sanitizeText(b.business_name || b.company) || "Unknown Business",
+            business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
+            rating: typeof b.rating_star === "number" ? b.rating_star : null,
+            hasPriceTag: b.has_price_tag || false,
+            hasX: b.has_x || false,
+            hasDollar: b.has_dollar_sign || false,
+            max_bounty: parseSearchMaxBounty(b.max_bounty ?? b.business_max_bounty),
+            business_short_bio: sanitizeText(b.business_short_bio),
+            business_tag_line: sanitizeText(b.business_tag_line),
+            tags: b.tags || [],
+            score: b.score || 0,
+            score_breakdown: b.score_breakdown || null,
+            itemType: "businesses",
+            profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
+            ...searchBusinessLocationFieldsFromApi(b),
+            ...locationFieldsFromApi(b),
+          };
+        });
 
         // Run tag search in parallel with main search — disabled for testing without businesstagsearch
         /*
@@ -2370,9 +2404,9 @@ export default function SearchScreen({ route }) {
             </View>
             <TouchableOpacity
               style={[styles.filterButtonOption, styles.mapButtonRight, darkMode && styles.darkFilterButtonOption]}
-              onPress={() => navigation.navigate("EveryCircleMap")}
-              accessibilityLabel='View on map'
-              accessibilityRole='button'
+              onPress={handleOpenSearchMap}
+              accessibilityLabel="View on map"
+              accessibilityRole="button"
             >
               <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText]}>View on Map</Text>
             </TouchableOpacity>

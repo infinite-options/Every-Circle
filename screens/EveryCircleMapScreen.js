@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
 import EveryCircleMapView from "../components/EveryCircleMapView";
@@ -28,7 +28,13 @@ import {
 
 export default function EveryCircleMapScreen() {
   const navigation = useNavigation();
+  const route = useRoute();
   const { darkMode } = useDarkMode();
+  const fromSearch = route.params?.fromSearch === true;
+  const searchQuery = route.params?.searchQuery || "";
+  const searchResultCount = route.params?.searchResultCount ?? null;
+  const searchMapBusinesses = route.params?.searchMapBusinesses;
+
   const [businesses, setBusinesses] = useState([]);
   const [mapCenter, setMapCenter] = useState(null);
   const [homeLocationSource, setHomeLocationSource] = useState(null);
@@ -44,11 +50,18 @@ export default function EveryCircleMapScreen() {
       setLoading(true);
       setError(null);
       try {
-        const [businessResponse, homeCoords] = await Promise.all([
-          fetch(BUSINESS_MAP_ENDPOINT),
-          resolveMapHomeCoords(),
-        ]);
+        const homeCoords = await resolveMapHomeCoords();
 
+        if (fromSearch && Array.isArray(searchMapBusinesses)) {
+          if (!cancelled) {
+            setBusinesses(searchMapBusinesses);
+            setMapCenter({ lat: homeCoords.lat, lng: homeCoords.lng });
+            setHomeLocationSource(homeCoords.source);
+          }
+          return;
+        }
+
+        const businessResponse = await fetch(BUSINESS_MAP_ENDPOINT);
         const json = await businessResponse.json();
         if (!businessResponse.ok) {
           throw new Error(json?.message || "Failed to load map businesses");
@@ -79,11 +92,17 @@ export default function EveryCircleMapScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fromSearch, searchMapBusinesses]);
 
   const handleBack = useCallback(() => {
-    navigation.navigate("Search");
-  }, [navigation]);
+    if (fromSearch) {
+      navigation.navigate("Search");
+      return;
+    }
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    }
+  }, [fromSearch, navigation]);
 
   const handleBusinessPress = useCallback(
     (business) => {
@@ -93,10 +112,56 @@ export default function EveryCircleMapScreen() {
     [navigation]
   );
 
+  const handleRetry = useCallback(() => {
+    setLoading(true);
+    setError(null);
+
+    if (fromSearch && Array.isArray(searchMapBusinesses)) {
+      resolveMapHomeCoords()
+        .then((homeCoords) => {
+          setBusinesses(searchMapBusinesses);
+          setMapCenter({ lat: homeCoords.lat, lng: homeCoords.lng });
+          setHomeLocationSource(homeCoords.source);
+        })
+        .catch((err) => setError(err.message || "Could not load map data."))
+        .finally(() => setLoading(false));
+      return;
+    }
+
+    Promise.all([fetch(BUSINESS_MAP_ENDPOINT), resolveMapHomeCoords()])
+      .then(async ([businessResponse, homeCoords]) => {
+        const json = await businessResponse.json();
+        if (!businessResponse.ok) {
+          throw new Error(json?.message || "Failed to load map businesses");
+        }
+        setBusinesses(Array.isArray(json?.result) ? json.result : []);
+        setMapCenter({ lat: homeCoords.lat, lng: homeCoords.lng });
+        setHomeLocationSource(homeCoords.source);
+      })
+      .catch((err) => setError(err.message || "Could not load businesses for the map."))
+      .finally(() => setLoading(false));
+  }, [fromSearch, searchMapBusinesses]);
+
   const homeLocationLabel =
     homeLocationSource === "profile"
       ? "Centered on your home location"
       : `Centered on ${MAP_PLACEHOLDER_HOME.label}`;
+
+  const summaryLabel = (() => {
+    if (loading) return "Loading map...";
+    if (fromSearch) {
+      const querySuffix = searchQuery ? ` for "${searchQuery}"` : "";
+      if (searchResultCount != null && businesses.length < searchResultCount) {
+        return `${businesses.length} of ${searchResultCount} search results on the map${querySuffix}`;
+      }
+      return `${businesses.length} search result${businesses.length === 1 ? "" : "s"} on the map${querySuffix}`;
+    }
+    return `${businesses.length} business${businesses.length === 1 ? "" : "es"} on Every Circle`;
+  })();
+
+  const emptyMessage = fromSearch
+    ? "No search results with map coordinates to display."
+    : "No businesses with a Google place id and coordinates yet.";
 
   return (
     <SafeAreaView
@@ -111,13 +176,13 @@ export default function EveryCircleMapScreen() {
 
       <View style={styles.summaryBar}>
         <Text style={[styles.summaryText, darkMode && styles.summaryTextDark]}>
-          {loading
-            ? "Loading map..."
-            : `${businesses.length} business${businesses.length === 1 ? "" : "es"} on Every Circle`}
+          {summaryLabel}
         </Text>
         {!loading && mapCenter && (
           <Text style={[styles.subtleText, darkMode && styles.summaryTextDark]}>
-            {homeLocationLabel}
+            {fromSearch
+              ? "Showing your current search results. " + homeLocationLabel.toLowerCase()
+              : homeLocationLabel}
           </Text>
         )}
         <View style={styles.legendRow}>
@@ -170,25 +235,7 @@ export default function EveryCircleMapScreen() {
       ) : error ? (
         <View style={styles.centered}>
           <Text style={[styles.errorText, darkMode && styles.summaryTextDark]}>{error}</Text>
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={() => {
-              setLoading(true);
-              setError(null);
-              Promise.all([fetch(BUSINESS_MAP_ENDPOINT), resolveMapHomeCoords()])
-                .then(async ([businessResponse, homeCoords]) => {
-                  const json = await businessResponse.json();
-                  if (!businessResponse.ok) {
-                    throw new Error(json?.message || "Failed to load map businesses");
-                  }
-                  setBusinesses(Array.isArray(json?.result) ? json.result : []);
-                  setMapCenter({ lat: homeCoords.lat, lng: homeCoords.lng });
-                  setHomeLocationSource(homeCoords.source);
-                })
-                .catch((err) => setError(err.message || "Could not load businesses for the map."))
-                .finally(() => setLoading(false));
-            }}
-          >
+          <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
@@ -199,14 +246,13 @@ export default function EveryCircleMapScreen() {
               businesses={businesses}
               mapCenter={mapCenter}
               everyCircleOnly={everyCircleOnly}
+              fitToBusinesses={fromSearch && businesses.length > 0}
               onBusinessPress={handleBusinessPress}
             />
           )}
           {!businesses.length && (
             <View style={styles.emptyOverlay} pointerEvents="none">
-              <Text style={styles.emptyText}>
-                No businesses with a Google place id and coordinates yet.
-              </Text>
+              <Text style={styles.emptyText}>{emptyMessage}</Text>
             </View>
           )}
         </View>
@@ -215,7 +261,7 @@ export default function EveryCircleMapScreen() {
       {Platform.OS === "web" && !loading && !error && businesses.length > 0 && (
         <View style={styles.hintBar}>
           <Text style={[styles.hintText, darkMode && styles.summaryTextDark]}>
-            Pan and zoom to explore. Tap a purple marker to open a business profile.
+            Pan and zoom to explore. Tap a marker to open a business profile.
           </Text>
         </View>
       )}

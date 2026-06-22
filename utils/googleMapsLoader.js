@@ -17,6 +17,7 @@ function buildMapsApi() {
     Point: maps.Point,
     SymbolPath: maps.SymbolPath,
     event: maps.event,
+    LatLngBounds: maps.LatLngBounds,
   };
 }
 

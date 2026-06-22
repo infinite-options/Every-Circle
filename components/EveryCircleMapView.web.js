@@ -16,7 +16,39 @@ function buildAddressLine(business) {
   return parts.join(", ");
 }
 
-function addBusinessMarkers(mapsApi, map, businesses, infoWindowRef, onBusinessPress, markersRef) {
+function fitMapToBusinesses(mapsApi, map, businesses, mapCenter) {
+  if (!businesses?.length || !mapsApi?.LatLngBounds) return;
+
+  const bounds = new mapsApi.LatLngBounds();
+  businesses.forEach((business) => {
+    bounds.extend({
+      lat: business.business_latitude,
+      lng: business.business_longitude,
+    });
+  });
+  if (mapCenter) {
+    bounds.extend({ lat: mapCenter.lat, lng: mapCenter.lng });
+  }
+
+  if (businesses.length === 1 && !mapCenter) {
+    map.setCenter(bounds.getCenter());
+    map.setZoom(DEFAULT_MAP_ZOOM);
+    return;
+  }
+
+  map.fitBounds(bounds, 56);
+}
+
+function addBusinessMarkers(
+  mapsApi,
+  map,
+  businesses,
+  infoWindowRef,
+  onBusinessPress,
+  markersRef,
+  fitToBusinesses,
+  mapCenter
+) {
   return getWebMapMarkerIcon(mapsApi).then((markerIcon) => {
     markersRef.current.forEach((marker) => marker.setMap(null));
     markersRef.current = [];
@@ -63,6 +95,10 @@ function addBusinessMarkers(mapsApi, map, businesses, infoWindowRef, onBusinessP
 
       markersRef.current.push(marker);
     });
+
+    if (fitToBusinesses) {
+      fitMapToBusinesses(mapsApi, map, businesses, mapCenter);
+    }
   });
 }
 
@@ -70,6 +106,7 @@ export default function EveryCircleMapView({
   businesses = [],
   mapCenter,
   everyCircleOnly = true,
+  fitToBusinesses = false,
   onBusinessPress,
 }) {
   const hostRef = useRef(null);
@@ -78,10 +115,20 @@ export default function EveryCircleMapView({
   const homeMarkerRef = useRef(null);
   const infoWindowRef = useRef(null);
   const onBusinessPressRef = useRef(onBusinessPress);
+  const fitToBusinessesRef = useRef(fitToBusinesses);
+  const mapCenterRef = useRef(mapCenter);
 
   useEffect(() => {
     onBusinessPressRef.current = onBusinessPress;
   }, [onBusinessPress]);
+
+  useEffect(() => {
+    fitToBusinessesRef.current = fitToBusinesses;
+  }, [fitToBusinesses]);
+
+  useEffect(() => {
+    mapCenterRef.current = mapCenter;
+  }, [mapCenter]);
 
   useEffect(() => {
     if (!mapCenter) return;
@@ -128,7 +175,9 @@ export default function EveryCircleMapView({
         businesses,
         infoWindowRef,
         (business) => onBusinessPressRef.current?.(business),
-        markersRef
+        markersRef,
+        fitToBusinessesRef.current,
+        mapCenterRef.current
       );
     }
 
@@ -153,10 +202,12 @@ export default function EveryCircleMapView({
     if (!mapRef.current || !mapCenter) return;
 
     const center = { lat: mapCenter.lat, lng: mapCenter.lng };
-    mapRef.current.setCenter(center);
-    mapRef.current.setZoom(DEFAULT_MAP_ZOOM);
     if (homeMarkerRef.current) {
       homeMarkerRef.current.setPosition(center);
+    }
+    if (!fitToBusinessesRef.current) {
+      mapRef.current.setCenter(center);
+      mapRef.current.setZoom(DEFAULT_MAP_ZOOM);
     }
   }, [mapCenter]);
 
@@ -179,7 +230,9 @@ export default function EveryCircleMapView({
           businesses,
           infoWindowRef,
           (business) => onBusinessPressRef.current?.(business),
-          markersRef
+          markersRef,
+          fitToBusinessesRef.current,
+          mapCenterRef.current
         );
       })
       .catch((err) => {

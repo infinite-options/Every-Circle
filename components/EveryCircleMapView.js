@@ -45,16 +45,30 @@ export default function EveryCircleMapView({
   businesses = [],
   mapCenter,
   everyCircleOnly = true,
+  fitToBusinesses = false,
   onBusinessPress,
 }) {
   const mapRef = useRef(null);
   const region = useMemo(() => regionFromCenter(mapCenter), [mapCenter]);
 
   useEffect(() => {
-    if (mapRef.current && mapCenter) {
-      mapRef.current.animateToRegion(region, 400);
+    if (!mapRef.current || !mapCenter) return;
+
+    if (fitToBusinesses && businesses.length > 0) {
+      const coordinates = businesses.map((business) => ({
+        latitude: business.business_latitude,
+        longitude: business.business_longitude,
+      }));
+      coordinates.push({ latitude: mapCenter.lat, longitude: mapCenter.lng });
+      mapRef.current.fitToCoordinates(coordinates, {
+        edgePadding: { top: 48, right: 48, bottom: 48, left: 48 },
+        animated: true,
+      });
+      return;
     }
-  }, [mapCenter, region]);
+
+    mapRef.current.animateToRegion(region, 400);
+  }, [businesses, fitToBusinesses, mapCenter, region]);
 
   return (
     <MapView
