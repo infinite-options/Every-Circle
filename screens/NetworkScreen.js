@@ -27,6 +27,9 @@ import { addScannedCircleConnection } from "../utils/addScannedCircleConnection"
 import { getSessionProfile } from "../utils/sessionProfile";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
+import NearbyPeopleMapView from "../components/NearbyPeopleMapView";
+import { isNearbySharingActive } from "../utils/nearbySharing";
+import { nearbyPeopleToMapMarkers } from "../utils/nearbyPeopleToMapMarkers";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -392,6 +395,8 @@ const NetworkScreen = ({ navigation }) => {
   const [nearbyUsers, setNearbyUsers] = useState([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState(null);
+  const [nearbySharingActive, setNearbySharingActive] = useState(false);
+  const [myNearbyLocation, setMyNearbyLocation] = useState(null);
   const [ignoredNearbyUids, setIgnoredNearbyUids] = useState(new Set());
   const [expandedDegrees, setExpandedDegrees] = useState({}); // { [deg]: boolean } - undefined/true = expanded
 
@@ -2026,6 +2031,9 @@ const NetworkScreen = ({ navigation }) => {
     const uid = profileUid || (await AsyncStorage.getItem("profile_uid"));
     if (!uid) return;
 
+    const sharingActive = await isNearbySharingActive();
+    setNearbySharingActive(sharingActive);
+
     // Reuse the same privacy settings that SettingsScreen persists
     let mode = "all_circles";
     try {
@@ -2045,11 +2053,16 @@ const NetworkScreen = ({ navigation }) => {
     setNearbyLoading(true);
     setNearbyError(null);
     setNearbyUsers([]);
+    setMyNearbyLocation(null);
     try {
       const res = await fetch(`${NEARBY_USERS_ENDPOINT}/${uid}?mode=${mode}`);
       const json = await res.json();
       if (json.code === 200) {
         setNearbyUsers(json.result || []);
+        const viewer = json.viewer_location;
+        if (viewer?.lat != null && viewer?.lng != null) {
+          setMyNearbyLocation({ lat: viewer.lat, lng: viewer.lng });
+        }
       } else if (json.code === 410) {
         setNearbyError("Your location has expired. Update it in Settings to see who's nearby.");
       } else {
@@ -2102,6 +2115,14 @@ const NetworkScreen = ({ navigation }) => {
         clearUnread();
       }
     }, [showMessages, fetchConversations, clearUnread]),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (showNearby) {
+        fetchNearbyUsers();
+      }
+    }, [showNearby]),
   );
 
   const _convRelTime = (iso) => {
@@ -2555,6 +2576,15 @@ const NetworkScreen = ({ navigation }) => {
 
           {showNearby && (
             <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
+              {nearbySharingActive && myNearbyLocation && !nearbyLoading && !nearbyError && (
+                <View style={styles.nearbyMapWrap}>
+                  <NearbyPeopleMapView
+                    mapCenter={myNearbyLocation}
+                    people={nearbyPeopleToMapMarkers(nearbyUsers.filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid)))}
+                    onPersonPress={(person) => navigation.navigate("Profile", { profile_uid: person.uid })}
+                  />
+                </View>
+              )}
               {nearbyLoading ? (
                 <ActivityIndicator size='small' color='#AF52DE' style={{ paddingVertical: 20 }} />
               ) : nearbyError ? (
@@ -3186,6 +3216,11 @@ const styles = StyleSheet.create({
   messagesEmptyTextDark: { color: "#666" },
 
   // ── Nearby accordion ─────────────────────────────────────────
+  nearbyMapWrap: {
+    marginBottom: 12,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
   nearbyRow: {
     flexDirection: "row",
     alignItems: "center",
