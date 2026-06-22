@@ -1,6 +1,7 @@
 import React, { useRef } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Image, Platform } from "react-native";
 import ProfileSectionItemImage from "./ProfileSectionItemImage";
+import { MAX_IMAGE_UPLOAD_LABEL } from "../utils/imageUploadLimits";
 
 /**
  * Left column for Education / Experience / Offering / Seeking cards — matches EditBusinessProfile product image pattern.
@@ -58,7 +59,9 @@ const ProfileItemImageColumn = ({
         </TouchableOpacity>
       </View>
       <TouchableOpacity style={[styles.uploadBtn, darkMode && styles.uploadBtnDark]} onPress={triggerUpload} activeOpacity={0.8}>
-        <Text style={styles.uploadBtnText}>Upload</Text>
+        <Text style={styles.uploadBtnText} numberOfLines={1}>
+          {`Upload <${MAX_IMAGE_UPLOAD_LABEL}`}
+        </Text>
       </TouchableOpacity>
       {toolsVisible && showRemove ? (
         <TouchableOpacity onPress={onRemoveImage} style={styles.removeBtn}>
@@ -79,7 +82,8 @@ const ProfileItemImageColumn = ({
 
 const styles = StyleSheet.create({
   left: {
-    width: 100,
+    width: 130,
+    flexShrink: 0,
     alignItems: "center",
   },
   image: {
@@ -130,7 +134,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     backgroundColor: "#00C721",
     paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
     borderRadius: 10,
     width: "100%",
     alignItems: "center",

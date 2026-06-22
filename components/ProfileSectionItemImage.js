@@ -17,16 +17,7 @@ export function ProfileSectionDefaultIcon({ section, size = 56, darkMode = false
 /**
  * Shows a uploaded section image when visible, otherwise a crisp Material default icon.
  */
-export default function ProfileSectionItemImage({
-  section,
-  imageUri,
-  imageIsHidden,
-  imageIsPublic,
-  size = 56,
-  darkMode = false,
-  style,
-  resizeMode = "cover",
-}) {
+export default function ProfileSectionItemImage({ section, imageUri, imageIsHidden, imageIsPublic, size = 56, darkMode = false, style, resizeMode = "cover" }) {
   const [imageError, setImageError] = useState(false);
   const hidden = imageIsHidden ?? isProfileItemImageHidden(imageIsPublic);
   const showCustom = hasCustomProfileSectionImage({ imageUri, imageIsHidden: hidden, imageError });
@@ -35,14 +26,7 @@ export default function ProfileSectionItemImage({
     return <ProfileSectionDefaultIcon section={section} size={size} darkMode={darkMode} style={style} />;
   }
 
-  return (
-    <Image
-      source={{ uri: imageUri }}
-      style={[styles.image, { width: size, height: size }, darkMode && styles.imageDark, style]}
-      resizeMode={resizeMode}
-      onError={() => setImageError(true)}
-    />
-  );
+  return <Image source={{ uri: imageUri }} style={[styles.image, { width: size, height: size }, darkMode && styles.imageDark, style]} resizeMode={resizeMode} onError={() => setImageError(true)} />;
 }
 
 const styles = StyleSheet.create({

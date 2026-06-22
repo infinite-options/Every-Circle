@@ -533,7 +533,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
                 onChangeText={(text) => handleInputChange(index, "details", text)}
                 multiline={true}
                 textAlignVertical='top'
-                scrollEnabled={false}
+                scrollEnabled={true}
               />
             </View>
           </View>
@@ -780,7 +780,7 @@ const styles = StyleSheet.create({
   },
   miniCard: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "stretch",
     gap: 12,
     marginBottom: 8,
     padding: 12,
@@ -796,6 +796,7 @@ const styles = StyleSheet.create({
   miniCardFields: {
     flex: 1,
     minWidth: 0,
+    flexDirection: "column",
   },
   input: {
     borderWidth: 1,
@@ -806,14 +807,13 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   descriptionInput: {
+    flex: 1,
     borderWidth: 1,
     borderColor: "#ccc",
     padding: 8,
     borderRadius: 5,
     backgroundColor: "#fff",
-    marginBottom: 5,
     minHeight: 40,
-    maxHeight: 120,
   },
   dateTimeSection: {
     marginBottom: 10,

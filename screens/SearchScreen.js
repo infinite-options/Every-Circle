@@ -33,6 +33,8 @@ import { isWishEnded } from "../utils/wishUtils";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 import { fetchSearchSuggestions, SEARCH_SUGGEST_MIN_LENGTH } from "../utils/searchSuggestions";
 import MiniCard from "../components/MiniCard";
+import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
+import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
@@ -1763,6 +1765,9 @@ export default function SearchScreen({ route }) {
     const respondedAt = wishUid ? respondedWishesById[wishUid] : null;
     const hasResponded = !!respondedAt;
     const respondedDateLabel = respondedAt ? formatDateForDisplay(respondedAt) : "";
+    const seekingTitle = wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : "";
+    const seekingImageUri = resolveProfileItemImageUri(wish.profile_wish_image, item.profile_uid);
+    const scoreSuffix = formatBusinessSearchScoreSuffix(item);
 
     return (
       <TouchableOpacity
@@ -1831,23 +1836,27 @@ export default function SearchScreen({ route }) {
 
         {/* Wish Information */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
-          <View style={styles.wishTitleRow}>
-            <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle, styles.wishTitleFlex]} numberOfLines={2}>
-              {wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : ""}
-            </Text>
-            {hasResponded && <Text style={[styles.wishRespondedFlag, darkMode && styles.darkWishRespondedFlag]}>Responded{respondedDateLabel ? ` ${respondedDateLabel}` : ""}</Text>}
+          <View style={styles.expertiseOfferingHeaderRow}>
+            <ProfileSectionItemImage section='seeking' imageUri={seekingImageUri} imageIsPublic={wish.profile_wish_image_is_public} size={56} darkMode={darkMode} />
+            <View style={styles.expertiseOfferingHeaderText}>
+              <View style={styles.wishTitleRow}>
+                <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle, styles.wishTitleFlex, scoreSuffix && styles.wishTitleWithSuffix]}>
+                  {seekingTitle}
+                  {scoreSuffix ? <Text style={[styles.searchScoreSuffix, darkMode && styles.darkSearchScoreSuffix]}>{` ${scoreSuffix}`}</Text> : null}
+                </Text>
+                {hasResponded && <Text style={[styles.wishRespondedFlag, darkMode && styles.darkWishRespondedFlag]}>Responded{respondedDateLabel ? ` ${respondedDateLabel}` : ""}</Text>}
+              </View>
+              {wish.description && String(wish.description).trim() && String(wish.description).trim() !== "." && (
+                <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{String(wish.description).trim()}</Text>
+              )}
+            </View>
           </View>
-          {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
-          {renderScoreBreakdown(item)}
           {(wish.profile_wish_start || wish.profile_wish_end) && (
             <Text style={[styles.wishDateTime, darkMode && styles.darkWishDateTime]}>
               {wish.profile_wish_start ? formatDateTimeForDisplay(wish.profile_wish_start) : "—"}
               {wish.profile_wish_start && wish.profile_wish_end ? " → " : ""}
               {wish.profile_wish_end ? formatDateTimeForDisplay(wish.profile_wish_end) : ""}
             </Text>
-          )}
-          {wish.description && String(wish.description).trim() && String(wish.description).trim() !== "." && (
-            <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{String(wish.description).trim()}</Text>
           )}
           {wish.bounty && (
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 5, flex: 1 }}>
@@ -1899,6 +1908,9 @@ export default function SearchScreen({ route }) {
 
     const canOpenSellerProfile = !!item.profile_uid;
     const canAddExpertiseToCart = !!(item.profile_uid && expertise.expertise_uid);
+    const offeringImageUri = resolveProfileItemImageUri(expertise.profile_expertise_image, item.profile_uid);
+    const offeringTitle = expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : "";
+    const scoreSuffix = formatBusinessSearchScoreSuffix(item);
 
     return (
       <View key={`${item.id}-${idx}`} style={[styles.wishItem, darkMode && styles.darkWishItem, isOwnExpertise && { opacity: 0.6 }]}>
@@ -1960,14 +1972,18 @@ export default function SearchScreen({ route }) {
 
         {/* Expertise Information (no tap-through to expertise detail) */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
-          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
-            <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : ""}</Text>
+          <View style={styles.expertiseOfferingHeaderRow}>
+            <ProfileSectionItemImage section='offering' imageUri={offeringImageUri} imageIsPublic={expertise.profile_expertise_image_is_public} size={56} darkMode={darkMode} />
+            <View style={styles.expertiseOfferingHeaderText}>
+              <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle, scoreSuffix && styles.wishTitleWithSuffix]}>
+                {offeringTitle}
+                {scoreSuffix ? <Text style={[styles.searchScoreSuffix, darkMode && styles.darkSearchScoreSuffix]}>{` ${scoreSuffix}`}</Text> : null}
+              </Text>
+              {expertise.description && String(expertise.description).trim() && String(expertise.description).trim() !== "." && (
+                <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{String(expertise.description).trim()}</Text>
+              )}
+            </View>
           </View>
-          {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
-          {renderScoreBreakdown(item)}
-          {expertise.description && String(expertise.description).trim() && String(expertise.description).trim() !== "." && (
-            <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{String(expertise.description).trim()}</Text>
-          )}
           {/* Cost / Qty / bounty row — same layout as Profile OFFERING cards */}
           {hasExpertiseCostRow && (
             <View style={styles.expertiseOfferingCostRow}>
@@ -3305,6 +3321,17 @@ const styles = StyleSheet.create({
     color: "#333",
     marginBottom: 4,
   },
+  wishTitleWithSuffix: {
+    flexWrap: "wrap",
+  },
+  searchScoreSuffix: {
+    fontSize: 12,
+    fontWeight: "normal",
+    color: "#666",
+  },
+  darkSearchScoreSuffix: {
+    color: "#aaaaaa",
+  },
   wishRespondedFlag: {
     color: "#800000",
     fontSize: 14,
@@ -3425,6 +3452,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginLeft: 0,
     marginTop: 4,
+  },
+  expertiseOfferingHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginBottom: 4,
+  },
+  expertiseOfferingHeaderText: {
+    flex: 1,
+    minWidth: 0,
   },
   expertiseOfferingRightCluster: {
     flexDirection: "row",
