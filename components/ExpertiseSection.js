@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system";
 import { formatCostValue } from "../utils/priceUtils";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import ProfileItemImageColumn from "./ProfileItemImageColumn";
@@ -18,6 +17,7 @@ import {
   isEndDateValid,
 } from "../utils/profileDateTime";
 import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expertiseMode";
+import { rejectNativeImageAsset, rejectWebImageFile } from "../utils/imageUploadLimits";
 
 let DateTimePicker = null;
 if (Platform.OS !== "web") {
@@ -125,19 +125,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
       });
       if (!result.canceled && result.assets?.[0]) {
         const asset = result.assets[0];
-        let fileSize = asset.fileSize;
-        if (!fileSize && asset.uri) {
-          try {
-            const fileInfo = await FileSystem.getInfoAsync(asset.uri);
-            fileSize = fileInfo.size;
-          } catch (e) {
-            /* ignore */
-          }
-        }
-        if (fileSize && fileSize > 2 * 1024 * 1024) {
-          Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
-          return;
-        }
+        if (await rejectNativeImageAsset(asset)) return;
         const updated = [...expertise];
         const prev = updated[index];
         const orig = prev._expOriginalImage || resolveProfileItemImageUri(prev.profile_expertise_image, profileUid);
@@ -157,14 +145,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
     const file = event.target?.files?.[0];
     if (event?.target) event.target.value = "";
     if (!file) return;
-    if (!file.type?.startsWith?.("image/")) {
-      Alert.alert("Invalid file type", "Please select an image file.");
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      Alert.alert("File not selectable", "Image size exceeds the 2MB upload limit.");
-      return;
-    }
+    if (rejectWebImageFile(file)) return;
     const reader = new FileReader();
     reader.onloadend = () => {
       const imageUri = reader.result;
@@ -483,7 +464,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
                 onChangeText={(text) => handleInputChange(index, "description", text)}
                 multiline={true}
                 textAlignVertical='top'
-                scrollEnabled={false}
+                scrollEnabled={true}
               />
             </View>
           </View>
@@ -734,7 +715,7 @@ const styles = StyleSheet.create({
   },
   miniCard: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "stretch",
     gap: 12,
     marginBottom: 8,
     padding: 12,
@@ -750,6 +731,7 @@ const styles = StyleSheet.create({
   miniCardFields: {
     flex: 1,
     minWidth: 0,
+    flexDirection: "column",
   },
   input: {
     borderWidth: 1,
@@ -760,14 +742,13 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   descriptionInput: {
+    flex: 1,
     borderWidth: 1,
     borderColor: "#ccc",
     padding: 8,
     borderRadius: 5,
     backgroundColor: "#fff",
-    marginBottom: 5,
     minHeight: 40,
-    maxHeight: 120,
   },
   dateTimeSection: {
     marginBottom: 10,

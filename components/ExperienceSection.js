@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
@@ -19,7 +19,6 @@ const ExperienceSection = ({
   const cardRefs = useRef({});
   // Tracks which index was just added via "+".
   const pendingNewIndexRef = useRef(null);
-  const [descriptionHeights, setDescriptionHeights] = useState({});
   // Helper function to format date input
   const formatDateInput = (text) => {
     // If the user manually entered a slash after 2 digits, preserve it
@@ -299,17 +298,13 @@ const ExperienceSection = ({
               <TextInput style={styles.input} placeholder='Company' value={item.company} onChangeText={(text) => handleInputChange(index, "company", text)} />
               <TextInput style={styles.input} placeholder='Job Title' value={item.title} onChangeText={(text) => handleInputChange(index, "title", text)} />
               <TextInput
-                style={[styles.descriptionInput, { height: Math.max(40, descriptionHeights[index] || 40) }]}
+                style={styles.descriptionInput}
                 placeholder='Description'
                 value={item.description}
                 onChangeText={(text) => handleInputChange(index, "description", text)}
                 multiline={true}
                 textAlignVertical='top'
-                scrollEnabled={false}
-                onContentSizeChange={(event) => {
-                  const height = event.nativeEvent.contentSize.height;
-                  setDescriptionHeights((prev) => (prev[index] === height ? prev : { ...prev, [index]: height }));
-                }}
+                scrollEnabled={true}
               />
             </View>
           </View>
@@ -367,12 +362,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   descriptionInput: {
+    flex: 1,
     borderWidth: 1,
     borderColor: "#ccc",
     padding: 10,
     borderRadius: 5,
     backgroundColor: "#fff",
-    marginBottom: 8,
     minHeight: 40,
   },
   dateContainer: {
@@ -399,7 +394,7 @@ const styles = StyleSheet.create({
   },
   miniCard: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "stretch",
     gap: 12,
     marginBottom: 8,
     padding: 12,
@@ -415,6 +410,7 @@ const styles = StyleSheet.create({
   miniCardFields: {
     flex: 1,
     minWidth: 0,
+    flexDirection: "column",
   },
   cardSpacing: {
     marginTop: 16,
