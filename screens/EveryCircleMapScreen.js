@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  PanResponder,
   Platform,
   StyleSheet,
   Switch,
@@ -26,6 +27,86 @@ import {
   MAP_MARKER_IMAGE,
 } from "../utils/mapMarkerAssets";
 
+function haversineDistanceMiles(lat1, lng1, lat2, lng2) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const R = 3958.8;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+const RADIUS_MIN = 1;
+const RADIUS_MAX = 100;
+const THUMB_SIZE = 24;
+
+function RadiusSlider({ value, onChange, darkMode }) {
+  const trackRef = useRef(200);
+  const startXRef = useRef(0);
+  const valueRef = useRef(value);
+  const onChangeRef = useRef(onChange);
+  useEffect(() => { valueRef.current = value; });
+  useEffect(() => { onChangeRef.current = onChange; });
+
+  const mileToX = (miles) => {
+    if (miles == null) return 0;
+    const usable = Math.max(1, trackRef.current - THUMB_SIZE);
+    return ((miles - RADIUS_MIN) / (RADIUS_MAX - RADIUS_MIN)) * usable;
+  };
+
+  const xToMile = (x) => {
+    const usable = Math.max(1, trackRef.current - THUMB_SIZE);
+    const pct = x / usable;
+    if (pct <= 0.01) return null;
+    return Math.round(RADIUS_MIN + Math.max(0, Math.min(1, pct)) * (RADIUS_MAX - RADIUS_MIN));
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => {
+        const tapX = e.nativeEvent.locationX - THUMB_SIZE / 2;
+        const clamped = Math.max(0, Math.min(trackRef.current - THUMB_SIZE, tapX));
+        startXRef.current = clamped;
+        onChangeRef.current(xToMile(clamped));
+      },
+      onPanResponderMove: (_, gs) => {
+        const newX = Math.max(0, Math.min(trackRef.current - THUMB_SIZE, startXRef.current + gs.dx));
+        onChangeRef.current(xToMile(newX));
+      },
+    })
+  ).current;
+
+  const thumbX = mileToX(value);
+
+  return (
+    <View
+      style={sliderStyles.track}
+      onLayout={(e) => { trackRef.current = e.nativeEvent.layout.width; }}
+      {...panResponder.panHandlers}
+    >
+      <View style={[sliderStyles.rail, darkMode && sliderStyles.railDark]} />
+      {value != null && <View style={[sliderStyles.fill, { width: thumbX + THUMB_SIZE / 2 }]} />}
+      <View style={[sliderStyles.thumb, { left: thumbX }, darkMode && sliderStyles.thumbDark]} />
+    </View>
+  );
+}
+
+const sliderStyles = StyleSheet.create({
+  track: { flex: 1, height: THUMB_SIZE, justifyContent: "center", position: "relative" },
+  rail: { height: 4, backgroundColor: "#ddd", borderRadius: 2, position: "absolute", left: 0, right: 0 },
+  railDark: { backgroundColor: "#555" },
+  fill: { height: 4, backgroundColor: "#4F8A8B", borderRadius: 2, position: "absolute", left: 0 },
+  thumb: {
+    width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: THUMB_SIZE / 2,
+    backgroundColor: "#4F8A8B", borderWidth: 2, borderColor: "#fff",
+    position: "absolute",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3,
+  },
+  thumbDark: { borderColor: "#333" },
+});
+
 export default function EveryCircleMapScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -41,7 +122,17 @@ export default function EveryCircleMapScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [everyCircleOnly, setEveryCircleOnly] = useState(true);
+  const [mapRadiusMiles, setMapRadiusMiles] = useState(null);
   const mapAccent = getHeaderColor("search");
+
+  const filteredBusinesses =
+    mapRadiusMiles != null && mapCenter != null
+      ? businesses.filter(
+          (b) =>
+            haversineDistanceMiles(mapCenter.lat, mapCenter.lng, b.business_latitude, b.business_longitude) <=
+            mapRadiusMiles
+        )
+      : businesses;
 
   useEffect(() => {
     let cancelled = false;
@@ -151,16 +242,23 @@ export default function EveryCircleMapScreen() {
     if (loading) return "Loading map...";
     if (fromSearch) {
       const querySuffix = searchQuery ? ` for "${searchQuery}"` : "";
-      if (searchResultCount != null && businesses.length < searchResultCount) {
-        return `${businesses.length} of ${searchResultCount} search results on the map${querySuffix}`;
+      const shown = filteredBusinesses.length;
+      const total = businesses.length;
+      if (mapRadiusMiles != null && shown < total) {
+        return `${shown} of ${total} search results within ${mapRadiusMiles} mi${querySuffix}`;
       }
-      return `${businesses.length} search result${businesses.length === 1 ? "" : "s"} on the map${querySuffix}`;
+      if (searchResultCount != null && total < searchResultCount) {
+        return `${total} of ${searchResultCount} search results on the map${querySuffix}`;
+      }
+      return `${total} search result${total === 1 ? "" : "s"} on the map${querySuffix}`;
     }
-    return `${businesses.length} business${businesses.length === 1 ? "" : "es"} on Every Circle`;
+    return `${filteredBusinesses.length} business${filteredBusinesses.length === 1 ? "" : "es"} on Every Circle`;
   })();
 
   const emptyMessage = fromSearch
-    ? "No search results with map coordinates to display."
+    ? mapRadiusMiles != null
+      ? `No businesses within ${mapRadiusMiles} miles. Try increasing the radius.`
+      : "No search results with map coordinates to display."
     : "No businesses with a Google place id and coordinates yet.";
 
   return (
@@ -228,6 +326,27 @@ export default function EveryCircleMapScreen() {
         )}
       </View>
 
+      {!loading && !error && fromSearch && (
+        <View style={[styles.radiusBar, darkMode && styles.radiusBarDark]}>
+          <Text style={[styles.radiusLabel, darkMode && styles.radiusLabelDark]}>Nearby:</Text>
+          <RadiusSlider value={mapRadiusMiles} onChange={setMapRadiusMiles} darkMode={darkMode} />
+          <View style={styles.radiusValueWrap}>
+            {mapRadiusMiles != null ? (
+              <TouchableOpacity
+                onPress={() => setMapRadiusMiles(null)}
+                style={styles.radiusClearBtn}
+                accessibilityLabel="Clear radius filter"
+              >
+                <Text style={styles.radiusValueActive}>{mapRadiusMiles} mi</Text>
+                <Text style={styles.radiusClearIcon}> ✕</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={[styles.radiusValueText, darkMode && styles.radiusLabelDark]}>All</Text>
+            )}
+          </View>
+        </View>
+      )}
+
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color="#AF52DE" />
@@ -243,14 +362,14 @@ export default function EveryCircleMapScreen() {
         <View style={styles.mapWrap}>
           {mapCenter && (
             <EveryCircleMapView
-              businesses={businesses}
+              businesses={filteredBusinesses}
               mapCenter={mapCenter}
               everyCircleOnly={everyCircleOnly}
-              fitToBusinesses={fromSearch && businesses.length > 0}
+              fitToBusinesses={fromSearch && filteredBusinesses.length > 0}
               onBusinessPress={handleBusinessPress}
             />
           )}
-          {!businesses.length && (
+          {!filteredBusinesses.length && (
             <View style={styles.emptyOverlay} pointerEvents="none">
               <Text style={styles.emptyText}>{emptyMessage}</Text>
             </View>
@@ -413,5 +532,52 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#666",
     textAlign: "center",
+  },
+  radiusBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#ddd",
+    backgroundColor: "#fff",
+  },
+  radiusBarDark: {
+    backgroundColor: "#1a1a1a",
+    borderBottomColor: "#444",
+  },
+  radiusLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#555",
+    marginRight: 10,
+    flexShrink: 0,
+  },
+  radiusLabelDark: {
+    color: "#aaa",
+  },
+  radiusValueWrap: {
+    marginLeft: 10,
+    minWidth: 52,
+    alignItems: "flex-end",
+    flexShrink: 0,
+  },
+  radiusClearBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  radiusValueActive: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#4F8A8B",
+  },
+  radiusClearIcon: {
+    fontSize: 12,
+    color: "#4F8A8B",
+  },
+  radiusValueText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#555",
   },
 });
