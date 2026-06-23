@@ -1129,6 +1129,7 @@ export default function SearchScreen({ route }) {
 
   const globalBusinessResults = searchType === "global" ? results.filter((item) => (item?.itemType || "businesses") === "businesses") : [];
   const globalOfferingResults = searchType === "global" ? results.filter((item) => item?.itemType === "expertise") : [];
+  const globalSeekingResults = searchType === "global" ? results.filter((item) => item?.itemType === "seeking") : [];
 
   const handleOpenSearchMap = useCallback(async () => {
     const isProfileType = searchType === "expertise" || searchType === "seeking";
