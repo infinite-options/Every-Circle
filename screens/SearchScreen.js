@@ -1,6 +1,6 @@
 // SearchScreen.js
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, SafeAreaView, FlatList, ActivityIndicator, Alert, Dimensions, Modal, Image, Platform } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, SafeAreaView, FlatList, ActivityIndicator, Alert, Dimensions, Modal, Image, Platform, useWindowDimensions } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import BottomNavBar from "../components/BottomNavBar";
@@ -33,6 +33,7 @@ import { isWishEnded } from "../utils/wishUtils";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 import { fetchSearchSuggestions, SEARCH_SUGGEST_MIN_LENGTH } from "../utils/searchSuggestions";
 import MiniCard from "../components/MiniCard";
+import MicroCard from "../components/MicroCard";
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
@@ -600,9 +601,13 @@ async function enrichOfferingOwnerConnectionDegrees(items) {
   }
 }
 
+const SEARCH_CARD_COMPACT_MAX_WIDTH = 480;
+
 export default function SearchScreen({ route }) {
   const navigation = useNavigation();
   const { darkMode } = useDarkMode();
+  const { width: windowWidth } = useWindowDimensions();
+  const isCompactSearchCard = Platform.OS !== "web" || windowWidth < SEARCH_CARD_COMPACT_MAX_WIDTH;
   const [cartItems, setCartItems] = useState([]);
   const [cartCount, setCartCount] = useState(0);
   /** When set, Add to Cart modal is shown for this search expertise row. */
@@ -2226,64 +2231,60 @@ export default function SearchScreen({ route }) {
     const offeringImageUri = resolveProfileItemImageUri(expertise.profile_expertise_image, item.profile_uid);
     const offeringTitle = expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : "";
     const scoreSuffix = formatBusinessSearchScoreSuffix(item);
+    const openSellerProfile = () => {
+      if (!item.profile_uid) return;
+      navigation.navigate("Profile", {
+        profile_uid: item.profile_uid,
+        returnTo: "Search",
+        searchState: getSearchStateForRestore(),
+      });
+    };
+    const microCardUser = {
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      profileImage: profile.image,
+      imageIsPublic: profile.imageIsPublic,
+      tagLine: profile.tagLine,
+      tagLineIsPublic: profile.tagLineIsPublic,
+    };
 
     return (
       <View key={`${item.id}-${idx}`} style={[styles.wishItem, darkMode && styles.darkWishItem, isOwnExpertise && { opacity: 0.6 }]}>
-        {/* Profile: image + name navigate to seller profile */}
-        <View style={styles.wishProfileContainer}>
-          <TouchableOpacity
-            activeOpacity={canOpenSellerProfile ? 0.7 : 1}
-            disabled={!canOpenSellerProfile}
-            onPress={() => {
-              if (!item.profile_uid) return;
-              navigation.navigate("Profile", {
-                profile_uid: item.profile_uid,
-                returnTo: "Search",
-                searchState: getSearchStateForRestore(),
-              });
-            }}
-            accessibilityRole='button'
-            accessibilityLabel='View seller profile'
-          >
-            <Image
-              source={profile.image && profile.imageIsPublic && profile.image !== "" && String(profile.image).trim() !== "" ? { uri: String(profile.image) } : require("../assets/profile.png")}
-              style={[styles.wishProfileImage, darkMode && styles.darkWishProfileImage]}
-              tintColor={darkMode ? "#ffffff" : undefined}
-              onError={(error) => {
-                console.log("Expertise profile image failed to load:", error.nativeEvent.error);
-              }}
-              defaultSource={require("../assets/profile.png")}
-            />
-          </TouchableOpacity>
-          <View style={styles.wishProfileInfo}>
-            <TouchableOpacity
-              activeOpacity={canOpenSellerProfile ? 0.7 : 1}
-              disabled={!canOpenSellerProfile}
-              onPress={() => {
-                if (!item.profile_uid) return;
-                navigation.navigate("Profile", {
-                  profile_uid: item.profile_uid,
-                  returnTo: "Search",
-                  searchState: getSearchStateForRestore(),
-                });
-              }}
-              accessibilityRole='button'
-              accessibilityLabel='View seller profile'
-            >
-              <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>{[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Anonymous User"}</Text>
-            </TouchableOpacity>
-            {/* Show email if public */}
-            {(() => {
-              const email = profile.emailIsPublic && profile.email ? String(profile.email).trim() : "";
-              return email && email !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{email}</Text> : null;
-            })()}
-            {/* Show phone if public */}
-            {(() => {
-              const phone = profile.phoneIsPublic && profile.phone ? String(profile.phone).trim() : "";
-              return phone && phone !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{phone}</Text> : null;
-            })()}
-          </View>
-        </View>
+        {/* Profile: compact MicroCard on mobile, full header on wider screens */}
+        <TouchableOpacity
+          activeOpacity={canOpenSellerProfile ? 0.7 : 1}
+          disabled={!canOpenSellerProfile}
+          onPress={openSellerProfile}
+          accessibilityRole='button'
+          accessibilityLabel='View seller profile'
+        >
+          {isCompactSearchCard ? (
+            <MicroCard user={microCardUser} showRelationship={false} embedded />
+          ) : (
+            <View style={styles.wishProfileContainer}>
+              <Image
+                source={profile.image && profile.imageIsPublic && profile.image !== "" && String(profile.image).trim() !== "" ? { uri: String(profile.image) } : require("../assets/profile.png")}
+                style={[styles.wishProfileImage, darkMode && styles.darkWishProfileImage]}
+                tintColor={darkMode ? "#ffffff" : undefined}
+                onError={(error) => {
+                  console.log("Expertise profile image failed to load:", error.nativeEvent.error);
+                }}
+                defaultSource={require("../assets/profile.png")}
+              />
+              <View style={styles.wishProfileInfo}>
+                <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>{[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Anonymous User"}</Text>
+                {(() => {
+                  const email = profile.emailIsPublic && profile.email ? String(profile.email).trim() : "";
+                  return email && email !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{email}</Text> : null;
+                })()}
+                {(() => {
+                  const phone = profile.phoneIsPublic && profile.phone ? String(profile.phone).trim() : "";
+                  return phone && phone !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{phone}</Text> : null;
+                })()}
+              </View>
+            </View>
+          )}
+        </TouchableOpacity>
 
         {/* Expertise Information (no tap-through to expertise detail) */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
@@ -2358,9 +2359,13 @@ export default function SearchScreen({ route }) {
             </View>
           )}
           {!isOwnExpertise ? (
-            <View style={styles.expertiseCardActionRow}>
+            <View style={[styles.expertiseCardActionRow, isCompactSearchCard && styles.expertiseCardActionRowCompact]}>
               <TouchableOpacity
-                style={[styles.expertiseCardMessageButton, darkMode && styles.darkExpertiseCardMessageButton, !canOpenSellerProfile && styles.expertiseCardActionDisabled]}
+                style={[
+                  isCompactSearchCard ? styles.expertiseCardMessageButtonCompact : styles.expertiseCardMessageButton,
+                  darkMode && (isCompactSearchCard ? styles.darkExpertiseCardMessageButtonCompact : styles.darkExpertiseCardMessageButton),
+                  !canOpenSellerProfile && styles.expertiseCardActionDisabled,
+                ]}
                 onPress={() => {
                   if (!item.profile_uid) return;
                   const offeringLabel = expertise.title && String(expertise.title).trim() ? String(expertise.title).trim() : item.company ? String(item.company).trim() : "Offering";
@@ -2374,11 +2379,17 @@ export default function SearchScreen({ route }) {
                 disabled={!canOpenSellerProfile}
                 activeOpacity={0.85}
               >
-                <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' style={{ marginRight: 7 }} />
-                <Text style={styles.expertiseCardActionButtonText}>Messaging</Text>
+                <Ionicons name='chatbubble-ellipses-outline' size={isCompactSearchCard ? 11 : 17} color='#fff' style={{ marginRight: isCompactSearchCard ? 3 : 7 }} />
+                <Text style={[styles.expertiseCardActionButtonText, isCompactSearchCard && styles.expertiseCardActionButtonTextCompact]} numberOfLines={1}>
+                  {isCompactSearchCard ? "Message" : "Messaging"}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.expertiseCardCartButton, darkMode && styles.darkExpertiseCardCartButton, !canAddExpertiseToCart && styles.expertiseCardActionDisabled]}
+                style={[
+                  isCompactSearchCard ? styles.expertiseCardCartButtonCompact : styles.expertiseCardCartButton,
+                  darkMode && (isCompactSearchCard ? styles.darkExpertiseCardCartButtonCompact : styles.darkExpertiseCardCartButton),
+                  !canAddExpertiseToCart && styles.expertiseCardActionDisabled,
+                ]}
                 onPress={() => {
                   if (!canAddExpertiseToCart) return;
                   setExpertiseCartModalItem({ expertiseData: expertise, profileData: profile, profile_uid: item.profile_uid });
@@ -2386,8 +2397,10 @@ export default function SearchScreen({ route }) {
                 disabled={!canAddExpertiseToCart}
                 activeOpacity={0.85}
               >
-                <Ionicons name='cart-outline' size={20} color='#fff' style={{ marginRight: 6 }} />
-                <Text style={styles.expertiseCardActionButtonText}>Add to Cart</Text>
+                <Ionicons name='cart-outline' size={isCompactSearchCard ? 11 : 20} color='#fff' style={{ marginRight: isCompactSearchCard ? 3 : 6 }} />
+                <Text style={[styles.expertiseCardActionButtonText, isCompactSearchCard && styles.expertiseCardActionButtonTextCompact]} numberOfLines={1}>
+                  {isCompactSearchCard ? "Cart" : "Add to Cart"}
+                </Text>
               </TouchableOpacity>
             </View>
           ) : null}
@@ -3625,6 +3638,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: "#eee",
+    minWidth: 0,
   },
   wishTitleRow: {
     flexDirection: "row",
@@ -3831,6 +3845,15 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     alignSelf: "center",
   },
+  expertiseCardActionRowCompact: {
+    flexWrap: "nowrap",
+    alignSelf: "stretch",
+    width: "100%",
+    justifyContent: "space-between",
+    gap: 6,
+    marginTop: 4,
+    marginBottom: 0,
+  },
   /** Match ProfileScreen `profileActionButtonPill` + Message / Connection pill sizing */
   expertiseCardMessageButton: {
     flexDirection: "row",
@@ -3858,6 +3881,38 @@ const styles = StyleSheet.create({
   darkExpertiseCardCartButton: {
     backgroundColor: "#009e98",
   },
+  expertiseCardMessageButtonCompact: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#AF52DE",
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    borderRadius: 10,
+    minWidth: 0,
+  },
+  darkExpertiseCardMessageButtonCompact: {
+    backgroundColor: "#8f47b5",
+  },
+  expertiseCardCartButtonCompact: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#00C7BE",
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    borderRadius: 10,
+    minWidth: 0,
+  },
+  darkExpertiseCardCartButtonCompact: {
+    backgroundColor: "#009e98",
+  },
   expertiseCardActionDisabled: {
     opacity: 0.45,
   },
@@ -3865,6 +3920,10 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 15,
+  },
+  expertiseCardActionButtonTextCompact: {
+    fontSize: 10,
+    flexShrink: 1,
   },
   ownExpertiseNotice: {
     fontSize: 13,
