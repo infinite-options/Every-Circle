@@ -37,6 +37,7 @@ import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
+import { searchResultsToMapProfiles } from "../utils/searchResultsToMapProfiles";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
 function NoBountyIcon({ darkMode, muted }) {
   return (
@@ -461,6 +462,7 @@ export default function SearchScreen({ route }) {
   const [network, setNetwork] = useState(null);
   const [bounty, setBounty] = useState(null);
   const [rating, setRating] = useState(null);
+  const [mapLoading, setMapLoading] = useState(false);
 
   // Search type state: 'global', 'businesses', 'expertise', 'seeking'
   const [searchType, setSearchType] = useState("global");
@@ -931,22 +933,65 @@ export default function SearchScreen({ route }) {
   const globalBusinessResults = searchType === "global" ? results.filter((item) => (item?.itemType || "businesses") === "businesses") : [];
   const globalOfferingResults = searchType === "global" ? results.filter((item) => item?.itemType === "expertise") : [];
 
-  const handleOpenSearchMap = useCallback(() => {
-    const visibleBusinessResults =
+  const handleOpenSearchMap = useCallback(async () => {
+    const isProfileType = searchType === "expertise" || searchType === "seeking";
+
+    const visibleResults =
       searchType === "global"
         ? globalBusinessResults
         : searchType === "businesses"
           ? results.filter((item) => item?.itemType === "businesses")
-          : [];
+          : searchType === "expertise" || searchType === "seeking"
+            ? results.filter((item) => item?.itemType === searchType)
+            : [];
 
-    const mapBusinesses = searchResultsToMapBusinesses(visibleBusinessResults);
+    if (visibleResults.length === 0) {
+      const typeLabel = searchType === "expertise" ? "Offering" : searchType === "seeking" ? "Seeking" : "business";
+      Alert.alert("No results", `Run a ${typeLabel} search first to see results on the map.`);
+      return;
+    }
 
-    if (mapBusinesses.length === 0) {
+    let mapMarkers = isProfileType
+      ? searchResultsToMapProfiles(visibleResults)
+      : searchResultsToMapBusinesses(visibleResults);
+
+    // Search API may not include profile coordinates — fetch them from the profile endpoint
+    if (isProfileType && mapMarkers.length === 0) {
+      const needsCoords = visibleResults.filter(
+        (item) => item.profile_uid && (item.profile_personal_latitude == null || item.profile_personal_longitude == null)
+      );
+      if (needsCoords.length > 0) {
+        setMapLoading(true);
+        try {
+          const enriched = await Promise.all(
+            needsCoords.map(async (item) => {
+              try {
+                const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${encodeURIComponent(item.profile_uid)}`);
+                const json = await res.json();
+                const pi = json.personal_info || {};
+                return {
+                  ...item,
+                  profile_personal_latitude: pi.profile_personal_latitude ?? null,
+                  profile_personal_longitude: pi.profile_personal_longitude ?? null,
+                };
+              } catch {
+                return item;
+              }
+            })
+          );
+          mapMarkers = searchResultsToMapProfiles(enriched);
+        } catch (e) {
+          console.warn("[Map] profile coordinate fetch failed:", e);
+        } finally {
+          setMapLoading(false);
+        }
+      }
+    }
+
+    if (mapMarkers.length === 0) {
       Alert.alert(
-        "No mappable results",
-        visibleBusinessResults.length === 0
-          ? "Run a business search first, or switch to Businesses or Global to see companies on the map."
-          : "None of the current search results have coordinates to show on the map."
+        "No location data",
+        "None of the current results have a home location set in their profile."
       );
       return;
     }
@@ -954,8 +999,9 @@ export default function SearchScreen({ route }) {
     navigation.navigate("EveryCircleMap", {
       fromSearch: true,
       searchQuery: searchQuery.trim(),
-      searchMapBusinesses: mapBusinesses,
-      searchResultCount: visibleBusinessResults.length,
+      searchMapBusinesses: mapMarkers,
+      searchResultCount: visibleResults.length,
+      searchType,
     });
   }, [globalBusinessResults, navigation, results, searchQuery, searchType]);
   const fetchSearchJson = async (endpoint, q, applyRatingFilter = false, distanceMiles = distance, ratingValue = rating) => {
@@ -1075,6 +1121,8 @@ export default function SearchScreen({ route }) {
           itemType: "expertise",
           profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
           ...locationFieldsFromApi(item),
+          profile_personal_latitude: item.profile_personal_latitude ?? null,
+          profile_personal_longitude: item.profile_personal_longitude ?? null,
           expertiseData: {
             title: item.profile_expertise_title,
             description: item.profile_expertise_description,
@@ -1298,6 +1346,8 @@ export default function SearchScreen({ route }) {
             profile_uid: item.profile_wish_profile_personal_id,
             profile_wish_end: item.profile_wish_end || "",
             ...locationFieldsFromApi(item),
+            profile_personal_latitude: item.profile_personal_latitude ?? null,
+            profile_personal_longitude: item.profile_personal_longitude ?? null,
             // Store wish data
             wishData: {
               title: item.profile_wish_title,
@@ -1376,6 +1426,8 @@ export default function SearchScreen({ route }) {
           itemType: "expertise",
           profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
           ...locationFieldsFromApi(item),
+          profile_personal_latitude: item.profile_personal_latitude ?? null,
+          profile_personal_longitude: item.profile_personal_longitude ?? null,
           expertiseData: {
             title: item.profile_expertise_title,
             description: item.profile_expertise_description,
@@ -2419,12 +2471,15 @@ export default function SearchScreen({ route }) {
               </TouchableOpacity>
             </View>
             <TouchableOpacity
-              style={[styles.filterButtonOption, styles.mapButtonRight, darkMode && styles.darkFilterButtonOption]}
+              style={[styles.filterButtonOption, styles.mapButtonRight, darkMode && styles.darkFilterButtonOption, mapLoading && { opacity: 0.6 }]}
               onPress={handleOpenSearchMap}
+              disabled={mapLoading}
               accessibilityLabel="View on map"
               accessibilityRole="button"
             >
-              <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText]}>View on Map</Text>
+              <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText]}>
+                {mapLoading ? "Loading…" : "View on Map"}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -3558,7 +3613,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#333",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   darkOfferingStatement: {
     color: "#e0e0e0",
@@ -3567,7 +3622,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#333",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   darkSeekingStatement: {
     color: "#e0e0e0",
@@ -3681,7 +3736,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#333",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   darkSeekingStatement: {
     color: "#e0e0e0",

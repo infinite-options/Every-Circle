@@ -36,9 +36,27 @@ function haversineDistanceMiles(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-const RADIUS_MIN = 1;
-const RADIUS_MAX = 100;
 const THUMB_SIZE = 24;
+
+const LOG_SCALE_MIN = 1;      // 1 mi is the log scale start
+const LOG_SCALE_MAX = 12500;  // ~half Earth circumference
+const LOG_MIN = Math.log(LOG_SCALE_MIN);
+const LOG_MAX = Math.log(LOG_SCALE_MAX);
+// Reserve 1.5% of track at each end for the 0 and ∞ snap zones
+const SNAP_EDGE = 0.015;
+
+function snapMiles(raw) {
+  if (raw < 10) return Math.round(raw);
+  if (raw < 100) return Math.round(raw / 5) * 5;
+  if (raw < 1000) return Math.round(raw / 25) * 25;
+  return Math.round(raw / 100) * 100;
+}
+
+function formatMiles(miles) {
+  if (miles == null) return "∞";
+  if (miles === 0) return "0 mi";
+  return miles >= 1000 ? `${miles.toLocaleString()} mi` : `${miles} mi`;
+}
 
 function RadiusSlider({ value, onChange, darkMode }) {
   const trackRef = useRef(200);
@@ -49,16 +67,20 @@ function RadiusSlider({ value, onChange, darkMode }) {
   useEffect(() => { onChangeRef.current = onChange; });
 
   const mileToX = (miles) => {
-    if (miles == null) return 0;
     const usable = Math.max(1, trackRef.current - THUMB_SIZE);
-    return ((miles - RADIUS_MIN) / (RADIUS_MAX - RADIUS_MIN)) * usable;
+    if (miles == null) return usable;                  // ∞ → rightmost
+    if (miles <= 0) return 0;                          // 0 → leftmost
+    const logPct = (Math.log(Math.max(LOG_SCALE_MIN, miles)) - LOG_MIN) / (LOG_MAX - LOG_MIN);
+    return (SNAP_EDGE + logPct * (1 - 2 * SNAP_EDGE)) * usable;
   };
 
   const xToMile = (x) => {
     const usable = Math.max(1, trackRef.current - THUMB_SIZE);
     const pct = x / usable;
-    if (pct <= 0.01) return null;
-    return Math.round(RADIUS_MIN + Math.max(0, Math.min(1, pct)) * (RADIUS_MAX - RADIUS_MIN));
+    if (pct <= SNAP_EDGE) return 0;                    // leftmost snap → 0 mi
+    if (pct >= 1 - SNAP_EDGE) return null;             // rightmost snap → ∞
+    const logPct = (pct - SNAP_EDGE) / (1 - 2 * SNAP_EDGE);
+    return snapMiles(Math.exp(LOG_MIN + logPct * (LOG_MAX - LOG_MIN)));
   };
 
   const panResponder = useRef(
@@ -87,7 +109,7 @@ function RadiusSlider({ value, onChange, darkMode }) {
       {...panResponder.panHandlers}
     >
       <View style={[sliderStyles.rail, darkMode && sliderStyles.railDark]} />
-      {value != null && <View style={[sliderStyles.fill, { width: thumbX + THUMB_SIZE / 2 }]} />}
+      <View style={[sliderStyles.fill, { width: value === 0 ? 0 : thumbX + THUMB_SIZE / 2 }]} />
       <View style={[sliderStyles.thumb, { left: thumbX }, darkMode && sliderStyles.thumbDark]} />
     </View>
   );
@@ -115,6 +137,7 @@ export default function EveryCircleMapScreen() {
   const searchQuery = route.params?.searchQuery || "";
   const searchResultCount = route.params?.searchResultCount ?? null;
   const searchMapBusinesses = route.params?.searchMapBusinesses;
+  const searchType = route.params?.searchType || "businesses";
 
   const [businesses, setBusinesses] = useState([]);
   const [mapCenter, setMapCenter] = useState(null);
@@ -198,7 +221,11 @@ export default function EveryCircleMapScreen() {
   const handleBusinessPress = useCallback(
     (business) => {
       if (!business?.business_uid) return;
-      navigation.navigate("BusinessProfile", { business_uid: business.business_uid });
+      if (business.itemType === "expertise" || business.itemType === "seeking") {
+        navigation.navigate("Profile", { profile_uid: business.profile_uid || business.business_uid });
+      } else {
+        navigation.navigate("BusinessProfile", { business_uid: business.business_uid });
+      }
     },
     [navigation]
   );
@@ -238,28 +265,33 @@ export default function EveryCircleMapScreen() {
       ? "Centered on your home location"
       : `Centered on ${MAP_PLACEHOLDER_HOME.label}`;
 
+  const itemLabel = searchType === "expertise" ? "offering" : searchType === "seeking" ? "seeking result" : "business";
+  const itemLabelPlural = searchType === "expertise" ? "offerings" : searchType === "seeking" ? "seeking results" : "businesses";
+
   const summaryLabel = (() => {
     if (loading) return "Loading map...";
     if (fromSearch) {
       const querySuffix = searchQuery ? ` for "${searchQuery}"` : "";
       const shown = filteredBusinesses.length;
       const total = businesses.length;
-      if (mapRadiusMiles != null && shown < total) {
-        return `${shown} of ${total} search results within ${mapRadiusMiles} mi${querySuffix}`;
+      if (mapRadiusMiles !== null && shown < total) {
+        return `${shown} of ${total} ${itemLabelPlural} within ${formatMiles(mapRadiusMiles)}${querySuffix}`;
       }
       if (searchResultCount != null && total < searchResultCount) {
-        return `${total} of ${searchResultCount} search results on the map${querySuffix}`;
+        return `${total} of ${searchResultCount} ${itemLabelPlural} on the map${querySuffix}`;
       }
-      return `${total} search result${total === 1 ? "" : "s"} on the map${querySuffix}`;
+      return `${total} ${total === 1 ? itemLabel : itemLabelPlural} on the map${querySuffix}`;
     }
-    return `${filteredBusinesses.length} business${filteredBusinesses.length === 1 ? "" : "es"} on Every Circle`;
+    return `${filteredBusinesses.length} ${filteredBusinesses.length === 1 ? itemLabel : itemLabelPlural} on Every Circle`;
   })();
 
   const emptyMessage = fromSearch
-    ? mapRadiusMiles != null
-      ? `No businesses within ${mapRadiusMiles} miles. Try increasing the radius.`
-      : "No search results with map coordinates to display."
-    : "No businesses with a Google place id and coordinates yet.";
+    ? mapRadiusMiles === 0
+      ? "Radius is 0 mi — slide right to expand."
+      : mapRadiusMiles !== null
+        ? `No ${itemLabelPlural} within ${formatMiles(mapRadiusMiles)}. Slide right to expand.`
+        : `No ${itemLabelPlural} with location coordinates to display.`
+    : `No ${itemLabelPlural} with coordinates yet.`;
 
   return (
     <SafeAreaView
@@ -331,17 +363,17 @@ export default function EveryCircleMapScreen() {
           <Text style={[styles.radiusLabel, darkMode && styles.radiusLabelDark]}>Nearby:</Text>
           <RadiusSlider value={mapRadiusMiles} onChange={setMapRadiusMiles} darkMode={darkMode} />
           <View style={styles.radiusValueWrap}>
-            {mapRadiusMiles != null ? (
+            {mapRadiusMiles !== null ? (
               <TouchableOpacity
                 onPress={() => setMapRadiusMiles(null)}
                 style={styles.radiusClearBtn}
                 accessibilityLabel="Clear radius filter"
               >
-                <Text style={styles.radiusValueActive}>{mapRadiusMiles} mi</Text>
+                <Text style={styles.radiusValueActive}>{formatMiles(mapRadiusMiles)}</Text>
                 <Text style={styles.radiusClearIcon}> ✕</Text>
               </TouchableOpacity>
             ) : (
-              <Text style={[styles.radiusValueText, darkMode && styles.radiusLabelDark]}>All</Text>
+              <Text style={[styles.radiusValueActive, { fontSize: 16 }]}>∞</Text>
             )}
           </View>
         </View>
@@ -558,7 +590,7 @@ const styles = StyleSheet.create({
   },
   radiusValueWrap: {
     marginLeft: 10,
-    minWidth: 52,
+    minWidth: 80,
     alignItems: "flex-end",
     flexShrink: 0,
   },
@@ -574,10 +606,5 @@ const styles = StyleSheet.create({
   radiusClearIcon: {
     fontSize: 12,
     color: "#4F8A8B",
-  },
-  radiusValueText: {
-    fontSize: 13,
-    fontWeight: "500",
-    color: "#555",
   },
 });

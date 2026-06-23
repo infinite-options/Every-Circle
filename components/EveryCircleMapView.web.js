@@ -69,11 +69,22 @@ function addBusinessMarkers(
       marker.addListener("click", () => {
         const address = buildAddressLine(business);
         const uid = business.business_uid || "";
+        const registeredLabel =
+          business.itemType === "expertise"
+            ? "Offering on Every Circle"
+            : business.itemType === "seeking"
+              ? "Seeking on Every Circle"
+              : "Registered on Every Circle";
+        const itemTitleHtml =
+          business.item_title
+            ? `<div style="margin-top: 4px; font-size: 12px; color: #666;">${business.item_title}</div>`
+            : "";
         const content = `
         <div style="font-family: system-ui, sans-serif; max-width: 240px;">
           <strong style="font-size: 14px;">${business.business_name || "Business"}</strong>
+          ${itemTitleHtml}
           ${address ? `<div style="margin-top: 6px; font-size: 12px; color: #444;">${address}</div>` : ""}
-          <div style="margin-top: 8px; font-size: 12px; color: #AF52DE;">Registered on Every Circle</div>
+          <div style="margin-top: 8px; font-size: 12px; color: #AF52DE;">${registeredLabel}</div>
           <button
             id="ec-map-btn-${uid}"
             type="button"

@@ -98,7 +98,16 @@ export default function EveryCircleMapView({
           <Callout onPress={() => onBusinessPress?.(business)}>
             <TouchableOpacity onPress={() => onBusinessPress?.(business)} activeOpacity={0.8}>
               <Text style={styles.calloutTitle}>{business.business_name}</Text>
-              <Text style={styles.calloutSubtitle}>Registered on Every Circle</Text>
+              {business.item_title ? (
+                <Text style={styles.calloutItemTitle}>{business.item_title}</Text>
+              ) : null}
+              <Text style={styles.calloutSubtitle}>
+                {business.itemType === "expertise"
+                  ? "Offering on Every Circle"
+                  : business.itemType === "seeking"
+                    ? "Seeking on Every Circle"
+                    : "Registered on Every Circle"}
+              </Text>
               <Text style={styles.calloutAction}>View profile</Text>
             </TouchableOpacity>
           </Callout>
@@ -131,6 +140,11 @@ const styles = StyleSheet.create({
   calloutTitle: {
     fontWeight: "700",
     fontSize: 14,
+    marginBottom: 2,
+  },
+  calloutItemTitle: {
+    fontSize: 12,
+    color: "#666",
     marginBottom: 4,
   },
   calloutSubtitle: {
