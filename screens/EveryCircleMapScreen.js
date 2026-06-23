@@ -145,7 +145,9 @@ export default function EveryCircleMapScreen() {
   const homeLocationLabel =
     homeLocationSource === "profile"
       ? "Centered on your home location"
-      : `Centered on ${MAP_PLACEHOLDER_HOME.label}`;
+      : homeLocationSource === "last_known"
+        ? "Centered on your last known location"
+        : `Centered on ${MAP_PLACEHOLDER_HOME.label}`;
 
   const summaryLabel = (() => {
     if (loading) return "Loading map...";

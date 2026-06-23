@@ -3,6 +3,9 @@
 
 // Production/Development Environment
 export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
+// import { Platform } from "react-native";
+// const LOCAL_HOST = Platform.OS === "android" ? "10.0.2.2" : "127.0.0.1";
+// export const API_BASE_URL = `http://${LOCAL_HOST}:4090`;
 // export const SEARCH_BASE_URL = "http://54.183.12.163:5001";
 // export const SEARCH_BASE_URL = "http://13.52.244.236:5001";
 // export const SEARCH_BASE_URL = "http://13.52.82.86:5001";

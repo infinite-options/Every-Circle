@@ -1,10 +1,11 @@
 import { getSessionProfile } from "./sessionProfile";
 import { parseCoordinateValue } from "./validateCoordinates";
 import { MAP_PLACEHOLDER_HOME } from "./mapDefaults";
+import { getLastKnownLocation } from "./lastKnownLocation";
 
 /**
  * Home location for map centering: profile_personal_latitude/longitude when set,
- * otherwise Dummy A placeholder (Salesforce Park, SF).
+ * then last-known GPS fix, otherwise Dummy A placeholder (Salesforce Park, SF).
  */
 export async function resolveMapHomeCoords() {
   try {
@@ -17,6 +18,11 @@ export async function resolveMapHomeCoords() {
     }
   } catch (err) {
     console.warn("resolveMapHomeCoords failed:", err);
+  }
+
+  const lastKnown = await getLastKnownLocation();
+  if (lastKnown) {
+    return { lat: lastKnown.lat, lng: lastKnown.lng, source: "last_known" };
   }
 
   return {

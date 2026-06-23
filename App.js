@@ -78,6 +78,7 @@ import ChatScreen from "./screens/ChatScreen";
 import AddReviewSearchScreen from "./screens/AddReviewSearchScreen";
 import EveryCircleMapScreen from "./screens/EveryCircleMapScreen";
 import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFromEnv } from "./utils/clearAppAsyncStorage";
+import { captureAndPersistLastKnownLocation } from "./utils/lastKnownLocation";
 
 const Stack = createNativeStackNavigator();
 
@@ -357,7 +358,10 @@ export default function App() {
         setTermsAccepted(termsAcceptedValue);
         console.log("App.js - Terms Accepted:", termsAcceptedValue);
 
-        if (uid) setInitialRoute("Profile");
+        if (uid) {
+          setInitialRoute("Profile");
+          captureAndPersistLastKnownLocation().catch(() => {});
+        }
 
         // Configure Google Sign-In (only on native platforms)
         if (!isWeb && GoogleSignin) {

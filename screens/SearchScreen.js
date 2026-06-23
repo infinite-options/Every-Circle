@@ -753,6 +753,7 @@ export default function SearchScreen({ route }) {
   const loadUserHomeCoords = useCallback(async () => {
     try {
       const { getSessionProfile } = require("../utils/sessionProfile");
+      const { getLastKnownLocation } = require("../utils/lastKnownLocation");
       const session = await getSessionProfile({ forceRefresh: true });
       const pi = session?.personalInfo || session?.rawProfile?.personal_info;
       const lat = pi?.profile_personal_latitude;
@@ -762,6 +763,14 @@ export default function SearchScreen({ route }) {
         setUserHomeCoords(coords);
         return coords;
       }
+
+      const lastKnown = await getLastKnownLocation();
+      if (lastKnown) {
+        const coords = { lat: lastKnown.lat, lng: lastKnown.lng };
+        setUserHomeCoords(coords);
+        return coords;
+      }
+
       const empty = { lat: null, lng: null };
       setUserHomeCoords(empty);
       return empty;
@@ -776,6 +785,17 @@ export default function SearchScreen({ route }) {
   useFocusEffect(
     useCallback(() => {
       loadUserHomeCoords();
+      const { captureAndPersistLastKnownLocation } = require("../utils/lastKnownLocation");
+      captureAndPersistLastKnownLocation()
+        .then((coords) => {
+          if (coords) {
+            setUserHomeCoords((prev) => {
+              if (prev.lat != null && prev.lng != null) return prev;
+              return { lat: coords.lat, lng: coords.lng };
+            });
+          }
+        })
+        .catch(() => {});
     }, [loadUserHomeCoords]),
   );
 

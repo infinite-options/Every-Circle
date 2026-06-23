@@ -323,8 +323,12 @@ const NewConnectionScreen = () => {
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
             (position) => {
-              setLatitude(position.coords.latitude);
-              setLongitude(position.coords.longitude);
+              const lat = position.coords.latitude;
+              const lng = position.coords.longitude;
+              setLatitude(lat);
+              setLongitude(lng);
+              const { saveLastKnownLocation } = require("../utils/lastKnownLocation");
+              saveLastKnownLocation(lat, lng, { source: "connection" });
               setFetchingLocation(false);
             },
             (error) => {
@@ -351,8 +355,12 @@ const NewConnectionScreen = () => {
           accuracy: Location.Accuracy.Balanced,
         });
 
-        setLatitude(location.coords.latitude);
-        setLongitude(location.coords.longitude);
+        const lat = location.coords.latitude;
+        const lng = location.coords.longitude;
+        setLatitude(lat);
+        setLongitude(lng);
+        const { saveLastKnownLocation } = require("../utils/lastKnownLocation");
+        saveLastKnownLocation(lat, lng, { source: "connection" });
         setFetchingLocation(false);
       }
     } catch (err) {

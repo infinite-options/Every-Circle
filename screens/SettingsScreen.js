@@ -128,21 +128,10 @@ const LOCATION_PICKER_OPTIONS = [...DUMMY_LOCATIONS, { name: "Live GPS" }];
 /** Resolve lat/lng from a picker option (preset or Live GPS). */
 async function resolveLocationOptionCoords(option) {
   if (option.name === "Live GPS") {
-    if (isWeb) {
-      return new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-          (err) => reject(err),
-          { timeout: 10000 },
-        );
-      });
-    }
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") {
-      throw new Error("Location permission denied");
-    }
-    const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    return { lat: loc.coords.latitude, lng: loc.coords.longitude };
+    const { getDeviceLocationCoords, saveLastKnownLocation } = require("../utils/lastKnownLocation");
+    const coords = await getDeviceLocationCoords();
+    saveLastKnownLocation(coords.lat, coords.lng, { source: "settings" });
+    return coords;
   }
   return { lat: option.lat, lng: option.lng };
 }
@@ -659,6 +648,8 @@ export default function SettingsScreen() {
       if (result.code === 200) {
         lastPatchedAtRef.current = Date.now();
         setStoredCoords({ lat, lng, updatedAt: result.updated_at || null });
+        const { saveLastKnownLocation } = require("../utils/lastKnownLocation");
+        saveLastKnownLocation(lat, lng, { source: liveSharing ? "live_sharing" : "nearby" });
         return true;
       }
     } catch (err) {
@@ -938,8 +929,8 @@ export default function SettingsScreen() {
       }
     } catch (err) {
       console.error("updateLocation error:", err);
-      const msg = err?.message === "Location permission denied" ? "Location permission is required to use Live GPS." : "Could not update location. Please try again.";
-      Alert.alert("Error", msg);
+      const { getLocationErrorMessage } = require("../utils/lastKnownLocation");
+      Alert.alert("Error", getLocationErrorMessage(err, "Could not update location. Please try again."));
     } finally {
       setLocationUpdating(null);
     }
@@ -992,8 +983,8 @@ export default function SettingsScreen() {
       }
     } catch (err) {
       console.error("updateHomeAddressLocation error:", err);
-      const msg = err?.message === "Location permission denied" ? "Location permission is required to use Live GPS." : "Could not update home address. Please try again.";
-      Alert.alert("Error", msg);
+      const { getLocationErrorMessage } = require("../utils/lastKnownLocation");
+      Alert.alert("Error", getLocationErrorMessage(err, "Could not update home address. Please try again."));
     } finally {
       setHomeAddressUpdating(null);
     }
