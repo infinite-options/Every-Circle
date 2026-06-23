@@ -1,5 +1,5 @@
 // SearchScreen.js
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, SafeAreaView, FlatList, ActivityIndicator, Alert, Dimensions, Modal, Image, Platform } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -137,6 +137,187 @@ function locationFieldsFromApi(row) {
   return {
     location_boosted: !!row.location_boosted,
     distance_miles: Number.isFinite(row.distance_miles) ? row.distance_miles : null,
+  };
+}
+
+function haversineMiles(lat1, lon1, lat2, lon2) {
+  const la1 = parseFloat(lat1);
+  const lo1 = parseFloat(lon1);
+  const la2 = parseFloat(lat2);
+  const lo2 = parseFloat(lon2);
+  if (![la1, lo1, la2, lo2].every(Number.isFinite)) return null;
+  const R = 3958.8;
+  const dLat = ((la2 - la1) * Math.PI) / 180;
+  const dLon = ((lo2 - lo1) * Math.PI) / 180;
+  const rLat1 = (la1 * Math.PI) / 180;
+  const rLat2 = (la2 * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(rLat1) * Math.cos(rLat2) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function searchTypeSupportsDistanceFilter(type) {
+  return type === "global" || type === "businesses" || type === "expertise" || type === "seeking";
+}
+
+function profileLocationFieldsFromApi(row) {
+  return {
+    profile_personal_latitude: row?.profile_personal_latitude ?? null,
+    profile_personal_longitude: row?.profile_personal_longitude ?? null,
+    ...locationFieldsFromApi(row),
+  };
+}
+
+function itemDistanceMiles(item, homeCoords) {
+  if (Number.isFinite(item?.distance_miles)) return item.distance_miles;
+  if (homeCoords?.lat == null || homeCoords?.lng == null) return null;
+  if (item?.itemType === "expertise" || item?.itemType === "seeking") {
+    return haversineMiles(homeCoords.lat, homeCoords.lng, item?.profile_personal_latitude, item?.profile_personal_longitude);
+  }
+  return haversineMiles(homeCoords.lat, homeCoords.lng, item?.business_latitude, item?.business_longitude);
+}
+
+/** Client-side safety net when API distance filtering is skipped or stale. */
+function applyDistanceFilterToSearchResults(items, maxMiles, homeCoords) {
+  if (maxMiles == null || homeCoords?.lat == null || homeCoords?.lng == null) return items;
+  return (items || []).filter((item) => {
+    const dist = itemDistanceMiles(item, homeCoords);
+    return dist != null && dist <= maxMiles;
+  });
+}
+
+/** Browse-all: strict network tiers within a section (not score-weighted). */
+function sortByNetworkPriority(items) {
+  return [...(items || [])].sort((a, b) => {
+    const aDeg = getClosestNetworkDegree(a);
+    const bDeg = getClosestNetworkDegree(b);
+    const aTier = aDeg == null ? 1 : 0;
+    const bTier = bDeg == null ? 1 : 0;
+    if (aTier !== bTier) return aTier - bTier;
+    if (aDeg != null && bDeg != null && aDeg !== bDeg) return aDeg - bDeg;
+    const byName = String(a.company || "").localeCompare(String(b.company || ""), undefined, { sensitivity: "base" });
+    if (byName !== 0) return byName;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  });
+}
+
+/** Global browse-all: keep accordion sections, network-sort inside each. */
+function sortBrowseAllGlobalSections(items) {
+  const businesses = sortByNetworkPriority((items || []).filter((item) => (item?.itemType || "businesses") === "businesses"));
+  const expertise = sortByNetworkPriority((items || []).filter((item) => item?.itemType === "expertise"));
+  const seeking = sortByNetworkPriority((items || []).filter((item) => item?.itemType === "seeking"));
+  return [...businesses, ...expertise, ...seeking];
+}
+
+function applyBrowseAllOrdering(items, { global = false } = {}) {
+  if (!items?.length) return items || [];
+  return global ? sortBrowseAllGlobalSections(items) : sortByNetworkPriority(items);
+}
+
+function isBrowseModeResultSet(items) {
+  return (items || []).some((item) => item?.score_breakdown?.browse_mode === true);
+}
+
+function browseResultListsDiffer(a, b) {
+  if (!a || !b || a.length !== b.length) return true;
+  return a.some((item, idx) => item?.id !== b[idx]?.id);
+}
+
+function mapSearchExpertiseRow(item, i) {
+  return {
+    id: `${item.profile_expertise_uid || i}`,
+    company: item.profile_expertise_title || "Untitled Expertise",
+    rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
+    hasPriceTag: false,
+    hasX: false,
+    hasDollar: false,
+    business_short_bio: item.profile_expertise_description || "",
+    business_tag_line: item.profile_expertise_title || "",
+    tags: [],
+    score: item.score || 0,
+    score_breakdown: item.score_breakdown || null,
+    itemType: "expertise",
+    profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
+    ...profileLocationFieldsFromApi(item),
+    expertiseData: {
+      title: item.profile_expertise_title,
+      description: item.profile_expertise_description,
+      details: item.profile_expertise_details,
+      bounty: item.profile_expertise_bounty,
+      cost: item.profile_expertise_cost,
+      quantity: item.profile_expertise_quantity || item.quantity,
+      profile_expertise_quantity: item.profile_expertise_quantity || item.quantity,
+      expertise_uid: item.profile_expertise_uid,
+      profile_expertise_start: item.profile_expertise_start || "",
+      profile_expertise_end: item.profile_expertise_end || "",
+      profile_expertise_location: item.profile_expertise_location || "",
+      profile_expertise_mode: item.profile_expertise_mode || "",
+      profile_expertise_image: item.profile_expertise_image || "",
+      profile_expertise_image_is_public: item.profile_expertise_image_is_public,
+      profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
+    },
+    profileData: {
+      firstName: item.profile_personal_first_name || "",
+      lastName: item.profile_personal_last_name || "",
+      email: item.user_email_id || "",
+      phone: item.profile_personal_phone_number || "",
+      image: item.profile_personal_image || "",
+      tagLine: item.profile_personal_tag_line || "",
+      city: item.profile_personal_city || "",
+      state: item.profile_personal_state || "",
+      emailIsPublic: item.profile_personal_email_is_public == 1,
+      phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
+      imageIsPublic: item.profile_personal_image_is_public == 1,
+      tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
+      locationIsPublic: item.profile_personal_location_is_public == 1,
+    },
+  };
+}
+
+function mapSearchWishRow(item, i) {
+  return {
+    id: `${item.profile_wish_uid || i}`,
+    company: item.profile_wish_title || "Untitled Wish",
+    rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
+    hasPriceTag: false,
+    hasX: false,
+    hasDollar: false,
+    hasBounty: !!item.profile_wish_bounty,
+    business_short_bio: item.profile_wish_description || "",
+    business_tag_line: item.profile_wish_title || "",
+    tags: [],
+    score: item.score || 0,
+    score_breakdown: item.score_breakdown || null,
+    itemType: "seeking",
+    profile_uid: item.profile_wish_profile_personal_id,
+    profile_wish_end: item.profile_wish_end || "",
+    ...profileLocationFieldsFromApi(item),
+    wishData: {
+      title: item.profile_wish_title,
+      description: item.profile_wish_description,
+      bounty: item.profile_wish_bounty,
+      cost: item.profile_wish_cost,
+      wish_uid: item.profile_wish_uid,
+      profile_wish_quantity: item.profile_wish_quantity || "",
+      profile_wish_image: item.profile_wish_image || "",
+      profile_wish_image_is_public: item.profile_wish_image_is_public,
+      profile_wish_start: item.profile_wish_start || "",
+      profile_wish_end: item.profile_wish_end || "",
+      profile_wish_location: item.profile_wish_location || "",
+      profile_wish_mode: item.profile_wish_mode || "",
+      profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
+    },
+    profileData: {
+      firstName: item.profile_personal_first_name || "",
+      lastName: item.profile_personal_last_name || "",
+      email: item.user_email_id || "",
+      phone: item.profile_personal_phone_number || "",
+      image: item.profile_personal_image || "",
+      tagLine: item.profile_personal_tag_line || "",
+      emailIsPublic: item.profile_personal_email_is_public == 1,
+      phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
+      imageIsPublic: item.profile_personal_image_is_public == 1,
+      tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
+    },
   };
 }
 
@@ -464,6 +645,8 @@ export default function SearchScreen({ route }) {
 
   // Search type state: 'global', 'businesses', 'expertise', 'seeking'
   const [searchType, setSearchType] = useState("global");
+  /** True after an empty-query browse-all search completes (drives per-section network sort). */
+  const [browseAllActive, setBrowseAllActive] = useState(false);
 
   const [currentProfileUid, setCurrentProfileUid] = useState(null);
   /** profile_wish_uid → wr_datetime for wishes the logged-in user has responded to (Seeking tab). */
@@ -473,13 +656,24 @@ export default function SearchScreen({ route }) {
   // Stores unsorted results so bounty filter can re-sort without re-fetching
   const rawResultsRef = useRef([]);
   const bountyRef = useRef(bounty);
+  const browseAllActiveRef = useRef(false);
+  const searchTypeRef = useRef(searchType);
+  const searchGenerationRef = useRef(0);
   useEffect(() => {
     bountyRef.current = bounty;
   }, [bounty]);
+  useEffect(() => {
+    searchTypeRef.current = searchType;
+  }, [searchType]);
 
-  const commitSearchResults = useCallback((list) => {
-    rawResultsRef.current = [...list];
-    setResults(applyBountyFilterAndSort(list, bountyRef.current));
+  const commitSearchResults = useCallback((list, { browseAll = false, searchType: resultSearchType = searchTypeRef.current } = {}) => {
+    browseAllActiveRef.current = browseAll;
+    setBrowseAllActive(browseAll);
+    const ordered = browseAll
+      ? applyBrowseAllOrdering(list, { global: resultSearchType === "global" })
+      : list;
+    rawResultsRef.current = [...ordered];
+    setResults(browseAll ? ordered : applyBountyFilterAndSort(ordered, bountyRef.current));
   }, []);
 
   useEffect(() => {
@@ -564,13 +758,18 @@ export default function SearchScreen({ route }) {
       const lat = pi?.profile_personal_latitude;
       const lng = pi?.profile_personal_longitude;
       if (lat != null && lng != null && !Number.isNaN(parseFloat(lat)) && !Number.isNaN(parseFloat(lng))) {
-        setUserHomeCoords({ lat: parseFloat(lat), lng: parseFloat(lng) });
-      } else {
-        setUserHomeCoords({ lat: null, lng: null });
+        const coords = { lat: parseFloat(lat), lng: parseFloat(lng) };
+        setUserHomeCoords(coords);
+        return coords;
       }
+      const empty = { lat: null, lng: null };
+      setUserHomeCoords(empty);
+      return empty;
     } catch (e) {
       console.warn("[SearchScreen] loadUserHomeCoords failed:", e);
-      setUserHomeCoords({ lat: null, lng: null });
+      const empty = { lat: null, lng: null };
+      setUserHomeCoords(empty);
+      return empty;
     }
   }, []);
 
@@ -744,7 +943,7 @@ export default function SearchScreen({ route }) {
           if (bizItems.length > 0) {
             enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(parsedResults)
               .then((updated) => {
-                if (bountyRef.current) commitSearchResults(updated);
+                if (bountyRef.current) commitSearchResults(updated, { browseAll: false, searchType: savedSearchType || searchTypeRef.current });
                 else {
                   rawResultsRef.current = [...updated];
                   setResults(updated);
@@ -792,6 +991,7 @@ export default function SearchScreen({ route }) {
 
   // Re-apply bounty prune/sort when filter changes (full list kept in rawResultsRef for Reset)
   useEffect(() => {
+    if (browseAllActiveRef.current) return;
     const base = rawResultsRef.current;
     if (base.length === 0) return;
     setResults(bountyRef.current ? applyBountyFilterAndSort(base, bountyRef.current) : [...base]);
@@ -863,6 +1063,7 @@ export default function SearchScreen({ route }) {
   const [showFilters, setShowFilters] = useState(false);
   const [showGlobalBusinesses, setShowGlobalBusinesses] = useState(true);
   const [showGlobalOffering, setShowGlobalOffering] = useState(true);
+  const [showGlobalSeeking, setShowGlobalSeeking] = useState(true);
 
   // Filter options (same as FilterScreen)
   const distanceOptions = [5, 10, 15, 25, 50, 100];
@@ -873,7 +1074,7 @@ export default function SearchScreen({ route }) {
   const clearDistanceFilter = (reRunSearch = true) => {
     setDistance(null);
     setDistanceModalVisible(false);
-    if (reRunSearch && searchQuery.trim()) {
+    if (reRunSearch) {
       performSearch(searchQuery, searchType, { distanceMiles: null });
     }
   };
@@ -881,17 +1082,13 @@ export default function SearchScreen({ route }) {
   const applyRatingFilter = (ratingValue) => {
     setRating(ratingValue);
     setRatingModalVisible(false);
-    if (searchQuery.trim()) {
-      performSearch(searchQuery, searchType, { ratingValue });
-    }
+    performSearch(searchQuery, searchType, { ratingValue });
   };
 
   const applyNetworkFilter = (networkValue) => {
     setNetwork(networkValue);
     setNetworkModalVisible(false);
-    if (searchQuery.trim()) {
-      performSearch(searchQuery, searchType, { networkValue });
-    }
+    performSearch(searchQuery, searchType, { networkValue });
   };
 
   /**
@@ -928,8 +1125,39 @@ export default function SearchScreen({ route }) {
   const bountyOptions = ["Ascending", "Descending"];
   const ratingOptions = ["> 1", "> 2", "> 3", "> 4", "> 4.5", "> 4.6", "> 4.8"];
 
-  const globalBusinessResults = searchType === "global" ? results.filter((item) => (item?.itemType || "businesses") === "businesses") : [];
-  const globalOfferingResults = searchType === "global" ? results.filter((item) => item?.itemType === "expertise") : [];
+  const globalBrowseAll =
+    searchType === "global" && (browseAllActive || !searchQuery.trim() || isBrowseModeResultSet(results));
+  const browseNetworkSortEpoch = useMemo(
+    () => results.map((item) => `${item.id}:${getClosestNetworkDegree(item) ?? "x"}`).join("|"),
+    [results],
+  );
+  const globalBusinessResults = useMemo(() => {
+    if (searchType !== "global") return [];
+    const businesses = results.filter((item) => (item?.itemType || "businesses") === "businesses");
+    return globalBrowseAll ? sortByNetworkPriority(businesses) : businesses;
+  }, [browseNetworkSortEpoch, globalBrowseAll, results, searchType]);
+  const globalOfferingResults = useMemo(() => {
+    if (searchType !== "global") return [];
+    const offerings = results.filter((item) => item?.itemType === "expertise");
+    return globalBrowseAll ? sortByNetworkPriority(offerings) : offerings;
+  }, [browseNetworkSortEpoch, globalBrowseAll, results, searchType]);
+  const globalSeekingResults = useMemo(() => {
+    if (searchType !== "global") return [];
+    const seeking = results.filter((item) => item?.itemType === "seeking");
+    return globalBrowseAll ? sortByNetworkPriority(seeking) : seeking;
+  }, [browseNetworkSortEpoch, globalBrowseAll, results, searchType]);
+
+  // Once connection degrees are present, persist browse-all section order in results state too.
+  useEffect(() => {
+    if (searchType !== "global") return;
+    if (!browseAllActive && !isBrowseModeResultSet(results)) return;
+    if (!results.length) return;
+    if (!results.some((item) => getClosestNetworkDegree(item) != null)) return;
+    const sorted = applyBrowseAllOrdering(results, { global: true });
+    if (!browseResultListsDiffer(results, sorted)) return;
+    rawResultsRef.current = [...sorted];
+    setResults(sorted);
+  }, [browseAllActive, browseNetworkSortEpoch, results, searchType]);
 
   const handleOpenSearchMap = useCallback(() => {
     const visibleBusinessResults =
@@ -958,13 +1186,34 @@ export default function SearchScreen({ route }) {
       searchResultCount: visibleBusinessResults.length,
     });
   }, [globalBusinessResults, navigation, results, searchQuery, searchType]);
-  const fetchSearchJson = async (endpoint, q, applyRatingFilter = false, distanceMiles = distance, ratingValue = rating) => {
-    let apiUrl = `${endpoint}?q=${encodeURIComponent(q)}&limit=${SEARCH_RESULT_LIMIT}`;
+  /** Append home coords and optional max_distance for business distance filtering / proximity boost. */
+  const appendLocationSearchParams = (baseUrl, { distanceMiles, coords, sendProximityCoords = false }) => {
+    let apiUrl = baseUrl;
+    const shouldSendCoords = sendProximityCoords || distanceMiles != null;
+    if (shouldSendCoords && coords?.lat != null && coords?.lng != null) {
+      apiUrl = appendHomeCoordsParams(apiUrl, coords);
+    }
+    if (distanceMiles != null && coords?.lat != null && coords?.lng != null) {
+      apiUrl = appendDistanceParams(apiUrl, distanceMiles, coords);
+    }
+    return apiUrl;
+  };
+
+  const fetchSearchJson = async (
+    endpoint,
+    q,
+    { applyRatingFilter = false, distanceMiles = distance, ratingValue = rating, homeCoords = userHomeCoords, isBrowseAll = false } = {},
+  ) => {
+    const limitParam = isBrowseAll ? "ALL" : SEARCH_RESULT_LIMIT;
+    let apiUrl = `${endpoint}?q=${encodeURIComponent(q)}&limit=${limitParam}`;
     if (applyRatingFilter && ratingValue !== null) {
       apiUrl += `&min_rating=${ratingValue}`;
     }
-    apiUrl = appendHomeCoordsParams(apiUrl, userHomeCoords);
-    apiUrl = appendDistanceParams(apiUrl, distanceMiles, userHomeCoords);
+    apiUrl = appendLocationSearchParams(apiUrl, {
+      distanceMiles,
+      coords: homeCoords,
+      sendProximityCoords: true,
+    });
 
     const fetchOptions =
       Platform.OS === "web"
@@ -998,11 +1247,23 @@ export default function SearchScreen({ route }) {
   // Extracted search function that can be called programmatically
   const performSearch = async (query, type = searchType, opts = {}) => {
     const q = query.trim();
-    if (!q) return;
+    const isBrowseAll = !q;
+    const searchGeneration = ++searchGenerationRef.current;
+    browseAllActiveRef.current = isBrowseAll;
+    setBrowseAllActive(isBrowseAll);
     const effectiveDistance = opts.distanceMiles !== undefined ? opts.distanceMiles : distance;
     const effectiveRating = opts.ratingValue !== undefined ? opts.ratingValue : rating;
     const effectiveNetwork = opts.networkValue !== undefined ? opts.networkValue : network;
-    if (effectiveDistance != null && (userHomeCoords.lat == null || userHomeCoords.lng == null)) {
+
+    let searchCoords = userHomeCoords;
+    if (effectiveDistance != null || searchTypeSupportsDistanceFilter(type)) {
+      const freshCoords = await loadUserHomeCoords();
+      if (freshCoords?.lat != null && freshCoords?.lng != null) {
+        searchCoords = freshCoords;
+      }
+    }
+
+    if (effectiveDistance != null && (searchCoords.lat == null || searchCoords.lng == null)) {
       Alert.alert("Home address needed", "Set your home address coordinates in Settings to filter search results by distance.", [
         { text: "Cancel", style: "cancel" },
         { text: "Open Settings", onPress: () => navigation.navigate("Settings") },
@@ -1010,23 +1271,31 @@ export default function SearchScreen({ route }) {
       return;
     }
 
-    console.log("🔍 Performing search for:", q);
+    console.log("🔍 Performing search for:", isBrowseAll ? "(browse all)" : q);
+    console.log("🔍 Browse all mode:", isBrowseAll);
     console.log("🔍 Search type:", type);
     console.log("🔍 Search query length:", q.length);
     console.log("🔍 Search query type:", typeof q);
     console.log("🔍 Rating filter:", effectiveRating);
     console.log("🔍 Network filter:", effectiveNetwork);
     console.log("🔍 Distance filter (mi):", effectiveDistance);
-    console.log("🔍 User home coords:", userHomeCoords);
+    console.log("🔍 User home coords:", searchCoords);
 
     setLoading(true);
     try {
       if (type === "global") {
-        const globalJsonRaw = await fetchSearchJson(SEARCH_GLOBAL_ENDPOINT, q, true, effectiveDistance, effectiveRating);
+        const globalJsonRaw = await fetchSearchJson(SEARCH_GLOBAL_ENDPOINT, q, {
+          applyRatingFilter: true,
+          distanceMiles: effectiveDistance,
+          ratingValue: effectiveRating,
+          homeCoords: searchCoords,
+          isBrowseAll,
+        });
         const globalJson = sanitizeEmptyStrings(globalJsonRaw);
         const globalResults = Array.isArray(globalJson) ? globalJson : globalJson.results || globalJson.result || [];
         const businessResults = globalResults.filter((item) => item.itemType === "businesses");
         const expertiseResults = globalResults.filter((item) => item.itemType === "expertise");
+        const seekingResults = globalResults.filter((item) => item.itemType === "seeking");
 
         const sanitizeText = (text) => {
           if (!text) return "";
@@ -1060,54 +1329,9 @@ export default function SearchScreen({ route }) {
           ...locationFieldsFromApi(b),
         }));
 
-        const mappedExpertise = expertiseResults.map((item, i) => ({
-          id: `${item.profile_expertise_uid || i}`,
-          company: item.profile_expertise_title || "Untitled Expertise",
-          rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
-          hasPriceTag: false,
-          hasX: false,
-          hasDollar: false,
-          business_short_bio: item.profile_expertise_description || "",
-          business_tag_line: item.profile_expertise_title || "",
-          tags: [],
-          score: item.score || 0,
-          score_breakdown: item.score_breakdown || null,
-          itemType: "expertise",
-          profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
-          ...locationFieldsFromApi(item),
-          expertiseData: {
-            title: item.profile_expertise_title,
-            description: item.profile_expertise_description,
-            details: item.profile_expertise_details,
-            bounty: item.profile_expertise_bounty,
-            cost: item.profile_expertise_cost,
-            quantity: item.profile_expertise_quantity || item.quantity,
-            profile_expertise_quantity: item.profile_expertise_quantity || item.quantity,
-            expertise_uid: item.profile_expertise_uid,
-            profile_expertise_start: item.profile_expertise_start || "",
-            profile_expertise_end: item.profile_expertise_end || "",
-            profile_expertise_location: item.profile_expertise_location || "",
-            profile_expertise_mode: item.profile_expertise_mode || "",
-            profile_expertise_image: item.profile_expertise_image || "",
-            profile_expertise_image_is_public: item.profile_expertise_image_is_public,
-            profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
-          },
-          profileData: {
-            firstName: item.profile_personal_first_name || "",
-            lastName: item.profile_personal_last_name || "",
-            email: item.user_email_id || "",
-            phone: item.profile_personal_phone_number || "",
-            image: item.profile_personal_image || "",
-            tagLine: item.profile_personal_tag_line || "",
-            city: item.profile_personal_city || "",
-            state: item.profile_personal_state || "",
-            emailIsPublic: item.profile_personal_email_is_public == 1,
-            phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
-            imageIsPublic: item.profile_personal_image_is_public == 1,
-            tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
-            locationIsPublic: item.profile_personal_location_is_public == 1,
-          },
-        }));
+        const mappedExpertise = expertiseResults.map((item, i) => mapSearchExpertiseRow(item, i));
+
+        const mappedSeeking = seekingResults.map((item, i) => mapSearchWishRow(item, i)).filter((item) => !isWishEnded(item));
 
         const normalizeByType = (items) => {
           if (!items.length) return [];
@@ -1115,12 +1339,22 @@ export default function SearchScreen({ route }) {
           return items.map((x) => ({ ...x, globalScore: (Number(x.score) || 0) / maxScore }));
         };
 
-        const list = [...normalizeByType(mappedBusinesses), ...normalizeByType(mappedExpertise)].sort((a, b) => b.globalScore - a.globalScore);
+        let list;
+        if (isBrowseAll) {
+          list = [...mappedBusinesses, ...mappedExpertise, ...mappedSeeking];
+        } else {
+          list = [...normalizeByType(mappedBusinesses), ...normalizeByType(mappedExpertise)].sort((a, b) => b.globalScore - a.globalScore);
+        }
         const enriched = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(list);
         const withOfferingDegrees = await enrichOfferingOwnerConnectionDegrees(enriched);
         let filteredEnriched = applyBusinessMinRatingFilter(withOfferingDegrees, effectiveRating);
         filteredEnriched = filterResultsByNetwork(filteredEnriched, effectiveNetwork);
-        commitSearchResults(filteredEnriched);
+        filteredEnriched = applyDistanceFilterToSearchResults(filteredEnriched, effectiveDistance, searchCoords);
+        if (searchGeneration !== searchGenerationRef.current) return;
+        if (isBrowseAll) {
+          filteredEnriched = applyBrowseAllOrdering(filteredEnriched, { global: true });
+        }
+        commitSearchResults(filteredEnriched, { browseAll: isBrowseAll, searchType: type });
         setHasLoadedInitialSearch(true);
         setLoading(false);
         return;
@@ -1142,15 +1376,19 @@ export default function SearchScreen({ route }) {
       }
 
       // Build the API URL with query parameter
-      let apiUrl = `${baseEndpoint}?q=${encodeURIComponent(q)}&limit=${SEARCH_RESULT_LIMIT}`;
+      const limitParam = isBrowseAll ? "ALL" : SEARCH_RESULT_LIMIT;
+      let apiUrl = `${baseEndpoint}?q=${encodeURIComponent(q)}&limit=${limitParam}`;
 
       // Add min_rating parameter if rating filter is set
       if (effectiveRating !== null) {
         apiUrl += `&min_rating=${effectiveRating}`;
       }
-      if (type === "businesses") {
-        apiUrl = appendHomeCoordsParams(apiUrl, userHomeCoords);
-        apiUrl = appendDistanceParams(apiUrl, effectiveDistance, userHomeCoords);
+      if (searchTypeSupportsDistanceFilter(type)) {
+        apiUrl = appendLocationSearchParams(apiUrl, {
+          distanceMiles: effectiveDistance,
+          coords: searchCoords,
+          sendProximityCoords: type === "global" || type === "businesses",
+        });
       }
 
       console.log("🎯 EXACT ENDPOINT BEING CALLED:", apiUrl);
@@ -1278,138 +1516,9 @@ export default function SearchScreen({ route }) {
       // Process results based on search type
       let list;
       if (type === "seeking") {
-        // For seeking/wishes, the response includes profile data directly
-        list = resultsArray
-          .map((item, i) => ({
-            id: `${item.profile_wish_uid || i}`,
-            company: item.profile_wish_title || "Untitled Wish",
-            rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
-            hasPriceTag: false,
-            hasX: false,
-            hasDollar: false,
-            //hasBounty: b.has_bounty || b.business_bounty || false,
-            hasBounty: item.profile_wish_bounty ? true : false,
-            business_short_bio: item.profile_wish_description || "",
-            business_tag_line: item.profile_wish_title || "",
-            tags: [],
-            score: item.score || 0,
-            score_breakdown: item.score_breakdown || null,
-            itemType: "seeking",
-            profile_uid: item.profile_wish_profile_personal_id,
-            profile_wish_end: item.profile_wish_end || "",
-            ...locationFieldsFromApi(item),
-            // Store wish data
-            wishData: {
-              title: item.profile_wish_title,
-              description: item.profile_wish_description,
-              bounty: item.profile_wish_bounty,
-              cost: item.profile_wish_cost,
-              wish_uid: item.profile_wish_uid,
-              profile_wish_quantity: item.profile_wish_quantity || "",
-              profile_wish_image: item.profile_wish_image || "",
-              profile_wish_image_is_public: item.profile_wish_image_is_public,
-              profile_wish_start: item.profile_wish_start || "",
-              profile_wish_end: item.profile_wish_end || "",
-              profile_wish_location: item.profile_wish_location || "",
-              profile_wish_mode: item.profile_wish_mode || "",
-              profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
-            },
-            // Store profile data for MiniCard-like display
-            profileData: {
-              firstName: item.profile_personal_first_name || "",
-              lastName: item.profile_personal_last_name || "",
-              email: item.user_email_id || "",
-              phone: item.profile_personal_phone_number || "",
-              image: item.profile_personal_image || "",
-              tagLine: item.profile_personal_tag_line || "",
-              emailIsPublic: item.profile_personal_email_is_public == 1,
-              phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
-              imageIsPublic: item.profile_personal_image_is_public == 1,
-              tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
-            },
-          }))
-          .filter((item) => !isWishEnded(item));
-        // try {
-        //   const profileFetches = list.map(async (item) => {
-        //     if (!item.profile_uid) return item;
-        //     try {
-        //       const profileRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${item.profile_uid}`);
-        //       const profileJson = await profileRes.json();
-        //       const p = profileJson.personal_info || {};
-        //       return {
-        //         ...item,
-        //         profileData: {
-        //           firstName: p.profile_personal_first_name || "",
-        //           lastName: p.profile_personal_last_name || "",
-        //           email: p.user_email_id || "",
-        //           phone: p.profile_personal_phone_number || "",
-        //           image: p.profile_personal_image || "",
-        //           tagLine: p.profile_personal_tag_line || "",
-        //           emailIsPublic: p.profile_personal_email_is_public == 1,
-        //           phoneIsPublic: p.profile_personal_phone_number_is_public == 1,
-        //           imageIsPublic: p.profile_personal_image_is_public == 1,
-        //           tagLineIsPublic: p.profile_personal_tag_line_is_public == 1,
-        //         },
-        //       };
-        //     } catch (e) {
-        //       return item;
-        //     }
-        //   });
-        //   list = await Promise.all(profileFetches);
-        // } catch (e) {
-        //   console.log("Could not fetch wish profiles:", e);
-        // }
+        list = resultsArray.map((item, i) => mapSearchWishRow(item, i)).filter((item) => !isWishEnded(item));
       } else if (type === "expertise") {
-        // For expertise, the response includes profile data directly
-        list = resultsArray.map((item, i) => ({
-          id: `${item.profile_expertise_uid || i}`,
-          company: item.profile_expertise_title || "Untitled Expertise",
-          rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
-          hasPriceTag: false,
-          hasX: false,
-          hasDollar: false,
-          business_short_bio: item.profile_expertise_description || "",
-          business_tag_line: item.profile_expertise_title || "",
-          tags: [],
-          score: item.score || 0,
-          score_breakdown: item.score_breakdown || null,
-          itemType: "expertise",
-          profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
-          ...locationFieldsFromApi(item),
-          expertiseData: {
-            title: item.profile_expertise_title,
-            description: item.profile_expertise_description,
-            details: item.profile_expertise_details,
-            bounty: item.profile_expertise_bounty,
-            cost: item.profile_expertise_cost,
-            quantity: item.profile_expertise_quantity || item.quantity,
-            profile_expertise_quantity: item.profile_expertise_quantity || item.quantity,
-            expertise_uid: item.profile_expertise_uid,
-            profile_expertise_start: item.profile_expertise_start || "",
-            profile_expertise_end: item.profile_expertise_end || "",
-            profile_expertise_location: item.profile_expertise_location || "",
-            profile_expertise_mode: item.profile_expertise_mode || "",
-            profile_expertise_image: item.profile_expertise_image || "",
-            profile_expertise_image_is_public: item.profile_expertise_image_is_public,
-            profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
-          },
-          // Store profile data for MiniCard-like display (all public info for Add to Cart modal)
-          profileData: {
-            firstName: item.profile_personal_first_name || "",
-            lastName: item.profile_personal_last_name || "",
-            email: item.user_email_id || "",
-            phone: item.profile_personal_phone_number || "",
-            image: item.profile_personal_image || "",
-            tagLine: item.profile_personal_tag_line || "",
-            city: item.profile_personal_city || "",
-            state: item.profile_personal_state || "",
-            emailIsPublic: item.profile_personal_email_is_public == 1,
-            phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
-            imageIsPublic: item.profile_personal_image_is_public == 1,
-            tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
-            locationIsPublic: item.profile_personal_location_is_public == 1,
-          },
-        }));
+        list = resultsArray.map((item, i) => mapSearchExpertiseRow(item, i));
       } else {
         // For businesses, use the existing mapping
         const sanitizeText = (text) => {
@@ -1497,8 +1606,18 @@ export default function SearchScreen({ route }) {
         list = filterResultsByNetwork(list, effectiveNetwork);
       }
 
+      if (searchTypeSupportsDistanceFilter(type)) {
+        list = applyDistanceFilterToSearchResults(list, effectiveDistance, searchCoords);
+      }
+
+      if (isBrowseAll) {
+        list = applyBrowseAllOrdering(list, { global: type === "global" });
+      }
+
+      if (searchGeneration !== searchGenerationRef.current) return;
+
       console.log("Processed search results:", list.length, "items");
-      commitSearchResults(list);
+      commitSearchResults(list, { browseAll: isBrowseAll, searchType: type });
       setHasLoadedInitialSearch(true);
     } catch (err) {
       console.error(" Search failed for query:", q, "Error:", err);
@@ -2610,6 +2729,12 @@ export default function SearchScreen({ route }) {
                   <Ionicons name={showGlobalOffering ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
                 </TouchableOpacity>
                 {showGlobalOffering && globalOfferingResults.map((item, idx) => renderResultItem(item, idx))}
+
+                <TouchableOpacity style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]} onPress={() => setShowGlobalSeeking((prev) => !prev)} activeOpacity={0.8}>
+                  <Text style={[styles.globalSectionHeaderText, darkMode && styles.darkGlobalSectionHeaderText]}>Seeking ({globalSeekingResults.length})</Text>
+                  <Ionicons name={showGlobalSeeking ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
+                </TouchableOpacity>
+                {showGlobalSeeking && globalSeekingResults.map((item, idx) => renderResultItem(item, idx))}
               </>
             ) : (
               results.map((item, idx) => renderResultItem(item, idx))
@@ -2648,9 +2773,7 @@ export default function SearchScreen({ route }) {
                         }
                         setDistance(item.miles);
                         setDistanceModalVisible(false);
-                        if (searchQuery.trim()) {
-                          performSearch(searchQuery, searchType, { distanceMiles: item.miles });
-                        }
+                        performSearch(searchQuery, searchType, { distanceMiles: item.miles });
                       }}
                     >
                       <Text style={[styles.optionText, isSelected && styles.selectedOptionText, darkMode && styles.darkOptionText, darkMode && isSelected && styles.darkSelectedOptionText]}>
