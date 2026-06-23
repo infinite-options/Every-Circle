@@ -46,6 +46,7 @@ export default function EveryCircleMapView({
   mapCenter,
   everyCircleOnly = true,
   fitToBusinesses = false,
+  radiusMiles,
   onBusinessPress,
 }) {
   const mapRef = useRef(null);
@@ -54,21 +55,38 @@ export default function EveryCircleMapView({
   useEffect(() => {
     if (!mapRef.current || !mapCenter) return;
 
-    if (fitToBusinesses && businesses.length > 0) {
-      const coordinates = businesses.map((business) => ({
-        latitude: business.business_latitude,
-        longitude: business.business_longitude,
-      }));
-      coordinates.push({ latitude: mapCenter.lat, longitude: mapCenter.lng });
-      mapRef.current.fitToCoordinates(coordinates, {
-        edgePadding: { top: 48, right: 48, bottom: 48, left: 48 },
-        animated: true,
-      });
+    if (fitToBusinesses) {
+      if (radiusMiles != null) {
+        if (radiusMiles === 0) {
+          mapRef.current.animateToRegion(region, 400);
+          return;
+        }
+        const clampLat = (v) => Math.max(-85, Math.min(85, v));
+        const clampLng = (v) => Math.max(-180, Math.min(180, v));
+        const dLat = (radiusMiles / 3959) * (180 / Math.PI);
+        const dLng = dLat / Math.cos((mapCenter.lat * Math.PI) / 180);
+        const corners = [
+          { latitude: clampLat(mapCenter.lat + dLat), longitude: clampLng(mapCenter.lng - dLng) },
+          { latitude: clampLat(mapCenter.lat - dLat), longitude: clampLng(mapCenter.lng + dLng) },
+          ...businesses.map((b) => ({ latitude: b.business_latitude, longitude: b.business_longitude })),
+        ];
+        mapRef.current.fitToCoordinates(corners, {
+          edgePadding: { top: 8, right: 8, bottom: 8, left: 8 },
+          animated: true,
+        });
+        return;
+      }
+
+      // null radius = ∞: fit to world corners so the entire map is visible
+      mapRef.current.fitToCoordinates(
+        [{ latitude: 75, longitude: -175 }, { latitude: -75, longitude: 175 }],
+        { edgePadding: { top: 16, right: 16, bottom: 16, left: 16 }, animated: true }
+      );
       return;
     }
 
     mapRef.current.animateToRegion(region, 400);
-  }, [businesses, fitToBusinesses, mapCenter, region]);
+  }, [businesses, fitToBusinesses, mapCenter, region, radiusMiles]);
 
   return (
     <MapView

@@ -39,7 +39,7 @@ function haversineDistanceMiles(lat1, lng1, lat2, lng2) {
 const THUMB_SIZE = 24;
 
 const LOG_SCALE_MIN = 1;      // 1 mi is the log scale start
-const LOG_SCALE_MAX = 12500;  // ~half Earth circumference
+const LOG_SCALE_MAX = 12500;  // ~half Earth circumference; bounds are clamped to prevent tile duplication
 const LOG_MIN = Math.log(LOG_SCALE_MIN);
 const LOG_MAX = Math.log(LOG_SCALE_MAX);
 // Reserve 1.5% of track at each end for the 0 and ∞ snap zones
@@ -77,7 +77,7 @@ function RadiusSlider({ value, onChange, darkMode }) {
   const xToMile = (x) => {
     const usable = Math.max(1, trackRef.current - THUMB_SIZE);
     const pct = x / usable;
-    if (pct <= SNAP_EDGE) return 0;                    // leftmost snap → 0 mi
+    if (pct < SNAP_EDGE) return 0;                     // leftmost snap → 0 mi
     if (pct >= 1 - SNAP_EDGE) return null;             // rightmost snap → ∞
     const logPct = (pct - SNAP_EDGE) / (1 - 2 * SNAP_EDGE);
     return snapMiles(Math.exp(LOG_MIN + logPct * (LOG_MAX - LOG_MIN)));
@@ -145,7 +145,7 @@ export default function EveryCircleMapScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [everyCircleOnly, setEveryCircleOnly] = useState(true);
-  const [mapRadiusMiles, setMapRadiusMiles] = useState(null);
+  const [mapRadiusMiles, setMapRadiusMiles] = useState(0);
   const mapAccent = getHeaderColor("search");
 
   const filteredBusinesses =
@@ -397,7 +397,8 @@ export default function EveryCircleMapScreen() {
               businesses={filteredBusinesses}
               mapCenter={mapCenter}
               everyCircleOnly={everyCircleOnly}
-              fitToBusinesses={fromSearch && filteredBusinesses.length > 0}
+              fitToBusinesses={fromSearch}
+              radiusMiles={fromSearch ? mapRadiusMiles : undefined}
               onBusinessPress={handleBusinessPress}
             />
           )}

@@ -20,12 +20,29 @@ function PersonMapMarker() {
   return <View style={styles.personMarker} />;
 }
 
-export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPress }) {
+export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPress, radiusMiles }) {
   const mapRef = useRef(null);
   const region = useMemo(() => (mapCenter ? regionFromCenter(mapCenter) : null), [mapCenter]);
 
   useEffect(() => {
     if (!mapRef.current || !mapCenter) return;
+
+    if (radiusMiles != null) {
+      const clampLat = (v) => Math.max(-85, Math.min(85, v));
+      const clampLng = (v) => Math.max(-180, Math.min(180, v));
+      const dLat = (radiusMiles / 3959) * (180 / Math.PI);
+      const dLng = dLat / Math.cos((mapCenter.lat * Math.PI) / 180);
+      const corners = [
+        { latitude: clampLat(mapCenter.lat + dLat), longitude: clampLng(mapCenter.lng - dLng) },
+        { latitude: clampLat(mapCenter.lat - dLat), longitude: clampLng(mapCenter.lng + dLng) },
+        ...people.map((p) => ({ latitude: p.lat, longitude: p.lng })),
+      ];
+      mapRef.current.fitToCoordinates(corners, {
+        edgePadding: { top: 8, right: 8, bottom: 8, left: 8 },
+        animated: true,
+      });
+      return;
+    }
 
     const coordinates = [
       { latitude: mapCenter.lat, longitude: mapCenter.lng },
@@ -43,7 +60,7 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
     if (region) {
       mapRef.current.animateToRegion(region, 400);
     }
-  }, [mapCenter, people, region]);
+  }, [mapCenter, people, region, radiusMiles]);
 
   if (!mapCenter || !region) return null;
 

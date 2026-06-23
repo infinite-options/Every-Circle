@@ -16,27 +16,35 @@ function buildAddressLine(business) {
   return parts.join(", ");
 }
 
-function fitMapToBusinesses(mapsApi, map, businesses, mapCenter) {
-  if (!businesses?.length || !mapsApi?.LatLngBounds) return;
+const clampLat = (v) => Math.max(-85, Math.min(85, v));
+const clampLng = (v) => Math.max(-180, Math.min(180, v));
 
-  const bounds = new mapsApi.LatLngBounds();
-  businesses.forEach((business) => {
-    bounds.extend({
-      lat: business.business_latitude,
-      lng: business.business_longitude,
-    });
-  });
-  if (mapCenter) {
-    bounds.extend({ lat: mapCenter.lat, lng: mapCenter.lng });
-  }
+function fitMapToBusinesses(mapsApi, map, businesses, mapCenter, radiusMiles) {
+  if (!mapsApi?.LatLngBounds) return;
 
-  if (businesses.length === 1 && !mapCenter) {
-    map.setCenter(bounds.getCenter());
-    map.setZoom(DEFAULT_MAP_ZOOM);
+  if (radiusMiles != null && mapCenter) {
+    if (radiusMiles === 0) {
+      map.setCenter({ lat: mapCenter.lat, lng: mapCenter.lng });
+      map.setZoom(DEFAULT_MAP_ZOOM);
+      return;
+    }
+    const dLat = (radiusMiles / 3959) * (180 / Math.PI);
+    const dLng = dLat / Math.cos((mapCenter.lat * Math.PI) / 180);
+    const bounds = new mapsApi.LatLngBounds();
+    bounds.extend({ lat: clampLat(mapCenter.lat + dLat), lng: clampLng(mapCenter.lng - dLng) });
+    bounds.extend({ lat: clampLat(mapCenter.lat - dLat), lng: clampLng(mapCenter.lng + dLng) });
+    businesses.forEach((b) => bounds.extend({ lat: b.business_latitude, lng: b.business_longitude }));
+    map.fitBounds(bounds, 8);
+    // Zoom 2 world = 1024px; any wider viewport duplicates tiles — floor at 3
+    if ((map.getZoom() ?? 3) < 3) map.setZoom(3);
     return;
   }
 
-  map.fitBounds(bounds, 56);
+  // null radius = ∞: zoom to world view so all results are visible in global context
+  if (mapCenter) {
+    map.setCenter({ lat: mapCenter.lat, lng: mapCenter.lng });
+  }
+  map.setZoom(3);
 }
 
 function addBusinessMarkers(
@@ -47,7 +55,8 @@ function addBusinessMarkers(
   onBusinessPress,
   markersRef,
   fitToBusinesses,
-  mapCenter
+  mapCenter,
+  radiusMiles
 ) {
   return getWebMapMarkerIcon(mapsApi).then((markerIcon) => {
     markersRef.current.forEach((marker) => marker.setMap(null));
@@ -108,7 +117,7 @@ function addBusinessMarkers(
     });
 
     if (fitToBusinesses) {
-      fitMapToBusinesses(mapsApi, map, businesses, mapCenter);
+      fitMapToBusinesses(mapsApi, map, businesses, mapCenter, radiusMiles);
     }
   });
 }
@@ -118,6 +127,7 @@ export default function EveryCircleMapView({
   mapCenter,
   everyCircleOnly = true,
   fitToBusinesses = false,
+  radiusMiles,
   onBusinessPress,
 }) {
   const hostRef = useRef(null);
@@ -128,6 +138,7 @@ export default function EveryCircleMapView({
   const onBusinessPressRef = useRef(onBusinessPress);
   const fitToBusinessesRef = useRef(fitToBusinesses);
   const mapCenterRef = useRef(mapCenter);
+  const radiusMilesRef = useRef(radiusMiles);
 
   useEffect(() => {
     onBusinessPressRef.current = onBusinessPress;
@@ -140,6 +151,10 @@ export default function EveryCircleMapView({
   useEffect(() => {
     mapCenterRef.current = mapCenter;
   }, [mapCenter]);
+
+  useEffect(() => {
+    radiusMilesRef.current = radiusMiles;
+  }, [radiusMiles]);
 
   useEffect(() => {
     if (!mapCenter) return;
@@ -188,7 +203,8 @@ export default function EveryCircleMapView({
         (business) => onBusinessPressRef.current?.(business),
         markersRef,
         fitToBusinessesRef.current,
-        mapCenterRef.current
+        mapCenterRef.current,
+        radiusMilesRef.current
       );
     }
 
@@ -243,13 +259,14 @@ export default function EveryCircleMapView({
           (business) => onBusinessPressRef.current?.(business),
           markersRef,
           fitToBusinessesRef.current,
-          mapCenterRef.current
+          mapCenterRef.current,
+          radiusMiles
         );
       })
       .catch((err) => {
         console.error("EveryCircleMapView web marker update failed:", err);
       });
-  }, [businesses]);
+  }, [businesses, radiusMiles]);
 
   return (
     <View style={styles.container}>

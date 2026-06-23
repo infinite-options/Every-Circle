@@ -7,8 +7,28 @@ import { getMapStylesForEveryCircleOnly } from "../utils/mapStyles";
 const HOME_MARKER_COLOR = "#2434C2";
 const PERSON_MARKER_COLOR = "#AF52DE";
 
-function fitMapToPeople(mapsApi, map, mapCenter, people) {
+function radiusBounds(mapsApi, center, radiusMiles) {
+  const clampLat = (v) => Math.max(-85, Math.min(85, v));
+  const clampLng = (v) => Math.max(-180, Math.min(180, v));
+  const dLat = (radiusMiles / 3959) * (180 / Math.PI);
+  const dLng = dLat / Math.cos((center.lat * Math.PI) / 180);
+  const bounds = new mapsApi.LatLngBounds();
+  bounds.extend({ lat: clampLat(center.lat + dLat), lng: clampLng(center.lng - dLng) });
+  bounds.extend({ lat: clampLat(center.lat - dLat), lng: clampLng(center.lng + dLng) });
+  return bounds;
+}
+
+function fitMapToPeople(mapsApi, map, mapCenter, people, radiusMiles) {
   if (!mapCenter) return;
+
+  if (radiusMiles != null) {
+    const bounds = radiusBounds(mapsApi, mapCenter, radiusMiles);
+    people.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
+    map.fitBounds(bounds, 8);
+    // Zoom 2 world = 1024px; any wider viewport duplicates tiles — floor at 3
+    if ((map.getZoom() ?? 3) < 3) map.setZoom(3);
+    return;
+  }
 
   if (!people?.length) {
     map.setCenter({ lat: mapCenter.lat, lng: mapCenter.lng });
@@ -75,7 +95,7 @@ function addPeopleMarkers(mapsApi, map, people, infoWindowRef, onPersonPressRef,
   });
 }
 
-export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPress }) {
+export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPress, radiusMiles }) {
   const hostRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
@@ -84,6 +104,7 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
   const onPersonPressRef = useRef(onPersonPress);
   const mapCenterRef = useRef(mapCenter);
   const peopleRef = useRef(people);
+  const radiusMilesRef = useRef(radiusMiles);
 
   useEffect(() => {
     onPersonPressRef.current = onPersonPress;
@@ -96,6 +117,10 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
   useEffect(() => {
     peopleRef.current = people;
   }, [people]);
+
+  useEffect(() => {
+    radiusMilesRef.current = radiusMiles;
+  }, [radiusMiles]);
 
   useEffect(() => {
     if (!mapCenter) return;
@@ -142,7 +167,7 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
       });
 
       addPeopleMarkers(mapsApi, map, peopleRef.current, infoWindowRef, onPersonPressRef, markersRef);
-      fitMapToPeople(mapsApi, map, mapCenterRef.current, peopleRef.current);
+      fitMapToPeople(mapsApi, map, mapCenterRef.current, peopleRef.current, radiusMilesRef.current);
     }
 
     initMap().catch((err) => {
@@ -174,12 +199,12 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
       .then((mapsApi) => {
         if (!mapRef.current) return;
         addPeopleMarkers(mapsApi, mapRef.current, people, infoWindowRef, onPersonPressRef, markersRef);
-        fitMapToPeople(mapsApi, mapRef.current, mapCenter, people);
+        fitMapToPeople(mapsApi, mapRef.current, mapCenter, people, radiusMiles);
       })
       .catch((err) => {
         console.error("NearbyPeopleMapView web marker update failed:", err);
       });
-  }, [mapCenter, people]);
+  }, [mapCenter, people, radiusMiles]);
 
   if (!mapCenter) return null;
 

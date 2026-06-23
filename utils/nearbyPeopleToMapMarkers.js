@@ -2,8 +2,8 @@
 export function nearbyPeopleToMapMarkers(people = []) {
   return people
     .map((person) => {
-      const lat = parseFloat(person.profile_personal_nearby_lat);
-      const lng = parseFloat(person.profile_personal_nearby_lng);
+      const lat = parseFloat(person.profile_personal_nearby_lat ?? person.nearby_lat ?? person.lat);
+      const lng = parseFloat(person.profile_personal_nearby_lng ?? person.nearby_lng ?? person.lng);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
 
       const firstName = person.profile_personal_first_name || "";
