@@ -39,13 +39,7 @@ import { API_BASE_URL, BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEG
 import { normalizeBusinessServiceFromApi as normalizeBusinessServiceRow, businessPaysCcFeeFromApiPayer, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { parsePrice, formatCostValue } from "../utils/priceUtils";
 import { mergeCustomTags, parseTagList, serializeTagList } from "../utils/tagListUtils";
-import {
-  buildBusinessServiceForApi,
-  DEFAULT_RETURN_WINDOW_DAYS,
-  normServiceReturnable,
-  normServiceReturnWindowDays,
-  normServiceTags,
-} from "../utils/buildBusinessServiceForApi";
+import { buildBusinessServiceForApi, DEFAULT_RETURN_WINDOW_DAYS, normServiceReturnable, normServiceReturnWindowDays, normServiceTags } from "../utils/buildBusinessServiceForApi";
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
 import { getBusinessSuggestions, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
 import {
@@ -111,7 +105,10 @@ const inferProfileImageFileMeta = (uri, galleryItem) => {
     const fileType = match ? (match[1] === "jpeg" ? "jpg" : match[1]) : "jpg";
     return { fileType, mimeType: `image/${fileType === "jpg" ? "jpeg" : fileType}` };
   }
-  const extRaw = String(uri || "").split(".").pop() || "jpg";
+  const extRaw =
+    String(uri || "")
+      .split(".")
+      .pop() || "jpg";
   const fileType = extRaw.split("?")[0].toLowerCase().replace("jpeg", "jpg") || "jpg";
   return { fileType, mimeType: `image/${fileType === "jpg" ? "jpeg" : fileType}` };
 };
@@ -173,9 +170,7 @@ const profileUriNeedsGoogleBlob = (uri) => isGoogleHostedPhotoUrl(uri) || isEphe
 /** After step-1 PUT persists business_google_photos, resolve matching google_photo_* S3 URL for profile. */
 const resolveGoogleProfileS3AfterSave = (biz, selectedUri, photosSent, uid, s3Before) => {
   const selected = resolveRestGooglePhotoUrl(selectedUri) || selectedUri;
-  const after = parseBusinessGooglePhotos(biz?.business_google_photos).map((raw) =>
-    isPermanentS3Url(raw) ? raw : resolveBusinessUploadUri(raw, uid),
-  );
+  const after = parseBusinessGooglePhotos(biz?.business_google_photos).map((raw) => (isPermanentS3Url(raw) ? raw : resolveBusinessUploadUri(raw, uid)));
   const sent = photosSent || [];
   let idx = sent.findIndex((u) => u === selected || googlePhotoUrlsMatch(u, selected));
   if (idx < 0) {
@@ -1171,9 +1166,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setRefreshingGooglePhotos(true);
     try {
       const pd = await getPlaceDetails(businessGoogleId);
-      const freshPhotos = dedupeGooglePhotoUrls(
-        (pd.photo_urls || []).map((url) => resolveRestGooglePhotoUrl(url) || url),
-      );
+      const freshPhotos = dedupeGooglePhotoUrls((pd.photo_urls || []).map((url) => resolveRestGooglePhotoUrl(url) || url));
       if (freshPhotos.length === 0) {
         Alert.alert("No Photos", "Google did not return any photos for this business.");
         return;
@@ -1367,9 +1360,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   const renderTagEditor = ({ inputValue, onChangeInput, onAdd, tags, onRemove }) => (
     <View style={styles.tagEditorBlock}>
-      {inputValue.trim().length > 0 ? (
-        <Text style={[styles.pendingTagsHint, darkMode && styles.darkPendingTagsHint]}>Click Add to save your tags before submitting.</Text>
-      ) : null}
+      {inputValue.trim().length > 0 ? <Text style={[styles.pendingTagsHint, darkMode && styles.darkPendingTagsHint]}>Click Add to save your tags before submitting.</Text> : null}
       <View style={styles.tagRow}>
         <TextInput
           style={[styles.tagInput, darkMode && styles.darkTagInput]}
@@ -1616,10 +1607,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
       const profileSelectionChanged = currentBusinessImageUri && !imageError && !profileImgMatchesUri(currentBusinessImageUri, originalBusinessImage, businessUID);
 
-      const profileIsFreshGoogle =
-        profileSelectionChanged &&
-        profileUriNeedsGoogleBlob(currentBusinessImageUri) &&
-        !profileUriIsOnS3(currentBusinessImageUri, profileGalleryItem, businessUID);
+      const profileIsFreshGoogle = profileSelectionChanged && profileUriNeedsGoogleBlob(currentBusinessImageUri) && !profileUriIsOnS3(currentBusinessImageUri, profileGalleryItem, businessUID);
 
       const deferProfileToSecondPut = Platform.OS === "web" && profileIsFreshGoogle;
 
@@ -1996,23 +1984,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             }
 
             if (deferProfileToSecondPut) {
-              const profileS3 = resolveGoogleProfileS3AfterSave(
-                biz,
-                currentBusinessImageUri,
-                googlePhotosToSend,
-                businessUID,
-                googleS3UrlsBeforeSave,
-              );
+              const profileS3 = resolveGoogleProfileS3AfterSave(biz, currentBusinessImageUri, googlePhotosToSend, businessUID, googleS3UrlsBeforeSave);
               if (profileS3) {
                 const profilePayload = new FormData();
                 profilePayload.append("user_uid", userUid);
                 profilePayload.append("business_uid", businessUID);
-                appendS3ProfileReference(
-                  profilePayload,
-                  { s3Key: normalizeBusinessUploadKey(profileS3, businessUID), uri: profileS3 },
-                  profileS3,
-                  businessUID,
-                );
+                appendS3ProfileReference(profilePayload, { s3Key: normalizeBusinessUploadKey(profileS3, businessUID), uri: profileS3 }, profileS3, businessUID);
                 const profileRes = await fetch(`${BusinessProfileAPI}`, { method: "PUT", body: profilePayload });
                 if (!profileRes.ok) {
                   console.warn("EditBusinessProfileScreen - step-2 profile save failed:", profileRes.status);
@@ -2739,7 +2716,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     }
 
     if (productTagInput.trim()) {
-      alertUnsavedTags('Click Add to save your product tags, or clear the tag field before adding/updating the product.');
+      alertUnsavedTags("Click Add to save your product tags, or clear the tag field before adding/updating the product.");
       return;
     }
 
@@ -3271,11 +3248,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         </View>
 
         <View style={{ marginBottom: 8 }}>
-          <TagSectionLabel
-            title='Product Tags'
-            style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle, { width: "100%", marginBottom: 4 }]}
-            darkMode={darkMode}
-          />
+          <TagSectionLabel title='Product Tags' style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle, { width: "100%", marginBottom: 4 }]} darkMode={darkMode} />
           {renderTagEditor({
             inputValue: productTagInput,
             onChangeInput: (text) => {
@@ -3547,11 +3520,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
               }}
             >
               <Text
-                style={[
-                  styles.bountyTypeBtnText,
-                  styles.bountyTypeBtnTextCompact,
-                  !(serviceForm.bs_is_returnable === 1 || serviceForm.bs_is_returnable === "1") && styles.bountyTypeBtnTextActive,
-                ]}
+                style={[styles.bountyTypeBtnText, styles.bountyTypeBtnTextCompact, !(serviceForm.bs_is_returnable === 1 || serviceForm.bs_is_returnable === "1") && styles.bountyTypeBtnTextActive]}
               >
                 No
               </Text>
@@ -3570,13 +3539,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 setIsChanged(true);
               }}
             >
-              <Text
-                style={[
-                  styles.bountyTypeBtnText,
-                  styles.bountyTypeBtnTextCompact,
-                  (serviceForm.bs_is_returnable === 1 || serviceForm.bs_is_returnable === "1") && styles.bountyTypeBtnTextActive,
-                ]}
-              >
+              <Text style={[styles.bountyTypeBtnText, styles.bountyTypeBtnTextCompact, (serviceForm.bs_is_returnable === 1 || serviceForm.bs_is_returnable === "1") && styles.bountyTypeBtnTextActive]}>
                 Yes
               </Text>
             </TouchableOpacity>
@@ -3821,7 +3784,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
         {/* Business MiniCard Live Preview - how business appears in searches */}
         <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
-          <Text style={[styles.label, darkMode && styles.darkLabel]}>Mini Card (how you'll appear in searches):</Text>
+          <Text style={[styles.label, darkMode && styles.darkLabel]}>Mini Card (how you'll appear in Searches):</Text>
           <View style={[styles.previewCard, darkMode && styles.darkPreviewCard]}>
             <MiniCard key={`minicard-${imageUpdateKey}`} business={previewBusiness} />
           </View>
