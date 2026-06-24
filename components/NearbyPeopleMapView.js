@@ -32,10 +32,11 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
       const clampLng = (v) => Math.max(-180, Math.min(180, v));
       const dLat = (radiusMiles / 3959) * (180 / Math.PI);
       const dLng = dLat / Math.cos((mapCenter.lat * Math.PI) / 180);
+      // Do not include people coords — null-distance users can be far away and
+      // would pull the bounding box well outside the chosen radius.
       const corners = [
         { latitude: clampLat(mapCenter.lat + dLat), longitude: clampLng(mapCenter.lng - dLng) },
         { latitude: clampLat(mapCenter.lat - dLat), longitude: clampLng(mapCenter.lng + dLng) },
-        ...people.map((p) => ({ latitude: p.lat, longitude: p.lng })),
       ];
       mapRef.current.fitToCoordinates(corners, {
         edgePadding: { top: 8, right: 8, bottom: 8, left: 8 },

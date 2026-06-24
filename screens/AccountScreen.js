@@ -125,6 +125,23 @@ function isReturnReceipt(receiptRows) {
   return merch != null && merch < 0;
 }
 
+function getOfferingQtyTypeLabel(costString) {
+  if (!costString) return "";
+  const s = String(costString).toLowerCase().replace(/^\$/, "").trim();
+  if (s.includes("total") || !s.match(/\/\w+/)) return "One Time";
+  const match = s.match(/\/(\w+)/);
+  if (!match) return "";
+  const unit = match[1];
+  if (unit === "hr" || unit === "hour") return "Per Hour";
+  if (unit === "day") return "Per Day";
+  if (unit === "week") return "Per Week";
+  if (unit === "month") return "Per Month";
+  if (unit === "quarter") return "Per Quarter";
+  if (unit === "year") return "Per Year";
+  if (unit === "each" || unit === "item") return "Per Item";
+  return `Per ${unit.charAt(0).toUpperCase() + unit.slice(1)}`;
+}
+
 function formatReceiptUsd(n) {
   return Number.isFinite(n) ? `$${n.toFixed(2)}` : "—";
 }
@@ -717,10 +734,15 @@ export default function AccountScreen({ navigation }) {
         const cartKeys = allKeys.filter((k) => k.startsWith("cart_"));
         const allCartRaw = await AsyncStorage.multiGet(cartKeys);
         const cartEnrichMap = {};
-        allCartRaw.forEach(([, val]) => {
+        allCartRaw.forEach(([key, val]) => {
           if (!val) return;
           try {
             const parsed = JSON.parse(val);
+            // Expertise/offering cart items (cart_expertise_*) store cost string directly
+            if (key.startsWith("cart_expertise_") && parsed.expertise_uid && parsed.cost) {
+              cartEnrichMap[parsed.expertise_uid] = { offeringCostString: parsed.cost };
+              return;
+            }
             (parsed.items || []).forEach((cartItem) => {
               const enrichment = cartChoiceEnrichmentFromItem(cartItem);
               if (enrichment) {
@@ -756,6 +778,31 @@ export default function AccountScreen({ navigation }) {
         items = [result.data];
       } else if (result?.data) {
         items = [result.data];
+      }
+
+      // For expertise/offering purchases the receipt endpoint often has no line items.
+      // Synthesize a row from the transaction summary so the modal always shows something.
+      const purchaseTypeFallback = (transaction.purchase_type || "").toLowerCase();
+      if (items.length === 0 && (purchaseTypeFallback === "expertise" || purchaseTypeFallback === "offering")) {
+        const qty = Math.max(1, parseInt(transaction.ti_bs_qty || 1, 10));
+        const totalAmt = parseFloat(transaction.seller_total || transaction.transaction_total || 0);
+        const tiCost = parseFloat(transaction.ti_bs_cost);
+        const unitCost = tiCost > 0 ? tiCost : (qty > 0 ? totalAmt / qty : totalAmt);
+        // Prefer ti_bs_id (expertise UID) from the transaction row; if missing use any key
+        // from localEnrichedItems that has an offeringCostString so the lookup still works.
+        const txExpertiseId = String(transaction.ti_bs_id || "").trim();
+        const enrichedExpertiseKey = txExpertiseId
+          || Object.keys(localEnrichedItems).find((k) => localEnrichedItems[k]?.offeringCostString)
+          || String(transaction.transaction_uid || "").trim();
+        items = [{
+          ti_uid: String(transaction.transaction_uid) + "_syn",
+          ti_bs_id: enrichedExpertiseKey,
+          bs_uid: enrichedExpertiseKey,
+          bs_service_name: transaction.purchased_item || "",
+          bs_service_desc: "",
+          ti_bs_cost: unitCost,
+          ti_bs_qty: qty,
+        }];
       }
 
       const apiEnrichMap = {};
@@ -2075,6 +2122,8 @@ export default function AccountScreen({ navigation }) {
   }
 
   const receiptIsReturnReceipt = !receiptLoading && receiptData.length > 0 && isReturnReceipt(receiptData);
+  const receiptPurchaseType = (receiptTransaction?.purchase_type || "").toLowerCase();
+  const isOfferingReceipt = receiptPurchaseType === "expertise" || receiptPurchaseType === "offering";
 
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
@@ -2746,6 +2795,37 @@ export default function AccountScreen({ navigation }) {
                       || receiptEnrichedItems[item.bs_uid]
                       || {};
 
+                    if (isOfferingReceipt) {
+                      const offeringName = String(item.bs_service_name || item.bs_service_desc || "N/A").trim() || "N/A";
+                      // Direct lookup by ti_bs_id; fall back to scanning all enriched items
+                      // because the buyer transaction row may not carry ti_bs_id = expertise_uid
+                      const costString = enrich.offeringCostString
+                        || Object.values(receiptEnrichedItems).find((e) => e && e.offeringCostString)?.offeringCostString
+                        || "";
+                      const qtyTypeLabel = getOfferingQtyTypeLabel(costString);
+                      const lineTotal = baseCost * qty;
+                      return (
+                        <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
+                          <View style={{ width: 280, paddingHorizontal: 4, justifyContent: "center" }}>
+                            <Text style={{ fontSize: 12, color: darkMode ? "#eee" : "#333", lineHeight: 18 }}>
+                              {offeringName}
+                            </Text>
+                            {qtyTypeLabel ? (
+                              <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#777", fontStyle: "italic", lineHeight: 16 }}>
+                                {qtyTypeLabel}
+                              </Text>
+                            ) : null}
+                          </View>
+                          <Text style={[styles.receiptTableCell, { width: 40, textAlign: "center" }]}>
+                            {qty}
+                          </Text>
+                          <Text style={[styles.receiptTableCell, { width: 80, textAlign: "right", fontWeight: "600" }]}>
+                            ${lineTotal.toFixed(2)}
+                          </Text>
+                        </View>
+                      );
+                    }
+
                     const choicesExtraCost = parseFloat(enrich.choicesExtraCost || 0);
                     const unitPrice = baseCost + choicesExtraCost;
                     const lineTotal = unitPrice * qty;
@@ -2791,7 +2871,7 @@ export default function AccountScreen({ navigation }) {
                         || {};
                       const baseCost = parseFloat(item.ti_bs_cost || 0);
                       const qty = parseInt(item.ti_bs_qty || 1, 10);
-                      const choicesExtra = parseFloat(enrich.choicesExtraCost || 0);
+                      const choicesExtra = isOfferingReceipt ? 0 : parseFloat(enrich.choicesExtraCost || 0);
                       return sum + (baseCost + choicesExtra) * qty;
                     }, 0);
                     return (
