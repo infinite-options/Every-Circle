@@ -426,6 +426,44 @@ function applyBountyFilterAndSort(items, bountyMode) {
   return [...businesses, ...others];
 }
 
+function getResultSortLabel(item) {
+  return String(item?.company || item?.business_name || "").trim();
+}
+
+/** A → Z / Z → A; global view sorts within each accordion section. */
+function applyAlphabeticalSort(items, mode, { global = false } = {}) {
+  if (mode !== "Ascending" && mode !== "Descending") {
+    return items;
+  }
+  const dir = mode === "Ascending" ? 1 : -1;
+  const sortList = (list) =>
+    [...(list || [])].sort((a, b) => {
+      const byName = getResultSortLabel(a).localeCompare(getResultSortLabel(b), undefined, { sensitivity: "base" });
+      if (byName !== 0) return dir * byName;
+      return String(a?.id || "").localeCompare(String(b?.id || ""));
+    });
+  if (!global) return sortList(items);
+  const businesses = sortList(items.filter((item) => (item?.itemType || "businesses") === "businesses"));
+  const expertise = sortList(items.filter((item) => item?.itemType === "expertise"));
+  const seeking = sortList(items.filter((item) => item?.itemType === "seeking"));
+  return [...businesses, ...expertise, ...seeking];
+}
+
+/** Client-side ordering: browse network, alphabetical, or bounty (typed search only). */
+function applyClientSorts(items, { browseAll = false, searchType = "global", bounty = null, alphabetical = null } = {}) {
+  const global = searchType === "global";
+  const list = items || [];
+
+  if (browseAll) {
+    if (alphabetical) return applyAlphabeticalSort(list, alphabetical, { global });
+    return applyBrowseAllOrdering(list, { global });
+  }
+
+  if (alphabetical) return applyAlphabeticalSort(list, alphabetical, { global });
+  if (bounty) return applyBountyFilterAndSort(list, bounty);
+  return list;
+}
+
 // Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
 const formatDateTimeForDisplay = (value) => {
   if (!value || typeof value !== "string" || value.trim() === "") return "";
@@ -647,6 +685,7 @@ export default function SearchScreen({ route }) {
   const [userHomeCoords, setUserHomeCoords] = useState({ lat: null, lng: null });
   const [network, setNetwork] = useState(null);
   const [bounty, setBounty] = useState(null);
+  const [sortAlphabetical, setSortAlphabetical] = useState(null);
   const [rating, setRating] = useState(null);
   const [mapLoading, setMapLoading] = useState(false);
 
@@ -660,9 +699,10 @@ export default function SearchScreen({ route }) {
   const [respondedWishesById, setRespondedWishesById] = useState({});
   const [connectionDegreeMap, setConnectionDegreeMap] = useState({});
   const connectionDegreeMapRef = useRef({});
-  // Stores unsorted results so bounty filter can re-sort without re-fetching
+  // Stores pre-client-sort results so bounty / alphabetical can re-sort without re-fetching
   const rawResultsRef = useRef([]);
   const bountyRef = useRef(bounty);
+  const sortAlphabeticalRef = useRef(sortAlphabetical);
   const browseAllActiveRef = useRef(false);
   const searchTypeRef = useRef(searchType);
   const searchGenerationRef = useRef(0);
@@ -670,17 +710,24 @@ export default function SearchScreen({ route }) {
     bountyRef.current = bounty;
   }, [bounty]);
   useEffect(() => {
+    sortAlphabeticalRef.current = sortAlphabetical;
+  }, [sortAlphabetical]);
+  useEffect(() => {
     searchTypeRef.current = searchType;
   }, [searchType]);
 
   const commitSearchResults = useCallback((list, { browseAll = false, searchType: resultSearchType = searchTypeRef.current } = {}) => {
     browseAllActiveRef.current = browseAll;
     setBrowseAllActive(browseAll);
-    const ordered = browseAll
-      ? applyBrowseAllOrdering(list, { global: resultSearchType === "global" })
-      : list;
-    rawResultsRef.current = [...ordered];
-    setResults(browseAll ? ordered : applyBountyFilterAndSort(ordered, bountyRef.current));
+    rawResultsRef.current = [...list];
+    setResults(
+      applyClientSorts(list, {
+        browseAll,
+        searchType: resultSearchType,
+        bounty: bountyRef.current,
+        alphabetical: sortAlphabeticalRef.current,
+      }),
+    );
   }, []);
 
   useEffect(() => {
@@ -838,15 +885,26 @@ export default function SearchScreen({ route }) {
         const raw = state.rawResults?.length ? state.rawResults : state.results;
         if (raw?.length) {
           rawResultsRef.current = [...raw];
-          const mode = state.bounty !== undefined ? state.bounty : bountyRef.current;
-          setResults(mode ? applyBountyFilterAndSort(raw, mode) : [...raw]);
+          if (state.browseAllActive) browseAllActiveRef.current = true;
+          const restoredBounty = state.bounty !== undefined ? state.bounty : bountyRef.current;
+          const restoredAlphabetical = state.sortAlphabetical !== undefined ? state.sortAlphabetical : sortAlphabeticalRef.current;
+          setResults(
+            applyClientSorts(raw, {
+              browseAll: !!state.browseAllActive,
+              searchType: state.searchType || searchTypeRef.current,
+              bounty: restoredBounty,
+              alphabetical: restoredAlphabetical,
+            }),
+          );
         } else if (state.results !== undefined) {
           setResults(state.results);
         }
         if (state.distance !== undefined) setDistance(state.distance);
         if (state.network !== undefined) setNetwork(state.network);
         if (state.bounty !== undefined) setBounty(state.bounty);
+        if (state.sortAlphabetical !== undefined) setSortAlphabetical(state.sortAlphabetical);
         if (state.rating !== undefined) setRating(state.rating);
+        if (state.browseAllActive) setBrowseAllActive(true);
         console.log(" Search screen state restored");
       }
     }, [route.params?.restoreState, route.params?.searchState]),
@@ -950,11 +1008,7 @@ export default function SearchScreen({ route }) {
           if (bizItems.length > 0) {
             enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(parsedResults)
               .then((updated) => {
-                if (bountyRef.current) commitSearchResults(updated, { browseAll: false, searchType: savedSearchType || searchTypeRef.current });
-                else {
-                  rawResultsRef.current = [...updated];
-                  setResults(updated);
-                }
+                commitSearchResults(updated, { browseAll: false, searchType: savedSearchType || searchTypeRef.current });
               })
               .catch((e) => {
                 console.error("Could not fetch ratings/bounty from cache:", e);
@@ -996,13 +1050,19 @@ export default function SearchScreen({ route }) {
     }
   }, [hasLoadedInitialSearch]);
 
-  // Re-apply bounty prune/sort when filter changes (full list kept in rawResultsRef for Reset)
+  // Re-apply client-side sort when bounty or alphabetical filter changes (raw list kept for Reset)
   useEffect(() => {
-    if (browseAllActiveRef.current) return;
     const base = rawResultsRef.current;
     if (base.length === 0) return;
-    setResults(bountyRef.current ? applyBountyFilterAndSort(base, bountyRef.current) : [...base]);
-  }, [bounty]);
+    setResults(
+      applyClientSorts(base, {
+        browseAll: browseAllActiveRef.current,
+        searchType: searchTypeRef.current,
+        bounty: bountyRef.current,
+        alphabetical: sortAlphabeticalRef.current,
+      }),
+    );
+  }, [bounty, sortAlphabetical]);
 
   // Save search state whenever results change (but not on initial load)
   useEffect(() => {
@@ -1066,6 +1126,7 @@ export default function SearchScreen({ route }) {
   const [distanceModalVisible, setDistanceModalVisible] = useState(false);
   const [networkModalVisible, setNetworkModalVisible] = useState(false);
   const [bountyModalVisible, setBountyModalVisible] = useState(false);
+  const [sortAlphabeticalModalVisible, setSortAlphabeticalModalVisible] = useState(false);
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showGlobalBusinesses, setShowGlobalBusinesses] = useState(true);
@@ -1130,6 +1191,8 @@ export default function SearchScreen({ route }) {
     return `${baseUrl}${sep}max_distance=${encodeURIComponent(miles)}`;
   };
   const bountyOptions = ["Ascending", "Descending"];
+  const sortAlphabeticalOptions = ["Ascending", "Descending"];
+  const sortAlphabeticalLabels = { Ascending: "A -> Z", Descending: "Z -> A" };
   const ratingOptions = ["> 1", "> 2", "> 3", "> 4", "> 4.5", "> 4.6", "> 4.8"];
 
   const globalBusinessResults = searchType === "global" ? results.filter((item) => (item?.itemType || "businesses") === "businesses") : [];
@@ -1419,9 +1482,6 @@ export default function SearchScreen({ route }) {
         filteredEnriched = filterResultsByNetwork(filteredEnriched, effectiveNetwork);
         filteredEnriched = applyDistanceFilterToSearchResults(filteredEnriched, effectiveDistance, searchCoords);
         if (searchGeneration !== searchGenerationRef.current) return;
-        if (isBrowseAll) {
-          filteredEnriched = applyBrowseAllOrdering(filteredEnriched, { global: true });
-        }
         commitSearchResults(filteredEnriched, { browseAll: isBrowseAll, searchType: type });
         setHasLoadedInitialSearch(true);
         setLoading(false);
@@ -1811,10 +1871,6 @@ export default function SearchScreen({ route }) {
         list = applyDistanceFilterToSearchResults(list, effectiveDistance, searchCoords);
       }
 
-      if (isBrowseAll) {
-        list = applyBrowseAllOrdering(list, { global: type === "global" });
-      }
-
       if (searchGeneration !== searchGenerationRef.current) return;
 
       console.log("Processed search results:", list.length, "items");
@@ -2022,7 +2078,9 @@ export default function SearchScreen({ route }) {
     distance,
     network,
     bounty,
+    sortAlphabetical,
     rating,
+    browseAllActive: browseAllActiveRef.current,
   });
 
   const handleExpertiseAddToCartConfirm = async (modalData) => {
@@ -2886,6 +2944,26 @@ export default function SearchScreen({ route }) {
                 style={[
                   styles.filterButtonOption,
                   darkMode && styles.darkFilterButtonOption,
+                  sortAlphabetical !== null && styles.activeFilterButton,
+                  darkMode && sortAlphabetical !== null && styles.darkActiveFilterButton,
+                ]}
+                onPress={() => setSortAlphabeticalModalVisible(true)}
+              >
+                <Text
+                  style={[
+                    styles.filterButtonText,
+                    darkMode && styles.darkFilterButtonText,
+                    sortAlphabetical !== null && styles.activeFilterButtonText,
+                    darkMode && sortAlphabetical !== null && styles.darkActiveFilterButtonText,
+                  ]}
+                >
+                  {sortAlphabetical !== null ? sortAlphabeticalLabels[sortAlphabetical] : "A -> Z"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.filterButtonOption,
+                  darkMode && styles.darkFilterButtonOption,
                   rating !== null && styles.activeFilterButton,
                   darkMode && rating !== null && styles.darkActiveFilterButton,
                 ]}
@@ -3051,6 +3129,50 @@ export default function SearchScreen({ route }) {
                   setBountyModalVisible(false);
                 })}
                 keyExtractor={(item) => item.toString()}
+                style={styles.optionsList}
+              />
+            </View>
+          </SafeAreaView>
+        </Modal>
+
+        {/* Alphabetical sort modal */}
+        <Modal animationType='slide' transparent={true} visible={sortAlphabeticalModalVisible} onRequestClose={() => setSortAlphabeticalModalVisible(false)}>
+          <SafeAreaView style={[styles.modalContainer, darkMode && styles.darkModalContainer]}>
+            <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
+              <View style={[styles.modalHeader, darkMode && styles.darkModalHeader]}>
+                <Text style={[styles.modalTitle, darkMode && styles.darkModalTitle]}>Arrange Alphabetically</Text>
+                <TouchableOpacity onPress={() => setSortAlphabeticalModalVisible(false)}>
+                  <Ionicons name='close' size={28} color={darkMode ? "#ffffff" : "#333"} />
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                style={[styles.resetOption, darkMode && styles.darkResetOption]}
+                onPress={() => {
+                  setSortAlphabetical(null);
+                  setSortAlphabeticalModalVisible(false);
+                }}
+              >
+                <Text style={[styles.resetOptionText, darkMode && styles.darkResetOptionText]}>Reset</Text>
+              </TouchableOpacity>
+              <FlatList
+                data={sortAlphabeticalOptions}
+                renderItem={({ item }) => {
+                  const isSelected = item === sortAlphabetical;
+                  return (
+                    <TouchableOpacity
+                      style={[styles.optionItem, isSelected && styles.selectedOption, darkMode && styles.darkOptionItem, darkMode && isSelected && styles.darkSelectedOption]}
+                      onPress={() => {
+                        setSortAlphabetical(item);
+                        setSortAlphabeticalModalVisible(false);
+                      }}
+                    >
+                      <Text style={[styles.optionText, isSelected && styles.selectedOptionText, darkMode && styles.darkOptionText, darkMode && isSelected && styles.darkSelectedOptionText]}>
+                        {sortAlphabeticalLabels[item]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }}
+                keyExtractor={(item) => item}
                 style={styles.optionsList}
               />
             </View>
