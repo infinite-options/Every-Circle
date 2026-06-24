@@ -23,9 +23,9 @@ function fitMapToPeople(mapsApi, map, mapCenter, people, radiusMiles) {
 
   if (radiusMiles != null) {
     const bounds = radiusBounds(mapsApi, mapCenter, radiusMiles);
-    people.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
+    // Do not extend with people — null-distance users can be far away and would
+    // pull the bounds well outside the chosen radius.
     map.fitBounds(bounds, 8);
-    // Zoom 2 world = 1024px; any wider viewport duplicates tiles — floor at 3
     if ((map.getZoom() ?? 3) < 3) map.setZoom(3);
     return;
   }
