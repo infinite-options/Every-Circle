@@ -374,9 +374,13 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       try {
         const choicesRecord = {};
         cartItems.forEach((item) => {
-          const enrichment = cartChoiceEnrichmentFromItem(item);
-          if (enrichment) {
-            choicesRecord[item.bs_uid] = enrichment;
+          if (item.itemType === "expertise" && item.expertise_uid && item.cost) {
+            choicesRecord[item.expertise_uid] = { offeringCostString: item.cost };
+          } else {
+            const enrichment = cartChoiceEnrichmentFromItem(item);
+            if (enrichment) {
+              choicesRecord[item.bs_uid] = enrichment;
+            }
           }
         });
         if (Object.keys(choicesRecord).length > 0) {
@@ -514,9 +518,13 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       try {
         const choicesRecord = {};
         cartItems.forEach((item) => {
-          const enrichment = cartChoiceEnrichmentFromItem(item);
-          if (enrichment) {
-            choicesRecord[item.bs_uid] = enrichment;
+          if (item.itemType === "expertise" && item.expertise_uid && item.cost) {
+            choicesRecord[item.expertise_uid] = { offeringCostString: item.cost };
+          } else {
+            const enrichment = cartChoiceEnrichmentFromItem(item);
+            if (enrichment) {
+              choicesRecord[item.bs_uid] = enrichment;
+            }
           }
         });
         if (Object.keys(choicesRecord).length > 0) {
