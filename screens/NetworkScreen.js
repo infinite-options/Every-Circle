@@ -1,6 +1,6 @@
 // NetworkScreen.js - Web-compatible version
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image, Modal } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image, Modal, PanResponder } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
@@ -27,6 +27,9 @@ import { addScannedCircleConnection } from "../utils/addScannedCircleConnection"
 import { getSessionProfile } from "../utils/sessionProfile";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
+import NearbyPeopleMapView from "../components/NearbyPeopleMapView";
+import { isNearbySharingActive } from "../utils/nearbySharing";
+import { nearbyPeopleToMapMarkers } from "../utils/nearbyPeopleToMapMarkers";
 
 // Web-compatible QR code - react-native-qrcode-svg works on both web and native
 let QRCodeComponent = null;
@@ -321,6 +324,94 @@ const connectionFilterModalStyles = StyleSheet.create({
   },
 });
 
+const NEARBY_RADIUS_MIN = 1;
+const NEARBY_RADIUS_MAX = 12500; // ~half Earth circumference in miles
+const NEARBY_THUMB = 22;
+const LOG_MIN = Math.log(NEARBY_RADIUS_MIN);
+const LOG_MAX = Math.log(NEARBY_RADIUS_MAX);
+
+function snapMiles(raw) {
+  if (raw < 10) return Math.round(raw);
+  if (raw < 100) return Math.round(raw / 5) * 5;
+  if (raw < 1000) return Math.round(raw / 25) * 25;
+  return Math.round(raw / 100) * 100;
+}
+
+function formatMiles(miles) {
+  return miles >= 1000 ? `${miles.toLocaleString()} mi` : `${miles} mi`;
+}
+
+function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
+  const trackRef = useRef(200);
+  const startXRef = useRef(0);
+  const valueRef = useRef(value);
+  const onChangeRef = useRef(onChange);
+  const onReleaseRef = useRef(onRelease);
+  useEffect(() => { valueRef.current = value; });
+  useEffect(() => { onChangeRef.current = onChange; });
+  useEffect(() => { onReleaseRef.current = onRelease; });
+
+  const mileToX = (miles) => {
+    if (miles == null) return 0;
+    const usable = Math.max(1, trackRef.current - NEARBY_THUMB);
+    return ((Math.log(Math.max(NEARBY_RADIUS_MIN, miles)) - LOG_MIN) / (LOG_MAX - LOG_MIN)) * usable;
+  };
+
+  const xToMile = (x) => {
+    const usable = Math.max(1, trackRef.current - NEARBY_THUMB);
+    const pct = x / usable;
+    if (pct <= 0.005) return null;
+    return snapMiles(Math.exp(LOG_MIN + Math.max(0, Math.min(1, pct)) * (LOG_MAX - LOG_MIN)));
+  };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => {
+        const tapX = e.nativeEvent.locationX - NEARBY_THUMB / 2;
+        const clamped = Math.max(0, Math.min(trackRef.current - NEARBY_THUMB, tapX));
+        startXRef.current = clamped;
+        onChangeRef.current(xToMile(clamped));
+      },
+      onPanResponderMove: (_, gs) => {
+        const newX = Math.max(0, Math.min(trackRef.current - NEARBY_THUMB, startXRef.current + gs.dx));
+        onChangeRef.current(xToMile(newX));
+      },
+      onPanResponderRelease: () => { onReleaseRef.current?.(); },
+      onPanResponderTerminate: () => { onReleaseRef.current?.(); },
+    })
+  ).current;
+
+  const thumbX = mileToX(value);
+
+  return (
+    <View
+      style={nearbySliderStyles.track}
+      onLayout={(e) => { trackRef.current = e.nativeEvent.layout.width; }}
+      {...panResponder.panHandlers}
+    >
+      <View style={[nearbySliderStyles.rail, darkMode && nearbySliderStyles.railDark]} />
+      {value != null && <View style={[nearbySliderStyles.fill, { width: thumbX + NEARBY_THUMB / 2 }]} />}
+      <View style={[nearbySliderStyles.thumb, { left: thumbX }, darkMode && nearbySliderStyles.thumbDark]} />
+    </View>
+  );
+}
+
+const nearbySliderStyles = StyleSheet.create({
+  track: { flex: 1, height: NEARBY_THUMB, justifyContent: "center", position: "relative" },
+  rail: { height: 4, backgroundColor: "#ddd", borderRadius: 2, position: "absolute", left: 0, right: 0 },
+  railDark: { backgroundColor: "#444" },
+  fill: { height: 4, backgroundColor: "#AF52DE", borderRadius: 2, position: "absolute", left: 0 },
+  thumb: {
+    width: NEARBY_THUMB, height: NEARBY_THUMB, borderRadius: NEARBY_THUMB / 2,
+    backgroundColor: "#AF52DE", borderWidth: 2, borderColor: "#fff",
+    position: "absolute",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3,
+  },
+  thumbDark: { borderColor: "#2a2a2a" },
+});
+
 const NetworkScreen = ({ navigation }) => {
   const route = useRoute();
   const { darkMode } = useDarkMode();
@@ -392,7 +483,11 @@ const NetworkScreen = ({ navigation }) => {
   const [nearbyUsers, setNearbyUsers] = useState([]);
   const [nearbyLoading, setNearbyLoading] = useState(false);
   const [nearbyError, setNearbyError] = useState(null);
+  const [nearbySharingActive, setNearbySharingActive] = useState(false);
+  const [myNearbyLocation, setMyNearbyLocation] = useState(null);
   const [ignoredNearbyUids, setIgnoredNearbyUids] = useState(new Set());
+  const [nearbyRadiusMiles, setNearbyRadiusMiles] = useState(null);
+  const nearbyRadiusMilesRef = useRef(null);
   const [expandedDegrees, setExpandedDegrees] = useState({}); // { [deg]: boolean } - undefined/true = expanded
 
   // Who Viewed My Profile
@@ -2022,9 +2117,12 @@ const NetworkScreen = ({ navigation }) => {
   const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
   const NEARBY_SETTINGS_KEY = "nearby_share_settings";
 
-  const fetchNearbyUsers = async () => {
+  const fetchNearbyUsers = async (radiusMiles) => {
     const uid = profileUid || (await AsyncStorage.getItem("profile_uid"));
     if (!uid) return;
+
+    const sharingActive = await isNearbySharingActive();
+    setNearbySharingActive(sharingActive);
 
     // Reuse the same privacy settings that SettingsScreen persists
     let mode = "all_circles";
@@ -2042,23 +2140,33 @@ const NetworkScreen = ({ navigation }) => {
       if (raw) setIgnoredNearbyUids(new Set(JSON.parse(raw)));
     } catch (_) {}
 
-    setNearbyLoading(true);
-    setNearbyError(null);
-    setNearbyUsers([]);
+    const isRadiusRefresh = radiusMiles != null;
+    if (!isRadiusRefresh) {
+      setNearbyLoading(true);
+      setNearbyError(null);
+      setNearbyUsers([]);
+      setMyNearbyLocation(null);
+    }
     try {
-      const res = await fetch(`${NEARBY_USERS_ENDPOINT}/${uid}?mode=${mode}`);
+      const radiusMeters = radiusMiles != null ? Math.round(radiusMiles * 1609) : null;
+      const radiusParam = radiusMeters != null ? `&radius_meters=${radiusMeters}` : "";
+      const res = await fetch(`${NEARBY_USERS_ENDPOINT}/${uid}?mode=${mode}${radiusParam}`);
       const json = await res.json();
       if (json.code === 200) {
         setNearbyUsers(json.result || []);
+        const viewer = json.viewer_location;
+        if (viewer?.lat != null && viewer?.lng != null) {
+          setMyNearbyLocation({ lat: viewer.lat, lng: viewer.lng });
+        }
       } else if (json.code === 410) {
-        setNearbyError("Your location has expired. Update it in Settings to see who's nearby.");
+        if (!isRadiusRefresh) setNearbyError("Your location has expired. Update it in Settings to see who's nearby.");
       } else {
-        setNearbyError(json.message || "Could not fetch nearby users.");
+        if (!isRadiusRefresh) setNearbyError(json.message || "Could not fetch nearby users.");
       }
     } catch (_) {
-      setNearbyError("Network error. Please try again.");
+      if (!isRadiusRefresh) setNearbyError("Network error. Please try again.");
     }
-    setNearbyLoading(false);
+    if (!isRadiusRefresh) setNearbyLoading(false);
   };
 
   const ignoreNearbyUser = async (uid) => {
@@ -2102,6 +2210,14 @@ const NetworkScreen = ({ navigation }) => {
         clearUnread();
       }
     }, [showMessages, fetchConversations, clearUnread]),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (showNearby) {
+        fetchNearbyUsers(nearbyRadiusMilesRef.current);
+      }
+    }, [showNearby]),
   );
 
   const _convRelTime = (iso) => {
@@ -2545,7 +2661,7 @@ const NetworkScreen = ({ navigation }) => {
             onPress={() => {
               const willExpand = !showNearby;
               setShowNearby(willExpand);
-              if (willExpand) fetchNearbyUsers();
+              if (willExpand) fetchNearbyUsers(nearbyRadiusMilesRef.current);
             }}
             activeOpacity={0.7}
           >
@@ -2555,6 +2671,43 @@ const NetworkScreen = ({ navigation }) => {
 
           {showNearby && (
             <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
+              {myNearbyLocation && !nearbyLoading && !nearbyError && (
+                <View style={styles.nearbyMapWrap}>
+                  <NearbyPeopleMapView
+                    mapCenter={myNearbyLocation}
+                    people={nearbyPeopleToMapMarkers(
+                      nearbyUsers
+                        .filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))
+                        .filter((u) => nearbyRadiusMiles == null || u.distance_meters == null || u.distance_meters / 1609 <= nearbyRadiusMiles)
+                    )}
+                    radiusMiles={nearbyRadiusMiles}
+                    onPersonPress={(person) => navigation.navigate("Profile", { profile_uid: person.uid })}
+                  />
+                </View>
+              )}
+              {/* Radius slider — always visible when not loading / error */}
+              {!nearbyLoading && !nearbyError && (
+                <View style={[styles.nearbyRadiusRow, darkMode && styles.nearbyRadiusRowDark]}>
+                  <Text style={[styles.nearbyRadiusLabel, darkMode && styles.nearbyRadiusLabelDark]}>Within:</Text>
+                  <NearbyRadiusSlider
+                    value={nearbyRadiusMiles}
+                    onChange={(v) => { nearbyRadiusMilesRef.current = v; setNearbyRadiusMiles(v); }}
+                    onRelease={() => fetchNearbyUsers(nearbyRadiusMilesRef.current)}
+                    darkMode={darkMode}
+                  />
+                  <View style={styles.nearbyRadiusValueWrap}>
+                    {nearbyRadiusMiles != null ? (
+                      <TouchableOpacity onPress={() => { nearbyRadiusMilesRef.current = null; setNearbyRadiusMiles(null); fetchNearbyUsers(null); }} style={styles.nearbyRadiusClearBtn} accessibilityLabel="Clear radius filter">
+                        <Text style={styles.nearbyRadiusValueActive}>{formatMiles(nearbyRadiusMiles)}</Text>
+                        <Text style={styles.nearbyRadiusClearIcon}> ✕</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.nearbyRadiusValueText}>All</Text>
+                    )}
+                  </View>
+                </View>
+              )}
+
               {nearbyLoading ? (
                 <ActivityIndicator size='small' color='#AF52DE' style={{ paddingVertical: 20 }} />
               ) : nearbyError ? (
@@ -2569,9 +2722,10 @@ const NetworkScreen = ({ navigation }) => {
                 </View>
               ) : (
                 <>
-                  {/* Active (non-ignored) users */}
+                  {/* Active (non-ignored) users, filtered by radius */}
                   {nearbyUsers
                     .filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))
+                    .filter((u) => nearbyRadiusMiles == null || u.distance_meters == null || u.distance_meters / 1609 <= nearbyRadiusMiles)
                     .map((item, idx) => {
                       const fullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
                       const initials = `${(item.profile_personal_first_name || "?")[0]}${(item.profile_personal_last_name || "?")[0]}`.toUpperCase();
@@ -3186,6 +3340,11 @@ const styles = StyleSheet.create({
   messagesEmptyTextDark: { color: "#666" },
 
   // ── Nearby accordion ─────────────────────────────────────────
+  nearbyMapWrap: {
+    marginBottom: 12,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
   nearbyRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -3822,6 +3981,53 @@ const styles = StyleSheet.create({
   },
   pullDownButtonTextActive: {
     color: "#fff",
+  },
+  nearbyRadiusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#efefef",
+    backgroundColor: "#fff",
+  },
+  nearbyRadiusRowDark: {
+    backgroundColor: "#1e1e1e",
+    borderBottomColor: "#333",
+  },
+  nearbyRadiusLabel: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#555",
+    marginRight: 10,
+    flexShrink: 0,
+  },
+  nearbyRadiusLabelDark: {
+    color: "#aaa",
+  },
+  nearbyRadiusValueWrap: {
+    marginLeft: 10,
+    minWidth: 76,
+    alignItems: "flex-end",
+    flexShrink: 0,
+  },
+  nearbyRadiusClearBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  nearbyRadiusValueActive: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#AF52DE",
+  },
+  nearbyRadiusClearIcon: {
+    fontSize: 12,
+    color: "#AF52DE",
+  },
+  nearbyRadiusValueText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#555",
   },
 });
 

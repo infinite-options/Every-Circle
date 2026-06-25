@@ -63,6 +63,8 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
       profile_expertise_end: "",
       profile_expertise_location: "",
       profile_expertise_mode: "",
+      profile_expertise_is_taxable: 0,
+      profile_expertise_tax_rate: "",
       isPublic: true,
       _expNewImageUri: "",
       _expWebImageFile: null,
@@ -606,6 +608,39 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
             />
           )}
 
+          {/* Sales Tax Row */}
+          <View style={styles.taxRow}>
+            <Text style={styles.costLabel}>Sales tax</Text>
+            <TouchableOpacity
+              style={[styles.taxBtn, !(item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") && styles.taxBtnActive]}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_is_taxable", 0);
+                handleInputChange(index, "profile_expertise_tax_rate", "");
+              }}
+            >
+              <Text style={[styles.taxBtnText, !(item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") && styles.taxBtnTextActive]}>
+                No tax
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.taxBtn, (item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") && styles.taxBtnActive]}
+              onPress={() => handleInputChange(index, "profile_expertise_is_taxable", 1)}
+            >
+              <Text style={[styles.taxBtnText, (item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") && styles.taxBtnTextActive]}>
+                Taxable
+              </Text>
+            </TouchableOpacity>
+            {(item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") ? (
+              <TextInput
+                style={styles.taxRateInput}
+                value={String(item.profile_expertise_tax_rate ?? "")}
+                onChangeText={(t) => handleInputChange(index, "profile_expertise_tax_rate", t.replace(/[^0-9.]/g, ""))}
+                placeholder='% e.g. 8.25'
+                keyboardType='decimal-pad'
+              />
+            ) : null}
+          </View>
+
           {/* Cost Row */}
           <View style={styles.amountRow}>
             <Text style={styles.costLabel}>Cost</Text>
@@ -922,6 +957,43 @@ const styles = StyleSheet.create({
   },
   dollar: { fontSize: 20, marginHorizontal: 5 },
   deleteIcon: { width: 20, height: 20 },
+  taxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 5,
+    marginBottom: 8,
+    gap: 6,
+  },
+  taxBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    backgroundColor: "#fff",
+  },
+  taxBtnActive: {
+    borderColor: "#007AFF",
+    backgroundColor: "#E8F4FD",
+  },
+  taxBtnText: {
+    fontSize: 13,
+    color: "#555",
+  },
+  taxBtnTextActive: {
+    color: "#007AFF",
+    fontWeight: "600",
+  },
+  taxRateInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    width: 100,
+    height: 36,
+    fontSize: 13,
+  },
   cardSpacing: {
     marginTop: 16,
   },

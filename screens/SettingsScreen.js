@@ -121,6 +121,9 @@ const DUMMY_LOCATIONS = [
   { name: "Dummy A — Salesforce Park, SF", lat: 37.7893, lng: -122.3966 },
   { name: "Dummy B — Ferry Building, SF", lat: 37.7956, lng: -122.3935 }, // ~0.48 mi from A ✓
   { name: "Dummy C — Golden Gate Park, SF", lat: 37.7694, lng: -122.4862 }, // ~5.1 mi from A ✗
+  { name: "Dummy D — Balboa Park, San Diego CA", lat: 32.7341, lng: -117.1442 },
+  { name: "Dummy E — Zilker Park, Austin TX", lat: 30.2669, lng: -97.7728 },
+  { name: "Dummy F — CN Tower, Toronto Canada", lat: 43.6426, lng: -79.3871 },
 ];
 
 const LOCATION_PICKER_OPTIONS = [...DUMMY_LOCATIONS, { name: "Live GPS" }];
@@ -1555,7 +1558,7 @@ export default function SettingsScreen() {
           <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox]}>
             <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Choose Nearby Location</Text>
             <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>
-              Updates your temporary nearby location (expires in 1 hour).{"\n"}Dummy A &amp; B are within 1 mile; Dummy C is ~5 miles away.
+              Updates your temporary nearby location (expires in 1 hour).{"\n"}A &amp; B: SF (nearby) · C: SF ~5 mi · D: San Diego · E: Austin · F: Toronto
             </Text>
 
             {LOCATION_PICKER_OPTIONS.map((option) => (

@@ -1,6 +1,6 @@
 // SearchScreen.js
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, SafeAreaView, FlatList, ActivityIndicator, Alert, Dimensions, Modal, Image, Platform } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, SafeAreaView, FlatList, ActivityIndicator, Alert, Dimensions, Modal, Image, Platform, useWindowDimensions } from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import BottomNavBar from "../components/BottomNavBar";
@@ -33,10 +33,12 @@ import { isWishEnded } from "../utils/wishUtils";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 import { fetchSearchSuggestions, SEARCH_SUGGEST_MIN_LENGTH } from "../utils/searchSuggestions";
 import MiniCard from "../components/MiniCard";
+import MicroCard from "../components/MicroCard";
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
+import { searchResultsToMapProfiles } from "../utils/searchResultsToMapProfiles";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
 function NoBountyIcon({ darkMode, muted }) {
   return (
@@ -424,6 +426,44 @@ function applyBountyFilterAndSort(items, bountyMode) {
   return [...businesses, ...others];
 }
 
+function getResultSortLabel(item) {
+  return String(item?.company || item?.business_name || "").trim();
+}
+
+/** A → Z / Z → A; global view sorts within each accordion section. */
+function applyAlphabeticalSort(items, mode, { global = false } = {}) {
+  if (mode !== "Ascending" && mode !== "Descending") {
+    return items;
+  }
+  const dir = mode === "Ascending" ? 1 : -1;
+  const sortList = (list) =>
+    [...(list || [])].sort((a, b) => {
+      const byName = getResultSortLabel(a).localeCompare(getResultSortLabel(b), undefined, { sensitivity: "base" });
+      if (byName !== 0) return dir * byName;
+      return String(a?.id || "").localeCompare(String(b?.id || ""));
+    });
+  if (!global) return sortList(items);
+  const businesses = sortList(items.filter((item) => (item?.itemType || "businesses") === "businesses"));
+  const expertise = sortList(items.filter((item) => item?.itemType === "expertise"));
+  const seeking = sortList(items.filter((item) => item?.itemType === "seeking"));
+  return [...businesses, ...expertise, ...seeking];
+}
+
+/** Client-side ordering: browse network, alphabetical, or bounty (typed search only). */
+function applyClientSorts(items, { browseAll = false, searchType = "global", bounty = null, alphabetical = null } = {}) {
+  const global = searchType === "global";
+  const list = items || [];
+
+  if (browseAll) {
+    if (alphabetical) return applyAlphabeticalSort(list, alphabetical, { global });
+    return applyBrowseAllOrdering(list, { global });
+  }
+
+  if (alphabetical) return applyAlphabeticalSort(list, alphabetical, { global });
+  if (bounty) return applyBountyFilterAndSort(list, bounty);
+  return list;
+}
+
 // Display stored "YYYY-MM-DD HH:mm" or "YYYY-MM-DDTHH:mm" as "m/d/y hh:mm"
 const formatDateTimeForDisplay = (value) => {
   if (!value || typeof value !== "string" || value.trim() === "") return "";
@@ -599,9 +639,13 @@ async function enrichOfferingOwnerConnectionDegrees(items) {
   }
 }
 
+const SEARCH_CARD_COMPACT_MAX_WIDTH = 480;
+
 export default function SearchScreen({ route }) {
   const navigation = useNavigation();
   const { darkMode } = useDarkMode();
+  const { width: windowWidth } = useWindowDimensions();
+  const isCompactSearchCard = Platform.OS !== "web" || windowWidth < SEARCH_CARD_COMPACT_MAX_WIDTH;
   const [cartItems, setCartItems] = useState([]);
   const [cartCount, setCartCount] = useState(0);
   /** When set, Add to Cart modal is shown for this search expertise row. */
@@ -641,7 +685,9 @@ export default function SearchScreen({ route }) {
   const [userHomeCoords, setUserHomeCoords] = useState({ lat: null, lng: null });
   const [network, setNetwork] = useState(null);
   const [bounty, setBounty] = useState(null);
+  const [sortAlphabetical, setSortAlphabetical] = useState(null);
   const [rating, setRating] = useState(null);
+  const [mapLoading, setMapLoading] = useState(false);
 
   // Search type state: 'global', 'businesses', 'expertise', 'seeking'
   const [searchType, setSearchType] = useState("global");
@@ -653,9 +699,10 @@ export default function SearchScreen({ route }) {
   const [respondedWishesById, setRespondedWishesById] = useState({});
   const [connectionDegreeMap, setConnectionDegreeMap] = useState({});
   const connectionDegreeMapRef = useRef({});
-  // Stores unsorted results so bounty filter can re-sort without re-fetching
+  // Stores pre-client-sort results so bounty / alphabetical can re-sort without re-fetching
   const rawResultsRef = useRef([]);
   const bountyRef = useRef(bounty);
+  const sortAlphabeticalRef = useRef(sortAlphabetical);
   const browseAllActiveRef = useRef(false);
   const searchTypeRef = useRef(searchType);
   const searchGenerationRef = useRef(0);
@@ -663,17 +710,24 @@ export default function SearchScreen({ route }) {
     bountyRef.current = bounty;
   }, [bounty]);
   useEffect(() => {
+    sortAlphabeticalRef.current = sortAlphabetical;
+  }, [sortAlphabetical]);
+  useEffect(() => {
     searchTypeRef.current = searchType;
   }, [searchType]);
 
   const commitSearchResults = useCallback((list, { browseAll = false, searchType: resultSearchType = searchTypeRef.current } = {}) => {
     browseAllActiveRef.current = browseAll;
     setBrowseAllActive(browseAll);
-    const ordered = browseAll
-      ? applyBrowseAllOrdering(list, { global: resultSearchType === "global" })
-      : list;
-    rawResultsRef.current = [...ordered];
-    setResults(browseAll ? ordered : applyBountyFilterAndSort(ordered, bountyRef.current));
+    rawResultsRef.current = [...list];
+    setResults(
+      applyClientSorts(list, {
+        browseAll,
+        searchType: resultSearchType,
+        bounty: bountyRef.current,
+        alphabetical: sortAlphabeticalRef.current,
+      }),
+    );
   }, []);
 
   useEffect(() => {
@@ -851,15 +905,26 @@ export default function SearchScreen({ route }) {
         const raw = state.rawResults?.length ? state.rawResults : state.results;
         if (raw?.length) {
           rawResultsRef.current = [...raw];
-          const mode = state.bounty !== undefined ? state.bounty : bountyRef.current;
-          setResults(mode ? applyBountyFilterAndSort(raw, mode) : [...raw]);
+          if (state.browseAllActive) browseAllActiveRef.current = true;
+          const restoredBounty = state.bounty !== undefined ? state.bounty : bountyRef.current;
+          const restoredAlphabetical = state.sortAlphabetical !== undefined ? state.sortAlphabetical : sortAlphabeticalRef.current;
+          setResults(
+            applyClientSorts(raw, {
+              browseAll: !!state.browseAllActive,
+              searchType: state.searchType || searchTypeRef.current,
+              bounty: restoredBounty,
+              alphabetical: restoredAlphabetical,
+            }),
+          );
         } else if (state.results !== undefined) {
           setResults(state.results);
         }
         if (state.distance !== undefined) setDistance(state.distance);
         if (state.network !== undefined) setNetwork(state.network);
         if (state.bounty !== undefined) setBounty(state.bounty);
+        if (state.sortAlphabetical !== undefined) setSortAlphabetical(state.sortAlphabetical);
         if (state.rating !== undefined) setRating(state.rating);
+        if (state.browseAllActive) setBrowseAllActive(true);
         console.log(" Search screen state restored");
       }
     }, [route.params?.restoreState, route.params?.searchState]),
@@ -963,11 +1028,7 @@ export default function SearchScreen({ route }) {
           if (bizItems.length > 0) {
             enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(parsedResults)
               .then((updated) => {
-                if (bountyRef.current) commitSearchResults(updated, { browseAll: false, searchType: savedSearchType || searchTypeRef.current });
-                else {
-                  rawResultsRef.current = [...updated];
-                  setResults(updated);
-                }
+                commitSearchResults(updated, { browseAll: false, searchType: savedSearchType || searchTypeRef.current });
               })
               .catch((e) => {
                 console.error("Could not fetch ratings/bounty from cache:", e);
@@ -1009,13 +1070,19 @@ export default function SearchScreen({ route }) {
     }
   }, [hasLoadedInitialSearch]);
 
-  // Re-apply bounty prune/sort when filter changes (full list kept in rawResultsRef for Reset)
+  // Re-apply client-side sort when bounty or alphabetical filter changes (raw list kept for Reset)
   useEffect(() => {
-    if (browseAllActiveRef.current) return;
     const base = rawResultsRef.current;
     if (base.length === 0) return;
-    setResults(bountyRef.current ? applyBountyFilterAndSort(base, bountyRef.current) : [...base]);
-  }, [bounty]);
+    setResults(
+      applyClientSorts(base, {
+        browseAll: browseAllActiveRef.current,
+        searchType: searchTypeRef.current,
+        bounty: bountyRef.current,
+        alphabetical: sortAlphabeticalRef.current,
+      }),
+    );
+  }, [bounty, sortAlphabetical]);
 
   // Save search state whenever results change (but not on initial load)
   useEffect(() => {
@@ -1079,6 +1146,7 @@ export default function SearchScreen({ route }) {
   const [distanceModalVisible, setDistanceModalVisible] = useState(false);
   const [networkModalVisible, setNetworkModalVisible] = useState(false);
   const [bountyModalVisible, setBountyModalVisible] = useState(false);
+  const [sortAlphabeticalModalVisible, setSortAlphabeticalModalVisible] = useState(false);
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showGlobalBusinesses, setShowGlobalBusinesses] = useState(true);
@@ -1143,58 +1211,73 @@ export default function SearchScreen({ route }) {
     return `${baseUrl}${sep}max_distance=${encodeURIComponent(miles)}`;
   };
   const bountyOptions = ["Ascending", "Descending"];
+  const sortAlphabeticalOptions = ["Ascending", "Descending"];
+  const sortAlphabeticalLabels = { Ascending: "A -> Z", Descending: "Z -> A" };
   const ratingOptions = ["> 1", "> 2", "> 3", "> 4", "> 4.5", "> 4.6", "> 4.8"];
 
-  const globalBrowseAll =
-    searchType === "global" && (browseAllActive || !searchQuery.trim() || isBrowseModeResultSet(results));
-  const browseNetworkSortEpoch = useMemo(
-    () => results.map((item) => `${item.id}:${getClosestNetworkDegree(item) ?? "x"}`).join("|"),
-    [results],
-  );
-  const globalBusinessResults = useMemo(() => {
-    if (searchType !== "global") return [];
-    const businesses = results.filter((item) => (item?.itemType || "businesses") === "businesses");
-    return globalBrowseAll ? sortByNetworkPriority(businesses) : businesses;
-  }, [browseNetworkSortEpoch, globalBrowseAll, results, searchType]);
-  const globalOfferingResults = useMemo(() => {
-    if (searchType !== "global") return [];
-    const offerings = results.filter((item) => item?.itemType === "expertise");
-    return globalBrowseAll ? sortByNetworkPriority(offerings) : offerings;
-  }, [browseNetworkSortEpoch, globalBrowseAll, results, searchType]);
-  const globalSeekingResults = useMemo(() => {
-    if (searchType !== "global") return [];
-    const seeking = results.filter((item) => item?.itemType === "seeking");
-    return globalBrowseAll ? sortByNetworkPriority(seeking) : seeking;
-  }, [browseNetworkSortEpoch, globalBrowseAll, results, searchType]);
+  const globalBusinessResults = searchType === "global" ? results.filter((item) => (item?.itemType || "businesses") === "businesses") : [];
+  const globalOfferingResults = searchType === "global" ? results.filter((item) => item?.itemType === "expertise") : [];
+  const globalSeekingResults = searchType === "global" ? results.filter((item) => item?.itemType === "seeking") : [];
 
-  // Once connection degrees are present, persist browse-all section order in results state too.
-  useEffect(() => {
-    if (searchType !== "global") return;
-    if (!browseAllActive && !isBrowseModeResultSet(results)) return;
-    if (!results.length) return;
-    if (!results.some((item) => getClosestNetworkDegree(item) != null)) return;
-    const sorted = applyBrowseAllOrdering(results, { global: true });
-    if (!browseResultListsDiffer(results, sorted)) return;
-    rawResultsRef.current = [...sorted];
-    setResults(sorted);
-  }, [browseAllActive, browseNetworkSortEpoch, results, searchType]);
+  const handleOpenSearchMap = useCallback(async () => {
+    const isProfileType = searchType === "expertise" || searchType === "seeking";
 
-  const handleOpenSearchMap = useCallback(() => {
-    const visibleBusinessResults =
+    const visibleResults =
       searchType === "global"
         ? globalBusinessResults
         : searchType === "businesses"
           ? results.filter((item) => item?.itemType === "businesses")
-          : [];
+          : searchType === "expertise" || searchType === "seeking"
+            ? results.filter((item) => item?.itemType === searchType)
+            : [];
 
-    const mapBusinesses = searchResultsToMapBusinesses(visibleBusinessResults);
+    if (visibleResults.length === 0) {
+      const typeLabel = searchType === "expertise" ? "Offering" : searchType === "seeking" ? "Seeking" : "business";
+      Alert.alert("No results", `Run a ${typeLabel} search first to see results on the map.`);
+      return;
+    }
 
-    if (mapBusinesses.length === 0) {
+    let mapMarkers = isProfileType
+      ? searchResultsToMapProfiles(visibleResults)
+      : searchResultsToMapBusinesses(visibleResults);
+
+    // Search API may not include profile coordinates — fetch them from the profile endpoint
+    if (isProfileType && mapMarkers.length === 0) {
+      const needsCoords = visibleResults.filter(
+        (item) => item.profile_uid && (item.profile_personal_latitude == null || item.profile_personal_longitude == null)
+      );
+      if (needsCoords.length > 0) {
+        setMapLoading(true);
+        try {
+          const enriched = await Promise.all(
+            needsCoords.map(async (item) => {
+              try {
+                const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${encodeURIComponent(item.profile_uid)}`);
+                const json = await res.json();
+                const pi = json.personal_info || {};
+                return {
+                  ...item,
+                  profile_personal_latitude: pi.profile_personal_latitude ?? null,
+                  profile_personal_longitude: pi.profile_personal_longitude ?? null,
+                };
+              } catch {
+                return item;
+              }
+            })
+          );
+          mapMarkers = searchResultsToMapProfiles(enriched);
+        } catch (e) {
+          console.warn("[Map] profile coordinate fetch failed:", e);
+        } finally {
+          setMapLoading(false);
+        }
+      }
+    }
+
+    if (mapMarkers.length === 0) {
       Alert.alert(
-        "No mappable results",
-        visibleBusinessResults.length === 0
-          ? "Run a business search first, or switch to Businesses or Global to see companies on the map."
-          : "None of the current search results have coordinates to show on the map."
+        "No location data",
+        "None of the current results have a home location set in their profile."
       );
       return;
     }
@@ -1202,8 +1285,9 @@ export default function SearchScreen({ route }) {
     navigation.navigate("EveryCircleMap", {
       fromSearch: true,
       searchQuery: searchQuery.trim(),
-      searchMapBusinesses: mapBusinesses,
-      searchResultCount: visibleBusinessResults.length,
+      searchMapBusinesses: mapMarkers,
+      searchResultCount: visibleResults.length,
+      searchType,
     });
   }, [globalBusinessResults, navigation, results, searchQuery, searchType]);
   /** Append home coords and optional max_distance for business distance filtering / proximity boost. */
@@ -1349,9 +1433,56 @@ export default function SearchScreen({ route }) {
           ...locationFieldsFromApi(b),
         }));
 
-        const mappedExpertise = expertiseResults.map((item, i) => mapSearchExpertiseRow(item, i));
-
-        const mappedSeeking = seekingResults.map((item, i) => mapSearchWishRow(item, i)).filter((item) => !isWishEnded(item));
+        const mappedExpertise = expertiseResults.map((item, i) => ({
+          id: `${item.profile_expertise_uid || i}`,
+          company: item.profile_expertise_title || "Untitled Expertise",
+          rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
+          hasPriceTag: false,
+          hasX: false,
+          hasDollar: false,
+          business_short_bio: item.profile_expertise_description || "",
+          business_tag_line: item.profile_expertise_title || "",
+          tags: [],
+          score: item.score || 0,
+          score_breakdown: item.score_breakdown || null,
+          itemType: "expertise",
+          profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
+          ...locationFieldsFromApi(item),
+          profile_personal_latitude: item.profile_personal_latitude ?? null,
+          profile_personal_longitude: item.profile_personal_longitude ?? null,
+          expertiseData: {
+            title: item.profile_expertise_title,
+            description: item.profile_expertise_description,
+            details: item.profile_expertise_details,
+            bounty: item.profile_expertise_bounty,
+            cost: item.profile_expertise_cost,
+            quantity: item.profile_expertise_quantity || item.quantity,
+            profile_expertise_quantity: item.profile_expertise_quantity || item.quantity,
+            expertise_uid: item.profile_expertise_uid,
+            profile_expertise_start: item.profile_expertise_start || "",
+            profile_expertise_end: item.profile_expertise_end || "",
+            profile_expertise_location: item.profile_expertise_location || "",
+            profile_expertise_mode: item.profile_expertise_mode || "",
+            profile_expertise_image: item.profile_expertise_image || "",
+            profile_expertise_image_is_public: item.profile_expertise_image_is_public,
+            profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
+          },
+          profileData: {
+            firstName: item.profile_personal_first_name || "",
+            lastName: item.profile_personal_last_name || "",
+            email: item.user_email_id || "",
+            phone: item.profile_personal_phone_number || "",
+            image: item.profile_personal_image || "",
+            tagLine: item.profile_personal_tag_line || "",
+            city: item.profile_personal_city || "",
+            state: item.profile_personal_state || "",
+            emailIsPublic: item.profile_personal_email_is_public == 1,
+            phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
+            imageIsPublic: item.profile_personal_image_is_public == 1,
+            tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
+            locationIsPublic: item.profile_personal_location_is_public == 1,
+          },
+        }));
 
         const normalizeByType = (items) => {
           if (!items.length) return [];
@@ -1371,9 +1502,6 @@ export default function SearchScreen({ route }) {
         filteredEnriched = filterResultsByNetwork(filteredEnriched, effectiveNetwork);
         filteredEnriched = applyDistanceFilterToSearchResults(filteredEnriched, effectiveDistance, searchCoords);
         if (searchGeneration !== searchGenerationRef.current) return;
-        if (isBrowseAll) {
-          filteredEnriched = applyBrowseAllOrdering(filteredEnriched, { global: true });
-        }
         commitSearchResults(filteredEnriched, { browseAll: isBrowseAll, searchType: type });
         setHasLoadedInitialSearch(true);
         setLoading(false);
@@ -1536,9 +1664,142 @@ export default function SearchScreen({ route }) {
       // Process results based on search type
       let list;
       if (type === "seeking") {
-        list = resultsArray.map((item, i) => mapSearchWishRow(item, i)).filter((item) => !isWishEnded(item));
+        // For seeking/wishes, the response includes profile data directly
+        list = resultsArray
+          .map((item, i) => ({
+            id: `${item.profile_wish_uid || i}`,
+            company: item.profile_wish_title || "Untitled Wish",
+            rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
+            hasPriceTag: false,
+            hasX: false,
+            hasDollar: false,
+            //hasBounty: b.has_bounty || b.business_bounty || false,
+            hasBounty: item.profile_wish_bounty ? true : false,
+            business_short_bio: item.profile_wish_description || "",
+            business_tag_line: item.profile_wish_title || "",
+            tags: [],
+            score: item.score || 0,
+            score_breakdown: item.score_breakdown || null,
+            itemType: "seeking",
+            profile_uid: item.profile_wish_profile_personal_id,
+            profile_wish_end: item.profile_wish_end || "",
+            ...locationFieldsFromApi(item),
+            profile_personal_latitude: item.profile_personal_latitude ?? null,
+            profile_personal_longitude: item.profile_personal_longitude ?? null,
+            // Store wish data
+            wishData: {
+              title: item.profile_wish_title,
+              description: item.profile_wish_description,
+              bounty: item.profile_wish_bounty,
+              cost: item.profile_wish_cost,
+              wish_uid: item.profile_wish_uid,
+              profile_wish_quantity: item.profile_wish_quantity || "",
+              profile_wish_image: item.profile_wish_image || "",
+              profile_wish_image_is_public: item.profile_wish_image_is_public,
+              profile_wish_start: item.profile_wish_start || "",
+              profile_wish_end: item.profile_wish_end || "",
+              profile_wish_location: item.profile_wish_location || "",
+              profile_wish_mode: item.profile_wish_mode || "",
+              profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
+            },
+            // Store profile data for MiniCard-like display
+            profileData: {
+              firstName: item.profile_personal_first_name || "",
+              lastName: item.profile_personal_last_name || "",
+              email: item.user_email_id || "",
+              phone: item.profile_personal_phone_number || "",
+              image: item.profile_personal_image || "",
+              tagLine: item.profile_personal_tag_line || "",
+              emailIsPublic: item.profile_personal_email_is_public == 1,
+              phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
+              imageIsPublic: item.profile_personal_image_is_public == 1,
+              tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
+            },
+          }))
+          .filter((item) => !isWishEnded(item));
+        // try {
+        //   const profileFetches = list.map(async (item) => {
+        //     if (!item.profile_uid) return item;
+        //     try {
+        //       const profileRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${item.profile_uid}`);
+        //       const profileJson = await profileRes.json();
+        //       const p = profileJson.personal_info || {};
+        //       return {
+        //         ...item,
+        //         profileData: {
+        //           firstName: p.profile_personal_first_name || "",
+        //           lastName: p.profile_personal_last_name || "",
+        //           email: p.user_email_id || "",
+        //           phone: p.profile_personal_phone_number || "",
+        //           image: p.profile_personal_image || "",
+        //           tagLine: p.profile_personal_tag_line || "",
+        //           emailIsPublic: p.profile_personal_email_is_public == 1,
+        //           phoneIsPublic: p.profile_personal_phone_number_is_public == 1,
+        //           imageIsPublic: p.profile_personal_image_is_public == 1,
+        //           tagLineIsPublic: p.profile_personal_tag_line_is_public == 1,
+        //         },
+        //       };
+        //     } catch (e) {
+        //       return item;
+        //     }
+        //   });
+        //   list = await Promise.all(profileFetches);
+        // } catch (e) {
+        //   console.log("Could not fetch wish profiles:", e);
+        // }
       } else if (type === "expertise") {
-        list = resultsArray.map((item, i) => mapSearchExpertiseRow(item, i));
+        // For expertise, the response includes profile data directly
+        list = resultsArray.map((item, i) => ({
+          id: `${item.profile_expertise_uid || i}`,
+          company: item.profile_expertise_title || "Untitled Expertise",
+          rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
+          hasPriceTag: false,
+          hasX: false,
+          hasDollar: false,
+          business_short_bio: item.profile_expertise_description || "",
+          business_tag_line: item.profile_expertise_title || "",
+          tags: [],
+          score: item.score || 0,
+          score_breakdown: item.score_breakdown || null,
+          itemType: "expertise",
+          profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
+          ...locationFieldsFromApi(item),
+          profile_personal_latitude: item.profile_personal_latitude ?? null,
+          profile_personal_longitude: item.profile_personal_longitude ?? null,
+          expertiseData: {
+            title: item.profile_expertise_title,
+            description: item.profile_expertise_description,
+            details: item.profile_expertise_details,
+            bounty: item.profile_expertise_bounty,
+            cost: item.profile_expertise_cost,
+            quantity: item.profile_expertise_quantity || item.quantity,
+            profile_expertise_quantity: item.profile_expertise_quantity || item.quantity,
+            expertise_uid: item.profile_expertise_uid,
+            profile_expertise_start: item.profile_expertise_start || "",
+            profile_expertise_end: item.profile_expertise_end || "",
+            profile_expertise_location: item.profile_expertise_location || "",
+            profile_expertise_mode: item.profile_expertise_mode || "",
+            profile_expertise_image: item.profile_expertise_image || "",
+            profile_expertise_image_is_public: item.profile_expertise_image_is_public,
+            profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
+          },
+          // Store profile data for MiniCard-like display (all public info for Add to Cart modal)
+          profileData: {
+            firstName: item.profile_personal_first_name || "",
+            lastName: item.profile_personal_last_name || "",
+            email: item.user_email_id || "",
+            phone: item.profile_personal_phone_number || "",
+            image: item.profile_personal_image || "",
+            tagLine: item.profile_personal_tag_line || "",
+            city: item.profile_personal_city || "",
+            state: item.profile_personal_state || "",
+            emailIsPublic: item.profile_personal_email_is_public == 1,
+            phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
+            imageIsPublic: item.profile_personal_image_is_public == 1,
+            tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
+            locationIsPublic: item.profile_personal_location_is_public == 1,
+          },
+        }));
       } else {
         // For businesses, use the existing mapping
         const sanitizeText = (text) => {
@@ -1628,10 +1889,6 @@ export default function SearchScreen({ route }) {
 
       if (searchTypeSupportsDistanceFilter(type)) {
         list = applyDistanceFilterToSearchResults(list, effectiveDistance, searchCoords);
-      }
-
-      if (isBrowseAll) {
-        list = applyBrowseAllOrdering(list, { global: type === "global" });
       }
 
       if (searchGeneration !== searchGenerationRef.current) return;
@@ -1841,7 +2098,9 @@ export default function SearchScreen({ route }) {
     distance,
     network,
     bounty,
+    sortAlphabetical,
     rating,
+    browseAllActive: browseAllActiveRef.current,
   });
 
   const handleExpertiseAddToCartConfirm = async (modalData) => {
@@ -2050,64 +2309,60 @@ export default function SearchScreen({ route }) {
     const offeringImageUri = resolveProfileItemImageUri(expertise.profile_expertise_image, item.profile_uid);
     const offeringTitle = expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : "";
     const scoreSuffix = formatBusinessSearchScoreSuffix(item);
+    const openSellerProfile = () => {
+      if (!item.profile_uid) return;
+      navigation.navigate("Profile", {
+        profile_uid: item.profile_uid,
+        returnTo: "Search",
+        searchState: getSearchStateForRestore(),
+      });
+    };
+    const microCardUser = {
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      profileImage: profile.image,
+      imageIsPublic: profile.imageIsPublic,
+      tagLine: profile.tagLine,
+      tagLineIsPublic: profile.tagLineIsPublic,
+    };
 
     return (
       <View key={`${item.id}-${idx}`} style={[styles.wishItem, darkMode && styles.darkWishItem, isOwnExpertise && { opacity: 0.6 }]}>
-        {/* Profile: image + name navigate to seller profile */}
-        <View style={styles.wishProfileContainer}>
-          <TouchableOpacity
-            activeOpacity={canOpenSellerProfile ? 0.7 : 1}
-            disabled={!canOpenSellerProfile}
-            onPress={() => {
-              if (!item.profile_uid) return;
-              navigation.navigate("Profile", {
-                profile_uid: item.profile_uid,
-                returnTo: "Search",
-                searchState: getSearchStateForRestore(),
-              });
-            }}
-            accessibilityRole='button'
-            accessibilityLabel='View seller profile'
-          >
-            <Image
-              source={profile.image && profile.imageIsPublic && profile.image !== "" && String(profile.image).trim() !== "" ? { uri: String(profile.image) } : require("../assets/profile.png")}
-              style={[styles.wishProfileImage, darkMode && styles.darkWishProfileImage]}
-              tintColor={darkMode ? "#ffffff" : undefined}
-              onError={(error) => {
-                console.log("Expertise profile image failed to load:", error.nativeEvent.error);
-              }}
-              defaultSource={require("../assets/profile.png")}
-            />
-          </TouchableOpacity>
-          <View style={styles.wishProfileInfo}>
-            <TouchableOpacity
-              activeOpacity={canOpenSellerProfile ? 0.7 : 1}
-              disabled={!canOpenSellerProfile}
-              onPress={() => {
-                if (!item.profile_uid) return;
-                navigation.navigate("Profile", {
-                  profile_uid: item.profile_uid,
-                  returnTo: "Search",
-                  searchState: getSearchStateForRestore(),
-                });
-              }}
-              accessibilityRole='button'
-              accessibilityLabel='View seller profile'
-            >
-              <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>{[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Anonymous User"}</Text>
-            </TouchableOpacity>
-            {/* Show email if public */}
-            {(() => {
-              const email = profile.emailIsPublic && profile.email ? String(profile.email).trim() : "";
-              return email && email !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{email}</Text> : null;
-            })()}
-            {/* Show phone if public */}
-            {(() => {
-              const phone = profile.phoneIsPublic && profile.phone ? String(profile.phone).trim() : "";
-              return phone && phone !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{phone}</Text> : null;
-            })()}
-          </View>
-        </View>
+        {/* Profile: compact MicroCard on mobile, full header on wider screens */}
+        <TouchableOpacity
+          activeOpacity={canOpenSellerProfile ? 0.7 : 1}
+          disabled={!canOpenSellerProfile}
+          onPress={openSellerProfile}
+          accessibilityRole='button'
+          accessibilityLabel='View seller profile'
+        >
+          {isCompactSearchCard ? (
+            <MicroCard user={microCardUser} showRelationship={false} embedded />
+          ) : (
+            <View style={styles.wishProfileContainer}>
+              <Image
+                source={profile.image && profile.imageIsPublic && profile.image !== "" && String(profile.image).trim() !== "" ? { uri: String(profile.image) } : require("../assets/profile.png")}
+                style={[styles.wishProfileImage, darkMode && styles.darkWishProfileImage]}
+                tintColor={darkMode ? "#ffffff" : undefined}
+                onError={(error) => {
+                  console.log("Expertise profile image failed to load:", error.nativeEvent.error);
+                }}
+                defaultSource={require("../assets/profile.png")}
+              />
+              <View style={styles.wishProfileInfo}>
+                <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>{[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Anonymous User"}</Text>
+                {(() => {
+                  const email = profile.emailIsPublic && profile.email ? String(profile.email).trim() : "";
+                  return email && email !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{email}</Text> : null;
+                })()}
+                {(() => {
+                  const phone = profile.phoneIsPublic && profile.phone ? String(profile.phone).trim() : "";
+                  return phone && phone !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{phone}</Text> : null;
+                })()}
+              </View>
+            </View>
+          )}
+        </TouchableOpacity>
 
         {/* Expertise Information (no tap-through to expertise detail) */}
         <View style={[styles.wishInfoContainer, darkMode && styles.darkWishInfoContainer]}>
@@ -2182,9 +2437,13 @@ export default function SearchScreen({ route }) {
             </View>
           )}
           {!isOwnExpertise ? (
-            <View style={styles.expertiseCardActionRow}>
+            <View style={[styles.expertiseCardActionRow, isCompactSearchCard && styles.expertiseCardActionRowCompact]}>
               <TouchableOpacity
-                style={[styles.expertiseCardMessageButton, darkMode && styles.darkExpertiseCardMessageButton, !canOpenSellerProfile && styles.expertiseCardActionDisabled]}
+                style={[
+                  isCompactSearchCard ? styles.expertiseCardMessageButtonCompact : styles.expertiseCardMessageButton,
+                  darkMode && (isCompactSearchCard ? styles.darkExpertiseCardMessageButtonCompact : styles.darkExpertiseCardMessageButton),
+                  !canOpenSellerProfile && styles.expertiseCardActionDisabled,
+                ]}
                 onPress={() => {
                   if (!item.profile_uid) return;
                   const offeringLabel = expertise.title && String(expertise.title).trim() ? String(expertise.title).trim() : item.company ? String(item.company).trim() : "Offering";
@@ -2198,11 +2457,17 @@ export default function SearchScreen({ route }) {
                 disabled={!canOpenSellerProfile}
                 activeOpacity={0.85}
               >
-                <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' style={{ marginRight: 7 }} />
-                <Text style={styles.expertiseCardActionButtonText}>Messaging</Text>
+                <Ionicons name='chatbubble-ellipses-outline' size={isCompactSearchCard ? 11 : 17} color='#fff' style={{ marginRight: isCompactSearchCard ? 3 : 7 }} />
+                <Text style={[styles.expertiseCardActionButtonText, isCompactSearchCard && styles.expertiseCardActionButtonTextCompact]} numberOfLines={1}>
+                  {isCompactSearchCard ? "Message" : "Messaging"}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.expertiseCardCartButton, darkMode && styles.darkExpertiseCardCartButton, !canAddExpertiseToCart && styles.expertiseCardActionDisabled]}
+                style={[
+                  isCompactSearchCard ? styles.expertiseCardCartButtonCompact : styles.expertiseCardCartButton,
+                  darkMode && (isCompactSearchCard ? styles.darkExpertiseCardCartButtonCompact : styles.darkExpertiseCardCartButton),
+                  !canAddExpertiseToCart && styles.expertiseCardActionDisabled,
+                ]}
                 onPress={() => {
                   if (!canAddExpertiseToCart) return;
                   setExpertiseCartModalItem({ expertiseData: expertise, profileData: profile, profile_uid: item.profile_uid });
@@ -2210,8 +2475,10 @@ export default function SearchScreen({ route }) {
                 disabled={!canAddExpertiseToCart}
                 activeOpacity={0.85}
               >
-                <Ionicons name='cart-outline' size={20} color='#fff' style={{ marginRight: 6 }} />
-                <Text style={styles.expertiseCardActionButtonText}>Add to Cart</Text>
+                <Ionicons name='cart-outline' size={isCompactSearchCard ? 11 : 20} color='#fff' style={{ marginRight: isCompactSearchCard ? 3 : 6 }} />
+                <Text style={[styles.expertiseCardActionButtonText, isCompactSearchCard && styles.expertiseCardActionButtonTextCompact]} numberOfLines={1}>
+                  {isCompactSearchCard ? "Cart" : "Add to Cart"}
+                </Text>
               </TouchableOpacity>
             </View>
           ) : null}
@@ -2558,12 +2825,15 @@ export default function SearchScreen({ route }) {
               </TouchableOpacity>
             </View>
             <TouchableOpacity
-              style={[styles.filterButtonOption, styles.mapButtonRight, darkMode && styles.darkFilterButtonOption]}
+              style={[styles.filterButtonOption, styles.mapButtonRight, darkMode && styles.darkFilterButtonOption, mapLoading && { opacity: 0.6 }]}
               onPress={handleOpenSearchMap}
+              disabled={mapLoading}
               accessibilityLabel="View on map"
               accessibilityRole="button"
             >
-              <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText]}>View on Map</Text>
+              <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText]}>
+                {mapLoading ? "Loading…" : "View on Map"}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -2688,6 +2958,26 @@ export default function SearchScreen({ route }) {
                   ]}
                 >
                   {bounty !== null ? bounty : "Bounty"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.filterButtonOption,
+                  darkMode && styles.darkFilterButtonOption,
+                  sortAlphabetical !== null && styles.activeFilterButton,
+                  darkMode && sortAlphabetical !== null && styles.darkActiveFilterButton,
+                ]}
+                onPress={() => setSortAlphabeticalModalVisible(true)}
+              >
+                <Text
+                  style={[
+                    styles.filterButtonText,
+                    darkMode && styles.darkFilterButtonText,
+                    sortAlphabetical !== null && styles.activeFilterButtonText,
+                    darkMode && sortAlphabetical !== null && styles.darkActiveFilterButtonText,
+                  ]}
+                >
+                  {sortAlphabetical !== null ? sortAlphabeticalLabels[sortAlphabetical] : "A -> Z"}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -2859,6 +3149,50 @@ export default function SearchScreen({ route }) {
                   setBountyModalVisible(false);
                 })}
                 keyExtractor={(item) => item.toString()}
+                style={styles.optionsList}
+              />
+            </View>
+          </SafeAreaView>
+        </Modal>
+
+        {/* Alphabetical sort modal */}
+        <Modal animationType='slide' transparent={true} visible={sortAlphabeticalModalVisible} onRequestClose={() => setSortAlphabeticalModalVisible(false)}>
+          <SafeAreaView style={[styles.modalContainer, darkMode && styles.darkModalContainer]}>
+            <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
+              <View style={[styles.modalHeader, darkMode && styles.darkModalHeader]}>
+                <Text style={[styles.modalTitle, darkMode && styles.darkModalTitle]}>Arrange Alphabetically</Text>
+                <TouchableOpacity onPress={() => setSortAlphabeticalModalVisible(false)}>
+                  <Ionicons name='close' size={28} color={darkMode ? "#ffffff" : "#333"} />
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                style={[styles.resetOption, darkMode && styles.darkResetOption]}
+                onPress={() => {
+                  setSortAlphabetical(null);
+                  setSortAlphabeticalModalVisible(false);
+                }}
+              >
+                <Text style={[styles.resetOptionText, darkMode && styles.darkResetOptionText]}>Reset</Text>
+              </TouchableOpacity>
+              <FlatList
+                data={sortAlphabeticalOptions}
+                renderItem={({ item }) => {
+                  const isSelected = item === sortAlphabetical;
+                  return (
+                    <TouchableOpacity
+                      style={[styles.optionItem, isSelected && styles.selectedOption, darkMode && styles.darkOptionItem, darkMode && isSelected && styles.darkSelectedOption]}
+                      onPress={() => {
+                        setSortAlphabetical(item);
+                        setSortAlphabeticalModalVisible(false);
+                      }}
+                    >
+                      <Text style={[styles.optionText, isSelected && styles.selectedOptionText, darkMode && styles.darkOptionText, darkMode && isSelected && styles.darkSelectedOptionText]}>
+                        {sortAlphabeticalLabels[item]}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }}
+                keyExtractor={(item) => item}
                 style={styles.optionsList}
               />
             </View>
@@ -3446,6 +3780,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: "#eee",
+    minWidth: 0,
   },
   wishTitleRow: {
     flexDirection: "row",
@@ -3652,6 +3987,15 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     alignSelf: "center",
   },
+  expertiseCardActionRowCompact: {
+    flexWrap: "nowrap",
+    alignSelf: "stretch",
+    width: "100%",
+    justifyContent: "space-between",
+    gap: 6,
+    marginTop: 4,
+    marginBottom: 0,
+  },
   /** Match ProfileScreen `profileActionButtonPill` + Message / Connection pill sizing */
   expertiseCardMessageButton: {
     flexDirection: "row",
@@ -3679,6 +4023,38 @@ const styles = StyleSheet.create({
   darkExpertiseCardCartButton: {
     backgroundColor: "#009e98",
   },
+  expertiseCardMessageButtonCompact: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#AF52DE",
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    borderRadius: 10,
+    minWidth: 0,
+  },
+  darkExpertiseCardMessageButtonCompact: {
+    backgroundColor: "#8f47b5",
+  },
+  expertiseCardCartButtonCompact: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#00C7BE",
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    borderRadius: 10,
+    minWidth: 0,
+  },
+  darkExpertiseCardCartButtonCompact: {
+    backgroundColor: "#009e98",
+  },
   expertiseCardActionDisabled: {
     opacity: 0.45,
   },
@@ -3686,6 +4062,10 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 15,
+  },
+  expertiseCardActionButtonTextCompact: {
+    fontSize: 10,
+    flexShrink: 1,
   },
   ownExpertiseNotice: {
     fontSize: 13,
@@ -3701,7 +4081,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#333",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   darkOfferingStatement: {
     color: "#e0e0e0",
@@ -3710,7 +4090,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#333",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   darkSeekingStatement: {
     color: "#e0e0e0",
@@ -3824,7 +4204,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: "#333",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   darkSeekingStatement: {
     color: "#e0e0e0",

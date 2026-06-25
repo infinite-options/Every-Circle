@@ -31,7 +31,7 @@ function formatRelationship(user) {
   return "Relationship not Assigned";
 }
 
-const MicroCard = ({ user, showRelationship = true }) => {
+const MicroCard = ({ user, showRelationship = true, embedded = false }) => {
   const { darkMode } = useDarkMode();
 
   const firstName = sanitizeText(user?.firstName || user?.personal_info?.profile_personal_first_name);
@@ -56,7 +56,7 @@ const MicroCard = ({ user, showRelationship = true }) => {
   const relationshipText = formatRelationship(user);
 
   return (
-    <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
+    <View style={[styles.cardContainer, embedded && styles.embeddedCardContainer, darkMode && styles.darkCardContainer, embedded && darkMode && styles.darkEmbeddedCardContainer]}>
       <Image
         source={userImageSource}
         style={[styles.profileImage, darkMode && styles.darkProfileImage]}
@@ -97,6 +97,15 @@ const styles = StyleSheet.create({
   darkCardContainer: {
     backgroundColor: "#2d2d2d",
     borderColor: "#444",
+  },
+  embeddedCardContainer: {
+    borderWidth: 0,
+    backgroundColor: "transparent",
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+  },
+  darkEmbeddedCardContainer: {
+    backgroundColor: "transparent",
   },
   profileImage: {
     width: 44,
