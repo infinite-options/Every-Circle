@@ -140,11 +140,8 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
-        zoomControl: false,
-        scrollwheel: false,
-        draggable: false,
-        disableDoubleClickZoom: true,
-        gestureHandling: "none",
+        zoomControl: true,
+        gestureHandling: "greedy",
         styles: getMapStylesForEveryCircleOnly(true),
       });
 
