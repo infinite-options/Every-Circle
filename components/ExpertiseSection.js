@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert, ActivityIndicator } from "react-native";
 import { Dropdown } from "react-native-element-dropdown";
 import * as ImagePicker from "expo-image-picker";
 import { formatCostValue } from "../utils/priceUtils";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
+import { getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import ProfileItemImageColumn from "./ProfileItemImageColumn";
 import {
   toDateTimeLocalValue,
@@ -35,6 +36,9 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
   const pendingNewIndexRef = useRef(null);
   const costInputRefs = useRef({});
   const [activePicker, setActivePicker] = useState(null); // { index, field: 'start'|'end', mode: 'date'|'time' }
+  const [addressSuggestionsByIndex, setAddressSuggestionsByIndex] = useState({});
+  const [addressLoadingIndex, setAddressLoadingIndex] = useState(null);
+  const addressDebounceRefs = useRef({});
   // Cost unit options for dropdown
   const costUnitOptions = [
     { label: "total", value: "total" },
@@ -62,6 +66,10 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
       profile_expertise_start: "",
       profile_expertise_end: "",
       profile_expertise_location: "",
+      profile_expertise_latitude: null,
+      profile_expertise_longitude: null,
+      profile_expertise_city: "",
+      profile_expertise_state: "",
       profile_expertise_mode: "",
       profile_expertise_is_taxable: 0,
       profile_expertise_tax_rate: "",
@@ -95,6 +103,97 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
     const updated = [...expertise];
     updated[index][field] = value;
     setExpertise(updated);
+  };
+
+  const onOfferingAddressChange = (index, text) => {
+    const updated = [...expertise];
+    updated[index].profile_expertise_location = text;
+    if (!text.trim()) {
+      updated[index].profile_expertise_latitude = null;
+      updated[index].profile_expertise_longitude = null;
+      updated[index].profile_expertise_city = "";
+      updated[index].profile_expertise_state = "";
+      setAddressSuggestionsByIndex((prev) => ({ ...prev, [index]: [] }));
+    }
+    setExpertise(updated);
+
+    if (addressDebounceRefs.current[index]) clearTimeout(addressDebounceRefs.current[index]);
+    if (!text.trim()) return;
+
+    addressDebounceRefs.current[index] = setTimeout(async () => {
+      try {
+        const results = await getAddressSuggestions(text);
+        setAddressSuggestionsByIndex((prev) => ({ ...prev, [index]: results }));
+      } catch (err) {
+        console.error("ExpertiseSection address suggestions error:", err);
+      }
+    }, 350);
+  };
+
+  const handleOfferingAddressSelect = async (index, place) => {
+    setAddressSuggestionsByIndex((prev) => ({ ...prev, [index]: [] }));
+    setAddressLoadingIndex(index);
+    try {
+      const pd = await getPlaceDetails(place.place_id);
+      if (pd.lat == null || pd.lng == null) {
+        Alert.alert("Error", "Could not determine coordinates for this address.");
+        return;
+      }
+      const updated = [...expertise];
+      updated[index].profile_expertise_location = pd.formatted_address || place.description || "";
+      updated[index].profile_expertise_latitude = pd.lat;
+      updated[index].profile_expertise_longitude = pd.lng;
+      updated[index].profile_expertise_city = pd.city || "";
+      updated[index].profile_expertise_state = pd.state || "";
+      setExpertise(updated);
+    } catch (err) {
+      console.error("ExpertiseSection address select error:", err);
+      Alert.alert("Error", "Could not load address details. Please try again.");
+    } finally {
+      setAddressLoadingIndex(null);
+    }
+  };
+
+  const renderOfferingAddressField = (index, item) => {
+    const hasRecordedLocation = item.profile_expertise_latitude != null && item.profile_expertise_longitude != null;
+    const addressPlaceholder = hasRecordedLocation
+      ? "Location recorded. Enter a new address to change it."
+      : "Start typing the offering address";
+    const suggestions = addressSuggestionsByIndex[index] || [];
+
+    return (
+      <View style={styles.offeringAddressContainer}>
+        <TextInput
+          style={[styles.locationInput, darkMode && styles.locationInputDark]}
+          placeholder={addressPlaceholder}
+          placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+          value={item.profile_expertise_location || ""}
+          onChangeText={(text) => onOfferingAddressChange(index, text)}
+          autoCapitalize='words'
+          autoCorrect={false}
+        />
+        {addressLoadingIndex === index ? <ActivityIndicator size='small' color='#4B2E83' style={{ marginTop: 8 }} /> : null}
+        {suggestions.length > 0 ? (
+          <View style={[styles.placesSuggestionsList, darkMode && styles.placesSuggestionsListDark]}>
+            {suggestions.map((suggestion) => (
+              <TouchableOpacity
+                key={suggestion.place_id}
+                style={[styles.placesSuggestionRow, darkMode && styles.placesSuggestionRowDark]}
+                onPress={() => handleOfferingAddressSelect(index, suggestion)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.placesSuggestionMain, darkMode && styles.placesSuggestionMainDark]}>
+                  {suggestion.structured_formatting?.main_text || suggestion.description}
+                </Text>
+                {suggestion.structured_formatting?.secondary_text ? (
+                  <Text style={[styles.placesSuggestionSub, darkMode && styles.placesSuggestionSubDark]}>{suggestion.structured_formatting.secondary_text}</Text>
+                ) : null}
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    );
   };
 
   const toggleExpertiseMode = (index, key) => {
@@ -565,12 +664,29 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               )}
             </View>
             <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>Location</Text>
+              <Text style={styles.dateTimeLabel}>Address</Text>
+              {renderOfferingAddressField(index, item)}
+            </View>
+            <View style={styles.dateTimeRow}>
+              <Text style={styles.dateTimeLabel}>City</Text>
               <TextInput
-                style={styles.locationInput}
-                placeholder='Location'
-                value={item.profile_expertise_location || ""}
-                onChangeText={(text) => handleInputChange(index, "profile_expertise_location", text)}
+                style={[styles.locationInput, darkMode && styles.locationInputDark]}
+                placeholder='City'
+                placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+                value={item.profile_expertise_city || ""}
+                onChangeText={(text) => handleInputChange(index, "profile_expertise_city", text)}
+                autoCapitalize='words'
+              />
+            </View>
+            <View style={styles.dateTimeRow}>
+              <Text style={styles.dateTimeLabel}>State</Text>
+              <TextInput
+                style={[styles.locationInput, darkMode && styles.locationInputDark]}
+                placeholder='State'
+                placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+                value={item.profile_expertise_state || ""}
+                onChangeText={(text) => handleInputChange(index, "profile_expertise_state", text)}
+                autoCapitalize='characters'
               />
             </View>
             <View style={styles.dateTimeRow}>
@@ -850,6 +966,52 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     minHeight: 40,
     fontSize: 14,
+  },
+  locationInputDark: {
+    borderColor: "#555",
+    backgroundColor: "#2d2d2d",
+    color: "#fff",
+  },
+  offeringAddressContainer: {
+    flex: 2,
+    minWidth: 0,
+  },
+  placesSuggestionsList: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    overflow: "hidden",
+  },
+  placesSuggestionsListDark: {
+    borderColor: "#555",
+    backgroundColor: "#2d2d2d",
+  },
+  placesSuggestionRow: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  placesSuggestionRowDark: {
+    borderBottomColor: "#444",
+  },
+  placesSuggestionMain: {
+    fontSize: 14,
+    color: "#222",
+    fontWeight: "500",
+  },
+  placesSuggestionMainDark: {
+    color: "#f5f5f5",
+  },
+  placesSuggestionSub: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 2,
+  },
+  placesSuggestionSubDark: {
+    color: "#aaa",
   },
   modeCheckboxRow: {
     flex: 2,

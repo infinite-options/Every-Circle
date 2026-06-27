@@ -93,6 +93,10 @@ export const RATINGS_ENDPOINT = `${API_BASE_URL}/ratings`;
 export const PROFILE_WISH_INFO_ENDPOINT = `${API_BASE_URL}/api/profilewishinfo`;
 /** GET /:profile_uid — wish responses submitted by the logged-in user */
 export const PROFILE_WISH_RESPONSE_ENDPOINT = `${API_BASE_URL}/api/profilewishresponse`;
+/** GET /:profile_uid — offering message clicks by the logged-in user; POST to record */
+export const PROFILE_EXPERTISE_RESPONSE_ENDPOINT = `${API_BASE_URL}/api/profileexpertiseresponse`;
+/** GET /:profile_expertise_uid — message responses for an offering (owner view) */
+export const PROFILE_EXPERTISE_RESPONSE_OFFERING_ENDPOINT = `${API_BASE_URL}/api/profileexpertiseresponse/offering`;
 
 // Circles Endpoint
 export const CIRCLES_ENDPOINT = `${API_BASE_URL}/api/v1/circles`;

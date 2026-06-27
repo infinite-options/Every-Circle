@@ -48,6 +48,7 @@ import { isWishEnded } from "../utils/wishUtils";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
+import { recordOfferingMessageResponse } from "../utils/offeringMessageResponse";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
@@ -625,8 +626,13 @@ const ProfileScreen = ({ route, navigation }) => {
         profile_expertise_start: exp.profile_expertise_start || "",
         profile_expertise_end: exp.profile_expertise_end || "",
         profile_expertise_location: exp.profile_expertise_location || "",
+        profile_expertise_latitude: exp.profile_expertise_latitude ?? null,
+        profile_expertise_longitude: exp.profile_expertise_longitude ?? null,
+        profile_expertise_city: exp.profile_expertise_city || "",
+        profile_expertise_state: exp.profile_expertise_state || "",
         profile_expertise_mode: exp.profile_expertise_mode || "",
         profile_expertise_updated_at: exp.profile_expertise_updated_at ?? exp.updated_at,
+        expertise_responses: Number(exp.expertise_responses) || 0,
         isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
       }));
       userData.wishes = parseProfileJsonArray(apiUser.wishes_info).map((wish) => ({
@@ -1374,6 +1380,15 @@ const ProfileScreen = ({ route, navigation }) => {
                     profile_uid,
                     profileState: wishResponsesProfileState,
                   });
+                } else if (returnTo === "OfferingResponses" && route.params?.offeringResponsesState) {
+                  console.log("🔙 Returning to OfferingResponses");
+                  const { expertiseData, profileData, profile_uid, profileState: offeringResponsesProfileState } = route.params.offeringResponsesState;
+                  navigation.navigate("OfferingResponses", {
+                    expertiseData,
+                    profileData,
+                    profile_uid,
+                    profileState: offeringResponsesProfileState,
+                  });
                 } else if (returnTo === "Chat") {
                   if (navigation.canGoBack()) {
                     navigation.goBack();
@@ -1738,15 +1753,68 @@ const ProfileScreen = ({ route, navigation }) => {
                           <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 8, gap: 10 }}>
                             <ProfileSectionItemImage section='offering' imageUri={expImageUri} imageIsPublic={exp.profile_expertise_image_is_public} size={56} darkMode={darkMode} />
                             <View style={{ flex: 1, minWidth: 0 }}>
-                              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-                                {sanitizeText(exp.name) ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500" }]}>{sanitizeText(exp.name)}</Text> : null}
+                              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
+                                {sanitizeText(exp.name) ? (
+                                  <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "500", flex: 1 }]}>{sanitizeText(exp.name)}</Text>
+                                ) : (
+                                  <View style={{ flex: 1 }} />
+                                )}
+                                {isCurrentUserProfile && exp.expertise_responses > 0 && (
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      const expertiseDataForNavigation = {
+                                        expertise_uid: exp.profile_expertise_uid,
+                                        profile_expertise_uid: exp.profile_expertise_uid,
+                                        title: exp.name,
+                                        profile_expertise_title: exp.name,
+                                        description: exp.description,
+                                        profile_expertise_description: exp.description,
+                                        cost: exp.cost,
+                                        bounty: exp.bounty,
+                                        profile_expertise_image: exp.profile_expertise_image,
+                                        profile_expertise_image_is_public: exp.profile_expertise_image_is_public,
+                                        profile_expertise_start: exp.profile_expertise_start,
+                                        profile_expertise_end: exp.profile_expertise_end,
+                                        profile_expertise_location: exp.profile_expertise_location,
+                                        profile_expertise_mode: exp.profile_expertise_mode,
+                                        profile_expertise_updated_at: exp.profile_expertise_updated_at ?? exp.updated_at,
+                                      };
+                                      const profileDataForNavigation = {
+                                        firstName: user.firstName,
+                                        lastName: user.lastName,
+                                        email: user.email,
+                                        phone: user.phoneNumber,
+                                        image: user.profileImage,
+                                        tagLine: user.tagLine,
+                                        city: user.city,
+                                        state: user.state,
+                                        emailIsPublic: user.emailIsPublic,
+                                        phoneIsPublic: user.phoneIsPublic,
+                                        imageIsPublic: user.imageIsPublic,
+                                        tagLineIsPublic: user.tagLineIsPublic,
+                                        locationIsPublic: user.locationIsPublic,
+                                      };
+                                      navigation.navigate("OfferingResponses", {
+                                        expertiseData: expertiseDataForNavigation,
+                                        profileData: profileDataForNavigation,
+                                        profile_uid: profileUID,
+                                        profileState: { profile_uid: profileUID, returnTo, searchState },
+                                      });
+                                    }}
+                                    activeOpacity={0.7}
+                                  >
+                                    <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>
+                                      Responses: {exp.expertise_responses || 0}
+                                    </Text>
+                                  </TouchableOpacity>
+                                )}
                               </View>
                               {sanitizeText(exp.description) ? (
                                 <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{sanitizeText(exp.description)}</Text>
                               ) : null}
                             </View>
                           </View>
-                          {exp.profile_expertise_start || exp.profile_expertise_end || exp.profile_expertise_location || formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
+                          {exp.profile_expertise_start || exp.profile_expertise_end || exp.profile_expertise_location || exp.profile_expertise_city || exp.profile_expertise_state || formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
                             <View style={[styles.seekingMetaRow, { marginTop: 6 }]}>
                               {exp.profile_expertise_start || exp.profile_expertise_end ? (
                                 <View style={styles.seekingMetaLine}>
@@ -1758,12 +1826,14 @@ const ProfileScreen = ({ route, navigation }) => {
                                   </Text>
                                 </View>
                               ) : null}
-                              {exp.profile_expertise_location || formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
+                              {exp.profile_expertise_location || exp.profile_expertise_city || exp.profile_expertise_state || formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
                                 <View style={[styles.seekingMetaLine, styles.seekingMetaLineSpaceBetween, (exp.profile_expertise_start || exp.profile_expertise_end) && { marginTop: 4 }]}>
-                                  {exp.profile_expertise_location ? (
+                                  {[exp.profile_expertise_city, exp.profile_expertise_state].filter(Boolean).join(", ") || exp.profile_expertise_location ? (
                                     <View style={styles.seekingMetaLine}>
                                       <Ionicons name='location-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
-                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{exp.profile_expertise_location}</Text>
+                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
+                                        {[exp.profile_expertise_city, exp.profile_expertise_state].filter(Boolean).join(", ") || exp.profile_expertise_location}
+                                      </Text>
                                     </View>
                                   ) : (
                                     <View style={styles.seekingMetaSpacer} />
@@ -1812,7 +1882,14 @@ const ProfileScreen = ({ route, navigation }) => {
                             <TouchableOpacity
                               style={[styles.contextChatButton, darkMode && styles.darkContextChatButton]}
                               activeOpacity={0.8}
-                              onPress={() =>
+                              onPress={async () => {
+                                const expertiseUid = String(exp.profile_expertise_uid || "").trim();
+                                const responderUid = (await AsyncStorage.getItem("profile_uid") || "").trim();
+                                if (expertiseUid && responderUid && routeProfileUID !== responderUid) {
+                                  recordOfferingMessageResponse(expertiseUid, responderUid).catch((e) => {
+                                    console.warn("[ProfileScreen] recordOfferingMessageResponse failed:", e);
+                                  });
+                                }
                                 navigation.navigate("Chat", {
                                   other_uid: routeProfileUID || profileUID,
                                   other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
@@ -1820,8 +1897,8 @@ const ProfileScreen = ({ route, navigation }) => {
                                   reply_context: {
                                     label: `Offering: ${sanitizeText(exp.name) || "Offering"}`,
                                   },
-                                })
-                              }
+                                });
+                              }}
                             >
                               <Ionicons name='chatbubble-ellipses-outline' size={14} color='#fff' style={{ marginRight: 6 }} />
                               <Text style={styles.contextChatButtonText}>Message about this offering</Text>
