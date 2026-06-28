@@ -25,12 +25,14 @@ import {
   PROFILE_WISH_RESPONSE_ENDPOINT,
 } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import { fetchMyOfferingMessageResponses, recordOfferingMessageResponse } from "../utils/offeringMessageResponse";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
 import { getHeaderColors } from "../config/headerColors";
 import { isWishEnded } from "../utils/wishUtils";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
+import { parseCoordinateValue } from "../utils/validateCoordinates";
 import { fetchSearchSuggestions, SEARCH_SUGGEST_MIN_LENGTH } from "../utils/searchSuggestions";
 import MiniCard from "../components/MiniCard";
 import MicroCard from "../components/MicroCard";
@@ -157,14 +159,53 @@ function haversineMiles(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function searchTypeSupportsDistanceFilter(type) {
-  return type === "global" || type === "businesses" || type === "expertise" || type === "seeking";
+function searchTypeSupportsDistanceFilter() {
+  return true;
+}
+
+const DEFAULT_SELECTED_SEARCH_TABS = { businesses: true, expertise: true, seeking: false };
+
+/** Seeking is exclusive with businesses/offering; catalog mode keeps at least one of those two. */
+function normalizeSearchTabs(tabs) {
+  if (tabs?.seeking) {
+    return { businesses: false, expertise: false, seeking: true };
+  }
+  const businesses = tabs?.businesses !== false;
+  const expertise = tabs?.expertise !== false;
+  if (!businesses && !expertise) {
+    return { businesses: true, expertise: true, seeking: false };
+  }
+  return { businesses, expertise, seeking: false };
+}
+
+function searchTabsFromLegacyType(type) {
+  if (!type || type === "global") return normalizeSearchTabs({ businesses: true, expertise: true, seeking: false });
+  if (type === "seeking") return { businesses: false, expertise: false, seeking: true };
+  return normalizeSearchTabs({
+    businesses: type === "businesses",
+    expertise: type === "expertise",
+    seeking: false,
+  });
+}
+
+function offeringDistanceCoords(item) {
+  const offeringLat = parseCoordinateValue(item?.profile_expertise_latitude ?? item?.expertiseData?.profile_expertise_latitude);
+  const offeringLng = parseCoordinateValue(item?.profile_expertise_longitude ?? item?.expertiseData?.profile_expertise_longitude);
+  if (offeringLat != null && offeringLng != null) {
+    return { lat: offeringLat, lng: offeringLng };
+  }
+  return {
+    lat: parseCoordinateValue(item?.profile_personal_latitude),
+    lng: parseCoordinateValue(item?.profile_personal_longitude),
+  };
 }
 
 function profileLocationFieldsFromApi(row) {
   return {
     profile_personal_latitude: row?.profile_personal_latitude ?? null,
     profile_personal_longitude: row?.profile_personal_longitude ?? null,
+    profile_expertise_latitude: row?.profile_expertise_latitude ?? null,
+    profile_expertise_longitude: row?.profile_expertise_longitude ?? null,
     ...locationFieldsFromApi(row),
   };
 }
@@ -172,7 +213,11 @@ function profileLocationFieldsFromApi(row) {
 function itemDistanceMiles(item, homeCoords) {
   if (Number.isFinite(item?.distance_miles)) return item.distance_miles;
   if (homeCoords?.lat == null || homeCoords?.lng == null) return null;
-  if (item?.itemType === "expertise" || item?.itemType === "seeking") {
+  if (item?.itemType === "expertise") {
+    const { lat, lng } = offeringDistanceCoords(item);
+    return haversineMiles(homeCoords.lat, homeCoords.lng, lat, lng);
+  }
+  if (item?.itemType === "seeking") {
     return haversineMiles(homeCoords.lat, homeCoords.lng, item?.profile_personal_latitude, item?.profile_personal_longitude);
   }
   return haversineMiles(homeCoords.lat, homeCoords.lng, item?.business_latitude, item?.business_longitude);
@@ -224,6 +269,18 @@ function browseResultListsDiffer(a, b) {
   return a.some((item, idx) => item?.id !== b[idx]?.id);
 }
 
+function offeringCityStateLabel(expertise) {
+  const city = String(expertise?.profile_expertise_city || "").trim();
+  const state = String(expertise?.profile_expertise_state || "").trim();
+  return [city, state].filter(Boolean).join(", ");
+}
+
+function offeringLocationLabel(expertise) {
+  const cityState = offeringCityStateLabel(expertise);
+  if (cityState) return cityState;
+  return String(expertise?.profile_expertise_location || "").trim();
+}
+
 function mapSearchExpertiseRow(item, i) {
   return {
     id: `${item.profile_expertise_uid || i}`,
@@ -252,6 +309,10 @@ function mapSearchExpertiseRow(item, i) {
       profile_expertise_start: item.profile_expertise_start || "",
       profile_expertise_end: item.profile_expertise_end || "",
       profile_expertise_location: item.profile_expertise_location || "",
+      profile_expertise_latitude: item.profile_expertise_latitude ?? null,
+      profile_expertise_longitude: item.profile_expertise_longitude ?? null,
+      profile_expertise_city: item.profile_expertise_city || "",
+      profile_expertise_state: item.profile_expertise_state || "",
       profile_expertise_mode: item.profile_expertise_mode || "",
       profile_expertise_image: item.profile_expertise_image || "",
       profile_expertise_image_is_public: item.profile_expertise_image_is_public,
@@ -689,14 +750,16 @@ export default function SearchScreen({ route }) {
   const [rating, setRating] = useState(null);
   const [mapLoading, setMapLoading] = useState(false);
 
-  // Search type state: 'global', 'businesses', 'expertise', 'seeking'
-  const [searchType, setSearchType] = useState("global");
+  // Multi-select search tabs (businesses / offering / seeking). Global tab hidden for now.
+  const [selectedSearchTabs, setSelectedSearchTabs] = useState({ ...DEFAULT_SELECTED_SEARCH_TABS });
   /** True after an empty-query browse-all search completes (drives per-section network sort). */
   const [browseAllActive, setBrowseAllActive] = useState(false);
 
   const [currentProfileUid, setCurrentProfileUid] = useState(null);
   /** profile_wish_uid → wr_datetime for wishes the logged-in user has responded to (Seeking tab). */
   const [respondedWishesById, setRespondedWishesById] = useState({});
+  /** profile_expertise_uid → er_datetime for offerings the logged-in user has messaged (Offering tab). */
+  const [respondedOfferingsById, setRespondedOfferingsById] = useState({});
   const [connectionDegreeMap, setConnectionDegreeMap] = useState({});
   const connectionDegreeMapRef = useRef({});
   // Stores pre-client-sort results so bounty / alphabetical can re-sort without re-fetching
@@ -704,7 +767,7 @@ export default function SearchScreen({ route }) {
   const bountyRef = useRef(bounty);
   const sortAlphabeticalRef = useRef(sortAlphabetical);
   const browseAllActiveRef = useRef(false);
-  const searchTypeRef = useRef(searchType);
+  const selectedSearchTabsRef = useRef(selectedSearchTabs);
   const searchGenerationRef = useRef(0);
   useEffect(() => {
     bountyRef.current = bounty;
@@ -713,17 +776,42 @@ export default function SearchScreen({ route }) {
     sortAlphabeticalRef.current = sortAlphabetical;
   }, [sortAlphabetical]);
   useEffect(() => {
-    searchTypeRef.current = searchType;
-  }, [searchType]);
+    selectedSearchTabsRef.current = selectedSearchTabs;
+  }, [selectedSearchTabs]);
 
-  const commitSearchResults = useCallback((list, { browseAll = false, searchType: resultSearchType = searchTypeRef.current } = {}) => {
+  const toggleSearchTab = useCallback((tabKey) => {
+    setSelectedSearchTabs((prev) => {
+      if (tabKey === "seeking") {
+        if (prev.seeking) {
+          return prev;
+        }
+        return { businesses: false, expertise: false, seeking: true };
+      }
+
+      if (prev.seeking) {
+        return { businesses: tabKey === "businesses", expertise: tabKey === "expertise", seeking: false };
+      }
+
+      if (!prev[tabKey]) {
+        return { ...prev, [tabKey]: true, seeking: false };
+      }
+
+      const otherKey = tabKey === "businesses" ? "expertise" : "businesses";
+      if (!prev[otherKey]) {
+        return prev;
+      }
+      return { ...prev, [tabKey]: false, seeking: false };
+    });
+  }, []);
+
+  const commitSearchResults = useCallback((list, { browseAll = false } = {}) => {
     browseAllActiveRef.current = browseAll;
     setBrowseAllActive(browseAll);
     rawResultsRef.current = [...list];
     setResults(
       applyClientSorts(list, {
         browseAll,
-        searchType: resultSearchType,
+        searchType: "global",
         bounty: bountyRef.current,
         alphabetical: sortAlphabeticalRef.current,
       }),
@@ -782,7 +870,7 @@ export default function SearchScreen({ route }) {
     setSearchQuery(text);
     setSearchSuggestions([]);
     setShowSearchSuggestions(false);
-    performSearch(text, searchType);
+    performSearch(text);
   };
 
   const dismissSearchSuggestions = () => {
@@ -860,19 +948,48 @@ export default function SearchScreen({ route }) {
     }
   }, [currentProfileUid]);
 
+  const fetchMyExpertiseResponses = useCallback(async () => {
+    const uid = (currentProfileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
+    if (!uid) {
+      setRespondedOfferingsById({});
+      return;
+    }
+    try {
+      const byId = await fetchMyOfferingMessageResponses(uid);
+      setRespondedOfferingsById(byId);
+    } catch (e) {
+      console.warn("[SearchScreen] fetchMyExpertiseResponses failed:", e);
+      setRespondedOfferingsById({});
+    }
+  }, [currentProfileUid]);
+
   useFocusEffect(
     useCallback(() => {
-      if (searchType === "seeking") {
+      if (selectedSearchTabs.seeking) {
         fetchMyWishResponses();
       }
-    }, [searchType, fetchMyWishResponses]),
+    }, [selectedSearchTabs.seeking, fetchMyWishResponses]),
   );
 
   useEffect(() => {
-    if (searchType === "seeking") {
+    if (selectedSearchTabs.seeking) {
       fetchMyWishResponses();
     }
-  }, [searchType, fetchMyWishResponses]);
+  }, [selectedSearchTabs.seeking, fetchMyWishResponses]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (selectedSearchTabs.expertise) {
+        fetchMyExpertiseResponses();
+      }
+    }, [selectedSearchTabs.expertise, fetchMyExpertiseResponses]),
+  );
+
+  useEffect(() => {
+    if (selectedSearchTabs.expertise) {
+      fetchMyExpertiseResponses();
+    }
+  }, [selectedSearchTabs.expertise, fetchMyExpertiseResponses]);
 
   // Restore search state when returning from Profile
   useFocusEffect(
@@ -881,7 +998,11 @@ export default function SearchScreen({ route }) {
         const state = route.params.searchState;
         console.log("🔄 Restoring Search screen state:", state);
         if (state.searchQuery !== undefined) setSearchQuery(state.searchQuery);
-        if (state.searchType !== undefined) setSearchType(state.searchType);
+        if (state.selectedSearchTabs) {
+          setSelectedSearchTabs(normalizeSearchTabs(state.selectedSearchTabs));
+        } else if (state.searchType !== undefined) {
+          setSelectedSearchTabs(searchTabsFromLegacyType(state.searchType));
+        }
         const raw = state.rawResults?.length ? state.rawResults : state.results;
         if (raw?.length) {
           rawResultsRef.current = [...raw];
@@ -891,7 +1012,7 @@ export default function SearchScreen({ route }) {
           setResults(
             applyClientSorts(raw, {
               browseAll: !!state.browseAllActive,
-              searchType: state.searchType || searchTypeRef.current,
+              searchType: "global",
               bounty: restoredBounty,
               alphabetical: restoredAlphabetical,
             }),
@@ -986,7 +1107,18 @@ export default function SearchScreen({ route }) {
           // User has searched before, restore their last search
           console.log("📋 Restoring last search for user:", userUid, "Query:", savedSearchQuery);
           setSearchQuery(savedSearchQuery);
-          if (savedSearchType) setSearchType(savedSearchType);
+          if (savedSearchType) {
+            try {
+              const parsedTabs = JSON.parse(savedSearchType);
+              if (parsedTabs && typeof parsedTabs === "object") {
+                setSelectedSearchTabs(normalizeSearchTabs(parsedTabs));
+              } else {
+                setSelectedSearchTabs(searchTabsFromLegacyType(savedSearchType));
+              }
+            } catch {
+              setSelectedSearchTabs(searchTabsFromLegacyType(savedSearchType));
+            }
+          }
           const parsedResults = JSON.parse(savedResults).map((item) =>
             item.itemType === "businesses"
               ? {
@@ -1008,7 +1140,7 @@ export default function SearchScreen({ route }) {
           if (bizItems.length > 0) {
             enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(parsedResults)
               .then((updated) => {
-                commitSearchResults(updated, { browseAll: false, searchType: savedSearchType || searchTypeRef.current });
+                commitSearchResults(updated, { browseAll: false });
               })
               .catch((e) => {
                 console.error("Could not fetch ratings/bounty from cache:", e);
@@ -1025,7 +1157,7 @@ export default function SearchScreen({ route }) {
           setHasLoadedInitialSearch(true);
           // Trigger the search after a brief delay to ensure state is set
           setTimeout(() => {
-            performSearch("Chinese", "global");
+            performSearch("Chinese");
           }, 100);
         }
       } catch (error) {
@@ -1034,7 +1166,7 @@ export default function SearchScreen({ route }) {
         setSearchQuery("Chinese");
         setHasLoadedInitialSearch(true);
         setTimeout(() => {
-          performSearch("Chinese", "global");
+          performSearch("Chinese");
         }, 100);
       }
     };
@@ -1057,7 +1189,7 @@ export default function SearchScreen({ route }) {
     setResults(
       applyClientSorts(base, {
         browseAll: browseAllActiveRef.current,
-        searchType: searchTypeRef.current,
+        searchType: "global",
         bounty: bountyRef.current,
         alphabetical: sortAlphabeticalRef.current,
       }),
@@ -1080,7 +1212,7 @@ export default function SearchScreen({ route }) {
 
           // Save with user-specific keys
           await AsyncStorage.setItem(`last_search_query_${userUid}`, searchQuery);
-          await AsyncStorage.setItem(`last_search_type_${userUid}`, searchType);
+          await AsyncStorage.setItem(`last_search_type_${userUid}`, JSON.stringify(selectedSearchTabs));
           const resultsToSave = rawResultsRef.current.length > 0 ? rawResultsRef.current : results;
           await AsyncStorage.setItem(`last_search_results_${userUid}`, JSON.stringify(resultsToSave));
           console.log("💾 Saved search state for user:", userUid, "Query:", searchQuery);
@@ -1091,7 +1223,7 @@ export default function SearchScreen({ route }) {
     };
 
     saveSearchState();
-  }, [results, searchQuery, searchType, hasLoadedInitialSearch, loading]);
+  }, [results, searchQuery, selectedSearchTabs, hasLoadedInitialSearch, loading]);
 
   // Clear cart data when refreshCart is true
   useEffect(() => {
@@ -1143,20 +1275,20 @@ export default function SearchScreen({ route }) {
     setDistance(null);
     setDistanceModalVisible(false);
     if (reRunSearch) {
-      performSearch(searchQuery, searchType, { distanceMiles: null });
+      performSearch(searchQuery, { distanceMiles: null });
     }
   };
 
   const applyRatingFilter = (ratingValue) => {
     setRating(ratingValue);
     setRatingModalVisible(false);
-    performSearch(searchQuery, searchType, { ratingValue });
+    performSearch(searchQuery, { ratingValue });
   };
 
   const applyNetworkFilter = (networkValue) => {
     setNetwork(networkValue);
     setNetworkModalVisible(false);
-    performSearch(searchQuery, searchType, { networkValue });
+    performSearch(searchQuery, { networkValue });
   };
 
   /**
@@ -1195,31 +1327,29 @@ export default function SearchScreen({ route }) {
   const sortAlphabeticalLabels = { Ascending: "A -> Z", Descending: "Z -> A" };
   const ratingOptions = ["> 1", "> 2", "> 3", "> 4", "> 4.5", "> 4.6", "> 4.8"];
 
-  const globalBusinessResults = searchType === "global" ? results.filter((item) => (item?.itemType || "businesses") === "businesses") : [];
-  const globalOfferingResults = searchType === "global" ? results.filter((item) => item?.itemType === "expertise") : [];
-  const globalSeekingResults = searchType === "global" ? results.filter((item) => item?.itemType === "seeking") : [];
+  const businessSectionResults = results.filter((item) => (item?.itemType || "businesses") === "businesses");
+  const offeringSectionResults = results.filter((item) => item?.itemType === "expertise");
+  const seekingSectionResults = results.filter((item) => item?.itemType === "seeking");
 
   const handleOpenSearchMap = useCallback(async () => {
-    const isProfileType = searchType === "expertise" || searchType === "seeking";
+    const isProfileType = selectedSearchTabs.expertise || selectedSearchTabs.seeking;
 
-    const visibleResults =
-      searchType === "global"
-        ? globalBusinessResults
-        : searchType === "businesses"
-          ? results.filter((item) => item?.itemType === "businesses")
-          : searchType === "expertise" || searchType === "seeking"
-            ? results.filter((item) => item?.itemType === searchType)
-            : [];
+    const visibleResults = [
+      ...(selectedSearchTabs.businesses ? businessSectionResults : []),
+      ...(selectedSearchTabs.expertise ? offeringSectionResults : []),
+      ...(selectedSearchTabs.seeking ? seekingSectionResults : []),
+    ];
 
     if (visibleResults.length === 0) {
-      const typeLabel = searchType === "expertise" ? "Offering" : searchType === "seeking" ? "Seeking" : "business";
-      Alert.alert("No results", `Run a ${typeLabel} search first to see results on the map.`);
+      Alert.alert("No results", "Select at least one tab and run a search to see results on the map.");
       return;
     }
 
-    let mapMarkers = isProfileType
+    const mapMarkers = isProfileType && !selectedSearchTabs.businesses
       ? searchResultsToMapProfiles(visibleResults)
-      : searchResultsToMapBusinesses(visibleResults);
+      : selectedSearchTabs.businesses
+        ? searchResultsToMapBusinesses(businessSectionResults)
+        : searchResultsToMapProfiles(visibleResults);
 
     // Search API may not include profile coordinates — fetch them from the profile endpoint
     if (isProfileType && mapMarkers.length === 0) {
@@ -1267,9 +1397,9 @@ export default function SearchScreen({ route }) {
       searchQuery: searchQuery.trim(),
       searchMapBusinesses: mapMarkers,
       searchResultCount: visibleResults.length,
-      searchType,
+      selectedSearchTabs,
     });
-  }, [globalBusinessResults, navigation, results, searchQuery, searchType]);
+  }, [businessSectionResults, navigation, offeringSectionResults, results, searchQuery, seekingSectionResults, selectedSearchTabs]);
   /** Append home coords and optional max_distance for business distance filtering / proximity boost. */
   const appendLocationSearchParams = (baseUrl, { distanceMiles, coords, sendProximityCoords = false }) => {
     let apiUrl = baseUrl;
@@ -1329,7 +1459,7 @@ export default function SearchScreen({ route }) {
   };
 
   // Extracted search function that can be called programmatically
-  const performSearch = async (query, type = searchType, opts = {}) => {
+  const performSearch = async (query, opts = {}) => {
     const q = query.trim();
     const isBrowseAll = !q;
     const searchGeneration = ++searchGenerationRef.current;
@@ -1340,7 +1470,7 @@ export default function SearchScreen({ route }) {
     const effectiveNetwork = opts.networkValue !== undefined ? opts.networkValue : network;
 
     let searchCoords = userHomeCoords;
-    if (effectiveDistance != null || searchTypeSupportsDistanceFilter(type)) {
+    if (effectiveDistance != null || searchTypeSupportsDistanceFilter()) {
       const freshCoords = await loadUserHomeCoords();
       if (freshCoords?.lat != null && freshCoords?.lng != null) {
         searchCoords = freshCoords;
@@ -1357,7 +1487,7 @@ export default function SearchScreen({ route }) {
 
     console.log("🔍 Performing search for:", isBrowseAll ? "(browse all)" : q);
     console.log("🔍 Browse all mode:", isBrowseAll);
-    console.log("🔍 Search type:", type);
+    console.log("🔍 Selected tabs:", selectedSearchTabsRef.current);
     console.log("🔍 Search query length:", q.length);
     console.log("🔍 Search query type:", typeof q);
     console.log("🔍 Rating filter:", effectiveRating);
@@ -1367,8 +1497,8 @@ export default function SearchScreen({ route }) {
 
     setLoading(true);
     try {
-      if (type === "global") {
-        const globalJsonRaw = await fetchSearchJson(SEARCH_GLOBAL_ENDPOINT, q, {
+      // Multi-type combined search via /search_global (Global tab hidden in UI).
+      const globalJsonRaw = await fetchSearchJson(SEARCH_GLOBAL_ENDPOINT, q, {
           applyRatingFilter: true,
           distanceMiles: effectiveDistance,
           ratingValue: effectiveRating,
@@ -1413,56 +1543,8 @@ export default function SearchScreen({ route }) {
           ...locationFieldsFromApi(b),
         }));
 
-        const mappedExpertise = expertiseResults.map((item, i) => ({
-          id: `${item.profile_expertise_uid || i}`,
-          company: item.profile_expertise_title || "Untitled Expertise",
-          rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
-          hasPriceTag: false,
-          hasX: false,
-          hasDollar: false,
-          business_short_bio: item.profile_expertise_description || "",
-          business_tag_line: item.profile_expertise_title || "",
-          tags: [],
-          score: item.score || 0,
-          score_breakdown: item.score_breakdown || null,
-          itemType: "expertise",
-          profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
-          ...locationFieldsFromApi(item),
-          profile_personal_latitude: item.profile_personal_latitude ?? null,
-          profile_personal_longitude: item.profile_personal_longitude ?? null,
-          expertiseData: {
-            title: item.profile_expertise_title,
-            description: item.profile_expertise_description,
-            details: item.profile_expertise_details,
-            bounty: item.profile_expertise_bounty,
-            cost: item.profile_expertise_cost,
-            quantity: item.profile_expertise_quantity || item.quantity,
-            profile_expertise_quantity: item.profile_expertise_quantity || item.quantity,
-            expertise_uid: item.profile_expertise_uid,
-            profile_expertise_start: item.profile_expertise_start || "",
-            profile_expertise_end: item.profile_expertise_end || "",
-            profile_expertise_location: item.profile_expertise_location || "",
-            profile_expertise_mode: item.profile_expertise_mode || "",
-            profile_expertise_image: item.profile_expertise_image || "",
-            profile_expertise_image_is_public: item.profile_expertise_image_is_public,
-            profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
-          },
-          profileData: {
-            firstName: item.profile_personal_first_name || "",
-            lastName: item.profile_personal_last_name || "",
-            email: item.user_email_id || "",
-            phone: item.profile_personal_phone_number || "",
-            image: item.profile_personal_image || "",
-            tagLine: item.profile_personal_tag_line || "",
-            city: item.profile_personal_city || "",
-            state: item.profile_personal_state || "",
-            emailIsPublic: item.profile_personal_email_is_public == 1,
-            phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
-            imageIsPublic: item.profile_personal_image_is_public == 1,
-            tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
-            locationIsPublic: item.profile_personal_location_is_public == 1,
-          },
-        }));
+        const mappedExpertise = expertiseResults.map((item, i) => mapSearchExpertiseRow(item, i));
+        const mappedSeeking = seekingResults.map((item, i) => mapSearchWishRow(item, i)).filter((item) => !isWishEnded(item));
 
         const normalizeByType = (items) => {
           if (!items.length) return [];
@@ -1474,7 +1556,9 @@ export default function SearchScreen({ route }) {
         if (isBrowseAll) {
           list = [...mappedBusinesses, ...mappedExpertise, ...mappedSeeking];
         } else {
-          list = [...normalizeByType(mappedBusinesses), ...normalizeByType(mappedExpertise)].sort((a, b) => b.globalScore - a.globalScore);
+          list = [...normalizeByType(mappedBusinesses), ...normalizeByType(mappedExpertise), ...normalizeByType(mappedSeeking)].sort(
+            (a, b) => b.globalScore - a.globalScore,
+          );
         }
         const enriched = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(list);
         const withOfferingDegrees = await enrichOfferingOwnerConnectionDegrees(enriched);
@@ -1482,12 +1566,12 @@ export default function SearchScreen({ route }) {
         filteredEnriched = filterResultsByNetwork(filteredEnriched, effectiveNetwork);
         filteredEnriched = applyDistanceFilterToSearchResults(filteredEnriched, effectiveDistance, searchCoords);
         if (searchGeneration !== searchGenerationRef.current) return;
-        commitSearchResults(filteredEnriched, { browseAll: isBrowseAll, searchType: type });
+        commitSearchResults(filteredEnriched, { browseAll: isBrowseAll });
         setHasLoadedInitialSearch(true);
         setLoading(false);
         return;
-      }
 
+      if (false) { // LEGACY single-tab search — kept for reference while Global tab is hidden.
       // Select the appropriate endpoint based on search type
       let baseEndpoint;
       switch (type) {
@@ -1874,8 +1958,9 @@ export default function SearchScreen({ route }) {
       if (searchGeneration !== searchGenerationRef.current) return;
 
       console.log("Processed search results:", list.length, "items");
-      commitSearchResults(list, { browseAll: isBrowseAll, searchType: type });
+      commitSearchResults(list, { browseAll: isBrowseAll });
       setHasLoadedInitialSearch(true);
+      }
     } catch (err) {
       console.error(" Search failed for query:", q, "Error:", err);
 
@@ -1897,7 +1982,7 @@ export default function SearchScreen({ route }) {
 
   const onSearch = async () => {
     dismissSearchSuggestions();
-    await performSearch(searchQuery, searchType);
+    await performSearch(searchQuery);
   };
 
   const tryAlternativeEndpoints = async (query) => {
@@ -2072,7 +2157,7 @@ export default function SearchScreen({ route }) {
 
   const getSearchStateForRestore = () => ({
     searchQuery,
-    searchType,
+    selectedSearchTabs,
     results,
     rawResults: rawResultsRef.current.length > 0 ? rawResultsRef.current : results,
     distance,
@@ -2275,8 +2360,7 @@ export default function SearchScreen({ route }) {
 
     const isOwnExpertise = currentProfileUid && item.profile_uid === currentProfileUid;
 
-    const expertiseLocationTrimmed =
-      expertise.profile_expertise_location != null && String(expertise.profile_expertise_location).trim() !== "" ? String(expertise.profile_expertise_location).trim() : "";
+    const expertiseLocationTrimmed = offeringLocationLabel(expertise);
     const expertiseQtyRaw = expertise.quantity ?? expertise.profile_expertise_quantity;
     const expertiseQtyTrimmed = expertiseQtyRaw != null && String(expertiseQtyRaw).trim() !== "" ? String(expertiseQtyRaw).trim() : "";
     const hasExpertiseSchedule = !!(expertise.profile_expertise_start || expertise.profile_expertise_end);
@@ -2289,6 +2373,25 @@ export default function SearchScreen({ route }) {
     const offeringImageUri = resolveProfileItemImageUri(expertise.profile_expertise_image, item.profile_uid);
     const offeringTitle = expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : "";
     const scoreSuffix = formatBusinessSearchScoreSuffix(item);
+    const expertiseUid = String(expertise.expertise_uid || item.id || "").trim();
+    const respondedAt = expertiseUid ? respondedOfferingsById[expertiseUid] : null;
+    const hasRespondedToOffering = !!respondedAt;
+    const offeringRespondedDateLabel = respondedAt ? formatDateForDisplay(respondedAt) : "";
+    const handleOfferingMessagePress = async () => {
+      if (!item.profile_uid) return;
+      const offeringLabel = offeringTitle || "Offering";
+      const responderUid = (currentProfileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
+      if (expertiseUid && responderUid && item.profile_uid !== responderUid) {
+        const byId = await recordOfferingMessageResponse(expertiseUid, responderUid);
+        if (byId) setRespondedOfferingsById(byId);
+      }
+      navigation.navigate("Chat", {
+        other_uid: item.profile_uid,
+        other_name: [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim() || "Chat",
+        other_image: profile.imageIsPublic && profile.image && String(profile.image).trim() !== "" ? String(profile.image) : null,
+        reply_context: { label: `Offering: ${offeringLabel}` },
+      });
+    };
     const openSellerProfile = () => {
       if (!item.profile_uid) return;
       navigation.navigate("Profile", {
@@ -2349,10 +2452,17 @@ export default function SearchScreen({ route }) {
           <View style={styles.expertiseOfferingHeaderRow}>
             <ProfileSectionItemImage section='offering' imageUri={offeringImageUri} imageIsPublic={expertise.profile_expertise_image_is_public} size={56} darkMode={darkMode} />
             <View style={styles.expertiseOfferingHeaderText}>
-              <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle, scoreSuffix && styles.wishTitleWithSuffix]}>
-                {offeringTitle}
-                {scoreSuffix ? <Text style={[styles.searchScoreSuffix, darkMode && styles.darkSearchScoreSuffix]}>{` ${scoreSuffix}`}</Text> : null}
-              </Text>
+              <View style={styles.wishTitleRow}>
+                <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle, styles.wishTitleFlex, scoreSuffix && styles.wishTitleWithSuffix]}>
+                  {offeringTitle}
+                  {scoreSuffix ? <Text style={[styles.searchScoreSuffix, darkMode && styles.darkSearchScoreSuffix]}>{` ${scoreSuffix}`}</Text> : null}
+                </Text>
+                {hasRespondedToOffering && (
+                  <Text style={[styles.wishRespondedFlag, darkMode && styles.darkWishRespondedFlag]}>
+                    Responded{offeringRespondedDateLabel ? ` ${offeringRespondedDateLabel}` : ""}
+                  </Text>
+                )}
+              </View>
               {expertise.description && String(expertise.description).trim() && String(expertise.description).trim() !== "." && (
                 <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{String(expertise.description).trim()}</Text>
               )}
@@ -2424,16 +2534,7 @@ export default function SearchScreen({ route }) {
                   darkMode && (isCompactSearchCard ? styles.darkExpertiseCardMessageButtonCompact : styles.darkExpertiseCardMessageButton),
                   !canOpenSellerProfile && styles.expertiseCardActionDisabled,
                 ]}
-                onPress={() => {
-                  if (!item.profile_uid) return;
-                  const offeringLabel = expertise.title && String(expertise.title).trim() ? String(expertise.title).trim() : item.company ? String(item.company).trim() : "Offering";
-                  navigation.navigate("Chat", {
-                    other_uid: item.profile_uid,
-                    other_name: [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim() || "Chat",
-                    other_image: profile.imageIsPublic && profile.image && String(profile.image).trim() !== "" ? String(profile.image) : null,
-                    reply_context: { label: `Offering: ${offeringLabel}` },
-                  });
-                }}
+                onPress={handleOfferingMessagePress}
                 disabled={!canOpenSellerProfile}
                 activeOpacity={0.85}
               >
@@ -2711,6 +2812,7 @@ export default function SearchScreen({ route }) {
           {/* Search type buttons - ALWAYS VISIBLE ABOVE SEARCH BAR */}
           <View style={[styles.searchTypeRow, { marginBottom: 10 }]}>
             <View style={styles.searchTypeButtonsGroup}>
+              {/*
               <TouchableOpacity
                 style={[
                   styles.filterButtonOption,
@@ -2720,7 +2822,7 @@ export default function SearchScreen({ route }) {
                 ]}
                 onPress={() => {
                   setSearchType("global");
-                  performSearch(searchQuery, "global");
+                  performSearch(searchQuery);
                 }}
               >
                 <Text
@@ -2734,24 +2836,22 @@ export default function SearchScreen({ route }) {
                   Global
                 </Text>
               </TouchableOpacity>
+              */}
               <TouchableOpacity
                 style={[
                   styles.filterButtonOption,
                   darkMode && styles.darkFilterButtonOption,
-                  searchType === "businesses" && styles.searchTypeButtonBusinesses,
-                  darkMode && searchType === "businesses" && styles.darkSearchTypeButtonBusinesses,
+                  selectedSearchTabs.businesses && styles.searchTypeButtonBusinesses,
+                  darkMode && selectedSearchTabs.businesses && styles.darkSearchTypeButtonBusinesses,
                 ]}
-                onPress={() => {
-                  setSearchType("businesses");
-                  performSearch(searchQuery, "businesses");
-                }}
+                onPress={() => toggleSearchTab("businesses")}
               >
                 <Text
                   style={[
                     styles.filterButtonText,
                     darkMode && styles.darkFilterButtonText,
-                    searchType === "businesses" && styles.searchTypeButtonTextBusinesses,
-                    darkMode && searchType === "businesses" && styles.darkSearchTypeButtonTextBusinesses,
+                    selectedSearchTabs.businesses && styles.searchTypeButtonTextBusinesses,
+                    darkMode && selectedSearchTabs.businesses && styles.darkSearchTypeButtonTextBusinesses,
                   ]}
                 >
                   Businesses
@@ -2761,20 +2861,17 @@ export default function SearchScreen({ route }) {
                 style={[
                   styles.filterButtonOption,
                   darkMode && styles.darkFilterButtonOption,
-                  searchType === "expertise" && styles.searchTypeButtonExpertise,
-                  darkMode && searchType === "expertise" && styles.darkSearchTypeButtonExpertise,
+                  selectedSearchTabs.expertise && styles.searchTypeButtonExpertise,
+                  darkMode && selectedSearchTabs.expertise && styles.darkSearchTypeButtonExpertise,
                 ]}
-                onPress={() => {
-                  setSearchType("expertise");
-                  performSearch(searchQuery, "expertise");
-                }}
+                onPress={() => toggleSearchTab("expertise")}
               >
                 <Text
                   style={[
                     styles.filterButtonText,
                     darkMode && styles.darkFilterButtonText,
-                    searchType === "expertise" && styles.searchTypeButtonTextExpertise,
-                    darkMode && searchType === "expertise" && styles.darkSearchTypeButtonTextExpertise,
+                    selectedSearchTabs.expertise && styles.searchTypeButtonTextExpertise,
+                    darkMode && selectedSearchTabs.expertise && styles.darkSearchTypeButtonTextExpertise,
                   ]}
                 >
                   Offering
@@ -2784,20 +2881,17 @@ export default function SearchScreen({ route }) {
                 style={[
                   styles.filterButtonOption,
                   darkMode && styles.darkFilterButtonOption,
-                  searchType === "seeking" && styles.searchTypeButtonSeeking,
-                  darkMode && searchType === "seeking" && styles.darkSearchTypeButtonSeeking,
+                  selectedSearchTabs.seeking && styles.searchTypeButtonSeeking,
+                  darkMode && selectedSearchTabs.seeking && styles.darkSearchTypeButtonSeeking,
                 ]}
-                onPress={() => {
-                  setSearchType("seeking");
-                  performSearch(searchQuery, "seeking");
-                }}
+                onPress={() => toggleSearchTab("seeking")}
               >
                 <Text
                   style={[
                     styles.filterButtonText,
                     darkMode && styles.darkFilterButtonText,
-                    searchType === "seeking" && styles.searchTypeButtonTextSeeking,
-                    darkMode && searchType === "seeking" && styles.darkSearchTypeButtonTextSeeking,
+                    selectedSearchTabs.seeking && styles.searchTypeButtonTextSeeking,
+                    darkMode && selectedSearchTabs.seeking && styles.darkSearchTypeButtonTextSeeking,
                   ]}
                 >
                   Seeking
@@ -2983,51 +3077,41 @@ export default function SearchScreen({ route }) {
             </View>
           )}
 
-          {/* Statement when Offering is selected */}
-          {searchType === "expertise" && <Text style={[styles.offeringStatement, darkMode && styles.darkOfferingStatement]}>Discover what others have to offer:</Text>}
-
-          {/* Statement when Seeking is selected */}
-          {searchType === "seeking" && <Text style={[styles.seekingStatement, darkMode && styles.darkSeekingStatement]}>Discover what people need:</Text>}
-
-          {/* Only show table header for businesses, not for expertise or seeking */}
-          {searchType === "businesses" && (
-            <View style={[styles.tableHeader, darkMode && styles.darkTableHeader]}>
-              <Text style={[styles.tableHeaderText, styles.tableHeaderCompany, darkMode && styles.darkTableHeaderText]}>
-                Company ({results.length} {results.length === 1 ? "result" : "results"})
-              </Text>
-              <Text style={[styles.tableHeaderText, styles.tableHeaderRating, darkMode && styles.darkTableHeaderText]}>Rating(#)</Text>
-              <Text style={[styles.tableHeaderText, styles.tableHeaderBounty, darkMode && styles.darkTableHeaderText]} numberOfLines={1}>
-                Bounty
-              </Text>
-              <Text style={[styles.tableHeaderText, styles.tableHeaderLevel, darkMode && styles.darkTableHeaderText]}>Level</Text>
-            </View>
-          )}
-
           <ScrollView style={styles.resultsContainer}>
             {loading ? (
               <Text style={[styles.loadingText, darkMode && styles.darkLoadingText]}>Loading…</Text>
-            ) : searchType === "global" ? (
-              <>
-                <TouchableOpacity style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]} onPress={() => setShowGlobalBusinesses((prev) => !prev)} activeOpacity={0.8}>
-                  <Text style={[styles.globalSectionHeaderText, darkMode && styles.darkGlobalSectionHeaderText]}>Businesses ({globalBusinessResults.length})</Text>
-                  <Ionicons name={showGlobalBusinesses ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
-                </TouchableOpacity>
-                {showGlobalBusinesses && globalBusinessResults.map((item, idx) => renderResultItem(item, idx))}
-
-                <TouchableOpacity style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]} onPress={() => setShowGlobalOffering((prev) => !prev)} activeOpacity={0.8}>
-                  <Text style={[styles.globalSectionHeaderText, darkMode && styles.darkGlobalSectionHeaderText]}>Offering ({globalOfferingResults.length})</Text>
-                  <Ionicons name={showGlobalOffering ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
-                </TouchableOpacity>
-                {showGlobalOffering && globalOfferingResults.map((item, idx) => renderResultItem(item, idx))}
-
-                <TouchableOpacity style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]} onPress={() => setShowGlobalSeeking((prev) => !prev)} activeOpacity={0.8}>
-                  <Text style={[styles.globalSectionHeaderText, darkMode && styles.darkGlobalSectionHeaderText]}>Seeking ({globalSeekingResults.length})</Text>
-                  <Ionicons name={showGlobalSeeking ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
-                </TouchableOpacity>
-                {showGlobalSeeking && globalSeekingResults.map((item, idx) => renderResultItem(item, idx))}
-              </>
             ) : (
-              results.map((item, idx) => renderResultItem(item, idx))
+              <>
+                {selectedSearchTabs.businesses && (
+                  <>
+                    <TouchableOpacity style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]} onPress={() => setShowGlobalBusinesses((prev) => !prev)} activeOpacity={0.8}>
+                      <Text style={[styles.globalSectionHeaderText, darkMode && styles.darkGlobalSectionHeaderText]}>Businesses ({businessSectionResults.length})</Text>
+                      <Ionicons name={showGlobalBusinesses ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
+                    </TouchableOpacity>
+                    {showGlobalBusinesses && businessSectionResults.map((item, idx) => renderResultItem(item, idx))}
+                  </>
+                )}
+
+                {selectedSearchTabs.expertise && (
+                  <>
+                    <TouchableOpacity style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]} onPress={() => setShowGlobalOffering((prev) => !prev)} activeOpacity={0.8}>
+                      <Text style={[styles.globalSectionHeaderText, darkMode && styles.darkGlobalSectionHeaderText]}>Offering ({offeringSectionResults.length})</Text>
+                      <Ionicons name={showGlobalOffering ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
+                    </TouchableOpacity>
+                    {showGlobalOffering && offeringSectionResults.map((item, idx) => renderResultItem(item, idx))}
+                  </>
+                )}
+
+                {selectedSearchTabs.seeking && (
+                  <>
+                    <TouchableOpacity style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]} onPress={() => setShowGlobalSeeking((prev) => !prev)} activeOpacity={0.8}>
+                      <Text style={[styles.globalSectionHeaderText, darkMode && styles.darkGlobalSectionHeaderText]}>Seeking ({seekingSectionResults.length})</Text>
+                      <Ionicons name={showGlobalSeeking ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
+                    </TouchableOpacity>
+                    {showGlobalSeeking && seekingSectionResults.map((item, idx) => renderResultItem(item, idx))}
+                  </>
+                )}
+              </>
             )}
           </ScrollView>
 
@@ -3063,7 +3147,7 @@ export default function SearchScreen({ route }) {
                         }
                         setDistance(item.miles);
                         setDistanceModalVisible(false);
-                        performSearch(searchQuery, searchType, { distanceMiles: item.miles });
+                        performSearch(searchQuery, { distanceMiles: item.miles });
                       }}
                     >
                       <Text style={[styles.optionText, isSelected && styles.selectedOptionText, darkMode && styles.darkOptionText, darkMode && isSelected && styles.darkSelectedOptionText]}>
@@ -3340,37 +3424,6 @@ const styles = StyleSheet.create({
   searchButton: { marginLeft: 10, backgroundColor: "#f0f0f0", borderRadius: 8, padding: 12 },
   filterButton: { marginLeft: 10, backgroundColor: "#f0f0f0", borderRadius: 8, padding: 12 },
 
-  tableHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  tableHeaderText: { fontSize: 14, color: "#686868" },
-  tableHeaderCompany: {
-    flex: 1,
-    paddingRight: 8,
-  },
-  tableHeaderRating: {
-    width: 100,
-    textAlign: "right",
-    paddingRight: 6,
-    flexShrink: 0,
-  },
-  /** Wider than `businessTableBountyCol` so the label stays one line; row icons stay narrow. */
-  tableHeaderBounty: {
-    width: 58,
-    textAlign: "center",
-    flexShrink: 0,
-  },
-  tableHeaderLevel: {
-    width: 52,
-    textAlign: "center",
-    flexShrink: 0,
-  },
-
   resultsContainer: { flex: 1, marginBottom: 15 },
   loadingText: { textAlign: "center", marginVertical: 10 },
 
@@ -3630,12 +3683,6 @@ const styles = StyleSheet.create({
   },
   darkFilterButton: {
     backgroundColor: "#404040",
-  },
-  darkTableHeader: {
-    borderBottomColor: "#404040",
-  },
-  darkTableHeaderText: {
-    color: "#cccccc",
   },
   darkResultItem: {
     backgroundColor: "#2d2d2d",
@@ -4057,25 +4104,6 @@ const styles = StyleSheet.create({
     color: "#e8a0a0",
   },
 
-  offeringStatement: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
-  },
-  darkOfferingStatement: {
-    color: "#e0e0e0",
-  },
-  seekingStatement: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
-  },
-  darkSeekingStatement: {
-    color: "#e0e0e0",
-  },
-
   // Search type button styles
   searchTypeButtonBusinesses: {
     backgroundColor: "#4F8A8B",
@@ -4170,23 +4198,5 @@ const styles = StyleSheet.create({
   },
   darkScoreBreakdownText: {
     color: "#aaaaaa",
-  },
-  offeringStatement: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 12,
-  },
-  darkOfferingStatement: {
-    color: "#e0e0e0",
-  },
-  seekingStatement: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
-  },
-  darkSeekingStatement: {
-    color: "#e0e0e0",
   },
 });

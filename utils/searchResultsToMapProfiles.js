@@ -6,8 +6,25 @@ export function searchResultsToMapProfiles(items) {
   for (const item of items || []) {
     if (item?.itemType !== "expertise" && item?.itemType !== "seeking") continue;
 
-    const lat = parseCoordinateValue(item.profile_personal_latitude);
-    const lng = parseCoordinateValue(item.profile_personal_longitude);
+    const coords =
+      item?.itemType === "expertise"
+        ? (() => {
+            const offeringLat = parseCoordinateValue(item?.profile_expertise_latitude ?? item?.expertiseData?.profile_expertise_latitude);
+            const offeringLng = parseCoordinateValue(item?.profile_expertise_longitude ?? item?.expertiseData?.profile_expertise_longitude);
+            if (offeringLat != null && offeringLng != null) {
+              return { lat: offeringLat, lng: offeringLng };
+            }
+            return {
+              lat: parseCoordinateValue(item.profile_personal_latitude),
+              lng: parseCoordinateValue(item.profile_personal_longitude),
+            };
+          })()
+        : {
+            lat: parseCoordinateValue(item.profile_personal_latitude),
+            lng: parseCoordinateValue(item.profile_personal_longitude),
+          };
+    const lat = coords.lat;
+    const lng = coords.lng;
     if (lat == null || lng == null) continue;
 
     const uid = item.profile_uid ?? item.id;
