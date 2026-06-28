@@ -2784,6 +2784,7 @@ export default function AccountScreen({ navigation }) {
                   <View style={styles.receiptTableHeader}>
                     <Text style={[styles.receiptHeaderCell, { width: 280 }]}>Item</Text>
                     <Text style={[styles.receiptHeaderCell, { width: 40 }]}>Qty</Text>
+                    <Text style={[styles.receiptHeaderCell, { width: 80 }]}>Unit Price</Text>
                     <Text style={[styles.receiptHeaderCell, { width: 80 }]}>Total</Text>
                   </View>
 
@@ -2818,6 +2819,9 @@ export default function AccountScreen({ navigation }) {
                           </View>
                           <Text style={[styles.receiptTableCell, { width: 40, textAlign: "center" }]}>
                             {qty}
+                          </Text>
+                          <Text style={[styles.receiptTableCell, { width: 80, textAlign: "right" }]}>
+                            ${baseCost.toFixed(2)}
                           </Text>
                           <Text style={[styles.receiptTableCell, { width: 80, textAlign: "right", fontWeight: "600" }]}>
                             ${lineTotal.toFixed(2)}
@@ -2856,6 +2860,10 @@ export default function AccountScreen({ navigation }) {
                           {qty}
                         </Text>
 
+                        <Text style={[styles.receiptTableCell, { width: 80, textAlign: "right" }]}>
+                          ${unitPrice.toFixed(2)}
+                        </Text>
+
                         <Text style={[styles.receiptTableCell, { width: 80, textAlign: "right", fontWeight: "600" }]}>
                           ${lineTotal.toFixed(2)}
                         </Text>
@@ -2886,6 +2894,7 @@ export default function AccountScreen({ navigation }) {
                           Grand Total
                         </Text>
                         <Text style={{ width: 40 }} />
+                        <Text style={{ width: 80 }} />
                         <Text style={[styles.receiptTableCell, {
                           width: 80, fontWeight: "700",
                           color: "#18884A", textAlign: "right"

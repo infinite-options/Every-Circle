@@ -634,6 +634,16 @@ const ProfileScreen = ({ route, navigation }) => {
         profile_expertise_updated_at: exp.profile_expertise_updated_at ?? exp.updated_at,
         expertise_responses: Number(exp.expertise_responses) || 0,
         isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
+        profile_expertise_is_taxable: exp.profile_expertise_is_taxable ?? 0,
+        profile_expertise_tax_rate: exp.profile_expertise_tax_rate || "",
+        profile_expertise_condition_type: exp.profile_expertise_condition_type || "na",
+        profile_expertise_condition_detail: exp.profile_expertise_condition_detail || "",
+        profile_expertise_bounty_type: exp.profile_expertise_bounty_type || "none",
+        profile_expertise_is_returnable: exp.profile_expertise_is_returnable ?? 0,
+        profile_expertise_return_window_days: exp.profile_expertise_return_window_days || "",
+        profile_expertise_free_shipping: exp.profile_expertise_free_shipping ?? 0,
+        profile_expertise_buyer_pays_shipping: exp.profile_expertise_buyer_pays_shipping ?? 0,
+        profile_expertise_refund_policy: exp.profile_expertise_refund_policy || "",
       }));
       userData.wishes = parseProfileJsonArray(apiUser.wishes_info).map((wish) => ({
         profile_wish_uid: wish.profile_wish_uid || "",
