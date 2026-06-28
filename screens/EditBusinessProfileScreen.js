@@ -3780,7 +3780,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         {renderField("Phone Number", formData.phone, "phone", "", "phoneIsPublic")}
         {renderField("Email", formData.email, "email", "", "emailIsPublic")}
         {renderCategoryField()}
-        {renderField("Tag Line", formData.tagline, "tagline", "", "taglineIsPublic")}
+        {renderField("Tagline", formData.tagline, "tagline", "", "taglineIsPublic")}
 
         {/* Business MiniCard Live Preview - how business appears in searches */}
         <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
