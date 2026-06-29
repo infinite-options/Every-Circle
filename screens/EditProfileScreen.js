@@ -413,7 +413,7 @@ const EditProfileScreen = ({ route, navigation }) => {
 
   const renderHomeAddressField = () => {
     const hasRecordedLocation = formData.homeLatitude != null && formData.homeLongitude != null;
-    const addressPlaceholder = hasRecordedLocation ? "Location already recorded for location features. Enter new address to change location." : "Start typing your home address";
+    const addressPlaceholder = hasRecordedLocation ? "Location recorded. Enter new address to change location." : "Start typing your home address";
 
     return (
       <View style={[styles.fieldContainer, styles.placesSearchContainer]}>

@@ -1,4 +1,5 @@
 import { parseCoordinateValue } from "./validateCoordinates";
+import { resolveBusinessProfileImage } from "./resolveBusinessProfileImage";
 
 function businessLocationFieldsFromRow(row) {
   if (!row || typeof row !== "object") {
@@ -50,7 +51,7 @@ export function searchResultsToMapBusinesses(items) {
       business_address_line_1: item.business_address_line_1 || null,
       business_city: item.business_city || null,
       business_state: item.business_state || null,
-      business_profile_img: item.business_profile_img || null,
+      business_profile_img: resolveBusinessProfileImage(item) || item.business_profile_img || null,
     });
   }
 

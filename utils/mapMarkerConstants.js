@@ -13,3 +13,9 @@ export const MAP_MARKER_DISPLAY_SIZE = {
 };
 
 export const MAP_MARKER_IMAGE = require("../assets/mapmarker.png");
+
+/** Pre-composited pin (white circle + purple border + logo) for native map Marker.image. */
+export const MAP_MARKER_PIN_IMAGE = require("../assets/map-marker-pin.png");
+
+/** Larger badge for map callouts / legend. */
+export const MAP_MARKER_CALLOUT_IMAGE = require("../assets/map-marker-callout.png");

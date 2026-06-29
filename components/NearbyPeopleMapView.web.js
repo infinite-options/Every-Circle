@@ -1,47 +1,79 @@
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { StyleSheet, View } from "react-native";
 import { loadGoogleMapsJs } from "../utils/googleMapsLoader";
 import { DEFAULT_MAP_ZOOM } from "../utils/mapDefaults";
 import { getMapStylesForEveryCircleOnly } from "../utils/mapStyles";
+import {
+  estimateRadiusMilesFromLatLngBounds,
+  radiusMilesToLatLngDelta,
+} from "../utils/mapRadiusSync";
+import MapZoomControls from "./MapZoomControls";
 
 const HOME_MARKER_COLOR = "#2434C2";
 const PERSON_MARKER_COLOR = "#AF52DE";
+const MIN_WEB_ZOOM = 2;
+const MAX_WEB_ZOOM = 20;
 
-function radiusBounds(mapsApi, center, radiusMiles) {
-  const clampLat = (v) => Math.max(-85, Math.min(85, v));
-  const clampLng = (v) => Math.max(-180, Math.min(180, v));
-  const dLat = (radiusMiles / 3959) * (180 / Math.PI);
-  const dLng = dLat / Math.cos((center.lat * Math.PI) / 180);
-  const bounds = new mapsApi.LatLngBounds();
-  bounds.extend({ lat: clampLat(center.lat + dLat), lng: clampLng(center.lng - dLng) });
-  bounds.extend({ lat: clampLat(center.lat - dLat), lng: clampLng(center.lng + dLng) });
-  return bounds;
-}
+const clampLat = (v) => Math.max(-85, Math.min(85, v));
+const clampLng = (v) => Math.max(-180, Math.min(180, v));
 
-function fitMapToPeople(mapsApi, map, mapCenter, people, radiusMiles) {
-  if (!mapCenter) return;
+function fitMapToRadius(mapsApi, map, mapCenter, radiusMiles) {
+  if (!mapsApi?.LatLngBounds) return;
 
-  if (radiusMiles != null) {
-    const bounds = radiusBounds(mapsApi, mapCenter, radiusMiles);
-    // Do not extend with people — null-distance users can be far away and would
-    // pull the bounds well outside the chosen radius.
+  if (radiusMiles != null && mapCenter) {
+    if (radiusMiles === 0) {
+      map.setCenter({ lat: mapCenter.lat, lng: mapCenter.lng });
+      map.setZoom(DEFAULT_MAP_ZOOM);
+      return;
+    }
+    const { dLat, dLng } = radiusMilesToLatLngDelta(radiusMiles, mapCenter.lat);
+    const bounds = new mapsApi.LatLngBounds();
+    bounds.extend({ lat: clampLat(mapCenter.lat + dLat), lng: clampLng(mapCenter.lng - dLng) });
+    bounds.extend({ lat: clampLat(mapCenter.lat - dLat), lng: clampLng(mapCenter.lng + dLng) });
     map.fitBounds(bounds, 8);
     if ((map.getZoom() ?? 3) < 3) map.setZoom(3);
     return;
   }
 
-  if (!people?.length) {
+  if (mapCenter) {
     map.setCenter({ lat: mapCenter.lat, lng: mapCenter.lng });
-    map.setZoom(DEFAULT_MAP_ZOOM);
-    return;
   }
+  map.setZoom(3);
+}
 
-  const bounds = new mapsApi.LatLngBounds();
-  bounds.extend({ lat: mapCenter.lat, lng: mapCenter.lng });
-  people.forEach((person) => {
-    bounds.extend({ lat: person.lat, lng: person.lng });
-  });
-  map.fitBounds(bounds, 48);
+function buildPersonCalloutHtml(person) {
+  const distMiles =
+    person.distanceMeters != null ? `${(person.distanceMeters / 1609).toFixed(1)} mi away` : "";
+  const uid = person.uid || "";
+  const profileUrl = person.image ? encodeURI(String(person.image).trim()) : "";
+  const photoHtml = profileUrl
+    ? `<img
+        src="${profileUrl}"
+        width="48"
+        height="48"
+        alt=""
+        style="display: block; width: 48px; height: 48px; border-radius: 50%; object-fit: cover; background: #f0f0f0; flex-shrink: 0;"
+      />`
+    : `<div style="width: 48px; height: 48px; border-radius: 50%; background: #e8e8e8; flex-shrink: 0;"></div>`;
+
+  return `
+    <div
+      id="ec-nearby-card-${uid}"
+      role="button"
+      tabindex="0"
+      style="font-family: system-ui, sans-serif; width: 240px; max-width: 240px; box-sizing: border-box; cursor: pointer;"
+    >
+      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+        ${photoHtml}
+        <div style="min-width: 0; flex: 1;">
+          <strong style="display: block; font-size: 14px; line-height: 1.35; word-break: break-word;">${person.name || "Nearby user"}</strong>
+          ${distMiles ? `<div style="margin-top: 4px; font-size: 12px; color: #666; line-height: 1.35;">${distMiles}</div>` : ""}
+        </div>
+      </div>
+      <div style="font-size: 12px; color: #AF52DE; line-height: 1.35;">On Every Circle</div>
+      <div style="margin-top: 8px; font-size: 12px; color: #2434C2; font-weight: 600;">View profile</div>
+    </div>
+  `;
 }
 
 function addPeopleMarkers(mapsApi, map, people, infoWindowRef, onPersonPressRef, markersRef) {
@@ -65,28 +97,14 @@ function addPeopleMarkers(mapsApi, map, people, infoWindowRef, onPersonPressRef,
     });
 
     marker.addListener("click", () => {
-      const distMiles =
-        person.distanceMeters != null ? `${(person.distanceMeters / 1609).toFixed(1)} mi away` : "";
+      const content = buildPersonCalloutHtml(person);
       const uid = person.uid || "";
-      const content = `
-        <div style="font-family: system-ui, sans-serif; max-width: 220px;">
-          <strong style="font-size: 14px;">${person.name || "Nearby user"}</strong>
-          ${distMiles ? `<div style="margin-top: 6px; font-size: 12px; color: #666;">${distMiles}</div>` : ""}
-          <button
-            id="ec-nearby-btn-${uid}"
-            type="button"
-            style="margin-top: 10px; background: #AF52DE; color: #fff; border: none; border-radius: 6px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer;"
-          >
-            View profile
-          </button>
-        </div>
-      `;
       infoWindowRef.current.setContent(content);
       infoWindowRef.current.open({ anchor: marker, map });
       mapsApi.event.addListener(infoWindowRef.current, "domready", () => {
-        const btn = document.getElementById(`ec-nearby-btn-${uid}`);
-        if (btn) {
-          btn.onclick = () => onPersonPressRef.current?.(person);
+        const card = document.getElementById(`ec-nearby-card-${uid}`);
+        if (card) {
+          card.onclick = () => onPersonPressRef.current?.(person);
         }
       });
     });
@@ -95,13 +113,25 @@ function addPeopleMarkers(mapsApi, map, people, infoWindowRef, onPersonPressRef,
   });
 }
 
-export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPress, radiusMiles }) {
+export default function NearbyPeopleMapView({
+  mapCenter,
+  people = [],
+  onPersonPress,
+  radiusMiles,
+  fitRadiusToken = 0,
+  onViewportRadiusChange,
+}) {
   const hostRef = useRef(null);
   const mapRef = useRef(null);
+  const mapsApiRef = useRef(null);
   const markersRef = useRef([]);
   const homeMarkerRef = useRef(null);
   const infoWindowRef = useRef(null);
+  const idleListenerRef = useRef(null);
+  const viewportDebounceRef = useRef(null);
+  const isProgrammaticFitRef = useRef(false);
   const onPersonPressRef = useRef(onPersonPress);
+  const onViewportRadiusChangeRef = useRef(onViewportRadiusChange);
   const mapCenterRef = useRef(mapCenter);
   const peopleRef = useRef(people);
   const radiusMilesRef = useRef(radiusMiles);
@@ -109,6 +139,10 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
   useEffect(() => {
     onPersonPressRef.current = onPersonPress;
   }, [onPersonPress]);
+
+  useEffect(() => {
+    onViewportRadiusChangeRef.current = onViewportRadiusChange;
+  }, [onViewportRadiusChange]);
 
   useEffect(() => {
     mapCenterRef.current = mapCenter;
@@ -122,6 +156,33 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
     radiusMilesRef.current = radiusMiles;
   }, [radiusMiles]);
 
+  const reportViewportRadius = useCallback(() => {
+    if (isProgrammaticFitRef.current) return;
+    if (!onViewportRadiusChangeRef.current || !mapCenterRef.current || !mapRef.current) return;
+    const bounds = mapRef.current.getBounds?.();
+    if (!bounds) return;
+    const miles = estimateRadiusMilesFromLatLngBounds(
+      bounds,
+      mapCenterRef.current.lat,
+      mapCenterRef.current.lng,
+    );
+    onViewportRadiusChangeRef.current(miles);
+  }, []);
+
+  const attachViewportListener = useCallback(
+    (mapsApi, map) => {
+      if (idleListenerRef.current) {
+        mapsApi.event.removeListener(idleListenerRef.current);
+        idleListenerRef.current = null;
+      }
+      idleListenerRef.current = mapsApi.event.addListener(map, "idle", () => {
+        if (viewportDebounceRef.current) clearTimeout(viewportDebounceRef.current);
+        viewportDebounceRef.current = setTimeout(reportViewportRadius, 180);
+      });
+    },
+    [reportViewportRadius],
+  );
+
   useEffect(() => {
     if (!mapCenter) return;
 
@@ -133,6 +194,7 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
       const mapsApi = await loadGoogleMapsJs();
       if (cancelled || !hostRef.current) return;
 
+      mapsApiRef.current = mapsApi;
       const center = { lat: mapCenter.lat, lng: mapCenter.lng };
       const map = new mapsApi.Map(hostRef.current, {
         center,
@@ -140,7 +202,7 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
-        zoomControl: true,
+        zoomControl: false,
         gestureHandling: "greedy",
         styles: getMapStylesForEveryCircleOnly(true),
       });
@@ -163,8 +225,13 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
         },
       });
 
+      attachViewportListener(mapsApi, map);
       addPeopleMarkers(mapsApi, map, peopleRef.current, infoWindowRef, onPersonPressRef, markersRef);
-      fitMapToPeople(mapsApi, map, mapCenterRef.current, peopleRef.current, radiusMilesRef.current);
+      isProgrammaticFitRef.current = true;
+      fitMapToRadius(mapsApi, map, mapCenterRef.current, radiusMilesRef.current);
+      setTimeout(() => {
+        isProgrammaticFitRef.current = false;
+      }, 600);
     }
 
     initMap().catch((err) => {
@@ -173,6 +240,11 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
 
     return () => {
       cancelled = true;
+      if (viewportDebounceRef.current) clearTimeout(viewportDebounceRef.current);
+      if (mapsApiRef.current && idleListenerRef.current) {
+        mapsApiRef.current.event.removeListener(idleListenerRef.current);
+        idleListenerRef.current = null;
+      }
       markersRef.current.forEach((marker) => marker.setMap(null));
       markersRef.current = [];
       if (homeMarkerRef.current) {
@@ -180,6 +252,7 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
         homeMarkerRef.current = null;
       }
       mapRef.current = null;
+      mapsApiRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- map shell initializes once per mount
   }, []);
@@ -191,23 +264,59 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
     if (homeMarkerRef.current) {
       homeMarkerRef.current.setPosition(center);
     }
+  }, [mapCenter]);
+
+  useEffect(() => {
+    if (!mapRef.current || !infoWindowRef.current) return;
 
     loadGoogleMapsJs()
       .then((mapsApi) => {
         if (!mapRef.current) return;
         addPeopleMarkers(mapsApi, mapRef.current, people, infoWindowRef, onPersonPressRef, markersRef);
-        fitMapToPeople(mapsApi, mapRef.current, mapCenter, people, radiusMiles);
       })
       .catch((err) => {
         console.error("NearbyPeopleMapView web marker update failed:", err);
       });
-  }, [mapCenter, people, radiusMiles]);
+  }, [people]);
+
+  useEffect(() => {
+    if (fitRadiusToken <= 0 || !mapRef.current) return;
+
+    loadGoogleMapsJs()
+      .then((mapsApi) => {
+        if (!mapRef.current) return;
+        isProgrammaticFitRef.current = true;
+        fitMapToRadius(
+          mapsApi,
+          mapRef.current,
+          mapCenterRef.current,
+          radiusMilesRef.current,
+        );
+        setTimeout(() => {
+          isProgrammaticFitRef.current = false;
+        }, 600);
+      })
+      .catch((err) => {
+        console.error("NearbyPeopleMapView web radius fit failed:", err);
+      });
+  }, [fitRadiusToken]);
+
+  const handleZoom = useCallback((zoomIn) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const current = map.getZoom() ?? DEFAULT_MAP_ZOOM;
+    const next = zoomIn
+      ? Math.min(current + 1, MAX_WEB_ZOOM)
+      : Math.max(current - 1, MIN_WEB_ZOOM);
+    map.setZoom(next);
+  }, []);
 
   if (!mapCenter) return null;
 
   return (
     <View style={styles.container}>
       <div ref={hostRef} style={styles.mapHost} />
+      <MapZoomControls onZoomIn={() => handleZoom(true)} onZoomOut={() => handleZoom(false)} />
     </View>
   );
 }
@@ -215,12 +324,13 @@ export default function NearbyPeopleMapView({ mapCenter, people = [], onPersonPr
 const styles = StyleSheet.create({
   container: {
     width: "100%",
-    marginBottom: 12,
-  },
-  mapHost: {
-    width: "100%",
     height: 220,
     borderRadius: 10,
     overflow: "hidden",
+    position: "relative",
+  },
+  mapHost: {
+    width: "100%",
+    height: "100%",
   },
 });

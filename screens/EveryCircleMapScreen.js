@@ -1,15 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Image,
-  PanResponder,
-  Platform,
-  StyleSheet,
-  Switch,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator, Image, PanResponder, Platform, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import AppHeader from "../components/AppHeader";
@@ -21,36 +11,20 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { getHeaderColor } from "../config/headerColors";
 import { resolveMapHomeCoords } from "../utils/resolveMapHomeCoords";
 import { MAP_PLACEHOLDER_HOME } from "../utils/mapDefaults";
+import { MAP_MARKER_CALLOUT_IMAGE } from "../utils/mapMarkerAssets";
 import {
-  MAP_MARKER_BORDER_COLOR,
-  MAP_MARKER_DISPLAY_SIZE,
-  MAP_MARKER_IMAGE,
-} from "../utils/mapMarkerAssets";
-
-function haversineDistanceMiles(lat1, lng1, lat2, lng2) {
-  const toRad = (d) => (d * Math.PI) / 180;
-  const R = 3958.8;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
+  MAP_RADIUS_LOG_MIN,
+  MAP_RADIUS_LOG_MAX,
+  MAP_RADIUS_SNAP_EDGE,
+  haversineDistanceMiles,
+  snapMapRadiusMiles,
+  normalizeViewportRadiusMiles,
+} from "../utils/mapRadiusSync";
 
 const THUMB_SIZE = 24;
 
-const LOG_SCALE_MIN = 1;      // 1 mi is the log scale start
-const LOG_SCALE_MAX = 12500;  // ~half Earth circumference; bounds are clamped to prevent tile duplication
-const LOG_MIN = Math.log(LOG_SCALE_MIN);
-const LOG_MAX = Math.log(LOG_SCALE_MAX);
-// Reserve 1.5% of track at each end for the 0 and ∞ snap zones
-const SNAP_EDGE = 0.015;
-
-function snapMiles(raw) {
-  if (raw < 10) return Math.round(raw);
-  if (raw < 100) return Math.round(raw / 5) * 5;
-  if (raw < 1000) return Math.round(raw / 25) * 25;
-  return Math.round(raw / 100) * 100;
-}
+const LOG_MIN = Math.log(MAP_RADIUS_LOG_MIN);
+const LOG_MAX = Math.log(MAP_RADIUS_LOG_MAX);
 
 function formatMiles(miles) {
   if (miles == null) return "∞";
@@ -63,24 +37,28 @@ function RadiusSlider({ value, onChange, darkMode }) {
   const startXRef = useRef(0);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
-  useEffect(() => { valueRef.current = value; });
-  useEffect(() => { onChangeRef.current = onChange; });
+  useEffect(() => {
+    valueRef.current = value;
+  });
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
 
   const mileToX = (miles) => {
     const usable = Math.max(1, trackRef.current - THUMB_SIZE);
-    if (miles == null) return usable;                  // ∞ → rightmost
-    if (miles <= 0) return 0;                          // 0 → leftmost
-    const logPct = (Math.log(Math.max(LOG_SCALE_MIN, miles)) - LOG_MIN) / (LOG_MAX - LOG_MIN);
-    return (SNAP_EDGE + logPct * (1 - 2 * SNAP_EDGE)) * usable;
+    if (miles == null) return usable; // ∞ → rightmost
+    if (miles <= 0) return 0; // 0 → leftmost
+    const logPct = (Math.log(Math.max(MAP_RADIUS_LOG_MIN, miles)) - LOG_MIN) / (LOG_MAX - LOG_MIN);
+    return (MAP_RADIUS_SNAP_EDGE + logPct * (1 - 2 * MAP_RADIUS_SNAP_EDGE)) * usable;
   };
 
   const xToMile = (x) => {
     const usable = Math.max(1, trackRef.current - THUMB_SIZE);
     const pct = x / usable;
-    if (pct < SNAP_EDGE) return 0;                     // leftmost snap → 0 mi
-    if (pct >= 1 - SNAP_EDGE) return null;             // rightmost snap → ∞
-    const logPct = (pct - SNAP_EDGE) / (1 - 2 * SNAP_EDGE);
-    return snapMiles(Math.exp(LOG_MIN + logPct * (LOG_MAX - LOG_MIN)));
+    if (pct < MAP_RADIUS_SNAP_EDGE) return 0; // leftmost snap → 0 mi
+    if (pct >= 1 - MAP_RADIUS_SNAP_EDGE) return null; // rightmost snap → ∞
+    const logPct = (pct - MAP_RADIUS_SNAP_EDGE) / (1 - 2 * MAP_RADIUS_SNAP_EDGE);
+    return snapMapRadiusMiles(Math.exp(LOG_MIN + logPct * (LOG_MAX - LOG_MIN)));
   };
 
   const panResponder = useRef(
@@ -97,7 +75,7 @@ function RadiusSlider({ value, onChange, darkMode }) {
         const newX = Math.max(0, Math.min(trackRef.current - THUMB_SIZE, startXRef.current + gs.dx));
         onChangeRef.current(xToMile(newX));
       },
-    })
+    }),
   ).current;
 
   const thumbX = mileToX(value);
@@ -105,7 +83,9 @@ function RadiusSlider({ value, onChange, darkMode }) {
   return (
     <View
       style={sliderStyles.track}
-      onLayout={(e) => { trackRef.current = e.nativeEvent.layout.width; }}
+      onLayout={(e) => {
+        trackRef.current = e.nativeEvent.layout.width;
+      }}
       {...panResponder.panHandlers}
     >
       <View style={[sliderStyles.rail, darkMode && sliderStyles.railDark]} />
@@ -121,10 +101,18 @@ const sliderStyles = StyleSheet.create({
   railDark: { backgroundColor: "#555" },
   fill: { height: 4, backgroundColor: "#4F8A8B", borderRadius: 2, position: "absolute", left: 0 },
   thumb: {
-    width: THUMB_SIZE, height: THUMB_SIZE, borderRadius: THUMB_SIZE / 2,
-    backgroundColor: "#4F8A8B", borderWidth: 2, borderColor: "#fff",
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: THUMB_SIZE / 2,
+    backgroundColor: "#4F8A8B",
+    borderWidth: 2,
+    borderColor: "#fff",
     position: "absolute",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
   },
   thumbDark: { borderColor: "#333" },
 });
@@ -146,15 +134,26 @@ export default function EveryCircleMapScreen() {
   const [error, setError] = useState(null);
   const [everyCircleOnly, setEveryCircleOnly] = useState(true);
   const [mapRadiusMiles, setMapRadiusMiles] = useState(0);
+  const [fitRadiusToken, setFitRadiusToken] = useState(1);
   const mapAccent = getHeaderColor("search");
+
+  const handleRadiusSliderChange = useCallback((miles) => {
+    setMapRadiusMiles(miles);
+    setFitRadiusToken((token) => token + 1);
+  }, []);
+
+  const handleViewportRadiusChange = useCallback((rawMiles) => {
+    const next = normalizeViewportRadiusMiles(rawMiles);
+    setMapRadiusMiles((prev) => {
+      if (prev === next) return prev;
+      if (prev != null && next != null && Math.abs(prev - next) <= 1) return prev;
+      return next;
+    });
+  }, []);
 
   const filteredBusinesses =
     mapRadiusMiles != null && mapCenter != null
-      ? businesses.filter(
-          (b) =>
-            haversineDistanceMiles(mapCenter.lat, mapCenter.lng, b.business_latitude, b.business_longitude) <=
-            mapRadiusMiles
-        )
+      ? businesses.filter((b) => haversineDistanceMiles(mapCenter.lat, mapCenter.lng, b.business_latitude, b.business_longitude) <= mapRadiusMiles)
       : businesses;
 
   useEffect(() => {
@@ -227,7 +226,7 @@ export default function EveryCircleMapScreen() {
         navigation.navigate("BusinessProfile", { business_uid: business.business_uid });
       }
     },
-    [navigation]
+    [navigation],
   );
 
   const handleRetry = useCallback(() => {
@@ -260,10 +259,7 @@ export default function EveryCircleMapScreen() {
       .finally(() => setLoading(false));
   }, [fromSearch, searchMapBusinesses]);
 
-  const homeLocationLabel =
-    homeLocationSource === "profile"
-      ? "Centered on your home location"
-      : `Centered on ${MAP_PLACEHOLDER_HOME.label}`;
+  const homeLocationLabel = homeLocationSource === "profile" ? "Centered on your home location" : `Centered on ${MAP_PLACEHOLDER_HOME.label}`;
 
   const itemLabel = searchType === "expertise" ? "offering" : searchType === "seeking" ? "seeking result" : "business";
   const itemLabelPlural = searchType === "expertise" ? "offerings" : searchType === "seeking" ? "seeking results" : "businesses";
@@ -294,54 +290,27 @@ export default function EveryCircleMapScreen() {
     : `No ${itemLabelPlural} with coordinates yet.`;
 
   return (
-    <SafeAreaView
-      style={[styles.container, darkMode && styles.containerDark]}
-      edges={["top", "left", "right"]}
-    >
-      <AppHeader
-        title="Every Circle Map"
-        backgroundColor="#4F8A8B"
-        onBackPress={handleBack}
-      />
+    <SafeAreaView style={[styles.container, darkMode && styles.containerDark]} edges={["top", "left", "right"]}>
+      <AppHeader title='Every Circle Map' backgroundColor='#4F8A8B' onBackPress={handleBack} />
 
       <View style={styles.summaryBar}>
-        <Text style={[styles.summaryText, darkMode && styles.summaryTextDark]}>
-          {summaryLabel}
-        </Text>
+        <Text style={[styles.summaryText, darkMode && styles.summaryTextDark]}>{summaryLabel}</Text>
         {!loading && mapCenter && (
-          <Text style={[styles.subtleText, darkMode && styles.summaryTextDark]}>
-            {fromSearch
-              ? "Showing your current search results. " + homeLocationLabel.toLowerCase()
-              : homeLocationLabel}
-          </Text>
+          <Text style={[styles.subtleText, darkMode && styles.summaryTextDark]}>{fromSearch ? "Showing your current search results. " + homeLocationLabel.toLowerCase() : homeLocationLabel}</Text>
         )}
         <View style={styles.legendRow}>
           <View style={styles.legendDotHome} />
-          <Text style={[styles.legendText, darkMode && styles.summaryTextDark]}>
-            Your location
-          </Text>
+          <Text style={[styles.legendText, darkMode && styles.summaryTextDark]}>Your location</Text>
           <View style={styles.legendMarkerWrap}>
-            <Image
-              source={MAP_MARKER_IMAGE}
-              style={styles.legendMarkerImage}
-              resizeMode="contain"
-            />
+            <Image source={MAP_MARKER_CALLOUT_IMAGE} style={styles.legendMarkerImage} resizeMode='contain' />
           </View>
-          <Text style={[styles.legendText, darkMode && styles.summaryTextDark]}>
-            Every Circle businesses
-          </Text>
+          <Text style={[styles.legendText, darkMode && styles.summaryTextDark]}>Every Circle businesses</Text>
         </View>
         {!loading && (
           <View style={[styles.toggleRow, darkMode && styles.toggleRowDark]}>
             <View style={styles.toggleCopy}>
-              <Text style={[styles.toggleLabel, darkMode && styles.summaryTextDark]}>
-                Every Circle only
-              </Text>
-              <Text style={[styles.toggleHint, darkMode && styles.summaryTextDark]}>
-                {everyCircleOnly
-                  ? "Hiding other map businesses and places"
-                  : "Showing all Google map places"}
-              </Text>
+              <Text style={[styles.toggleLabel, darkMode && styles.summaryTextDark]}>Every Circle only</Text>
+              <Text style={[styles.toggleHint, darkMode && styles.summaryTextDark]}>{everyCircleOnly ? "Hiding other map businesses and places" : "Showing all Google map places"}</Text>
             </View>
             <Switch
               value={everyCircleOnly}
@@ -352,7 +321,7 @@ export default function EveryCircleMapScreen() {
               }}
               thumbColor={everyCircleOnly ? mapAccent : "#f4f3f4"}
               ios_backgroundColor={darkMode ? "#555" : "#767577"}
-              accessibilityLabel="Every Circle only map mode"
+              accessibilityLabel='Every Circle only map mode'
             />
           </View>
         )}
@@ -361,14 +330,10 @@ export default function EveryCircleMapScreen() {
       {!loading && !error && fromSearch && (
         <View style={[styles.radiusBar, darkMode && styles.radiusBarDark]}>
           <Text style={[styles.radiusLabel, darkMode && styles.radiusLabelDark]}>Nearby:</Text>
-          <RadiusSlider value={mapRadiusMiles} onChange={setMapRadiusMiles} darkMode={darkMode} />
+          <RadiusSlider value={mapRadiusMiles} onChange={handleRadiusSliderChange} darkMode={darkMode} />
           <View style={styles.radiusValueWrap}>
             {mapRadiusMiles !== null ? (
-              <TouchableOpacity
-                onPress={() => setMapRadiusMiles(null)}
-                style={styles.radiusClearBtn}
-                accessibilityLabel="Clear radius filter"
-              >
+              <TouchableOpacity onPress={() => setMapRadiusMiles(null)} style={styles.radiusClearBtn} accessibilityLabel='Clear radius filter'>
                 <Text style={styles.radiusValueActive}>{formatMiles(mapRadiusMiles)}</Text>
                 <Text style={styles.radiusClearIcon}> ✕</Text>
               </TouchableOpacity>
@@ -381,7 +346,7 @@ export default function EveryCircleMapScreen() {
 
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#AF52DE" />
+          <ActivityIndicator size='large' color='#AF52DE' />
         </View>
       ) : error ? (
         <View style={styles.centered}>
@@ -399,11 +364,13 @@ export default function EveryCircleMapScreen() {
               everyCircleOnly={everyCircleOnly}
               fitToBusinesses={fromSearch}
               radiusMiles={fromSearch ? mapRadiusMiles : undefined}
+              fitRadiusToken={fromSearch ? fitRadiusToken : 0}
+              onViewportRadiusChange={fromSearch ? handleViewportRadiusChange : undefined}
               onBusinessPress={handleBusinessPress}
             />
           )}
           {!filteredBusinesses.length && (
-            <View style={styles.emptyOverlay} pointerEvents="none">
+            <View style={styles.emptyOverlay} pointerEvents='none'>
               <Text style={styles.emptyText}>{emptyMessage}</Text>
             </View>
           )}
@@ -412,9 +379,7 @@ export default function EveryCircleMapScreen() {
 
       {Platform.OS === "web" && !loading && !error && businesses.length > 0 && (
         <View style={styles.hintBar}>
-          <Text style={[styles.hintText, darkMode && styles.summaryTextDark]}>
-            Pan and zoom to explore. Tap a marker to open a business profile.
-          </Text>
+          <Text style={[styles.hintText, darkMode && styles.summaryTextDark]}>Pan and zoom to explore. Tap a marker to open a business profile.</Text>
         </View>
       )}
 
@@ -466,19 +431,14 @@ const styles = StyleSheet.create({
     borderColor: "#fff",
   },
   legendMarkerWrap: {
-    width: MAP_MARKER_DISPLAY_SIZE.width,
-    height: MAP_MARKER_DISPLAY_SIZE.height,
-    borderRadius: MAP_MARKER_DISPLAY_SIZE.width / 2,
-    borderWidth: 2,
-    borderColor: MAP_MARKER_BORDER_COLOR,
-    backgroundColor: "#ffffff",
+    width: 32,
+    height: 32,
     alignItems: "center",
     justifyContent: "center",
-    overflow: "hidden",
   },
   legendMarkerImage: {
-    width: 14,
-    height: 14,
+    width: 32,
+    height: 32,
   },
   legendText: {
     fontSize: 13,
@@ -514,6 +474,7 @@ const styles = StyleSheet.create({
   mapWrap: {
     flex: 1,
     minHeight: 320,
+    overflow: "visible",
   },
   centered: {
     flex: 1,

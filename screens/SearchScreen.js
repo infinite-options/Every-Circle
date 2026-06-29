@@ -41,6 +41,7 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
 import { searchResultsToMapProfiles } from "../utils/searchResultsToMapProfiles";
+import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
 function NoBountyIcon({ darkMode, muted }) {
   return (
@@ -716,6 +717,7 @@ export default function SearchScreen({ route }) {
   const [hasLoadedInitialSearch, setHasLoadedInitialSearch] = useState(false);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
+  const [settingsDebugModeEnabled, setSettingsDebugModeEnabled] = useState(false);
 
   const searchFeedbackInstructions = "Instructions for Search";
 
@@ -918,8 +920,19 @@ export default function SearchScreen({ route }) {
   useFocusEffect(
     useCallback(() => {
       loadUserHomeCoords();
+      (async () => {
+        try {
+          const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
+          if (nd !== null) setSettingsDebugModeEnabled(JSON.parse(nd) === true);
+          else setSettingsDebugModeEnabled(false);
+        } catch {
+          setSettingsDebugModeEnabled(false);
+        }
+      })();
     }, [loadUserHomeCoords]),
   );
+
+  const showSearchDebugScores = SHOW_NETWORK_DEBUG_UI !== 0 && settingsDebugModeEnabled;
 
   const fetchMyWishResponses = useCallback(async () => {
     const uid = (currentProfileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
@@ -2112,6 +2125,7 @@ export default function SearchScreen({ route }) {
   };
 
   const renderScoreBreakdown = (item) => {
+    if (!showSearchDebugScores) return null;
     const breakdown = item?.score_breakdown;
     if (!breakdown || typeof breakdown !== "object") return null;
     const sem = Number.isFinite(breakdown.semantic_score) ? Number(breakdown.semantic_score).toFixed(3) : null;
@@ -2230,7 +2244,7 @@ export default function SearchScreen({ route }) {
     const respondedDateLabel = respondedAt ? formatDateForDisplay(respondedAt) : "";
     const seekingTitle = wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : "";
     const seekingImageUri = resolveProfileItemImageUri(wish.profile_wish_image, item.profile_uid);
-    const scoreSuffix = formatBusinessSearchScoreSuffix(item);
+    const scoreSuffix = showSearchDebugScores ? formatBusinessSearchScoreSuffix(item) : null;
 
     return (
       <TouchableOpacity
@@ -2372,7 +2386,7 @@ export default function SearchScreen({ route }) {
     const canAddExpertiseToCart = !!(item.profile_uid && expertise.expertise_uid);
     const offeringImageUri = resolveProfileItemImageUri(expertise.profile_expertise_image, item.profile_uid);
     const offeringTitle = expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : "";
-    const scoreSuffix = formatBusinessSearchScoreSuffix(item);
+    const scoreSuffix = showSearchDebugScores ? formatBusinessSearchScoreSuffix(item) : null;
     const expertiseUid = String(expertise.expertise_uid || item.id || "").trim();
     const respondedAt = expertiseUid ? respondedOfferingsById[expertiseUid] : null;
     const hasRespondedToOffering = !!respondedAt;
@@ -2661,7 +2675,7 @@ export default function SearchScreen({ route }) {
 
   const renderBusinessResultItem = (item, idx) => {
     const miniCardBusiness = mapBusinessToMiniCard(item);
-    const scoreSuffix = formatBusinessSearchScoreSuffix(item);
+    const scoreSuffix = showSearchDebugScores ? formatBusinessSearchScoreSuffix(item) : null;
     const locationBoost =
       item.location_boosted ? <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} /> : null;
 
@@ -2745,7 +2759,7 @@ export default function SearchScreen({ route }) {
               <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
                 <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
               </View>
-              {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
+              {showSearchDebugScores && Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
               {renderScoreBreakdown(item)}
               {(() => {
                 const tagLine = item.business_tag_line ? String(item.business_tag_line).trim() : "";

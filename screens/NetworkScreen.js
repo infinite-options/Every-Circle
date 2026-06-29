@@ -28,6 +28,13 @@ import { getSessionProfile } from "../utils/sessionProfile";
 import { normalizeConversationsResponse } from "../utils/chatConversations";
 import { formatProfileViewedDate, getLatestProfileViewTimestamp } from "../utils/profileViewTimestamp";
 import NearbyPeopleMapView from "../components/NearbyPeopleMapView";
+import {
+  MAP_RADIUS_LOG_MIN,
+  MAP_RADIUS_LOG_MAX,
+  MAP_RADIUS_SNAP_EDGE,
+  snapMapRadiusMiles,
+  normalizeViewportRadiusMiles,
+} from "../utils/mapRadiusSync";
 import { isNearbySharingActive } from "../utils/nearbySharing";
 import { nearbyPeopleToMapMarkers } from "../utils/nearbyPeopleToMapMarkers";
 
@@ -324,20 +331,13 @@ const connectionFilterModalStyles = StyleSheet.create({
   },
 });
 
-const NEARBY_RADIUS_MIN = 1;
-const NEARBY_RADIUS_MAX = 12500; // ~half Earth circumference in miles
 const NEARBY_THUMB = 22;
-const LOG_MIN = Math.log(NEARBY_RADIUS_MIN);
-const LOG_MAX = Math.log(NEARBY_RADIUS_MAX);
-
-function snapMiles(raw) {
-  if (raw < 10) return Math.round(raw);
-  if (raw < 100) return Math.round(raw / 5) * 5;
-  if (raw < 1000) return Math.round(raw / 25) * 25;
-  return Math.round(raw / 100) * 100;
-}
+const LOG_MIN = Math.log(MAP_RADIUS_LOG_MIN);
+const LOG_MAX = Math.log(MAP_RADIUS_LOG_MAX);
 
 function formatMiles(miles) {
+  if (miles == null) return "∞";
+  if (miles === 0) return "0 mi";
   return miles >= 1000 ? `${miles.toLocaleString()} mi` : `${miles} mi`;
 }
 
@@ -352,16 +352,20 @@ function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
   useEffect(() => { onReleaseRef.current = onRelease; });
 
   const mileToX = (miles) => {
-    if (miles == null) return 0;
     const usable = Math.max(1, trackRef.current - NEARBY_THUMB);
-    return ((Math.log(Math.max(NEARBY_RADIUS_MIN, miles)) - LOG_MIN) / (LOG_MAX - LOG_MIN)) * usable;
+    if (miles == null) return usable;
+    if (miles <= 0) return 0;
+    const logPct = (Math.log(Math.max(MAP_RADIUS_LOG_MIN, miles)) - LOG_MIN) / (LOG_MAX - LOG_MIN);
+    return (MAP_RADIUS_SNAP_EDGE + logPct * (1 - 2 * MAP_RADIUS_SNAP_EDGE)) * usable;
   };
 
   const xToMile = (x) => {
     const usable = Math.max(1, trackRef.current - NEARBY_THUMB);
     const pct = x / usable;
-    if (pct <= 0.005) return null;
-    return snapMiles(Math.exp(LOG_MIN + Math.max(0, Math.min(1, pct)) * (LOG_MAX - LOG_MIN)));
+    if (pct < MAP_RADIUS_SNAP_EDGE) return 0;
+    if (pct >= 1 - MAP_RADIUS_SNAP_EDGE) return null;
+    const logPct = (pct - MAP_RADIUS_SNAP_EDGE) / (1 - 2 * MAP_RADIUS_SNAP_EDGE);
+    return snapMapRadiusMiles(Math.exp(LOG_MIN + logPct * (LOG_MAX - LOG_MIN)));
   };
 
   const panResponder = useRef(
@@ -392,7 +396,7 @@ function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
       {...panResponder.panHandlers}
     >
       <View style={[nearbySliderStyles.rail, darkMode && nearbySliderStyles.railDark]} />
-      {value != null && <View style={[nearbySliderStyles.fill, { width: thumbX + NEARBY_THUMB / 2 }]} />}
+      <View style={[nearbySliderStyles.fill, { width: value === 0 ? 0 : thumbX + NEARBY_THUMB / 2 }]} />
       <View style={[nearbySliderStyles.thumb, { left: thumbX }, darkMode && nearbySliderStyles.thumbDark]} />
     </View>
   );
@@ -488,6 +492,8 @@ const NetworkScreen = ({ navigation }) => {
   const [ignoredNearbyUids, setIgnoredNearbyUids] = useState(new Set());
   const [nearbyRadiusMiles, setNearbyRadiusMiles] = useState(null);
   const nearbyRadiusMilesRef = useRef(null);
+  const [fitNearbyRadiusToken, setFitNearbyRadiusToken] = useState(0);
+  const nearbyHasLoadedRef = useRef(false);
   const [expandedDegrees, setExpandedDegrees] = useState({}); // { [deg]: boolean } - undefined/true = expanded
 
   // Who Viewed My Profile
@@ -2140,7 +2146,7 @@ const NetworkScreen = ({ navigation }) => {
       if (raw) setIgnoredNearbyUids(new Set(JSON.parse(raw)));
     } catch (_) {}
 
-    const isRadiusRefresh = radiusMiles != null;
+    const isRadiusRefresh = radiusMiles != null || nearbyHasLoadedRef.current;
     if (!isRadiusRefresh) {
       setNearbyLoading(true);
       setNearbyError(null);
@@ -2153,10 +2159,14 @@ const NetworkScreen = ({ navigation }) => {
       const res = await fetch(`${NEARBY_USERS_ENDPOINT}/${uid}?mode=${mode}${radiusParam}`);
       const json = await res.json();
       if (json.code === 200) {
+        nearbyHasLoadedRef.current = true;
         setNearbyUsers(json.result || []);
         const viewer = json.viewer_location;
         if (viewer?.lat != null && viewer?.lng != null) {
-          setMyNearbyLocation({ lat: viewer.lat, lng: viewer.lng });
+          setMyNearbyLocation((prev) => {
+            if (prev?.lat === viewer.lat && prev?.lng === viewer.lng) return prev;
+            return { lat: viewer.lat, lng: viewer.lng };
+          });
         }
       } else if (json.code === 410) {
         if (!isRadiusRefresh) setNearbyError("Your location has expired. Update it in Settings to see who's nearby.");
@@ -2168,6 +2178,23 @@ const NetworkScreen = ({ navigation }) => {
     }
     if (!isRadiusRefresh) setNearbyLoading(false);
   };
+
+  const handleNearbyRadiusSliderChange = useCallback((miles) => {
+    nearbyRadiusMilesRef.current = miles;
+    setNearbyRadiusMiles(miles);
+    setFitNearbyRadiusToken((token) => token + 1);
+  }, []);
+
+  const handleNearbyViewportRadiusChange = useCallback((rawMiles) => {
+    const next = normalizeViewportRadiusMiles(rawMiles);
+    const prev = nearbyRadiusMilesRef.current;
+    if (prev === next || (prev != null && next != null && Math.abs(prev - next) <= 1)) {
+      return;
+    }
+    nearbyRadiusMilesRef.current = next;
+    setNearbyRadiusMiles(next);
+    // Match Search map: +/- and pinch only move the slider; fetch on slider release.
+  }, []);
 
   const ignoreNearbyUser = async (uid) => {
     const next = new Set(ignoredNearbyUids);
@@ -2661,7 +2688,10 @@ const NetworkScreen = ({ navigation }) => {
             onPress={() => {
               const willExpand = !showNearby;
               setShowNearby(willExpand);
-              if (willExpand) fetchNearbyUsers(nearbyRadiusMilesRef.current);
+              if (willExpand) {
+                fetchNearbyUsers(nearbyRadiusMilesRef.current);
+                setFitNearbyRadiusToken((token) => token + 1);
+              }
             }}
             activeOpacity={0.7}
           >
@@ -2681,6 +2711,8 @@ const NetworkScreen = ({ navigation }) => {
                         .filter((u) => nearbyRadiusMiles == null || u.distance_meters == null || u.distance_meters / 1609 <= nearbyRadiusMiles)
                     )}
                     radiusMiles={nearbyRadiusMiles}
+                    fitRadiusToken={fitNearbyRadiusToken}
+                    onViewportRadiusChange={handleNearbyViewportRadiusChange}
                     onPersonPress={(person) => navigation.navigate("Profile", { profile_uid: person.uid })}
                   />
                 </View>
@@ -2691,19 +2723,12 @@ const NetworkScreen = ({ navigation }) => {
                   <Text style={[styles.nearbyRadiusLabel, darkMode && styles.nearbyRadiusLabelDark]}>Within:</Text>
                   <NearbyRadiusSlider
                     value={nearbyRadiusMiles}
-                    onChange={(v) => { nearbyRadiusMilesRef.current = v; setNearbyRadiusMiles(v); }}
+                    onChange={handleNearbyRadiusSliderChange}
                     onRelease={() => fetchNearbyUsers(nearbyRadiusMilesRef.current)}
                     darkMode={darkMode}
                   />
                   <View style={styles.nearbyRadiusValueWrap}>
-                    {nearbyRadiusMiles != null ? (
-                      <TouchableOpacity onPress={() => { nearbyRadiusMilesRef.current = null; setNearbyRadiusMiles(null); fetchNearbyUsers(null); }} style={styles.nearbyRadiusClearBtn} accessibilityLabel="Clear radius filter">
-                        <Text style={styles.nearbyRadiusValueActive}>{formatMiles(nearbyRadiusMiles)}</Text>
-                        <Text style={styles.nearbyRadiusClearIcon}> ✕</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <Text style={styles.nearbyRadiusValueText}>All</Text>
-                    )}
+                    <Text style={styles.nearbyRadiusValueActive}>{formatMiles(nearbyRadiusMiles)}</Text>
                   </View>
                 </View>
               )}
