@@ -998,6 +998,16 @@ const NetworkScreen = ({ navigation }) => {
       };
 
       setUserProfileData(userData);
+
+      const canExchangeContactInfo = userData.emailIsPublic || userData.phoneIsPublic;
+      let effectiveFormSwitchEnabled = formSwitchEnabledRef.current;
+      if (!canExchangeContactInfo && effectiveFormSwitchEnabled) {
+        effectiveFormSwitchEnabled = false;
+        setFormSwitchEnabled(false);
+        formSwitchEnabledRef.current = false;
+        await AsyncStorage.setItem("form_switch_enabled", "false");
+      }
+
       // QR encodes a single HTTPS URL so phone cameras open the scan landing page in the browser.
       const scanUrl = `https://everycircle.com/scan/${profileUID}`;
       const qrMeta = {
@@ -1005,7 +1015,7 @@ const NetworkScreen = ({ navigation }) => {
         profile_uid: profileUID,
         version: "1.0",
         url: scanUrl,
-        form_switch_enabled: formSwitchEnabled,
+        form_switch_enabled: canExchangeContactInfo && effectiveFormSwitchEnabled,
       };
       console.log("🔗 QR Code URL:", scanUrl);
       setQrCodeData(scanUrl);
@@ -2272,6 +2282,7 @@ const NetworkScreen = ({ navigation }) => {
           {(() => {
             // if (__DEV__) console.log("🔵 NetworkScreen - Rendering QR Code Section");
             if (qrCodeData && userProfileData && QRCodeComponent) {
+              const canExchangeContactInfo = Boolean(userProfileData.emailIsPublic || userProfileData.phoneIsPublic);
               // if (__DEV__) console.log("🔵 NetworkScreen - QR Code data exists, rendering QR section");
               return (
                 <View style={styles.qrCodeContainer}>
@@ -2299,14 +2310,22 @@ const NetworkScreen = ({ navigation }) => {
                     </View>
 
                     {/* Form Switch Toggle */}
-                    <View style={[styles.formSwitchContainer, darkMode && styles.darkFormSwitchContainer]}>
+                    <View
+                      style={[
+                        styles.formSwitchContainer,
+                        darkMode && styles.darkFormSwitchContainer,
+                        !canExchangeContactInfo && styles.formSwitchContainerDisabled,
+                      ]}
+                    >
                       <View style={styles.formSwitchTextContainer}>
                         {/* <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>Automatically add user scanning my QR Code to my Circles of Influence</Text> */}
                         <Text style={[styles.formSwitchDescription, darkMode && styles.darkFormSwitchDescription]}>Exchange Contact Info</Text>
                       </View>
                       <Switch
-                        value={formSwitchEnabled}
+                        value={canExchangeContactInfo && formSwitchEnabled}
+                        disabled={!canExchangeContactInfo}
                         onValueChange={async (value) => {
+                          if (!canExchangeContactInfo) return;
                           setFormSwitchEnabled(value);
                           formSwitchEnabledRef.current = value; // Update ref
                           // Persist the setting
@@ -2318,14 +2337,18 @@ const NetworkScreen = ({ navigation }) => {
                           }
                         }}
                         trackColor={{ false: "#767577", true: "rgba(36, 52, 194, 0.5)" }}
-                        thumbColor={formSwitchEnabled ? getHeaderColor("network") : "#f4f3f4"}
+                        thumbColor={canExchangeContactInfo && formSwitchEnabled ? getHeaderColor("network") : "#f4f3f4"}
                         ios_backgroundColor='#767577'
                         activeThumbColor={getHeaderColor("network")}
                         activeTrackColor='rgba(36, 52, 194, 0.5)'
                         accessibilityRole='switch'
                         accessibilitylabel='Exchange contact info'
-                        accessibilityHint='Turns contact info exchange on or off when someone scans your QR code'
-                        accessibilityState={{ checked: formSwitchEnabled }}
+                        accessibilityHint={
+                          canExchangeContactInfo
+                            ? "Turns contact info exchange on or off when someone scans your QR code"
+                            : "Make your email or phone number public in your profile to enable contact info exchange"
+                        }
+                        accessibilityState={{ checked: canExchangeContactInfo && formSwitchEnabled, disabled: !canExchangeContactInfo }}
                       />
                     </View>
 
@@ -3908,6 +3931,9 @@ const styles = StyleSheet.create({
   darkFormSwitchContainer: {
     backgroundColor: "#2d2d2d",
     borderColor: "#404040",
+  },
+  formSwitchContainerDisabled: {
+    opacity: 0.5,
   },
   formSwitchTextContainer: {
     flex: 1,
