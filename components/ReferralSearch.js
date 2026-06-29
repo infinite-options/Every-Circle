@@ -2,7 +2,8 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, Modal, FlatList, Image, ActivityIndicator, StyleSheet, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { SEARCH_REFERRAL_ENDPOINT } from "../apiConfig";
+import { SEARCH_REFERRAL_ENDPOINT, REFERRAL_API_ENDPOINT } from "../apiConfig";
+import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 
 const ReferralSearch = ({
   visible,
@@ -27,6 +28,16 @@ const ReferralSearch = ({
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
+  const profileToSearchResult = (profile) => ({
+    profile_personal_uid: profile.profile_personal_uid,
+    profile_personal_user_id: profile.profile_personal_user_id,
+    profile_personal_first_name: profile.profile_personal_first_name,
+    profile_personal_last_name: profile.profile_personal_last_name,
+    profile_personal_city: profile.profile_personal_city,
+    profile_personal_state: profile.profile_personal_state,
+    profile_personal_image: profile.profile_personal_image,
+  });
+
   const handleSearch = async () => {
     if (!searchQuery.trim() || searchQuery.trim().length < 2) {
       return;
@@ -36,7 +47,18 @@ const ReferralSearch = ({
     setHasSearched(true);
 
     try {
-      const url = `${SEARCH_REFERRAL_ENDPOINT}?query=${encodeURIComponent(searchQuery.trim())}`;
+      const trimmedQuery = searchQuery.trim();
+
+      if (trimmedQuery.includes("@")) {
+        const email = trimmedQuery.toLowerCase();
+        const response = await fetch(REFERRAL_API_ENDPOINT + encodeURIComponent(email));
+        const data = await response.json();
+        const profile = data.personal_info;
+        setSearchResults(profile?.profile_personal_uid ? [profileToSearchResult(profile)] : []);
+        return;
+      }
+
+      const url = `${SEARCH_REFERRAL_ENDPOINT}?query=${encodeURIComponent(trimmedQuery)}`;
       console.log("Search URL:", url); // DEBUG
 
       const response = await fetch(url);
@@ -127,7 +149,8 @@ const ReferralSearch = ({
           value={searchQuery}
           onChangeText={setSearchQuery}
           onSubmitEditing={handleSearch}
-          autoCapitalize='words'
+          autoCapitalize='none'
+          keyboardType={searchPlaceholder.toLowerCase().includes("email") ? "email-address" : "default"}
           accessibilityLabel={searchPlaceholder}
           accessibilityHint='Enter search terms'
           accessibilityRole='search'

@@ -178,17 +178,15 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
 
     setIsCheckingReferral(true);
     try {
-      console.log("Referral Modal: Checking referral for email:", referralId);
-      const response = await fetch(REFERRAL_API_ENDPOINT + encodeURIComponent(referralId));
+      console.log("Referral Modal: Checking referral for email:", referralEmailNormalized);
+      const response = await fetch(REFERRAL_API_ENDPOINT + encodeURIComponent(referralEmailNormalized));
       const data = await response.json();
       console.log("Referral Modal: Backend response:", data);
-      if (data.user_uid && data.user_uid !== "unknown") {
-        console.log("Referral Modal: Referral UID returned from backend:", data.user_uid);
-        // Store both the email and the UID
-        // await AsyncStorage.setItem("referral_email", referralId);
-        await AsyncStorage.setItem("referral_uid", data.user_uid);
+      const foundReferralUid = data.personal_info?.profile_personal_uid;
+      if (foundReferralUid && foundReferralUid !== "unknown") {
+        console.log("Referral Modal: Referral UID returned from backend:", foundReferralUid);
+        await AsyncStorage.setItem("referral_uid", foundReferralUid);
         setShowReferralModal(false);
-        const foundReferralUid = data.user_uid;
         if (pendingGoogleUserInfo) {
           navigation.navigate("UserInfo", {
             googleUserInfo: pendingGoogleUserInfo,
@@ -631,7 +629,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                 <Text style={{ fontSize: 18, fontWeight: "bold", marginBottom: 12 }}>Who referred you to Every Circle?</Text>
 
                 {/* Email Input Section */}
-                <TextInput
+                {/* <TextInput
                   style={{ borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 10, marginBottom: 8 }}
                   placeholder='Enter referral email (optional)'
                   value={referralId}
@@ -642,8 +640,8 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   accessibilitylabel='Referral email'
                   accessibilityHint='Enter the email address of the person who referred you, or leave it blank'
                   accessibilityState={{ disabled: isCheckingReferral }}
-                />
-                {!!referralError && <Text style={{ color: "red", marginBottom: 8 }}>{referralError}</Text>}
+                /> */}
+                {/* {!!referralError && <Text style={{ color: "red", marginBottom: 8 }}>{referralError}</Text>}
                 <TouchableOpacity
                   style={{ backgroundColor: "#FF9500", paddingVertical: 12, paddingHorizontal: 30, borderRadius: 25, minWidth: 100, alignItems: "center", justifyContent: "center", marginBottom: 12 }}
                   onPress={handleReferralSubmit}
@@ -654,14 +652,14 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   accessibilityState={{ disabled: isCheckingReferral, busy: isCheckingReferral }}
                 >
                   <Text style={{ color: "#fff", fontWeight: "bold", fontSize: 16 }}>{isCheckingReferral ? "Checking..." : "Continue"}</Text>
-                </TouchableOpacity>
+                </TouchableOpacity> */}
 
                 {/* Divider */}
-                <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 16 }}>
+                {/* <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 16 }}>
                   <View style={{ flex: 1, height: 1, backgroundColor: "#E5E5E5" }} />
                   <Text style={{ marginHorizontal: 10, color: "#666", fontSize: 14 }}>OR SEARCH</Text>
                   <View style={{ flex: 1, height: 1, backgroundColor: "#E5E5E5" }} />
-                </View>
+                </View> */}
 
                 {/* Search Section - Embed ReferralSearch content here */}
                 <ReferralSearch
@@ -670,6 +668,9 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   onNewUser={handleNewUserReferral}
                   onClose={blockingOAuthReferral ? () => {} : () => setShowReferralModal(false)}
                   embedded={true}
+                  instructionText='Search by email, city, state, or name'
+                  searchPlaceholder='Email, location, or name'
+                  noResultsSubtext='Try another spelling, city, or email.'
                 />
               </View>
             </View>
