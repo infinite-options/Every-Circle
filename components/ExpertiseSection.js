@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert, ActivityIndicator } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { Dropdown } from "react-native-element-dropdown";
 import * as ImagePicker from "expo-image-picker";
 import { formatCostValue } from "../utils/priceUtils";
@@ -73,6 +74,14 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
       profile_expertise_mode: "",
       profile_expertise_is_taxable: 0,
       profile_expertise_tax_rate: "",
+      profile_expertise_condition_type: "na",
+      profile_expertise_condition_detail: "",
+      profile_expertise_bounty_type: "none",
+      profile_expertise_is_returnable: 0,
+      profile_expertise_return_window_days: "",
+      profile_expertise_free_shipping: 0,
+      profile_expertise_buyer_pays_shipping: 0,
+      profile_expertise_refund_policy: "",
       isPublic: true,
       _expNewImageUri: "",
       _expWebImageFile: null,
@@ -798,25 +807,6 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               selectedTextStyle={styles.dropdownSelectedText}
               activeColor='#f0f0f0'
             />
-            <Text style={styles.dollar}>💰</Text>
-            <TextInput
-              style={styles.bountyInput}
-              placeholder='Total Bounty'
-              keyboardType='decimal-pad'
-              value={(() => {
-                const parsed = parseBounty(item.bounty);
-                const amount = parsed.amount;
-                if (!amount) return "";
-                if (amount.toLowerCase() === "free") return "Free";
-                return `$${amount}`;
-              })()}
-              onChangeText={(text) => {
-                const cleanedText = text.replace(/\$/g, "");
-                handleBountyAmountChange(index, cleanedText);
-              }}
-              // Format bounty only after editing is finished
-              onBlur={() => handleBountyAmountBlur(index)}
-            />
             <TextInput
               style={styles.bountyInput}
               placeholder='Available Quantity'
@@ -827,6 +817,183 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
             <TouchableOpacity onPress={() => deleteExpertise(index)}>
               <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
             </TouchableOpacity>
+          </View>
+
+          {/* Bounty Row */}
+          <View style={styles.taxRow}>
+            <Text style={styles.costLabel}>Bounty</Text>
+            <TouchableOpacity
+              style={[styles.taxBtn, item.profile_expertise_bounty_type === "none" && styles.taxBtnActive]}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_bounty_type", "none");
+                handleInputChange(index, "bounty", "");
+              }}
+            >
+              <Text style={[styles.taxBtnText, item.profile_expertise_bounty_type === "none" && styles.taxBtnTextActive]}>No Bounty</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.taxBtn, styles.taxBtnWide, item.profile_expertise_bounty_type === "per_item" && styles.taxBtnActive]}
+              onPress={() => handleInputChange(index, "profile_expertise_bounty_type", "per_item")}
+            >
+              <Text style={[styles.taxBtnText, styles.taxBtnWideText, item.profile_expertise_bounty_type === "per_item" && styles.taxBtnTextActive]}>Per Item</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.taxBtn, styles.taxBtnWide, item.profile_expertise_bounty_type === "total" && styles.taxBtnActive]}
+              onPress={() => handleInputChange(index, "profile_expertise_bounty_type", "total")}
+            >
+              <Text style={[styles.taxBtnText, styles.taxBtnWideText, item.profile_expertise_bounty_type === "total" && styles.taxBtnTextActive]}>Single Bounty</Text>
+            </TouchableOpacity>
+            {item.profile_expertise_bounty_type !== "none" ? (
+              <TextInput
+                style={styles.taxRateInput}
+                value={(() => {
+                  const parsed = parseBounty(item.bounty);
+                  const amount = parsed.amount;
+                  if (!amount) return "";
+                  return `$${amount}`;
+                })()}
+                onChangeText={(text) => handleBountyAmountChange(index, text.replace(/\$/g, ""))}
+                onBlur={() => handleBountyAmountBlur(index)}
+                placeholder='$0.00'
+                keyboardType='decimal-pad'
+              />
+            ) : null}
+          </View>
+
+          {/* Condition Row */}
+          <View style={styles.taxRow}>
+            <Text style={styles.costLabel}>Condition</Text>
+            <TouchableOpacity
+              style={[styles.taxBtn, item.profile_expertise_condition_type === "na" && styles.taxBtnActive]}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_condition_type", "na");
+                handleInputChange(index, "profile_expertise_condition_detail", "");
+              }}
+            >
+              <Text style={[styles.taxBtnText, item.profile_expertise_condition_type === "na" && styles.taxBtnTextActive]}>N/A</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.taxBtn, item.profile_expertise_condition_type === "new" && styles.taxBtnActive]}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_condition_type", "new");
+                handleInputChange(index, "profile_expertise_condition_detail", "");
+              }}
+            >
+              <Text style={[styles.taxBtnText, item.profile_expertise_condition_type === "new" && styles.taxBtnTextActive]}>New</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.taxBtn, item.profile_expertise_condition_type === "used" && styles.taxBtnActive]}
+              onPress={() => handleInputChange(index, "profile_expertise_condition_type", "used")}
+            >
+              <Text style={[styles.taxBtnText, item.profile_expertise_condition_type === "used" && styles.taxBtnTextActive]}>Used</Text>
+            </TouchableOpacity>
+            {item.profile_expertise_condition_type === "used" ? (
+              <TextInput
+                style={[styles.taxRateInput, { width: 130 }]}
+                value={item.profile_expertise_condition_detail || ""}
+                onChangeText={(t) => handleInputChange(index, "profile_expertise_condition_detail", t)}
+                placeholder='Description'
+              />
+            ) : null}
+          </View>
+
+          {/* Returnable Row */}
+          <View style={styles.taxRow}>
+            <Text style={styles.costLabel}>Returnable</Text>
+            <TouchableOpacity
+              style={[styles.taxBtn, !(item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnActive]}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_is_returnable", 0);
+                handleInputChange(index, "profile_expertise_return_window_days", "");
+              }}
+            >
+              <Text style={[styles.taxBtnText, !(item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnTextActive]}>No</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.taxBtn, (item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnActive]}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_is_returnable", 1);
+                if (!item.profile_expertise_return_window_days) {
+                  handleInputChange(index, "profile_expertise_return_window_days", "30");
+                }
+              }}
+            >
+              <Text style={[styles.taxBtnText, (item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnTextActive]}>Yes</Text>
+            </TouchableOpacity>
+            {(item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") ? (
+              <>
+                <TextInput
+                  style={[styles.taxRateInput, { width: 56 }]}
+                  value={String(item.profile_expertise_return_window_days ?? "")}
+                  onChangeText={(t) => handleInputChange(index, "profile_expertise_return_window_days", t.replace(/\D/g, ""))}
+                  placeholder='30'
+                  keyboardType='number-pad'
+                />
+                <Text style={styles.taxBtnText}>days</Text>
+              </>
+            ) : null}
+          </View>
+
+          {/* Shippable Row */}
+          <View style={styles.taxRow}>
+            <Text style={styles.costLabel}>Shipping</Text>
+            <TouchableOpacity
+              style={styles.shippingCheckbox}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_free_shipping", 0);
+                handleInputChange(index, "profile_expertise_buyer_pays_shipping", 0);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={!item.profile_expertise_free_shipping && !item.profile_expertise_buyer_pays_shipping ? "checkbox" : "square-outline"}
+                size={20}
+                color={!item.profile_expertise_free_shipping && !item.profile_expertise_buyer_pays_shipping ? "#007AFF" : "#aaa"}
+              />
+              <Text style={styles.taxBtnText}>N/A</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.shippingCheckbox}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_free_shipping", item.profile_expertise_free_shipping ? 0 : 1);
+                handleInputChange(index, "profile_expertise_buyer_pays_shipping", 0);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={item.profile_expertise_free_shipping ? "checkbox" : "square-outline"}
+                size={20}
+                color={item.profile_expertise_free_shipping ? "#007AFF" : "#aaa"}
+              />
+              <Text style={styles.taxBtnText}>Free</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.shippingCheckbox}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_buyer_pays_shipping", item.profile_expertise_buyer_pays_shipping ? 0 : 1);
+                handleInputChange(index, "profile_expertise_free_shipping", 0);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={item.profile_expertise_buyer_pays_shipping ? "checkbox" : "square-outline"}
+                size={20}
+                color={item.profile_expertise_buyer_pays_shipping ? "#007AFF" : "#aaa"}
+              />
+              <Text style={styles.taxBtnText}>Buyer pays</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Refund Policy Row */}
+          <View style={[styles.taxRow, { alignItems: "flex-start", marginBottom: 8 }]}>
+            <Text style={[styles.costLabel, { marginTop: 8 }]}>Refund Policy</Text>
+            <TextInput
+              style={[styles.taxRateInput, { width: 220, height: 60, textAlignVertical: "top", paddingTop: 6 }]}
+              value={item.profile_expertise_refund_policy || ""}
+              onChangeText={(t) => handleInputChange(index, "profile_expertise_refund_policy", t)}
+              placeholder='Describe your refund policy'
+              multiline
+            />
           </View>
         </View>
       ))}
@@ -1145,6 +1312,19 @@ const styles = StyleSheet.create({
   taxBtnTextActive: {
     color: "#007AFF",
     fontWeight: "600",
+  },
+  taxBtnWide: {
+    minWidth: 80,
+    alignItems: "center",
+  },
+  taxBtnWideText: {
+    fontSize: 12,
+    textAlign: "center",
+  },
+  shippingCheckbox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   taxRateInput: {
     borderWidth: 1,
