@@ -26,6 +26,9 @@ function authContinuationParams(route) {
   return out;
 }
 
+/** Explicit "I was not referred" choice — only saved when the user taps that option. */
+const NOT_REFERRED_REFERRAL_UID = "110-000001";
+
 export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, navigation, route }) {
   const { reinitialize } = useUnread();
   const [email, setEmail] = useState("");
@@ -44,9 +47,50 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   const [isConfirmPasswordVisible, setIsConfirmPasswordVisible] = useState(false);
   const [userExistsError, setUserExistsError] = useState("");
   const [isAttemptingLogin, setIsAttemptingLogin] = useState(false);
-  /** OAuth account already created in App.js; only referrer collection remains — hide signup form to avoid duplicate POSTs. */
+  /** Account exists but referrer not chosen — hide signup form until referral step completes. */
   const [blockingOAuthReferral, setBlockingOAuthReferral] = useState(false);
+  /** User must pick a referrer (or "I was not referred") before UserInfo; no default is persisted. */
+  const [pendingReferralCompletion, setPendingReferralCompletion] = useState(false);
   const oauthReferralHandledRef = useRef(false);
+  const requireReferralHandledRef = useRef(false);
+  const referralRequired = blockingOAuthReferral || pendingReferralCompletion;
+
+  const openReferralModal = async () => {
+    await AsyncStorage.multiRemove(["referral_uid", "referral_email"]);
+    setReferralId("");
+    setReferralError("");
+    setPendingReferralCompletion(true);
+    setShowReferralModal(true);
+  };
+
+  const completeReferralAndNavigate = async (selectedReferralUid) => {
+    await AsyncStorage.setItem("referral_uid", selectedReferralUid);
+    setShowReferralModal(false);
+    setReferralError("");
+
+    const navParams = {
+      referralId: selectedReferralUid,
+      ...authContinuationParams(route),
+    };
+    if (pendingGoogleUserInfo) {
+      navParams.googleUserInfo = pendingGoogleUserInfo;
+      setPendingGoogleUserInfo(null);
+    }
+    if (pendingAppleUserInfo) {
+      navParams.appleUserInfo = pendingAppleUserInfo;
+      setPendingAppleUserInfo(null);
+    }
+    setPendingRegularSignup(false);
+    setPendingReferralCompletion(false);
+    setBlockingOAuthReferral(false);
+    navigation.navigate("UserInfo", navParams);
+  };
+
+  const promptReferralBeforeUserInfo = async () => {
+    await AsyncStorage.multiRemove(["referral_uid", "referral_email"]);
+    setBlockingOAuthReferral(true);
+    await openReferralModal();
+  };
 
   // Handle pre-populated Google user info
   useEffect(() => {
@@ -86,7 +130,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     }
     if (gInfo) setPendingGoogleUserInfo(gInfo);
     if (aInfo) setPendingAppleUserInfo(aInfo);
-    setShowReferralModal(true);
+    openReferralModal();
   }, [navigation, route.params]);
 
   // Listen for Apple sign up completion (if passed via route)
@@ -104,10 +148,25 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           ...authContinuationParams(route),
         });
       } else {
-        setShowReferralModal(true);
+        openReferralModal();
       }
     }
   }, [route.params?.appleUserInfo, route.params?.referralProfileUid]);
+
+  // Returning user logged in elsewhere (e.g. Login → Profile) but never chose a referrer.
+  useEffect(() => {
+    if (!route.params?.requireReferralCompletion || requireReferralHandledRef.current) return;
+    requireReferralHandledRef.current = true;
+
+    const { googleUserInfo: gInfo, appleUserInfo: aInfo } = route.params || {};
+    if (gInfo?.email) {
+      setEmail(gInfo.email);
+      setIsGoogleSignUp(true);
+      setPendingGoogleUserInfo(gInfo);
+    }
+    if (aInfo) setPendingAppleUserInfo(aInfo);
+    promptReferralBeforeUserInfo();
+  }, [route.params?.requireReferralCompletion, route.params?.googleUserInfo, route.params?.appleUserInfo]);
 
   const validateInputs = useCallback(
     (email, password, confirmPassword) => {
@@ -158,7 +217,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
   const handleReferralSubmit = async () => {
     setReferralError("");
     if (!referralId) {
-      setReferralError("Please enter a referral email or click New User.");
+      setReferralError("Please select who referred you, search for them, or tap I was not referred.");
       console.log("Referral Modal: No referral email entered");
       return;
     }
@@ -184,35 +243,10 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
       console.log("Referral Modal: Backend response:", data);
       if (data.user_uid && data.user_uid !== "unknown") {
         console.log("Referral Modal: Referral UID returned from backend:", data.user_uid);
-        // Store both the email and the UID
-        // await AsyncStorage.setItem("referral_email", referralId);
-        await AsyncStorage.setItem("referral_uid", data.user_uid);
-        setShowReferralModal(false);
-        const foundReferralUid = data.user_uid;
-        if (pendingGoogleUserInfo) {
-          navigation.navigate("UserInfo", {
-            googleUserInfo: pendingGoogleUserInfo,
-            referralId: foundReferralUid,
-            ...authContinuationParams(route),
-          });
-          setPendingGoogleUserInfo(null);
-        } else if (pendingAppleUserInfo) {
-          navigation.navigate("UserInfo", {
-            appleUserInfo: pendingAppleUserInfo,
-            referralId: foundReferralUid,
-            ...authContinuationParams(route),
-          });
-          setPendingAppleUserInfo(null);
-        } else if (pendingRegularSignup) {
-          navigation.navigate("UserInfo", {
-            referralId: foundReferralUid,
-            ...authContinuationParams(route),
-          });
-          setPendingRegularSignup(false);
-        }
+        await completeReferralAndNavigate(data.user_uid);
       } else {
-        console.log("Referral Modal: No referral UID returned, user should enter another email or click New User.");
-        setReferralError("Referral email not found. Please try another or click New User.");
+        console.log("Referral Modal: No referral UID returned, user should enter another email or tap I was not referred.");
+        setReferralError("Referral email not found. Please try another or tap I was not referred.");
       }
     } catch (error) {
       setReferralError("Error checking referral. Please try again.");
@@ -222,60 +256,14 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
     }
   };
 
-  const handleReferralSelect = (selectedUid, selectedUserId) => {
-    setShowReferralModal(false);
-
-    if (pendingGoogleUserInfo) {
-      navigation.navigate("UserInfo", {
-        googleUserInfo: pendingGoogleUserInfo,
-        referralId: selectedUid,
-        ...authContinuationParams(route),
-      });
-      setPendingGoogleUserInfo(null);
-    } else if (pendingAppleUserInfo) {
-      navigation.navigate("UserInfo", {
-        appleUserInfo: pendingAppleUserInfo,
-        referralId: selectedUid,
-        ...authContinuationParams(route),
-      });
-      setPendingAppleUserInfo(null);
-    } else if (pendingRegularSignup) {
-      navigation.navigate("UserInfo", {
-        referralId: selectedUid,
-        ...authContinuationParams(route),
-      });
-      setPendingRegularSignup(false);
-    }
+  const handleReferralSelect = async (selectedUid) => {
+    await completeReferralAndNavigate(selectedUid);
   };
 
   const handleNewUserReferral = async () => {
     setReferralError("");
-    setShowReferralModal(false);
-    const newUserReferralId = "110-000001";
-    // Store both email (empty for new user) and UID
     await AsyncStorage.setItem("referral_email", "");
-    await AsyncStorage.setItem("referral_uid", newUserReferralId);
-    if (pendingGoogleUserInfo) {
-      navigation.navigate("UserInfo", {
-        googleUserInfo: pendingGoogleUserInfo,
-        referralId: newUserReferralId,
-        ...authContinuationParams(route),
-      });
-      setPendingGoogleUserInfo(null);
-    } else if (pendingAppleUserInfo) {
-      navigation.navigate("UserInfo", {
-        appleUserInfo: pendingAppleUserInfo,
-        referralId: newUserReferralId,
-        ...authContinuationParams(route),
-      });
-      setPendingAppleUserInfo(null);
-    } else if (pendingRegularSignup) {
-      navigation.navigate("UserInfo", {
-        referralId: newUserReferralId,
-        ...authContinuationParams(route),
-      });
-      setPendingRegularSignup(false);
-    }
+    await completeReferralAndNavigate(NOT_REFERRED_REFERRAL_UID);
   };
 
   const handleContinue = async () => {
@@ -319,7 +307,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             });
             setPendingGoogleUserInfo(null);
           } else {
-            setShowReferralModal(true);
+            await openReferralModal();
             console.log("Setting referral modal to true, should show now");
           }
         } else {
@@ -399,14 +387,14 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                 fullUser.message === "Profile not found for this user" ||
                 (fullUser.code === 404 && fullUser.message === "Profile not found for this user")
               ) {
-                console.log("SignUpScreen - Profile not found for user, routing to UserInfo");
+                console.log("SignUpScreen - Profile not found for user, routing to referral selection");
                 await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
                 await clearUserProfileCacheStorage();
                 await AsyncStorage.setItem("user_uid", user_uid);
                 await AsyncStorage.setItem("user_email_id", user_email);
 
                 setIsAttemptingLogin(false);
-                navigation.navigate("UserInfo", { ...authContinuationParams(route) });
+                await promptReferralBeforeUserInfo();
                 return;
               }
 
@@ -453,12 +441,12 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   profileCheckData.message === "Profile not found for this user" ||
                   (profileCheckData.code === 404 && profileCheckData.message === "Profile not found for this user")
                 ) {
-                  console.log("SignUpScreen - Profile not found in catch block, routing to UserInfo");
+                  console.log("SignUpScreen - Profile not found in catch block, routing to referral selection");
                   await AsyncStorage.multiRemove(["profile_uid", "user_first_name", "user_last_name", "user_phone_number"]);
                   await clearUserProfileCacheStorage();
                   await AsyncStorage.setItem("user_uid", createAccountData.user_uid);
                   setIsAttemptingLogin(false);
-                  navigation.navigate("UserInfo", { ...authContinuationParams(route) });
+                  await promptReferralBeforeUserInfo();
                   return;
                 }
               } catch (profileError) {
@@ -486,7 +474,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             });
             setPendingRegularSignup(false);
           } else {
-            setShowReferralModal(true);
+            await openReferralModal();
           }
         } else {
           throw new Error("Failed to create account");
@@ -506,11 +494,11 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
           <View style={styles.header}>
             <Text style={styles.title}>Welcome to everyCircle!</Text>
             <Text style={styles.subtitle}>
-              {blockingOAuthReferral ? "Who referred you? Finish this step to complete your sign up." : isGoogleSignUp ? "Complete your sign up" : "Please create your account to continue."}
+              {referralRequired ? "Who referred you? Finish this step to complete your sign up." : isGoogleSignUp ? "Complete your sign up" : "Please create your account to continue."}
             </Text>
           </View>
 
-          {!blockingOAuthReferral && (
+          {!referralRequired && (
             <View style={styles.inputContainer}>
               <View style={styles.fieldContainer}>
                 <Text style={styles.label}>Email</Text>
@@ -582,7 +570,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             </View>
           )}
 
-          {!blockingOAuthReferral && (
+          {!referralRequired && (
             <View style={styles.buttonContainer}>
               <TouchableOpacity
                 style={[styles.continueButton, isValid ? styles.continueButtonActive : styles.continueButtonDisabled]}
@@ -598,7 +586,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             </View>
           )}
 
-          {!blockingOAuthReferral && !isGoogleSignUp && (
+          {!referralRequired && !isGoogleSignUp && (
             <>
               <View style={styles.dividerContainer}>
                 <View style={styles.divider} />
@@ -613,7 +601,7 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
             </>
           )}
 
-          {!blockingOAuthReferral && (
+          {!referralRequired && (
             <View style={styles.footer}>
               <Text style={styles.footerText}>
                 Already have an account?{" "}
@@ -668,7 +656,15 @@ export default function SignUpScreen({ onGoogleSignUp, onAppleSignUp, onError, n
                   visible={true}
                   onSelect={handleReferralSelect}
                   onNewUser={handleNewUserReferral}
-                  onClose={blockingOAuthReferral ? () => {} : () => setShowReferralModal(false)}
+                  onClose={
+                    referralRequired
+                      ? () => {}
+                      : () => {
+                          setShowReferralModal(false);
+                          setPendingReferralCompletion(false);
+                          AsyncStorage.multiRemove(["referral_uid", "referral_email"]);
+                        }
+                  }
                   embedded={true}
                 />
               </View>
