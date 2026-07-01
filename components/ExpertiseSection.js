@@ -115,15 +115,15 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
   };
 
   const onOfferingAddressChange = (index, text) => {
-    const updated = [...expertise];
-    updated[index].profile_expertise_location = text;
-    if (!text.trim()) {
-      updated[index].profile_expertise_latitude = null;
-      updated[index].profile_expertise_longitude = null;
-      updated[index].profile_expertise_city = "";
-      updated[index].profile_expertise_state = "";
-      setAddressSuggestionsByIndex((prev) => ({ ...prev, [index]: [] }));
-    }
+    const updated = expertise.map((e, i) => {
+      if (i !== index) return e;
+      return {
+        ...e,
+        profile_expertise_location: text,
+        ...(text.trim() ? {} : { profile_expertise_latitude: null, profile_expertise_longitude: null, profile_expertise_city: "", profile_expertise_state: "" }),
+      };
+    });
+    if (!text.trim()) setAddressSuggestionsByIndex((prev) => ({ ...prev, [index]: [] }));
     setExpertise(updated);
 
     if (addressDebounceRefs.current[index]) clearTimeout(addressDebounceRefs.current[index]);
@@ -137,6 +137,27 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
         console.error("ExpertiseSection address suggestions error:", err);
       }
     }, 350);
+  };
+
+  const onOfferingAddressBlur = async (index) => {
+    const item = expertise[index];
+    if (!item?.profile_expertise_location?.trim()) return;
+    if (item.profile_expertise_latitude != null && item.profile_expertise_longitude != null) return;
+    try {
+      const suggs = await getAddressSuggestions(item.profile_expertise_location.trim());
+      if (!suggs.length) return;
+      const pd = await getPlaceDetails(suggs[0].place_id);
+      if (pd.lat == null || pd.lng == null) return;
+      setExpertise(
+        expertise.map((e, i) =>
+          i !== index
+            ? e
+            : { ...e, profile_expertise_latitude: pd.lat, profile_expertise_longitude: pd.lng, profile_expertise_city: pd.city || e.profile_expertise_city, profile_expertise_state: pd.state || e.profile_expertise_state }
+        )
+      );
+    } catch (e) {
+      console.warn("[Expertise] blur geocode failed:", e);
+    }
   };
 
   const handleOfferingAddressSelect = async (index, place) => {
@@ -178,6 +199,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
           placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
           value={item.profile_expertise_location || ""}
           onChangeText={(text) => onOfferingAddressChange(index, text)}
+          onBlur={() => onOfferingAddressBlur(index)}
           autoCapitalize='words'
           autoCorrect={false}
         />

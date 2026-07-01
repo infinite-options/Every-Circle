@@ -540,6 +540,8 @@ function parseExpertiseInfo(raw) {
 function buildExpertiseRows(expertiseList, sellerTransactions) {
   const list = Array.isArray(expertiseList) ? expertiseList : [];
   const sellerTx = Array.isArray(sellerTransactions) ? sellerTransactions : [];
+  console.log("[Sales] sellerTx count:", sellerTx.length, "sample:", JSON.stringify(sellerTx[0]));
+  console.log("[Sales] expertiseList UIDs:", list.map((e) => e.profile_expertise_uid));
   return list.map((exp) => {
     const expertiseUid = exp.profile_expertise_uid;
     const costString = exp.profile_expertise_cost || "";
@@ -554,19 +556,23 @@ function buildExpertiseRows(expertiseList, sellerTransactions) {
         cost = costString;
       }
     }
-    let totalQty = 0;
+    let soldQty = 0;
     sellerTx.forEach((transaction) => {
       if (transaction.ti_bs_id === expertiseUid) {
         const qty = parseInt(transaction.ti_bs_qty) || 0;
-        totalQty += qty;
+        soldQty += qty;
       }
     });
+    const initialQty = parseInt(exp.profile_expertise_quantity) || 0;
+    const remaining = initialQty > 0 ? Math.max(0, initialQty - soldQty) : null;
     return {
       name: exp.profile_expertise_title || "",
       cost,
       unit,
       bounty: exp.profile_expertise_bounty || "",
-      quantity: totalQty,
+      soldQty,
+      initialQty,
+      remaining,
       isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
     };
   });
@@ -2226,17 +2232,21 @@ export default function AccountScreen({ navigation }) {
                     <View style={styles.tableContainer}>
                       <View style={styles.transactionHeaderRow}>
                         <Text style={[styles.transactionHeaderBusiness, { flex: 1.5 }]}>Item</Text>
-                        <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Cost</Text>
-                        <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Unit</Text>
-                        <Text style={[styles.transactionHeaderDate, { flex: 1 }]}>Qty</Text>
+                        <Text style={[styles.transactionHeaderDate, { flex: 0.9 }]}>Cost</Text>
+                        <Text style={[styles.transactionHeaderDate, { flex: 0.7 }]}>Unit</Text>
+                        <Text style={[styles.transactionHeaderDate, { flex: 0.7 }]}>Sold</Text>
+                        <Text style={[styles.transactionHeaderDate, { flex: 0.7 }]}>Left</Text>
                         <Text style={[styles.transactionHeaderAmount, { flex: 1, textAlign: "right" }]}>Bounty</Text>
                       </View>
                       {expertiseData.map((item, idx) => (
                         <View key={idx} style={styles.tableRow}>
                           <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>{item.name}</Text>
-                          <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
-                          <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
-                          <Text style={[styles.tableCell, { flex: 1, color: "#777", marginLeft: 12 }]}>{item.quantity || 0}</Text>
+                          <Text style={[styles.tableCell, { flex: 0.9, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
+                          <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
+                          <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.soldQty}</Text>
+                          <Text style={[styles.tableCell, { flex: 0.7, color: item.remaining === 0 ? "#c00" : "#777", marginLeft: 12 }]}>
+                            {item.remaining !== null ? item.remaining : "—"}
+                          </Text>
                           <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: "right", marginRight: 15 }]}>${item.bounty}</Text>
                         </View>
                       ))}

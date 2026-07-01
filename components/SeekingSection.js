@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, Alert, ActivityIndicator } from "react-native";
+import { getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import { Dropdown } from "react-native-element-dropdown";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
@@ -35,6 +36,9 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
   const pendingNewIndexRef = useRef(null);
   const bountyInputRefs = useRef({});
   const [activePicker, setActivePicker] = useState(null); // { index, field: 'start'|'end', mode: 'date'|'time' }
+  const [addressSuggestionsByIndex, setAddressSuggestionsByIndex] = useState({});
+  const [addressLoadingIndex, setAddressLoadingIndex] = useState(null);
+  const addressDebounceRefs = useRef({});
   // Bounty unit options for dropdown
   const bountyUnitOptions = [
     { label: "total", value: "total" },
@@ -61,7 +65,12 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
       profile_wish_image_is_public: 1,
       profile_wish_start: "",
       profile_wish_end: "",
+      profile_wish_bounty_type: "none",
       profile_wish_location: "",
+      profile_wish_latitude: null,
+      profile_wish_longitude: null,
+      profile_wish_city: "",
+      profile_wish_state: "",
       profile_wish_mode: "",
       isPublic: true,
       _wishNewImageUri: "",
@@ -93,6 +102,130 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
     const updated = [...wishes];
     updated[index][field] = value;
     setWishes(updated);
+  };
+
+  const onWishAddressChange = (index, text) => {
+    const updated = wishes.map((w, i) => {
+      if (i !== index) return w;
+      return {
+        ...w,
+        profile_wish_location: text,
+        ...(text.trim() ? {} : { profile_wish_latitude: null, profile_wish_longitude: null, profile_wish_city: "", profile_wish_state: "" }),
+      };
+    });
+    if (!text.trim()) setAddressSuggestionsByIndex((prev) => ({ ...prev, [index]: [] }));
+    setWishes(updated);
+
+    if (addressDebounceRefs.current[index]) clearTimeout(addressDebounceRefs.current[index]);
+    if (!text.trim()) return;
+
+    addressDebounceRefs.current[index] = setTimeout(async () => {
+      try {
+        const results = await getAddressSuggestions(text);
+        setAddressSuggestionsByIndex((prev) => ({ ...prev, [index]: results }));
+      } catch (err) {
+        console.error("SeekingSection address suggestions error:", err);
+      }
+    }, 350);
+  };
+
+  const onWishAddressBlur = async (index) => {
+    const item = wishes[index];
+    if (!item?.profile_wish_location?.trim()) return;
+    if (item.profile_wish_latitude != null && item.profile_wish_longitude != null) return;
+    try {
+      const suggs = await getAddressSuggestions(item.profile_wish_location.trim());
+      if (!suggs.length) return;
+      const pd = await getPlaceDetails(suggs[0].place_id);
+      if (pd.lat == null || pd.lng == null) return;
+      setWishes(
+        wishes.map((w, i) =>
+          i !== index
+            ? w
+            : { ...w, profile_wish_latitude: pd.lat, profile_wish_longitude: pd.lng, profile_wish_city: pd.city || w.profile_wish_city, profile_wish_state: pd.state || w.profile_wish_state }
+        )
+      );
+    } catch (e) {
+      console.warn("[Seeking] blur geocode failed:", e);
+    }
+  };
+
+  const handleWishAddressSelect = async (index, place) => {
+    setAddressSuggestionsByIndex((prev) => ({ ...prev, [index]: [] }));
+    setAddressLoadingIndex(index);
+    try {
+      console.log("[Seeking] address select called, place_id:", place.place_id);
+      const pd = await getPlaceDetails(place.place_id);
+      console.log("[Seeking] getPlaceDetails result:", JSON.stringify(pd));
+      if (pd.lat == null || pd.lng == null) {
+        console.warn("[Seeking] lat/lng missing from place details:", pd);
+        Alert.alert("Error", "Could not determine coordinates for this address.");
+        return;
+      }
+      const updated = wishes.map((w, i) => {
+        if (i !== index) return w;
+        return {
+          ...w,
+          profile_wish_location: pd.formatted_address || place.description || "",
+          profile_wish_latitude: pd.lat,
+          profile_wish_longitude: pd.lng,
+          profile_wish_city: pd.city || "",
+          profile_wish_state: pd.state || "",
+        };
+      });
+      console.log("[Seeking] updated wish lat/lng:", updated[index]?.profile_wish_latitude, updated[index]?.profile_wish_longitude);
+      setWishes(updated);
+    } catch (err) {
+      console.error("SeekingSection address select error:", err);
+      Alert.alert("Error", "Could not load address details. Please try again.");
+    } finally {
+      setAddressLoadingIndex(null);
+    }
+  };
+
+  const renderWishAddressField = (index, item) => {
+    const hasRecordedLocation = item.profile_wish_latitude != null && item.profile_wish_longitude != null;
+    const addressPlaceholder = hasRecordedLocation
+      ? "Address recorded. Enter a new address to change it."
+      : "Start typing the address";
+    const suggestions = addressSuggestionsByIndex[index] || [];
+
+    return (
+      <View style={styles.addressContainer}>
+        <TextInput
+          style={[styles.locationInput, darkMode && styles.locationInputDark]}
+          placeholder={addressPlaceholder}
+          placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+          value={item.profile_wish_location || ""}
+          onChangeText={(text) => onWishAddressChange(index, text)}
+          onBlur={() => onWishAddressBlur(index)}
+          autoCapitalize='words'
+          autoCorrect={false}
+        />
+        {addressLoadingIndex === index ? <ActivityIndicator size='small' color='#4B2E83' style={{ marginTop: 8 }} /> : null}
+        {suggestions.length > 0 ? (
+          <View style={[styles.placesSuggestionsList, darkMode && styles.placesSuggestionsListDark]}>
+            {suggestions.map((suggestion) => (
+              <TouchableOpacity
+                key={suggestion.place_id}
+                style={[styles.placesSuggestionRow, darkMode && styles.placesSuggestionRowDark]}
+                onPress={() => handleWishAddressSelect(index, suggestion)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.placesSuggestionMain, darkMode && styles.placesSuggestionMainDark]}>
+                  {suggestion.structured_formatting?.main_text || suggestion.description}
+                </Text>
+                {suggestion.structured_formatting?.secondary_text ? (
+                  <Text style={[styles.placesSuggestionSub, darkMode && styles.placesSuggestionSubDark]}>
+                    {suggestion.structured_formatting.secondary_text}
+                  </Text>
+                ) : null}
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+      </View>
+    );
   };
 
   const getWishDisplayUri = (item) => {
@@ -538,7 +671,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
             </View>
           </View>
 
-          {/* Start Date/Time, End Date/Time, Location */}
+          {/* Start Date/Time, End Date/Time, Address */}
           <View style={styles.dateTimeSection}>
             <View style={styles.dateTimeRow}>
               <Text style={styles.dateTimeLabel}>Start Date and Time</Text>
@@ -633,12 +766,27 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               )}
             </View>
             <View style={styles.dateTimeRow}>
-              <Text style={styles.dateTimeLabel}>Location</Text>
+              <Text style={styles.dateTimeLabel}>Address</Text>
+              {renderWishAddressField(index, item)}
+            </View>
+            <View style={styles.dateTimeRow}>
+              <Text style={styles.dateTimeLabel}>City</Text>
               <TextInput
-                style={styles.locationInput}
-                placeholder='Location'
-                value={item.profile_wish_location || ""}
-                onChangeText={(text) => handleInputChange(index, "profile_wish_location", text)}
+                style={[styles.locationInput, darkMode && styles.locationInputDark]}
+                placeholder='City'
+                placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+                value={item.profile_wish_city || ""}
+                onChangeText={(text) => handleInputChange(index, "profile_wish_city", text)}
+              />
+            </View>
+            <View style={styles.dateTimeRow}>
+              <Text style={styles.dateTimeLabel}>State</Text>
+              <TextInput
+                style={[styles.locationInput, darkMode && styles.locationInputDark]}
+                placeholder='State'
+                placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+                value={item.profile_wish_state || ""}
+                onChangeText={(text) => handleInputChange(index, "profile_wish_state", text)}
               />
             </View>
             <View style={styles.dateTimeRow}>
@@ -713,24 +861,6 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               selectedTextStyle={styles.dropdownSelectedText}
               activeColor='#f0f0f0'
             />
-            <Text style={styles.dollar}>💰</Text>
-            <TextInput
-              style={styles.bountyInput}
-              placeholder='Total Bounty'
-              keyboardType='decimal-pad'
-              value={(() => {
-                const parsed = parseBounty(item.amount);
-                const amount = parsed.amount;
-                if (!amount) return "";
-                if (amount.toLowerCase() === "free") return "Free";
-                return `$${amount}`;
-              })()}
-              onChangeText={(text) => {
-                const cleanedText = text.replace(/\$/g, "");
-                handleBountyAmountChange(index, cleanedText);
-              }}
-              onBlur={() => handleBountyAmountBlur(index)}
-            />
             <TextInput
               style={styles.bountyInput}
               placeholder='Desired Quantity'
@@ -741,6 +871,47 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
             <TouchableOpacity onPress={() => deleteWish(index)}>
               <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
             </TouchableOpacity>
+          </View>
+
+          {/* Bounty Row */}
+          <View style={styles.bountyTypeRow}>
+            <Text style={styles.costLabel}>Bounty</Text>
+            <TouchableOpacity
+              style={[styles.bountyTypeBtn, item.profile_wish_bounty_type === "none" && styles.bountyTypeBtnActive]}
+              onPress={() => {
+                handleInputChange(index, "profile_wish_bounty_type", "none");
+                handleInputChange(index, "amount", "");
+              }}
+            >
+              <Text style={[styles.bountyTypeBtnText, item.profile_wish_bounty_type === "none" && styles.bountyTypeBtnTextActive]}>No Bounty</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.bountyTypeBtn, item.profile_wish_bounty_type === "per_item" && styles.bountyTypeBtnActive]}
+              onPress={() => handleInputChange(index, "profile_wish_bounty_type", "per_item")}
+            >
+              <Text style={[styles.bountyTypeBtnText, item.profile_wish_bounty_type === "per_item" && styles.bountyTypeBtnTextActive]}>Per Item</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.bountyTypeBtn, item.profile_wish_bounty_type === "total" && styles.bountyTypeBtnActive]}
+              onPress={() => handleInputChange(index, "profile_wish_bounty_type", "total")}
+            >
+              <Text style={[styles.bountyTypeBtnText, item.profile_wish_bounty_type === "total" && styles.bountyTypeBtnTextActive]}>Single Bounty</Text>
+            </TouchableOpacity>
+            {item.profile_wish_bounty_type !== "none" ? (
+              <TextInput
+                style={styles.bountyTypeInput}
+                value={(() => {
+                  const parsed = parseBounty(item.amount);
+                  const amount = parsed.amount;
+                  if (!amount) return "";
+                  return `$${amount}`;
+                })()}
+                onChangeText={(text) => handleBountyAmountChange(index, text.replace(/\$/g, ""))}
+                onBlur={() => handleBountyAmountBlur(index)}
+                placeholder='$0.00'
+                keyboardType='decimal-pad'
+              />
+            ) : null}
           </View>
         </View>
       ))}
@@ -881,6 +1052,52 @@ const styles = StyleSheet.create({
     minHeight: 40,
     fontSize: 14,
   },
+  locationInputDark: {
+    borderColor: "#555",
+    backgroundColor: "#2d2d2d",
+    color: "#eee",
+  },
+  addressContainer: {
+    flex: 2,
+    minWidth: 0,
+  },
+  placesSuggestionsList: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    overflow: "hidden",
+  },
+  placesSuggestionsListDark: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#555",
+  },
+  placesSuggestionRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  placesSuggestionRowDark: {
+    borderBottomColor: "#444",
+  },
+  placesSuggestionMain: {
+    fontSize: 14,
+    color: "#222",
+    fontWeight: "500",
+  },
+  placesSuggestionMainDark: {
+    color: "#eee",
+  },
+  placesSuggestionSub: {
+    fontSize: 12,
+    color: "#777",
+    marginTop: 2,
+  },
+  placesSuggestionSubDark: {
+    color: "#aaa",
+  },
   modeCheckboxRow: {
     flex: 2,
     flexDirection: "row",
@@ -1018,6 +1235,45 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     width: "20%",
     height: 40,
+    textAlignVertical: "center",
+  },
+  bountyTypeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  bountyTypeBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    backgroundColor: "#f5f5f5",
+  },
+  bountyTypeBtnActive: {
+    backgroundColor: "#4B2E83",
+    borderColor: "#4B2E83",
+  },
+  bountyTypeBtnText: {
+    fontSize: 13,
+    color: "#444",
+  },
+  bountyTypeBtnTextActive: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+  bountyTypeInput: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    padding: 8,
+    borderRadius: 5,
+    backgroundColor: "#fff",
+    width: 90,
+    height: 36,
+    fontSize: 14,
     textAlignVertical: "center",
   },
   toggleContainer: { flexDirection: "row", gap: 4 },
