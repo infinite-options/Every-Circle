@@ -116,7 +116,7 @@ const EditProfileScreen = ({ route, navigation }) => {
       name: biz.name || biz.profile_business_name || "",
       role: biz.role || biz.profile_business_role || "",
       // isPublic: biz.isPublic !== undefined ? biz.isPublic : biz.profile_business_is_visible === 1,
-      isPublic: biz.individualIsPublic === true || biz.isPublic === true,
+      isPublic: biz.isPublic !== undefined ? biz.isPublic : biz.bu_individual_business_is_public === 1 || biz.bu_individual_business_is_public === "1" || biz.bu_individual_business_is_public === true,
       isApproved: biz.isApproved !== undefined ? biz.isApproved : biz.profile_business_approved === "1",
       individualIsPublic:
         biz.individualIsPublic !== undefined
@@ -124,7 +124,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           : biz.bu_individual_business_is_public === true || biz.bu_individual_business_is_public === 1 || biz.bu_individual_business_is_public === "1",
       isNew: biz.isNew || false,
       business_updated_at: biz.business_updated_at ?? biz.updated_at,
-    })) || [{ name: "", role: "", isPublic: 0, isApproved: 0, isNew: false }],
+    })) || [{ name: "", role: "", isPublic: true, isApproved: 0, isNew: false }],
     experience: (() => {
       const uid = initialFormProfileUid;
       return (
