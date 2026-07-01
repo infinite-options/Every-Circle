@@ -1,3 +1,4 @@
+import { resolveMapBusinessImageUrl } from "./mapBusinessImage";
 import { parseCoordinateValue } from "./validateCoordinates";
 
 function businessLocationFieldsFromRow(row) {
@@ -41,7 +42,7 @@ export function searchResultsToMapBusinesses(items) {
     const businessUid = item.business_uid ?? item.id;
     if (businessUid == null || String(businessUid).trim() === "") continue;
 
-    businesses.push({
+    const mapBusiness = {
       business_uid: String(businessUid).trim(),
       business_name: item.company || item.business_name || "Business",
       business_google_id: item.business_google_id || null,
@@ -51,6 +52,14 @@ export function searchResultsToMapBusinesses(items) {
       business_city: item.business_city || null,
       business_state: item.business_state || null,
       business_profile_img: item.business_profile_img || null,
+      business_profile_img_is_public: item.business_profile_img_is_public,
+      business_image_is_public: item.business_image_is_public,
+      imageIsPublic: item.imageIsPublic,
+    };
+
+    businesses.push({
+      ...mapBusiness,
+      business_profile_img: resolveMapBusinessImageUrl(mapBusiness) || mapBusiness.business_profile_img,
     });
   }
 

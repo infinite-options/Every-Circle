@@ -41,6 +41,7 @@ export function searchResultsToMapProfiles(items) {
       business_latitude: lat,
       business_longitude: lng,
       business_profile_img: item.profileData?.image || null,
+      imageIsPublic: item.profileData?.imageIsPublic,
       // Extra fields used by EveryCircleMapScreen for navigation + labels.
       itemType: item.itemType,
       profile_uid: String(uid).trim(),

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { View, Text, TextInput, StyleSheet, Dimensions, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Image, Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getBusinessSuggestions, getPlaceDetails } from "../utils/googlePlaces";
+import { getBusinessSuggestions, getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import { googlePhotoUrlsMatch, dedupeGooglePhotoUrls } from "../utils/resolveBusinessProfileImage";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
@@ -19,7 +19,11 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
   const [placeSearchError, setPlaceSearchError] = useState("");
   const [existingBusinessUid, setExistingBusinessUid] = useState("");
   const [placeSuggestions, setPlaceSuggestions] = useState([]);
+  const [addressSearchText, setAddressSearchText] = useState(formData.addressLine1 || "");
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
+  const [addressSearchLoading, setAddressSearchLoading] = useState(false);
   const placesDebounceRef = useRef(null);
+  const addressDebounceRef = useRef(null);
   const userUploadedImages = formData.images || [];
   const hasGooglePlace = Boolean(formData.googleId);
   const googlePhotos = hasGooglePlace ? formData.businessGooglePhotos || [] : [];
@@ -174,6 +178,73 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
     }, 350);
   };
 
+  const onAddressChange = (text) => {
+    setAddressSearchText(text);
+    setFormData((prev) => ({ ...prev, addressLine1: text }));
+    if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+
+    if (!text.trim()) {
+      setAddressSuggestions([]);
+      setFormData((prev) => {
+        const updated = { ...prev, addressLine1: "", latitude: "", longitude: "" };
+        AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+        return updated;
+      });
+      return;
+    }
+
+    addressDebounceRef.current = setTimeout(async () => {
+      try {
+        const results = await getAddressSuggestions(text);
+        setAddressSuggestions(results);
+      } catch (err) {
+        console.error("BusinessStep0 address suggestions error:", err);
+      }
+    }, 350);
+  };
+
+  const syncAddressToFormData = (text) => {
+    setFormData((prev) => {
+      const updated = { ...prev, addressLine1: text };
+      AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+      return updated;
+    });
+  };
+
+  const handleAddressSelect = async (place) => {
+    setAddressSuggestions([]);
+    setAddressSearchLoading(true);
+    try {
+      const pd = await getPlaceDetails(place.place_id);
+      if (pd.lat == null || pd.lng == null) {
+        Alert.alert("Error", "Could not determine coordinates for this address.");
+        return;
+      }
+      const streetAddress = pd.address_line_1 || place.structured_formatting?.main_text || place.description || "";
+      setAddressSearchText(streetAddress);
+      setFormData((prev) => {
+        const updated = {
+          ...prev,
+          addressLine1: streetAddress,
+          city: pd.city || prev.city,
+          state: pd.state || prev.state,
+          zip: pd.zip || prev.zip,
+          country: pd.country || prev.country,
+          latitude: pd.lat ?? "",
+          longitude: pd.lng ?? "",
+          location: pd.area_location || prev.location,
+        };
+        AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+        return updated;
+      });
+    } catch (err) {
+      console.error("BusinessStep0 address select error:", err);
+      Alert.alert("Error", "Could not load address details. Please try again.");
+    } finally {
+      setAddressSearchLoading(false);
+    }
+  };
+
   const handleGooglePlaceSelect = async (place) => {
     setPlaceSuggestions([]);
     setPlaceSearchError("");
@@ -184,6 +255,8 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
     try {
       const pd = await getPlaceDetails(place.place_id);
       const photoUrls = dedupeGooglePhotoUrls(pd.photo_urls || []);
+      const streetAddress = pd.address_line_1 || "";
+      setAddressSearchText(streetAddress);
       const updated = {
         ...formData,
         businessName: pd.name || place.structured_formatting?.main_text || "",
@@ -195,7 +268,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
         businessGooglePhotos: photoUrls,
         favImage: photoUrls[0] || "",
         priceLevel: "",
-        addressLine1: pd.address_line_1 || "",
+        addressLine1: streetAddress,
         addressLine2: "",
         city: pd.city || "",
         state: pd.state || "",
@@ -384,45 +457,66 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
               <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>
                 Controls whether location and address appear on your Business Mini Card.
               </Text>
+
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Location</Text>
               <TextInput
                 style={[styles.input, darkMode && styles.darkInput]}
-                value={formData.addressLine1 || ""}
-                placeholder='Enter street address'
+                value={formData.location || ""}
+                placeholder='Neighborhood, area, or landmark'
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                onChangeText={(text) => updateFormData("addressLine1", text)}
-                accessibilitylabel='Street address'
-                accessibilityHint='Enter your street address'
-                aria-label='Street address'
+                onChangeText={(text) => updateFormData("location", text)}
+                autoCapitalize='words'
+                autoCorrect={false}
+                accessibilityLabel='Location'
+                accessibilityHint='Optional neighborhood, area, or landmark'
+                aria-label='Location'
               />
 
-              <View style={{ flexDirection: "row", width: "100%", gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Suite or Unit</Text>
-                  <TextInput
-                    style={[styles.input, darkMode && styles.darkInput]}
-                    value={formData.addressLine2 || ""}
-                    placeholder='Suite, unit, etc.'
-                    placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                    onChangeText={(text) => updateFormData("addressLine2", text)}
-                    accessibilitylabel='Suite or unit'
-                    accessibilityHint='Optional suite or unit number'
-                    aria-label='Suite or unit'
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Location</Text>
-                  <TextInput
-                    style={[styles.input, darkMode && styles.darkInput]}
-                    value={formData.location || ""}
-                    placeholder='Neighborhood, area, or landmark'
-                    placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                    onChangeText={(text) => updateFormData("location", text)}
-                    accessibilitylabel='Location'
-                    accessibilityHint='Optional area or location description'
-                    aria-label='Location'
-                  />
-                </View>
+              <Text style={[styles.label, darkMode && styles.darkLabel, { marginTop: 12 }]}>Street Address</Text>
+              <View style={[styles.placesSearchContainer, { width: "100%", zIndex: 900 }]}>
+                <TextInput
+                  style={[styles.input, darkMode && styles.darkInput]}
+                  value={addressSearchText}
+                  placeholder='Start typing your street address'
+                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                  onChangeText={onAddressChange}
+                  onBlur={() => syncAddressToFormData(addressSearchText)}
+                  autoCapitalize='words'
+                  autoCorrect={false}
+                  accessibilitylabel='Street address'
+                  accessibilityHint='Start typing your street address and choose one from the suggestions'
+                  aria-label='Street address'
+                />
+                {addressSearchLoading ? <ActivityIndicator size='small' color='#FF9500' style={{ marginTop: 8 }} /> : null}
+                {addressSuggestions.length > 0 && (
+                  <View style={[styles.suggestionsList, darkMode && styles.darkSuggestionsList]}>
+                    {addressSuggestions.map((item) => (
+                      <TouchableOpacity key={item.place_id} style={[styles.suggestionRow, darkMode && styles.darkSuggestionRow]} onPress={() => handleAddressSelect(item)} activeOpacity={0.7}>
+                        <Text style={[styles.suggestionMain, darkMode && styles.darkLabel]} numberOfLines={1}>
+                          {item.structured_formatting?.main_text || item.description}
+                        </Text>
+                        {item.structured_formatting?.secondary_text ? (
+                          <Text style={[styles.suggestionSub, darkMode && styles.darkSubtitle]} numberOfLines={1}>
+                            {item.structured_formatting.secondary_text}
+                          </Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
               </View>
+
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Suite or Unit</Text>
+              <TextInput
+                style={[styles.input, darkMode && styles.darkInput]}
+                value={formData.addressLine2 || ""}
+                placeholder='Suite, unit, etc.'
+                placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                onChangeText={(text) => updateFormData("addressLine2", text)}
+                accessibilitylabel='Suite or unit'
+                accessibilityHint='Optional suite or unit number'
+                aria-label='Suite or unit'
+              />
 
               <View style={{ flexDirection: "row", width: "100%", gap: 10 }}>
                 <View style={{ flex: 1 }}>
@@ -790,6 +884,9 @@ const styles = StyleSheet.create({
   },
   darkPlaceSearchErrorLink: {
     color: "#4da3ff",
+  },
+  placesSearchContainer: {
+    zIndex: 10,
   },
   suggestionsList: {
     backgroundColor: "#fff",

@@ -293,7 +293,7 @@ export default function BusinessStep1({ formData, setFormData, onPendingTagsChan
               ))}
             </View>
 
-            <Text style={[styles.label, darkMode && styles.darkLabel]}>Tag Line (Optional)</Text>
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Tagline (Optional)</Text>
             <TextInput
               style={[styles.input, darkMode && styles.darkInput]}
               placeholder='A short tagline for your business'

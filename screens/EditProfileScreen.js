@@ -1,7 +1,6 @@
 //EditProfileScreen.js
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Modal, ActivityIndicator, Keyboard, UIManager, findNodeHandle, Platform, BackHandler } from "react-native";
-import { axiosMiddleware as axios } from "../utils/httpMiddleware";
 import MiniCard from "../components/MiniCard";
 import MicroCard from "../components/MicroCard";
 import BottomNavBar from "../components/BottomNavBar";
@@ -117,7 +116,7 @@ const EditProfileScreen = ({ route, navigation }) => {
       name: biz.name || biz.profile_business_name || "",
       role: biz.role || biz.profile_business_role || "",
       // isPublic: biz.isPublic !== undefined ? biz.isPublic : biz.profile_business_is_visible === 1,
-      isPublic: biz.individualIsPublic === true || biz.isPublic === true,
+      isPublic: biz.isPublic !== undefined ? biz.isPublic : biz.bu_individual_business_is_public === 1 || biz.bu_individual_business_is_public === "1" || biz.bu_individual_business_is_public === true,
       isApproved: biz.isApproved !== undefined ? biz.isApproved : biz.profile_business_approved === "1",
       individualIsPublic:
         biz.individualIsPublic !== undefined
@@ -125,7 +124,7 @@ const EditProfileScreen = ({ route, navigation }) => {
           : biz.bu_individual_business_is_public === true || biz.bu_individual_business_is_public === 1 || biz.bu_individual_business_is_public === "1",
       isNew: biz.isNew || false,
       business_updated_at: biz.business_updated_at ?? biz.updated_at,
-    })) || [{ name: "", role: "", isPublic: 0, isApproved: 0, isNew: false }],
+    })) || [{ name: "", role: "", isPublic: true, isApproved: 0, isNew: false }],
     experience: (() => {
       const uid = initialFormProfileUid;
       return (
@@ -339,8 +338,6 @@ const EditProfileScreen = ({ route, navigation }) => {
     linkedin: user?.linkedin || "",
     youtube: user?.youtube || "",
   });
-  // Add this right after the formData useState (around line 94)
-  console.log("Wishes data loaded:", JSON.stringify(formData.wishes, null, 2));
   // console.log("EditProfileScreen business_info:", formData.businesses);
 
   // Add state to track deleted items
@@ -420,6 +417,8 @@ const EditProfileScreen = ({ route, navigation }) => {
         ...prev,
         homeLatitude: pd.lat,
         homeLongitude: pd.lng,
+        city: pd.city || prev.city,
+        state: pd.state || prev.state,
       }));
       setIsChanged(true);
     } catch (err) {
@@ -432,12 +431,12 @@ const EditProfileScreen = ({ route, navigation }) => {
 
   const renderHomeAddressField = () => {
     const hasRecordedLocation = formData.homeLatitude != null && formData.homeLongitude != null;
-    const addressPlaceholder = hasRecordedLocation ? "Location already recorded for location based features. Enter new address to change location." : "Start typing your home address";
+    const addressPlaceholder = hasRecordedLocation ? "Location already recorded for location features. Enter new address to change location." : "Start typing your home address";
 
     return (
       <View style={[styles.fieldContainer, styles.placesSearchContainer]}>
         <View style={styles.labelRow}>
-          <Text style={[styles.label, darkMode && styles.darkLabel]}>Address (for location based services only)</Text>
+          <Text style={[styles.label, darkMode && styles.darkLabel]}>Address (for location services only)</Text>
           <Text style={[styles.toggleText, styles.alwaysHiddenLabel, darkMode && styles.darkAlwaysHiddenLabel]}>Always Hidden</Text>
         </View>
         <TextInput
@@ -701,6 +700,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     }
 
     setIsLoading(true);
+    let imageFileSize = 0;
     try {
       const payload = new FormData();
       payload.append("profile_uid", trimmedProfileUID);
@@ -890,7 +890,6 @@ const EditProfileScreen = ({ route, navigation }) => {
         }),
       );
 
-      let imageFileSize = 0;
       if (profileImageUri && !imageError && profileImageUri !== originalProfileImage) {
         if (Platform.OS === "web" && webImageFile) {
           // On web, use the actual File object
@@ -1156,16 +1155,29 @@ const EditProfileScreen = ({ route, navigation }) => {
       console.log("============================================");
 
       console.log("Deleted items being sent:", deletedItems);
-      await new Promise((res) => setTimeout(res, 2000)); // Simulate 2s delay
-      // Do not set Content-Type for FormData — axios / RN must attach the multipart boundary.
-      const response = await axios({
-        method: "put",
-        url: `${ProfileScreenAPI}?profile_uid=${trimmedProfileUID}`,
-        data: payload,
+      // Use fetch (not axios) for multipart FormData — axios often throws Network Error on native.
+      const response = await fetch(`${ProfileScreenAPI}?profile_uid=${encodeURIComponent(trimmedProfileUID)}`, {
+        method: "PUT",
+        body: payload,
         headers: {
           Accept: "application/json",
         },
       });
+
+      if (!response.ok) {
+        if (response.status === 413) {
+          Alert.alert("File Too Large", `The selected image (${(imageFileSize / 1024).toFixed(1)} KB) was too large to upload. Please select an image under 2MB.`);
+          return;
+        }
+        let errBody = "";
+        try {
+          const errJson = await response.json();
+          errBody = errJson?.message || JSON.stringify(errJson);
+        } catch {
+          /* ignore */
+        }
+        throw new Error(errBody || `Update failed (${response.status})`);
+      }
 
       if (response.status === 200) {
         console.log("Profile update successful");
@@ -1204,13 +1216,8 @@ const EditProfileScreen = ({ route, navigation }) => {
         Alert.alert("Error", "Failed to update profile.");
       }
     } catch (error) {
-      // Handle 413 Payload Too Large
-      if (error.response && error.response.status === 413) {
-        Alert.alert("File Too Large", `The selected image (${(imageFileSize / 1024).toFixed(1)} KB) was too large to upload. Please select an image under 2MB.`);
-        return;
-      }
       console.error("Update Error:", error);
-      let errorMsg = "Update failed. Please try again.";
+      let errorMsg = error.message || "Update failed. Please try again.";
       if (imageFileSize > 0) {
         errorMsg += ` (Image file size: ${(imageFileSize / 1024).toFixed(1)} KB)`;
       }
@@ -1441,8 +1448,8 @@ const EditProfileScreen = ({ route, navigation }) => {
     };
 
     if (Platform.OS === "android") {
-      BackHandler.addEventListener("hardwareBackPress", handleBackPress);
-      return () => BackHandler.removeEventListener("hardwareBackPress", handleBackPress);
+      const sub = BackHandler.addEventListener("hardwareBackPress", handleBackPress);
+      return () => sub.remove();
     }
   }, [isChanged, navigation]);
 
@@ -1542,7 +1549,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         </TouchableOpacity>
         {showBio && (
           <>
-            {renderField("Tag Line", formData.tagLine, formData.tagLineIsPublic, "tagLine", "tagLineIsPublic")}
+            {renderField("Tagline", formData.tagLine, formData.tagLineIsPublic, "tagLine", "tagLineIsPublic")}
             {renderShortBioField()}
           </>
         )}
