@@ -4,8 +4,31 @@ import { loadGoogleMapsJs } from "../utils/googleMapsLoader";
 import { DEFAULT_MAP_ZOOM } from "../utils/mapDefaults";
 import { getMapStylesForEveryCircleOnly } from "../utils/mapStyles";
 import { getWebMapMarkerIcon } from "../utils/mapMarkerAssets";
+import { resolveMapBusinessImageUrl, shouldShowMapBusinessImage } from "../utils/mapBusinessImage";
 
 const HOME_MARKER_COLOR = "#2434C2";
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildBusinessImageHtml(business) {
+  if (!shouldShowMapBusinessImage(business)) return "";
+  const imageUrl = resolveMapBusinessImageUrl(business);
+  if (!imageUrl) return "";
+  return `
+    <img
+      src="${escapeHtml(imageUrl)}"
+      alt=""
+      style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 1px solid #ddd;"
+    />
+  `;
+}
 
 function buildAddressLine(business) {
   const parts = [
@@ -86,18 +109,24 @@ function addBusinessMarkers(
               : "Registered on Every Circle";
         const itemTitleHtml =
           business.item_title
-            ? `<div style="margin-top: 4px; font-size: 12px; color: #666;">${business.item_title}</div>`
+            ? `<div style="margin-top: 4px; font-size: 12px; color: #666;">${escapeHtml(business.item_title)}</div>`
             : "";
+        const imageHtml = buildBusinessImageHtml(business);
         const content = `
-        <div style="font-family: system-ui, sans-serif; max-width: 240px;">
-          <strong style="font-size: 14px;">${business.business_name || "Business"}</strong>
-          ${itemTitleHtml}
-          ${address ? `<div style="margin-top: 6px; font-size: 12px; color: #444;">${address}</div>` : ""}
-          <div style="margin-top: 8px; font-size: 12px; color: #AF52DE;">${registeredLabel}</div>
+        <div style="font-family: system-ui, sans-serif; max-width: 280px;">
+          <div style="display: flex; gap: 10px; align-items: flex-start;">
+            ${imageHtml}
+            <div style="flex: 1; min-width: 0;">
+              <strong style="font-size: 14px;">${escapeHtml(business.business_name || "Business")}</strong>
+              ${itemTitleHtml}
+              ${address ? `<div style="margin-top: 6px; font-size: 12px; color: #444;">${escapeHtml(address)}</div>` : ""}
+              <div style="margin-top: 8px; font-size: 12px; color: #AF52DE;">${escapeHtml(registeredLabel)}</div>
+            </div>
+          </div>
           <button
             id="ec-map-btn-${uid}"
             type="button"
-            style="margin-top: 10px; background: #AF52DE; color: #fff; border: none; border-radius: 6px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer;"
+            style="margin-top: 10px; background: #AF52DE; color: #fff; border: none; border-radius: 6px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer; width: 100%;"
           >
             View on Every Circle
           </button>
