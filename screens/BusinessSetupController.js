@@ -227,7 +227,7 @@ export default function BusinessSetupController({ navigation, route }) {
       const payloadData = {
         user_uid: userUid,
         business_name: currentFormData.businessName,
-        business_location: currentFormData.location || currentFormData.addressLine1 || "",
+        business_location: currentFormData.location || "",
         business_phone_number: currentFormData.phoneNumber,
         business_ein_number: currentFormData.einNumber,
         business_address_line_1: currentFormData.addressLine1,
@@ -251,7 +251,7 @@ export default function BusinessSetupController({ navigation, route }) {
         business_is_active: currentFormData.business_is_active,
         business_email_id_is_public: currentFormData.business_email_id_is_public,
         business_phone_number_is_public: currentFormData.business_phone_number_is_public,
-        business_location_is_public: currentFormData.business_location_is_public,
+        business_location_is_public: currentFormData.business_location_is_public ? "1" : "0",
         business_tag_line_is_public: tagLineIsPublic,
         business_short_bio_is_public: currentFormData.business_short_bio_is_public,
         business_images_is_public: currentFormData.business_images_is_public,
@@ -268,7 +268,7 @@ export default function BusinessSetupController({ navigation, route }) {
       const data = new FormData();
       data.append("user_uid", userUid);
       data.append("business_name", currentFormData.businessName);
-      data.append("business_location", currentFormData.location || currentFormData.addressLine1 || "");
+      data.append("business_location", currentFormData.location || "");
       data.append("business_phone_number", currentFormData.phoneNumber);
       data.append("business_ein_number", currentFormData.einNumber);
       data.append("business_address_line_1", currentFormData.addressLine1);
@@ -304,7 +304,7 @@ export default function BusinessSetupController({ navigation, route }) {
 
       data.append("business_email_id_is_public", currentFormData.business_email_id_is_public);
       data.append("business_phone_number_is_public", currentFormData.business_phone_number_is_public);
-      data.append("business_location_is_public", currentFormData.business_location_is_public);
+      data.append("business_location_is_public", currentFormData.business_location_is_public ? "1" : "0");
       data.append("business_tag_line_is_public", tagLineIsPublic);
       data.append("business_short_bio_is_public", currentFormData.business_short_bio_is_public);
       data.append("business_images_is_public", currentFormData.business_images_is_public);

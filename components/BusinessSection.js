@@ -31,7 +31,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
       // Fallback: add entry if navigation not provided
       // Mark the next card index before state update, then notify parent after render.
       pendingNewIndexRef.current = businesses.length;
-      const newEntry = { name: "", role: "", isPublic: false, isNew: false };
+      const newEntry = { name: "", role: "", isPublic: true, isNew: false };
       setBusinesses([...businesses, newEntry]);
     }
   };
@@ -79,11 +79,6 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
     const updated = [...businesses];
     updated[index].isPublic = !updated[index].isPublic;
     setBusinesses(updated);
-
-    // Sync outer toggle if it's the only one
-    if (updated.length === 1) {
-      toggleVisibility("businessIsPublic");
-    }
   };
 
   const toggleIndividualVisibility = (index) => {
@@ -385,7 +380,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                         name: biz.business_name,
                         business_uid: biz.business_uid,
                         isNew: false,
-                        isPublic: false,
+                        isPublic: true,
                         isApproved: false,
                         role: updated[activeBusinessIndex].role || "",
                       };

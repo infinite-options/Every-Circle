@@ -19,6 +19,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
   const [placeSearchError, setPlaceSearchError] = useState("");
   const [existingBusinessUid, setExistingBusinessUid] = useState("");
   const [placeSuggestions, setPlaceSuggestions] = useState([]);
+  const [addressSearchText, setAddressSearchText] = useState(formData.addressLine1 || "");
   const [addressSuggestions, setAddressSuggestions] = useState([]);
   const [addressSearchLoading, setAddressSearchLoading] = useState(false);
   const placesDebounceRef = useRef(null);
@@ -178,19 +179,19 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
   };
 
   const onAddressChange = (text) => {
+    setAddressSearchText(text);
+    setFormData((prev) => ({ ...prev, addressLine1: text }));
     if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
 
     if (!text.trim()) {
       setAddressSuggestions([]);
-      const updated = { ...formData, addressLine1: text, latitude: "", longitude: "" };
-      setFormData(updated);
-      AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+      setFormData((prev) => {
+        const updated = { ...prev, addressLine1: "", latitude: "", longitude: "" };
+        AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+        return updated;
+      });
       return;
     }
-
-    const updated = { ...formData, addressLine1: text };
-    setFormData(updated);
-    AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
 
     addressDebounceRef.current = setTimeout(async () => {
       try {
@@ -202,6 +203,14 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
     }, 350);
   };
 
+  const syncAddressToFormData = (text) => {
+    setFormData((prev) => {
+      const updated = { ...prev, addressLine1: text };
+      AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+      return updated;
+    });
+  };
+
   const handleAddressSelect = async (place) => {
     setAddressSuggestions([]);
     setAddressSearchLoading(true);
@@ -211,19 +220,23 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
         Alert.alert("Error", "Could not determine coordinates for this address.");
         return;
       }
-      const updated = {
-        ...formData,
-        addressLine1: pd.address_line_1 || place.structured_formatting?.main_text || "",
-        city: pd.city || "",
-        state: pd.state || "",
-        zip: pd.zip || "",
-        country: pd.country || "",
-        latitude: pd.lat ?? "",
-        longitude: pd.lng ?? "",
-        location: pd.area_location || formData.location || "",
-      };
-      setFormData(updated);
-      await AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+      const streetAddress = pd.address_line_1 || place.structured_formatting?.main_text || place.description || "";
+      setAddressSearchText(streetAddress);
+      setFormData((prev) => {
+        const updated = {
+          ...prev,
+          addressLine1: streetAddress,
+          city: pd.city || prev.city,
+          state: pd.state || prev.state,
+          zip: pd.zip || prev.zip,
+          country: pd.country || prev.country,
+          latitude: pd.lat ?? "",
+          longitude: pd.lng ?? "",
+          location: pd.area_location || prev.location,
+        };
+        AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+        return updated;
+      });
     } catch (err) {
       console.error("BusinessStep0 address select error:", err);
       Alert.alert("Error", "Could not load address details. Please try again.");
@@ -242,6 +255,8 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
     try {
       const pd = await getPlaceDetails(place.place_id);
       const photoUrls = dedupeGooglePhotoUrls(pd.photo_urls || []);
+      const streetAddress = pd.address_line_1 || "";
+      setAddressSearchText(streetAddress);
       const updated = {
         ...formData,
         businessName: pd.name || place.structured_formatting?.main_text || "",
@@ -253,7 +268,7 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
         businessGooglePhotos: photoUrls,
         favImage: photoUrls[0] || "",
         priceLevel: "",
-        addressLine1: pd.address_line_1 || "",
+        addressLine1: streetAddress,
         addressLine2: "",
         city: pd.city || "",
         state: pd.state || "",
@@ -442,13 +457,30 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
               <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>
                 Controls whether location and address appear on your Business Mini Card.
               </Text>
-              <View style={{ width: "100%", zIndex: 900 }}>
+
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Location</Text>
+              <TextInput
+                style={[styles.input, darkMode && styles.darkInput]}
+                value={formData.location || ""}
+                placeholder='Neighborhood, area, or landmark'
+                placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                onChangeText={(text) => updateFormData("location", text)}
+                autoCapitalize='words'
+                autoCorrect={false}
+                accessibilityLabel='Location'
+                accessibilityHint='Optional neighborhood, area, or landmark'
+                aria-label='Location'
+              />
+
+              <Text style={[styles.label, darkMode && styles.darkLabel, { marginTop: 12 }]}>Street Address</Text>
+              <View style={[styles.placesSearchContainer, { width: "100%", zIndex: 900 }]}>
                 <TextInput
                   style={[styles.input, darkMode && styles.darkInput]}
-                  value={formData.addressLine1 || ""}
+                  value={addressSearchText}
                   placeholder='Start typing your street address'
                   placeholderTextColor={darkMode ? "#cccccc" : "#666"}
                   onChangeText={onAddressChange}
+                  onBlur={() => syncAddressToFormData(addressSearchText)}
                   autoCapitalize='words'
                   autoCorrect={false}
                   accessibilitylabel='Street address'
@@ -474,34 +506,17 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
                 )}
               </View>
 
-              <View style={{ flexDirection: "row", width: "100%", gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Suite or Unit</Text>
-                  <TextInput
-                    style={[styles.input, darkMode && styles.darkInput]}
-                    value={formData.addressLine2 || ""}
-                    placeholder='Suite, unit, etc.'
-                    placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                    onChangeText={(text) => updateFormData("addressLine2", text)}
-                    accessibilitylabel='Suite or unit'
-                    accessibilityHint='Optional suite or unit number'
-                    aria-label='Suite or unit'
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.label, darkMode && styles.darkLabel]}>Location</Text>
-                  <TextInput
-                    style={[styles.input, darkMode && styles.darkInput]}
-                    value={formData.location || ""}
-                    placeholder='Neighborhood, area, or landmark'
-                    placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                    onChangeText={(text) => updateFormData("location", text)}
-                    accessibilitylabel='Location'
-                    accessibilityHint='Optional area or location description'
-                    aria-label='Location'
-                  />
-                </View>
-              </View>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Suite or Unit</Text>
+              <TextInput
+                style={[styles.input, darkMode && styles.darkInput]}
+                value={formData.addressLine2 || ""}
+                placeholder='Suite, unit, etc.'
+                placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                onChangeText={(text) => updateFormData("addressLine2", text)}
+                accessibilitylabel='Suite or unit'
+                accessibilityHint='Optional suite or unit number'
+                aria-label='Suite or unit'
+              />
 
               <View style={{ flexDirection: "row", width: "100%", gap: 10 }}>
                 <View style={{ flex: 1 }}>
@@ -869,6 +884,9 @@ const styles = StyleSheet.create({
   },
   darkPlaceSearchErrorLink: {
     color: "#4da3ff",
+  },
+  placesSearchContainer: {
+    zIndex: 10,
   },
   suggestionsList: {
     backgroundColor: "#fff",

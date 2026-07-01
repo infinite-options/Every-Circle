@@ -41,7 +41,7 @@ import { parsePrice, formatCostValue } from "../utils/priceUtils";
 import { mergeCustomTags, parseTagList, serializeTagList } from "../utils/tagListUtils";
 import { buildBusinessServiceForApi, DEFAULT_RETURN_WINDOW_DAYS, normServiceReturnable, normServiceReturnWindowDays, normServiceTags } from "../utils/buildBusinessServiceForApi";
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
-import { getBusinessSuggestions, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
+import { getAddressSuggestions, getBusinessSuggestions, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
 import {
   resolveBusinessProfileImage,
   resolveBusinessProfileImgUrl,
@@ -852,6 +852,10 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   const [placeSuggestions, setPlaceSuggestions] = useState([]);
   const [placeSearchLoading, setPlaceSearchLoading] = useState(false);
   const placesDebounceRef = useRef(null);
+  const [addressInput, setAddressInput] = useState(business?.business_address_line_1 || "");
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
+  const [addressSearchLoading, setAddressSearchLoading] = useState(false);
+  const addressDebounceRef = useRef(null);
   const [showUnsavedChangesModal, setShowUnsavedChangesModal] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState(null);
 
@@ -923,12 +927,14 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setPlaceSearchLoading(true);
     try {
       const pd = await getPlaceDetails(place.place_id);
+      const streetAddress = pd.address_line_1 || pd.formatted_address || "";
+      setAddressInput(streetAddress);
       setFormData((prev) => {
         const coordsStr = pd.lat != null && pd.lng != null ? formatCoordinatePairForInput(pd.lat, pd.lng) : prev.coordinates;
         return {
           ...prev,
-          location: pd.formatted_address || prev.location,
-          addressLine2: pd.address_line_1 || pd.formatted_address || prev.addressLine2,
+          location: pd.area_location || prev.location,
+          addressLine2: streetAddress || prev.addressLine2,
           city: pd.city || prev.city,
           state: pd.state || prev.state,
           country: pd.country || prev.country,
@@ -943,6 +949,61 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       Alert.alert("Error", "Could not load place details. Please try again.");
     } finally {
       setPlaceSearchLoading(false);
+    }
+  };
+
+  const onAddressInputChange = (text) => {
+    setAddressInput(text);
+    setIsChanged(true);
+    if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+
+    if (!text.trim()) {
+      setAddressSuggestions([]);
+      setFormData((prev) => ({ ...prev, addressLine2: "", coordinates: "" }));
+      setCoordinatesError("");
+      return;
+    }
+
+    setFormData((prev) => ({ ...prev, addressLine2: text }));
+
+    addressDebounceRef.current = setTimeout(async () => {
+      try {
+        const results = await getAddressSuggestions(text);
+        setAddressSuggestions(results);
+      } catch (err) {
+        console.error("EditBusinessProfile address suggestions error:", err);
+      }
+    }, 350);
+  };
+
+  const handleAddressSelect = async (place) => {
+    setAddressSuggestions([]);
+    setAddressSearchLoading(true);
+    try {
+      const pd = await getPlaceDetails(place.place_id);
+      if (pd.lat == null || pd.lng == null) {
+        Alert.alert("Error", "Could not determine coordinates for this address.");
+        return;
+      }
+      const streetAddress = pd.address_line_1 || place.structured_formatting?.main_text || place.description || "";
+      setAddressInput(streetAddress);
+      setFormData((prev) => ({
+        ...prev,
+        addressLine2: streetAddress,
+        city: pd.city || prev.city,
+        state: pd.state || prev.state,
+        country: pd.country || prev.country,
+        zip: pd.zip || prev.zip,
+        location: pd.area_location || prev.location,
+        coordinates: formatCoordinatePairForInput(pd.lat, pd.lng),
+      }));
+      setCoordinatesError("");
+      setIsChanged(true);
+    } catch (err) {
+      console.error("EditBusinessProfile address select error:", err);
+      Alert.alert("Error", "Could not load address details. Please try again.");
+    } finally {
+      setAddressSearchLoading(false);
     }
   };
 
@@ -2075,6 +2136,42 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           handleFieldChange(key, formattedText);
         }}
       />
+    </View>
+  );
+
+  const renderAddressField = () => (
+    <View style={[styles.fieldContainer, styles.placesSearchContainer]}>
+      <View style={styles.labelRow}>
+        <Text style={[styles.label, darkMode && styles.darkLabel]}>Address</Text>
+        <View style={styles.toggleContainer}>
+          <TouchableOpacity onPress={() => handleToggleVisibility("locationIsPublic")} style={[styles.togglePill, formData.locationIsPublic && styles.togglePillActiveGreen]}>
+            <Text style={[styles.togglePillText, formData.locationIsPublic && styles.togglePillTextActive]}>{formData.locationIsPublic ? "Visible" : "Show"}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => handleToggleVisibility("locationIsPublic")} style={[styles.togglePill, !formData.locationIsPublic && styles.togglePillActiveRed]}>
+            <Text style={[styles.togglePillText, !formData.locationIsPublic && styles.togglePillTextActive]}>{!formData.locationIsPublic ? "Hidden" : "Hide"}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+      <TextInput
+        style={[styles.input, darkMode && styles.darkInput]}
+        placeholder='Start typing your street address'
+        placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+        value={addressInput}
+        onChangeText={onAddressInputChange}
+        autoCapitalize='words'
+        autoCorrect={false}
+      />
+      {addressSearchLoading ? <ActivityIndicator size='small' color='#4B2E83' style={{ marginTop: 8 }} /> : null}
+      {addressSuggestions.length > 0 && (
+        <View style={[styles.placesSuggestionsList, darkMode && styles.darkPlacesSuggestionsList]}>
+          {addressSuggestions.map((item) => (
+            <TouchableOpacity key={item.place_id} style={[styles.placesSuggestionRow, darkMode && styles.darkPlacesSuggestionRow]} onPress={() => handleAddressSelect(item)} activeOpacity={0.7}>
+              <Text style={[styles.placesSuggestionMain, darkMode && styles.darkLabel]}>{item.structured_formatting?.main_text || item.description}</Text>
+              {item.structured_formatting?.secondary_text ? <Text style={[styles.placesSuggestionSub, darkMode && styles.darkCoordHint]}>{item.structured_formatting.secondary_text}</Text> : null}
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </View>
   );
 
@@ -3771,7 +3868,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         {renderField("Business Name", formData.name, "name")}
         {renderUpdateLocationFromGoogle()}
         {renderField("Location", formData.location, "location", "", "locationIsPublic")}
-        {renderField("Address", formData.addressLine2, "addressLine2", "", "locationIsPublic")}
+        {renderAddressField()}
         {renderField("City", formData.city, "city", "", "locationIsPublic")}
         {renderField("State", formData.state, "state", "", "locationIsPublic")}
         {renderField("Country", formData.country, "country", "", "locationIsPublic")}
