@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { View, Text, TextInput, StyleSheet, Dimensions, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity, Image, Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getBusinessSuggestions, getPlaceDetails } from "../utils/googlePlaces";
+import { getBusinessSuggestions, getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import { googlePhotoUrlsMatch, dedupeGooglePhotoUrls } from "../utils/resolveBusinessProfileImage";
 import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
@@ -19,7 +19,10 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
   const [placeSearchError, setPlaceSearchError] = useState("");
   const [existingBusinessUid, setExistingBusinessUid] = useState("");
   const [placeSuggestions, setPlaceSuggestions] = useState([]);
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
+  const [addressSearchLoading, setAddressSearchLoading] = useState(false);
   const placesDebounceRef = useRef(null);
+  const addressDebounceRef = useRef(null);
   const userUploadedImages = formData.images || [];
   const hasGooglePlace = Boolean(formData.googleId);
   const googlePhotos = hasGooglePlace ? formData.businessGooglePhotos || [] : [];
@@ -172,6 +175,61 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
         console.error("BusinessStep0 place suggestions error:", err);
       }
     }, 350);
+  };
+
+  const onAddressChange = (text) => {
+    if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+
+    if (!text.trim()) {
+      setAddressSuggestions([]);
+      const updated = { ...formData, addressLine1: text, latitude: "", longitude: "" };
+      setFormData(updated);
+      AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+      return;
+    }
+
+    const updated = { ...formData, addressLine1: text };
+    setFormData(updated);
+    AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+
+    addressDebounceRef.current = setTimeout(async () => {
+      try {
+        const results = await getAddressSuggestions(text);
+        setAddressSuggestions(results);
+      } catch (err) {
+        console.error("BusinessStep0 address suggestions error:", err);
+      }
+    }, 350);
+  };
+
+  const handleAddressSelect = async (place) => {
+    setAddressSuggestions([]);
+    setAddressSearchLoading(true);
+    try {
+      const pd = await getPlaceDetails(place.place_id);
+      if (pd.lat == null || pd.lng == null) {
+        Alert.alert("Error", "Could not determine coordinates for this address.");
+        return;
+      }
+      const updated = {
+        ...formData,
+        addressLine1: pd.address_line_1 || place.structured_formatting?.main_text || "",
+        city: pd.city || "",
+        state: pd.state || "",
+        zip: pd.zip || "",
+        country: pd.country || "",
+        latitude: pd.lat ?? "",
+        longitude: pd.lng ?? "",
+        location: pd.area_location || formData.location || "",
+      };
+      setFormData(updated);
+      await AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
+    } catch (err) {
+      console.error("BusinessStep0 address select error:", err);
+      Alert.alert("Error", "Could not load address details. Please try again.");
+    } finally {
+      setAddressSearchLoading(false);
+    }
   };
 
   const handleGooglePlaceSelect = async (place) => {
@@ -384,16 +442,37 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
               <Text style={[styles.helperText, darkMode && styles.darkHelperText]}>
                 Controls whether location and address appear on your Business Mini Card.
               </Text>
-              <TextInput
-                style={[styles.input, darkMode && styles.darkInput]}
-                value={formData.addressLine1 || ""}
-                placeholder='Enter street address'
-                placeholderTextColor={darkMode ? "#cccccc" : "#666"}
-                onChangeText={(text) => updateFormData("addressLine1", text)}
-                accessibilitylabel='Street address'
-                accessibilityHint='Enter your street address'
-                aria-label='Street address'
-              />
+              <View style={{ width: "100%", zIndex: 900 }}>
+                <TextInput
+                  style={[styles.input, darkMode && styles.darkInput]}
+                  value={formData.addressLine1 || ""}
+                  placeholder='Start typing your street address'
+                  placeholderTextColor={darkMode ? "#cccccc" : "#666"}
+                  onChangeText={onAddressChange}
+                  autoCapitalize='words'
+                  autoCorrect={false}
+                  accessibilitylabel='Street address'
+                  accessibilityHint='Start typing your street address and choose one from the suggestions'
+                  aria-label='Street address'
+                />
+                {addressSearchLoading ? <ActivityIndicator size='small' color='#FF9500' style={{ marginTop: 8 }} /> : null}
+                {addressSuggestions.length > 0 && (
+                  <View style={[styles.suggestionsList, darkMode && styles.darkSuggestionsList]}>
+                    {addressSuggestions.map((item) => (
+                      <TouchableOpacity key={item.place_id} style={[styles.suggestionRow, darkMode && styles.darkSuggestionRow]} onPress={() => handleAddressSelect(item)} activeOpacity={0.7}>
+                        <Text style={[styles.suggestionMain, darkMode && styles.darkLabel]} numberOfLines={1}>
+                          {item.structured_formatting?.main_text || item.description}
+                        </Text>
+                        {item.structured_formatting?.secondary_text ? (
+                          <Text style={[styles.suggestionSub, darkMode && styles.darkSubtitle]} numberOfLines={1}>
+                            {item.structured_formatting.secondary_text}
+                          </Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
 
               <View style={{ flexDirection: "row", width: "100%", gap: 10 }}>
                 <View style={{ flex: 1 }}>

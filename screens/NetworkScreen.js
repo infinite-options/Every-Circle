@@ -461,6 +461,7 @@ const NetworkScreen = ({ navigation }) => {
   const [availableIntroducedBy, setAvailableIntroducedBy] = useState([]);
   /** Which single filter list is open: relationship | date | location | event | notes | introduced */
   const [filterModalKind, setFilterModalKind] = useState(null);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [graphHtml, setGraphHtml] = useState(""); // For web iframe
   const iframeContainerRef = React.useRef(null); // Ref for web iframe container
@@ -2450,68 +2451,91 @@ const NetworkScreen = ({ navigation }) => {
                         </View>
                       )}
 
-                      {/* Row 3: Relationship */}
-                      <View style={styles.controlRow}>
-                        <Text style={styles.controlRowLabel}>3. Relationship</Text>
-                        <TouchableOpacity style={[styles.pullDownButton, relationshipFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("relationship")}>
-                          <Text style={[styles.pullDownButtonText, relationshipFilter !== "All" && styles.pullDownButtonTextActive]}>{relationshipFilter === "All" ? "All" : relationshipFilter}</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {/* Row 4: Date(s) */}
-                      <View style={styles.controlRow}>
-                        <Text style={styles.controlRowLabel}>4. Date(s)</Text>
-                        <TouchableOpacity style={[styles.pullDownButton, dateFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("date")}>
-                          <Text style={[styles.pullDownButtonText, dateFilter !== "All" && styles.pullDownButtonTextActive]}>{dateFilter === "All" ? "All" : dateFilter}</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {/* Row 5: Location(s) */}
-                      <View style={styles.controlRow}>
-                        <Text style={styles.controlRowLabel}>5. Location(s)</Text>
-                        <TouchableOpacity style={[styles.pullDownButton, locationFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("location")}>
-                          <Text style={[styles.pullDownButtonText, locationFilter !== "All" && styles.pullDownButtonTextActive]}>{locationFilter === "All" ? "All" : locationFilter}</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {/* Row 6: Event(s) */}
-                      <View style={styles.controlRow}>
-                        <Text style={styles.controlRowLabel}>6. Event(s)</Text>
-                        <TouchableOpacity style={[styles.pullDownButton, eventFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("event")}>
-                          <Text style={[styles.pullDownButtonText, eventFilter !== "All" && styles.pullDownButtonTextActive]}>{eventFilter === "All" ? "All" : eventFilter}</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {/* Row 7: Notes */}
-                      <View style={styles.controlRow}>
-                        <Text style={styles.controlRowLabel}>7. Notes</Text>
-                        <TouchableOpacity style={[styles.pullDownButton, notesFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("notes")}>
-                          <Text style={[styles.pullDownButtonText, notesFilter !== "All" && styles.pullDownButtonTextActive]}>{formatFilterButtonLabel(notesFilter)}</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {/* Row 8: Introduced by */}
-                      <View style={styles.controlRow}>
-                        <Text style={styles.controlRowLabel}>8. Introduced by</Text>
-                        <TouchableOpacity style={[styles.pullDownButton, introducedByFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("introduced")}>
-                          <Text style={[styles.pullDownButtonText, introducedByFilter !== "All" && styles.pullDownButtonTextActive]}>{formatFilterButtonLabel(introducedByFilter)}</Text>
-                        </TouchableOpacity>
-                      </View>
-
+                      {/* Advanced filters dropdown (rows 3–8) */}
                       <TouchableOpacity
-                        onPress={() => {
-                          setRelationshipFilter("All");
-                          setDateFilter("All");
-                          setLocationFilter("All");
-                          setEventFilter("All");
-                          setNotesFilter("All");
-                          setIntroducedByFilter("All");
-                          setFilterModalKind(null);
-                        }}
-                        style={{ alignSelf: "center", marginTop: 8, paddingVertical: 8, paddingHorizontal: 14 }}
+                        style={[styles.advancedFiltersHeader, darkMode && styles.darkAdvancedFiltersHeader]}
+                        onPress={() => setShowAdvancedFilters((prev) => !prev)}
+                        activeOpacity={0.7}
                       >
-                        <Text style={{ color: "#535db7", fontWeight: "600", fontSize: 13 }}>Reset filters (3–8)</Text>
+                        <Text style={[styles.advancedFiltersHeaderText, darkMode && styles.darkAdvancedFiltersHeaderText]}>
+                          Advanced Filters
+                          {(relationshipFilter !== "All" ||
+                            dateFilter !== "All" ||
+                            locationFilter !== "All" ||
+                            eventFilter !== "All" ||
+                            notesFilter !== "All" ||
+                            introducedByFilter !== "All") &&
+                            " (active)"}
+                        </Text>
+                        <Ionicons name={showAdvancedFilters ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#e0e0e0" : "#333"} />
                       </TouchableOpacity>
+
+                      {showAdvancedFilters && (
+                        <>
+                          {/* Row 3: Relationship */}
+                          <View style={styles.controlRow}>
+                            <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>3. Relationship</Text>
+                            <TouchableOpacity style={[styles.pullDownButton, relationshipFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("relationship")}>
+                              <Text style={[styles.pullDownButtonText, relationshipFilter !== "All" && styles.pullDownButtonTextActive]}>{relationshipFilter === "All" ? "All" : relationshipFilter}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Row 4: Date(s) */}
+                          <View style={styles.controlRow}>
+                            <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>4. Date(s)</Text>
+                            <TouchableOpacity style={[styles.pullDownButton, dateFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("date")}>
+                              <Text style={[styles.pullDownButtonText, dateFilter !== "All" && styles.pullDownButtonTextActive]}>{dateFilter === "All" ? "All" : dateFilter}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Row 5: Location(s) */}
+                          <View style={styles.controlRow}>
+                            <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>5. Location(s)</Text>
+                            <TouchableOpacity style={[styles.pullDownButton, locationFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("location")}>
+                              <Text style={[styles.pullDownButtonText, locationFilter !== "All" && styles.pullDownButtonTextActive]}>{locationFilter === "All" ? "All" : locationFilter}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Row 6: Event(s) */}
+                          <View style={styles.controlRow}>
+                            <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>6. Event(s)</Text>
+                            <TouchableOpacity style={[styles.pullDownButton, eventFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("event")}>
+                              <Text style={[styles.pullDownButtonText, eventFilter !== "All" && styles.pullDownButtonTextActive]}>{eventFilter === "All" ? "All" : eventFilter}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Row 7: Notes */}
+                          <View style={styles.controlRow}>
+                            <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>7. Notes</Text>
+                            <TouchableOpacity style={[styles.pullDownButton, notesFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("notes")}>
+                              <Text style={[styles.pullDownButtonText, notesFilter !== "All" && styles.pullDownButtonTextActive]}>{formatFilterButtonLabel(notesFilter)}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {/* Row 8: Introduced by */}
+                          <View style={styles.controlRow}>
+                            <Text style={[styles.controlRowLabel, darkMode && { color: "#e0e0e0" }]}>8. Introduced by</Text>
+                            <TouchableOpacity style={[styles.pullDownButton, introducedByFilter !== "All" && styles.pullDownButtonActive]} onPress={() => setFilterModalKind("introduced")}>
+                              <Text style={[styles.pullDownButtonText, introducedByFilter !== "All" && styles.pullDownButtonTextActive]}>{formatFilterButtonLabel(introducedByFilter)}</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          <TouchableOpacity
+                            onPress={() => {
+                              setRelationshipFilter("All");
+                              setDateFilter("All");
+                              setLocationFilter("All");
+                              setEventFilter("All");
+                              setNotesFilter("All");
+                              setIntroducedByFilter("All");
+                              setFilterModalKind(null);
+                            }}
+                            style={{ alignSelf: "center", marginTop: 8, paddingVertical: 8, paddingHorizontal: 14 }}
+                          >
+                            <Text style={{ color: "#535db7", fontWeight: "600", fontSize: 13 }}>Reset filters (3–8)</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
                     </View>
 
                     {loading && <ActivityIndicator size='large' color='#AF52DE' />}
@@ -3928,6 +3952,28 @@ const styles = StyleSheet.create({
   },
   darkFormSwitchDescription: {
     color: "#aaa",
+  },
+  advancedFiltersHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "rgba(36, 52, 194, 0.12)",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  darkAdvancedFiltersHeader: {
+    backgroundColor: "rgba(28, 40, 153, 0.25)",
+  },
+  advancedFiltersHeaderText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333",
+  },
+  darkAdvancedFiltersHeaderText: {
+    color: "#e0e0e0",
   },
   controlRow: {
     flexDirection: "row",
