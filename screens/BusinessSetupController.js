@@ -12,6 +12,7 @@ import { BUSINESS_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { googlePhotoUrlsMatch, dedupeGooglePhotoUrls } from "../utils/resolveBusinessProfileImage";
+import { obscureSecretsInString } from "../utils/obscureSecretForDisplay";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 
@@ -397,23 +398,27 @@ export default function BusinessSetupController({ navigation, route }) {
         }
       }
 
+      const safeLogValue = (value) => {
+        const raw = typeof value === "object" ? JSON.stringify(value) : String(value);
+        return obscureSecretsInString(raw);
+      };
+
       // Log in Postman-friendly format (key:value - no space after colon for easy copy-paste)
       formDataEntries.forEach(([key, value]) => {
-        const displayValue = typeof value === "object" ? JSON.stringify(value) : String(value);
-        console.log(`${key}:${displayValue}`);
+        console.log(`${key}:${safeLogValue(value)}`);
       });
 
       console.log("============================================");
       console.log("📋 AS JSON (for Postman body - form-data):");
       console.log("============================================");
-      console.log(JSON.stringify(payloadData, null, 2));
+      console.log(obscureSecretsInString(JSON.stringify(payloadData, null, 2)));
 
       console.log("============================================");
       console.log("📋 RAW FORM DATA PARTS:");
       console.log("============================================");
       if (data && data._parts) {
         data._parts.forEach(([key, value]) => {
-          console.log(`${key}:`, value);
+          console.log(`${key}:`, safeLogValue(value));
         });
       }
       console.log("============================================");

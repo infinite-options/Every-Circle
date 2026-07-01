@@ -42,6 +42,7 @@ import { mergeCustomTags, parseTagList, serializeTagList } from "../utils/tagLis
 import { buildBusinessServiceForApi, DEFAULT_RETURN_WINDOW_DAYS, normServiceReturnable, normServiceReturnWindowDays, normServiceTags } from "../utils/buildBusinessServiceForApi";
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
 import { getBusinessSuggestions, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
+import { obscureSecretsInString } from "../utils/obscureSecretForDisplay";
 import {
   resolveBusinessProfileImage,
   resolveBusinessProfileImgUrl,
@@ -1835,11 +1836,11 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       console.log("Image fields (backend contract):");
       console.log("  business_img_* count:", newFileIndex);
       console.log("  business_profile_img:", deferProfileToSecondPut ? "(deferred – step 2)" : profileSelectionChanged ? (profileImageSent ? "SENT" : "attempted") : "not sent");
-      console.log("  business_images_url:", businessImagesUrlValue);
-      console.log("  delete_business_images:", deleteUserUrls.length > 0 ? JSON.stringify(deleteUserUrls) : "(not sent)");
+      console.log("  business_images_url:", obscureSecretsInString(businessImagesUrlValue));
+      console.log("  delete_business_images:", deleteUserUrls.length > 0 ? obscureSecretsInString(JSON.stringify(deleteUserUrls)) : "(not sent)");
       console.log("  business_google_id:", businessGoogleId || "(not sent)");
       console.log("  business_google_photos:", sendGooglePhotos ? `sent (${googlePhotosToSend.length}: kept S3 + fresh Google)` : "not sent");
-      console.log("  business_favorite_image:", deferFavoriteToSecondPut ? "(deferred – step 2)" : favoriteForSave || "(not sent)");
+      console.log("  business_favorite_image:", deferFavoriteToSecondPut ? "(deferred – step 2)" : obscureSecretsInString(favoriteForSave) || "(not sent)");
       console.log("  business_profile_img_is_public:", formData.imageIsPublic ? "1" : "0");
       console.log("--------------------------------------------");
       console.log("============================================");

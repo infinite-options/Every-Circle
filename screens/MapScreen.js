@@ -3,6 +3,7 @@ import { StyleSheet, View, Dimensions, TouchableOpacity, Text, KeyboardAvoidingV
 import MapView, { Marker } from "react-native-maps";
 import { GooglePlacesAutocomplete } from "react-native-google-places-autocomplete";
 import config from "../config";
+import { obscureApiKeyForDisplay } from "../utils/obscureSecretForDisplay";
 
 const { width, height } = Dimensions.get("window");
 const ASPECT_RATIO = width / height;
@@ -17,8 +18,8 @@ const DEFAULT_LOCATION = {
   longitudeDelta: LONGITUDE_DELTA,
 };
 
-console.log("Google Maps API Key being used:", config.googleMapsApiKey);
-console.log("Initializing GooglePlacesAutocomplete with API key:", config.googleMapsApiKey);
+console.log("Google Maps API Key being used:", obscureApiKeyForDisplay(config.googleMapsApiKey));
+console.log("Initializing GooglePlacesAutocomplete with API key:", obscureApiKeyForDisplay(config.googleMapsApiKey));
 
 export default function MapScreen({ onLogout }) {
   const [isAutocompleteFocused, setAutocompleteFocused] = useState(false);

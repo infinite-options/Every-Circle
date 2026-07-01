@@ -41,6 +41,7 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
 import { searchResultsToMapProfiles } from "../utils/searchResultsToMapProfiles";
+import { obscureSecretsInString } from "../utils/obscureSecretForDisplay";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
 function NoBountyIcon({ darkMode, muted }) {
   return (
@@ -1873,8 +1874,8 @@ export default function SearchScreen({ route }) {
         };
 
         list = resultsArray.map((b, i) => {
-          console.log("All image fields:", b.business_profile_img, b.business_images_url, b.business_favorite_image, b.business_name);
-          console.log("Business profile img:", b.business_profile_img, b.business_name);
+          console.log("All image fields:", obscureSecretsInString(b.business_profile_img), obscureSecretsInString(b.business_images_url), obscureSecretsInString(b.business_favorite_image), b.business_name);
+          console.log("Business profile img:", obscureSecretsInString(b.business_profile_img), b.business_name);
           return {
             id: `${b.business_uid || i}`,
             business_uid: b.business_uid ? String(b.business_uid).trim() : null,
@@ -2737,8 +2738,8 @@ export default function SearchScreen({ route }) {
             <Image
               source={item.business_profile_img ? { uri: encodeURI(item.business_profile_img.trim()) } : require("../assets/profile.png")}
               style={{ width: 40, height: 40, borderRadius: 20, marginRight: 10 }}
-              onError={(e) => console.log("Image load error:", e.nativeEvent.error, item.business_profile_img)}
-              onLoad={() => console.log("Image loaded successfully:", item.business_profile_img)}
+              onError={(e) => console.log("Image load error:", e.nativeEvent.error, obscureSecretsInString(item.business_profile_img))}
+              onLoad={() => console.log("Image loaded successfully:", obscureSecretsInString(item.business_profile_img))}
               defaultSource={require("../assets/profile.png")}
             />
             <View style={{ flex: 1 }}>

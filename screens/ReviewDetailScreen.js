@@ -23,6 +23,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { parsePrice } from "../utils/priceUtils";
+import { obscureSecretsInString } from "../utils/obscureSecretForDisplay";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -209,7 +210,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
 
         // Filter out Google Maps API URLs that don't work in React Native
         if (uri.includes("maps.googleapis.com/maps/api/place/js/PhotoService") || uri.includes("PhotoService.GetPhoto") || uri.includes("callback=none")) {
-          console.log("Filtering out Google API URL that won't work in React Native:", uri.substring(0, 100) + "...");
+          console.log("Filtering out Google API URL that won't work in React Native:", obscureSecretsInString(uri.substring(0, 100) + "..."));
           return false;
         }
 
@@ -804,7 +805,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
                   <Text style={styles.cardTitle}>Business Images</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScroll}>
                     {business.images.map((uri, index) => {
-                      if (__DEV__) console.log(`🔵 ReviewDetailScreen - Rendering image ${index}:`, uri);
+                      if (__DEV__) console.log(`🔵 ReviewDetailScreen - Rendering image ${index}:`, obscureSecretsInString(uri));
                       return (
                         <View key={index} style={styles.imageContainer}>
                           <Image
@@ -812,7 +813,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
                             style={styles.image}
                             onError={(error) => {
                               console.log(`Business image ${index} failed to load:`, error.nativeEvent.error);
-                              console.log(`Problematic URI:`, uri);
+                              console.log(`Problematic URI:`, obscureSecretsInString(uri));
                             }}
                             onLoad={() => console.log(`Business image ${index} loaded successfully`)}
                             defaultSource={require("../assets/profile.png")}

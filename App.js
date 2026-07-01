@@ -79,11 +79,12 @@ import ChatScreen from "./screens/ChatScreen";
 import AddReviewSearchScreen from "./screens/AddReviewSearchScreen";
 import EveryCircleMapScreen from "./screens/EveryCircleMapScreen";
 import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFromEnv } from "./utils/clearAppAsyncStorage";
+import { obscureApiKeyForDisplay } from "./utils/obscureSecretForDisplay";
 
 const Stack = createNativeStackNavigator();
 
 export const mapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
-const mapsApiKeyDisplay = mapsApiKey ? "..." + mapsApiKey.slice(-4) : "Not set";
+const mapsApiKeyDisplay = obscureApiKeyForDisplay(mapsApiKey);
 
 /** Home screen: show version / last-build line (PM version, app version, last change). */
 const SHOW_HOME_BUILD_INFO = true;

@@ -117,10 +117,7 @@ const NETWORK_GRAPH_PURPLE = "#9C45F7";
 const NETWORK_GRAPH_PURPLE_FILL_50 = "rgba(156, 69, 247, 0.5)";
 
 function escapeVisHtmlLabel(text) {
-  return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 /** Persist connections graph and circles separately so one fetch does not wipe the other. */
@@ -163,15 +160,7 @@ function groupNetworkByDegree(data) {
 }
 
 function applyConnectionFilters(nodes, filters) {
-  const {
-    relationshipFilter,
-    dateFilter,
-    locationFilter,
-    eventFilter,
-    notesFilter,
-    introducedByFilter,
-    searchQuery = "",
-  } = filters;
+  const { relationshipFilter, dateFilter, locationFilter, eventFilter, notesFilter, introducedByFilter, searchQuery = "" } = filters;
 
   let filtered = nodes || [];
 
@@ -325,7 +314,7 @@ const connectionFilterModalStyles = StyleSheet.create({
 });
 
 const NEARBY_RADIUS_MIN = 1;
-const NEARBY_RADIUS_MAX = 12500; // ~half Earth circumference in miles
+const NEARBY_RADIUS_MAX = 1500; // ~half Earth circumference in miles
 const NEARBY_THUMB = 22;
 const LOG_MIN = Math.log(NEARBY_RADIUS_MIN);
 const LOG_MAX = Math.log(NEARBY_RADIUS_MAX);
@@ -347,9 +336,15 @@ function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
   const onReleaseRef = useRef(onRelease);
-  useEffect(() => { valueRef.current = value; });
-  useEffect(() => { onChangeRef.current = onChange; });
-  useEffect(() => { onReleaseRef.current = onRelease; });
+  useEffect(() => {
+    valueRef.current = value;
+  });
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
+  useEffect(() => {
+    onReleaseRef.current = onRelease;
+  });
 
   const mileToX = (miles) => {
     if (miles == null) return 0;
@@ -378,9 +373,13 @@ function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
         const newX = Math.max(0, Math.min(trackRef.current - NEARBY_THUMB, startXRef.current + gs.dx));
         onChangeRef.current(xToMile(newX));
       },
-      onPanResponderRelease: () => { onReleaseRef.current?.(); },
-      onPanResponderTerminate: () => { onReleaseRef.current?.(); },
-    })
+      onPanResponderRelease: () => {
+        onReleaseRef.current?.();
+      },
+      onPanResponderTerminate: () => {
+        onReleaseRef.current?.();
+      },
+    }),
   ).current;
 
   const thumbX = mileToX(value);
@@ -388,7 +387,9 @@ function NearbyRadiusSlider({ value, onChange, onRelease, darkMode }) {
   return (
     <View
       style={nearbySliderStyles.track}
-      onLayout={(e) => { trackRef.current = e.nativeEvent.layout.width; }}
+      onLayout={(e) => {
+        trackRef.current = e.nativeEvent.layout.width;
+      }}
       {...panResponder.panHandlers}
     >
       <View style={[nearbySliderStyles.rail, darkMode && nearbySliderStyles.railDark]} />
@@ -404,10 +405,18 @@ const nearbySliderStyles = StyleSheet.create({
   railDark: { backgroundColor: "#444" },
   fill: { height: 4, backgroundColor: "#AF52DE", borderRadius: 2, position: "absolute", left: 0 },
   thumb: {
-    width: NEARBY_THUMB, height: NEARBY_THUMB, borderRadius: NEARBY_THUMB / 2,
-    backgroundColor: "#AF52DE", borderWidth: 2, borderColor: "#fff",
+    width: NEARBY_THUMB,
+    height: NEARBY_THUMB,
+    borderRadius: NEARBY_THUMB / 2,
+    backgroundColor: "#AF52DE",
+    borderWidth: 2,
+    borderColor: "#fff",
     position: "absolute",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.3, shadowRadius: 2, elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 3,
   },
   thumbDark: { borderColor: "#2a2a2a" },
 });
@@ -1834,11 +1843,7 @@ const NetworkScreen = ({ navigation }) => {
         image: hasImg && !isZeroNode ? img : undefined,
         size: isZeroNode ? userNodeSize : hasImg ? 18 : 10,
         borderWidth: isZeroNode ? userNodeBorderWidth : undefined,
-        color: isZeroNode
-          ? { border: NETWORK_GRAPH_PURPLE, background: NETWORK_GRAPH_PURPLE_FILL_50 }
-          : hasImg
-            ? undefined
-            : { border: "#FFFFFF", background: "#e9d4ff" },
+        color: isZeroNode ? { border: NETWORK_GRAPH_PURPLE, background: NETWORK_GRAPH_PURPLE_FILL_50 } : hasImg ? undefined : { border: "#FFFFFF", background: "#e9d4ff" },
         font: { size: 11, color: "#444" },
         level: Number(n.degree) || 1,
       });
@@ -2678,7 +2683,7 @@ const NetworkScreen = ({ navigation }) => {
                     people={nearbyPeopleToMapMarkers(
                       nearbyUsers
                         .filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))
-                        .filter((u) => nearbyRadiusMiles == null || u.distance_meters == null || u.distance_meters / 1609 <= nearbyRadiusMiles)
+                        .filter((u) => nearbyRadiusMiles == null || u.distance_meters == null || u.distance_meters / 1609 <= nearbyRadiusMiles),
                     )}
                     radiusMiles={nearbyRadiusMiles}
                     onPersonPress={(person) => navigation.navigate("Profile", { profile_uid: person.uid })}
@@ -2691,13 +2696,24 @@ const NetworkScreen = ({ navigation }) => {
                   <Text style={[styles.nearbyRadiusLabel, darkMode && styles.nearbyRadiusLabelDark]}>Within:</Text>
                   <NearbyRadiusSlider
                     value={nearbyRadiusMiles}
-                    onChange={(v) => { nearbyRadiusMilesRef.current = v; setNearbyRadiusMiles(v); }}
+                    onChange={(v) => {
+                      nearbyRadiusMilesRef.current = v;
+                      setNearbyRadiusMiles(v);
+                    }}
                     onRelease={() => fetchNearbyUsers(nearbyRadiusMilesRef.current)}
                     darkMode={darkMode}
                   />
                   <View style={styles.nearbyRadiusValueWrap}>
                     {nearbyRadiusMiles != null ? (
-                      <TouchableOpacity onPress={() => { nearbyRadiusMilesRef.current = null; setNearbyRadiusMiles(null); fetchNearbyUsers(null); }} style={styles.nearbyRadiusClearBtn} accessibilityLabel="Clear radius filter">
+                      <TouchableOpacity
+                        onPress={() => {
+                          nearbyRadiusMilesRef.current = null;
+                          setNearbyRadiusMiles(null);
+                          fetchNearbyUsers(null);
+                        }}
+                        style={styles.nearbyRadiusClearBtn}
+                        accessibilityLabel='Clear radius filter'
+                      >
                         <Text style={styles.nearbyRadiusValueActive}>{formatMiles(nearbyRadiusMiles)}</Text>
                         <Text style={styles.nearbyRadiusClearIcon}> ✕</Text>
                       </TouchableOpacity>
