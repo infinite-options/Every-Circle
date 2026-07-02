@@ -30,7 +30,7 @@ if (Platform.OS !== "web") {
   }
 }
 
-const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic, handleDelete, onInputFocus, profileUid = "", darkMode = false }) => {
+const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic, handleDelete, soldExpertiseUids = new Set(), onInputFocus, profileUid = "", darkMode = false }) => {
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
   // Tracks which index was just added via "+".
@@ -105,6 +105,11 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
   }, [expertise.length, onInputFocus]);
 
   const deleteExpertise = (index) => {
+    const uid = expertise[index]?.profile_expertise_uid;
+    if (uid && soldExpertiseUids.has(uid)) {
+      Alert.alert("Cannot Delete", "This offering has been purchased and cannot be deleted.");
+      return;
+    }
     handleDelete(index);
   };
 
@@ -836,8 +841,8 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               value={item.quantity || ""}
               onChangeText={(text) => handleInputChange(index, "quantity", text)}
             />
-            <TouchableOpacity onPress={() => deleteExpertise(index)}>
-              <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
+            <TouchableOpacity onPress={() => deleteExpertise(index)} disabled={!!(item.profile_expertise_uid && soldExpertiseUids.has(item.profile_expertise_uid))}>
+              <Image source={require("../assets/delete.png")} style={[styles.deleteIcon, item.profile_expertise_uid && soldExpertiseUids.has(item.profile_expertise_uid) && { opacity: 0.3 }]} />
             </TouchableOpacity>
           </View>
 

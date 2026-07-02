@@ -1543,7 +1543,12 @@ export default function SearchScreen({ route }) {
           ...locationFieldsFromApi(b),
         }));
 
-        const mappedExpertise = expertiseResults.map((item, i) => mapSearchExpertiseRow(item, i));
+        const mappedExpertise = expertiseResults
+          .filter((item) => {
+            const qty = item.profile_expertise_quantity;
+            return qty == null || qty === "" || parseInt(qty) !== 0;
+          })
+          .map((item, i) => mapSearchExpertiseRow(item, i));
         const mappedSeeking = seekingResults.map((item, i) => mapSearchWishRow(item, i)).filter((item) => !isWishEnded(item));
 
         const normalizeByType = (items) => {
@@ -1813,7 +1818,12 @@ export default function SearchScreen({ route }) {
         // }
       } else if (type === "expertise") {
         // For expertise, the response includes profile data directly
-        list = resultsArray.map((item, i) => ({
+        list = resultsArray
+          .filter((item) => {
+            const qty = item.profile_expertise_quantity;
+            return qty == null || qty === "" || parseInt(qty) !== 0;
+          })
+          .map((item, i) => ({
           id: `${item.profile_expertise_uid || i}`,
           company: item.profile_expertise_title || "Untitled Expertise",
           rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,

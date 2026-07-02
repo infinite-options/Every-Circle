@@ -16,7 +16,7 @@ import EducationSection from "../components/EducationSection";
 import ExpertiseSection, { validateExpertise } from "../components/ExpertiseSection";
 import SeekingSection, { validateSeeking } from "../components/SeekingSection";
 import BusinessSection from "../components/BusinessSection";
-import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
+import { USER_PROFILE_INFO_ENDPOINT, API_BASE_URL } from "../apiConfig";
 import { refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import { parseCoordinateValue } from "../utils/validateCoordinates";
@@ -80,11 +80,17 @@ const EditProfileScreen = ({ route, navigation }) => {
     console.log("EditProfileScreen - Screen Mounted");
   }, []);
 
-  // Add this at the very top of EditProfileScreen component (around line 19, right after the route params)
   useEffect(() => {
-    console.log("=== RAW USER DATA FROM BACKEND ===");
-    console.log("user?.wishes:", JSON.stringify(user?.wishes, null, 2));
-  }, []);
+    if (!initialFormProfileUid) return;
+    fetch(`${API_BASE_URL}/api/v1/transactions/seller/${encodeURIComponent(initialFormProfileUid)}`)
+      .then((r) => r.json())
+      .then((json) => {
+        const rows = Array.isArray(json?.data) ? json.data : [];
+        const uids = new Set(rows.map((r) => r.ti_bs_id).filter(Boolean));
+        setSoldExpertiseUids(uids);
+      })
+      .catch(() => {});
+  }, [initialFormProfileUid]);
 
   const initialHomeLatLng = getInitialHomeLatLng(user);
 
@@ -353,6 +359,7 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [pendingBusinessNames, setPendingBusinessNames] = useState([]);
   const [isChanged, setIsChanged] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [soldExpertiseUids, setSoldExpertiseUids] = useState(new Set());
   const [shortBioHeight, setShortBioHeight] = useState(40); // Initial height for Short Bio
   const fileInputRef = useRef(null); // For web file input
   const [imageUpdateKey, setImageUpdateKey] = useState(0); // Key to force MiniCard re-render when image changes
@@ -1569,6 +1576,7 @@ const EditProfileScreen = ({ route, navigation }) => {
             toggleVisibility={() => handleToggleVisibility("expertiseIsPublic")}
             isPublic={formData.expertiseIsPublic}
             handleDelete={handleDeleteExpertise}
+            soldExpertiseUids={soldExpertiseUids}
             profileUid={profileUID.trim()}
             darkMode={darkMode}
             onInputFocus={(inputRef) => {

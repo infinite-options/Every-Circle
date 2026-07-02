@@ -563,15 +563,17 @@ function buildExpertiseRows(expertiseList, sellerTransactions) {
         soldQty += qty;
       }
     });
-    const initialQty = parseInt(exp.profile_expertise_quantity) || 0;
-    const remaining = initialQty > 0 ? Math.max(0, initialQty - soldQty) : null;
+    // profile_expertise_quantity is the remaining quantity in the DB (decremented on each sale).
+    // null/0 with no sales = unlimited ("—"); 0 with sales = sold out.
+    const rawDbQty = exp.profile_expertise_quantity;
+    const dbQty = rawDbQty != null && rawDbQty !== "" ? parseInt(rawDbQty) : null;
+    const remaining = dbQty == null ? null : dbQty > 0 ? dbQty : soldQty > 0 ? 0 : null;
     return {
       name: exp.profile_expertise_title || "",
       cost,
       unit,
       bounty: exp.profile_expertise_bounty || "",
       soldQty,
-      initialQty,
       remaining,
       isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
     };
@@ -2245,7 +2247,7 @@ export default function AccountScreen({ navigation }) {
                           <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
                           <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.soldQty}</Text>
                           <Text style={[styles.tableCell, { flex: 0.7, color: item.remaining === 0 ? "#c00" : "#777", marginLeft: 12 }]}>
-                            {item.remaining !== null ? item.remaining : "—"}
+                            {item.remaining === null ? "∞" : item.remaining}
                           </Text>
                           <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: "right", marginRight: 15 }]}>${item.bounty}</Text>
                         </View>
