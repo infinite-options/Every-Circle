@@ -35,9 +35,14 @@ import { enrichReviewWithConnectionDegree } from "../utils/profilePathConnection
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
 import * as DocumentPicker from "expo-document-picker";
 import { bountyPickerRequiresSelection, getDefaultBountyRecipient, isBountyReviewDisabled, mergeBountyEligibleReviews, resolveBountyRecommenderProfileId } from "../utils/bountyRecipientUtils";
+import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
+
+/** Set to true to show Tagline / Contact Information sections again on the business profile. */
+const SHOW_BUSINESS_PROFILE_TAGLINE_SECTION = false;
+const SHOW_BUSINESS_PROFILE_CONTACT_SECTION = false;
 
 // Module-level cache so category list is fetched at most once per app session
 let _categoryListCache = null;
@@ -67,6 +72,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [showReviews, setShowReviews] = useState(true);
   const [showServices, setShowServices] = useState(true);
   const [showTagline, setShowTagline] = useState(true);
+  /** Settings → Debug Mode = Yes: show Business ID on profile header. */
+  const [settingsDebugModeEnabled, setSettingsDebugModeEnabled] = useState(false);
+  const showBusinessIdDebug = SHOW_NETWORK_DEBUG_UI !== 0 && settingsDebugModeEnabled;
   const [businessViewers, setBusinessViewers] = useState([]);
   const [showBusinessViewers, setShowBusinessViewers] = useState(true);
 
@@ -632,6 +640,20 @@ export default function BusinessProfileScreen({ route, navigation }) {
     }, [business_uid]),
   );
 
+  useFocusEffect(
+    React.useCallback(() => {
+      (async () => {
+        try {
+          const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
+          if (nd !== null) setSettingsDebugModeEnabled(JSON.parse(nd) === true);
+          else setSettingsDebugModeEnabled(false);
+        } catch {
+          setSettingsDebugModeEnabled(false);
+        }
+      })();
+    }, []),
+  );
+
   const miniCardBusiness = useMemo(() => (business ? buildBusinessMiniCardBusiness(business, business_uid) : null), [business, business_uid]);
 
   const modalSelectedChoiceItems = useMemo(
@@ -1079,7 +1101,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
               <View style={[styles.previewCard, darkMode && styles.darkPreviewCard]}>
                 <MiniCard business={miniCardBusiness} />
               </View>
-              <Text style={[styles.profileId, darkMode && styles.darkProfileId]}>Business ID: {business_uid}</Text>
+              {showBusinessIdDebug ? <Text style={[styles.profileId, darkMode && styles.darkProfileId]}>Business ID: {business_uid}</Text> : null}
             </View>
           ) : null}
 
@@ -1106,7 +1128,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           )}
 
           {/* Tagline Section */}
-          {business.taglineIsPublic && isSafeForConditional(business.tagline) && (
+          {SHOW_BUSINESS_PROFILE_TAGLINE_SECTION && business.taglineIsPublic && isSafeForConditional(business.tagline) && (
             <View style={styles.fieldContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowTagline(!showTagline)}>
                 <Text style={styles.sectionHeaderText}>TAGLINE</Text>
@@ -1121,6 +1143,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           )}
 
           {/* Contact Information */}
+          {SHOW_BUSINESS_PROFILE_CONTACT_SECTION && (
           <View style={styles.fieldContainer}>
             <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowContact(!showContact)}>
               <Text style={styles.sectionHeaderText}>CONTACT INFORMATION</Text>
@@ -1149,7 +1172,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 {business.emailIsPublic && isSafeForConditional(business.business_email_id) && (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Email: {sanitizeText(business.business_email_id)}</Text>
                 )}
-                {isSafeForConditional(business.business_website) && <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Website: 🌐 {sanitizeText(business.business_website)}</Text>}
                 {isSafeForConditional(business.business_role || business.role || business.bu_role) && (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Business Role: {sanitizeText(business.business_role || business.role || business.bu_role)}</Text>
                 )}
@@ -1159,6 +1181,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
               </View>
             )}
           </View>
+          )}
 
           {/* Business Hours */}
           {isSafeForConditional(business.business_hours) && (
@@ -1181,8 +1204,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
             </View>
           )}
 
-          {/* Custom Tags */}
-          {business.customTags && business.customTags.length > 0 && (
+          {/* Custom Tags — owners/editors only */}
+          {isOwner && business.customTags && business.customTags.length > 0 && (
             <View style={styles.fieldContainer}>
               <Text style={[styles.label, darkMode && styles.darkLabel]}>Tags:</Text>
               <View style={styles.tagsContainer}>
@@ -1204,7 +1227,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
           {/* Social Links */}
           {(() => {
-            const hasSocialLinks = business.facebook || business.instagram || business.linkedin || business.youtube;
+            const hasSocialLinks = business.facebook || business.instagram || business.linkedin || business.youtube || isSafeForConditional(business.business_website);
             if (!hasSocialLinks) return null;
             return (
               <View style={styles.fieldContainer}>
@@ -1214,6 +1237,11 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 </TouchableOpacity>
                 {showSocialLinks && (
                   <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
+                    {isSafeForConditional(business.business_website) && (
+                      <TouchableOpacity onPress={() => Linking.openURL(business.business_website.startsWith("http") ? business.business_website : `https://${business.business_website}`)}>
+                        <Text style={[styles.inputText, styles.linkText]}>🌐 Website: {sanitizeText(business.business_website)}</Text>
+                      </TouchableOpacity>
+                    )}
                     {isSafeForConditional(business.facebook) && (
                       <TouchableOpacity onPress={() => Linking.openURL(business.facebook.startsWith("http") ? business.facebook : `https://${business.facebook}`)}>
                         <Text style={[styles.inputText, styles.linkText]}>📘 Facebook: {sanitizeText(business.facebook)}</Text>

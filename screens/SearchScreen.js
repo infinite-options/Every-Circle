@@ -38,7 +38,7 @@ import MiniCard from "../components/MiniCard";
 import MicroCard from "../components/MicroCard";
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
-import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
+import { mapBusinessToMiniCard, mapBusinessToMicroCard } from "../utils/mapBusinessToMiniCard";
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
 import { searchResultsToMapProfiles } from "../utils/searchResultsToMapProfiles";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
@@ -2599,9 +2599,9 @@ export default function SearchScreen({ route }) {
     );
   };
 
-  const renderBusinessResultActions = (item) => (
-    <View style={styles.businessResultActions}>
-      <View style={styles.businessTableRatingCol}>
+  const renderBusinessResultActions = (item, { compact = false } = {}) => (
+    <View style={[styles.businessResultActions, compact && styles.businessResultActionsCompact, compact && darkMode && styles.darkBusinessResultActionsCompact]}>
+      <View style={[styles.businessTableRatingCol, compact && styles.businessTableColCompact]}>
         {Number.isFinite(item.rating) ? (
           <View style={styles.ratingContainer}>
             <Ionicons name='star' size={16} color='#FFCD3C' />
@@ -2615,7 +2615,7 @@ export default function SearchScreen({ route }) {
         )}
       </View>
 
-      <View style={styles.businessTableBountyCol}>
+      <View style={[styles.businessTableBountyCol, compact && styles.businessTableColCompact]}>
         {(() => {
           const hasProductDetail = item.product_count !== undefined;
           const noProducts = hasProductDetail && (item.product_count === 0 || item.product_count == null);
@@ -2627,7 +2627,7 @@ export default function SearchScreen({ route }) {
         })()}
       </View>
 
-      <View style={styles.businessTableLevelCol}>
+      <View style={[styles.businessTableLevelCol, compact && styles.businessTableColCompact]}>
         {(() => {
           const reviewCount = Number(item.ratingCount);
           const hasBusinessReviews = Number.isFinite(reviewCount) && reviewCount > 0;
@@ -2691,6 +2691,7 @@ export default function SearchScreen({ route }) {
 
   const renderBusinessResultItem = (item, idx) => {
     const miniCardBusiness = mapBusinessToMiniCard(item);
+    const microCardBusiness = mapBusinessToMicroCard(item);
     const scoreSuffix = showSearchScores ? formatBusinessSearchScoreSuffix(item) : null;
     const locationBoost =
       item.location_boosted ? <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} /> : null;
@@ -2698,7 +2699,7 @@ export default function SearchScreen({ route }) {
     return (
       <TouchableOpacity
         key={`${item.id}-${idx}`}
-        style={[styles.resultItem, darkMode && styles.darkResultItem]}
+        style={[styles.resultItem, darkMode && styles.darkResultItem, isCompactSearchCard && styles.resultItemCompact]}
         activeOpacity={0.7}
         onPress={() => {
           console.log("🏢 Navigating to profile for:", item.company, "ID:", item.id);
@@ -2709,19 +2710,38 @@ export default function SearchScreen({ route }) {
           });
         }}
       >
-        <View style={styles.searchMiniCardWrap}>
-          {miniCardBusiness ? (
-            <MiniCard
-              business={miniCardBusiness}
-              embedded
-              nameSuffix={scoreSuffix}
-              headerAccessory={locationBoost}
-            />
-          ) : (
-            <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
-          )}
-        </View>
-        {renderBusinessResultActions(item)}
+        {isCompactSearchCard ? (
+          <>
+            {microCardBusiness ? (
+              <MicroCard
+                user={microCardBusiness}
+                showRelationship={false}
+                embedded
+                nameSuffix={scoreSuffix}
+                headerAccessory={locationBoost}
+              />
+            ) : (
+              <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
+            )}
+            {renderBusinessResultActions(item, { compact: true })}
+          </>
+        ) : (
+          <>
+            <View style={styles.searchMiniCardWrap}>
+              {miniCardBusiness ? (
+                <MiniCard
+                  business={miniCardBusiness}
+                  embedded
+                  nameSuffix={scoreSuffix}
+                  headerAccessory={locationBoost}
+                />
+              ) : (
+                <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
+              )}
+            </View>
+            {renderBusinessResultActions(item)}
+          </>
+        )}
       </TouchableOpacity>
     );
   };
@@ -3469,6 +3489,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginVertical: 4,
   },
+  resultItemCompact: {
+    flexDirection: "column",
+    alignItems: "stretch",
+  },
   searchMiniCardWrap: {
     flex: 1,
     marginRight: 8,
@@ -3482,6 +3506,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flexShrink: 0,
+  },
+  businessResultActionsCompact: {
+    alignSelf: "stretch",
+    justifyContent: "space-around",
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#ddd",
+  },
+  darkBusinessResultActionsCompact: {
+    borderTopColor: "#444",
+  },
+  businessTableColCompact: {
+    width: undefined,
+    flex: 1,
   },
   businessTableRatingCol: {
     width: 100,
