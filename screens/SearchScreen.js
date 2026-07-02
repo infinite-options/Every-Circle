@@ -41,6 +41,8 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
 import { searchResultsToMapProfiles } from "../utils/searchResultsToMapProfiles";
+import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
+import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
 function NoBountyIcon({ darkMode, muted }) {
   return (
@@ -756,6 +758,9 @@ export default function SearchScreen({ route }) {
   const [browseAllActive, setBrowseAllActive] = useState(false);
 
   const [currentProfileUid, setCurrentProfileUid] = useState(null);
+  /** Settings → Debug Mode = Yes: show search ranking scores on result cards. */
+  const [settingsDebugModeEnabled, setSettingsDebugModeEnabled] = useState(false);
+  const showSearchScores = SHOW_NETWORK_DEBUG_UI !== 0 && settingsDebugModeEnabled;
   /** profile_wish_uid → wr_datetime for wishes the logged-in user has responded to (Seeking tab). */
   const [respondedWishesById, setRespondedWishesById] = useState({});
   /** profile_expertise_uid → er_datetime for offerings the logged-in user has messaged (Offering tab). */
@@ -821,6 +826,20 @@ export default function SearchScreen({ route }) {
   useEffect(() => {
     AsyncStorage.getItem("profile_uid").then((uid) => setCurrentProfileUid(uid));
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        try {
+          const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
+          if (nd !== null) setSettingsDebugModeEnabled(JSON.parse(nd) === true);
+          else setSettingsDebugModeEnabled(false);
+        } catch {
+          setSettingsDebugModeEnabled(false);
+        }
+      })();
+    }, []),
+  );
 
   useEffect(() => {
     return () => {
@@ -2122,6 +2141,7 @@ export default function SearchScreen({ route }) {
   };
 
   const renderScoreBreakdown = (item) => {
+    if (!showSearchScores) return null;
     const breakdown = item?.score_breakdown;
     if (!breakdown || typeof breakdown !== "object") return null;
     const sem = Number.isFinite(breakdown.semantic_score) ? Number(breakdown.semantic_score).toFixed(3) : null;
@@ -2240,7 +2260,7 @@ export default function SearchScreen({ route }) {
     const respondedDateLabel = respondedAt ? formatDateForDisplay(respondedAt) : "";
     const seekingTitle = wish.title ? String(wish.title).trim() : item.company ? String(item.company).trim() : "";
     const seekingImageUri = resolveProfileItemImageUri(wish.profile_wish_image, item.profile_uid);
-    const scoreSuffix = formatBusinessSearchScoreSuffix(item);
+    const scoreSuffix = showSearchScores ? formatBusinessSearchScoreSuffix(item) : null;
 
     return (
       <TouchableOpacity
@@ -2296,12 +2316,12 @@ export default function SearchScreen({ route }) {
               {/* Show email if public */}
               {(() => {
                 const email = profile.emailIsPublic && profile.email ? String(profile.email).trim() : "";
-                return email && email !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{email}</Text> : null;
+                return isSafeForConditional(email) ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{sanitizeText(email)}</Text> : null;
               })()}
               {/* Show phone if public */}
               {(() => {
                 const phone = profile.phoneIsPublic && profile.phone ? String(profile.phone).trim() : "";
-                return phone && phone !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{phone}</Text> : null;
+                return isSafeForConditional(phone) ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{sanitizeText(phone)}</Text> : null;
               })()}
             </View>
           </View>
@@ -2319,22 +2339,22 @@ export default function SearchScreen({ route }) {
                 </Text>
                 {hasResponded && <Text style={[styles.wishRespondedFlag, darkMode && styles.darkWishRespondedFlag]}>Responded{respondedDateLabel ? ` ${respondedDateLabel}` : ""}</Text>}
               </View>
-              {wish.description && String(wish.description).trim() && String(wish.description).trim() !== "." && (
-                <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{String(wish.description).trim()}</Text>
-              )}
+              {isSafeForConditional(wish.description) ? (
+                <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{sanitizeText(wish.description)}</Text>
+              ) : null}
             </View>
           </View>
-          {(wish.profile_wish_start || wish.profile_wish_end) && (
+          {isSafeForConditional(wish.profile_wish_start) || isSafeForConditional(wish.profile_wish_end) ? (
             <Text style={[styles.wishDateTime, darkMode && styles.darkWishDateTime]}>
-              {wish.profile_wish_start ? formatDateTimeForDisplay(wish.profile_wish_start) : "—"}
-              {wish.profile_wish_start && wish.profile_wish_end ? " → " : ""}
-              {wish.profile_wish_end ? formatDateTimeForDisplay(wish.profile_wish_end) : ""}
+              {isSafeForConditional(wish.profile_wish_start) ? formatDateTimeForDisplay(wish.profile_wish_start) : "—"}
+              {isSafeForConditional(wish.profile_wish_start) && isSafeForConditional(wish.profile_wish_end) ? " → " : ""}
+              {isSafeForConditional(wish.profile_wish_end) ? formatDateTimeForDisplay(wish.profile_wish_end) : ""}
             </Text>
-          )}
-          {wish.bounty && (
+          ) : null}
+          {isSafeForConditional(wish.bounty) ? (
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 5, flex: 1 }}>
               <View style={{ flex: 1 }}>
-                {wish.cost && (
+                {isSafeForConditional(wish.cost) ? (
                   <View style={styles.wishBountyContainer}>
                     <View style={styles.moneyBagIconContainer}>
                       <Text style={styles.moneyBagDollarSymbol}>$</Text>
@@ -2343,20 +2363,20 @@ export default function SearchScreen({ route }) {
                       {String(wish.cost).toLowerCase() !== "free" ? `Cost: $${String(wish.cost).replace(/^\$/, "")}` : `Cost: ${wish.cost}`}
                     </Text>
                   </View>
-                )}
+                ) : null}
               </View>
               <View>
-                {wish.bounty && (
+                {isSafeForConditional(wish.bounty) ? (
                   <View style={styles.wishBountyContainer}>
                     <Text style={styles.bountyEmojiIcon}>💰</Text>
                     <Text style={[styles.wishBountyLabel, darkMode && styles.darkWishBountyLabel]}>
                       {String(wish.bounty).toLowerCase() !== "free" ? `Bounty: $${String(wish.bounty).replace(/^\$/, "")}` : `Bounty: ${wish.bounty}`}
                     </Text>
                   </View>
-                )}
+                ) : null}
               </View>
             </View>
-          )}
+          ) : null}
         </View>
         {isOwnWish && <Text style={{ fontSize: 20, color: "#6e1010", fontStyle: "italic", marginTop: 4 }}>You cannot respond to your own request.</Text>}
       </TouchableOpacity>
@@ -2382,7 +2402,7 @@ export default function SearchScreen({ route }) {
     const canAddExpertiseToCart = !!(item.profile_uid && expertise.expertise_uid);
     const offeringImageUri = resolveProfileItemImageUri(expertise.profile_expertise_image, item.profile_uid);
     const offeringTitle = expertise.title ? String(expertise.title).trim() : item.company ? String(item.company).trim() : "";
-    const scoreSuffix = formatBusinessSearchScoreSuffix(item);
+    const scoreSuffix = showSearchScores ? formatBusinessSearchScoreSuffix(item) : null;
     const expertiseUid = String(expertise.expertise_uid || item.id || "").trim();
     const respondedAt = expertiseUid ? respondedOfferingsById[expertiseUid] : null;
     const hasRespondedToOffering = !!respondedAt;
@@ -2446,11 +2466,11 @@ export default function SearchScreen({ route }) {
                 <Text style={[styles.wishProfileName, darkMode && styles.darkWishProfileName]}>{[profile.firstName, profile.lastName].filter(Boolean).join(" ") || "Anonymous User"}</Text>
                 {(() => {
                   const email = profile.emailIsPublic && profile.email ? String(profile.email).trim() : "";
-                  return email && email !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{email}</Text> : null;
+                  return isSafeForConditional(email) ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{sanitizeText(email)}</Text> : null;
                 })()}
                 {(() => {
                   const phone = profile.phoneIsPublic && profile.phone ? String(profile.phone).trim() : "";
-                  return phone && phone !== "." ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{phone}</Text> : null;
+                  return isSafeForConditional(phone) ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{sanitizeText(phone)}</Text> : null;
                 })()}
               </View>
             </View>
@@ -2473,9 +2493,9 @@ export default function SearchScreen({ route }) {
                   </Text>
                 )}
               </View>
-              {expertise.description && String(expertise.description).trim() && String(expertise.description).trim() !== "." && (
-                <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{String(expertise.description).trim()}</Text>
-              )}
+              {isSafeForConditional(expertise.description) ? (
+                <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{sanitizeText(expertise.description)}</Text>
+              ) : null}
             </View>
           </View>
           {/* Cost / Qty / bounty row — same layout as Profile OFFERING cards */}
@@ -2671,7 +2691,7 @@ export default function SearchScreen({ route }) {
 
   const renderBusinessResultItem = (item, idx) => {
     const miniCardBusiness = mapBusinessToMiniCard(item);
-    const scoreSuffix = formatBusinessSearchScoreSuffix(item);
+    const scoreSuffix = showSearchScores ? formatBusinessSearchScoreSuffix(item) : null;
     const locationBoost =
       item.location_boosted ? <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} /> : null;
 
@@ -2755,8 +2775,8 @@ export default function SearchScreen({ route }) {
               <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
                 <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
               </View>
-              {Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
-              {renderScoreBreakdown(item)}
+              {showSearchScores && Number.isFinite(item.score) && <Text style={[styles.scoreText, darkMode && styles.darkScoreText]}>Score: {Number(item.score).toFixed(3)}</Text>}
+              {showSearchScores && renderScoreBreakdown(item)}
               {(() => {
                 const tagLine = item.business_tag_line ? String(item.business_tag_line).trim() : "";
                 if (tagLine && tagLine !== "." && tagLine.length > 0) {
