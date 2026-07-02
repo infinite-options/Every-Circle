@@ -7,7 +7,7 @@ import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFr
 
 const DEFAULT_PRODUCT_IMAGE = require("../assets/profile.png");
 
-const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, businessUid }) => {
+const ProductCard = ({ service, onPress, onEdit, showEditButton, showTags = showEditButton, darkMode, businessUid }) => {
   const tags = useMemo(() => parseTagList(service.bs_tags), [service.bs_tags]);
 
   const productImageUri = useMemo(() => {
@@ -141,6 +141,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
           service,
           darkMode,
           showEditButton,
+          showTags,
           onEdit,
           thumbSource,
           metaTextStyle,
@@ -164,6 +165,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
         service,
         darkMode,
         showEditButton,
+        showTags,
         onEdit,
         thumbSource,
         metaTextStyle,
@@ -238,6 +240,7 @@ function renderProductCardBody({
   service,
   darkMode,
   showEditButton,
+  showTags,
   onEdit,
   thumbSource,
   metaTextStyle,
@@ -348,7 +351,7 @@ function renderProductCardBody({
         {shippingLine ? <Text style={metaTextStyle}>{shippingLine}</Text> : null}
         {taxRateLine ? <Text style={metaTextStyle}>{taxRateLine}</Text> : null}
         {ccFeeBuyerLine ? <Text style={metaTextStyle}>{ccFeeBuyerLine}</Text> : null}
-        {tags.length > 0 ? (
+        {showTags && tags.length > 0 ? (
           <View style={styles.tagsRow}>
             {tags.map((tag, i) => (
               <View key={`${tag}-${i}`} style={[styles.tagChip, darkMode && styles.tagChipDark]}>
