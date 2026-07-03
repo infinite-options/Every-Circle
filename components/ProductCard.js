@@ -1,6 +1,5 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { parsePrice, formatCostValue } from "../utils/priceUtils";
 import { parseTagList } from "../utils/tagListUtils";
 import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
@@ -266,7 +265,7 @@ function renderProductCardBody({
             </Text>
             {showEditButton && onEdit && (
               <TouchableOpacity onPress={() => onEdit(service)} style={styles.editButton}>
-                <Ionicons name='pencil' size={20} color='#007AFF' />
+                <Image source={require("../assets/Edit.png")} style={styles.editIcon} tintColor='#000' />
               </TouchableOpacity>
             )}
           </View>
@@ -421,6 +420,10 @@ const styles = StyleSheet.create({
   },
   editButton: {
     padding: 5,
+  },
+  editIcon: {
+    width: 20,
+    height: 20,
   },
   textContainer: {
     flex: 1,
