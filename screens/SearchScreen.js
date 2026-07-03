@@ -3056,15 +3056,17 @@ export default function SearchScreen({ route }) {
               </TouchableOpacity>
             </View>
             <TouchableOpacity
-              style={[styles.filterButtonOption, styles.mapButtonRight, darkMode && styles.darkFilterButtonOption, mapLoading && { opacity: 0.6 }]}
+              style={[styles.filterButtonOption, styles.mapButtonRight, styles.mapIconButton, darkMode && styles.darkFilterButtonOption, mapLoading && { opacity: 0.6 }]}
               onPress={handleOpenSearchMap}
               disabled={mapLoading}
               accessibilityLabel="View on map"
               accessibilityRole="button"
             >
-              <Text style={[styles.filterButtonText, darkMode && styles.darkFilterButtonText]}>
-                {mapLoading ? "Loading…" : "View on Map"}
-              </Text>
+              {mapLoading ? (
+                <ActivityIndicator size="small" color={darkMode ? "#ffffff" : "#333333"} />
+              ) : (
+                <Ionicons name="map-outline" size={22} color={darkMode ? "#ffffff" : "#333333"} />
+              )}
             </TouchableOpacity>
           </View>
 
@@ -3771,6 +3773,10 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     marginRight: 0,
     marginBottom: 4,
+  },
+  mapIconButton: {
+    minWidth: 40,
+    paddingHorizontal: 8,
   },
   filterButtonsContainer: {
     flexDirection: "row",

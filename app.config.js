@@ -5,6 +5,7 @@ config({ path: path.resolve(__dirname, ".env") });
 
 module.exports = ({ config: expoConfig }) => ({
   expo: {
+    owner: "pmarathay",
     name: process.env.EXPO_PUBLIC_APP_NAME,
     slug: process.env.EXPO_PUBLIC_APP_SLUG,
     version: "1.0.0",
