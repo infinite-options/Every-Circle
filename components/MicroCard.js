@@ -103,6 +103,8 @@ const styles = StyleSheet.create({
     borderColor: "#444",
   },
   embeddedCardContainer: {
+    width: "100%",
+    alignSelf: "stretch",
     borderWidth: 0,
     backgroundColor: "transparent",
     paddingVertical: 0,

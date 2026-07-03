@@ -965,61 +965,82 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
           <View style={styles.taxRow}>
             <Text style={styles.costLabel}>Shipping</Text>
             <TouchableOpacity
-              style={styles.shippingCheckbox}
+              style={[
+                styles.taxBtn,
+                !(item.profile_expertise_free_shipping === 1 || item.profile_expertise_free_shipping === "1" || item.profile_expertise_free_shipping === true) &&
+                  !(item.profile_expertise_buyer_pays_shipping === 1 || item.profile_expertise_buyer_pays_shipping === "1" || item.profile_expertise_buyer_pays_shipping === true) &&
+                  styles.taxBtnActive,
+              ]}
               onPress={() => {
                 handleInputChange(index, "profile_expertise_free_shipping", 0);
                 handleInputChange(index, "profile_expertise_buyer_pays_shipping", 0);
               }}
-              activeOpacity={0.7}
             >
-              <Ionicons
-                name={!item.profile_expertise_free_shipping && !item.profile_expertise_buyer_pays_shipping ? "checkbox" : "square-outline"}
-                size={20}
-                color={!item.profile_expertise_free_shipping && !item.profile_expertise_buyer_pays_shipping ? "#007AFF" : "#aaa"}
-              />
-              <Text style={styles.taxBtnText}>N/A</Text>
+              <Text
+                style={[
+                  styles.taxBtnText,
+                  !(item.profile_expertise_free_shipping === 1 || item.profile_expertise_free_shipping === "1" || item.profile_expertise_free_shipping === true) &&
+                    !(item.profile_expertise_buyer_pays_shipping === 1 || item.profile_expertise_buyer_pays_shipping === "1" || item.profile_expertise_buyer_pays_shipping === true) &&
+                    styles.taxBtnTextActive,
+                ]}
+              >
+                N/A
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.shippingCheckbox}
+              style={[
+                styles.taxBtn,
+                (item.profile_expertise_free_shipping === 1 || item.profile_expertise_free_shipping === "1" || item.profile_expertise_free_shipping === true) && styles.taxBtnActive,
+              ]}
               onPress={() => {
-                handleInputChange(index, "profile_expertise_free_shipping", item.profile_expertise_free_shipping ? 0 : 1);
+                handleInputChange(index, "profile_expertise_free_shipping", 1);
                 handleInputChange(index, "profile_expertise_buyer_pays_shipping", 0);
               }}
-              activeOpacity={0.7}
             >
-              <Ionicons
-                name={item.profile_expertise_free_shipping ? "checkbox" : "square-outline"}
-                size={20}
-                color={item.profile_expertise_free_shipping ? "#007AFF" : "#aaa"}
-              />
-              <Text style={styles.taxBtnText}>Free</Text>
+              <Text
+                style={[
+                  styles.taxBtnText,
+                  (item.profile_expertise_free_shipping === 1 || item.profile_expertise_free_shipping === "1" || item.profile_expertise_free_shipping === true) && styles.taxBtnTextActive,
+                ]}
+              >
+                Free
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.shippingCheckbox}
+              style={[
+                styles.taxBtn,
+                styles.taxBtnWide,
+                (item.profile_expertise_buyer_pays_shipping === 1 || item.profile_expertise_buyer_pays_shipping === "1" || item.profile_expertise_buyer_pays_shipping === true) &&
+                  styles.taxBtnActive,
+              ]}
               onPress={() => {
-                handleInputChange(index, "profile_expertise_buyer_pays_shipping", item.profile_expertise_buyer_pays_shipping ? 0 : 1);
+                handleInputChange(index, "profile_expertise_buyer_pays_shipping", 1);
                 handleInputChange(index, "profile_expertise_free_shipping", 0);
               }}
-              activeOpacity={0.7}
             >
-              <Ionicons
-                name={item.profile_expertise_buyer_pays_shipping ? "checkbox" : "square-outline"}
-                size={20}
-                color={item.profile_expertise_buyer_pays_shipping ? "#007AFF" : "#aaa"}
-              />
-              <Text style={styles.taxBtnText}>Buyer pays</Text>
+              <Text
+                style={[
+                  styles.taxBtnText,
+                  styles.taxBtnWideText,
+                  (item.profile_expertise_buyer_pays_shipping === 1 || item.profile_expertise_buyer_pays_shipping === "1" || item.profile_expertise_buyer_pays_shipping === true) &&
+                    styles.taxBtnTextActive,
+                ]}
+              >
+                Buyer pays
+              </Text>
             </TouchableOpacity>
           </View>
 
           {/* Refund Policy Row */}
-          <View style={[styles.taxRow, { alignItems: "flex-start", marginBottom: 8 }]}>
-            <Text style={[styles.costLabel, { marginTop: 8 }]}>Refund Policy</Text>
+          <View style={styles.dateTimeRow}>
+            <Text style={styles.dateTimeLabel}>Refund Policy</Text>
             <TextInput
-              style={[styles.taxRateInput, { width: 220, height: 60, textAlignVertical: "top", paddingTop: 6 }]}
+              style={[styles.locationInput, darkMode && styles.locationInputDark]}
               value={item.profile_expertise_refund_policy || ""}
-              onChangeText={(t) => handleInputChange(index, "profile_expertise_refund_policy", t)}
-              placeholder='Describe your refund policy'
-              multiline
+              onChangeText={(t) => handleInputChange(index, "profile_expertise_refund_policy", t.slice(0, 45))}
+              placeholder='Describe your refund policy (max 45 characters)'
+              placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+              maxLength={45}
             />
           </View>
         </View>
@@ -1347,11 +1368,6 @@ const styles = StyleSheet.create({
   taxBtnWideText: {
     fontSize: 12,
     textAlign: "center",
-  },
-  shippingCheckbox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
   },
   taxRateInput: {
     borderWidth: 1,

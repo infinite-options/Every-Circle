@@ -151,12 +151,12 @@ async function resolveLocationOptionCoords(option) {
 }
 
 /** Two tappable labels (Edit Profile–style) instead of a Switch. */
-function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMode, variant = "yesNo" }) {
+function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMode }) {
   const leftOn = !value;
   const rightOn = value;
-  const leftBgStyle = variant === "background" ? (leftOn ? styles.togglePillThemeLight : null) : leftOn ? styles.togglePillActiveRed : null;
-  const rightBgStyle = variant === "background" ? (rightOn ? styles.togglePillThemeDark : null) : rightOn ? styles.togglePillActiveGreen : null;
-  const leftTextActiveStyle = variant === "background" && leftOn ? styles.togglePillTextDarkEmphasis : leftOn ? styles.togglePillTextActive : null;
+  const leftBgStyle = leftOn ? styles.togglePillActiveRed : null;
+  const rightBgStyle = rightOn ? styles.togglePillActiveGreen : null;
+  const leftTextActiveStyle = leftOn ? styles.togglePillTextActive : null;
   const rightTextActiveStyle = rightOn ? styles.togglePillTextActive : null;
 
   return (
@@ -266,8 +266,8 @@ export default function SettingsScreen() {
       if (p !== null) setDisplayPhoneNumber(JSON.parse(p));
       if (t !== null) setTermsAccepted(JSON.parse(t));
       if (c !== null) setAllowCookies(JSON.parse(c));
-      if(isThirdPartyAuth !== null) setHideChangePassword(JSON.parse(isThirdPartyAuth));
-      
+      if (isThirdPartyAuth !== null) setHideChangePassword(JSON.parse(isThirdPartyAuth));
+
       // Load email quickly from AsyncStorage for admin check
       const storedEmail = await AsyncStorage.getItem("user_email");
       if (storedEmail) setUserEmail(storedEmail);
@@ -1134,7 +1134,7 @@ export default function SettingsScreen() {
                     <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Background</Text>
                   </Text>
                 </View>
-                <SettingsBoolPills value={darkMode} onValueChange={(v) => toggleDarkMode(v)} leftLabel='Light' rightLabel='Dark' darkMode={darkMode} variant='background' />
+                <SettingsBoolPills value={darkMode} onValueChange={(v) => toggleDarkMode(v)} leftLabel='Light' rightLabel='Dark' darkMode={darkMode} />
               </View>
 
               {/* Privacy Mode */}
@@ -1241,9 +1241,7 @@ export default function SettingsScreen() {
                       <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Home Address Coordinates</Text>
                     </Text>
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
-                      {homeAddressCoords.lat != null
-                        ? `${parseFloat(homeAddressCoords.lat).toFixed(5)}, ${parseFloat(homeAddressCoords.lng).toFixed(5)}`
-                        : "No home coordinates set"}
+                      {homeAddressCoords.lat != null ? `${parseFloat(homeAddressCoords.lat).toFixed(5)}, ${parseFloat(homeAddressCoords.lng).toFixed(5)}` : "No home coordinates set"}
                     </Text>
                   </View>
                 </View>
@@ -1298,13 +1296,15 @@ export default function SettingsScreen() {
               </TouchableOpacity>
 
               {/* Change Password */}
-              {!hideChangePassword && <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
-                <View style={styles.itemLabel}>
-                  <MaterialIcons name='lock' size={20} style={styles.icon} color={settingsMenuIconColor} />
-                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
-                </View>
-                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
-              </TouchableOpacity>} 
+              {!hideChangePassword && (
+                <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
+                  <View style={styles.itemLabel}>
+                    <MaterialIcons name='lock' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
+                  </View>
+                  <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
+                </TouchableOpacity>
+              )}
             </View>
           )}
 
@@ -1760,7 +1760,7 @@ export default function SettingsScreen() {
           <View style={[styles.modalBox, darkMode && styles.darkModalBox]}>
             <MaterialIcons name='warning' size={48} color={COLORS.warningRed} style={{ marginBottom: 15 }} />
             <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle]}>Cookies Required</Text>
-            <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>If you do not allow cookies, you will only have access to the Settings scresen.</Text>
+            <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>If you do not allow cookies, you will only have access to the Settings screen.</Text>
             <View style={styles.warningButtonContainer}>
               <TouchableOpacity onPress={cancelCookiesRejection} style={[styles.warningButton, styles.cancelButton]}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -1936,12 +1936,6 @@ const styles = StyleSheet.create({
   togglePillActiveGreen: {
     backgroundColor: "#4CAF50",
   },
-  togglePillThemeLight: {
-    backgroundColor: "#FFE082",
-  },
-  togglePillThemeDark: {
-    backgroundColor: COLORS.primary,
-  },
   togglePillText: {
     fontSize: 12,
     color: "#4e4e4e",
@@ -1951,10 +1945,6 @@ const styles = StyleSheet.create({
   },
   togglePillTextActive: {
     color: "#fff",
-    fontWeight: "bold",
-  },
-  togglePillTextDarkEmphasis: {
-    color: "#333",
     fontWeight: "bold",
   },
   darkTogglePillText: {

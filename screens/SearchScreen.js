@@ -41,6 +41,7 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import { mapBusinessToMiniCard, mapBusinessToMicroCard } from "../utils/mapBusinessToMiniCard";
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
 import { searchResultsToMapProfiles } from "../utils/searchResultsToMapProfiles";
+import { searchReferralProfiles, loadReferralNetworkByUid, mapReferralProfileToSearchItem } from "../utils/searchReferralProfiles";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
@@ -165,28 +166,32 @@ function searchTypeSupportsDistanceFilter() {
   return true;
 }
 
-const DEFAULT_SELECTED_SEARCH_TABS = { businesses: true, expertise: true, seeking: false };
+const DEFAULT_SELECTED_SEARCH_TABS = { businesses: true, expertise: true, seeking: false, individuals: false };
 
-/** Seeking is exclusive with businesses/offering; catalog mode keeps at least one of those two. */
+/** Seeking and Individuals are exclusive with businesses/offering; catalog mode keeps at least one of those two. */
 function normalizeSearchTabs(tabs) {
+  if (tabs?.individuals) {
+    return { businesses: false, expertise: false, seeking: false, individuals: true };
+  }
   if (tabs?.seeking) {
-    return { businesses: false, expertise: false, seeking: true };
+    return { businesses: false, expertise: false, seeking: true, individuals: false };
   }
   const businesses = tabs?.businesses !== false;
   const expertise = tabs?.expertise !== false;
   if (!businesses && !expertise) {
-    return { businesses: true, expertise: true, seeking: false };
+    return { businesses: true, expertise: true, seeking: false, individuals: false };
   }
-  return { businesses, expertise, seeking: false };
+  return { businesses, expertise, seeking: false, individuals: false };
 }
 
 function searchTabsFromLegacyType(type) {
   if (!type || type === "global") return normalizeSearchTabs({ businesses: true, expertise: true, seeking: false });
-  if (type === "seeking") return { businesses: false, expertise: false, seeking: true };
+  if (type === "seeking") return { businesses: false, expertise: false, seeking: true, individuals: false };
   return normalizeSearchTabs({
     businesses: type === "businesses",
     expertise: type === "expertise",
     seeking: false,
+    individuals: false,
   });
 }
 
@@ -786,26 +791,33 @@ export default function SearchScreen({ route }) {
 
   const toggleSearchTab = useCallback((tabKey) => {
     setSelectedSearchTabs((prev) => {
+      if (tabKey === "individuals") {
+        if (prev.individuals) {
+          return prev;
+        }
+        return { businesses: false, expertise: false, seeking: false, individuals: true };
+      }
+
       if (tabKey === "seeking") {
         if (prev.seeking) {
           return prev;
         }
-        return { businesses: false, expertise: false, seeking: true };
+        return { businesses: false, expertise: false, seeking: true, individuals: false };
       }
 
-      if (prev.seeking) {
-        return { businesses: tabKey === "businesses", expertise: tabKey === "expertise", seeking: false };
+      if (prev.seeking || prev.individuals) {
+        return { businesses: tabKey === "businesses", expertise: tabKey === "expertise", seeking: false, individuals: false };
       }
 
       if (!prev[tabKey]) {
-        return { ...prev, [tabKey]: true, seeking: false };
+        return { ...prev, [tabKey]: true, seeking: false, individuals: false };
       }
 
       const otherKey = tabKey === "businesses" ? "expertise" : "businesses";
       if (!prev[otherKey]) {
         return prev;
       }
-      return { ...prev, [tabKey]: false, seeking: false };
+      return { ...prev, [tabKey]: false, seeking: false, individuals: false };
     });
   }, []);
 
@@ -849,6 +861,13 @@ export default function SearchScreen({ route }) {
 
   const onSearchQueryChange = (text) => {
     setSearchQuery(text);
+    if (selectedSearchTabsRef.current.individuals) {
+      if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
+      setSearchSuggestions([]);
+      setShowSearchSuggestions(false);
+      setSuggestionsLoading(false);
+      return;
+    }
     if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
 
     if (!text.trim()) {
@@ -1283,8 +1302,20 @@ export default function SearchScreen({ route }) {
   const [showGlobalBusinesses, setShowGlobalBusinesses] = useState(true);
   const [showGlobalOffering, setShowGlobalOffering] = useState(true);
   const [showGlobalSeeking, setShowGlobalSeeking] = useState(true);
+  const [showGlobalIndividuals, setShowGlobalIndividuals] = useState(true);
 
-  // Filter options (same as FilterScreen)
+  const individualsSearchPlaceholder = "Email, location, or name";
+  const defaultSearchPlaceholder = "What are you looking for?";
+  const searchInputPlaceholder = selectedSearchTabs.individuals ? individualsSearchPlaceholder : defaultSearchPlaceholder;
+
+  useEffect(() => {
+    if (selectedSearchTabs.individuals) {
+      rawResultsRef.current = [];
+      setResults([]);
+      setSearchSuggestions([]);
+      setShowSearchSuggestions(false);
+    }
+  }, [selectedSearchTabs.individuals]);
   const distanceOptions = [5, 10, 15, 25, 50, 100];
   /** First modal row: omit user_lat / max_distance on Qdrant search. */
   const distanceModalOptions = [{ key: "any", label: "Any distance (no filter)", miles: null }, ...distanceOptions.map((d) => ({ key: String(d), label: `${d} mi`, miles: d }))];
@@ -1349,6 +1380,7 @@ export default function SearchScreen({ route }) {
   const businessSectionResults = results.filter((item) => (item?.itemType || "businesses") === "businesses");
   const offeringSectionResults = results.filter((item) => item?.itemType === "expertise");
   const seekingSectionResults = results.filter((item) => item?.itemType === "seeking");
+  const individualsSectionResults = results.filter((item) => item?.itemType === "individuals");
 
   const handleOpenSearchMap = useCallback(async () => {
     const isProfileType = selectedSearchTabs.expertise || selectedSearchTabs.seeking;
@@ -1487,6 +1519,34 @@ export default function SearchScreen({ route }) {
     const effectiveDistance = opts.distanceMiles !== undefined ? opts.distanceMiles : distance;
     const effectiveRating = opts.ratingValue !== undefined ? opts.ratingValue : rating;
     const effectiveNetwork = opts.networkValue !== undefined ? opts.networkValue : network;
+
+    if (selectedSearchTabsRef.current.individuals) {
+      setLoading(true);
+      try {
+        if (!q || q.length < 2) {
+          if (searchGeneration !== searchGenerationRef.current) return;
+          commitSearchResults([], { browseAll: false });
+          setHasLoadedInitialSearch(true);
+          return;
+        }
+
+        const [profiles, networkByUid] = await Promise.all([searchReferralProfiles(q), loadReferralNetworkByUid()]);
+        const list = profiles.map((profile) => mapReferralProfileToSearchItem(profile, networkByUid.get(profile.profile_personal_uid)));
+        if (searchGeneration !== searchGenerationRef.current) return;
+        commitSearchResults(list, { browseAll: false });
+        setHasLoadedInitialSearch(true);
+      } catch (error) {
+        console.error("Individual search failed:", error);
+        if (searchGeneration === searchGenerationRef.current) {
+          commitSearchResults([], { browseAll: false });
+        }
+      } finally {
+        if (searchGeneration === searchGenerationRef.current) {
+          setLoading(false);
+        }
+      }
+      return;
+    }
 
     let searchCoords = userHomeCoords;
     if (effectiveDistance != null || searchTypeSupportsDistanceFilter()) {
@@ -2746,7 +2806,32 @@ export default function SearchScreen({ route }) {
     );
   };
 
+  const renderIndividualResultItem = (item, idx) => {
+    const profileUid = item.profile_uid;
+    return (
+      <TouchableOpacity
+        key={`${item.id}-${idx}`}
+        style={[styles.individualResultItem, darkMode && styles.darkIndividualResultItem]}
+        activeOpacity={0.7}
+        onPress={() => {
+          if (profileUid) {
+            navigation.navigate("Profile", {
+              profile_uid: profileUid,
+              returnTo: "Search",
+              searchState: getSearchStateForRestore(),
+            });
+          }
+        }}
+      >
+        <MicroCard user={item.microCardUser || item.profileData} showRelationship embedded />
+      </TouchableOpacity>
+    );
+  };
+
   const renderResultItem = (item, idx) => {
+    if (item.itemType === "individuals") {
+      return renderIndividualResultItem(item, idx);
+    }
     // If it's a wish/seeking item, use the special wish renderer
     if (item.itemType === "seeking" && item.wishData) {
       return renderWishItem(item, idx);
@@ -2947,6 +3032,28 @@ export default function SearchScreen({ route }) {
                   Seeking
                 </Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.filterButtonOption,
+                  darkMode && styles.darkFilterButtonOption,
+                  selectedSearchTabs.individuals && styles.searchTypeButtonIndividuals,
+                  darkMode && selectedSearchTabs.individuals && styles.darkSearchTypeButtonIndividuals,
+                ]}
+                onPress={() => toggleSearchTab("individuals")}
+                accessibilityLabel="Search individuals"
+                accessibilityRole="button"
+              >
+                <Text
+                  style={[
+                    styles.filterButtonText,
+                    darkMode && styles.darkFilterButtonText,
+                    selectedSearchTabs.individuals && styles.searchTypeButtonTextIndividuals,
+                    darkMode && selectedSearchTabs.individuals && styles.darkSearchTypeButtonTextIndividuals,
+                  ]}
+                >
+                  Individuals
+                </Text>
+              </TouchableOpacity>
             </View>
             <TouchableOpacity
               style={[styles.filterButtonOption, styles.mapButtonRight, darkMode && styles.darkFilterButtonOption, mapLoading && { opacity: 0.6 }]}
@@ -2966,7 +3073,7 @@ export default function SearchScreen({ route }) {
             <View style={styles.searchContainer}>
               <TextInput
                 style={[styles.searchInput, darkMode && styles.darkSearchInput]}
-                placeholder='What are you looking for?'
+                placeholder={searchInputPlaceholder}
                 placeholderTextColor={darkMode ? "#cccccc" : "#666"}
                 value={searchQuery}
                 onChangeText={onSearchQueryChange}
@@ -3132,6 +3239,24 @@ export default function SearchScreen({ route }) {
               <Text style={[styles.loadingText, darkMode && styles.darkLoadingText]}>Loading…</Text>
             ) : (
               <>
+                {selectedSearchTabs.individuals && (
+                  <>
+                    <TouchableOpacity style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]} onPress={() => setShowGlobalIndividuals((prev) => !prev)} activeOpacity={0.8}>
+                      <Text style={[styles.globalSectionHeaderText, darkMode && styles.darkGlobalSectionHeaderText]}>Individuals ({individualsSectionResults.length})</Text>
+                      <Ionicons name={showGlobalIndividuals ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
+                    </TouchableOpacity>
+                    {showGlobalIndividuals && individualsSectionResults.length > 0
+                      ? individualsSectionResults.map((item, idx) => renderResultItem(item, idx))
+                      : showGlobalIndividuals ? (
+                          <Text style={[styles.individualsSearchHint, darkMode && styles.darkIndividualsSearchHint]}>
+                            {searchQuery.trim().length < 2
+                              ? "Search by email, city, state, or name (at least 2 characters)."
+                              : "No individuals found. Try another spelling, city, or email."}
+                          </Text>
+                        ) : null}
+                  </>
+                )}
+
                 {selectedSearchTabs.businesses && (
                   <>
                     <TouchableOpacity style={[styles.globalSectionHeader, darkMode && styles.darkGlobalSectionHeader]} onPress={() => setShowGlobalBusinesses((prev) => !prev)} activeOpacity={0.8}>
@@ -3476,6 +3601,17 @@ const styles = StyleSheet.create({
 
   resultsContainer: { flex: 1, marginBottom: 15 },
   loadingText: { textAlign: "center", marginVertical: 10 },
+
+  individualResultItem: {
+    width: "100%",
+    alignSelf: "stretch",
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#ddd",
+  },
+  darkIndividualResultItem: {
+    borderBottomColor: "#444",
+  },
 
   resultItem: {
     flexDirection: "row",
@@ -4186,6 +4322,9 @@ const styles = StyleSheet.create({
   searchTypeButtonSeeking: {
     backgroundColor: "#4F8A8B",
   },
+  searchTypeButtonIndividuals: {
+    backgroundColor: "#4F8A8B",
+  },
   searchTypeButtonTextBusinesses: {
     color: "#fff",
     fontWeight: "600",
@@ -4202,6 +4341,10 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
   },
+  searchTypeButtonTextIndividuals: {
+    color: "#fff",
+    fontWeight: "600",
+  },
   // Dark mode search type button styles
   darkSearchTypeButtonBusinesses: {
     backgroundColor: "#AF52DE",
@@ -4214,6 +4357,9 @@ const styles = StyleSheet.create({
   },
   darkSearchTypeButtonSeeking: {
     backgroundColor: "#9C45F7",
+  },
+  darkSearchTypeButtonIndividuals: {
+    backgroundColor: "#007AFF",
   },
   darkSearchTypeButtonTextBusinesses: {
     color: "#fff",
@@ -4228,6 +4374,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   darkSearchTypeButtonTextSeeking: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+  darkSearchTypeButtonTextIndividuals: {
     color: "#fff",
     fontWeight: "600",
   },
@@ -4251,6 +4401,17 @@ const styles = StyleSheet.create({
   },
   darkGlobalSectionHeaderText: {
     color: "#fff",
+  },
+  individualsSearchHint: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#666",
+    paddingHorizontal: 4,
+    paddingVertical: 12,
+    textAlign: "center",
+  },
+  darkIndividualsSearchHint: {
+    color: "#bbb",
   },
   scoreText: {
     fontSize: 11,
