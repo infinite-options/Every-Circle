@@ -21,6 +21,8 @@ import {
 import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expertiseMode";
 import { rejectNativeImageAsset, rejectWebImageFile } from "../utils/imageUploadLimits";
 
+const CONDITION_DETAIL_MAX_CHARS = 250;
+
 let DateTimePicker = null;
 if (Platform.OS !== "web") {
   try {
@@ -783,13 +785,16 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               </Text>
             </TouchableOpacity>
             {(item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") ? (
-              <TextInput
-                style={styles.taxRateInput}
-                value={String(item.profile_expertise_tax_rate ?? "")}
-                onChangeText={(t) => handleInputChange(index, "profile_expertise_tax_rate", t.replace(/[^0-9.]/g, ""))}
-                placeholder='% e.g. 8.25'
-                keyboardType='decimal-pad'
-              />
+              <View style={styles.taxRateInputWithSuffix}>
+                <TextInput
+                  style={[styles.taxRateInput, styles.taxRateInputCompact]}
+                  value={String(item.profile_expertise_tax_rate ?? "")}
+                  onChangeText={(t) => handleInputChange(index, "profile_expertise_tax_rate", t.replace(/[^0-9.]/g, ""))}
+                  placeholder='% e.g. 8.25'
+                  keyboardType='decimal-pad'
+                />
+                <Text style={styles.taxRateInputSuffix}>%</Text>
+              </View>
             ) : null}
           </View>
 
@@ -834,9 +839,10 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               selectedTextStyle={styles.dropdownSelectedText}
               activeColor='#f0f0f0'
             />
+            <Text style={[styles.costLabel, styles.quantityInlineLabel]}>Quantity</Text>
             <TextInput
               style={styles.bountyInput}
-              placeholder='Available Quantity'
+              placeholder='Count'
               keyboardType='numeric'
               value={item.quantity || ""}
               onChangeText={(text) => handleInputChange(index, "quantity", text)}
@@ -916,48 +922,12 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
             </TouchableOpacity>
             {item.profile_expertise_condition_type === "used" ? (
               <TextInput
-                style={[styles.taxRateInput, { width: 130 }]}
+                style={[styles.taxRateInput, styles.conditionDetailInput]}
                 value={item.profile_expertise_condition_detail || ""}
-                onChangeText={(t) => handleInputChange(index, "profile_expertise_condition_detail", t)}
-                placeholder='Description'
+                onChangeText={(t) => handleInputChange(index, "profile_expertise_condition_detail", t.slice(0, CONDITION_DETAIL_MAX_CHARS))}
+                placeholder='Description (250 characters max)'
+                maxLength={CONDITION_DETAIL_MAX_CHARS}
               />
-            ) : null}
-          </View>
-
-          {/* Returnable Row */}
-          <View style={styles.taxRow}>
-            <Text style={styles.costLabel}>Returnable</Text>
-            <TouchableOpacity
-              style={[styles.taxBtn, !(item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnActive]}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_is_returnable", 0);
-                handleInputChange(index, "profile_expertise_return_window_days", "");
-              }}
-            >
-              <Text style={[styles.taxBtnText, !(item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnTextActive]}>No</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.taxBtn, (item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnActive]}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_is_returnable", 1);
-                if (!item.profile_expertise_return_window_days) {
-                  handleInputChange(index, "profile_expertise_return_window_days", "30");
-                }
-              }}
-            >
-              <Text style={[styles.taxBtnText, (item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnTextActive]}>Yes</Text>
-            </TouchableOpacity>
-            {(item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") ? (
-              <>
-                <TextInput
-                  style={[styles.taxRateInput, { width: 56 }]}
-                  value={String(item.profile_expertise_return_window_days ?? "")}
-                  onChangeText={(t) => handleInputChange(index, "profile_expertise_return_window_days", t.replace(/\D/g, ""))}
-                  placeholder='30'
-                  keyboardType='number-pad'
-                />
-                <Text style={styles.taxBtnText}>days</Text>
-              </>
             ) : null}
           </View>
 
@@ -1031,9 +1001,46 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
             </TouchableOpacity>
           </View>
 
+          {/* Returnable Row */}
+          <View style={styles.taxRow}>
+            <Text style={styles.costLabel}>Returnable</Text>
+            <TouchableOpacity
+              style={[styles.taxBtn, !(item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnActive]}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_is_returnable", 0);
+                handleInputChange(index, "profile_expertise_return_window_days", "");
+              }}
+            >
+              <Text style={[styles.taxBtnText, !(item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnTextActive]}>No</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.taxBtn, (item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnActive]}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_is_returnable", 1);
+                if (!item.profile_expertise_return_window_days) {
+                  handleInputChange(index, "profile_expertise_return_window_days", "30");
+                }
+              }}
+            >
+              <Text style={[styles.taxBtnText, (item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnTextActive]}>Yes</Text>
+            </TouchableOpacity>
+            {(item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") ? (
+              <>
+                <TextInput
+                  style={[styles.taxRateInput, { width: 56 }]}
+                  value={String(item.profile_expertise_return_window_days ?? "")}
+                  onChangeText={(t) => handleInputChange(index, "profile_expertise_return_window_days", t.replace(/\D/g, ""))}
+                  placeholder='30'
+                  keyboardType='number-pad'
+                />
+                <Text style={styles.taxBtnText}>days</Text>
+              </>
+            ) : null}
+          </View>
+
           {/* Refund Policy Row */}
           <View style={styles.dateTimeRow}>
-            <Text style={styles.dateTimeLabel}>Refund Policy</Text>
+            <Text style={styles.costLabel}>Refund Policy</Text>
             <TextInput
               style={[styles.locationInput, darkMode && styles.locationInputDark]}
               value={item.profile_expertise_refund_policy || ""}
@@ -1268,6 +1275,10 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginRight: 5,
   },
+  quantityInlineLabel: {
+    marginLeft: 5,
+    marginRight: 0,
+  },
   amountInput: {
     borderWidth: 1,
     borderColor: "#ccc",
@@ -1378,6 +1389,27 @@ const styles = StyleSheet.create({
     width: 100,
     height: 36,
     fontSize: 13,
+  },
+  taxRateInputCompact: {
+    width: 108,
+    minWidth: 108,
+    maxWidth: 108,
+  },
+  taxRateInputWithSuffix: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexShrink: 0,
+  },
+  taxRateInputSuffix: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#555",
+  },
+  conditionDetailInput: {
+    flex: 1,
+    minWidth: 0,
+    width: undefined,
   },
   cardSpacing: {
     marginTop: 16,
