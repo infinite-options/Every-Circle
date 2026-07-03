@@ -6,8 +6,8 @@ export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.
 // export const SEARCH_BASE_URL = "http://54.183.12.163:5001";
 // export const SEARCH_BASE_URL = "http://13.52.244.236:5001";
 // export const SEARCH_BASE_URL = "http://13.52.82.86:5001";
-// export const SEARCH_BASE_URL = "https://ioec2vrecsearch.infiniteoptions.com";
-export const SEARCH_BASE_URL = "http://127.0.0.1:5001";
+export const SEARCH_BASE_URL = "https://ioec2vrecsearch.infiniteoptions.com";
+// export const SEARCH_BASE_URL = "http://127.0.0.1:5001";
 
 // Legacy API Base URL (infiniteoptions domain)
 // export const API_BASE_URL = "https://ioec2ecaspm.infiniteoptions.com";
