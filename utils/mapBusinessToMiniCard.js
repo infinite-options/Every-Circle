@@ -48,7 +48,7 @@ export function mapBusinessToMiniCard(raw, options = {}) {
     : options.defaultLocationIsPublic !== false;
 
   return {
-    business_name: sanitizeText(raw.business_name || raw.name || ""),
+    business_name: sanitizeText(raw.business_name || raw.company || raw.name || ""),
     business_tag_line: tagLine,
     tagline: tagLine,
     business_location: sanitizeText(raw.business_location || raw.location || ""),
@@ -76,6 +76,23 @@ export function mapBusinessToMiniCard(raw, options = {}) {
 /**
  * Shared MiniCard input for Edit Business Profile preview and Business Profile screen.
  */
+/** Compact search/profile row: business name, tagline, and image mapped to MicroCard `user` shape. */
+export function mapBusinessToMicroCard(raw) {
+  const mini = mapBusinessToMiniCard(raw);
+  if (!mini) return null;
+
+  const businessName = mini.business_name || sanitizeText(raw.company || raw.name || "") || "Business";
+
+  return {
+    firstName: businessName,
+    lastName: "",
+    tagLine: mini.tagline || mini.business_tag_line || "",
+    tagLineIsPublic: mini.taglineIsPublic,
+    profileImage: mini.business_profile_img || mini.first_image || "",
+    imageIsPublic: mini.imageIsPublic,
+  };
+}
+
 export function buildBusinessMiniCardBusiness(source, uid = "", overrides = {}) {
   const raw = source || {};
   const businessUid = uid || raw.business_uid || "";

@@ -1350,6 +1350,11 @@ const ProfileScreen = ({ route, navigation }) => {
   }
 
   const isWeb = Platform.OS === "web";
+  const shortBioBelowCard = (() => {
+    if (!user.shortBioIsPublic) return "";
+    const text = sanitizeText(user.shortBio);
+    return text && text.trim() !== "" ? text : "";
+  })();
 
   return (
     <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
@@ -1685,14 +1690,17 @@ const ProfileScreen = ({ route, navigation }) => {
             />
           </View>
 
-          <MiniCard
-            showRelationship={!!routeProfileUID && !isCurrentUserProfile}
-            user={{
-              ...user,
-              imageIsPublic: user.imageIsPublic,
-              profileImage: isCurrentUserProfile || user.imageIsPublic ? user.profileImage : "",
-            }}
-          />
+          <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
+            <MiniCard
+              showRelationship={!!routeProfileUID && !isCurrentUserProfile}
+              user={{
+                ...user,
+                imageIsPublic: user.imageIsPublic,
+                profileImage: isCurrentUserProfile || user.imageIsPublic ? user.profileImage : "",
+              }}
+            />
+            {shortBioBelowCard ? <Text style={[styles.shortBioBelowCard, darkMode && styles.darkShortBioBelowCard]}>{shortBioBelowCard}</Text> : null}
+          </View>
 
           {/* Add / View Connection + Message — only when viewing someone else's profile */}
           {routeProfileUID &&
@@ -1740,20 +1748,6 @@ const ProfileScreen = ({ route, navigation }) => {
                 </View>
               );
             })()}
-
-          {/* Bio section */}
-          {user.shortBioIsPublic && (
-            <View style={[styles.fieldContainer, { borderWidth: 1, borderColor: "#000", borderRadius: 8 }]}>
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Bio:</Text>
-              {user.shortBio && user.shortBio.trim() !== "" ? (
-                <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>{sanitizeText(user.shortBio)}</Text>
-                </View>
-              ) : (
-                <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: darkMode ? "#999" : "#666" }]}>No bio added yet</Text>
-              )}
-            </View>
-          )}
 
           {/* Only show Expertise section if there are public expertise entries, or if viewing own profile */}
           {/*{(isCurrentUserProfile || (user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0)) && ( */}
@@ -1824,9 +1818,7 @@ const ProfileScreen = ({ route, navigation }) => {
                                     }}
                                     activeOpacity={0.7}
                                   >
-                                    <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>
-                                      Responses: {exp.expertise_responses || 0}
-                                    </Text>
+                                    <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Responses: {exp.expertise_responses || 0}</Text>
                                   </TouchableOpacity>
                                 )}
                               </View>
@@ -1835,7 +1827,12 @@ const ProfileScreen = ({ route, navigation }) => {
                               ) : null}
                             </View>
                           </View>
-                          {exp.profile_expertise_start || exp.profile_expertise_end || exp.profile_expertise_location || exp.profile_expertise_city || exp.profile_expertise_state || formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
+                          {exp.profile_expertise_start ||
+                          exp.profile_expertise_end ||
+                          exp.profile_expertise_location ||
+                          exp.profile_expertise_city ||
+                          exp.profile_expertise_state ||
+                          formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
                             <View style={[styles.seekingMetaRow, { marginTop: 6 }]}>
                               {exp.profile_expertise_start || exp.profile_expertise_end ? (
                                 <View style={styles.seekingMetaLine}>
@@ -1905,7 +1902,7 @@ const ProfileScreen = ({ route, navigation }) => {
                               activeOpacity={0.8}
                               onPress={async () => {
                                 const expertiseUid = String(exp.profile_expertise_uid || "").trim();
-                                const responderUid = (await AsyncStorage.getItem("profile_uid") || "").trim();
+                                const responderUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
                                 if (expertiseUid && responderUid && routeProfileUID !== responderUid) {
                                   recordOfferingMessageResponse(expertiseUid, responderUid).catch((e) => {
                                     console.warn("[ProfileScreen] recordOfferingMessageResponse failed:", e);
@@ -2344,7 +2341,7 @@ const ProfileScreen = ({ route, navigation }) => {
             <View style={[styles.sectionHeader, { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }]}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <TouchableOpacity onPress={() => setShowReviews(!showReviews)} activeOpacity={0.7}>
-                  <Text style={styles.sectionHeaderText}>REVIEWS</Text>
+                  <Text style={styles.sectionHeaderText}>REVIEWS I HAVE LEFT</Text>
                 </TouchableOpacity>
                 {isCurrentUserProfile && (
                   <TouchableOpacity
@@ -2649,6 +2646,22 @@ const styles = StyleSheet.create({
   },
   safeArea: { flex: 1, backgroundColor: "#fff" },
   scrollContainer: { flex: 1 },
+  previewSection: {
+    marginBottom: 12,
+  },
+  darkPreviewSection: {
+    backgroundColor: "transparent",
+  },
+  shortBioBelowCard: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#444",
+    marginTop: 12,
+    paddingHorizontal: 4,
+  },
+  darkShortBioBelowCard: {
+    color: "#ccc",
+  },
   fieldContainer: {
     marginTop: 15,
     marginBottom: 0,

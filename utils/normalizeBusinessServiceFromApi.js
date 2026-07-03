@@ -150,7 +150,9 @@ export function normalizeBusinessServiceFromApi(service) {
   };
 
   if (bs_condition_type !== undefined && bs_condition_type !== null && String(bs_condition_type).trim() !== "") {
-    next.bs_condition_type = String(bs_condition_type).toLowerCase() === "used" ? "used" : "new";
+    const low = String(bs_condition_type).trim().toLowerCase();
+    if (low === "used") next.bs_condition_type = "used";
+    else if (low === "new") next.bs_condition_type = "new";
   }
 
   return next;

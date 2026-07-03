@@ -31,7 +31,7 @@ function formatRelationship(user) {
   return "Relationship not Assigned";
 }
 
-const MicroCard = ({ user, showRelationship = true, embedded = false }) => {
+const MicroCard = ({ user, showRelationship = true, embedded = false, nameSuffix = null, headerAccessory = null }) => {
   const { darkMode } = useDarkMode();
 
   const firstName = sanitizeText(user?.firstName || user?.personal_info?.profile_personal_first_name);
@@ -64,9 +64,13 @@ const MicroCard = ({ user, showRelationship = true, embedded = false }) => {
       />
 
       <View style={styles.textColumn}>
-        <Text style={[styles.name, darkMode && styles.darkName]} numberOfLines={1}>
-          {displayName}
-        </Text>
+        <View style={styles.nameRow}>
+          <Text style={[styles.name, darkMode && styles.darkName, nameSuffix ? styles.nameWithSuffix : null]} numberOfLines={nameSuffix ? 2 : 1}>
+            {displayName}
+            {nameSuffix ? <Text style={[styles.nameSuffix, darkMode && styles.darkNameSuffix]}>{` ${nameSuffix}`}</Text> : null}
+          </Text>
+          {headerAccessory}
+        </View>
         {showTagline ? (
           <Text style={[styles.tagline, darkMode && styles.darkText]} numberOfLines={2}>
             {tagLine}
@@ -99,6 +103,8 @@ const styles = StyleSheet.create({
     borderColor: "#444",
   },
   embeddedCardContainer: {
+    width: "100%",
+    alignSelf: "stretch",
     borderWidth: 0,
     backgroundColor: "transparent",
     paddingVertical: 0,
@@ -119,11 +125,28 @@ const styles = StyleSheet.create({
     minWidth: 0,
     marginRight: 12,
   },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+    marginBottom: 4,
+  },
   name: {
     fontSize: 16,
     fontWeight: "bold",
     color: "#333",
-    marginBottom: 4,
+    flexShrink: 1,
+  },
+  nameWithSuffix: {
+    flexWrap: "wrap",
+  },
+  nameSuffix: {
+    fontSize: 12,
+    fontWeight: "normal",
+    color: "#666",
+  },
+  darkNameSuffix: {
+    color: "#aaaaaa",
   },
   darkName: {
     color: "#fff",

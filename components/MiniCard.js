@@ -137,6 +137,14 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
               );
             })()}
 
+            {/* BUSINESS EMAIL */}
+            {(() => {
+              if (emailIsPublic && isSafeForConditional(email) && email !== "." && email.trim() !== "") {
+                return <Text style={[styles.email, darkMode && styles.darkText]}>{email}</Text>;
+              }
+              return null;
+            })()}
+
             {/* STREET ADDRESS (next line) */}
             {(() => {
               if (locationIsPublic && isSafeForConditional(addressLine1) && addressLine1 !== "." && addressLine1.trim() !== "") {
@@ -157,14 +165,6 @@ const MiniCard = ({ user, business, showRelationship = false, nameSuffix = null,
                 if (locationText && locationText.trim() !== "") {
                   return <Text style={[styles.city, darkMode && styles.darkText]}>{locationText}</Text>;
                 }
-              }
-              return null;
-            })()}
-
-            {/* BUSINESS EMAIL */}
-            {(() => {
-              if (emailIsPublic && isSafeForConditional(email) && email !== "." && email.trim() !== "") {
-                return <Text style={[styles.email, darkMode && styles.darkText]}>{email}</Text>;
               }
               return null;
             })()}

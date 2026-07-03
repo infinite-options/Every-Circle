@@ -19,10 +19,17 @@ export function searchResultsToMapProfiles(items) {
               lng: parseCoordinateValue(item.profile_personal_longitude),
             };
           })()
-        : {
-            lat: parseCoordinateValue(item.profile_personal_latitude),
-            lng: parseCoordinateValue(item.profile_personal_longitude),
-          };
+        : (() => {
+            const wishLat = parseCoordinateValue(item?.profile_wish_latitude ?? item?.wishData?.profile_wish_latitude);
+            const wishLng = parseCoordinateValue(item?.profile_wish_longitude ?? item?.wishData?.profile_wish_longitude);
+            if (wishLat != null && wishLng != null) {
+              return { lat: wishLat, lng: wishLng };
+            }
+            return {
+              lat: parseCoordinateValue(item.profile_personal_latitude),
+              lng: parseCoordinateValue(item.profile_personal_longitude),
+            };
+          })();
     const lat = coords.lat;
     const lng = coords.lng;
     if (lat == null || lng == null) continue;

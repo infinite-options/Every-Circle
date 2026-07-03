@@ -1,13 +1,12 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Platform, Image } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { parsePrice, formatCostValue } from "../utils/priceUtils";
 import { parseTagList } from "../utils/tagListUtils";
 import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 
 const DEFAULT_PRODUCT_IMAGE = require("../assets/profile.png");
 
-const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, businessUid }) => {
+const ProductCard = ({ service, onPress, onEdit, showEditButton, showTags = showEditButton, darkMode, businessUid }) => {
   const tags = useMemo(() => parseTagList(service.bs_tags), [service.bs_tags]);
 
   const productImageUri = useMemo(() => {
@@ -29,7 +28,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
   const quantityLine = useMemo(() => {
     const unlimited = service.bs_qty_unlimited === 1 || service.bs_qty_unlimited === "1" || service.bs_qty_unlimited === true;
     if (unlimited) {
-      return "Available quantity: No limit";
+      return null;
     }
     const n =
       service.bs_available_quantity != null && String(service.bs_available_quantity).trim() !== ""
@@ -38,36 +37,44 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
           ? String(service.bs_quantity).trim()
           : "";
     if (n !== "") {
+      if (n.toLowerCase() === "unlimited") return null;
       return `Available quantity: ${n}`;
     }
     if (service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0") {
       return "Available quantity: Limited";
     }
-    return "Available quantity: No limit";
+    return null;
   }, [service.bs_qty_unlimited, service.bs_available_quantity, service.bs_quantity]);
 
   const conditionLine = useMemo(() => {
     const c = service.bs_condition_type;
-    if (c !== undefined && c !== null && String(c).trim() !== "") {
-      const isUsed = String(c).toLowerCase() === "used";
-      const detail = (service.bs_condition_detail || "").trim();
-      if (isUsed) {
+    if (c !== undefined && c !== null) {
+      const cLow = String(c).trim().toLowerCase();
+      if (cLow === "" || cLow === "na") return null;
+      if (cLow === "used") {
+        const detail = (service.bs_condition_detail || service.bs_used_condition || "").trim();
         return detail ? `Condition: Used — ${detail}` : "Condition: Used";
       }
-      return "Condition: New";
+      if (cLow === "new") return "Condition: New";
     }
     const legacy = service.bs_condition;
     if (legacy != null && String(legacy).trim() !== "") {
+      const low = String(legacy).trim().toLowerCase();
+      if (low === "new") return "Condition: New";
+      if (low === "used") return "Condition: Used";
       return `Condition: ${String(legacy).trim()}`;
     }
     return null;
-  }, [service.bs_condition_type, service.bs_condition_detail, service.bs_condition]);
+  }, [service.bs_condition_type, service.bs_condition_detail, service.bs_used_condition, service.bs_condition]);
 
   const shippingLine = useMemo(() => {
     const free = service.bs_free_shipping === 1 || service.bs_free_shipping === "1" || service.bs_free_shipping === true;
     const buyer = service.bs_buyer_pays_shipping === 1 || service.bs_buyer_pays_shipping === "1" || service.bs_buyer_pays_shipping === true;
     if (free) return "Shipping: Free shipping";
     if (buyer) return "Shipping: Buyer pays shipping";
+    const freeOff = service.bs_free_shipping === 0 || service.bs_free_shipping === "0" || service.bs_free_shipping === false;
+    const buyerOff = service.bs_buyer_pays_shipping === 0 || service.bs_buyer_pays_shipping === "0" || service.bs_buyer_pays_shipping === false;
+    if (freeOff && buyerOff) return null;
     const legacy = service.bs_shipping;
     if (legacy != null && String(legacy).trim() !== "") {
       return `Shipping: ${String(legacy).trim()}`;
@@ -133,6 +140,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
           service,
           darkMode,
           showEditButton,
+          showTags,
           onEdit,
           thumbSource,
           metaTextStyle,
@@ -156,6 +164,7 @@ const ProductCard = ({ service, onPress, onEdit, showEditButton, darkMode, busin
         service,
         darkMode,
         showEditButton,
+        showTags,
         onEdit,
         thumbSource,
         metaTextStyle,
@@ -230,6 +239,7 @@ function renderProductCardBody({
   service,
   darkMode,
   showEditButton,
+  showTags,
   onEdit,
   thumbSource,
   metaTextStyle,
@@ -255,7 +265,7 @@ function renderProductCardBody({
             </Text>
             {showEditButton && onEdit && (
               <TouchableOpacity onPress={() => onEdit(service)} style={styles.editButton}>
-                <Ionicons name='pencil' size={20} color='#007AFF' />
+                <Image source={require("../assets/Edit.png")} style={styles.editIcon} tintColor='#000' />
               </TouchableOpacity>
             )}
           </View>
@@ -267,7 +277,7 @@ function renderProductCardBody({
         </View>
       </View>
       <View style={styles.textContainer}>
-        <Text style={metaTextStyle}>{quantityLine}</Text>
+        {quantityLine ? <Text style={metaTextStyle}>{quantityLine}</Text> : null}
         {isSoldOut && (
           <View
             style={{
@@ -340,7 +350,7 @@ function renderProductCardBody({
         {shippingLine ? <Text style={metaTextStyle}>{shippingLine}</Text> : null}
         {taxRateLine ? <Text style={metaTextStyle}>{taxRateLine}</Text> : null}
         {ccFeeBuyerLine ? <Text style={metaTextStyle}>{ccFeeBuyerLine}</Text> : null}
-        {tags.length > 0 ? (
+        {showTags && tags.length > 0 ? (
           <View style={styles.tagsRow}>
             {tags.map((tag, i) => (
               <View key={`${tag}-${i}`} style={[styles.tagChip, darkMode && styles.tagChipDark]}>
@@ -410,6 +420,10 @@ const styles = StyleSheet.create({
   },
   editButton: {
     padding: 5,
+  },
+  editIcon: {
+    width: 20,
+    height: 20,
   },
   textContainer: {
     flex: 1,

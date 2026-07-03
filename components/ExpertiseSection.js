@@ -21,6 +21,8 @@ import {
 import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expertiseMode";
 import { rejectNativeImageAsset, rejectWebImageFile } from "../utils/imageUploadLimits";
 
+const CONDITION_DETAIL_MAX_CHARS = 250;
+
 let DateTimePicker = null;
 if (Platform.OS !== "web") {
   try {
@@ -778,13 +780,16 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               </Text>
             </TouchableOpacity>
             {(item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") ? (
-              <TextInput
-                style={styles.taxRateInput}
-                value={String(item.profile_expertise_tax_rate ?? "")}
-                onChangeText={(t) => handleInputChange(index, "profile_expertise_tax_rate", t.replace(/[^0-9.]/g, ""))}
-                placeholder='% e.g. 8.25'
-                keyboardType='decimal-pad'
-              />
+              <View style={styles.taxRateInputWithSuffix}>
+                <TextInput
+                  style={[styles.taxRateInput, styles.taxRateInputCompact]}
+                  value={String(item.profile_expertise_tax_rate ?? "")}
+                  onChangeText={(t) => handleInputChange(index, "profile_expertise_tax_rate", t.replace(/[^0-9.]/g, ""))}
+                  placeholder='% e.g. 8.25'
+                  keyboardType='decimal-pad'
+                />
+                <Text style={styles.taxRateInputSuffix}>%</Text>
+              </View>
             ) : null}
           </View>
 
@@ -829,9 +834,10 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               selectedTextStyle={styles.dropdownSelectedText}
               activeColor='#f0f0f0'
             />
+            <Text style={[styles.costLabel, styles.quantityInlineLabel]}>Quantity</Text>
             <TextInput
               style={styles.bountyInput}
-              placeholder='Available Quantity'
+              placeholder='Count'
               keyboardType='numeric'
               value={item.quantity || ""}
               onChangeText={(text) => handleInputChange(index, "quantity", text)}
@@ -911,12 +917,83 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
             </TouchableOpacity>
             {item.profile_expertise_condition_type === "used" ? (
               <TextInput
-                style={[styles.taxRateInput, { width: 130 }]}
+                style={[styles.taxRateInput, styles.conditionDetailInput]}
                 value={item.profile_expertise_condition_detail || ""}
-                onChangeText={(t) => handleInputChange(index, "profile_expertise_condition_detail", t)}
-                placeholder='Description'
+                onChangeText={(t) => handleInputChange(index, "profile_expertise_condition_detail", t.slice(0, CONDITION_DETAIL_MAX_CHARS))}
+                placeholder='Description (250 characters max)'
+                maxLength={CONDITION_DETAIL_MAX_CHARS}
               />
             ) : null}
+          </View>
+
+          {/* Shippable Row */}
+          <View style={styles.taxRow}>
+            <Text style={styles.costLabel}>Shipping</Text>
+            <TouchableOpacity
+              style={[
+                styles.taxBtn,
+                !(item.profile_expertise_free_shipping === 1 || item.profile_expertise_free_shipping === "1" || item.profile_expertise_free_shipping === true) &&
+                  !(item.profile_expertise_buyer_pays_shipping === 1 || item.profile_expertise_buyer_pays_shipping === "1" || item.profile_expertise_buyer_pays_shipping === true) &&
+                  styles.taxBtnActive,
+              ]}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_free_shipping", 0);
+                handleInputChange(index, "profile_expertise_buyer_pays_shipping", 0);
+              }}
+            >
+              <Text
+                style={[
+                  styles.taxBtnText,
+                  !(item.profile_expertise_free_shipping === 1 || item.profile_expertise_free_shipping === "1" || item.profile_expertise_free_shipping === true) &&
+                    !(item.profile_expertise_buyer_pays_shipping === 1 || item.profile_expertise_buyer_pays_shipping === "1" || item.profile_expertise_buyer_pays_shipping === true) &&
+                    styles.taxBtnTextActive,
+                ]}
+              >
+                N/A
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.taxBtn,
+                (item.profile_expertise_free_shipping === 1 || item.profile_expertise_free_shipping === "1" || item.profile_expertise_free_shipping === true) && styles.taxBtnActive,
+              ]}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_free_shipping", 1);
+                handleInputChange(index, "profile_expertise_buyer_pays_shipping", 0);
+              }}
+            >
+              <Text
+                style={[
+                  styles.taxBtnText,
+                  (item.profile_expertise_free_shipping === 1 || item.profile_expertise_free_shipping === "1" || item.profile_expertise_free_shipping === true) && styles.taxBtnTextActive,
+                ]}
+              >
+                Free
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.taxBtn,
+                styles.taxBtnWide,
+                (item.profile_expertise_buyer_pays_shipping === 1 || item.profile_expertise_buyer_pays_shipping === "1" || item.profile_expertise_buyer_pays_shipping === true) &&
+                  styles.taxBtnActive,
+              ]}
+              onPress={() => {
+                handleInputChange(index, "profile_expertise_buyer_pays_shipping", 1);
+                handleInputChange(index, "profile_expertise_free_shipping", 0);
+              }}
+            >
+              <Text
+                style={[
+                  styles.taxBtnText,
+                  styles.taxBtnWideText,
+                  (item.profile_expertise_buyer_pays_shipping === 1 || item.profile_expertise_buyer_pays_shipping === "1" || item.profile_expertise_buyer_pays_shipping === true) &&
+                    styles.taxBtnTextActive,
+                ]}
+              >
+                Buyer pays
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Returnable Row */}
@@ -956,65 +1033,16 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
             ) : null}
           </View>
 
-          {/* Shippable Row */}
-          <View style={styles.taxRow}>
-            <Text style={styles.costLabel}>Shipping</Text>
-            <TouchableOpacity
-              style={styles.shippingCheckbox}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_free_shipping", 0);
-                handleInputChange(index, "profile_expertise_buyer_pays_shipping", 0);
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={!item.profile_expertise_free_shipping && !item.profile_expertise_buyer_pays_shipping ? "checkbox" : "square-outline"}
-                size={20}
-                color={!item.profile_expertise_free_shipping && !item.profile_expertise_buyer_pays_shipping ? "#007AFF" : "#aaa"}
-              />
-              <Text style={styles.taxBtnText}>N/A</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.shippingCheckbox}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_free_shipping", item.profile_expertise_free_shipping ? 0 : 1);
-                handleInputChange(index, "profile_expertise_buyer_pays_shipping", 0);
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={item.profile_expertise_free_shipping ? "checkbox" : "square-outline"}
-                size={20}
-                color={item.profile_expertise_free_shipping ? "#007AFF" : "#aaa"}
-              />
-              <Text style={styles.taxBtnText}>Free</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.shippingCheckbox}
-              onPress={() => {
-                handleInputChange(index, "profile_expertise_buyer_pays_shipping", item.profile_expertise_buyer_pays_shipping ? 0 : 1);
-                handleInputChange(index, "profile_expertise_free_shipping", 0);
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={item.profile_expertise_buyer_pays_shipping ? "checkbox" : "square-outline"}
-                size={20}
-                color={item.profile_expertise_buyer_pays_shipping ? "#007AFF" : "#aaa"}
-              />
-              <Text style={styles.taxBtnText}>Buyer pays</Text>
-            </TouchableOpacity>
-          </View>
-
           {/* Refund Policy Row */}
-          <View style={[styles.taxRow, { alignItems: "flex-start", marginBottom: 8 }]}>
-            <Text style={[styles.costLabel, { marginTop: 8 }]}>Refund Policy</Text>
+          <View style={styles.dateTimeRow}>
+            <Text style={styles.costLabel}>Refund Policy</Text>
             <TextInput
-              style={[styles.taxRateInput, { width: 220, height: 60, textAlignVertical: "top", paddingTop: 6 }]}
+              style={[styles.locationInput, darkMode && styles.locationInputDark]}
               value={item.profile_expertise_refund_policy || ""}
-              onChangeText={(t) => handleInputChange(index, "profile_expertise_refund_policy", t)}
-              placeholder='Describe your refund policy'
-              multiline
+              onChangeText={(t) => handleInputChange(index, "profile_expertise_refund_policy", t.slice(0, 45))}
+              placeholder='Describe your refund policy (max 45 characters)'
+              placeholderTextColor={darkMode ? "#cccccc" : "#999999"}
+              maxLength={45}
             />
           </View>
         </View>
@@ -1242,6 +1270,10 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginRight: 5,
   },
+  quantityInlineLabel: {
+    marginLeft: 5,
+    marginRight: 0,
+  },
   amountInput: {
     borderWidth: 1,
     borderColor: "#ccc",
@@ -1343,11 +1375,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: "center",
   },
-  shippingCheckbox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
   taxRateInput: {
     borderWidth: 1,
     borderColor: "#ccc",
@@ -1357,6 +1384,27 @@ const styles = StyleSheet.create({
     width: 100,
     height: 36,
     fontSize: 13,
+  },
+  taxRateInputCompact: {
+    width: 108,
+    minWidth: 108,
+    maxWidth: 108,
+  },
+  taxRateInputWithSuffix: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexShrink: 0,
+  },
+  taxRateInputSuffix: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#555",
+  },
+  conditionDetailInput: {
+    flex: 1,
+    minWidth: 0,
+    width: undefined,
   },
   cardSpacing: {
     marginTop: 16,

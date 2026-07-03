@@ -31,7 +31,8 @@ export function normServiceTags(service) {
  */
 export function buildBusinessServiceForApi(service, idx = 0) {
   const condRaw = service.bs_condition_type;
-  const condType = condRaw === "used" ? "used" : "new";
+  const condLow = condRaw == null ? "" : String(condRaw).trim().toLowerCase();
+  const condType = condLow === "used" ? "used" : condLow === "new" ? "new" : "";
   const bountyNone = service.bs_bounty_type === "none" || !String(service.bs_bounty || "").trim();
   const bountyTypeOut = bountyNone ? "per_item" : service.bs_bounty_type === "total" ? "total" : "per_item";
   const bountyOut = bountyNone ? "" : service.bs_bounty || "";

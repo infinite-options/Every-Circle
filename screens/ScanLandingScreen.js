@@ -199,18 +199,14 @@ export default function ScanLandingScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps='handled'>
         <Text style={styles.brand}>EveryCircle</Text>
         <Text style={styles.headline}>Connect on EveryCircle</Text>
-        <Text style={styles.sub}>
-          {showRedirecting
-            ? "Taking you to your network…"
-            : "Someone shared their profile with you. Log in or sign up to connect, or save their public contact card."}
-        </Text>
+        <Text style={styles.sub}>{showRedirecting ? "Taking you to your network…" : "Someone shared their profile with you. Log in or sign up to connect, or save their public contact card."}</Text>
 
         {(loading || showRedirecting) && (
           <View style={styles.centerRow}>
-            <ActivityIndicator size="large" color="#2434C2" />
+            <ActivityIndicator size='large' color='#2434C2' />
             <Text style={styles.muted}>{loading ? "Loading profile…" : "Opening connect…"}</Text>
           </View>
         )}
@@ -224,7 +220,7 @@ export default function ScanLandingScreen() {
             </View>
 
             <TouchableOpacity style={styles.primaryBtn} onPress={goToSignUp} activeOpacity={0.85}>
-              <Text style={styles.primaryBtnText}>Sign up for EveryCircle</Text>
+              <Text style={styles.primaryBtnText}>Sign up for everyCircle</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={[styles.secondaryBtn, styles.loginBtn]} onPress={goToLogin} activeOpacity={0.85}>
@@ -232,7 +228,7 @@ export default function ScanLandingScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.secondaryBtn} onPress={downloadVCard} activeOpacity={0.85}>
-              <Text style={styles.secondaryBtnText}>No thanks — save contact (.vcf)</Text>
+              <Text style={styles.secondaryBtnText}>No thanks — save contact in Phone</Text>
             </TouchableOpacity>
           </>
         )}

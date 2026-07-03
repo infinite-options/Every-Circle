@@ -80,6 +80,9 @@ import {
 
 const BusinessProfileAPI = BUSINESS_INFO_ENDPOINT;
 const DEFAULT_BUSINESS_IMAGE = require("../assets/profile.png");
+const CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS = 128;
+const CONDITION_DETAIL_MAX_CHARS = 250;
+const QUANTITY_MAX_DIGITS = 10;
 
 const parseInitialGalleryUploads = (business, businessUID) => buildBusinessGalleryUploads(business, businessUID);
 
@@ -2000,7 +2003,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             body: JSON.stringify({
               choice_groups: localSvc.bs_choice_groups || [],
               special_instructions_enabled: localSvc.bs_special_instructions_enabled || 0,
-              special_instructions_max_chars: localSvc.bs_special_instructions_max_chars || 80,
+              special_instructions_max_chars: CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS,
             }),
           })
             .then((res) => {
@@ -2635,7 +2638,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     bs_service_image_is_public: 1,
     bs_choice_groups: [],
     bs_special_instructions_enabled: 0,
-    bs_special_instructions_max_chars: 80,
+    bs_special_instructions_max_chars: CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS,
   };
 
   const [serviceForm, setServiceForm] = useState({ ...defaultService });
@@ -2651,30 +2654,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setIsChanged(true);
   };
 
-  const toggleFreeShipping = () => {
-    setServiceForm((prev) => {
-      if (prev.bs_free_shipping === 1) {
-        return { ...prev, bs_free_shipping: 0 };
-      }
-      return { ...prev, bs_free_shipping: 1, bs_buyer_pays_shipping: 0 };
-    });
-    setIsChanged(true);
-  };
-
-  const toggleBuyerPaysShipping = () => {
-    setServiceForm((prev) => {
-      if (prev.bs_buyer_pays_shipping === 1) {
-        return { ...prev, bs_buyer_pays_shipping: 0 };
-      }
-      return { ...prev, bs_buyer_pays_shipping: 1, bs_free_shipping: 0 };
-    });
-    setIsChanged(true);
-  };
-
-  const setShippingNotApplicable = () => {
-    setServiceForm((prev) => ({ ...prev, bs_free_shipping: 0, bs_buyer_pays_shipping: 0 }));
-    setIsChanged(true);
-  };
+  const isShippingNotApplicable = (form) => !(form.bs_free_shipping === 1 || form.bs_free_shipping === "1") && !(form.bs_buyer_pays_shipping === 1 || form.bs_buyer_pays_shipping === "1");
 
   const handleServiceCostAmountChange = (value) => {
     const parsed = parseServiceCost(serviceForm.bs_cost || "");
@@ -2721,8 +2701,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setServiceFormCostUnitError(false);
     setIsChanged(true);
   };
-
-  const isShippingNotApplicable = (form) => !(form.bs_free_shipping === 1 || form.bs_free_shipping === "1") && !(form.bs_buyer_pays_shipping === 1 || form.bs_buyer_pays_shipping === "1");
 
   const buildServiceRowForList = (formSource = serviceForm) => {
     const existingService = editingServiceIndex !== null ? services[editingServiceIndex] : null;
@@ -2771,8 +2749,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     const bountyAmtForList = formSource.bs_bounty_type === "none" ? "" : formSource.bs_bounty || "";
 
     const condForm = formSource.bs_condition_type;
-    const conditionTypeForList = condForm === "used" ? "used" : "new";
-    const conditionDetailForList = condForm === "used" ? String(formSource.bs_condition_detail || "").trim() : "";
+    const condLow = condForm == null ? "" : String(condForm).trim().toLowerCase();
+    const conditionTypeForList = condLow === "used" ? "used" : condLow === "new" ? "new" : "";
+    const conditionDetailForList = condLow === "used" ? String(formSource.bs_condition_detail || "").trim() : "";
+    const freeShippingForList = formSource.bs_free_shipping === 1 || formSource.bs_free_shipping === "1" || formSource.bs_free_shipping === true ? 1 : 0;
+    const buyerPaysShippingForList =
+      formSource.bs_buyer_pays_shipping === 1 || formSource.bs_buyer_pays_shipping === "1" || formSource.bs_buyer_pays_shipping === true ? 1 : 0;
 
     return {
       ...formSource,
@@ -2783,6 +2765,11 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_bounty: bountyAmtForList,
       bs_condition_type: conditionTypeForList,
       bs_condition_detail: conditionDetailForList,
+      bs_condition: "",
+      bs_used_condition: "",
+      bs_free_shipping: freeShippingForList,
+      bs_buyer_pays_shipping: buyerPaysShippingForList,
+      bs_shipping: freeShippingForList || buyerPaysShippingForList ? "" : "",
       bs_is_taxable: formTaxable ? 1 : 0,
       bs_tax_rate: formTaxable ? String(parsePrice(formSource.bs_tax_rate) || "0") : "0",
       bs_is_returnable: normServiceReturnable(formSource),
@@ -2792,7 +2779,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_uid: existingService?.bs_uid || "",
       bs_choice_groups: formSource.bs_choice_groups || [],
       bs_special_instructions_enabled: formSource.bs_special_instructions_enabled || 0,
-      bs_special_instructions_max_chars: formSource.bs_special_instructions_max_chars || 80,
+      bs_special_instructions_max_chars: CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS,
       _svcNewImageUri,
       _svcWebImageFile,
       _svcDeleteImageUrl,
@@ -2853,11 +2840,17 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_uid: service.bs_uid || "",
       bs_tags: service.bs_tags || "",
       bs_condition_type: (() => {
-        if (service.bs_condition_type === "used") return "used";
-        if (service.bs_condition_type === "na") return "na";
-        return "new";
+        const t = service.bs_condition_type;
+        const tLow = t == null ? "" : String(t).trim().toLowerCase();
+        if (tLow === "used") return "used";
+        if (tLow === "new") return "new";
+        return "na";
       })(),
-      bs_condition_detail: service.bs_condition_type === "used" ? service.bs_condition_detail || "" : "",
+      bs_condition_detail: (() => {
+        const t = service.bs_condition_type;
+        const tLow = t == null ? "" : String(t).trim().toLowerCase();
+        return tLow === "used" ? String(service.bs_condition_detail || service.bs_used_condition || "").trim() : "";
+      })(),
       bs_bounty_type: (() => {
         const b = service.bs_bounty;
         if (b == null || String(b).trim() === "" || parsePrice(b) === 0) return "none";
@@ -2869,7 +2862,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_buyer_pays_shipping: service.bs_buyer_pays_shipping === 1 || service.bs_buyer_pays_shipping === "1" || service.bs_buyer_pays_shipping === true ? 1 : 0,
       bs_choice_groups: service.bs_choice_groups || [],
       bs_special_instructions_enabled: service.bs_special_instructions_enabled || 0,
-      bs_special_instructions_max_chars: service.bs_special_instructions_max_chars || 80,
+      bs_special_instructions_max_chars: CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS,
       bs_qty_unlimited: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? 0 : 1,
       bs_available_quantity: service.bs_available_quantity != null ? String(service.bs_available_quantity) : "",
       bs_service_image_is_public: service.bs_service_image_is_public === 0 || service.bs_service_image_is_public === "0" ? 0 : 1,
@@ -3462,19 +3455,27 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
               </Text>
             </TouchableOpacity>
             {serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1" ? (
-              <TextInput
-                ref={serviceTaxRateInputRef}
-                style={[styles.serviceFormRowInput, darkMode && styles.darkServiceFormRowInput, serviceFormTaxRateError && { borderWidth: 2, borderColor: "#FF3B30" }]}
-                value={String(serviceForm.bs_tax_rate ?? "")}
-                onChangeText={(t) => {
-                  handleServiceChange("bs_tax_rate", t.replace(/[^0-9.]/g, ""));
-                  setServiceFormTaxRateError(false);
-                  setIsChanged(true);
-                }}
-                placeholder='% e.g. 8.25'
-                keyboardType='decimal-pad'
-                placeholderTextColor={darkMode ? "#888" : "#999"}
-              />
+              <View style={styles.serviceFormInputWithSuffix}>
+                <TextInput
+                  ref={serviceTaxRateInputRef}
+                  style={[
+                    styles.serviceFormRowInput,
+                    styles.serviceFormCompactNumericInput,
+                    darkMode && styles.darkServiceFormRowInput,
+                    serviceFormTaxRateError && { borderWidth: 2, borderColor: "#FF3B30" },
+                  ]}
+                  value={String(serviceForm.bs_tax_rate ?? "")}
+                  onChangeText={(t) => {
+                    handleServiceChange("bs_tax_rate", t.replace(/[^0-9.]/g, ""));
+                    setServiceFormTaxRateError(false);
+                    setIsChanged(true);
+                  }}
+                  placeholder='% e.g. 8.25'
+                  keyboardType='decimal-pad'
+                  placeholderTextColor={darkMode ? "#888" : "#999"}
+                />
+                <Text style={[styles.serviceFormInputSuffix, darkMode && styles.darkServiceFormInputSuffix]}>%</Text>
+              </View>
             ) : null}
           </View>
         </View>
@@ -3598,8 +3599,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
               <TextInput
                 style={[styles.serviceFormRowInput, darkMode && styles.darkServiceFormRowInput]}
                 value={serviceForm.bs_condition_detail}
-                onChangeText={(t) => handleServiceChange("bs_condition_detail", t)}
-                placeholder='Description'
+                onChangeText={(t) => handleServiceChange("bs_condition_detail", t.slice(0, CONDITION_DETAIL_MAX_CHARS))}
+                placeholder='Description (max 250 characters)'
+                maxLength={CONDITION_DETAIL_MAX_CHARS}
                 placeholderTextColor={darkMode ? "#888" : "#999"}
               />
             ) : null}
@@ -3690,15 +3692,21 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             {!(serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1") ? (
               <TextInput
                 ref={serviceQuantityInputRef}
-                style={[styles.serviceFormRowInput, darkMode && styles.darkServiceFormRowInput, serviceFormQuantityError && { borderWidth: 2, borderColor: "#FF3B30" }]}
+                style={[
+                  styles.serviceFormRowInput,
+                  styles.serviceFormCompactNumericInput,
+                  darkMode && styles.darkServiceFormRowInput,
+                  serviceFormQuantityError && { borderWidth: 2, borderColor: "#FF3B30" },
+                ]}
                 value={serviceForm.bs_available_quantity}
                 onChangeText={(t) => {
-                  handleServiceChange("bs_available_quantity", t.replace(/\D/g, ""));
+                  handleServiceChange("bs_available_quantity", t.replace(/\D/g, "").slice(0, QUANTITY_MAX_DIGITS));
                   setServiceFormQuantityError(false);
                   setIsChanged(true);
                 }}
                 placeholder='Count'
                 keyboardType='number-pad'
+                maxLength={QUANTITY_MAX_DIGITS}
                 placeholderTextColor={darkMode ? "#888" : "#999"}
               />
             ) : null}
@@ -3707,22 +3715,68 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
         <View style={styles.serviceFormCompactRow}>
           <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Shipping</Text>
-          <View style={[styles.serviceFormRowBody, { flexWrap: "wrap", gap: 10 }]}>
-            <TouchableOpacity style={styles.serviceCheckboxRowInline} onPress={setShippingNotApplicable} activeOpacity={0.7}>
-              <Ionicons name={isShippingNotApplicable(serviceForm) ? "checkbox" : "square-outline"} size={20} color={isShippingNotApplicable(serviceForm) ? "#9C45F7" : darkMode ? "#aaa" : "#666"} />
-              <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>Not applicable</Text>
+          <View style={styles.serviceFormRowBody}>
+            <TouchableOpacity
+              style={[styles.bountyTypeBtn, styles.bountyTypeBtnCompact, styles.bountyTypeBtnLong, isShippingNotApplicable(serviceForm) && styles.bountyTypeBtnActive]}
+              onPress={() => {
+                setServiceForm((prev) => ({ ...prev, bs_free_shipping: 0, bs_buyer_pays_shipping: 0 }));
+                setIsChanged(true);
+              }}
+            >
+              <Text
+                style={[
+                  styles.bountyTypeBtnText,
+                  styles.bountyTypeBtnTextCompact,
+                  styles.bountyTypeBtnTextLong,
+                  isShippingNotApplicable(serviceForm) && styles.bountyTypeBtnTextActive,
+                ]}
+              >
+                Not Applicable
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.serviceCheckboxRowInline} onPress={toggleFreeShipping} activeOpacity={0.7}>
-              <Ionicons name={serviceForm.bs_free_shipping === 1 ? "checkbox" : "square-outline"} size={20} color={serviceForm.bs_free_shipping === 1 ? "#9C45F7" : darkMode ? "#aaa" : "#666"} />
-              <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>Free</Text>
+            <TouchableOpacity
+              style={[
+                styles.bountyTypeBtn,
+                styles.bountyTypeBtnCompact,
+                (serviceForm.bs_free_shipping === 1 || serviceForm.bs_free_shipping === "1") && styles.bountyTypeBtnActive,
+              ]}
+              onPress={() => {
+                setServiceForm((prev) => ({ ...prev, bs_free_shipping: 1, bs_buyer_pays_shipping: 0 }));
+                setIsChanged(true);
+              }}
+            >
+              <Text
+                style={[
+                  styles.bountyTypeBtnText,
+                  styles.bountyTypeBtnTextCompact,
+                  (serviceForm.bs_free_shipping === 1 || serviceForm.bs_free_shipping === "1") && styles.bountyTypeBtnTextActive,
+                ]}
+              >
+                Free
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.serviceCheckboxRowInline} onPress={toggleBuyerPaysShipping} activeOpacity={0.7}>
-              <Ionicons
-                name={serviceForm.bs_buyer_pays_shipping === 1 ? "checkbox" : "square-outline"}
-                size={20}
-                color={serviceForm.bs_buyer_pays_shipping === 1 ? "#9C45F7" : darkMode ? "#aaa" : "#666"}
-              />
-              <Text style={[styles.serviceCheckboxLabelCompact, darkMode && styles.darkServiceCheckboxLabelCompact]}>Buyer pays</Text>
+            <TouchableOpacity
+              style={[
+                styles.bountyTypeBtn,
+                styles.bountyTypeBtnCompact,
+                styles.bountyTypeBtnLong,
+                (serviceForm.bs_buyer_pays_shipping === 1 || serviceForm.bs_buyer_pays_shipping === "1") && styles.bountyTypeBtnActive,
+              ]}
+              onPress={() => {
+                setServiceForm((prev) => ({ ...prev, bs_buyer_pays_shipping: 1, bs_free_shipping: 0 }));
+                setIsChanged(true);
+              }}
+            >
+              <Text
+                style={[
+                  styles.bountyTypeBtnText,
+                  styles.bountyTypeBtnTextCompact,
+                  styles.bountyTypeBtnTextLong,
+                  (serviceForm.bs_buyer_pays_shipping === 1 || serviceForm.bs_buyer_pays_shipping === "1") && styles.bountyTypeBtnTextActive,
+                ]}
+              >
+                Buyer pays
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -3740,85 +3794,57 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           />
         </View>
 
-        {/* Special Instructions */}
-        <View style={[styles.serviceFormCompactRow, { alignItems: "flex-start", flexWrap: "wrap" }]}>
-          <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Special Instructions</Text>
-          <View style={{ flex: 1, gap: 8 }}>
-            <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-              <TouchableOpacity
-                style={[
-                  styles.bountyTypeBtn,
-                  styles.bountyTypeBtnCompact,
-                  (serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && styles.bountyTypeBtnActive,
-                ]}
-                onPress={() => {
-                  handleServiceChange("bs_special_instructions_enabled", 1);
-                  setIsChanged(true);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.bountyTypeBtnText,
-                    styles.bountyTypeBtnTextCompact,
-                    (serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && styles.bountyTypeBtnTextActive,
-                  ]}
-                >
-                  Enabled
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.bountyTypeBtn,
-                  styles.bountyTypeBtnCompact,
-                  !(serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && styles.bountyTypeBtnActive,
-                ]}
-                onPress={() => {
-                  handleServiceChange("bs_special_instructions_enabled", 0);
-                  setIsChanged(true);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.bountyTypeBtnText,
-                    styles.bountyTypeBtnTextCompact,
-                    !(serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && styles.bountyTypeBtnTextActive,
-                  ]}
-                >
-                  Disabled
-                </Text>
-              </TouchableOpacity>
-            </View>
-            {(serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555" }}>Max characters:</Text>
-                <TextInput
-                  style={[styles.serviceFormRowInput, darkMode && styles.darkServiceFormRowInput, { flex: 0, width: 72 }]}
-                  value={String(serviceForm.bs_special_instructions_max_chars || 80)}
-                  onChangeText={(t) => {
-                    handleServiceChange("bs_special_instructions_max_chars", t.replace(/\D/g, ""));
-                    setIsChanged(true);
-                  }}
-                  keyboardType='number-pad'
-                  placeholder='80'
-                  placeholderTextColor={darkMode ? "#888" : "#999"}
-                />
-                <View
-                  style={{
-                    borderWidth: 1,
-                    borderColor: darkMode ? "#555" : "#ddd",
-                    borderRadius: 8,
-                    padding: 10,
-                    flex: 1,
-                    minHeight: 60,
-                    justifyContent: "flex-end",
-                    backgroundColor: darkMode ? "#2d2d2d" : "#fff",
-                  }}
-                >
-                  <Text style={{ color: darkMode ? "#888" : "#aaa", fontSize: 12, textAlign: "right" }}>{serviceForm.bs_special_instructions_max_chars || 80}</Text>
-                </View>
-              </View>
-            )}
-          </View>
+        {/* Allow Customer Special Instructions */}
+        <View style={styles.serviceFormSpecialInstructionsRow}>
+          <Text style={[styles.serviceFormSpecialInstructionsTitle, darkMode && styles.darkServiceFormRowTitle]} numberOfLines={1}>
+            Allow Customer Special Instructions
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.bountyTypeBtn,
+              styles.bountyTypeBtnCompact,
+              !(serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && styles.bountyTypeBtnActive,
+            ]}
+            onPress={() => {
+              handleServiceChange("bs_special_instructions_enabled", 0);
+              setIsChanged(true);
+            }}
+          >
+            <Text
+              style={[
+                styles.bountyTypeBtnText,
+                styles.bountyTypeBtnTextCompact,
+                !(serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && styles.bountyTypeBtnTextActive,
+              ]}
+            >
+              No
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.bountyTypeBtn,
+              styles.bountyTypeBtnCompact,
+              (serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && styles.bountyTypeBtnActive,
+            ]}
+            onPress={() => {
+              setServiceForm((prev) => ({
+                ...prev,
+                bs_special_instructions_enabled: 1,
+                bs_special_instructions_max_chars: CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS,
+              }));
+              setIsChanged(true);
+            }}
+          >
+            <Text
+              style={[
+                styles.bountyTypeBtnText,
+                styles.bountyTypeBtnTextCompact,
+                (serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && styles.bountyTypeBtnTextActive,
+              ]}
+            >
+              Yes
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.formButtons}>
@@ -3891,7 +3917,6 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         {renderBusinessRoleField()}
         {renderEINField()}
         {renderBusinessCcFeeField()}
-        {renderField("Website", formData.website, "website")}
 
         {/* MISSING: renderField calls for First Name, Last Name (EditProfileScreen has these) */}
         {/* Note: Business profile doesn't have firstName/lastName fields */}
@@ -4024,6 +4049,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
         {/* BUSINESS-SPECIFIC: Social Links Section (EditProfileScreen doesn't have this section in edit) */}
         <Text style={[styles.label, darkMode && styles.darkLabel]}>Social Links</Text>
+        {renderField("Website", formData.website, "website")}
         {renderSocialField("Facebook", "facebook")}
         {renderSocialField("Instagram", "instagram")}
         {renderSocialField("LinkedIn", "linkedin")}
@@ -4378,6 +4404,23 @@ const styles = StyleSheet.create({
     gap: 8,
     minHeight: 40,
   },
+  serviceFormSpecialInstructionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    alignSelf: "flex-start",
+    marginBottom: 8,
+    gap: 6,
+    flexWrap: "nowrap",
+    maxWidth: "100%",
+  },
+  serviceFormSpecialInstructionsTitle: {
+    flexShrink: 1,
+    minWidth: 0,
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#111",
+  },
   serviceFormRowTitle: {
     width: 108,
     flexShrink: 0,
@@ -4413,6 +4456,27 @@ const styles = StyleSheet.create({
     borderColor: "#555",
     backgroundColor: "#2d2d2d",
     color: "#fff",
+  },
+  serviceFormCompactNumericInput: {
+    flex: 0,
+    flexGrow: 0,
+    width: 108,
+    minWidth: 108,
+    maxWidth: 108,
+  },
+  serviceFormInputWithSuffix: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexShrink: 0,
+  },
+  serviceFormInputSuffix: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#555",
+  },
+  darkServiceFormInputSuffix: {
+    color: "#ccc",
   },
   bountyTypeBtnCompact: {
     paddingVertical: 5,
