@@ -213,7 +213,21 @@ function profileLocationFieldsFromApi(row) {
     profile_personal_longitude: row?.profile_personal_longitude ?? null,
     profile_expertise_latitude: row?.profile_expertise_latitude ?? null,
     profile_expertise_longitude: row?.profile_expertise_longitude ?? null,
+    profile_wish_latitude: row?.profile_wish_latitude ?? null,
+    profile_wish_longitude: row?.profile_wish_longitude ?? null,
     ...locationFieldsFromApi(row),
+  };
+}
+
+function seekingDistanceCoords(item) {
+  const wishLat = parseCoordinateValue(item?.profile_wish_latitude ?? item?.wishData?.profile_wish_latitude);
+  const wishLng = parseCoordinateValue(item?.profile_wish_longitude ?? item?.wishData?.profile_wish_longitude);
+  if (wishLat != null && wishLng != null) {
+    return { lat: wishLat, lng: wishLng };
+  }
+  return {
+    lat: parseCoordinateValue(item?.profile_personal_latitude),
+    lng: parseCoordinateValue(item?.profile_personal_longitude),
   };
 }
 
@@ -225,7 +239,8 @@ function itemDistanceMiles(item, homeCoords) {
     return haversineMiles(homeCoords.lat, homeCoords.lng, lat, lng);
   }
   if (item?.itemType === "seeking") {
-    return haversineMiles(homeCoords.lat, homeCoords.lng, item?.profile_personal_latitude, item?.profile_personal_longitude);
+    const { lat, lng } = seekingDistanceCoords(item);
+    return haversineMiles(homeCoords.lat, homeCoords.lng, lat, lng);
   }
   return haversineMiles(homeCoords.lat, homeCoords.lng, item?.business_latitude, item?.business_longitude);
 }
@@ -373,6 +388,8 @@ function mapSearchWishRow(item, i) {
       profile_wish_start: item.profile_wish_start || "",
       profile_wish_end: item.profile_wish_end || "",
       profile_wish_location: item.profile_wish_location || "",
+      profile_wish_latitude: item.profile_wish_latitude ?? null,
+      profile_wish_longitude: item.profile_wish_longitude ?? null,
       profile_wish_mode: item.profile_wish_mode || "",
       profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
     },
@@ -1847,6 +1864,8 @@ export default function SearchScreen({ route }) {
               profile_wish_start: item.profile_wish_start || "",
               profile_wish_end: item.profile_wish_end || "",
               profile_wish_location: item.profile_wish_location || "",
+              profile_wish_latitude: item.profile_wish_latitude ?? null,
+              profile_wish_longitude: item.profile_wish_longitude ?? null,
               profile_wish_mode: item.profile_wish_mode || "",
               profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
             },
