@@ -2994,6 +2994,7 @@ export default function SearchScreen({ route }) {
               <TouchableOpacity
                 style={[
                   styles.filterButtonOption,
+                  styles.searchTypeTabOption,
                   darkMode && styles.darkFilterButtonOption,
                   selectedSearchTabs.businesses && styles.searchTypeButtonBusinesses,
                   darkMode && selectedSearchTabs.businesses && styles.darkSearchTypeButtonBusinesses,
@@ -3003,10 +3004,12 @@ export default function SearchScreen({ route }) {
                 <Text
                   style={[
                     styles.filterButtonText,
+                    styles.searchTypeTabText,
                     darkMode && styles.darkFilterButtonText,
                     selectedSearchTabs.businesses && styles.searchTypeButtonTextBusinesses,
                     darkMode && selectedSearchTabs.businesses && styles.darkSearchTypeButtonTextBusinesses,
                   ]}
+                  numberOfLines={1}
                 >
                   Businesses
                 </Text>
@@ -3014,6 +3017,7 @@ export default function SearchScreen({ route }) {
               <TouchableOpacity
                 style={[
                   styles.filterButtonOption,
+                  styles.searchTypeTabOption,
                   darkMode && styles.darkFilterButtonOption,
                   selectedSearchTabs.expertise && styles.searchTypeButtonExpertise,
                   darkMode && selectedSearchTabs.expertise && styles.darkSearchTypeButtonExpertise,
@@ -3023,10 +3027,12 @@ export default function SearchScreen({ route }) {
                 <Text
                   style={[
                     styles.filterButtonText,
+                    styles.searchTypeTabText,
                     darkMode && styles.darkFilterButtonText,
                     selectedSearchTabs.expertise && styles.searchTypeButtonTextExpertise,
                     darkMode && selectedSearchTabs.expertise && styles.darkSearchTypeButtonTextExpertise,
                   ]}
+                  numberOfLines={1}
                 >
                   Offering
                 </Text>
@@ -3034,6 +3040,7 @@ export default function SearchScreen({ route }) {
               <TouchableOpacity
                 style={[
                   styles.filterButtonOption,
+                  styles.searchTypeTabOption,
                   darkMode && styles.darkFilterButtonOption,
                   selectedSearchTabs.seeking && styles.searchTypeButtonSeeking,
                   darkMode && selectedSearchTabs.seeking && styles.darkSearchTypeButtonSeeking,
@@ -3043,10 +3050,12 @@ export default function SearchScreen({ route }) {
                 <Text
                   style={[
                     styles.filterButtonText,
+                    styles.searchTypeTabText,
                     darkMode && styles.darkFilterButtonText,
                     selectedSearchTabs.seeking && styles.searchTypeButtonTextSeeking,
                     darkMode && selectedSearchTabs.seeking && styles.darkSearchTypeButtonTextSeeking,
                   ]}
+                  numberOfLines={1}
                 >
                   Seeking
                 </Text>
@@ -3054,6 +3063,7 @@ export default function SearchScreen({ route }) {
               <TouchableOpacity
                 style={[
                   styles.filterButtonOption,
+                  styles.searchTypeTabOption,
                   darkMode && styles.darkFilterButtonOption,
                   selectedSearchTabs.individuals && styles.searchTypeButtonIndividuals,
                   darkMode && selectedSearchTabs.individuals && styles.darkSearchTypeButtonIndividuals,
@@ -3065,28 +3075,17 @@ export default function SearchScreen({ route }) {
                 <Text
                   style={[
                     styles.filterButtonText,
+                    styles.searchTypeTabText,
                     darkMode && styles.darkFilterButtonText,
                     selectedSearchTabs.individuals && styles.searchTypeButtonTextIndividuals,
                     darkMode && selectedSearchTabs.individuals && styles.darkSearchTypeButtonTextIndividuals,
                   ]}
+                  numberOfLines={1}
                 >
                   Individuals
                 </Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={[styles.filterButtonOption, styles.mapButtonRight, styles.mapIconButton, darkMode && styles.darkFilterButtonOption, mapLoading && { opacity: 0.6 }]}
-              onPress={handleOpenSearchMap}
-              disabled={mapLoading}
-              accessibilityLabel="View on map"
-              accessibilityRole="button"
-            >
-              {mapLoading ? (
-                <ActivityIndicator size="small" color={darkMode ? "#ffffff" : "#333333"} />
-              ) : (
-                <Ionicons name="map-outline" size={22} color={darkMode ? "#ffffff" : "#333333"} />
-              )}
-            </TouchableOpacity>
           </View>
 
           {/* Search bar */}
@@ -3110,11 +3109,24 @@ export default function SearchScreen({ route }) {
                 accessibilityHint='Enter text to search'
                 accessibilityRole='search'
               />
-              <TouchableOpacity style={[styles.searchButton, darkMode && styles.darkSearchButton]} onPress={onSearch}>
-                <Ionicons name='search' size={22} color={darkMode ? "#ffffff" : "#000000"} />
+              <TouchableOpacity style={[styles.searchBarIconButton, darkMode && styles.darkSearchBarIconButton]} onPress={onSearch}>
+                <Ionicons name='search' size={20} color={darkMode ? "#ffffff" : "#000000"} />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.filterButton, darkMode && styles.darkFilterButton]} onPress={() => setShowFilters(!showFilters)}>
-                <MaterialIcons name='filter-list' size={22} color={darkMode ? "#ffffff" : "#000000"} />
+              <TouchableOpacity style={[styles.searchBarIconButton, darkMode && styles.darkSearchBarIconButton]} onPress={() => setShowFilters(!showFilters)}>
+                <MaterialIcons name='filter-list' size={20} color={darkMode ? "#ffffff" : "#000000"} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.searchBarIconButton, darkMode && styles.darkSearchBarIconButton, mapLoading && { opacity: 0.6 }]}
+                onPress={handleOpenSearchMap}
+                disabled={mapLoading}
+                accessibilityLabel="View on map"
+                accessibilityRole="button"
+              >
+                {mapLoading ? (
+                  <ActivityIndicator size="small" color={darkMode ? "#ffffff" : "#333333"} />
+                ) : (
+                  <Ionicons name="map-outline" size={20} color={darkMode ? "#ffffff" : "#333333"} />
+                )}
               </TouchableOpacity>
             </View>
 
@@ -3612,13 +3624,14 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
+    minWidth: 0,
     backgroundColor: "#f0f0f0",
     borderRadius: 8,
-    padding: 12,
-    marginRight: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginRight: 6,
   },
-  searchButton: { marginLeft: 10, backgroundColor: "#f0f0f0", borderRadius: 8, padding: 12 },
-  filterButton: { marginLeft: 10, backgroundColor: "#f0f0f0", borderRadius: 8, padding: 12 },
+  searchBarIconButton: { marginLeft: 6, backgroundColor: "#f0f0f0", borderRadius: 8, padding: 8 },
 
   resultsContainer: { flex: 1, marginBottom: 15 },
   loadingText: { textAlign: "center", marginVertical: 10 },
@@ -3779,23 +3792,22 @@ const styles = StyleSheet.create({
   searchTypeRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
   },
   searchTypeButtonsGroup: {
     flexDirection: "row",
-    flexWrap: "wrap",
+    flexWrap: "nowrap",
     flex: 1,
-    gap: 6,
-    marginRight: 8,
+    gap: 4,
   },
-  mapButtonRight: {
-    flexShrink: 0,
+  searchTypeTabOption: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: 6,
     marginRight: 0,
-    marginBottom: 4,
+    marginBottom: 0,
   },
-  mapIconButton: {
-    minWidth: 40,
-    paddingHorizontal: 8,
+  searchTypeTabText: {
+    fontSize: 11,
   },
   filterButtonsContainer: {
     flexDirection: "row",
@@ -3908,10 +3920,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#404040",
     color: "#ffffff",
   },
-  darkSearchButton: {
-    backgroundColor: "#404040",
-  },
-  darkFilterButton: {
+  darkSearchBarIconButton: {
     backgroundColor: "#404040",
   },
   darkResultItem: {

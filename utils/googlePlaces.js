@@ -66,11 +66,19 @@ async function _getPlacePredictions(input, types) {
     }
   }
 
+  if (!PLACES_KEY) {
+    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_PLACES_API_KEY (or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY) in .env / eas.json");
+    return [];
+  }
+
   try {
     const typesParam = Array.isArray(types) && types.length ? `&types=${encodeURIComponent(types.join("|"))}` : "";
     const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input.trim())}&key=${PLACES_KEY}${typesParam}&language=en`;
     const res = await fetch(url);
     const json = await res.json();
+    if (json.status && json.status !== "OK" && json.status !== "ZERO_RESULTS") {
+      console.warn("[Places] autocomplete status:", json.status, json.error_message || "");
+    }
     return _mapPredictions(json.predictions);
   } catch (e) {
     console.error("[Places] native REST error:", e);
@@ -214,10 +222,18 @@ export async function getPlaceDetails(placeId) {
       return {};
     }
   } else {
+    if (!PLACES_KEY) {
+      console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_PLACES_API_KEY (or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY) in .env / eas.json");
+      return {};
+    }
     try {
       const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&key=${PLACES_KEY}&fields=name,formatted_address,address_components,geometry,formatted_phone_number,website,photos,rating`;
       const res = await fetch(url);
       const json = await res.json();
+      if (json.status && json.status !== "OK") {
+        console.warn("[Places] getDetails status:", json.status, json.error_message || "");
+        return {};
+      }
       const pd = json.result || {};
       const addr = _parseAddressComponents(pd.address_components);
       return {

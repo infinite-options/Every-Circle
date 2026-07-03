@@ -430,7 +430,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     return (
       <View style={[styles.fieldContainer, styles.placesSearchContainer]}>
         <View style={styles.labelRow}>
-          <Text style={[styles.label, darkMode && styles.darkLabel]}>Address (for location services only)</Text>
+          <Text style={[styles.label, darkMode && styles.darkLabel]}>Address (for location services)</Text>
           <Text style={[styles.toggleText, styles.alwaysHiddenLabel, darkMode && styles.darkAlwaysHiddenLabel]}>Always Hidden</Text>
         </View>
         <TextInput
@@ -754,7 +754,10 @@ const EditProfileScreen = ({ route, navigation }) => {
         cost: w.cost || "",
         isPublic: w.isPublic,
       }));
-      console.log("[EditProfile] wishesPayload lat/lng:", wishesPayload.map((w) => ({ lat: w.profile_wish_latitude, lng: w.profile_wish_longitude })));
+      console.log(
+        "[EditProfile] wishesPayload lat/lng:",
+        wishesPayload.map((w) => ({ lat: w.profile_wish_latitude, lng: w.profile_wish_longitude })),
+      );
       payload.append("wishes_info", JSON.stringify(wishesPayload));
 
       const experiencePayload = (formData.experience || []).map((exp) => {
@@ -1252,7 +1255,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     <View style={styles.fieldContainer}>
       {/* Row: Label and Toggle */}
       <View style={styles.labelRow}>
-        <Text style={[styles.label, darkMode && styles.darkLabel]}>Short Bio (max 500 characters)</Text>
+        <Text style={[styles.label, darkMode && styles.darkLabel]}>Bio (max 500 characters)</Text>
         <View style={styles.toggleContainer}>
           <TouchableOpacity onPress={() => handleToggleVisibility("shortBioIsPublic")} style={[styles.togglePill, formData.shortBioIsPublic && styles.togglePillActiveGreen]}>
             <Text style={[styles.togglePillText, formData.shortBioIsPublic && styles.togglePillTextActive]}>{formData.shortBioIsPublic ? "Visible" : "Show"}</Text>

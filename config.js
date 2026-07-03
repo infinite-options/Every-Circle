@@ -49,6 +49,9 @@ if (!ENV.GOOGLE_URL_SCHEME) {
 if (!ENV.GOOGLE_MAPS_API_KEY) {
   console.error("ERROR: EXPO_PUBLIC_GOOGLE_MAPS_API_KEY is not defined in .env file");
 }
+if (!ENV.GOOGLE_PLACES_API_KEY && !ENV.GOOGLE_MAPS_API_KEY) {
+  console.error("ERROR: EXPO_PUBLIC_GOOGLE_PLACES_API_KEY (or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY fallback) is not defined");
+}
 if (!ENV.PROJECT_ID) {
   console.error("ERROR: EXPO_PUBLIC_PROJECT_ID is not defined in .env file");
 }
@@ -98,7 +101,8 @@ const config = {
   googleURLScheme: getGoogleURLScheme(),
   bundleIdentifier: ENV.BUNDLE_IDENTIFIER,
   googleMapsApiKey: ENV.GOOGLE_MAPS_API_KEY,
-  googlePlacesApiKey: ENV.GOOGLE_PLACES_API_KEY,
+  // EAS production builds only inject vars listed in eas.json; fall back to Maps key (same GCP key locally).
+  googlePlacesApiKey: ENV.GOOGLE_PLACES_API_KEY || ENV.GOOGLE_MAPS_API_KEY,
 };
 
 // console.log("Exporting config:", config);
