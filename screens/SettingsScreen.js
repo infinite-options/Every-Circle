@@ -39,15 +39,9 @@ import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../confi
 import versionData from "../version.json";
 import Constants from "expo-constants";
 import appConfig from "../config";
+import { obscureApiKey } from "../utils/obscureApiKey";
 
-/** LoginScreen-style helpers for dev API key fingerprint (partial, for debugging). */
-function getApiKeyLastTwoDigits(clientId) {
-  if (!clientId) return "Not set";
-  const match = clientId.match(/(.+)\.apps\.googleusercontent\.com$/);
-  if (match) return "..." + match[1].slice(-2);
-  return "..." + clientId.slice(-2);
-}
-
+/** LoginScreen-style helper for dev OAuth client fingerprint (partial, for debugging). */
 function getApiKeyFirstFourDigits(clientId) {
   if (!clientId) return "Not set";
   const match = clientId.match(/([\w-]+)-([\w]+)\.apps\.googleusercontent\.com$/);
@@ -1552,7 +1546,7 @@ export default function SettingsScreen() {
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Android: {getApiKeyFirstFourDigits(appConfig.googleClientIds.android)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Web: {getApiKeyFirstFourDigits(appConfig.googleClientIds.web)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>URL Scheme: {appConfig.googleURLScheme ? appConfig.googleURLScheme.split("-").pop().slice(0, 4) : "Not set"}</Text>
-              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Google API: {getApiKeyLastTwoDigits(appConfig.googleApiKey)}</Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Google API: {obscureApiKey(appConfig.googleApiKey)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Environment: {__DEV__ ? "Development" : "Production"}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>iOS Build: {Constants.expoConfig?.ios?.buildNumber || "Not set"}</Text>
             </View>
