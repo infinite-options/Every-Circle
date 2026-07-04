@@ -1552,8 +1552,7 @@ export default function SettingsScreen() {
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Android: {getApiKeyFirstFourDigits(appConfig.googleClientIds.android)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Web: {getApiKeyFirstFourDigits(appConfig.googleClientIds.web)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>URL Scheme: {appConfig.googleURLScheme ? appConfig.googleURLScheme.split("-").pop().slice(0, 4) : "Not set"}</Text>
-              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Maps API: {getApiKeyLastTwoDigits(appConfig.googleMapsApiKey)}</Text>
-              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Places API: {getApiKeyLastTwoDigits(appConfig.googlePlacesApiKey)}</Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Google API: {getApiKeyLastTwoDigits(appConfig.googleApiKey)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Environment: {__DEV__ ? "Development" : "Production"}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>iOS Build: {Constants.expoConfig?.ios?.buildNumber || "Not set"}</Text>
             </View>

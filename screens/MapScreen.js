@@ -17,8 +17,8 @@ const DEFAULT_LOCATION = {
   longitudeDelta: LONGITUDE_DELTA,
 };
 
-console.log("Google Maps API Key being used:", config.googleMapsApiKey);
-console.log("Initializing GooglePlacesAutocomplete with API key:", config.googleMapsApiKey);
+console.log("Google API Key being used:", config.googleApiKey);
+console.log("Initializing GooglePlacesAutocomplete with API key:", config.googleApiKey);
 
 export default function MapScreen({ onLogout }) {
   const [isAutocompleteFocused, setAutocompleteFocused] = useState(false);
@@ -141,7 +141,7 @@ export default function MapScreen({ onLogout }) {
             console.log("GooglePlacesAutocomplete timeout");
           }}
           query={{
-            key: config.googleMapsApiKey,
+            key: config.googleApiKey,
             language: "en",
             components: "country:us",
             sensor: true,

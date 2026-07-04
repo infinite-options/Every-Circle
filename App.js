@@ -82,8 +82,7 @@ import { clearEphemeralReferralKeysOnLaunch, maybeClearAllStorageOnColdStartFrom
 
 const Stack = createNativeStackNavigator();
 
-export const mapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
-const mapsApiKeyDisplay = mapsApiKey ? "..." + mapsApiKey.slice(-4) : "Not set";
+export const googleApiKey = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
 
 /** Home screen: show version / last-build line (PM version, app version, last change). */
 const SHOW_HOME_BUILD_INFO = true;

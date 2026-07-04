@@ -9,7 +9,7 @@
 import { Platform } from "react-native";
 import config from "../config";
 
-const PLACES_KEY = config.googlePlacesApiKey;   // used for native REST + JS SDK script tag
+const PLACES_KEY = config.googleApiKey;
 
 // ─── Web: load Maps JS SDK once ──────────────────────────────────────────────
 let _sdkPromise = null;
@@ -67,7 +67,7 @@ async function _getPlacePredictions(input, types) {
   }
 
   if (!PLACES_KEY) {
-    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_PLACES_API_KEY (or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY) in .env / eas.json");
+    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY in .env / eas.json");
     return [];
   }
 
@@ -223,7 +223,7 @@ export async function getPlaceDetails(placeId) {
     }
   } else {
     if (!PLACES_KEY) {
-      console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_PLACES_API_KEY (or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY) in .env / eas.json");
+      console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY in .env / eas.json");
       return {};
     }
     try {

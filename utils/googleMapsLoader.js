@@ -49,7 +49,7 @@ function ensureGoogleMapsScript() {
       }
     };
 
-    const apiKey = config.googleMapsApiKey;
+    const apiKey = config.googleApiKey;
     const script = document.createElement("script");
     script.dataset.everycircleMaps = "true";
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&callback=${MAPS_CALLBACK_NAME}`;

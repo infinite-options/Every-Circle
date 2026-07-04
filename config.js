@@ -5,8 +5,7 @@ import {
   EXPO_PUBLIC_ANDROID_CLIENT_ID_RELEASE,
   EXPO_PUBLIC_WEB_CLIENT_ID,
   EXPO_PUBLIC_GOOGLE_URL_SCHEME,
-  EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
-  EXPO_PUBLIC_GOOGLE_PLACES_API_KEY,
+  EXPO_PUBLIC_GOOGLE_API_KEY,
   EXPO_PUBLIC_PROJECT_ID,
   EXPO_PUBLIC_APP_NAME,
   EXPO_PUBLIC_APP_SLUG,
@@ -22,8 +21,7 @@ const ENV = {
   WEB_CLIENT_ID: EXPO_PUBLIC_WEB_CLIENT_ID,
   // BUNDLE_IDENTIFIER: "com.infiniteoptions.meetmeupapp", // From app.json ios.bundleIdentifier
   GOOGLE_URL_SCHEME: EXPO_PUBLIC_GOOGLE_URL_SCHEME,
-  GOOGLE_MAPS_API_KEY: EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
-  GOOGLE_PLACES_API_KEY: EXPO_PUBLIC_GOOGLE_PLACES_API_KEY,
+  GOOGLE_API_KEY: EXPO_PUBLIC_GOOGLE_API_KEY,
   PROJECT_ID: EXPO_PUBLIC_PROJECT_ID,
   APP_NAME: EXPO_PUBLIC_APP_NAME,
   APP_SLUG: EXPO_PUBLIC_APP_SLUG,
@@ -46,11 +44,8 @@ if (!ENV.WEB_CLIENT_ID) {
 if (!ENV.GOOGLE_URL_SCHEME) {
   console.error("ERROR: EXPO_PUBLIC_GOOGLE_URL_SCHEME is not defined in .env file");
 }
-if (!ENV.GOOGLE_MAPS_API_KEY) {
-  console.error("ERROR: EXPO_PUBLIC_GOOGLE_MAPS_API_KEY is not defined in .env file");
-}
-if (!ENV.GOOGLE_PLACES_API_KEY && !ENV.GOOGLE_MAPS_API_KEY) {
-  console.error("ERROR: EXPO_PUBLIC_GOOGLE_PLACES_API_KEY (or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY fallback) is not defined");
+if (!ENV.GOOGLE_API_KEY) {
+  console.error("ERROR: EXPO_PUBLIC_GOOGLE_API_KEY is not defined in .env file");
 }
 if (!ENV.PROJECT_ID) {
   console.error("ERROR: EXPO_PUBLIC_PROJECT_ID is not defined in .env file");
@@ -79,7 +74,7 @@ const getGoogleURLScheme = () => {
 // console.log("Expected app.json URL scheme:", ENV.BUNDLE_IDENTIFIER);
 // console.log("Expected eas.json GOOGLE_URL_SCHEME:", getGoogleURLScheme());
 
-// console.log("Loading Maps API key:", process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY);
+// console.log("Loading Google API key:", process.env.EXPO_PUBLIC_GOOGLE_API_KEY);
 
 const getAndroidClientId = () => {
   const clientId = __DEV__ ? EXPO_PUBLIC_ANDROID_CLIENT_ID_DEBUG : EXPO_PUBLIC_ANDROID_CLIENT_ID_RELEASE;
@@ -100,9 +95,7 @@ const config = {
   },
   googleURLScheme: getGoogleURLScheme(),
   bundleIdentifier: ENV.BUNDLE_IDENTIFIER,
-  googleMapsApiKey: ENV.GOOGLE_MAPS_API_KEY,
-  // EAS production builds only inject vars listed in eas.json; fall back to Maps key (same GCP key locally).
-  googlePlacesApiKey: ENV.GOOGLE_PLACES_API_KEY || ENV.GOOGLE_MAPS_API_KEY,
+  googleApiKey: ENV.GOOGLE_API_KEY,
 };
 
 // console.log("Exporting config:", config);
@@ -113,7 +106,7 @@ const config = {
 // console.log("4. Info.plist CFBundleURLSchemes:", getGoogleURLScheme());
 
 // console.log("Final Maps configuration:", {
-//   apiKey: ENV.GOOGLE_MAPS_API_KEY,
+//   apiKey: ENV.GOOGLE_API_KEY,
 //   bundleId: ENV.BUNDLE_IDENTIFIER,
 // });
 
