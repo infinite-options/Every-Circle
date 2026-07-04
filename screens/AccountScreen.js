@@ -540,8 +540,6 @@ function parseExpertiseInfo(raw) {
 function buildExpertiseRows(expertiseList, sellerTransactions) {
   const list = Array.isArray(expertiseList) ? expertiseList : [];
   const sellerTx = Array.isArray(sellerTransactions) ? sellerTransactions : [];
-  console.log("[Sales] sellerTx count:", sellerTx.length, "sample:", JSON.stringify(sellerTx[0]));
-  console.log("[Sales] expertiseList UIDs:", list.map((e) => e.profile_expertise_uid));
   return list.map((exp) => {
     const expertiseUid = exp.profile_expertise_uid;
     const costString = exp.profile_expertise_cost || "";
@@ -569,6 +567,7 @@ function buildExpertiseRows(expertiseList, sellerTransactions) {
     const dbQty = rawDbQty != null && rawDbQty !== "" ? parseInt(rawDbQty) : null;
     const remaining = dbQty == null ? null : dbQty > 0 ? dbQty : soldQty > 0 ? 0 : null;
     return {
+      expertiseUid,
       name: exp.profile_expertise_title || "",
       cost,
       unit,
@@ -592,6 +591,8 @@ export default function AccountScreen({ navigation }) {
   const [transactionLoading, setTransactionLoading] = useState(true);
   const [expertiseData, setExpertiseData] = useState([]);
   const [expertiseLoading, setExpertiseLoading] = useState(true);
+  const [sellerTxData, setSellerTxData] = useState([]);
+  const [salesModal, setSalesModal] = useState({ visible: false, item: null, transactions: [] });
   const [accountType, setAccountType] = useState("personal"); // 'personal' or 'business'
   const [businessTransactionData, setBusinessTransactionData] = useState([]);
   const [businessTransactionLoading, setBusinessTransactionLoading] = useState(true);
@@ -1136,6 +1137,7 @@ export default function AccountScreen({ navigation }) {
         } else if (profileResult?.expertise_info) {
           expertiseList = parseExpertiseInfo(profileResult.expertise_info);
         }
+        setSellerTxData(sellerTx);
         setExpertiseData(buildExpertiseRows(expertiseList, sellerTx));
       } catch (error) {
         console.error("Error loading account-screen personal:", error);
@@ -2241,8 +2243,16 @@ export default function AccountScreen({ navigation }) {
                         <Text style={[styles.transactionHeaderAmount, { flex: 1, textAlign: "right" }]}>Bounty</Text>
                       </View>
                       {expertiseData.map((item, idx) => (
-                        <View key={idx} style={styles.tableRow}>
-                          <Text style={[styles.tableCell, { flex: 1.5, color: "#777" }]}>{item.name}</Text>
+                        <TouchableOpacity
+                          key={idx}
+                          style={styles.tableRow}
+                          onPress={() => {
+                            const txs = sellerTxData.filter((tx) => tx.ti_bs_id === item.expertiseUid);
+                            setSalesModal({ visible: true, item, transactions: txs });
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.tableCell, { flex: 1.5, color: "#1a73e8", textDecorationLine: "underline" }]}>{item.name}</Text>
                           <Text style={[styles.tableCell, { flex: 0.9, color: "#777", marginLeft: 30 }]}>${item.cost}</Text>
                           <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.unit}</Text>
                           <Text style={[styles.tableCell, { flex: 0.7, color: "#777", marginLeft: 12 }]}>{item.soldQty}</Text>
@@ -2250,7 +2260,7 @@ export default function AccountScreen({ navigation }) {
                             {item.remaining === null ? "∞" : item.remaining}
                           </Text>
                           <Text style={[styles.tableCell, { flex: 1, color: "#777", textAlign: "right", marginRight: 15 }]}>${item.bounty}</Text>
-                        </View>
+                        </TouchableOpacity>
                       ))}
                     </View>
                   ) : (
@@ -3437,6 +3447,66 @@ export default function AccountScreen({ navigation }) {
                 {updatingEscrow ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.receiveItemModalButtonText}>Yes</Text>}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Sales Detail Modal */}
+      <Modal animationType='slide' transparent={true} visible={salesModal.visible} onRequestClose={() => setSalesModal({ visible: false, item: null, transactions: [] })}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" }}>
+          <View style={{ backgroundColor: "#fff", borderRadius: 12, padding: 20, width: "90%", maxHeight: "80%" }}>
+            <Text style={{ fontSize: 18, fontWeight: "700", marginBottom: 4, color: "#222" }}>{salesModal.item?.name}</Text>
+            <Text style={{ fontSize: 13, color: "#888", marginBottom: 16 }}>
+              {salesModal.transactions?.length
+                ? `${salesModal.transactions.length} purchase${salesModal.transactions.length !== 1 ? "s" : ""}`
+                : "No purchases yet"}
+            </Text>
+
+            <ScrollView>
+              {salesModal.transactions?.length === 0 ? (
+                <Text style={{ color: "#888", fontStyle: "italic" }}>No one has purchased this offering yet.</Text>
+              ) : (
+                salesModal.transactions.map((tx, i) => {
+                  const name = [tx.buyer_first_name, tx.buyer_last_name].filter(Boolean).join(" ") || "Unknown buyer";
+                  const qty = parseInt(tx.ti_bs_qty) || 0;
+                  const unitPrice = parseFloat(tx.unit_price) || 0;
+                  const total = parseFloat(tx.transaction_total) || 0;
+                  const showEmail = tx.buyer_email_is_public == 1 && tx.buyer_email;
+                  const showPhone = tx.buyer_phone_is_public == 1 && tx.buyer_phone;
+                  const showLocation = tx.buyer_location_is_public == 1 && (tx.buyer_city || tx.buyer_state);
+                  const purchaseDate = tx.transaction_datetime
+                    ? new Date(tx.transaction_datetime).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+                    : null;
+                  return (
+                    <View key={i} style={{ borderTopWidth: i > 0 ? 1 : 0, borderTopColor: "#eee", paddingTop: i > 0 ? 14 : 0, marginBottom: 14 }}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                        <Text style={{ fontSize: 15, fontWeight: "600", color: "#222" }}>{name}</Text>
+                        {purchaseDate ? <Text style={{ fontSize: 12, color: "#999" }}>{purchaseDate}</Text> : null}
+                      </View>
+                      {showEmail ? <Text style={{ fontSize: 13, color: "#555", marginBottom: 2 }}>{tx.buyer_email}</Text> : null}
+                      {showPhone ? <Text style={{ fontSize: 13, color: "#555", marginBottom: 2 }}>{tx.buyer_phone}</Text> : null}
+                      {showLocation ? (
+                        <Text style={{ fontSize: 13, color: "#555", marginBottom: 6 }}>
+                          {[tx.buyer_city, tx.buyer_state].filter(Boolean).join(", ")}
+                        </Text>
+                      ) : null}
+                      <View style={{ flexDirection: "row", gap: 16, marginTop: 4 }}>
+                        <Text style={{ fontSize: 13, color: "#444" }}>Qty: <Text style={{ fontWeight: "600" }}>{qty}</Text></Text>
+                        <Text style={{ fontSize: 13, color: "#444" }}>Unit: <Text style={{ fontWeight: "600" }}>${unitPrice.toFixed(2)}</Text></Text>
+                        <Text style={{ fontSize: 13, color: "#444" }}>Total: <Text style={{ fontWeight: "600" }}>${total.toFixed(2)}</Text></Text>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              onPress={() => setSalesModal({ visible: false, item: null, transactions: [] })}
+              style={{ marginTop: 16, alignSelf: "center", paddingHorizontal: 32, paddingVertical: 10, backgroundColor: "#222", borderRadius: 8 }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "600" }}>Close</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
