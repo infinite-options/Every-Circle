@@ -3,10 +3,13 @@ import React, { useState, useEffect } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import MiniCard from "../components/MiniCard";
+import MicroCard from "../components/MicroCard";
 import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import AppHeader from "../components/AppHeader";
+import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
+import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
+import { buildSeekingReplyContext } from "../utils/chatReplyContext";
 
 // Only import Stripe on native platforms (not web)
 let useStripe = null;
@@ -90,20 +93,6 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
   const [paymentError, setPaymentError] = useState(null);
   const [customerUid, setCustomerUid] = useState(null);
   const [pendingAccept, setPendingAccept] = useState(null); // { recommendedProfileUid, recommenderProfileUid, wishResponseUid, subtotal }
-
-  // Create user object for MiniCard
-  const userForMiniCard = {
-    firstName: profileData?.firstName || "",
-    lastName: profileData?.lastName || "",
-    email: profileData?.email || "",
-    phoneNumber: profileData?.phone || "",
-    profileImage: profileData?.image || "",
-    tagLine: profileData?.tagLine || "",
-    emailIsPublic: profileData?.emailIsPublic || false,
-    phoneIsPublic: profileData?.phoneIsPublic || false,
-    tagLineIsPublic: profileData?.tagLineIsPublic || false,
-    imageIsPublic: profileData?.imageIsPublic || false,
-  };
 
   // Initialize Stripe on mount
   useEffect(() => {
@@ -594,6 +583,14 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
       ? String(wishData.title).trim()
       : null;
 
+  const wishTitle = wishData?.title ? String(wishData.title).trim() : "";
+  const wishDescription = String(wishData?.description || wishData?.details || "").trim();
+  const wishImageUri = resolveProfileItemImageUri(wishData?.profile_wish_image, profile_uid);
+  const wishQty =
+    wishData?.profile_wish_quantity != null && String(wishData.profile_wish_quantity).trim() !== "" ? String(wishData.profile_wish_quantity).trim() : "";
+  const wishCost = wishData?.cost || "";
+  const wishBounty = wishData?.bounty || "";
+
   return (
     <SafeAreaView style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header with Back Button */}
@@ -605,73 +602,80 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
         </View>
       ) : (
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-          {/* Wish Card */}
-          <View style={[styles.card, darkMode && styles.darkCard]}>
-            <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Seeking</Text>
-            {wishData?.title && <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wishData.title}</Text>}
-            {wishData?.description && <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{wishData.description}</Text>}
-            {wishData?.details && (
-              <View style={styles.detailsContainer}>
-                <Text style={[styles.detailsTitle, darkMode && styles.darkDetailsTitle]}>Details</Text>
-                <Text style={[styles.detailsText, darkMode && styles.darkDetailsText]}>{wishData.details}</Text>
+          {/* Seeking item — same layout as Profile SEEKING cards */}
+          <View style={[styles.seekingCard, darkMode && styles.darkSeekingCard]}>
+            <View style={styles.seekingHeaderRow}>
+              <ProfileSectionItemImage section='seeking' imageUri={wishImageUri} imageIsPublic={wishData?.profile_wish_image_is_public} size={56} darkMode={darkMode} />
+              <View style={styles.seekingHeaderText}>
+                {wishTitle ? <Text style={[styles.seekingTitle, darkMode && styles.darkSeekingTitle]}>{wishTitle}</Text> : null}
+                {wishDescription ? <Text style={[styles.seekingDescription, darkMode && styles.darkSeekingDescription]}>{wishDescription}</Text> : null}
               </View>
-            )}
-            {(wishData?.profile_wish_start || wishData?.profile_wish_end || wishData?.profile_wish_location || wishData?.profile_wish_mode || wishData?.cost || wishData?.bounty) && (
-              <View style={[styles.wishMetaContainer, darkMode && styles.darkWishMetaContainer]}>
-                {(wishData?.profile_wish_start || wishData?.profile_wish_end) && (
-                  <View style={styles.wishMetaRow}>
-                    <Ionicons name='calendar-outline' size={14} color={darkMode ? "#999" : "#666"} style={styles.wishMetaIcon} />
-                    <Text style={[styles.wishMetaText, darkMode && styles.darkWishMetaText]}>
+            </View>
+            {wishData?.profile_wish_start || wishData?.profile_wish_end || wishData?.profile_wish_location || wishData?.profile_wish_mode ? (
+              <View style={[styles.seekingMetaRow, { marginTop: 6 }]}>
+                {wishData?.profile_wish_start || wishData?.profile_wish_end ? (
+                  <View style={styles.seekingMetaLine}>
+                    <Ionicons name='calendar-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
+                    <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
                       {wishData.profile_wish_start ? formatDateTimeForDisplay(wishData.profile_wish_start) : "—"}
                       {wishData.profile_wish_start && wishData.profile_wish_end ? " → " : ""}
                       {wishData.profile_wish_end ? formatDateTimeForDisplay(wishData.profile_wish_end) : ""}
                     </Text>
                   </View>
-                )}
-                {(wishData?.profile_wish_location || wishData?.profile_wish_mode) && (
-                  <View style={[styles.wishMetaRow, (wishData?.profile_wish_start || wishData?.profile_wish_end) && styles.wishMetaRowSpaced]}>
-                    {wishData?.profile_wish_location && (
-                      <View style={styles.wishMetaRow}>
-                        <Ionicons name='location-outline' size={14} color={darkMode ? "#999" : "#666"} style={styles.wishMetaIcon} />
-                        <Text style={[styles.wishMetaText, darkMode && styles.darkWishMetaText]}>{wishData.profile_wish_location}</Text>
+                ) : null}
+                {wishData?.profile_wish_location || wishData?.profile_wish_mode ? (
+                  <View
+                    style={[
+                      styles.seekingMetaLine,
+                      styles.seekingMetaLineSpaceBetween,
+                      (wishData?.profile_wish_start || wishData?.profile_wish_end) && { marginTop: 4 },
+                    ]}
+                  >
+                    {wishData?.profile_wish_location ? (
+                      <View style={styles.seekingMetaLine}>
+                        <Ionicons name='location-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
+                        <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{wishData.profile_wish_location}</Text>
                       </View>
+                    ) : (
+                      <View style={styles.seekingMetaSpacer} />
                     )}
-                    {wishData?.profile_wish_mode && (
-                      <View style={[styles.wishMetaRow, wishData?.profile_wish_location && { marginLeft: 12 }]}>
+                    {wishData?.profile_wish_mode ? (
+                      <View style={styles.seekingMetaLine}>
                         <Ionicons
                           name={wishData.profile_wish_mode.toLowerCase() === "virtual" ? "videocam-outline" : "people-outline"}
                           size={14}
                           color={darkMode ? "#999" : "#666"}
-                          style={styles.wishMetaIcon}
+                          style={{ marginRight: 6 }}
                         />
-                        <Text style={[styles.wishMetaText, darkMode && styles.darkWishMetaText]}>{wishData.profile_wish_mode}</Text>
+                        <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{wishData.profile_wish_mode}</Text>
                       </View>
-                    )}
-                  </View>
-                )}
-                {(wishData?.cost || wishData?.bounty) && (
-                  <View style={[styles.pricingContainer, (wishData?.profile_wish_start || wishData?.profile_wish_end || wishData?.profile_wish_location || wishData?.profile_wish_mode) && styles.wishMetaRowSpaced]}>
-                    {wishData?.cost ? (
-                      <View style={styles.pricingRow}>
-                        <View style={styles.moneyBagIconContainer}>
-                          <Text style={styles.moneyBagDollarSymbol}>$</Text>
-                        </View>
-                        <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>
-                          {String(wishData.cost).toLowerCase() !== "free" ? `Cost: $${String(wishData.cost).replace(/^\$/, "")}` : `Cost: ${wishData.cost}`}
-                        </Text>
-                      </View>
-                    ) : (
-                      <View />
-                    )}
-                    {wishData?.bounty ? (
-                      <Text style={[styles.pricingLabel, styles.pricingBountyRight, darkMode && styles.darkPricingLabel]}>
-                        {String(wishData.bounty).toLowerCase() !== "free" ? `💰 $${String(wishData.bounty).replace(/^\$/, "")}` : `💰 ${wishData.bounty}`}
-                      </Text>
                     ) : null}
                   </View>
-                )}
+                ) : null}
               </View>
-            )}
+            ) : null}
+            {wishCost || wishQty || wishBounty ? (
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0, marginTop: 6 }}>
+                {wishCost ? (
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <View style={styles.moneyBagIconContainer}>
+                      <Text style={styles.moneyBagDollarSymbol}>$</Text>
+                    </View>
+                    <Text style={[styles.seekingCostText, darkMode && styles.darkSeekingCostText]}>
+                      {String(wishCost).toLowerCase() !== "free" ? `Cost: $${String(wishCost).replace(/^\$/, "")}` : `Cost: ${wishCost}`}
+                    </Text>
+                  </View>
+                ) : null}
+                <View style={{ flexDirection: "row", alignItems: "center", flex: 1, justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
+                  {wishQty ? <Text style={[styles.seekingCostText, darkMode && styles.darkSeekingCostText]}>Qty: {wishQty}</Text> : null}
+                  {wishBounty ? (
+                    <Text style={[styles.seekingCostText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkSeekingCostText]}>
+                      {String(wishBounty).toLowerCase() !== "free" ? `💰 $${String(wishBounty).replace(/^\$/, "")}` : `💰 ${wishBounty}`}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            ) : null}
           </View>
 
           {/* Responses */}
@@ -679,81 +683,80 @@ const WishResponsesScreenContent = ({ route, navigation }) => {
             <>
               <Text style={[styles.responsesTitle, darkMode && styles.darkResponsesTitle]}>Responses ({responses.length})</Text>
               {responses.map((response, index) => {
-                // Mini card: always show the person who can fulfill (API returns profile_personal_* for that person)
-                const miniCardUser = {
-                  firstName: response.profile_personal_first_name || "",
-                  lastName: response.profile_personal_last_name || "",
-                  email: response.profile_personal_email || "",
-                  phoneNumber: response.profile_personal_phone_number || "",
-                  profileImage: response.profile_personal_image || "",
-                  tagLine: response.profile_personal_tag_line || "",
-                  emailIsPublic: response.profile_personal_email_is_public === 1,
-                  phoneIsPublic: response.profile_personal_phone_number_is_public === 1,
-                  tagLineIsPublic: response.profile_personal_tag_line_is_public === 1,
-                  imageIsPublic: response.profile_personal_image_is_public === 1,
+                const responderProfileUid = String(response.wr_responder_id || response.responder_id || "").trim();
+                const recommendedProfileUid = String(response.profile_personal_uid || response.wr_recommended_id || "").trim();
+                const useRecommendedProfileForDisplay = !response.responder_first_name && !response.responder_last_name && recommendedProfileUid === responderProfileUid;
+                const responderMicroCardUser = {
+                  firstName: response.responder_first_name || (useRecommendedProfileForDisplay ? response.profile_personal_first_name : "") || "",
+                  lastName: response.responder_last_name || (useRecommendedProfileForDisplay ? response.profile_personal_last_name : "") || "",
+                  profileImage: response.responder_image || (useRecommendedProfileForDisplay ? response.profile_personal_image : "") || "",
+                  tagLine: response.responder_tag_line || (useRecommendedProfileForDisplay ? response.profile_personal_tag_line : "") || "",
+                  tagLineIsPublic:
+                    response.responder_tag_line_is_public === 1 ||
+                    (useRecommendedProfileForDisplay && response.profile_personal_tag_line_is_public === 1),
+                  imageIsPublic:
+                    response.responder_image_is_public === 1 ||
+                    (useRecommendedProfileForDisplay && response.profile_personal_image_is_public === 1),
                 };
-
-                const responderName = [response.responder_first_name, response.responder_last_name].filter(Boolean).join(" ").trim();
-                const responderProfileUid = response.wr_responder_id;
+                const responseNote = String(response.wr_responder_note || "").trim();
+                const responderName = [responderMicroCardUser.firstName, responderMicroCardUser.lastName].filter(Boolean).join(" ").trim();
 
                 return (
                   <View key={response.wish_response_uid || index} style={[styles.responseCard, darkMode && styles.darkResponseCard]}>
-                    <View style={[styles.responseNoteContainer, darkMode && styles.darkResponseNoteContainer]}>
-                      <View style={styles.responseLabelRow}>
-                        {responderName && responderProfileUid ? (
-                          <TouchableOpacity
-                            activeOpacity={0.7}
-                            onPress={() => {
-                              navigation.navigate("Profile", {
-                                profile_uid: responderProfileUid,
-                                returnTo: "WishResponses",
-                                wishResponsesState: {
-                                  wishData,
-                                  profileData,
-                                  profile_uid,
-                                  profileState,
-                                },
-                              });
-                            }}
-                          >
-                            <Text style={[styles.responseNoteLabel, styles.responderNameLink, darkMode && styles.darkResponseNoteLabel]}>{responderName}</Text>
-                          </TouchableOpacity>
-                        ) : responderName ? (
-                          <Text style={[styles.responseNoteLabel, darkMode && styles.darkResponseNoteLabel]}>{responderName}</Text>
-                        ) : null}
-                        <Text style={[styles.responseNoteLabel, darkMode && styles.darkResponseNoteLabel]}>{responderName ? " Response:" : "Response:"}</Text>
-                      </View>
-                      <Text style={[styles.responseNote, darkMode && styles.darkResponseNote]}>{response.wr_responder_note || "No note provided"}</Text>
-                    </View>
                     <TouchableOpacity
                       activeOpacity={0.7}
+                      disabled={!responderProfileUid}
                       onPress={() => {
-                        console.log("🏢 Navigating to Profile from MiniCard in WishResponses");
-                        if (response.profile_personal_uid) {
-                          navigation.navigate("Profile", {
-                            profile_uid: response.profile_personal_uid,
-                            returnTo: "WishResponses",
-                            wishResponsesState: {
-                              wishData,
-                              profileData,
-                              profile_uid,
-                              profileState,
-                            },
-                          });
-                        }
+                        if (!responderProfileUid) return;
+                        navigation.navigate("Profile", {
+                          profile_uid: responderProfileUid,
+                          returnTo: "WishResponses",
+                          wishResponsesState: {
+                            wishData,
+                            profileData,
+                            profile_uid,
+                            profileState,
+                          },
+                        });
                       }}
                     >
-                      <View style={[styles.miniCardContainer, darkMode && styles.darkMiniCardContainer]}>
-                        <MiniCard user={miniCardUser} />
-                      </View>
+                      <MicroCard user={responderMicroCardUser} showRelationship={false} embedded />
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.acceptButton, darkMode && styles.darkAcceptButton, accepting === response.wish_response_uid && styles.disabledButton]}
-                      onPress={() => handleAccept(response)}
-                      disabled={accepting === response.wish_response_uid}
-                    >
-                      {accepting === response.wish_response_uid ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.acceptButtonText}>Accept</Text>}
-                    </TouchableOpacity>
+                    <Text style={[styles.responseNote, darkMode && styles.darkResponseNote]}>{responseNote || "No note provided"}</Text>
+                    <View style={styles.responseActionsRow}>
+                      {responderProfileUid ? (
+                        <TouchableOpacity
+                          style={[styles.messageButton, darkMode && styles.darkMessageButton]}
+                          activeOpacity={0.85}
+                          onPress={() =>
+                            navigation.navigate("Chat", {
+                              other_uid: responderProfileUid,
+                              other_name: responderName || "Chat",
+                              other_image:
+                                responderMicroCardUser.imageIsPublic && responderMicroCardUser.profileImage
+                                  ? responderMicroCardUser.profileImage
+                                  : null,
+                              reply_context: buildSeekingReplyContext({
+                                label: `Seeking: ${wishTitle || "Seeking"}`,
+                                quote: responseNote || undefined,
+                                profileWishUid: wishData?.wish_uid || wishData?.profile_wish_id,
+                                wishResponseUid: response.wish_response_uid,
+                              }),
+                            })
+                          }
+                        >
+                          <Ionicons name='chatbubble-ellipses-outline' size={16} color='#fff' style={{ marginRight: 6 }} />
+                          <Text style={styles.messageButtonText}>Message</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                      <TouchableOpacity
+                        style={[styles.acceptButton, darkMode && styles.darkAcceptButton, accepting === response.wish_response_uid && styles.disabledButton]}
+                        onPress={() => handleAccept(response)}
+                        disabled={accepting === response.wish_response_uid}
+                      >
+                        {accepting === response.wish_response_uid ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.acceptButtonText}>Accept</Text>}
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 );
               })}
@@ -835,106 +838,72 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 120, // Extra padding to ensure content is visible above BottomNavBar
   },
-  card: {
+  seekingCard: {
+    borderWidth: 1,
+    borderColor: "#000",
+    borderRadius: 8,
+    padding: 12,
     backgroundColor: "#fff",
-    padding: 20,
-    marginBottom: 15,
-    borderRadius: 12,
-    boxShadow: "0px 2px 4px rgba(0, 0, 0, 0.05)",
-    ...(Platform.OS !== "web" && { elevation: 2 }),
+    marginBottom: 16,
   },
-  darkCard: {
+  darkSeekingCard: {
     backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
   },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 15,
+  seekingHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginBottom: 2,
+  },
+  seekingHeaderText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  seekingTitle: {
+    fontSize: 15,
+    fontWeight: "500",
     color: "#333",
+    marginBottom: 4,
   },
-  darkCardTitle: {
+  darkSeekingTitle: {
     color: "#fff",
   },
-  wishTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 10,
-    color: "#333",
-  },
-  darkWishTitle: {
-    color: "#fff",
-  },
-  wishDescription: {
-    fontSize: 16,
+  seekingDescription: {
+    fontSize: 15,
     color: "#666",
-    lineHeight: 24,
-    marginBottom: 20,
+    lineHeight: 22,
   },
-  darkWishDescription: {
-    color: "#cccccc",
+  darkSeekingDescription: {
+    color: "#aaa",
   },
-  detailsContainer: {
-    marginTop: 20,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
+  seekingMetaRow: {
+    marginLeft: 0,
   },
-  detailsTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    marginBottom: 10,
-    color: "#333",
-  },
-  darkDetailsTitle: {
-    color: "#fff",
-  },
-  detailsText: {
-    fontSize: 14,
-    color: "#666",
-    lineHeight: 20,
-  },
-  darkDetailsText: {
-    color: "#cccccc",
-  },
-  wishMetaContainer: {
-    marginTop: 15,
-    paddingTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
-  },
-  wishMetaRow: {
+  seekingMetaLine: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
   },
-  wishMetaRowSpaced: {
-    marginTop: 8,
-  },
-  wishMetaIcon: {
-    marginRight: 6,
-  },
-  wishMetaText: {
-    fontSize: 14,
-    color: "#666",
-  },
-  darkWishMetaText: {
-    color: "#cccccc",
-  },
-  darkWishMetaContainer: {
-    borderTopColor: "#404040",
-  },
-  pricingContainer: {
-    flexDirection: "row",
+  seekingMetaLineSpaceBetween: {
     justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 10,
   },
-  pricingBountyRight: {
-    textAlign: "right",
-    minWidth: 60,
+  seekingMetaSpacer: {
+    flex: 1,
   },
-  pricingRow: {
-    flexDirection: "row",
-    alignItems: "center",
+  seekingMetaText: {
+    color: "#666",
+    fontSize: 13,
+  },
+  darkSeekingMetaText: {
+    color: "#999",
+  },
+  seekingCostText: {
+    fontSize: 15,
+    color: "#333",
+  },
+  darkSeekingCostText: {
+    color: "#fff",
   },
   moneyBagIconContainer: {
     width: 20,
@@ -949,18 +918,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "bold",
     color: "#ffffff",
-  },
-  bountyEmojiIcon: {
-    fontSize: 20,
-    marginRight: 6,
-  },
-  pricingLabel: {
-    fontSize: 16,
-    color: "#666",
-    fontWeight: "500",
-  },
-  darkPricingLabel: {
-    color: "#cccccc",
   },
   responsesTitle: {
     fontSize: 20,
@@ -983,44 +940,40 @@ const styles = StyleSheet.create({
   darkResponseCard: {
     backgroundColor: "#2d2d2d",
   },
-  miniCardContainer: {
-    marginBottom: 15,
-  },
-  darkMiniCardContainer: {
-    backgroundColor: "transparent",
-  },
-  responseNoteContainer: {
-    marginBottom: 15,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  darkResponseNoteContainer: {
-    borderBottomColor: "#404040",
-  },
-  responseLabelRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 8,
-  },
-  responseNoteLabel: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  responderNameLink: {
-    textDecorationLine: "underline",
-  },
-  darkResponseNoteLabel: {
-    color: "#fff",
-  },
   responseNote: {
     fontSize: 16,
     color: "#666",
     lineHeight: 24,
+    marginTop: 12,
+    marginBottom: 16,
   },
   darkResponseNote: {
     color: "#cccccc",
+  },
+  responseActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  messageButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#4B2E83",
+    borderRadius: 30,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    minWidth: 150,
+  },
+  darkMessageButton: {
+    backgroundColor: "#5a3d9e",
+  },
+  messageButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 16,
   },
   acceptButton: {
     backgroundColor: "#00C7BE",
@@ -1029,7 +982,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
     alignItems: "center",
     justifyContent: "center",
-    alignSelf: "center",
     minWidth: 150,
   },
   darkAcceptButton: {

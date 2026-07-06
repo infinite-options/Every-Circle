@@ -49,6 +49,7 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
 import { recordOfferingMessageResponse } from "../utils/offeringMessageResponse";
+import { buildOfferingReplyContext, buildSeekingReplyContext } from "../utils/chatReplyContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
@@ -639,6 +640,7 @@ const ProfileScreen = ({ route, navigation }) => {
         profile_expertise_mode: exp.profile_expertise_mode || "",
         profile_expertise_updated_at: exp.profile_expertise_updated_at ?? exp.updated_at,
         expertise_responses: Number(exp.expertise_responses) || 0,
+        expertise_sales: Number(exp.expertise_sales) || 0,
         isPublic: exp.profile_expertise_is_public === 1 || exp.isPublic === true,
         profile_expertise_is_taxable: exp.profile_expertise_is_taxable ?? 0,
         profile_expertise_tax_rate: exp.profile_expertise_tax_rate || "",
@@ -1774,52 +1776,61 @@ const ProfileScreen = ({ route, navigation }) => {
                                 ) : (
                                   <View style={{ flex: 1 }} />
                                 )}
-                                {isCurrentUserProfile && exp.expertise_responses > 0 && (
-                                  <TouchableOpacity
-                                    onPress={() => {
-                                      const expertiseDataForNavigation = {
-                                        expertise_uid: exp.profile_expertise_uid,
-                                        profile_expertise_uid: exp.profile_expertise_uid,
-                                        title: exp.name,
-                                        profile_expertise_title: exp.name,
-                                        description: exp.description,
-                                        profile_expertise_description: exp.description,
-                                        cost: exp.cost,
-                                        bounty: exp.bounty,
-                                        profile_expertise_image: exp.profile_expertise_image,
-                                        profile_expertise_image_is_public: exp.profile_expertise_image_is_public,
-                                        profile_expertise_start: exp.profile_expertise_start,
-                                        profile_expertise_end: exp.profile_expertise_end,
-                                        profile_expertise_location: exp.profile_expertise_location,
-                                        profile_expertise_mode: exp.profile_expertise_mode,
-                                        profile_expertise_updated_at: exp.profile_expertise_updated_at ?? exp.updated_at,
-                                      };
-                                      const profileDataForNavigation = {
-                                        firstName: user.firstName,
-                                        lastName: user.lastName,
-                                        email: user.email,
-                                        phone: user.phoneNumber,
-                                        image: user.profileImage,
-                                        tagLine: user.tagLine,
-                                        city: user.city,
-                                        state: user.state,
-                                        emailIsPublic: user.emailIsPublic,
-                                        phoneIsPublic: user.phoneIsPublic,
-                                        imageIsPublic: user.imageIsPublic,
-                                        tagLineIsPublic: user.tagLineIsPublic,
-                                        locationIsPublic: user.locationIsPublic,
-                                      };
-                                      navigation.navigate("OfferingResponses", {
-                                        expertiseData: expertiseDataForNavigation,
-                                        profileData: profileDataForNavigation,
-                                        profile_uid: profileUID,
-                                        profileState: { profile_uid: profileUID, returnTo, searchState },
-                                      });
-                                    }}
-                                    activeOpacity={0.7}
-                                  >
-                                    <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Responses: {exp.expertise_responses || 0}</Text>
-                                  </TouchableOpacity>
+                                {isCurrentUserProfile && (exp.expertise_sales > 0 || exp.expertise_responses > 0) && (
+                                  <View style={styles.offeringStatsColumn}>
+                                    <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Sales: {exp.expertise_sales || 0}</Text>
+                                    {exp.expertise_responses > 0 ? (
+                                      <TouchableOpacity
+                                        onPress={() => {
+                                          const expertiseDataForNavigation = {
+                                            expertise_uid: exp.profile_expertise_uid,
+                                            profile_expertise_uid: exp.profile_expertise_uid,
+                                            title: exp.name,
+                                            profile_expertise_title: exp.name,
+                                            description: exp.description,
+                                            profile_expertise_description: exp.description,
+                                            cost: exp.cost,
+                                            bounty: exp.bounty,
+                                            quantity: exp.quantity,
+                                            profile_expertise_quantity: exp.quantity,
+                                            profile_expertise_image: exp.profile_expertise_image,
+                                            profile_expertise_image_is_public: exp.profile_expertise_image_is_public,
+                                            profile_expertise_start: exp.profile_expertise_start,
+                                            profile_expertise_end: exp.profile_expertise_end,
+                                            profile_expertise_location: exp.profile_expertise_location,
+                                            profile_expertise_city: exp.profile_expertise_city,
+                                            profile_expertise_state: exp.profile_expertise_state,
+                                            profile_expertise_mode: exp.profile_expertise_mode,
+                                            profile_expertise_updated_at: exp.profile_expertise_updated_at ?? exp.updated_at,
+                                          };
+                                          const profileDataForNavigation = {
+                                            firstName: user.firstName,
+                                            lastName: user.lastName,
+                                            email: user.email,
+                                            phone: user.phoneNumber,
+                                            image: user.profileImage,
+                                            tagLine: user.tagLine,
+                                            city: user.city,
+                                            state: user.state,
+                                            emailIsPublic: user.emailIsPublic,
+                                            phoneIsPublic: user.phoneIsPublic,
+                                            imageIsPublic: user.imageIsPublic,
+                                            tagLineIsPublic: user.tagLineIsPublic,
+                                            locationIsPublic: user.locationIsPublic,
+                                          };
+                                          navigation.navigate("OfferingResponses", {
+                                            expertiseData: expertiseDataForNavigation,
+                                            profileData: profileDataForNavigation,
+                                            profile_uid: profileUID,
+                                            profileState: { profile_uid: profileUID, returnTo, searchState },
+                                          });
+                                        }}
+                                        activeOpacity={0.7}
+                                      >
+                                        <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Responses: {exp.expertise_responses || 0}</Text>
+                                      </TouchableOpacity>
+                                    ) : null}
+                                  </View>
                                 )}
                               </View>
                               {sanitizeText(exp.description) ? (
@@ -1903,18 +1914,24 @@ const ProfileScreen = ({ route, navigation }) => {
                               onPress={async () => {
                                 const expertiseUid = String(exp.profile_expertise_uid || "").trim();
                                 const responderUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+                                let expertiseResponseUid = null;
                                 if (expertiseUid && responderUid && routeProfileUID !== responderUid) {
-                                  recordOfferingMessageResponse(expertiseUid, responderUid).catch((e) => {
+                                  try {
+                                    const recordResult = await recordOfferingMessageResponse(expertiseUid, responderUid);
+                                    expertiseResponseUid = recordResult?.expertise_response_uid || null;
+                                  } catch (e) {
                                     console.warn("[ProfileScreen] recordOfferingMessageResponse failed:", e);
-                                  });
+                                  }
                                 }
                                 navigation.navigate("Chat", {
                                   other_uid: routeProfileUID || profileUID,
                                   other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
                                   other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
-                                  reply_context: {
+                                  reply_context: buildOfferingReplyContext({
                                     label: `Offering: ${sanitizeText(exp.name) || "Offering"}`,
-                                  },
+                                    profileExpertiseUid: expertiseUid,
+                                    expertiseResponseUid,
+                                  }),
                                 });
                               }}
                             >
@@ -2154,9 +2171,10 @@ const ProfileScreen = ({ route, navigation }) => {
                                 other_uid: routeProfileUID || profileUID,
                                 other_name: `${user.firstName} ${user.lastName}`.trim() || "Chat",
                                 other_image: user.profileImage && user.imageIsPublic ? user.profileImage : null,
-                                reply_context: {
+                                reply_context: buildSeekingReplyContext({
                                   label: `Seeking: ${sanitizeText(wish.helpNeeds) || "Seeking"}`,
-                                },
+                                  profileWishUid: wish.profile_wish_uid,
+                                }),
                               })
                             }
                           >
@@ -2880,6 +2898,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "bold",
     color: "#ffffff",
+  },
+  offeringStatsColumn: {
+    alignItems: "flex-end",
+    gap: 2,
   },
   wishResponseLinkText: {
     color: "#800000",

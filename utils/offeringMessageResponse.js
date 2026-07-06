@@ -84,6 +84,24 @@ export const fetchMyOfferingMessageResponses = async (profileUid) => {
   return merged;
 };
 
+const extractExpertiseResponseUid = (json) => {
+  if (!json || typeof json !== "object") return "";
+  const data = json.data;
+  const candidates = [
+    json.expertise_response_uid,
+    json.expertise_response_id,
+    data?.expertise_response_uid,
+    data?.expertise_response_id,
+    Array.isArray(data) ? data[0]?.expertise_response_uid : null,
+    Array.isArray(data) ? data[0]?.expertise_response_id : null,
+  ];
+  for (const value of candidates) {
+    const id = String(value || "").trim();
+    if (id) return id;
+  }
+  return "";
+};
+
 export const recordOfferingMessageResponse = async (profileExpertiseId, responderId) => {
   const expertiseId = String(profileExpertiseId || "").trim();
   const uid = String(responderId || "").trim();
@@ -97,8 +115,9 @@ export const recordOfferingMessageResponse = async (profileExpertiseId, responde
     await writeLocalRespondedMap(uid, localMap);
   }
 
+  let expertiseResponseUid = "";
   try {
-    await fetch(PROFILE_EXPERTISE_RESPONSE_ENDPOINT, {
+    const res = await fetch(PROFILE_EXPERTISE_RESPONSE_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -106,9 +125,15 @@ export const recordOfferingMessageResponse = async (profileExpertiseId, responde
         responder_id: uid,
       }),
     });
+    const json = await res.json();
+    expertiseResponseUid = extractExpertiseResponseUid(json);
   } catch (e) {
     console.warn("[offeringMessageResponse] record API failed:", e);
   }
 
-  return localMap;
+  return {
+    respondedMap: localMap,
+    profile_expertise_uid: expertiseId,
+    expertise_response_uid: expertiseResponseUid || null,
+  };
 };

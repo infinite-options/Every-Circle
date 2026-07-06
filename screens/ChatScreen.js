@@ -14,6 +14,7 @@ import { CHAT_CONVERSATIONS_ENDPOINT, CHAT_MESSAGES_ENDPOINT, USER_PROFILE_INFO_
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { createAblyRealtimeClient } from "../utils/ablyClient";
 import { normalizeMessageForUi, orderMessagesForChatList } from "../utils/chatConversations";
+import { buildChatMessagePostBody } from "../utils/chatReplyContext";
 import { sanitizeText } from "../utils/textSanitizer";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 
@@ -394,8 +395,12 @@ export default function ChatScreen() {
   // ─── send ────────────────────────────────────────────────────────────────
 
   const buildReplyBody = (text, context) => {
-    if (!context?.label) return text;
-    return `↪ ${context.label}\n${text}`;
+    if (!context?.label && !context?.quote) return text;
+    const lines = [];
+    if (context?.label) lines.push(`↪ ${context.label}`);
+    if (context?.quote) lines.push(context.quote);
+    lines.push(text);
+    return lines.join("\n");
   };
 
   const parseReplyBody = (rawBody) => {
@@ -432,11 +437,14 @@ export default function ChatScreen() {
       const res = await fetch(CHAT_MESSAGES_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          conversation_uid: convUid,
-          sender_uid: myUid,
-          body: bodyToSend,
-        }),
+        body: JSON.stringify(
+          buildChatMessagePostBody({
+            conversationUid: convUid,
+            senderUid: myUid,
+            body: bodyToSend,
+            replyContext: pendingReplyContext,
+          }),
+        ),
       });
       const json = await res.json();
       setMessages((prev) => {
@@ -459,6 +467,22 @@ export default function ChatScreen() {
     } finally {
       setSending(false);
     }
+  };
+
+  const renderReplyContextHeader = () => {
+    if (!pendingReplyContext?.label && !pendingReplyContext?.quote) return null;
+    return (
+      <View style={styles.replyContextRow}>
+        <View style={[styles.replyContextBanner, darkMode && styles.replyContextBannerDark]}>
+          {pendingReplyContext.label ? (
+            <Text style={[styles.replyContextLabel, darkMode && styles.replyContextLabelDark]}>{pendingReplyContext.label}</Text>
+          ) : null}
+          {pendingReplyContext.quote ? (
+            <Text style={[styles.replyContextQuote, darkMode && styles.replyContextQuoteDark]}>{pendingReplyContext.quote}</Text>
+          ) : null}
+        </View>
+      </View>
+    );
   };
 
   // ─── render helpers ───────────────────────────────────────────────────────
@@ -562,6 +586,7 @@ export default function ChatScreen() {
             data={messages}
             keyExtractor={(item) => item.message_uid}
             renderItem={renderMessage}
+            ListHeaderComponent={renderReplyContextHeader}
             contentContainerStyle={styles.messageList}
             keyboardShouldPersistTaps='handled'
             keyboardDismissMode='on-drag'
@@ -576,10 +601,11 @@ export default function ChatScreen() {
         )}
 
         <View style={[styles.inputBar, darkMode && styles.inputBarDark]}>
-          {pendingReplyContext?.label ? (
+          {pendingReplyContext?.label || pendingReplyContext?.quote ? (
             <View style={[styles.pendingReplyChip, darkMode && styles.pendingReplyChipDark]}>
-              <Text style={[styles.pendingReplyChipText, darkMode && styles.pendingReplyChipTextDark]} numberOfLines={2}>
-                Replying to {pendingReplyContext.label}
+              <Text style={[styles.pendingReplyChipText, darkMode && styles.pendingReplyChipTextDark]} numberOfLines={3}>
+                {pendingReplyContext.label ? `Replying to ${pendingReplyContext.label}` : "Replying to response"}
+                {pendingReplyContext.quote ? `: "${pendingReplyContext.quote}"` : ""}
               </Text>
               <TouchableOpacity onPress={() => setPendingReplyContext(null)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
                 <Ionicons name='close' size={16} color={darkMode ? "#ddd" : "#666"} />
@@ -634,6 +660,42 @@ const styles = StyleSheet.create({
   messageListFlex: { flex: 1, minHeight: 0 },
   // Message list
   messageList: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 16, flexGrow: 1 },
+
+  replyContextRow: {
+    alignSelf: "flex-start",
+    maxWidth: "80%",
+    marginBottom: 12,
+  },
+  replyContextBanner: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: "#d8b7eb",
+    backgroundColor: "#f9f3fd",
+  },
+  replyContextBannerDark: {
+    backgroundColor: "#2f2240",
+    borderColor: "#6a4f80",
+  },
+  replyContextLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#5a2e79",
+    marginBottom: 4,
+  },
+  replyContextLabelDark: {
+    color: "#e8d9f7",
+  },
+  replyContextQuote: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#444",
+  },
+  replyContextQuoteDark: {
+    color: "#ddd",
+  },
 
   // Day labels
   dayLabelWrap: { alignItems: "center", marginVertical: 8 },

@@ -1,6 +1,22 @@
 // SearchScreen.js
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, SafeAreaView, FlatList, ActivityIndicator, Alert, Dimensions, Modal, Image, Platform, useWindowDimensions } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  SafeAreaView,
+  FlatList,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Modal,
+  Image,
+  Platform,
+  useWindowDimensions,
+} from "react-native";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import BottomNavBar from "../components/BottomNavBar";
@@ -26,6 +42,7 @@ import {
 } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { fetchMyOfferingMessageResponses, recordOfferingMessageResponse } from "../utils/offeringMessageResponse";
+import { buildOfferingReplyContext } from "../utils/chatReplyContext";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
@@ -422,17 +439,7 @@ const SEARCH_SCORE_DETAIL_LABELS = {
   phrase_tag: "Tag Phrase",
 };
 
-const SEARCH_SCORE_IGNORED_KEYS = new Set([
-  "semantic_score",
-  "lexical_fuzzy_score",
-  "total_lexical_boost",
-  "final_score",
-  "rescore_mode",
-  "rrf_k",
-  "rrf_rank_semantic",
-  "rrf_rank_lexical",
-  "rrf_raw",
-]);
+const SEARCH_SCORE_IGNORED_KEYS = new Set(["semantic_score", "lexical_fuzzy_score", "total_lexical_boost", "final_score", "rescore_mode", "rrf_k", "rrf_rank_semantic", "rrf_rank_lexical", "rrf_raw"]);
 
 /** Inline score suffix for business search rows, e.g. "(Score 0.984 Sem: 0.222, Lex 0.273, Tag Token 0.220)". */
 function formatBusinessSearchScoreSuffix(item) {
@@ -1413,17 +1420,16 @@ export default function SearchScreen({ route }) {
       return;
     }
 
-    const mapMarkers = isProfileType && !selectedSearchTabs.businesses
-      ? searchResultsToMapProfiles(visibleResults)
-      : selectedSearchTabs.businesses
-        ? searchResultsToMapBusinesses(businessSectionResults)
-        : searchResultsToMapProfiles(visibleResults);
+    const mapMarkers =
+      isProfileType && !selectedSearchTabs.businesses
+        ? searchResultsToMapProfiles(visibleResults)
+        : selectedSearchTabs.businesses
+          ? searchResultsToMapBusinesses(businessSectionResults)
+          : searchResultsToMapProfiles(visibleResults);
 
     // Search API may not include profile coordinates — fetch them from the profile endpoint
     if (isProfileType && mapMarkers.length === 0) {
-      const needsCoords = visibleResults.filter(
-        (item) => item.profile_uid && (item.profile_personal_latitude == null || item.profile_personal_longitude == null)
-      );
+      const needsCoords = visibleResults.filter((item) => item.profile_uid && (item.profile_personal_latitude == null || item.profile_personal_longitude == null));
       if (needsCoords.length > 0) {
         setMapLoading(true);
         try {
@@ -1441,7 +1447,7 @@ export default function SearchScreen({ route }) {
               } catch {
                 return item;
               }
-            })
+            }),
           );
           mapMarkers = searchResultsToMapProfiles(enriched);
         } catch (e) {
@@ -1453,10 +1459,7 @@ export default function SearchScreen({ route }) {
     }
 
     if (mapMarkers.length === 0) {
-      Alert.alert(
-        "No location data",
-        "None of the current results have a home location set in their profile."
-      );
+      Alert.alert("No location data", "None of the current results have a home location set in their profile.");
       return;
     }
 
@@ -1481,11 +1484,7 @@ export default function SearchScreen({ route }) {
     return apiUrl;
   };
 
-  const fetchSearchJson = async (
-    endpoint,
-    q,
-    { applyRatingFilter = false, distanceMiles = distance, ratingValue = rating, homeCoords = userHomeCoords, isBrowseAll = false } = {},
-  ) => {
+  const fetchSearchJson = async (endpoint, q, { applyRatingFilter = false, distanceMiles = distance, ratingValue = rating, homeCoords = userHomeCoords, isBrowseAll = false } = {}) => {
     const limitParam = isBrowseAll ? "ALL" : SEARCH_RESULT_LIMIT;
     let apiUrl = `${endpoint}?q=${encodeURIComponent(q)}&limit=${limitParam}`;
     if (applyRatingFilter && ratingValue !== null) {
@@ -1595,418 +1594,417 @@ export default function SearchScreen({ route }) {
     try {
       // Multi-type combined search via /search_global (Global tab hidden in UI).
       const globalJsonRaw = await fetchSearchJson(SEARCH_GLOBAL_ENDPOINT, q, {
-          applyRatingFilter: true,
-          distanceMiles: effectiveDistance,
-          ratingValue: effectiveRating,
-          homeCoords: searchCoords,
-          isBrowseAll,
-        });
-        const globalJson = sanitizeEmptyStrings(globalJsonRaw);
-        const globalResults = Array.isArray(globalJson) ? globalJson : globalJson.results || globalJson.result || [];
-        const businessResults = globalResults.filter((item) => item.itemType === "businesses");
-        const expertiseResults = globalResults.filter((item) => item.itemType === "expertise");
-        const seekingResults = globalResults.filter((item) => item.itemType === "seeking");
+        applyRatingFilter: true,
+        distanceMiles: effectiveDistance,
+        ratingValue: effectiveRating,
+        homeCoords: searchCoords,
+        isBrowseAll,
+      });
+      const globalJson = sanitizeEmptyStrings(globalJsonRaw);
+      const globalResults = Array.isArray(globalJson) ? globalJson : globalJson.results || globalJson.result || [];
+      const businessResults = globalResults.filter((item) => item.itemType === "businesses");
+      const expertiseResults = globalResults.filter((item) => item.itemType === "expertise");
+      const seekingResults = globalResults.filter((item) => item.itemType === "seeking");
 
-        const sanitizeText = (text) => {
-          if (!text) return "";
-          const str = String(text).trim();
-          return str === "." ? "" : str;
-        };
+      const sanitizeText = (text) => {
+        if (!text) return "";
+        const str = String(text).trim();
+        return str === "." ? "" : str;
+      };
 
-        const mappedBusinesses = businessResults.map((b, i) => ({
-          ...b,
-          id: `${b.business_uid || i}`,
-          business_uid: b.business_uid ? String(b.business_uid).trim() : null,
-          company: sanitizeText(b.business_name || b.company) || "Unknown Business",
-          business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
-          rating: null,
-          ratingCount: 0,
-          connection_degree: null,
-          max_bounty: null,
-          max_per_item_bounty: null,
-          max_total_bounty: null,
-          hasPriceTag: b.has_price_tag || false,
-          hasX: b.has_x || false,
-          hasDollar: b.has_dollar_sign || false,
-          business_short_bio: sanitizeText(b.business_short_bio),
-          business_tag_line: sanitizeText(b.business_tag_line),
-          tags: b.tags || [],
-          score: b.score || 0,
-          score_breakdown: b.score_breakdown || null,
-          itemType: "businesses",
-          profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
-          ...searchBusinessLocationFieldsFromApi(b),
-          ...locationFieldsFromApi(b),
-        }));
+      const mappedBusinesses = businessResults.map((b, i) => ({
+        ...b,
+        id: `${b.business_uid || i}`,
+        business_uid: b.business_uid ? String(b.business_uid).trim() : null,
+        company: sanitizeText(b.business_name || b.company) || "Unknown Business",
+        business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
+        rating: null,
+        ratingCount: 0,
+        connection_degree: null,
+        max_bounty: null,
+        max_per_item_bounty: null,
+        max_total_bounty: null,
+        hasPriceTag: b.has_price_tag || false,
+        hasX: b.has_x || false,
+        hasDollar: b.has_dollar_sign || false,
+        business_short_bio: sanitizeText(b.business_short_bio),
+        business_tag_line: sanitizeText(b.business_tag_line),
+        tags: b.tags || [],
+        score: b.score || 0,
+        score_breakdown: b.score_breakdown || null,
+        itemType: "businesses",
+        profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
+        ...searchBusinessLocationFieldsFromApi(b),
+        ...locationFieldsFromApi(b),
+      }));
 
-        const mappedExpertise = expertiseResults
-          .filter((item) => {
-            const qty = item.profile_expertise_quantity;
-            return qty == null || qty === "" || parseInt(qty) !== 0;
-          })
-          .map((item, i) => mapSearchExpertiseRow(item, i));
-        const mappedSeeking = seekingResults.map((item, i) => mapSearchWishRow(item, i)).filter((item) => !isWishEnded(item));
+      const mappedExpertise = expertiseResults
+        .filter((item) => {
+          const qty = item.profile_expertise_quantity;
+          return qty == null || qty === "" || parseInt(qty) !== 0;
+        })
+        .map((item, i) => mapSearchExpertiseRow(item, i));
+      const mappedSeeking = seekingResults.map((item, i) => mapSearchWishRow(item, i)).filter((item) => !isWishEnded(item));
 
-        const normalizeByType = (items) => {
-          if (!items.length) return [];
-          const maxScore = Math.max(...items.map((x) => Number(x.score) || 0), 0.000001);
-          return items.map((x) => ({ ...x, globalScore: (Number(x.score) || 0) / maxScore }));
-        };
+      const normalizeByType = (items) => {
+        if (!items.length) return [];
+        const maxScore = Math.max(...items.map((x) => Number(x.score) || 0), 0.000001);
+        return items.map((x) => ({ ...x, globalScore: (Number(x.score) || 0) / maxScore }));
+      };
 
-        let list;
-        if (isBrowseAll) {
-          list = [...mappedBusinesses, ...mappedExpertise, ...mappedSeeking];
-        } else {
-          list = [...normalizeByType(mappedBusinesses), ...normalizeByType(mappedExpertise), ...normalizeByType(mappedSeeking)].sort(
-            (a, b) => b.globalScore - a.globalScore,
-          );
-        }
-        const enriched = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(list);
-        const withOfferingDegrees = await enrichOfferingOwnerConnectionDegrees(enriched);
-        let filteredEnriched = applyBusinessMinRatingFilter(withOfferingDegrees, effectiveRating);
-        filteredEnriched = filterResultsByNetwork(filteredEnriched, effectiveNetwork);
-        filteredEnriched = applyDistanceFilterToSearchResults(filteredEnriched, effectiveDistance, searchCoords);
-        if (searchGeneration !== searchGenerationRef.current) return;
-        commitSearchResults(filteredEnriched, { browseAll: isBrowseAll });
-        setHasLoadedInitialSearch(true);
-        setLoading(false);
-        return;
-
-      if (false) { // LEGACY single-tab search — kept for reference while Global tab is hidden.
-      // Select the appropriate endpoint based on search type
-      let baseEndpoint;
-      switch (type) {
-        case "expertise":
-          baseEndpoint = EXPERTISE_RESULTS_ENDPOINT;
-          break;
-        case "seeking":
-          baseEndpoint = WISHES_RESULTS_ENDPOINT;
-          break;
-        case "businesses":
-        default:
-          baseEndpoint = BUSINESS_RESULTS_ENDPOINT;
-          break;
-      }
-
-      // Build the API URL with query parameter
-      const limitParam = isBrowseAll ? "ALL" : SEARCH_RESULT_LIMIT;
-      let apiUrl = `${baseEndpoint}?q=${encodeURIComponent(q)}&limit=${limitParam}`;
-
-      // Add min_rating parameter if rating filter is set
-      if (effectiveRating !== null) {
-        apiUrl += `&min_rating=${effectiveRating}`;
-      }
-      if (searchTypeSupportsDistanceFilter(type)) {
-        apiUrl = appendLocationSearchParams(apiUrl, {
-          distanceMiles: effectiveDistance,
-          coords: searchCoords,
-          sendProximityCoords: type === "global" || type === "businesses",
-        });
-      }
-
-      console.log("🎯 EXACT ENDPOINT BEING CALLED:", apiUrl);
-
-      // Add CORS mode and headers for web requests
-      const fetchOptions =
-        Platform.OS === "web"
-          ? {
-              method: "GET",
-              mode: "cors",
-              credentials: "omit", // Don't send credentials for CORS
-              // Don't include Content-Type for GET requests to avoid preflight
-              headers: {
-                Accept: "application/json",
-              },
-              cache: "no-cache",
-            }
-          : {
-              method: "GET",
-              headers: {
-                Accept: "application/json",
-                "Content-Type": "application/json",
-              },
-            };
-
-      console.log("📡 Fetch options:", JSON.stringify(fetchOptions, null, 2));
-
-      let res;
-      try {
-        res = await fetch(apiUrl, fetchOptions);
-      } catch (fetchError) {
-        console.error("❌ Fetch error details:", fetchError);
-        console.error("❌ Error name:", fetchError.name);
-        console.error("❌ Error message:", fetchError.message);
-
-        // Try with no-cors mode as a fallback (limited but might work)
-        if (Platform.OS === "web" && fetchError.message === "Failed to fetch") {
-          console.warn("⚠️ CORS error detected, trying no-cors mode as fallback...");
-          try {
-            const noCorsOptions = {
-              method: "GET",
-              mode: "no-cors", // This bypasses CORS but we can't read response headers
-              credentials: "omit",
-              cache: "no-cache",
-            };
-            res = await fetch(apiUrl, noCorsOptions);
-            console.log("✅ no-cors request succeeded, but response may be opaque");
-            // Note: With no-cors, we can't read response headers or check status properly
-            // The response will be "opaque" - we can only read the body
-          } catch (noCorsError) {
-            console.error("❌ no-cors fallback also failed:", noCorsError);
-            throw new Error(
-              `CORS Error: The search server at ${SEARCH_BASE_URL} is not allowing requests from http://localhost:8081.\n\n` +
-                `To fix this, the server needs to:\n` +
-                `1. Allow requests from http://localhost:8081 (or your production domain)\n` +
-                `2. Include CORS headers: Access-Control-Allow-Origin, Access-Control-Allow-Methods\n\n` +
-                `You can test the endpoint directly in your browser:\n${apiUrl}\n\n` +
-                `Note: The server must respond to OPTIONS preflight requests with proper CORS headers.`,
-            );
-          }
-        } else {
-          throw fetchError;
-        }
-      }
-
-      // Check if response is opaque (from no-cors mode)
-      const isOpaque = res.type === "opaque" || res.type === "opaqueredirect";
-
-      if (!isOpaque) {
-        console.log("📡 Response status:", res.status);
-        console.log("📡 Response ok:", res.ok);
-        console.log("📡 Response headers:", Object.fromEntries(res.headers.entries()));
-      }
-
-      // Check if response is ok (skip check for opaque responses)
-      if (!isOpaque && !res.ok) {
-        const errorText = await res.text();
-        console.error("❌ Response error text:", errorText);
-        throw new Error(`HTTP error! status: ${res.status}, message: ${errorText}`);
-      }
-
-      // Get raw response text first
-      const responseText = await res.text();
-      console.log("📄 Raw response text length:", responseText.length);
-      console.log("📄 Raw response text (first 500 chars):", responseText.substring(0, 500));
-
-      // Check if response looks like JSON
-      if (!responseText.trim().startsWith("{") && !responseText.trim().startsWith("[")) {
-        console.error("❌ Response is not JSON. First 200 chars:", responseText.substring(0, 200));
-        throw new Error(`API returned non-JSON response: ${responseText.substring(0, 200)}`);
-      }
-
-      // Parse JSON
-      let json;
-      try {
-        json = JSON.parse(responseText);
-        console.log("✅ JSON parsed successfully");
-        console.log("📊 JSON type:", typeof json);
-        console.log("📊 Is array?", Array.isArray(json));
-        console.log("📊 JSON keys:", typeof json === "object" && json !== null ? Object.keys(json) : "N/A");
-      } catch (parseError) {
-        console.error("❌ JSON parse error:", parseError);
-        console.error("❌ Response text that failed to parse:", responseText.substring(0, 500));
-        throw new Error(`Failed to parse JSON response: ${parseError.message}`);
-      }
-
-      // Sanitize empty strings ("", " ") to null for expertise and wishes endpoints to prevent downstream errors
-      if (type === "expertise" || type === "seeking") {
-        json = sanitizeEmptyStrings(json);
-      }
-
-      // console.log("📡 Search API Response:", JSON.stringify(json, null, 2));
-      // console.log("📊 Number of results returned:", Array.isArray(json) ? json.length : json.results?.length || json.result?.length || 0);
-
-      // Handle both possible response structures
-      // console.log("🔍 Raw JSON response:", json);
-      // console.log("🔍 JSON type:", typeof json);
-      // console.log("🔍 Is array?", Array.isArray(json));
-
-      // The API returns an array directly, not wrapped in results/result
-      const resultsArray = Array.isArray(json) ? json : json.results || json.result || [];
-      console.log("🔍 Results array length:", resultsArray.length);
-      // console.log("🔍 Results array length:", resultsArray.length);
-
-      // Process results based on search type
       let list;
-      if (type === "seeking") {
-        // For seeking/wishes, the response includes profile data directly
-        list = resultsArray
-          .map((item, i) => ({
-            id: `${item.profile_wish_uid || i}`,
-            company: item.profile_wish_title || "Untitled Wish",
-            rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
-            hasPriceTag: false,
-            hasX: false,
-            hasDollar: false,
-            //hasBounty: b.has_bounty || b.business_bounty || false,
-            hasBounty: item.profile_wish_bounty ? true : false,
-            business_short_bio: item.profile_wish_description || "",
-            business_tag_line: item.profile_wish_title || "",
-            tags: [],
-            score: item.score || 0,
-            score_breakdown: item.score_breakdown || null,
-            itemType: "seeking",
-            profile_uid: item.profile_wish_profile_personal_id,
-            profile_wish_end: item.profile_wish_end || "",
-            ...locationFieldsFromApi(item),
-            profile_personal_latitude: item.profile_personal_latitude ?? null,
-            profile_personal_longitude: item.profile_personal_longitude ?? null,
-            // Store wish data
-            wishData: {
-              title: item.profile_wish_title,
-              description: item.profile_wish_description,
-              bounty: item.profile_wish_bounty,
-              cost: item.profile_wish_cost,
-              wish_uid: item.profile_wish_uid,
-              profile_wish_quantity: item.profile_wish_quantity || "",
-              profile_wish_image: item.profile_wish_image || "",
-              profile_wish_image_is_public: item.profile_wish_image_is_public,
-              profile_wish_start: item.profile_wish_start || "",
-              profile_wish_end: item.profile_wish_end || "",
-              profile_wish_location: item.profile_wish_location || "",
-              profile_wish_latitude: item.profile_wish_latitude ?? null,
-              profile_wish_longitude: item.profile_wish_longitude ?? null,
-              profile_wish_mode: item.profile_wish_mode || "",
-              profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
-            },
-            // Store profile data for MiniCard-like display
-            profileData: {
-              firstName: item.profile_personal_first_name || "",
-              lastName: item.profile_personal_last_name || "",
-              email: item.user_email_id || "",
-              phone: item.profile_personal_phone_number || "",
-              image: item.profile_personal_image || "",
-              tagLine: item.profile_personal_tag_line || "",
-              emailIsPublic: item.profile_personal_email_is_public == 1,
-              phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
-              imageIsPublic: item.profile_personal_image_is_public == 1,
-              tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
-            },
-          }))
-          .filter((item) => !isWishEnded(item));
-        // try {
-        //   const profileFetches = list.map(async (item) => {
-        //     if (!item.profile_uid) return item;
-        //     try {
-        //       const profileRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${item.profile_uid}`);
-        //       const profileJson = await profileRes.json();
-        //       const p = profileJson.personal_info || {};
-        //       return {
-        //         ...item,
-        //         profileData: {
-        //           firstName: p.profile_personal_first_name || "",
-        //           lastName: p.profile_personal_last_name || "",
-        //           email: p.user_email_id || "",
-        //           phone: p.profile_personal_phone_number || "",
-        //           image: p.profile_personal_image || "",
-        //           tagLine: p.profile_personal_tag_line || "",
-        //           emailIsPublic: p.profile_personal_email_is_public == 1,
-        //           phoneIsPublic: p.profile_personal_phone_number_is_public == 1,
-        //           imageIsPublic: p.profile_personal_image_is_public == 1,
-        //           tagLineIsPublic: p.profile_personal_tag_line_is_public == 1,
-        //         },
-        //       };
-        //     } catch (e) {
-        //       return item;
-        //     }
-        //   });
-        //   list = await Promise.all(profileFetches);
-        // } catch (e) {
-        //   console.log("Could not fetch wish profiles:", e);
-        // }
-      } else if (type === "expertise") {
-        // For expertise, the response includes profile data directly
-        list = resultsArray
-          .filter((item) => {
-            const qty = item.profile_expertise_quantity;
-            return qty == null || qty === "" || parseInt(qty) !== 0;
-          })
-          .map((item, i) => ({
-          id: `${item.profile_expertise_uid || i}`,
-          company: item.profile_expertise_title || "Untitled Expertise",
-          rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
-          hasPriceTag: false,
-          hasX: false,
-          hasDollar: false,
-          business_short_bio: item.profile_expertise_description || "",
-          business_tag_line: item.profile_expertise_title || "",
-          tags: [],
-          score: item.score || 0,
-          score_breakdown: item.score_breakdown || null,
-          itemType: "expertise",
-          profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
-          ...locationFieldsFromApi(item),
-          profile_personal_latitude: item.profile_personal_latitude ?? null,
-          profile_personal_longitude: item.profile_personal_longitude ?? null,
-          expertiseData: {
-            title: item.profile_expertise_title,
-            description: item.profile_expertise_description,
-            details: item.profile_expertise_details,
-            bounty: item.profile_expertise_bounty,
-            cost: item.profile_expertise_cost,
-            quantity: item.profile_expertise_quantity || item.quantity,
-            profile_expertise_quantity: item.profile_expertise_quantity || item.quantity,
-            expertise_uid: item.profile_expertise_uid,
-            profile_expertise_start: item.profile_expertise_start || "",
-            profile_expertise_end: item.profile_expertise_end || "",
-            profile_expertise_location: item.profile_expertise_location || "",
-            profile_expertise_mode: item.profile_expertise_mode || "",
-            profile_expertise_image: item.profile_expertise_image || "",
-            profile_expertise_image_is_public: item.profile_expertise_image_is_public,
-            profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
-          },
-          // Store profile data for MiniCard-like display (all public info for Add to Cart modal)
-          profileData: {
-            firstName: item.profile_personal_first_name || "",
-            lastName: item.profile_personal_last_name || "",
-            email: item.user_email_id || "",
-            phone: item.profile_personal_phone_number || "",
-            image: item.profile_personal_image || "",
-            tagLine: item.profile_personal_tag_line || "",
-            city: item.profile_personal_city || "",
-            state: item.profile_personal_state || "",
-            emailIsPublic: item.profile_personal_email_is_public == 1,
-            phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
-            imageIsPublic: item.profile_personal_image_is_public == 1,
-            tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
-            locationIsPublic: item.profile_personal_location_is_public == 1,
-          },
-        }));
+      if (isBrowseAll) {
+        list = [...mappedBusinesses, ...mappedExpertise, ...mappedSeeking];
       } else {
-        // For businesses, use the existing mapping
-        const sanitizeText = (text) => {
-          if (!text) return "";
-          const str = String(text).trim();
-          return str === "." ? "" : str;
-        };
+        list = [...normalizeByType(mappedBusinesses), ...normalizeByType(mappedExpertise), ...normalizeByType(mappedSeeking)].sort((a, b) => b.globalScore - a.globalScore);
+      }
+      const enriched = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(list);
+      const withOfferingDegrees = await enrichOfferingOwnerConnectionDegrees(enriched);
+      let filteredEnriched = applyBusinessMinRatingFilter(withOfferingDegrees, effectiveRating);
+      filteredEnriched = filterResultsByNetwork(filteredEnriched, effectiveNetwork);
+      filteredEnriched = applyDistanceFilterToSearchResults(filteredEnriched, effectiveDistance, searchCoords);
+      if (searchGeneration !== searchGenerationRef.current) return;
+      commitSearchResults(filteredEnriched, { browseAll: isBrowseAll });
+      setHasLoadedInitialSearch(true);
+      setLoading(false);
+      return;
 
-        list = resultsArray.map((b, i) => {
-          console.log("All image fields:", b.business_profile_img, b.business_images_url, b.business_favorite_image, b.business_name);
-          console.log("Business profile img:", b.business_profile_img, b.business_name);
-          return {
-            id: `${b.business_uid || i}`,
-            business_uid: b.business_uid ? String(b.business_uid).trim() : null,
-            company: sanitizeText(b.business_name || b.company) || "Unknown Business",
-            business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
-            rating: typeof b.rating_star === "number" ? b.rating_star : null,
-            hasPriceTag: b.has_price_tag || false,
-            hasX: b.has_x || false,
-            hasDollar: b.has_dollar_sign || false,
-            max_bounty: parseSearchMaxBounty(b.max_bounty ?? b.business_max_bounty),
-            business_short_bio: sanitizeText(b.business_short_bio),
-            business_tag_line: sanitizeText(b.business_tag_line),
-            tags: b.tags || [],
-            score: b.score || 0,
-            score_breakdown: b.score_breakdown || null,
-            itemType: "businesses",
-            profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
-            ...searchBusinessLocationFieldsFromApi(b),
-            ...locationFieldsFromApi(b),
+      if (false) {
+        // LEGACY single-tab search — kept for reference while Global tab is hidden.
+        // Select the appropriate endpoint based on search type
+        let baseEndpoint;
+        switch (type) {
+          case "expertise":
+            baseEndpoint = EXPERTISE_RESULTS_ENDPOINT;
+            break;
+          case "seeking":
+            baseEndpoint = WISHES_RESULTS_ENDPOINT;
+            break;
+          case "businesses":
+          default:
+            baseEndpoint = BUSINESS_RESULTS_ENDPOINT;
+            break;
+        }
+
+        // Build the API URL with query parameter
+        const limitParam = isBrowseAll ? "ALL" : SEARCH_RESULT_LIMIT;
+        let apiUrl = `${baseEndpoint}?q=${encodeURIComponent(q)}&limit=${limitParam}`;
+
+        // Add min_rating parameter if rating filter is set
+        if (effectiveRating !== null) {
+          apiUrl += `&min_rating=${effectiveRating}`;
+        }
+        if (searchTypeSupportsDistanceFilter(type)) {
+          apiUrl = appendLocationSearchParams(apiUrl, {
+            distanceMiles: effectiveDistance,
+            coords: searchCoords,
+            sendProximityCoords: type === "global" || type === "businesses",
+          });
+        }
+
+        console.log("🎯 EXACT ENDPOINT BEING CALLED:", apiUrl);
+
+        // Add CORS mode and headers for web requests
+        const fetchOptions =
+          Platform.OS === "web"
+            ? {
+                method: "GET",
+                mode: "cors",
+                credentials: "omit", // Don't send credentials for CORS
+                // Don't include Content-Type for GET requests to avoid preflight
+                headers: {
+                  Accept: "application/json",
+                },
+                cache: "no-cache",
+              }
+            : {
+                method: "GET",
+                headers: {
+                  Accept: "application/json",
+                  "Content-Type": "application/json",
+                },
+              };
+
+        console.log("📡 Fetch options:", JSON.stringify(fetchOptions, null, 2));
+
+        let res;
+        try {
+          res = await fetch(apiUrl, fetchOptions);
+        } catch (fetchError) {
+          console.error("❌ Fetch error details:", fetchError);
+          console.error("❌ Error name:", fetchError.name);
+          console.error("❌ Error message:", fetchError.message);
+
+          // Try with no-cors mode as a fallback (limited but might work)
+          if (Platform.OS === "web" && fetchError.message === "Failed to fetch") {
+            console.warn("⚠️ CORS error detected, trying no-cors mode as fallback...");
+            try {
+              const noCorsOptions = {
+                method: "GET",
+                mode: "no-cors", // This bypasses CORS but we can't read response headers
+                credentials: "omit",
+                cache: "no-cache",
+              };
+              res = await fetch(apiUrl, noCorsOptions);
+              console.log("✅ no-cors request succeeded, but response may be opaque");
+              // Note: With no-cors, we can't read response headers or check status properly
+              // The response will be "opaque" - we can only read the body
+            } catch (noCorsError) {
+              console.error("❌ no-cors fallback also failed:", noCorsError);
+              throw new Error(
+                `CORS Error: The search server at ${SEARCH_BASE_URL} is not allowing requests from http://localhost:8081.\n\n` +
+                  `To fix this, the server needs to:\n` +
+                  `1. Allow requests from http://localhost:8081 (or your production domain)\n` +
+                  `2. Include CORS headers: Access-Control-Allow-Origin, Access-Control-Allow-Methods\n\n` +
+                  `You can test the endpoint directly in your browser:\n${apiUrl}\n\n` +
+                  `Note: The server must respond to OPTIONS preflight requests with proper CORS headers.`,
+              );
+            }
+          } else {
+            throw fetchError;
+          }
+        }
+
+        // Check if response is opaque (from no-cors mode)
+        const isOpaque = res.type === "opaque" || res.type === "opaqueredirect";
+
+        if (!isOpaque) {
+          console.log("📡 Response status:", res.status);
+          console.log("📡 Response ok:", res.ok);
+          console.log("📡 Response headers:", Object.fromEntries(res.headers.entries()));
+        }
+
+        // Check if response is ok (skip check for opaque responses)
+        if (!isOpaque && !res.ok) {
+          const errorText = await res.text();
+          console.error("❌ Response error text:", errorText);
+          throw new Error(`HTTP error! status: ${res.status}, message: ${errorText}`);
+        }
+
+        // Get raw response text first
+        const responseText = await res.text();
+        console.log("📄 Raw response text length:", responseText.length);
+        console.log("📄 Raw response text (first 500 chars):", responseText.substring(0, 500));
+
+        // Check if response looks like JSON
+        if (!responseText.trim().startsWith("{") && !responseText.trim().startsWith("[")) {
+          console.error("❌ Response is not JSON. First 200 chars:", responseText.substring(0, 200));
+          throw new Error(`API returned non-JSON response: ${responseText.substring(0, 200)}`);
+        }
+
+        // Parse JSON
+        let json;
+        try {
+          json = JSON.parse(responseText);
+          console.log("✅ JSON parsed successfully");
+          console.log("📊 JSON type:", typeof json);
+          console.log("📊 Is array?", Array.isArray(json));
+          console.log("📊 JSON keys:", typeof json === "object" && json !== null ? Object.keys(json) : "N/A");
+        } catch (parseError) {
+          console.error("❌ JSON parse error:", parseError);
+          console.error("❌ Response text that failed to parse:", responseText.substring(0, 500));
+          throw new Error(`Failed to parse JSON response: ${parseError.message}`);
+        }
+
+        // Sanitize empty strings ("", " ") to null for expertise and wishes endpoints to prevent downstream errors
+        if (type === "expertise" || type === "seeking") {
+          json = sanitizeEmptyStrings(json);
+        }
+
+        // console.log("📡 Search API Response:", JSON.stringify(json, null, 2));
+        // console.log("📊 Number of results returned:", Array.isArray(json) ? json.length : json.results?.length || json.result?.length || 0);
+
+        // Handle both possible response structures
+        // console.log("🔍 Raw JSON response:", json);
+        // console.log("🔍 JSON type:", typeof json);
+        // console.log("🔍 Is array?", Array.isArray(json));
+
+        // The API returns an array directly, not wrapped in results/result
+        const resultsArray = Array.isArray(json) ? json : json.results || json.result || [];
+        console.log("🔍 Results array length:", resultsArray.length);
+        // console.log("🔍 Results array length:", resultsArray.length);
+
+        // Process results based on search type
+        let list;
+        if (type === "seeking") {
+          // For seeking/wishes, the response includes profile data directly
+          list = resultsArray
+            .map((item, i) => ({
+              id: `${item.profile_wish_uid || i}`,
+              company: item.profile_wish_title || "Untitled Wish",
+              rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
+              hasPriceTag: false,
+              hasX: false,
+              hasDollar: false,
+              //hasBounty: b.has_bounty || b.business_bounty || false,
+              hasBounty: item.profile_wish_bounty ? true : false,
+              business_short_bio: item.profile_wish_description || "",
+              business_tag_line: item.profile_wish_title || "",
+              tags: [],
+              score: item.score || 0,
+              score_breakdown: item.score_breakdown || null,
+              itemType: "seeking",
+              profile_uid: item.profile_wish_profile_personal_id,
+              profile_wish_end: item.profile_wish_end || "",
+              ...locationFieldsFromApi(item),
+              profile_personal_latitude: item.profile_personal_latitude ?? null,
+              profile_personal_longitude: item.profile_personal_longitude ?? null,
+              // Store wish data
+              wishData: {
+                title: item.profile_wish_title,
+                description: item.profile_wish_description,
+                bounty: item.profile_wish_bounty,
+                cost: item.profile_wish_cost,
+                wish_uid: item.profile_wish_uid,
+                profile_wish_quantity: item.profile_wish_quantity || "",
+                profile_wish_image: item.profile_wish_image || "",
+                profile_wish_image_is_public: item.profile_wish_image_is_public,
+                profile_wish_start: item.profile_wish_start || "",
+                profile_wish_end: item.profile_wish_end || "",
+                profile_wish_location: item.profile_wish_location || "",
+                profile_wish_latitude: item.profile_wish_latitude ?? null,
+                profile_wish_longitude: item.profile_wish_longitude ?? null,
+                profile_wish_mode: item.profile_wish_mode || "",
+                profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
+              },
+              // Store profile data for MiniCard-like display
+              profileData: {
+                firstName: item.profile_personal_first_name || "",
+                lastName: item.profile_personal_last_name || "",
+                email: item.user_email_id || "",
+                phone: item.profile_personal_phone_number || "",
+                image: item.profile_personal_image || "",
+                tagLine: item.profile_personal_tag_line || "",
+                emailIsPublic: item.profile_personal_email_is_public == 1,
+                phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
+                imageIsPublic: item.profile_personal_image_is_public == 1,
+                tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
+              },
+            }))
+            .filter((item) => !isWishEnded(item));
+          // try {
+          //   const profileFetches = list.map(async (item) => {
+          //     if (!item.profile_uid) return item;
+          //     try {
+          //       const profileRes = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${item.profile_uid}`);
+          //       const profileJson = await profileRes.json();
+          //       const p = profileJson.personal_info || {};
+          //       return {
+          //         ...item,
+          //         profileData: {
+          //           firstName: p.profile_personal_first_name || "",
+          //           lastName: p.profile_personal_last_name || "",
+          //           email: p.user_email_id || "",
+          //           phone: p.profile_personal_phone_number || "",
+          //           image: p.profile_personal_image || "",
+          //           tagLine: p.profile_personal_tag_line || "",
+          //           emailIsPublic: p.profile_personal_email_is_public == 1,
+          //           phoneIsPublic: p.profile_personal_phone_number_is_public == 1,
+          //           imageIsPublic: p.profile_personal_image_is_public == 1,
+          //           tagLineIsPublic: p.profile_personal_tag_line_is_public == 1,
+          //         },
+          //       };
+          //     } catch (e) {
+          //       return item;
+          //     }
+          //   });
+          //   list = await Promise.all(profileFetches);
+          // } catch (e) {
+          //   console.log("Could not fetch wish profiles:", e);
+          // }
+        } else if (type === "expertise") {
+          // For expertise, the response includes profile data directly
+          list = resultsArray
+            .filter((item) => {
+              const qty = item.profile_expertise_quantity;
+              return qty == null || qty === "" || parseInt(qty) !== 0;
+            })
+            .map((item, i) => ({
+              id: `${item.profile_expertise_uid || i}`,
+              company: item.profile_expertise_title || "Untitled Expertise",
+              rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
+              hasPriceTag: false,
+              hasX: false,
+              hasDollar: false,
+              business_short_bio: item.profile_expertise_description || "",
+              business_tag_line: item.profile_expertise_title || "",
+              tags: [],
+              score: item.score || 0,
+              score_breakdown: item.score_breakdown || null,
+              itemType: "expertise",
+              profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
+              ...locationFieldsFromApi(item),
+              profile_personal_latitude: item.profile_personal_latitude ?? null,
+              profile_personal_longitude: item.profile_personal_longitude ?? null,
+              expertiseData: {
+                title: item.profile_expertise_title,
+                description: item.profile_expertise_description,
+                details: item.profile_expertise_details,
+                bounty: item.profile_expertise_bounty,
+                cost: item.profile_expertise_cost,
+                quantity: item.profile_expertise_quantity || item.quantity,
+                profile_expertise_quantity: item.profile_expertise_quantity || item.quantity,
+                expertise_uid: item.profile_expertise_uid,
+                profile_expertise_start: item.profile_expertise_start || "",
+                profile_expertise_end: item.profile_expertise_end || "",
+                profile_expertise_location: item.profile_expertise_location || "",
+                profile_expertise_mode: item.profile_expertise_mode || "",
+                profile_expertise_image: item.profile_expertise_image || "",
+                profile_expertise_image_is_public: item.profile_expertise_image_is_public,
+                profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
+              },
+              // Store profile data for MiniCard-like display (all public info for Add to Cart modal)
+              profileData: {
+                firstName: item.profile_personal_first_name || "",
+                lastName: item.profile_personal_last_name || "",
+                email: item.user_email_id || "",
+                phone: item.profile_personal_phone_number || "",
+                image: item.profile_personal_image || "",
+                tagLine: item.profile_personal_tag_line || "",
+                city: item.profile_personal_city || "",
+                state: item.profile_personal_state || "",
+                emailIsPublic: item.profile_personal_email_is_public == 1,
+                phoneIsPublic: item.profile_personal_phone_number_is_public == 1,
+                imageIsPublic: item.profile_personal_image_is_public == 1,
+                tagLineIsPublic: item.profile_personal_tag_line_is_public == 1,
+                locationIsPublic: item.profile_personal_location_is_public == 1,
+              },
+            }));
+        } else {
+          // For businesses, use the existing mapping
+          const sanitizeText = (text) => {
+            if (!text) return "";
+            const str = String(text).trim();
+            return str === "." ? "" : str;
           };
-        });
 
-        // Run tag search in parallel with main search — disabled for testing without businesstagsearch
-        /*
+          list = resultsArray.map((b, i) => {
+            console.log("All image fields:", b.business_profile_img, b.business_images_url, b.business_favorite_image, b.business_name);
+            console.log("Business profile img:", b.business_profile_img, b.business_name);
+            return {
+              id: `${b.business_uid || i}`,
+              business_uid: b.business_uid ? String(b.business_uid).trim() : null,
+              company: sanitizeText(b.business_name || b.company) || "Unknown Business",
+              business_profile_img: b.business_profile_img ? b.business_profile_img.trim() : null,
+              rating: typeof b.rating_star === "number" ? b.rating_star : null,
+              hasPriceTag: b.has_price_tag || false,
+              hasX: b.has_x || false,
+              hasDollar: b.has_dollar_sign || false,
+              max_bounty: parseSearchMaxBounty(b.max_bounty ?? b.business_max_bounty),
+              business_short_bio: sanitizeText(b.business_short_bio),
+              business_tag_line: sanitizeText(b.business_tag_line),
+              tags: b.tags || [],
+              score: b.score || 0,
+              score_breakdown: b.score_breakdown || null,
+              itemType: "businesses",
+              profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
+              ...searchBusinessLocationFieldsFromApi(b),
+              ...locationFieldsFromApi(b),
+            };
+          });
+
+          // Run tag search in parallel with main search — disabled for testing without businesstagsearch
+          /*
         try {
           const tagRes = await fetch(`${BUSINESS_TAG_SEARCH_ENDPOINT}?q=${encodeURIComponent(q)}`);
           const tagJson = await tagRes.json();
@@ -2044,30 +2042,30 @@ export default function SearchScreen({ route }) {
         }
         */
 
-        list = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(list);
-        list = applyBusinessMinRatingFilter(list, effectiveRating);
-        list = filterResultsByNetwork(list, effectiveNetwork);
+          list = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(list);
+          list = applyBusinessMinRatingFilter(list, effectiveRating);
+          list = filterResultsByNetwork(list, effectiveNetwork);
 
-        // Sort by highest rating if rating filter is active
-        if (effectiveRating !== null) {
-          list = [...list].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+          // Sort by highest rating if rating filter is active
+          if (effectiveRating !== null) {
+            list = [...list].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+          }
         }
-      }
 
-      if (type === "expertise" || type === "seeking") {
-        list = await enrichOfferingOwnerConnectionDegrees(list);
-        list = filterResultsByNetwork(list, effectiveNetwork);
-      }
+        if (type === "expertise" || type === "seeking") {
+          list = await enrichOfferingOwnerConnectionDegrees(list);
+          list = filterResultsByNetwork(list, effectiveNetwork);
+        }
 
-      if (searchTypeSupportsDistanceFilter(type)) {
-        list = applyDistanceFilterToSearchResults(list, effectiveDistance, searchCoords);
-      }
+        if (searchTypeSupportsDistanceFilter(type)) {
+          list = applyDistanceFilterToSearchResults(list, effectiveDistance, searchCoords);
+        }
 
-      if (searchGeneration !== searchGenerationRef.current) return;
+        if (searchGeneration !== searchGenerationRef.current) return;
 
-      console.log("Processed search results:", list.length, "items");
-      commitSearchResults(list, { browseAll: isBrowseAll });
-      setHasLoadedInitialSearch(true);
+        console.log("Processed search results:", list.length, "items");
+        commitSearchResults(list, { browseAll: isBrowseAll });
+        setHasLoadedInitialSearch(true);
       }
     } catch (err) {
       console.error(" Search failed for query:", q, "Error:", err);
@@ -2418,9 +2416,7 @@ export default function SearchScreen({ route }) {
                 </Text>
                 {hasResponded && <Text style={[styles.wishRespondedFlag, darkMode && styles.darkWishRespondedFlag]}>Responded{respondedDateLabel ? ` ${respondedDateLabel}` : ""}</Text>}
               </View>
-              {isSafeForConditional(wish.description) ? (
-                <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{sanitizeText(wish.description)}</Text>
-              ) : null}
+              {isSafeForConditional(wish.description) ? <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{sanitizeText(wish.description)}</Text> : null}
             </View>
           </View>
           {isSafeForConditional(wish.profile_wish_start) || isSafeForConditional(wish.profile_wish_end) ? (
@@ -2490,15 +2486,21 @@ export default function SearchScreen({ route }) {
       if (!item.profile_uid) return;
       const offeringLabel = offeringTitle || "Offering";
       const responderUid = (currentProfileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
+      let expertiseResponseUid = null;
       if (expertiseUid && responderUid && item.profile_uid !== responderUid) {
-        const byId = await recordOfferingMessageResponse(expertiseUid, responderUid);
-        if (byId) setRespondedOfferingsById(byId);
+        const recordResult = await recordOfferingMessageResponse(expertiseUid, responderUid);
+        if (recordResult?.respondedMap) setRespondedOfferingsById(recordResult.respondedMap);
+        expertiseResponseUid = recordResult?.expertise_response_uid || null;
       }
       navigation.navigate("Chat", {
         other_uid: item.profile_uid,
         other_name: [profile.firstName, profile.lastName].filter(Boolean).join(" ").trim() || "Chat",
         other_image: profile.imageIsPublic && profile.image && String(profile.image).trim() !== "" ? String(profile.image) : null,
-        reply_context: { label: `Offering: ${offeringLabel}` },
+        reply_context: buildOfferingReplyContext({
+          label: `Offering: ${offeringLabel}`,
+          profileExpertiseUid: expertiseUid,
+          expertiseResponseUid,
+        }),
       });
     };
     const openSellerProfile = () => {
@@ -2567,14 +2569,10 @@ export default function SearchScreen({ route }) {
                   {scoreSuffix ? <Text style={[styles.searchScoreSuffix, darkMode && styles.darkSearchScoreSuffix]}>{` ${scoreSuffix}`}</Text> : null}
                 </Text>
                 {hasRespondedToOffering && (
-                  <Text style={[styles.wishRespondedFlag, darkMode && styles.darkWishRespondedFlag]}>
-                    Responded{offeringRespondedDateLabel ? ` ${offeringRespondedDateLabel}` : ""}
-                  </Text>
+                  <Text style={[styles.wishRespondedFlag, darkMode && styles.darkWishRespondedFlag]}>Responded{offeringRespondedDateLabel ? ` ${offeringRespondedDateLabel}` : ""}</Text>
                 )}
               </View>
-              {isSafeForConditional(expertise.description) ? (
-                <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{sanitizeText(expertise.description)}</Text>
-              ) : null}
+              {isSafeForConditional(expertise.description) ? <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{sanitizeText(expertise.description)}</Text> : null}
             </View>
           </View>
           {/* Cost / Qty / bounty row — same layout as Profile OFFERING cards */}
@@ -2772,8 +2770,7 @@ export default function SearchScreen({ route }) {
     const miniCardBusiness = mapBusinessToMiniCard(item);
     const microCardBusiness = mapBusinessToMicroCard(item);
     const scoreSuffix = showSearchScores ? formatBusinessSearchScoreSuffix(item) : null;
-    const locationBoost =
-      item.location_boosted ? <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} /> : null;
+    const locationBoost = item.location_boosted ? <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} /> : null;
 
     return (
       <TouchableOpacity
@@ -2792,13 +2789,7 @@ export default function SearchScreen({ route }) {
         {isCompactSearchCard ? (
           <>
             {microCardBusiness ? (
-              <MicroCard
-                user={microCardBusiness}
-                showRelationship={false}
-                embedded
-                nameSuffix={scoreSuffix}
-                headerAccessory={locationBoost}
-              />
+              <MicroCard user={microCardBusiness} showRelationship={false} embedded nameSuffix={scoreSuffix} headerAccessory={locationBoost} />
             ) : (
               <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
             )}
@@ -2808,12 +2799,7 @@ export default function SearchScreen({ route }) {
           <>
             <View style={styles.searchMiniCardWrap}>
               {miniCardBusiness ? (
-                <MiniCard
-                  business={miniCardBusiness}
-                  embedded
-                  nameSuffix={scoreSuffix}
-                  headerAccessory={locationBoost}
-                />
+                <MiniCard business={miniCardBusiness} embedded nameSuffix={scoreSuffix} headerAccessory={locationBoost} />
               ) : (
                 <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
               )}
@@ -3069,8 +3055,8 @@ export default function SearchScreen({ route }) {
                   darkMode && selectedSearchTabs.individuals && styles.darkSearchTypeButtonIndividuals,
                 ]}
                 onPress={() => toggleSearchTab("individuals")}
-                accessibilityLabel="Search individuals"
-                accessibilityRole="button"
+                accessibilityLabel='Search individuals'
+                accessibilityRole='button'
               >
                 <Text
                   style={[
@@ -3119,14 +3105,10 @@ export default function SearchScreen({ route }) {
                 style={[styles.searchBarIconButton, darkMode && styles.darkSearchBarIconButton, mapLoading && { opacity: 0.6 }]}
                 onPress={handleOpenSearchMap}
                 disabled={mapLoading}
-                accessibilityLabel="View on map"
-                accessibilityRole="button"
+                accessibilityLabel='View on map'
+                accessibilityRole='button'
               >
-                {mapLoading ? (
-                  <ActivityIndicator size="small" color={darkMode ? "#ffffff" : "#333333"} />
-                ) : (
-                  <Ionicons name="map-outline" size={20} color={darkMode ? "#ffffff" : "#333333"} />
-                )}
+                {mapLoading ? <ActivityIndicator size='small' color={darkMode ? "#ffffff" : "#333333"} /> : <Ionicons name='map-outline' size={20} color={darkMode ? "#ffffff" : "#333333"} />}
               </TouchableOpacity>
             </View>
 
@@ -3278,15 +3260,13 @@ export default function SearchScreen({ route }) {
                       <Text style={[styles.globalSectionHeaderText, darkMode && styles.darkGlobalSectionHeaderText]}>Individuals ({individualsSectionResults.length})</Text>
                       <Ionicons name={showGlobalIndividuals ? "chevron-up" : "chevron-down"} size={18} color={darkMode ? "#fff" : "#333"} />
                     </TouchableOpacity>
-                    {showGlobalIndividuals && individualsSectionResults.length > 0
-                      ? individualsSectionResults.map((item, idx) => renderResultItem(item, idx))
-                      : showGlobalIndividuals ? (
-                          <Text style={[styles.individualsSearchHint, darkMode && styles.darkIndividualsSearchHint]}>
-                            {searchQuery.trim().length < 2
-                              ? "Search by email, city, state, or name (at least 2 characters)."
-                              : "No individuals found. Try another spelling, city, or email."}
-                          </Text>
-                        ) : null}
+                    {showGlobalIndividuals && individualsSectionResults.length > 0 ? (
+                      individualsSectionResults.map((item, idx) => renderResultItem(item, idx))
+                    ) : showGlobalIndividuals ? (
+                      <Text style={[styles.individualsSearchHint, darkMode && styles.darkIndividualsSearchHint]}>
+                        {searchQuery.trim().length < 2 ? "Search by email, city, state, or name (at least 2 characters)." : "No individuals found. Try another spelling, city, or email."}
+                      </Text>
+                    ) : null}
                   </>
                 )}
 
