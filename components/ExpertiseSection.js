@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, A
 import { Ionicons } from "@expo/vector-icons";
 import { Dropdown } from "react-native-element-dropdown";
 import * as ImagePicker from "expo-image-picker";
-import { formatCostValue } from "../utils/priceUtils";
+import { formatCostValue, parsePrice } from "../utils/priceUtils";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import { getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import ProfileItemImageColumn from "./ProfileItemImageColumn";
@@ -22,6 +22,27 @@ import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expert
 import { rejectNativeImageAsset, rejectWebImageFile } from "../utils/imageUploadLimits";
 
 const CONDITION_DETAIL_MAX_CHARS = 250;
+
+/** Numeric cost amount from an offering cost string (ignores unit suffix). */
+export const getOfferingCostAmount = (cost) => {
+  if (!cost || String(cost).trim().toLowerCase() === "free") return 0;
+  const cleaned = String(cost).replace(/\$/g, "").trim();
+  if (cleaned.toLowerCase().endsWith("total")) {
+    return parsePrice(cleaned.replace(/total$/i, "").trim());
+  }
+  const slashIdx = cleaned.indexOf("/");
+  const amountStr = slashIdx >= 0 ? cleaned.slice(0, slashIdx).trim() : cleaned;
+  return parsePrice(amountStr);
+};
+
+/** True when a per-item or single bounty exceeds the offering's item cost. */
+export const offeringBountyExceedsCost = (item) => {
+  if (!item || item.profile_expertise_bounty_type === "none") return false;
+  const bountyAmount = parsePrice(item.bounty);
+  const costAmount = getOfferingCostAmount(item.cost);
+  if (bountyAmount <= 0 || costAmount <= 0) return false;
+  return bountyAmount > costAmount;
+};
 
 let DateTimePicker = null;
 if (Platform.OS !== "web") {
@@ -887,6 +908,11 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               />
             ) : null}
           </View>
+          {offeringBountyExceedsCost(item) ? (
+            <Text style={[styles.bountyCostWarning, darkMode && styles.bountyCostWarningDark]}>
+              Warning: Bounty is greater than the item cost. You may pay referrers more than you charge per item.
+            </Text>
+          ) : null}
 
           {/* Condition Row */}
           <View style={styles.taxRow}>
@@ -1346,6 +1372,16 @@ const styles = StyleSheet.create({
     marginTop: 5,
     marginBottom: 8,
     gap: 6,
+  },
+  bountyCostWarning: {
+    fontSize: 13,
+    color: "#FF9500",
+    marginTop: -4,
+    marginBottom: 8,
+    lineHeight: 18,
+  },
+  bountyCostWarningDark: {
+    color: "#FFB340",
   },
   taxBtn: {
     paddingHorizontal: 12,
