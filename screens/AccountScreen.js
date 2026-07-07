@@ -616,6 +616,21 @@ function mapAccountScreenBusinessResponse(json) {
   return { bountyResult, sellerLines, businessForMiniCardRaw };
 }
 
+/** Drop stale account-screen responses when the API tags type/id or the user switched profiles. */
+function accountScreenResponseMatches(json, expectedType, expectedId) {
+  if (!json || typeof json !== "object") return true;
+  const root = json.data !== undefined && json.data !== null && typeof json.data === "object" && !Array.isArray(json.data) ? json.data : json;
+  const type = json.account_screen_type ?? root.account_screen_type;
+  const id = json.account_screen_id ?? root.account_screen_id;
+  if (type != null && String(type).toLowerCase() !== String(expectedType).toLowerCase()) {
+    return false;
+  }
+  if (id != null && expectedId != null && String(id) !== String(expectedId)) {
+    return false;
+  }
+  return true;
+}
+
 function parseExpertiseInfo(raw) {
   if (raw == null) return [];
   try {
@@ -681,7 +696,6 @@ export default function AccountScreen({ navigation }) {
   const [expertiseLoading, setExpertiseLoading] = useState(true);
   const [sellerTxData, setSellerTxData] = useState([]);
   const [salesModal, setSalesModal] = useState({ visible: false, item: null, transactions: [] });
-  const [accountType, setAccountType] = useState("personal"); // 'personal' or 'business'
   const [businessTransactionData, setBusinessTransactionData] = useState([]);
   const [businessTransactionLoading, setBusinessTransactionLoading] = useState(true);
   const [businessUID, setBusinessUID] = useState(null);
@@ -752,6 +766,9 @@ export default function AccountScreen({ navigation }) {
 
   /** Coalesce overlapping refreshAccountScreenPersonal calls (focus + escrow update, Strict Mode, etc.) */
   const refreshPersonalInFlightRef = useRef(null);
+  /** Ignore in-flight account-screen responses after a profile switch. */
+  const personalFetchGenRef = useRef(0);
+  const businessFetchGenRef = useRef(0);
 
   /** Avoid stale `selectedAccount` / `businessUID` / `businesses` inside `refreshAccountScreenBusiness` when invoked from a focus callback with `[]` deps */
   const selectedAccountRef = useRef(selectedAccount);
@@ -769,6 +786,46 @@ export default function AccountScreen({ navigation }) {
   useEffect(() => {
     businessesRef.current = businesses;
   }, [businesses]);
+
+  const clearPersonalAccountSections = () => {
+    setTransactionData([]);
+    setExpertiseData([]);
+    setSellerTxData([]);
+    setBountyData(null);
+    setPersonalWallet(null);
+    setTransactionLoading(true);
+    setBountyLoading(true);
+    setExpertiseLoading(true);
+  };
+
+  const clearBusinessAccountSections = () => {
+    setBusinessTransactionData([]);
+    setBusinessBountyData(null);
+    setBusinessReceiptCache({});
+    businessReceiptFetchedRef.current = new Set();
+    setSelectedBusinessFullData(null);
+    setBusinessTransactionLoading(true);
+    setBusinessBountyLoading(true);
+  };
+
+  const handleProfileSelection = (nextAccount) => {
+    setShowAccountDropdown(false);
+    const current = selectedAccountRef.current;
+    if (nextAccount === current) return;
+
+    if (nextAccount === "personal") {
+      businessFetchGenRef.current += 1;
+      personalFetchGenRef.current += 1;
+      refreshPersonalInFlightRef.current = null;
+      clearBusinessAccountSections();
+      clearPersonalAccountSections();
+    } else {
+      personalFetchGenRef.current += 1;
+      businessFetchGenRef.current += 1;
+      clearBusinessAccountSections();
+    }
+    setSelectedAccount(nextAccount);
+  };
 
   //seller can see return note in transaction details if return requested
   const [showReturnNoteViewModal, setShowReturnNoteViewModal] = useState(false);
@@ -1147,8 +1204,12 @@ export default function AccountScreen({ navigation }) {
     if (refreshPersonalInFlightRef.current) {
       return refreshPersonalInFlightRef.current;
     }
+    const fetchGen = personalFetchGenRef.current;
     const task = (async () => {
       try {
+        setTransactionData([]);
+        setExpertiseData([]);
+        setSellerTxData([]);
         setTransactionLoading(true);
         setBountyLoading(true);
         setExpertiseLoading(true);
@@ -1156,6 +1217,7 @@ export default function AccountScreen({ navigation }) {
         const profileId = rawProfileId ? String(rawProfileId).trim() : "";
         if (!profileId) {
           console.log("No profile ID found, skipping account-screen personal fetch");
+          if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
           setTransactionData([]);
           setBountyData(null);
           setPersonalWallet(null);
@@ -1166,6 +1228,7 @@ export default function AccountScreen({ navigation }) {
         const response = await fetch(url, {
           method: "GET",
         });
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         if (response.status === 400) {
           // Aggregate unavailable: show empty purchases/bounties; expertise from cached profile + no seller lines.
           setTransactionData([]);
@@ -1185,6 +1248,8 @@ export default function AccountScreen({ navigation }) {
           throw new Error("account-screen personal returned non-JSON");
         }
         const json = await response.json();
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
+        if (!accountScreenResponseMatches(json, "personal", profileId)) return;
         const mapped = mapAccountScreenPersonalResponse(json);
 
         const purchaseRows = Array.isArray(mapped.transactions) ? mapped.transactions : [];
@@ -1228,15 +1293,18 @@ export default function AccountScreen({ navigation }) {
         } else if (profileResult?.expertise_info) {
           expertiseList = parseExpertiseInfo(profileResult.expertise_info);
         }
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         setSellerTxData(sellerTx);
         setExpertiseData(buildExpertiseRows(expertiseList, sellerTx));
       } catch (error) {
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         console.error("Error loading account-screen personal:", error);
         setTransactionData([]);
         setBountyData({ error: error.message });
         setPersonalWallet(null);
         setExpertiseData([]);
       } finally {
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         setTransactionLoading(false);
         setBountyLoading(false);
         setExpertiseLoading(false);
@@ -1465,16 +1533,27 @@ export default function AccountScreen({ navigation }) {
    * @param {string} [primaryBusinessUidOverride] — optional first-business uid before `businessUID` state commits.
    */
   const refreshAccountScreenBusiness = async (primaryBusinessUidOverride) => {
+    const fetchGen = businessFetchGenRef.current;
+    const targetBusinessUID =
+      selectedAccountRef.current !== "personal"
+        ? selectedAccountRef.current
+        : primaryBusinessUidOverride ?? businessUIDRef.current;
+
+    const shouldApplyBusinessResponse = () =>
+      fetchGen === businessFetchGenRef.current &&
+      selectedAccountRef.current !== "personal" &&
+      targetBusinessUID != null &&
+      String(selectedAccountRef.current) === String(targetBusinessUID);
+
     try {
+      setBusinessTransactionData([]);
+      setBusinessBountyData(null);
       setBusinessTransactionLoading(true);
       setBusinessBountyLoading(true);
-      const selectedAcct = selectedAccountRef.current;
-      const targetBusinessUID = selectedAcct !== "personal" ? selectedAcct : (primaryBusinessUidOverride ?? businessUIDRef.current);
 
       if (!targetBusinessUID) {
         console.log("No business UID available");
-        setBusinessTransactionData([]);
-        setBusinessBountyData(null);
+        if (!shouldApplyBusinessResponse()) return;
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
         setSelectedBusinessFullData(null);
@@ -1488,17 +1567,15 @@ export default function AccountScreen({ navigation }) {
         method: "GET",
       });
 
+      if (!shouldApplyBusinessResponse()) return;
+
       if (response.status === 400) {
         setBusinessBountyData({ data: [] });
         setBusinessTransactionData([]);
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
-        if (selectedAcct !== "personal") {
-          const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
-          setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
-        } else {
-          setSelectedBusinessFullData(null);
-        }
+        const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+        setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
         return;
       }
 
@@ -1507,28 +1584,21 @@ export default function AccountScreen({ navigation }) {
         setBusinessTransactionData([]);
         setBusinessBountyData(null);
         businessReceiptFetchedRef.current = new Set();
-        if (selectedAcct !== "personal") {
-          const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
-          setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
-        } else {
-          setSelectedBusinessFullData(null);
-        }
+        const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+        setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
         return;
       }
 
       const json = await response.json();
+      if (!shouldApplyBusinessResponse()) return;
+      if (!accountScreenResponseMatches(json, "business", targetBusinessUID)) return;
+
       const { bountyResult, sellerLines, businessForMiniCardRaw } = mapAccountScreenBusinessResponse(json);
 
       const selectedBusiness = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
 
-      const miniForCard =
-        selectedAcct === "personal"
-          ? null
-          : (() => {
-              let m = businessForMiniCardRaw ? mapRawBusinessToSelectedBusinessFullData(businessForMiniCardRaw) : null;
-              if (!m) m = mapSessionBusinessRowToMiniCard(selectedBusiness);
-              return m;
-            })();
+      let miniForCard = businessForMiniCardRaw ? mapRawBusinessToSelectedBusinessFullData(businessForMiniCardRaw) : null;
+      if (!miniForCard) miniForCard = mapSessionBusinessRowToMiniCard(selectedBusiness);
       setSelectedBusinessFullData(miniForCard);
 
       if (bountyResult?.data && Array.isArray(bountyResult.data)) {
@@ -1543,13 +1613,6 @@ export default function AccountScreen({ navigation }) {
         setBusinessBountyData(bountyResult);
       } else {
         setBusinessBountyData(null);
-      }
-
-      if (selectedAcct === "personal") {
-        setBusinessTransactionData([]);
-        setBusinessReceiptCache({});
-        businessReceiptFetchedRef.current = new Set();
-        return;
       }
 
       const bountyDataByTransaction = {};
@@ -1608,21 +1671,19 @@ export default function AccountScreen({ navigation }) {
         return dateB - dateA;
       });
 
+      if (!shouldApplyBusinessResponse()) return;
       setBusinessTransactionData(filteredTransactions);
     } catch (error) {
+      if (!shouldApplyBusinessResponse()) return;
       console.error("Error loading account-screen business:", error);
       setBusinessTransactionData([]);
       setBusinessBountyData({ error: error.message });
       setBusinessReceiptCache({});
       businessReceiptFetchedRef.current = new Set();
-      const selectedAcct = selectedAccountRef.current;
-      if (selectedAcct !== "personal") {
-        const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === selectedAcct);
-        setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
-      } else {
-        setSelectedBusinessFullData(null);
-      }
+      const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+      setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
     } finally {
+      if (!shouldApplyBusinessResponse()) return;
       setBusinessTransactionLoading(false);
       setBusinessBountyLoading(false);
     }
@@ -1660,14 +1721,14 @@ export default function AccountScreen({ navigation }) {
     }, []),
   );
 
-  // Load business aggregate when switching to a business profile; clear MiniCard on personal. Session `businesses` fills dropdown first.
+  // Refresh the active profile's account-screen payload when selection changes.
   useEffect(() => {
     if (selectedAccount === "personal" || !selectedAccount) {
       setSelectedBusinessFullData(null);
+      refreshAccountScreenPersonal();
+      return;
     }
-    if (selectedAccount !== "personal") {
-      refreshAccountScreenBusiness();
-    }
+    refreshAccountScreenBusiness();
   }, [selectedAccount, businesses]);
 
   // Format date to dd/mm format
@@ -2323,11 +2384,7 @@ export default function AccountScreen({ navigation }) {
           <View style={styles.selectProfileMenu}>
             <TouchableOpacity
               style={styles.dropdownItem}
-              onPress={() => {
-                setAccountType("personal");
-                setSelectedAccount("personal");
-                setShowAccountDropdown(false);
-              }}
+              onPress={() => handleProfileSelection("personal")}
             >
               <Text style={[styles.dropdownItemText, selectedAccount === "personal" && styles.dropdownItemTextActive]}>Personal</Text>
             </TouchableOpacity>
@@ -2338,11 +2395,7 @@ export default function AccountScreen({ navigation }) {
                 <TouchableOpacity
                   key={businessId || index}
                   style={styles.dropdownItem}
-                  onPress={() => {
-                    setAccountType("business");
-                    setSelectedAccount(businessId);
-                    setShowAccountDropdown(false);
-                  }}
+                  onPress={() => handleProfileSelection(businessId)}
                 >
                   <Text style={[styles.dropdownItemText, selectedAccount === businessId && styles.dropdownItemTextActive]}>{businessName}</Text>
                 </TouchableOpacity>
@@ -2351,7 +2404,7 @@ export default function AccountScreen({ navigation }) {
           </View>
         )}
 
-        {accountType === "personal" ? (
+        {selectedAccount === "personal" ? (
           <>
             {/* Sales (profile offerings / seller activity) */}
             <View style={styles.sectionContainer}>
