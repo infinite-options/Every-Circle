@@ -76,12 +76,100 @@ function getReceiptLineQty(row) {
   return q > 0 ? Math.round(q) : 1;
 }
 
+/** Quantity already confirmed received on a receipt line (from backend). */
+function getPreviouslyReceivedQty(row) {
+  const q = parsePrice(row?.ti_received_qty);
+  return q > 0 ? Math.round(q) : 0;
+}
+
+/** Remaining quantity the buyer can still confirm on a line. */
+function getRemainingQtyToReceive(row) {
+  return Math.max(0, getReceiptLineQty(row) - getPreviouslyReceivedQty(row));
+}
+
 /** Stable id for a receipt line in API payloads (prefer transaction line uid). */
 function getReceiptLineTransactionItemUid(row) {
   const uid = row?.ti_uid != null && String(row.ti_uid).trim() !== "" ? String(row.ti_uid).trim() : "";
   if (uid) return uid;
   const bsId = row?.ti_bs_id != null && String(row.ti_bs_id).trim() !== "" ? String(row.ti_bs_id).trim() : "";
   return bsId;
+}
+
+/** Load receipt line items for a transaction (delivery verification, returns, etc.). */
+async function fetchReceiptLinesForTransaction(transaction) {
+  const profileId = transaction.transaction_profile_id || (await AsyncStorage.getItem("profile_uid"));
+  const transactionUid = transaction.transaction_uid;
+  if (!profileId || !transactionUid) {
+    throw new Error("Cannot load receipt: missing transaction data.");
+  }
+
+  const sellerId = transaction.seller_id || "";
+  const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${profileId}/${transactionUid}${sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : ""}`;
+  const response = await fetch(url, { method: "GET" });
+  if (!response.ok) {
+    throw new Error(`Failed to load receipt: ${response.status}`);
+  }
+
+  const result = await response.json();
+  let items = [];
+  if (Array.isArray(result)) {
+    items = result;
+  } else if (Array.isArray(result?.data)) {
+    items = result.data;
+  } else if (result?.data && typeof result.data === "object" && !Array.isArray(result.data)) {
+    items = [result.data];
+  } else if (result?.data) {
+    items = [result.data];
+  }
+
+  const purchaseTypeFallback = (transaction.purchase_type || "").toLowerCase();
+  if (items.length === 0 && (purchaseTypeFallback === "expertise" || purchaseTypeFallback === "offering")) {
+    const qty = Math.max(1, parseInt(transaction.ti_bs_qty || 1, 10));
+    const totalAmt = parseFloat(transaction.seller_total || transaction.transaction_total || 0);
+    const tiCost = parseFloat(transaction.ti_bs_cost);
+    const unitCost = tiCost > 0 ? tiCost : qty > 0 ? totalAmt / qty : totalAmt;
+    const txExpertiseId = String(transaction.ti_bs_id || transaction.transaction_uid || "").trim();
+    items = [
+      {
+        ti_uid: String(transaction.transaction_uid) + "_syn",
+        ti_bs_id: txExpertiseId,
+        bs_uid: txExpertiseId,
+        bs_service_name: transaction.purchased_item || "",
+        bs_service_desc: "",
+        ti_bs_cost: unitCost,
+        ti_bs_qty: qty,
+      },
+    ];
+  }
+
+  if (items.length === 0) {
+    const qty = Math.max(1, parseInt(transaction.ti_bs_qty || 1, 10));
+    items = [
+      {
+        ti_uid: String(transaction.ti_uid || transaction.transaction_uid || "line_0"),
+        ti_bs_id: String(transaction.ti_bs_id || "").trim(),
+        bs_service_name: transaction.purchased_item || "Item",
+        ti_bs_cost: parseFloat(transaction.ti_bs_cost || transaction.seller_total || transaction.transaction_total || 0),
+        ti_bs_qty: qty,
+      },
+    ];
+  }
+
+  return items;
+}
+
+/** True when every receipt line has been fully marked as received. */
+function areAllReceiptLinesFullyReceived(receiptRows, selectedItemIds, receivedQuantities) {
+  if (!Array.isArray(receiptRows) || receiptRows.length === 0) return false;
+  return receiptRows.every((row, index) => {
+    const purchasedQty = getReceiptLineQty(row);
+    const alreadyReceived = getPreviouslyReceivedQty(row);
+    const itemId = String(index);
+    const newlySelected = selectedItemIds.includes(itemId);
+    const raw = receivedQuantities[itemId];
+    const newlyReceived = newlySelected ? (typeof raw === "number" ? raw : parseInt(String(raw), 10) || 0) : 0;
+    return alreadyReceived + newlyReceived >= purchasedQty;
+  });
 }
 
 /** Sum return qty already requested for a line (supports partial multi-qty returns). */
@@ -615,13 +703,16 @@ export default function AccountScreen({ navigation }) {
   const [showProductResults, setShowProductResults] = useState(true);
   const [showBusinessNetEarning, setShowBusinessNetEarning] = useState(true);
   const [showBusinessTransactionHistory, setShowBusinessTransactionHistory] = useState(true);
-  const [showBalance, setShowBalance] = useState(true);
   const [showWallet, setShowWallet] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [showReceiveItemModal, setShowReceiveItemModal] = useState(false);
   const [pendingTransactionForConfirm, setPendingTransactionForConfirm] = useState(null);
   const [updatingEscrow, setUpdatingEscrow] = useState(false);
+  const [deliveryVerificationReceiptData, setDeliveryVerificationReceiptData] = useState([]);
+  const [deliveryVerificationLoading, setDeliveryVerificationLoading] = useState(false);
+  const [selectedReceivedItems, setSelectedReceivedItems] = useState([]);
+  const [receivedItemQuantities, setReceivedItemQuantities] = useState({});
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [receiptData, setReceiptData] = useState([]);
   const [receiptLoading, setReceiptLoading] = useState(false);
@@ -1160,23 +1251,63 @@ export default function AccountScreen({ navigation }) {
     return task;
   };
 
-  const updateTransactionEscrow = async (transactionUid) => {
+  const resetDeliveryVerificationModal = () => {
+    setShowReceiveItemModal(false);
+    setPendingTransactionForConfirm(null);
+    setDeliveryVerificationReceiptData([]);
+    setSelectedReceivedItems([]);
+    setReceivedItemQuantities({});
+    setDeliveryVerificationLoading(false);
+  };
+
+  const openDeliveryVerification = async (transaction) => {
+    setPendingTransactionForConfirm(transaction);
+    setDeliveryVerificationReceiptData([]);
+    setSelectedReceivedItems([]);
+    setReceivedItemQuantities({});
+    setShowReceiveItemModal(true);
+    setDeliveryVerificationLoading(true);
+    try {
+      const items = await fetchReceiptLinesForTransaction(transaction);
+      setDeliveryVerificationReceiptData(items);
+    } catch (error) {
+      console.error("Error loading delivery verification items:", error);
+      Alert.alert("Error", error.message || "Failed to load order items.");
+      resetDeliveryVerificationModal();
+    } finally {
+      setDeliveryVerificationLoading(false);
+    }
+  };
+
+  const updateTransactionEscrow = async (transactionUid, deliveryVerificationItems, releaseEscrow) => {
+    const profileId =
+      pendingTransactionForConfirm?.transaction_profile_id ||
+      (await getSessionProfile())?.profileUid ||
+      (await AsyncStorage.getItem("profile_uid"));
+    if (!profileId) {
+      Alert.alert("Error", "Cannot confirm delivery: missing profile.");
+      return;
+    }
     try {
       setUpdatingEscrow(true);
       const response = await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          profile_id: profileId,
           transaction_uid: transactionUid,
-          transaction_in_escrow: 0,
+          transaction_in_escrow: releaseEscrow ? 0 : 1,
+          delivery_verification_items: deliveryVerificationItems,
         }),
       });
       if (!response.ok) {
         throw new Error(`Failed to update: ${response.status}`);
       }
-      setShowReceiveItemModal(false);
-      setPendingTransactionForConfirm(null);
+      resetDeliveryVerificationModal();
       await refreshAccountScreenPersonal();
+      if (!releaseEscrow) {
+        Alert.alert("Partial delivery recorded", "Escrow will release when all items in this order are confirmed received.");
+      }
     } catch (error) {
       console.error("Error updating transaction escrow:", error);
       Alert.alert("Error", "Failed to update payment status. Please try again.");
@@ -2359,10 +2490,7 @@ export default function AccountScreen({ navigation }) {
                                 if (showPendingLink) {
                                   return (
                                     <TouchableOpacity
-                                      onPress={() => {
-                                        setPendingTransactionForConfirm(transaction);
-                                        setShowReceiveItemModal(true);
-                                      }}
+                                      onPress={() => openDeliveryVerification(transaction)}
                                       activeOpacity={0.7}
                                     >
                                       <Text style={styles.pendingLink}>Pending</Text>
@@ -2395,7 +2523,29 @@ export default function AccountScreen({ navigation }) {
                 <Text style={styles.sectionHeaderText}>EARNINGS</Text>
                 <Ionicons name={showNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
-              {showNetEarning && <NetEarningChart />}
+              {showNetEarning && (
+                <>
+                  {bountyLoading ? (
+                    <Text style={styles.loadingText}>Loading earnings...</Text>
+                  ) : bountyData?.error ? (
+                    <Text style={styles.errorText}>Unable to load earnings.</Text>
+                  ) : (
+                    <View style={styles.balanceSectionBody}>
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}</Text>
+                      </View>
+                      {personalPendingEscrowBounty > 0 ? (
+                        <View style={styles.balanceContainer}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending (escrow)</Text>
+                          <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>${personalPendingEscrowBounty.toFixed(2)}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  )}
+                  <NetEarningChart />
+                </>
+              )}
             </View>
 
             {/* Wallet */}
@@ -2427,36 +2577,6 @@ export default function AccountScreen({ navigation }) {
                     </View>
                   ) : (
                     <Text style={styles.noDataText}>No wallet data available.</Text>
-                  )}
-                </>
-              )}
-            </View>
-
-            {/* Balance summary */}
-            <View style={styles.sectionContainer}>
-              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBalance(!showBalance)}>
-                <Text style={styles.sectionHeaderText}>BALANCE</Text>
-                <Ionicons name={showBalance ? "chevron-up" : "chevron-down"} size={20} color='#000' />
-              </TouchableOpacity>
-              {showBalance && (
-                <>
-                  {bountyLoading ? (
-                    <Text style={styles.loadingText}>Loading balance...</Text>
-                  ) : bountyData?.error ? (
-                    <Text style={styles.errorText}>Unable to load balance.</Text>
-                  ) : (
-                    <View style={styles.balanceSectionBody}>
-                      <View style={styles.balanceContainer}>
-                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
-                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}</Text>
-                      </View>
-                      {personalPendingEscrowBounty > 0 ? (
-                        <View style={styles.balanceContainer}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending (escrow)</Text>
-                          <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>${personalPendingEscrowBounty.toFixed(2)}</Text>
-                        </View>
-                      ) : null}
-                    </View>
                   )}
                 </>
               )}
@@ -2588,19 +2708,10 @@ export default function AccountScreen({ navigation }) {
                 <Text style={styles.sectionHeaderText}>BOUNTIES</Text>
                 <Ionicons name={showBusinessNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
-              {showBusinessNetEarning && <BusinessNetEarningChart />}
-            </View>
-
-            {/* Balance summary */}
-            <View style={styles.sectionContainer}>
-              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBalance(!showBalance)}>
-                <Text style={styles.sectionHeaderText}>BALANCE</Text>
-                <Ionicons name={showBalance ? "chevron-up" : "chevron-down"} size={20} color='#000' />
-              </TouchableOpacity>
-              {showBalance && (
+              {showBusinessNetEarning && (
                 <>
                   {businessTransactionLoading ? (
-                    <Text style={styles.loadingText}>Loading balance...</Text>
+                    <Text style={styles.loadingText}>Loading earnings...</Text>
                   ) : (
                     <View style={styles.balanceSectionBody}>
                       <View style={styles.balanceContainer}>
@@ -2609,6 +2720,7 @@ export default function AccountScreen({ navigation }) {
                       </View>
                     </View>
                   )}
+                  <BusinessNetEarningChart />
                 </>
               )}
             </View>
@@ -3417,36 +3529,213 @@ export default function AccountScreen({ navigation }) {
       </Modal>
 
       {/* Receive Item Confirmation Modal - for Seeking/Business + Pending transactions */}
-      <Modal animationType='fade' transparent={true} visible={showReceiveItemModal} onRequestClose={() => setShowReceiveItemModal(false)}>
+      <Modal animationType='fade' transparent={true} visible={showReceiveItemModal} onRequestClose={resetDeliveryVerificationModal}>
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
-          <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent]}>
+          <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent, { maxHeight: "80%" }]}>
             <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle]}>Delivery Verification</Text>
-            <Text style={[styles.receiveItemModalTitle, darkMode && styles.darkTitle]}>
-              Did you receive the quantity {pendingTransactionForConfirm?.ti_bs_qty ?? 1} of {pendingTransactionForConfirm?.purchased_item || "item"}?
-            </Text>
-            <View style={styles.receiveItemModalButtons}>
-              <TouchableOpacity
-                style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
-                onPress={() => {
-                  setShowReceiveItemModal(false);
-                  setPendingTransactionForConfirm(null);
-                }}
-                disabled={updatingEscrow}
-              >
-                <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>No</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.receiveItemModalButton, styles.receiveItemYesButton]}
-                onPress={() => {
-                  if (pendingTransactionForConfirm?.transaction_uid) {
-                    updateTransactionEscrow(pendingTransactionForConfirm.transaction_uid);
-                  }
-                }}
-                disabled={updatingEscrow}
-              >
-                {updatingEscrow ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.receiveItemModalButtonText}>Yes</Text>}
-              </TouchableOpacity>
-            </View>
+            <Text style={[styles.receiveItemModalTitle, darkMode && styles.darkTitle]}>Select the item(s) you have received:</Text>
+
+            {deliveryVerificationLoading ? (
+              <ActivityIndicator size='small' color='#9C45F7' style={{ marginVertical: 24 }} />
+            ) : (
+              <ScrollView style={{ maxHeight: 260, marginBottom: 16 }}>
+                {deliveryVerificationReceiptData.map((item, index) => {
+                  const itemId = String(index);
+                  const isSelected = selectedReceivedItems.includes(itemId);
+                  const purchasedQty = getReceiptLineQty(item);
+                  const alreadyReceivedQty = getPreviouslyReceivedQty(item);
+                  const remainingQty = getRemainingQtyToReceive(item);
+                  const fullyReceived = remainingQty <= 0;
+                  const receivedQty = receivedItemQuantities[itemId] ?? remainingQty;
+                  const needsQtyPicker = isSelected && remainingQty > 1;
+
+                  return (
+                    <View
+                      key={itemId}
+                      style={{
+                        paddingVertical: 8,
+                        paddingHorizontal: 4,
+                        borderBottomWidth: 1,
+                        borderBottomColor: darkMode ? "#444" : "#eee",
+                        opacity: fullyReceived ? 0.45 : 1,
+                      }}
+                    >
+                      <TouchableOpacity
+                        disabled={fullyReceived}
+                        style={{ flexDirection: "row", alignItems: "center" }}
+                        onPress={() => {
+                          if (fullyReceived) return;
+                          if (isSelected) {
+                            setSelectedReceivedItems((prev) => prev.filter((id) => id !== itemId));
+                            setReceivedItemQuantities((prev) => {
+                              const next = { ...prev };
+                              delete next[itemId];
+                              return next;
+                            });
+                          } else {
+                            setSelectedReceivedItems((prev) => [...prev, itemId]);
+                            setReceivedItemQuantities((prev) => ({ ...prev, [itemId]: remainingQty }));
+                          }
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name={fullyReceived ? "checkbox" : isSelected ? "checkbox" : "square-outline"} size={18} color={fullyReceived || isSelected ? "#9C45F7" : "#555"} style={{ marginRight: 8 }} />
+                        <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", flex: 1 }}>
+                          {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {purchasedQty}
+                        </Text>
+                        {fullyReceived ? (
+                          <Text style={{ fontSize: 11, color: "#9C45F7", marginLeft: 4 }}>Received</Text>
+                        ) : alreadyReceivedQty > 0 ? (
+                          <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>{remainingQty} left</Text>
+                        ) : null}
+                      </TouchableOpacity>
+
+                      {needsQtyPicker && (
+                        <View style={{ marginTop: 8, marginLeft: 26 }}>
+                          <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>How many did you receive?</Text>
+                          <View style={{ flexDirection: "row", alignItems: "center" }}>
+                            <TouchableOpacity
+                              style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: 8,
+                                borderWidth: 1,
+                                borderColor: darkMode ? "#555" : "#ccc",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
+                              }}
+                              onPress={() =>
+                                setReceivedItemQuantities((prev) => ({
+                                  ...prev,
+                                  [itemId]: Math.max(1, (prev[itemId] ?? remainingQty) - 1),
+                                }))
+                              }
+                            >
+                              <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>−</Text>
+                            </TouchableOpacity>
+                            <TextInput
+                              style={{
+                                width: 48,
+                                marginHorizontal: 10,
+                                borderWidth: 1,
+                                borderColor: darkMode ? "#555" : "#ccc",
+                                borderRadius: 8,
+                                paddingVertical: 6,
+                                textAlign: "center",
+                                fontSize: 14,
+                                color: darkMode ? "#fff" : "#333",
+                                backgroundColor: darkMode ? "#3a3a3a" : "#fff",
+                              }}
+                              value={String(receivedQty)}
+                              onChangeText={(t) => {
+                                const digits = t.replace(/[^0-9]/g, "");
+                                const n = digits === "" ? "" : parseInt(digits, 10);
+                                setReceivedItemQuantities((prev) => ({
+                                  ...prev,
+                                  [itemId]: n === "" ? "" : Math.min(remainingQty, Math.max(1, n)),
+                                }));
+                              }}
+                              keyboardType='number-pad'
+                              maxLength={4}
+                            />
+                            <TouchableOpacity
+                              style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: 8,
+                                borderWidth: 1,
+                                borderColor: darkMode ? "#555" : "#ccc",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
+                              }}
+                              onPress={() =>
+                                setReceivedItemQuantities((prev) => ({
+                                  ...prev,
+                                  [itemId]: Math.min(remainingQty, (prev[itemId] ?? remainingQty) + 1),
+                                }))
+                              }
+                            >
+                              <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>+</Text>
+                            </TouchableOpacity>
+                            <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginLeft: 8 }}>of {remainingQty}</Text>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {selectedReceivedItems.length === 0 && !deliveryVerificationLoading ? (
+              <Text style={{ color: "#9C45F7", fontSize: 12, marginBottom: 12, textAlign: "center" }}>Please select at least one received item.</Text>
+            ) : null}
+
+            {(() => {
+              const hasInvalidQty = selectedReceivedItems.some((id) => {
+                const index = parseInt(id, 10);
+                const item = deliveryVerificationReceiptData[index];
+                if (!item) return true;
+                const remainingQty = getRemainingQtyToReceive(item);
+                const raw = receivedItemQuantities[id];
+                const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
+                if (remainingQty > 1) {
+                  return !Number.isFinite(n) || n < 1 || n > remainingQty;
+                }
+                return false;
+              });
+              const canConfirmReceived = selectedReceivedItems.length > 0 && !hasInvalidQty && !deliveryVerificationLoading;
+
+              return (
+                <View style={styles.receiveItemModalButtons}>
+                  <TouchableOpacity
+                    style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
+                    onPress={resetDeliveryVerificationModal}
+                    disabled={updatingEscrow}
+                  >
+                    <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.receiveItemModalButton, styles.receiveItemYesButton, !canConfirmReceived && { opacity: 0.5 }]}
+                    disabled={!canConfirmReceived || updatingEscrow}
+                    onPress={() => {
+                      const transactionUid = pendingTransactionForConfirm?.transaction_uid;
+                      if (!transactionUid) return;
+
+                      const deliveryVerificationItems = [];
+                      for (const id of selectedReceivedItems) {
+                        const index = parseInt(id, 10);
+                        const item = deliveryVerificationReceiptData[index];
+                        if (!item) continue;
+                        const transaction_item_uid = getReceiptLineTransactionItemUid(item);
+                        if (!transaction_item_uid) {
+                          Alert.alert("Error", "Receipt line is missing a transaction item id (ti_uid or ti_bs_id). Cannot confirm delivery.");
+                          return;
+                        }
+                        const purchasedQty = getReceiptLineQty(item);
+                        const remainingQty = getRemainingQtyToReceive(item);
+                        const raw = receivedItemQuantities[id];
+                        const received_quantity = remainingQty > 1 ? (typeof raw === "number" ? raw : parseInt(String(raw), 10) || 1) : Math.min(1, remainingQty);
+                        if (received_quantity < 1) continue;
+                        deliveryVerificationItems.push({ transaction_item_uid, received_quantity });
+                      }
+
+                      if (deliveryVerificationItems.length === 0) {
+                        Alert.alert("Error", "Could not build delivery verification items.");
+                        return;
+                      }
+
+                      const releaseEscrow = areAllReceiptLinesFullyReceived(deliveryVerificationReceiptData, selectedReceivedItems, receivedItemQuantities);
+                      updateTransactionEscrow(transactionUid, deliveryVerificationItems, releaseEscrow);
+                    }}
+                  >
+                    {updatingEscrow ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.receiveItemModalButtonText}>Confirm</Text>}
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
           </View>
         </View>
       </Modal>

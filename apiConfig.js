@@ -79,6 +79,7 @@ export const SEARCH_REFERRAL_ENDPOINT = `${API_BASE_URL}/api/search_referral`;
 
 // Transaction and Rating Endpoints
 export const TRANSACTIONS_ENDPOINT = `${API_BASE_URL}/api/v1/transactions`;
+/** PUT body: profile_id, transaction_uid, transaction_in_escrow, delivery_verification_items */
 /** PUT — buyer submit return request (note + line items) */
 export const TRANSACTIONS_RETURN_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/return`;
 /** GET list / PUT resolve — admin declined returns queue */
