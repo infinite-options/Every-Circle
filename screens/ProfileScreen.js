@@ -20,6 +20,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 // import axios from 'axios';
+import SeekingCardDetails from "../components/SeekingCardDetails";
+import OfferingCardDetails from "../components/OfferingCardDetails";
 import MiniCard from "../components/MiniCard";
 import MicroCard from "../components/MicroCard";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
@@ -1911,71 +1913,11 @@ const ProfileScreen = ({ route, navigation }) => {
                               ) : null}
                             </View>
                           </View>
-                          {exp.profile_expertise_start ||
-                          exp.profile_expertise_end ||
-                          exp.profile_expertise_location ||
-                          exp.profile_expertise_city ||
-                          exp.profile_expertise_state ||
-                          formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
-                            <View style={[styles.seekingMetaRow, { marginTop: 6 }]}>
-                              {exp.profile_expertise_start || exp.profile_expertise_end ? (
-                                <View style={styles.seekingMetaLine}>
-                                  <Ionicons name='calendar-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
-                                  <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
-                                    {exp.profile_expertise_start ? formatDateTimeForDisplay(exp.profile_expertise_start) : "—"}
-                                    {exp.profile_expertise_start && exp.profile_expertise_end ? " → " : ""}
-                                    {exp.profile_expertise_end ? formatDateTimeForDisplay(exp.profile_expertise_end) : ""}
-                                  </Text>
-                                </View>
-                              ) : null}
-                              {exp.profile_expertise_location || exp.profile_expertise_city || exp.profile_expertise_state || formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
-                                <View style={[styles.seekingMetaLine, styles.seekingMetaLineSpaceBetween, (exp.profile_expertise_start || exp.profile_expertise_end) && { marginTop: 4 }]}>
-                                  {[exp.profile_expertise_city, exp.profile_expertise_state].filter(Boolean).join(", ") || exp.profile_expertise_location ? (
-                                    <View style={styles.seekingMetaLine}>
-                                      <Ionicons name='location-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
-                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
-                                        {[exp.profile_expertise_city, exp.profile_expertise_state].filter(Boolean).join(", ") || exp.profile_expertise_location}
-                                      </Text>
-                                    </View>
-                                  ) : (
-                                    <View style={styles.seekingMetaSpacer} />
-                                  )}
-                                  {formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
-                                    <View style={styles.seekingMetaLine}>
-                                      {getExpertiseModeIoniconNames(exp.profile_expertise_mode).map((iconName, iconIdx, arr) => (
-                                        <Ionicons key={iconName} name={iconName} size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: iconIdx < arr.length - 1 ? 4 : 6 }} />
-                                      ))}
-                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
-                                        {formatExpertiseModeForDisplay(exp.profile_expertise_mode)}
-                                      </Text>
-                                    </View>
-                                  ) : null}
-                                </View>
-                              ) : null}
-                            </View>
-                          ) : null}
-                          {exp.cost || exp.quantity || exp.bounty ? (
-                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0, marginTop: 6 }}>
-                              {exp.cost ? (
-                                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                                  <View style={styles.moneyBagIconContainer}>
-                                    <Text style={styles.moneyBagDollarSymbol}>$</Text>
-                                  </View>
-                                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
-                                    {exp.cost.toLowerCase() !== "free" ? `Cost: $${exp.cost.replace(/^\$/, "")}` : `Cost: ${exp.cost}`}
-                                  </Text>
-                                </View>
-                              ) : null}
-                              <View style={{ flexDirection: "row", alignItems: "center", flex: 1, justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
-                                {exp.quantity ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(exp.quantity).trim()}</Text> : null}
-                                {exp.bounty ? (
-                                  <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
-                                    {exp.bounty.toLowerCase() !== "free" ? `💰 $${exp.bounty.replace(/^\$/, "")}` : `💰 ${exp.bounty}`}
-                                  </Text>
-                                ) : null}
-                              </View>
-                            </View>
-                          ) : null}
+                          <OfferingCardDetails
+                            offering={exp}
+                            darkMode={darkMode}
+                            metaTextStyle={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}
+                          />
                         </>
                       );
                       const messageAboutOfferingBtn =
@@ -2132,65 +2074,11 @@ const ProfileScreen = ({ route, navigation }) => {
                               {wish.details ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{wish.details}</Text> : null}
                             </View>
                           </View>
-                          {wish.profile_wish_start || wish.profile_wish_end || wish.profile_wish_location || wish.profile_wish_mode ? (
-                            <View style={[styles.seekingMetaRow, { marginTop: 6 }]}>
-                              {wish.profile_wish_start || wish.profile_wish_end ? (
-                                <View style={styles.seekingMetaLine}>
-                                  <Ionicons name='calendar-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
-                                  <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
-                                    {wish.profile_wish_start ? formatDateTimeForDisplay(wish.profile_wish_start) : "—"}
-                                    {wish.profile_wish_start && wish.profile_wish_end ? " → " : ""}
-                                    {wish.profile_wish_end ? formatDateTimeForDisplay(wish.profile_wish_end) : ""}
-                                  </Text>
-                                </View>
-                              ) : null}
-                              {wish.profile_wish_location || wish.profile_wish_mode ? (
-                                <View style={[styles.seekingMetaLine, styles.seekingMetaLineSpaceBetween, (wish.profile_wish_start || wish.profile_wish_end) && { marginTop: 4 }]}>
-                                  {wish.profile_wish_location ? (
-                                    <View style={styles.seekingMetaLine}>
-                                      <Ionicons name='location-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
-                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{wish.profile_wish_location}</Text>
-                                    </View>
-                                  ) : (
-                                    <View style={styles.seekingMetaSpacer} />
-                                  )}
-                                  {wish.profile_wish_mode ? (
-                                    <View style={styles.seekingMetaLine}>
-                                      <Ionicons
-                                        name={wish.profile_wish_mode.toLowerCase() === "virtual" ? "videocam-outline" : "people-outline"}
-                                        size={14}
-                                        color={darkMode ? "#999" : "#666"}
-                                        style={{ marginRight: 6 }}
-                                      />
-                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{wish.profile_wish_mode}</Text>
-                                    </View>
-                                  ) : null}
-                                </View>
-                              ) : null}
-                            </View>
-                          ) : null}
-                          {wish.cost || wish.profile_wish_quantity || wish.amount ? (
-                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0, marginTop: 6 }}>
-                              {wish.cost ? (
-                                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                                  <View style={styles.moneyBagIconContainer}>
-                                    <Text style={styles.moneyBagDollarSymbol}>$</Text>
-                                  </View>
-                                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
-                                    {wish.cost.toLowerCase() !== "free" ? `Cost: $${wish.cost.replace(/^\$/, "")}` : `Cost: ${wish.cost}`}
-                                  </Text>
-                                </View>
-                              ) : null}
-                              <View style={{ flexDirection: "row", alignItems: "center", flex: 1, justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
-                                {wish.profile_wish_quantity ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(wish.profile_wish_quantity).trim()}</Text> : null}
-                                {wish.amount ? (
-                                  <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
-                                    {wish.amount.toLowerCase() !== "free" ? `💰 $${wish.amount.replace(/^\$/, "")}` : `💰 ${wish.amount}`}
-                                  </Text>
-                                ) : null}
-                              </View>
-                            </View>
-                          ) : null}
+                          <SeekingCardDetails
+                            seeking={wish}
+                            darkMode={darkMode}
+                            metaTextStyle={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}
+                          />
                         </>
                       );
 
