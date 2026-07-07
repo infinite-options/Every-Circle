@@ -703,7 +703,6 @@ export default function AccountScreen({ navigation }) {
   const [showProductResults, setShowProductResults] = useState(true);
   const [showBusinessNetEarning, setShowBusinessNetEarning] = useState(true);
   const [showBusinessTransactionHistory, setShowBusinessTransactionHistory] = useState(true);
-  const [showBalance, setShowBalance] = useState(true);
   const [showWallet, setShowWallet] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
@@ -2524,7 +2523,29 @@ export default function AccountScreen({ navigation }) {
                 <Text style={styles.sectionHeaderText}>EARNINGS</Text>
                 <Ionicons name={showNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
-              {showNetEarning && <NetEarningChart />}
+              {showNetEarning && (
+                <>
+                  {bountyLoading ? (
+                    <Text style={styles.loadingText}>Loading earnings...</Text>
+                  ) : bountyData?.error ? (
+                    <Text style={styles.errorText}>Unable to load earnings.</Text>
+                  ) : (
+                    <View style={styles.balanceSectionBody}>
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}</Text>
+                      </View>
+                      {personalPendingEscrowBounty > 0 ? (
+                        <View style={styles.balanceContainer}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending (escrow)</Text>
+                          <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>${personalPendingEscrowBounty.toFixed(2)}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  )}
+                  <NetEarningChart />
+                </>
+              )}
             </View>
 
             {/* Wallet */}
@@ -2556,36 +2577,6 @@ export default function AccountScreen({ navigation }) {
                     </View>
                   ) : (
                     <Text style={styles.noDataText}>No wallet data available.</Text>
-                  )}
-                </>
-              )}
-            </View>
-
-            {/* Balance summary */}
-            <View style={styles.sectionContainer}>
-              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBalance(!showBalance)}>
-                <Text style={styles.sectionHeaderText}>BALANCE</Text>
-                <Ionicons name={showBalance ? "chevron-up" : "chevron-down"} size={20} color='#000' />
-              </TouchableOpacity>
-              {showBalance && (
-                <>
-                  {bountyLoading ? (
-                    <Text style={styles.loadingText}>Loading balance...</Text>
-                  ) : bountyData?.error ? (
-                    <Text style={styles.errorText}>Unable to load balance.</Text>
-                  ) : (
-                    <View style={styles.balanceSectionBody}>
-                      <View style={styles.balanceContainer}>
-                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
-                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}</Text>
-                      </View>
-                      {personalPendingEscrowBounty > 0 ? (
-                        <View style={styles.balanceContainer}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending (escrow)</Text>
-                          <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>${personalPendingEscrowBounty.toFixed(2)}</Text>
-                        </View>
-                      ) : null}
-                    </View>
                   )}
                 </>
               )}
@@ -2717,19 +2708,10 @@ export default function AccountScreen({ navigation }) {
                 <Text style={styles.sectionHeaderText}>BOUNTIES</Text>
                 <Ionicons name={showBusinessNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
-              {showBusinessNetEarning && <BusinessNetEarningChart />}
-            </View>
-
-            {/* Balance summary */}
-            <View style={styles.sectionContainer}>
-              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBalance(!showBalance)}>
-                <Text style={styles.sectionHeaderText}>BALANCE</Text>
-                <Ionicons name={showBalance ? "chevron-up" : "chevron-down"} size={20} color='#000' />
-              </TouchableOpacity>
-              {showBalance && (
+              {showBusinessNetEarning && (
                 <>
                   {businessTransactionLoading ? (
-                    <Text style={styles.loadingText}>Loading balance...</Text>
+                    <Text style={styles.loadingText}>Loading earnings...</Text>
                   ) : (
                     <View style={styles.balanceSectionBody}>
                       <View style={styles.balanceContainer}>
@@ -2738,6 +2720,7 @@ export default function AccountScreen({ navigation }) {
                       </View>
                     </View>
                   )}
+                  <BusinessNetEarningChart />
                 </>
               )}
             </View>
