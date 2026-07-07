@@ -782,10 +782,10 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
             {(item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") ? (
               <View style={styles.taxRateInputWithSuffix}>
                 <TextInput
-                  style={[styles.taxRateInput, styles.taxRateInputCompact]}
+                  style={[styles.taxRateInput, styles.taxRateInputCompact, !item.profile_expertise_tax_rate && { borderColor: "#c00", borderWidth: 1 }]}
                   value={String(item.profile_expertise_tax_rate ?? "")}
                   onChangeText={(t) => handleInputChange(index, "profile_expertise_tax_rate", t.replace(/[^0-9.]/g, ""))}
-                  placeholder='% e.g. 8.25'
+                  placeholder='Required'
                   keyboardType='decimal-pad'
                 />
                 <Text style={styles.taxRateInputSuffix}>%</Text>
@@ -1422,6 +1422,16 @@ export const validateExpertise = (expertise) => {
     if (!e.name) return true; // skip empty entries
     const unit = e.cost ? e.cost.match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$|(\btotal\b)/i) : null;
     return !!unit;
+  });
+};
+
+export const validateExpertiseTax = (expertise) => {
+  return expertise.every((e) => {
+    if (!e.name) return true; // skip empty entries
+    const taxable = e.profile_expertise_is_taxable === 1 || e.profile_expertise_is_taxable === "1";
+    if (!taxable) return true;
+    const rate = String(e.profile_expertise_tax_rate ?? "").trim();
+    return rate !== "" && parseFloat(rate) > 0;
   });
 };
 export default ExpertiseSection;

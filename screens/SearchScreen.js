@@ -356,6 +356,10 @@ function mapSearchExpertiseRow(item, i) {
       profile_expertise_image: item.profile_expertise_image || "",
       profile_expertise_image_is_public: item.profile_expertise_image_is_public,
       profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
+      profile_expertise_is_taxable: item.profile_expertise_is_taxable,
+      profile_expertise_tax_rate: item.profile_expertise_tax_rate || "",
+      profile_expertise_refund_policy: item.profile_expertise_refund_policy || "",
+      profile_expertise_return_window_days: item.profile_expertise_return_window_days || "",
     },
     profileData: {
       firstName: item.profile_personal_first_name || "",
@@ -729,6 +733,58 @@ async function enrichOfferingOwnerConnectionDegrees(items) {
     console.log("Could not fetch profile connection degrees:", e);
     return items;
   }
+}
+
+async function enrichExpertiseTaxAndReturnInfo(items) {
+  const expertiseItems = items.filter((i) => i.itemType === "expertise" && i.profile_uid);
+  if (expertiseItems.length === 0) return items;
+
+  const uniqueProfileUids = [...new Set(expertiseItems.map((i) => String(i.profile_uid).trim()).filter(Boolean))];
+
+  // Build a map: expertise_uid → { is_taxable, tax_rate, refund_policy, return_window_days }
+  const taxMap = {};
+  await Promise.all(
+    uniqueProfileUids.map(async (profileUid) => {
+      try {
+        const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${profileUid}`);
+        if (!res.ok) return;
+        const json = await res.json();
+        const expertiseInfo = json?.expertise_info;
+        if (!expertiseInfo) return;
+        let expertiseArr = [];
+        try {
+          expertiseArr = typeof expertiseInfo === "string" ? JSON.parse(expertiseInfo) : expertiseInfo;
+        } catch (_) {
+          return;
+        }
+        if (!Array.isArray(expertiseArr)) return;
+        expertiseArr.forEach((exp) => {
+          if (exp.profile_expertise_uid) {
+            taxMap[exp.profile_expertise_uid] = {
+              profile_expertise_is_taxable: exp.profile_expertise_is_taxable ?? 0,
+              profile_expertise_tax_rate: exp.profile_expertise_tax_rate || "",
+              profile_expertise_refund_policy: exp.profile_expertise_refund_policy || "",
+              profile_expertise_return_window_days: exp.profile_expertise_return_window_days || "",
+            };
+          }
+        });
+      } catch (_) {
+        /* ignore per-profile errors */
+      }
+    }),
+  );
+
+  if (Object.keys(taxMap).length === 0) return items;
+
+  return items.map((item) => {
+    if (item.itemType !== "expertise" || !item.expertiseData?.expertise_uid) return item;
+    const extra = taxMap[item.expertiseData.expertise_uid];
+    if (!extra) return item;
+    return {
+      ...item,
+      expertiseData: { ...item.expertiseData, ...extra },
+    };
+  });
 }
 
 const SEARCH_CARD_COMPACT_MAX_WIDTH = 480;
@@ -1660,7 +1716,8 @@ export default function SearchScreen({ route }) {
       }
       const enriched = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(list);
       const withOfferingDegrees = await enrichOfferingOwnerConnectionDegrees(enriched);
-      let filteredEnriched = applyBusinessMinRatingFilter(withOfferingDegrees, effectiveRating);
+      const withTaxInfo = await enrichExpertiseTaxAndReturnInfo(withOfferingDegrees);
+      let filteredEnriched = applyBusinessMinRatingFilter(withTaxInfo, effectiveRating);
       filteredEnriched = filterResultsByNetwork(filteredEnriched, effectiveNetwork);
       filteredEnriched = applyDistanceFilterToSearchResults(filteredEnriched, effectiveDistance, searchCoords);
       if (searchGeneration !== searchGenerationRef.current) return;
@@ -1952,6 +2009,10 @@ export default function SearchScreen({ route }) {
                 profile_expertise_image: item.profile_expertise_image || "",
                 profile_expertise_image_is_public: item.profile_expertise_image_is_public,
                 profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
+                profile_expertise_is_taxable: item.profile_expertise_is_taxable,
+                profile_expertise_tax_rate: item.profile_expertise_tax_rate || "",
+                profile_expertise_refund_policy: item.profile_expertise_refund_policy || "",
+                profile_expertise_return_window_days: item.profile_expertise_return_window_days || "",
               },
               // Store profile data for MiniCard-like display (all public info for Add to Cart modal)
               profileData: {
@@ -2055,6 +2116,10 @@ export default function SearchScreen({ route }) {
         if (type === "expertise" || type === "seeking") {
           list = await enrichOfferingOwnerConnectionDegrees(list);
           list = filterResultsByNetwork(list, effectiveNetwork);
+        }
+
+        if (type === "expertise") {
+          list = await enrichExpertiseTaxAndReturnInfo(list);
         }
 
         if (searchTypeSupportsDistanceFilter(type)) {
@@ -2472,6 +2537,11 @@ export default function SearchScreen({ route }) {
     const expertiseModeDisplay = formatExpertiseModeForDisplay(expertise.profile_expertise_mode);
     const hasExpertiseScheduleMeta = !!(hasExpertiseSchedule || expertiseLocationTrimmed || expertiseModeDisplay);
     const hasExpertiseCostRow = !!(expertise.cost || expertiseQtyTrimmed || expertise.bounty);
+    const isTaxable = expertise.profile_expertise_is_taxable == 1 || expertise.profile_expertise_is_taxable === true;
+    const taxRate = expertise.profile_expertise_tax_rate ? String(expertise.profile_expertise_tax_rate).trim() : "";
+    const refundPolicy = expertise.profile_expertise_refund_policy ? String(expertise.profile_expertise_refund_policy).trim() : "";
+    const returnWindowDays = expertise.profile_expertise_return_window_days ? String(expertise.profile_expertise_return_window_days).trim() : "";
+    const hasTaxOrReturn = isTaxable || refundPolicy;
 
     const canOpenSellerProfile = !!item.profile_uid;
     const canAddExpertiseToCart = !!(item.profile_uid && expertise.expertise_uid);
@@ -2596,6 +2666,26 @@ export default function SearchScreen({ route }) {
                   </Text>
                 ) : null}
               </View>
+            </View>
+          )}
+          {hasTaxOrReturn && (
+            <View style={[styles.seekingMetaRow, styles.expertiseOfferingMetaRow]}>
+              {isTaxable && (
+                <View style={styles.seekingMetaLine}>
+                  <Ionicons name='receipt-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
+                  <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
+                    {taxRate ? `Sales Tax: ${taxRate}%` : "Sales Tax applies"}
+                  </Text>
+                </View>
+              )}
+              {refundPolicy ? (
+                <View style={styles.seekingMetaLine}>
+                  <Ionicons name='return-down-back-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
+                  <Text style={[styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
+                    {`Returns: ${refundPolicy}${returnWindowDays ? ` (${returnWindowDays}d)` : ""}`}
+                  </Text>
+                </View>
+              ) : null}
             </View>
           )}
           {/* Calendar, location, in-person / virtual — same as Profile OFFERING meta */}

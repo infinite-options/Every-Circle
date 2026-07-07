@@ -13,7 +13,7 @@ import { getHeaderColors } from "../config/headerColors";
 // PROFILE-SPECIFIC
 import ExperienceSection from "../components/ExperienceSection";
 import EducationSection from "../components/EducationSection";
-import ExpertiseSection, { validateExpertise } from "../components/ExpertiseSection";
+import ExpertiseSection, { validateExpertise, validateExpertiseTax } from "../components/ExpertiseSection";
 import SeekingSection, { validateSeeking } from "../components/SeekingSection";
 import BusinessSection from "../components/BusinessSection";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
@@ -671,6 +671,11 @@ const EditProfileScreen = ({ route, navigation }) => {
   const handleSave = async () => {
     if (!validateExpertise(formData.expertise)) {
       Alert.alert("Required Field", "Please select a unit for all Offering entries before submitting.");
+      return;
+    }
+
+    if (!validateExpertiseTax(formData.expertise)) {
+      Alert.alert("Required Field", "Please enter a tax rate for all taxable offerings.");
       return;
     }
 

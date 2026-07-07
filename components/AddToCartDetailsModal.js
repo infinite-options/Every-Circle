@@ -49,6 +49,10 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
   const { value: costValue, units } = parseCost(expertiseData?.cost || "");
   const bountyAmount = parseBounty(expertiseData?.bounty || "0");
 
+  const isTaxable = expertiseData?.profile_expertise_is_taxable == 1 || expertiseData?.profile_expertise_is_taxable === true;
+  const taxRateStr = String(expertiseData?.profile_expertise_tax_rate ?? "").trim();
+  const taxRatePct = isTaxable && taxRateStr !== "" ? parseFloat(taxRateStr) : 0;
+
   const [escrow, setEscrow] = useState(true);
   const [quantity, setQuantity] = useState("1");
   const [quantityError, setQuantityError] = useState("");
@@ -66,8 +70,9 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
   const qtyNum = isTotalUnit ? 1 : parseFloat(quantity) || 0;
   const costAmount = costValue * qtyNum;
   const subtotal = costAmount; // Bounty paid by seller, not included in buyer's total
+  const taxAmount = taxRatePct > 0 ? subtotal * (taxRatePct / 100) : 0;
   const processingFee = subtotal * 0.03;
-  const totalWithFee = subtotal + processingFee;
+  const totalWithFee = subtotal + taxAmount + processingFee;
 
   const handleAddToCart = () => {
     if (qtyNum <= 0 || qtyNum > 9999) {
@@ -81,6 +86,8 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
     setQuantityError("");
     onAddToCart({
       subtotal,
+      taxAmount,
+      taxRatePct,
       totalWithFee,
       quantity: qtyNum,
       escrow,
@@ -172,6 +179,12 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
               <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>Subtotal</Text>
               <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${subtotal.toFixed(2)}</Text>
             </View>
+            {taxAmount > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>Sales Tax ({taxRatePct}%)</Text>
+                <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${taxAmount.toFixed(2)}</Text>
+              </View>
+            )}
             <View style={styles.summaryRow}>
               <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>Credit card processing fee (3%)</Text>
               <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${processingFee.toFixed(2)}</Text>
