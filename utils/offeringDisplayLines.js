@@ -37,14 +37,70 @@ function getOfferingTaxSubtext(offering) {
   return "plus sales tax";
 }
 
-function getOfferingBountySubtext(offering) {
-  const bountyType = String(offering?.profile_expertise_bounty_type ?? "none").trim();
+function parseOfferingBountyAmountParts(raw) {
+  const str = String(raw ?? "").trim();
+  if (!str || str.toLowerCase() === "free") return null;
+  const cleaned = str.replace(/^\$/, "").trim();
+  if (!cleaned) return null;
+
+  if (cleaned.toLowerCase().endsWith("total")) {
+    const amount = cleaned.replace(/\s*total$/i, "").trim();
+    return { amount, suffix: " total" };
+  }
+
+  const slashIdx = cleaned.indexOf("/");
+  if (slashIdx >= 0) {
+    const amount = cleaned.slice(0, slashIdx).trim();
+    const unit = cleaned.slice(slashIdx + 1).trim();
+    return { amount, suffix: unit ? `/${unit}` : "" };
+  }
+
+  return { amount: cleaned, suffix: "" };
+}
+
+function getOfferingBountyMetricValue(offering) {
+  const bountyType = String(offering?.profile_expertise_bounty_type ?? "none").trim().toLowerCase();
   if (bountyType === "none") return null;
   const raw = String(offering?.bounty ?? offering?.profile_expertise_bounty ?? "").trim();
-  if (!raw || raw.toLowerCase() === "free") return null;
-  const amount = raw.replace(/^\$/, "").trim();
-  if (bountyType === "total") return `$${amount} single bounty`;
-  return `$${amount} bounty each`;
+  const parts = parseOfferingBountyAmountParts(raw);
+  if (!parts?.amount || parsePrice(parts.amount) <= 0) return null;
+
+  let suffix = parts.suffix;
+  if (!suffix) {
+    if (bountyType === "total") suffix = " total";
+    else suffix = "/each";
+  }
+  return `$${parts.amount}${suffix}`;
+}
+
+function getOfferingBountySubtext(offering) {
+  const metric = getOfferingBountyMetricValue(offering);
+  if (!metric) return null;
+  const bountyType = String(offering?.profile_expertise_bounty_type ?? "none").trim();
+  if (bountyType === "total") return `${metric} single bounty`;
+  return `${metric} bounty each`;
+}
+
+function getOfferingCostMetricValue(offering) {
+  const cost = offering?.cost ?? offering?.profile_expertise_cost ?? "";
+  const col = parseOfferingCost(cost);
+  return col?.value || null;
+}
+
+function getOfferingQtyMetricValue(offering) {
+  const qty = offering?.quantity ?? offering?.profile_expertise_quantity ?? "";
+  const raw = String(qty).trim();
+  if (!raw || raw === "0") return null;
+  return raw;
+}
+
+/** Three-column metrics for Search list cards — Cost, Qty, Bounty. */
+export function getOfferingListMetricColumns(offering) {
+  return [
+    { label: "Cost", value: getOfferingCostMetricValue(offering) },
+    { label: "Qty", value: getOfferingQtyMetricValue(offering) },
+    { label: "Bounty", value: getOfferingBountyMetricValue(offering) },
+  ].filter((col) => col.value);
 }
 
 export function getOfferingLocationLabel(offering) {

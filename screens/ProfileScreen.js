@@ -1389,6 +1389,7 @@ const ProfileScreen = ({ route, navigation }) => {
             ? () => {
                 // Navigate back to the screen we came from with preserved state
                 const wishDetailState = route.params?.wishDetailState;
+                const offeringDetailState = route.params?.offeringDetailState;
                 if (wishDetailState) {
                   console.log("🔙 Returning to WishDetail");
                   if (navigation.canGoBack()) {
@@ -1401,6 +1402,22 @@ const ProfileScreen = ({ route, navigation }) => {
                       searchState: wishDetailState.searchState,
                       returnTo: wishDetailState.returnTo,
                       profileState: wishDetailState.profileState,
+                    });
+                  }
+                  return;
+                }
+                if (offeringDetailState) {
+                  console.log("🔙 Returning to OfferingDetail");
+                  if (navigation.canGoBack()) {
+                    navigation.goBack();
+                  } else {
+                    navigation.navigate("OfferingDetail", {
+                      expertiseData: offeringDetailState.expertiseData,
+                      profileData: offeringDetailState.profileData,
+                      profile_uid: offeringDetailState.profile_uid,
+                      searchState: offeringDetailState.searchState,
+                      returnTo: offeringDetailState.returnTo,
+                      profileState: offeringDetailState.profileState,
                     });
                   }
                   return;

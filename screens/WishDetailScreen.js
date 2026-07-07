@@ -14,6 +14,7 @@ import { TRANSACTIONS_ENDPOINT, PROFILE_WISH_INFO_ENDPOINT, PROFILE_WISH_RESPONS
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
+import SeekingCardDetails from "../components/SeekingCardDetails";
 
 const formatDateForDisplay = (value) => {
   if (!value || typeof value !== "string" || value.trim() === "") return "";
@@ -337,30 +338,7 @@ const WishDetailScreenContent = ({ route, navigation }) => {
             </View>
           )}
 
-          {/* Cost and Bounty */}
-          {(wishData?.cost || wishData?.profile_wish_cost || wishData?.bounty) && (
-            <View style={styles.pricingContainer}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flex: 1 }}>
-                {(wishData?.cost || wishData?.profile_wish_cost) && (
-                  <View style={styles.wishBountyContainer}>
-                    <View style={styles.moneyBagIconContainer}>
-                      <Text style={styles.moneyBagDollarSymbol}>$</Text>
-                    </View>
-                    <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>
-                      Cost: {wishData?.profile_wish_cost_currency ? `${wishData.profile_wish_cost_currency} ` : ""}
-                      {wishData?.cost || wishData?.profile_wish_cost}
-                    </Text>
-                  </View>
-                )}
-                {wishData?.bounty && (
-                  <View style={styles.pricingRow}>
-                    <Text style={styles.bountyEmojiIcon}>💰</Text>
-                    <Text style={[styles.pricingLabel, darkMode && styles.darkPricingLabel]}>Bounty: USD {wishData.bounty}</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          )}
+          <SeekingCardDetails seeking={wishData} darkMode={darkMode} />
         </View>
 
         {existingResponses.length > 0 && (

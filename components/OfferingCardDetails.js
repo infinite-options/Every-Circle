@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { formatDateTimeForDisplay } from "../utils/profileDateTime";
 import { formatExpertiseModeForDisplay } from "../utils/expertiseMode";
-import { getOfferingCardLayout, offeringCardHasDetails } from "../utils/offeringDisplayLines";
+import { getOfferingCardLayout, getOfferingListMetricColumns, offeringCardHasDetails } from "../utils/offeringDisplayLines";
 
 function FulfillmentRow({ label, value, rowTextStyle }) {
   return (
@@ -18,23 +18,33 @@ function FulfillmentRow({ label, value, rowTextStyle }) {
 
 function MetricBox({ columnLabel, value, subtext, darkMode, align = "left" }) {
   if (!value && !subtext) return null;
+  const alignStyle = align === "center" ? styles.metricAlignCenter : align === "right" ? styles.metricAlignRight : null;
   return (
-    <View style={[styles.metricBox, darkMode && styles.metricBoxDark]}>
-      {columnLabel ? <Text style={[styles.metricLabel, darkMode && styles.metricLabelDark, align === "right" && styles.metricLabelRight]}>{columnLabel}</Text> : null}
+    <View style={[styles.metricBox, darkMode && styles.metricBoxDark, alignStyle]}>
+      {columnLabel ? <Text style={[styles.metricLabel, darkMode && styles.metricLabelDark, alignStyle]}>{columnLabel}</Text> : null}
       {value ? (
-        <Text style={[styles.metricValue, darkMode && styles.metricValueDark, align === "right" && styles.metricValueRight]} numberOfLines={2}>
+        <Text style={[styles.metricValue, darkMode && styles.metricValueDark, alignStyle]} numberOfLines={2}>
           {value}
         </Text>
       ) : null}
-      {subtext ? <Text style={[styles.metricSubtext, darkMode && styles.metricSubtextDark, align === "right" && styles.metricSubtextRight]}>{subtext}</Text> : null}
+      {subtext ? <Text style={[styles.metricSubtext, darkMode && styles.metricSubtextDark, alignStyle]}>{subtext}</Text> : null}
     </View>
   );
 }
 
-/** Offering metrics, when/where, and fulfillment — matches profile/search card mockup. */
-export default function OfferingCardDetails({ offering, darkMode = false, style, metaTextStyle }) {
+const LIST_METRIC_ALIGN = {
+  Cost: "left",
+  Qty: "center",
+  Bounty: "right",
+};
+
+/** Offering metrics, when/where, and fulfillment — list (Search) or detail (full) variant. */
+export default function OfferingCardDetails({ offering, darkMode = false, style, metaTextStyle, variant = "detail" }) {
   const layout = getOfferingCardLayout(offering);
-  if (!offeringCardHasDetails(layout)) return null;
+  const listMetrics = variant === "list" ? getOfferingListMetricColumns(offering) : [];
+  const hasListContent = variant === "list" && (listMetrics.length > 0 || layout.whenWhere.hasContent);
+  const hasDetailContent = variant === "detail" && offeringCardHasDetails(layout);
+  if (!hasListContent && !hasDetailContent) return null;
 
   const rowTextStyle = [styles.metaRowText, darkMode && styles.metaRowTextDark, metaTextStyle];
   const modeLabel = formatExpertiseModeForDisplay(layout.whenWhere.mode);
@@ -44,6 +54,50 @@ export default function OfferingCardDetails({ offering, darkMode = false, style,
     layout.whenWhere.end ? formatDateTimeForDisplay(layout.whenWhere.end) : "",
   ].join("");
 
+  const whenWhereBlock = layout.whenWhere.hasContent ? (
+    <View style={[styles.section, variant === "list" && styles.listWhenWhereSection, variant === "list" && darkMode && styles.listWhenWhereSectionDark]}>
+      {variant === "detail" ? <Text style={[styles.sectionHeader, darkMode && styles.sectionHeaderDark]}>WHEN AND WHERE</Text> : null}
+      {layout.whenWhere.start || layout.whenWhere.end ? (
+        <View style={styles.whenWhereLine}>
+          <Ionicons name='calendar-outline' size={14} color={darkMode ? "#999" : "#666"} style={styles.lineIcon} />
+          <Text style={rowTextStyle}>{scheduleText}</Text>
+        </View>
+      ) : null}
+      {layout.whenWhere.location || modeLabel ? (
+        <View style={[styles.whenWhereLine, styles.whenWhereLocationRow, (layout.whenWhere.start || layout.whenWhere.end) && styles.whenWhereLineSpaced]}>
+          {layout.whenWhere.location ? (
+            <View style={styles.locationCluster}>
+              <Ionicons name='location-outline' size={14} color={darkMode ? "#999" : "#666"} style={styles.lineIcon} />
+              <Text style={rowTextStyle}>{layout.whenWhere.location}</Text>
+            </View>
+          ) : (
+            <View style={styles.locationCluster} />
+          )}
+          {modeLabel ? (
+            <View style={[styles.modeBadge, darkMode && styles.modeBadgeDark]}>
+              <Text style={[styles.modeBadgeText, darkMode && styles.modeBadgeTextDark]}>{modeLabel}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  ) : null;
+
+  if (variant === "list") {
+    return (
+      <View style={[styles.container, style]}>
+        {listMetrics.length > 0 ? (
+          <View style={styles.metricsRow}>
+            {listMetrics.map((col) => (
+              <MetricBox key={col.label} columnLabel={col.label} value={col.value} darkMode={darkMode} align={LIST_METRIC_ALIGN[col.label] || "left"} />
+            ))}
+          </View>
+        ) : null}
+        {whenWhereBlock}
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, style]}>
       {layout.metrics.hasContent ? (
@@ -52,36 +106,7 @@ export default function OfferingCardDetails({ offering, darkMode = false, style,
           <MetricBox columnLabel='Availability' value={layout.metrics.availabilityValue} subtext={layout.metrics.availabilitySubtext} darkMode={darkMode} align='right' />
         </View>
       ) : null}
-
-      {layout.whenWhere.hasContent ? (
-        <View style={styles.section}>
-          <Text style={[styles.sectionHeader, darkMode && styles.sectionHeaderDark]}>WHEN AND WHERE</Text>
-          {layout.whenWhere.start || layout.whenWhere.end ? (
-            <View style={styles.whenWhereLine}>
-              <Ionicons name='calendar-outline' size={14} color={darkMode ? "#999" : "#666"} style={styles.lineIcon} />
-              <Text style={rowTextStyle}>{scheduleText}</Text>
-            </View>
-          ) : null}
-          {layout.whenWhere.location || modeLabel ? (
-            <View style={[styles.whenWhereLine, styles.whenWhereLocationRow]}>
-              {layout.whenWhere.location ? (
-                <View style={styles.locationCluster}>
-                  <Ionicons name='location-outline' size={14} color={darkMode ? "#999" : "#666"} style={styles.lineIcon} />
-                  <Text style={rowTextStyle}>{layout.whenWhere.location}</Text>
-                </View>
-              ) : (
-                <View style={styles.locationCluster} />
-              )}
-              {modeLabel ? (
-                <View style={[styles.modeBadge, darkMode && styles.modeBadgeDark]}>
-                  <Text style={[styles.modeBadgeText, darkMode && styles.modeBadgeTextDark]}>{modeLabel}</Text>
-                </View>
-              ) : null}
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
+      {whenWhereBlock}
       {layout.fulfillmentRows.length > 0 ? (
         <View style={styles.fulfillmentSection}>
           <Text style={[styles.sectionHeader, styles.fulfillmentSectionHeader, darkMode && styles.sectionHeaderDark]}>FULFILLMENT</Text>
@@ -115,8 +140,11 @@ const styles = StyleSheet.create({
   metricBoxDark: {
     backgroundColor: "#2a2a2a",
   },
-  metricLabelRight: {
-    textAlign: "right",
+  metricAlignCenter: {
+    alignItems: "center",
+  },
+  metricAlignRight: {
+    alignItems: "flex-end",
   },
   metricLabel: {
     fontSize: 12,
@@ -135,9 +163,6 @@ const styles = StyleSheet.create({
   metricValueDark: {
     color: "#f5f5f5",
   },
-  metricValueRight: {
-    textAlign: "right",
-  },
   metricSubtext: {
     fontSize: 12,
     color: "#888",
@@ -146,11 +171,18 @@ const styles = StyleSheet.create({
   metricSubtextDark: {
     color: "#aaa",
   },
-  metricSubtextRight: {
-    textAlign: "right",
-  },
   section: {
     gap: 8,
+  },
+  listWhenWhereSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e0e0e0",
+    gap: 6,
+  },
+  listWhenWhereSectionDark: {
+    borderTopColor: "#404040",
   },
   fulfillmentSection: {
     gap: 0,
@@ -172,6 +204,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
+  },
+  whenWhereLineSpaced: {
+    marginTop: 2,
   },
   whenWhereLocationRow: {
     justifyContent: "space-between",
