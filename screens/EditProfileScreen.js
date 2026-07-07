@@ -74,6 +74,7 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [showExperience, setShowExperience] = useState(true);
   const [showEducation, setShowEducation] = useState(true);
   const [showBusiness, setShowBusiness] = useState(true);
+  const [showSocial, setShowSocial] = useState(true);
 
   useEffect(() => {
     // This useEffect is only used to log the screen being mounted
@@ -103,6 +104,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     expertiseIsPublic: user?.expertiseIsPublic || false,
     wishesIsPublic: user?.wishesIsPublic || false,
     businessIsPublic: user?.businessIsPublic || false,
+    socialLinksIsPublic: user?.socialLinksIsPublic ?? true,
     imageIsPublic: user?.imageIsPublic || false,
     businesses: user?.businesses?.map((biz) => ({
       profile_business_uid: biz.profile_business_uid || "",
@@ -327,10 +329,36 @@ const EditProfileScreen = ({ route, navigation }) => {
         ]
       );
     })(),
-    facebook: user?.facebook || "",
-    twitter: user?.twitter || "",
-    linkedin: user?.linkedin || "",
-    youtube: user?.youtube || "",
+    socialLinks: (() => {
+      const fixed = [
+        { platform: "linkedin",  label: "LinkedIn",    icon: "logo-linkedin"  },
+        { platform: "instagram", label: "Instagram",   icon: "logo-instagram" },
+        { platform: "twitter",   label: "Twitter / X", icon: "logo-twitter"   },
+      ];
+      const linksInfo = user?.links_info || [];
+      const linksMap = {};
+      linksInfo.forEach((row) => {
+        const name = String(row.social_link_name || "").toLowerCase();
+        linksMap[name] = {
+          url: row.social_link_url || "",
+          isPublic: row.social_link_is_public !== 0,
+        };
+      });
+      const result = fixed.map(({ platform, label, icon }) => ({
+        platform,
+        label,
+        icon,
+        url: linksMap[platform]?.url || "",
+        isPublic: linksMap[platform]?.isPublic ?? true,
+        isFixed: true,
+      }));
+      Object.entries(linksMap).forEach(([platform, { url, isPublic }]) => {
+        if (!fixed.find((f) => f.platform === platform)) {
+          result.push({ platform, label: platform, icon: "link-outline", url, isPublic, isFixed: false });
+        }
+      });
+      return result;
+    })(),
   });
   // console.log("EditProfileScreen business_info:", formData.businesses);
 
@@ -729,6 +757,7 @@ const EditProfileScreen = ({ route, navigation }) => {
       payload.append("profile_personal_expertise_is_public", formData.expertiseIsPublic ? 1 : 0);
       payload.append("profile_personal_wishes_is_public", formData.wishesIsPublic ? 1 : 0);
       payload.append("profile_personal_business_is_public", formData.businessIsPublic ? 1 : 0);
+      payload.append("profile_personal_social_is_public", formData.socialLinksIsPublic ? 1 : 0);
       console.log("EditProfileScreen - Sending businessIsPublic:", formData.businessIsPublic);
       console.log("EditProfileScreen - As value:", formData.businessIsPublic ? 1 : 0);
       payload.append("profile_personal_image_is_public", formData.imageIsPublic ? 1 : 0);
@@ -882,15 +911,17 @@ const EditProfileScreen = ({ route, navigation }) => {
       console.log("Businesses payload being sent:", businessesPayload);
       payload.append("business_info", JSON.stringify(businessesPayload));
 
-      payload.append(
-        "social_links",
-        JSON.stringify({
-          facebook: formData.facebook,
-          twitter: formData.twitter,
-          linkedin: formData.linkedin,
-          youtube: formData.youtube,
-        }),
-      );
+      const socialLinksPayload = {};
+      const socialPublicPayload = {};
+      (formData.socialLinks || []).forEach(({ platform, url, isPublic }) => {
+        const key = (platform || "").trim().toLowerCase();
+        if (key) {
+          socialLinksPayload[key] = (url || "").trim();
+          socialPublicPayload[key] = isPublic !== false;
+        }
+      });
+      payload.append("social_links", JSON.stringify(socialLinksPayload));
+      payload.append("social_links_public", JSON.stringify(socialPublicPayload));
 
       if (profileImageUri && !imageError && profileImageUri !== originalProfileImage) {
         if (Platform.OS === "web" && webImageFile) {
@@ -1544,6 +1575,124 @@ const EditProfileScreen = ({ route, navigation }) => {
           </>
         )}
 
+        {/* SOCIAL MEDIA Section */}
+        <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowSocial(!showSocial)} activeOpacity={0.7}>
+          <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>SOCIAL MEDIA</Text>
+          <Ionicons name={showSocial ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
+        </TouchableOpacity>
+        {showSocial && (
+          <View style={[styles.sectionContent, darkMode && styles.darkSectionContent]}>
+            {/* Section-level visibility toggle */}
+            <View style={[styles.labelRow, { marginBottom: 12 }]}>
+              <Text style={[styles.label, darkMode && styles.darkLabel]}>Social Media</Text>
+              <View style={styles.toggleContainer}>
+                <TouchableOpacity onPress={() => handleToggleVisibility("socialLinksIsPublic")} style={[styles.togglePill, formData.socialLinksIsPublic && styles.togglePillActiveGreen]}>
+                  <Text style={[styles.togglePillText, formData.socialLinksIsPublic && styles.togglePillTextActive]}>{formData.socialLinksIsPublic ? "Visible" : "Show"}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleToggleVisibility("socialLinksIsPublic")} style={[styles.togglePill, !formData.socialLinksIsPublic && styles.togglePillActiveRed]}>
+                  <Text style={[styles.togglePillText, !formData.socialLinksIsPublic && styles.togglePillTextActive]}>{!formData.socialLinksIsPublic ? "Hidden" : "Hide"}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            {(formData.socialLinks || []).map((link, idx) => (
+              <View key={idx} style={{ marginBottom: 16 }}>
+                {/* Header row: icon + label/name + public toggle + delete (custom only) */}
+                <View style={styles.labelRow}>
+                  {link.isFixed ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                      <Ionicons name={link.icon || "link-outline"} size={18} color={darkMode ? "#aaa" : "#555"} style={{ marginRight: 6 }} />
+                      <Text style={[styles.label, darkMode && styles.darkLabel]}>{link.label}</Text>
+                    </View>
+                  ) : (
+                    <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                      <Ionicons name="link-outline" size={18} color={darkMode ? "#aaa" : "#555"} style={{ marginRight: 6 }} />
+                      <TextInput
+                        style={[styles.input, darkMode && styles.darkInput, { flex: 1, marginBottom: 0, paddingVertical: 6 }]}
+                        value={link.platform}
+                        onChangeText={(text) => {
+                          const updated = [...formData.socialLinks];
+                          updated[idx] = { ...updated[idx], platform: text, label: text };
+                          setFormData((prev) => ({ ...prev, socialLinks: updated }));
+                          setIsChanged(true);
+                        }}
+                        placeholder="Platform name (e.g. TikTok)"
+                        placeholderTextColor={darkMode ? "#666" : "#999"}
+                        autoCapitalize="words"
+                      />
+                      <TouchableOpacity
+                        onPress={() => {
+                          const updated = formData.socialLinks.filter((_, i) => i !== idx);
+                          setFormData((prev) => ({ ...prev, socialLinks: updated }));
+                          setIsChanged(true);
+                        }}
+                        style={{ marginLeft: 6 }}
+                      >
+                        <Ionicons name="close-circle" size={22} color={darkMode ? "#888" : "#999"} />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                  <View style={styles.toggleContainer}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const updated = [...formData.socialLinks];
+                        updated[idx] = { ...updated[idx], isPublic: true };
+                        setFormData((prev) => ({ ...prev, socialLinks: updated }));
+                        setIsChanged(true);
+                      }}
+                      style={[styles.togglePill, link.isPublic && styles.togglePillActiveGreen]}
+                    >
+                      <Text style={[styles.togglePillText, link.isPublic && styles.togglePillTextActive]}>{link.isPublic ? "Visible" : "Show"}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const updated = [...formData.socialLinks];
+                        updated[idx] = { ...updated[idx], isPublic: false };
+                        setFormData((prev) => ({ ...prev, socialLinks: updated }));
+                        setIsChanged(true);
+                      }}
+                      style={[styles.togglePill, !link.isPublic && styles.togglePillActiveRed]}
+                    >
+                      <Text style={[styles.togglePillText, !link.isPublic && styles.togglePillTextActive]}>{!link.isPublic ? "Hidden" : "Hide"}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                <TextInput
+                  style={[styles.input, darkMode && styles.darkInput]}
+                  value={link.url}
+                  onChangeText={(text) => {
+                    const updated = [...formData.socialLinks];
+                    updated[idx] = { ...updated[idx], url: text };
+                    setFormData((prev) => ({ ...prev, socialLinks: updated }));
+                    setIsChanged(true);
+                  }}
+                  placeholder={
+                    link.platform === "linkedin" ? "https://linkedin.com/in/yourprofile" :
+                    link.platform === "instagram" ? "https://instagram.com/yourusername" :
+                    link.platform === "twitter" ? "https://twitter.com/yourusername" : "https://"
+                  }
+                  placeholderTextColor={darkMode ? "#666" : "#999"}
+                  autoCapitalize="none"
+                  keyboardType="url"
+                />
+              </View>
+            ))}
+
+            {/* Add link button */}
+            <TouchableOpacity
+              onPress={() => {
+                const updated = [...(formData.socialLinks || []), { platform: "", label: "", icon: "link-outline", url: "", isPublic: true, isFixed: false }];
+                setFormData((prev) => ({ ...prev, socialLinks: updated }));
+                setIsChanged(true);
+              }}
+              style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add-circle-outline" size={22} color="#9C45F7" style={{ marginRight: 6 }} />
+              <Text style={{ color: "#9C45F7", fontWeight: "600", fontSize: 14 }}>Add Link</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* BIO Section */}
         <TouchableOpacity style={[styles.sectionHeader, darkMode && styles.darkSectionHeader]} onPress={() => setShowBio(!showBio)} activeOpacity={0.7}>
           <Text style={[styles.sectionHeaderText, darkMode && styles.darkSectionHeaderText]}>BIO</Text>
@@ -1824,6 +1973,24 @@ const styles = StyleSheet.create({
   },
   darkUploadLink: {
     color: "#4a9eff",
+  },
+  sectionContent: {
+    padding: 16,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  darkSectionContent: {
+    backgroundColor: "#1a1a1a",
+    borderBottomColor: "#333",
+  },
+  fieldLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+  },
+  darkFieldLabel: {
+    color: "#ccc",
   },
   darkDisabledInput: {
     backgroundColor: "#404040",

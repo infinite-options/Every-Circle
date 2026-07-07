@@ -3,6 +3,7 @@ import {
   View,
   Text,
   TextInput,
+  Linking,
   TouchableOpacity,
   Alert,
   StyleSheet,
@@ -103,16 +104,20 @@ function normalizeUserProfileInfoResponse(raw) {
 
   if (cur.social_links == null && Array.isArray(cur.links_info) && cur.links_info.length > 0) {
     const social = {};
+    const socialIcons = {};
     for (const row of cur.links_info) {
       if (!row || typeof row !== "object") continue;
       const name = String(row.social_link_name || row.link_name || row.platform || "").toLowerCase();
-      const url = row.social_link_url || row.url || row.link || "";
-      if (name.includes("facebook")) social.facebook = url;
-      else if (name.includes("twitter") || name === "x") social.twitter = url;
-      else if (name.includes("linkedin")) social.linkedin = url;
-      else if (name.includes("youtube")) social.youtube = url;
+      const url = row.profile_link_url || row.social_link_url || row.url || row.link || "";
+      const icon = row.social_link_icon || null;
+      if (name.includes("facebook")) { social.facebook = url; if (icon) socialIcons.facebook = icon; }
+      else if (name.includes("twitter") || name === "x") { social.twitter = url; if (icon) socialIcons.twitter = icon; }
+      else if (name.includes("linkedin")) { social.linkedin = url; if (icon) socialIcons.linkedin = icon; }
+      else if (name.includes("instagram")) { social.instagram = url; if (icon) socialIcons.instagram = icon; }
+      else if (name.includes("youtube")) { social.youtube = url; if (icon) socialIcons.youtube = icon; }
+      else if (name && url) { social[name] = url; }
     }
-    if (Object.keys(social).length > 0) cur = { ...cur, social_links: social };
+    if (Object.keys(social).length > 0) cur = { ...cur, social_links: social, social_icons: socialIcons };
   }
 
   return cur;
@@ -209,6 +214,7 @@ const ProfileScreen = ({ route, navigation }) => {
   const { darkMode } = useDarkMode();
   const [showExperience, setShowExperience] = useState(true);
   const [showEducation, setShowEducation] = useState(true);
+  const [showSocial, setShowSocial] = useState(true);
   const [showBusiness, setShowBusiness] = useState(true);
   const [showReviews, setShowReviews] = useState(true);
   const [showOffering, setShowOffering] = useState(true);
@@ -573,6 +579,7 @@ const ProfileScreen = ({ route, navigation }) => {
         expertiseIsPublic: apiUser.personal_info?.profile_personal_expertise_is_public === 1,
         wishesIsPublic: apiUser.personal_info?.profile_personal_wishes_is_public === 1,
         businessIsPublic: apiUser.personal_info?.profile_personal_business_is_public === 1,
+        socialLinksIsPublic: apiUser.personal_info?.profile_personal_social_is_public !== 0,
         profileImage: apiUser.personal_info?.profile_personal_image ? String(apiUser.personal_info.profile_personal_image) : "",
       };
       userData.experience = apiUser.experience_info
@@ -690,7 +697,11 @@ const ProfileScreen = ({ route, navigation }) => {
       userData.facebook = socialLinks.facebook || "";
       userData.twitter = socialLinks.twitter || "";
       userData.linkedin = socialLinks.linkedin || "";
+      userData.instagram = socialLinks.instagram || "";
       userData.youtube = socialLinks.youtube || "";
+      userData.social_links = socialLinks;
+      userData.social_icons = apiUser.social_icons || {};
+      userData.links_info = Array.isArray(apiUser.links_info) ? apiUser.links_info : [];
       // console.log("ProfileScreen - Setting user data:", userData);
       // console.log("ProfileScreen - Profile UID in userData:", userData.profile_uid);
       setUser(userData);
@@ -1704,6 +1715,7 @@ const ProfileScreen = ({ route, navigation }) => {
             {shortBioBelowCard ? <Text style={[styles.shortBioBelowCard, darkMode && styles.darkShortBioBelowCard]}>{shortBioBelowCard}</Text> : null}
           </View>
 
+
           {/* Add / View Connection + Message — only when viewing someone else's profile */}
           {routeProfileUID &&
             !isCurrentUserProfile &&
@@ -1750,6 +1762,67 @@ const ProfileScreen = ({ route, navigation }) => {
                 </View>
               );
             })()}
+
+          {/* Social Media Links — dropdown section */}
+          {(isCurrentUserProfile || user.socialLinksIsPublic !== false) && (() => {
+            const defaults = {
+              linkedin:  { label: "LinkedIn",    icon: "logo-linkedin",   color: "#0077B5" },
+              instagram: { label: "Instagram",   icon: "logo-instagram",  color: "#C13584" },
+              twitter:   { label: "Twitter / X", icon: "logo-twitter",    color: "#1DA1F2" },
+              facebook:  { label: "Facebook",    icon: "logo-facebook",   color: "#1877F2" },
+              youtube:   { label: "YouTube",     icon: "logo-youtube",    color: "#FF0000" },
+            };
+            const linksInfo = user.links_info || [];
+            const socialItems = linksInfo
+              .filter((row) => {
+                if (!row.social_link_url) return false;
+                if (!isCurrentUserProfile && row.social_link_is_public === 0) return false;
+                return true;
+              })
+              .map((row) => {
+                const name = String(row.social_link_name || "").toLowerCase();
+                const meta = defaults[name];
+                return {
+                  key: name,
+                  label: meta ? meta.label : (row.social_link_name || name),
+                  icon: meta ? meta.icon : "link-outline",
+                  color: meta ? meta.color : "#555",
+                  url: String(row.social_link_url).trim(),
+                };
+              });
+            if (socialItems.length === 0 && !isCurrentUserProfile) return null;
+            return (
+              <View style={styles.fieldContainer}>
+                <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowSocial(!showSocial)}>
+                  <Text style={styles.sectionHeaderText}>SOCIAL MEDIA</Text>
+                  <Ionicons name={showSocial ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+                </TouchableOpacity>
+                {showSocial && (
+                  socialItems.length > 0 ? (
+                    socialItems.map(({ key, label, icon, color, url }) => (
+                      <TouchableOpacity
+                        key={key}
+                        onPress={() => Linking.openURL(url)}
+                        style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}
+                        activeOpacity={0.7}
+                      >
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <Ionicons name={icon} size={22} color={color} style={{ marginRight: 12 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "600" }]}>{label}</Text>
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: darkMode ? "#aaa" : "#666", fontSize: 12 }]} numberOfLines={1}>{url}</Text>
+                          </View>
+                          <Ionicons name="open-outline" size={16} color={darkMode ? "#aaa" : "#999"} />
+                        </View>
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666", padding: 12 }]}>No social media links added yet</Text>
+                  )
+                )}
+              </View>
+            );
+          })()}
 
           {/* Only show Expertise section if there are public expertise entries, or if viewing own profile */}
           {/*{(isCurrentUserProfile || (user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0)) && ( */}
