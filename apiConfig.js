@@ -106,7 +106,7 @@ export const PROFILE_EXPERTISE_RESPONSE_OFFERING_ENDPOINT = `${API_BASE_URL}/api
 export const CONTENT_REPORTS_ENDPOINT = `${API_BASE_URL}/api/v1/reports`;
 /** GET offerings where profile_expertise_moderated = 2 (pending review) */
 export const MODERATION_OFFERINGS_REVIEW_QUEUE_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/offerings/review-queue`;
-/** GET/PUT /:profile_expertise_uid and PUT /:profile_expertise_uid/review */
+/** GET/PUT /:profile_expertise_uid, PUT /:profile_expertise_uid/review, POST /:profile_expertise_uid/acknowledge */
 export const MODERATION_OFFERINGS_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/offerings`;
 
 // Circles Endpoint

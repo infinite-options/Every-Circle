@@ -60,7 +60,13 @@ import FlagOfferingModal from "../components/FlagOfferingModal";
 import OfferingModerationBanner from "../components/OfferingModerationBanner";
 import { expertiseCartTaxFields } from "../utils/cartLineTax";
 import { getHeaderColors } from "../config/headerColors";
-import { isOfferingModeratedBlocked, normalizeOfferingModeration } from "../utils/offeringModeration";
+import {
+  getOfferingModeratedState,
+  isOfferingModeratedBlocked,
+  MODERATED_ACKNOWLEDGED,
+  MODERATED_TAKEN_DOWN,
+  normalizeOfferingModeration,
+} from "../utils/offeringModeration";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 console.log(`ProfileScreen - Full endpoint: ${ProfileScreenAPI}`);
@@ -1870,12 +1876,77 @@ const ProfileScreen = ({ route, navigation }) => {
               </TouchableOpacity>
               {showOffering &&
                 (user.expertise &&
-                user.expertise.filter((exp) => (isCurrentUserProfile ? exp.isPublic || isOfferingModeratedBlocked(exp) : exp.isPublic)).length > 0 ? (
+                user.expertise.filter((exp) => {
+                  if (getOfferingModeratedState(exp) === MODERATED_ACKNOWLEDGED) return false;
+                  return isCurrentUserProfile ? exp.isPublic || isOfferingModeratedBlocked(exp) : exp.isPublic;
+                }).length > 0 ? (
                   user.expertise
-                    .filter((exp) => (isCurrentUserProfile ? exp.isPublic || isOfferingModeratedBlocked(exp) : exp.isPublic))
+                    .filter((exp) => {
+                      if (getOfferingModeratedState(exp) === MODERATED_ACKNOWLEDGED) return false;
+                      return isCurrentUserProfile ? exp.isPublic || isOfferingModeratedBlocked(exp) : exp.isPublic;
+                    })
                     .map((exp, index) => {
                       const expImageUri = resolveProfileItemImageUri(exp.profile_expertise_image, profileUID);
                       const offeringModeratedBlocked = isOfferingModeratedBlocked(exp);
+                      const offeringTakenDown = getOfferingModeratedState(exp) === MODERATED_TAKEN_DOWN;
+                      const openOfferingDetail = () => {
+                        const expertiseData = {
+                          expertise_uid: exp.profile_expertise_uid,
+                          profile_expertise_uid: exp.profile_expertise_uid,
+                          title: exp.name,
+                          profile_expertise_title: exp.name,
+                          description: exp.description,
+                          profile_expertise_description: exp.description,
+                          details: exp.details || exp.profile_expertise_details || "",
+                          cost: exp.cost,
+                          bounty: exp.bounty,
+                          quantity: exp.quantity,
+                          profile_expertise_quantity: exp.quantity,
+                          profile_expertise_image: exp.profile_expertise_image,
+                          profile_expertise_image_is_public: exp.profile_expertise_image_is_public,
+                          profile_expertise_start: exp.profile_expertise_start,
+                          profile_expertise_end: exp.profile_expertise_end,
+                          profile_expertise_location: exp.profile_expertise_location,
+                          profile_expertise_city: exp.profile_expertise_city,
+                          profile_expertise_state: exp.profile_expertise_state,
+                          profile_expertise_mode: exp.profile_expertise_mode,
+                          profile_expertise_updated_at: exp.profile_expertise_updated_at ?? exp.updated_at,
+                          moderation: exp.moderation,
+                          profile_expertise_moderated: exp.profile_expertise_moderated,
+                          profile_expertise_is_taxable: exp.profile_expertise_is_taxable,
+                          profile_expertise_tax_rate: exp.profile_expertise_tax_rate,
+                          profile_expertise_condition_type: exp.profile_expertise_condition_type,
+                          profile_expertise_condition_detail: exp.profile_expertise_condition_detail,
+                          profile_expertise_bounty_type: exp.profile_expertise_bounty_type,
+                          profile_expertise_is_returnable: exp.profile_expertise_is_returnable,
+                          profile_expertise_return_window_days: exp.profile_expertise_return_window_days,
+                          profile_expertise_free_shipping: exp.profile_expertise_free_shipping,
+                          profile_expertise_buyer_pays_shipping: exp.profile_expertise_buyer_pays_shipping,
+                          profile_expertise_refund_policy: exp.profile_expertise_refund_policy,
+                        };
+                        const profileData = {
+                          firstName: user.firstName,
+                          lastName: user.lastName,
+                          email: user.email,
+                          phone: user.phoneNumber,
+                          image: user.profileImage,
+                          tagLine: user.tagLine,
+                          city: user.city,
+                          state: user.state,
+                          emailIsPublic: user.emailIsPublic,
+                          phoneIsPublic: user.phoneIsPublic,
+                          imageIsPublic: user.imageIsPublic,
+                          tagLineIsPublic: user.tagLineIsPublic,
+                          locationIsPublic: user.locationIsPublic,
+                        };
+                        navigation.navigate("OfferingDetail", {
+                          expertiseData,
+                          profileData,
+                          profile_uid: profileUID,
+                          returnTo: "Profile",
+                          profileState: { profile_uid: profileUID, returnTo, searchState },
+                        });
+                      };
                       const offeringBody = (
                         <>
                           {isCurrentUserProfile && offeringModeratedBlocked ? <OfferingModerationBanner item={exp} darkMode={darkMode} /> : null}
@@ -2030,7 +2101,28 @@ const ProfileScreen = ({ route, navigation }) => {
                             </TouchableOpacity>
                           </View>
                         ) : null;
-                      const cardShellStyle = [styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }];
+                      const cardShellStyle = [
+                        styles.sectionItemContainer,
+                        darkMode && styles.darkSectionItemContainer,
+                        offeringTakenDown && (darkMode ? styles.darkTakenDownOfferingCard : styles.takenDownOfferingCard),
+                        index > 0 && { marginTop: 4 },
+                      ];
+                      // Taken-down offerings: view-only detail (no edit). Other own offerings stay non-navigating.
+                      if (offeringTakenDown) {
+                        return (
+                          <TouchableOpacity
+                            key={index}
+                            style={cardShellStyle}
+                            onPress={openOfferingDetail}
+                            activeOpacity={0.75}
+                            accessibilityRole='button'
+                            accessibilityLabel='View taken-down offering details'
+                          >
+                            {offeringBody}
+                            {messageAboutOfferingBtn}
+                          </TouchableOpacity>
+                        );
+                      }
                       if (routeProfileUID && !isCurrentUserProfile) {
                         return (
                           <View key={index} style={cardShellStyle}>
@@ -3029,6 +3121,14 @@ const styles = StyleSheet.create({
   darkSectionItemContainer: {
     backgroundColor: "#2d2d2d",
     borderColor: "#404040",
+  },
+  takenDownOfferingCard: {
+    backgroundColor: "#FFF5F5",
+    borderColor: "#E57373",
+  },
+  darkTakenDownOfferingCard: {
+    backgroundColor: "#3a2a2a",
+    borderColor: "#8B4545",
   },
   /** Empty-state lines: "No bio added yet", etc. */
   emptySectionPlaceholder: {

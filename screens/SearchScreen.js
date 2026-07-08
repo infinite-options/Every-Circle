@@ -321,7 +321,7 @@ function offeringLocationLabel(expertise) {
   return String(expertise?.profile_expertise_location || "").trim();
 }
 
-/** Drop zero-qty and moderated offerings (profile_expertise_moderated 1 or 2). */
+/** Drop zero-qty and moderated offerings (profile_expertise_moderated 1, 2, or 3). */
 function shouldIncludeSearchExpertiseRow(item) {
   const qty = item?.profile_expertise_quantity;
   if (qty != null && qty !== "" && parseInt(qty, 10) === 0) return false;
@@ -4055,117 +4055,6 @@ const styles = StyleSheet.create({
   },
   darkSeekingMetaText: {
     color: "#999",
-  },
-  expertiseCardActionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    marginTop: 14,
-    marginBottom: 4,
-    flexWrap: "wrap",
-    alignSelf: "center",
-  },
-  expertiseCardActionRowCompact: {
-    flexWrap: "nowrap",
-    alignSelf: "stretch",
-    width: "100%",
-    justifyContent: "space-between",
-    gap: 6,
-    marginTop: 4,
-    marginBottom: 0,
-  },
-  /** Match ProfileScreen `profileActionButtonPill` + Message / Connection pill sizing */
-  expertiseCardMessageButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#AF52DE",
-    paddingVertical: 10,
-    paddingHorizontal: 28,
-    borderRadius: 24,
-    minWidth: 192,
-  },
-  darkExpertiseCardMessageButton: {
-    backgroundColor: "#8f47b5",
-  },
-  expertiseCardCartButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#00C7BE",
-    paddingVertical: 10,
-    paddingHorizontal: 28,
-    borderRadius: 24,
-    minWidth: 192,
-  },
-  darkExpertiseCardCartButton: {
-    backgroundColor: "#009e98",
-  },
-  expertiseCardFlagButton: {
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#B71C1C",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 24,
-    minWidth: 44,
-  },
-  darkExpertiseCardFlagButton: {
-    backgroundColor: "#9A1616",
-  },
-  expertiseCardFlagButtonCompact: {
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#B71C1C",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 16,
-    minWidth: 34,
-  },
-  expertiseCardMessageButtonCompact: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#AF52DE",
-    paddingVertical: 4,
-    paddingHorizontal: 4,
-    borderRadius: 10,
-    minWidth: 0,
-  },
-  darkExpertiseCardMessageButtonCompact: {
-    backgroundColor: "#8f47b5",
-  },
-  expertiseCardCartButtonCompact: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#00C7BE",
-    paddingVertical: 4,
-    paddingHorizontal: 4,
-    borderRadius: 10,
-    minWidth: 0,
-  },
-  darkExpertiseCardCartButtonCompact: {
-    backgroundColor: "#009e98",
-  },
-  expertiseCardActionDisabled: {
-    opacity: 0.45,
-  },
-  expertiseCardActionButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 15,
-  },
-  expertiseCardActionButtonTextCompact: {
-    fontSize: 10,
-    flexShrink: 1,
   },
   ownExpertiseNotice: {
     fontSize: 13,

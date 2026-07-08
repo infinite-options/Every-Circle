@@ -20,7 +20,7 @@ import BusinessSection from "../components/BusinessSection";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
-import { isOfferingModeratedBlocked } from "../utils/offeringModeration";
+import { getOfferingModeratedState, isOfferingModeratedBlocked, MODERATED_ACKNOWLEDGED } from "../utils/offeringModeration";
 import { mapOfferingFormToPayload, mapProfileOfferingToFormItem } from "../utils/offeringResubmission";
 import { parseCoordinateValue } from "../utils/validateCoordinates";
 import { getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
@@ -113,7 +113,9 @@ const EditProfileScreen = ({ route, navigation }) => {
   const initialExpertiseState = (() => {
     const uid = initialFormProfileUid;
     const mapped = (user?.expertise || []).map((e) => mapProfileOfferingToFormItem(e, uid));
-    const moderated = mapped.filter(isOfferingModeratedBlocked);
+    const moderated = mapped.filter(
+      (e) => isOfferingModeratedBlocked(e) && getOfferingModeratedState(e) !== MODERATED_ACKNOWLEDGED
+    );
     const editable = mapped.filter((e) => !isOfferingModeratedBlocked(e));
     return {
       moderated,
@@ -809,15 +811,25 @@ const EditProfileScreen = ({ route, navigation }) => {
       });
       payload.append("education_info", JSON.stringify(educationPayload));
 
-      const editableByUid = new Map((formData.expertise || []).filter((e) => e.profile_expertise_uid).map((e) => [e.profile_expertise_uid, e]));
-      const moderatedByUid = new Map((moderatedExpertiseRef.current || []).map((e) => [e.profile_expertise_uid, e]));
+      // Only send editable + brand-new offerings. Taken-down / pending-review rows must
+      // stay out of expertise_info — the backend rejects any update to those UIDs.
+      const moderatedUids = new Set(
+        (moderatedExpertiseRef.current || []).map((e) => e.profile_expertise_uid).filter(Boolean)
+      );
+      const editableByUid = new Map(
+        (formData.expertise || [])
+          .filter((e) => e.profile_expertise_uid && !moderatedUids.has(e.profile_expertise_uid))
+          .map((e) => [e.profile_expertise_uid, e])
+      );
       const originalOrder = (user?.expertise || []).map((e) => e.profile_expertise_uid).filter(Boolean);
       const mergedExpertise = [];
       for (const uid of originalOrder) {
-        if (moderatedByUid.has(uid)) mergedExpertise.push(moderatedByUid.get(uid));
-        else if (editableByUid.has(uid)) mergedExpertise.push(editableByUid.get(uid));
+        if (moderatedUids.has(uid)) continue;
+        if (editableByUid.has(uid)) mergedExpertise.push(editableByUid.get(uid));
       }
-      (formData.expertise || []).filter((e) => !e.profile_expertise_uid).forEach((e) => mergedExpertise.push(e));
+      (formData.expertise || [])
+        .filter((e) => !e.profile_expertise_uid)
+        .forEach((e) => mergedExpertise.push(e));
 
       const expertisePayload = mergedExpertise.map(mapOfferingFormToPayload);
       payload.append("expertise_info", JSON.stringify(expertisePayload));

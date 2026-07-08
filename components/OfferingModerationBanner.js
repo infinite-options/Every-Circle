@@ -16,7 +16,8 @@ const OfferingModerationBanner = ({ item, darkMode = false, compact = false }) =
   const message = getModerationOwnerMessage(item);
   const isPending = status === MODERATION_STATUS.PENDING_REVIEW;
   const isRejected = status === MODERATION_STATUS.REJECTED;
-  const isTakenDown = status === MODERATION_STATUS.TAKEN_DOWN || (!isPending && !isRejected);
+  const isAcknowledged = status === MODERATION_STATUS.ACKNOWLEDGED;
+  const isTakenDown = status === MODERATION_STATUS.TAKEN_DOWN || (!isPending && !isRejected && !isAcknowledged);
 
   return (
     <View
@@ -25,18 +26,29 @@ const OfferingModerationBanner = ({ item, darkMode = false, compact = false }) =
         compact && styles.bannerCompact,
         isPending && styles.bannerPending,
         isRejected && styles.bannerRejected,
-        isTakenDown && !isRejected && styles.bannerTakenDown,
+        isAcknowledged && styles.bannerAcknowledged,
+        isTakenDown && !isRejected && !isAcknowledged && styles.bannerTakenDown,
         darkMode && styles.bannerDark,
       ]}
     >
       <View style={styles.headerRow}>
         <Ionicons
-          name={isPending ? "hourglass-outline" : isRejected ? "close-circle-outline" : "warning-outline"}
+          name={isPending ? "hourglass-outline" : isAcknowledged ? "checkmark-circle-outline" : isRejected ? "close-circle-outline" : "warning-outline"}
           size={compact ? 14 : 16}
-          color={isPending ? "#B45309" : "#B71C1C"}
+          color={isPending ? "#B45309" : isAcknowledged ? "#2E7D32" : "#B71C1C"}
           style={{ marginRight: 6 }}
         />
-        <Text style={[styles.title, compact && styles.titleCompact, darkMode && styles.titleDark]}>{getModerationStatusLabel(item)}</Text>
+        <Text
+          style={[
+            styles.title,
+            compact && styles.titleCompact,
+            isAcknowledged && styles.titleAcknowledged,
+            darkMode && styles.titleDark,
+            isAcknowledged && darkMode && styles.titleAcknowledgedDark,
+          ]}
+        >
+          {getModerationStatusLabel(item)}
+        </Text>
       </View>
       {message ? <Text style={[styles.message, compact && styles.messageCompact, darkMode && styles.messageDark]}>{message}</Text> : null}
     </View>
@@ -68,6 +80,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF5F5",
     borderColor: "#E57373",
   },
+  bannerAcknowledged: {
+    backgroundColor: "#F1F8F4",
+    borderColor: "#A5D6A7",
+  },
   bannerDark: {
     backgroundColor: "#3a2a2a",
     borderColor: "#664444",
@@ -85,8 +101,14 @@ const styles = StyleSheet.create({
   titleCompact: {
     fontSize: 12,
   },
+  titleAcknowledged: {
+    color: "#2E7D32",
+  },
   titleDark: {
     color: "#ff8a80",
+  },
+  titleAcknowledgedDark: {
+    color: "#81C784",
   },
   message: {
     fontSize: 12,

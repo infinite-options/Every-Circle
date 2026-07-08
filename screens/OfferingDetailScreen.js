@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -15,23 +15,45 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import { recordOfferingMessageResponse } from "../utils/offeringMessageResponse";
 import { buildOfferingReplyContext } from "../utils/chatReplyContext";
 import DetailFlagButton, { detailActionRowStyle } from "../components/DetailFlagButton";
+import FlagOfferingModal from "../components/FlagOfferingModal";
+import OfferingModerationBanner from "../components/OfferingModerationBanner";
 import { useHeaderCart } from "../components/HeaderCartButton";
 import { expertiseCartTaxFields } from "../utils/cartLineTax";
+import {
+  acknowledgeOfferingModeration,
+  canAcknowledgeTakenDownOffering,
+  getOfferingModeratedState,
+  isOfferingModeratedBlocked,
+  MODERATED_ACKNOWLEDGED,
+  MODERATED_TAKEN_DOWN,
+} from "../utils/offeringModeration";
 
 const OfferingDetailScreenContent = ({ route, navigation }) => {
-  const { expertiseData, profileData, profile_uid, searchState, returnTo, profileState } = route.params || {};
+  const { expertiseData: initialExpertiseData, profileData, profile_uid, searchState, returnTo, profileState } = route.params || {};
   const { darkMode } = useDarkMode();
   const { refreshCart, headerCartButton } = useHeaderCart(navigation, { returnTo: "Search", searchState });
   const [currentProfileUid, setCurrentProfileUid] = useState(null);
   const [showCartModal, setShowCartModal] = useState(false);
+  const [showFlagModal, setShowFlagModal] = useState(false);
+  const [expertiseData, setExpertiseData] = useState(initialExpertiseData);
+  const [acknowledging, setAcknowledging] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem("profile_uid").then((uid) => setCurrentProfileUid(uid));
   }, []);
 
+  useEffect(() => {
+    setExpertiseData(initialExpertiseData);
+  }, [initialExpertiseData]);
+
   const isOwnExpertise = currentProfileUid && profile_uid === currentProfileUid;
+  const moderatedState = getOfferingModeratedState(expertiseData);
+  const offeringTakenDown = moderatedState === MODERATED_TAKEN_DOWN;
+  const offeringAcknowledged = moderatedState === MODERATED_ACKNOWLEDGED;
+  const offeringModeratedBlocked = isOfferingModeratedBlocked(expertiseData);
+  const canAcknowledge = isOwnExpertise && canAcknowledgeTakenDownOffering(expertiseData);
   const offeringTitle = expertiseData?.title ? String(expertiseData.title).trim() : "";
-  const expertiseUid = String(expertiseData?.expertise_uid || "").trim();
+  const expertiseUid = String(expertiseData?.expertise_uid || expertiseData?.profile_expertise_uid || "").trim();
   const offeringImageUri = resolveProfileItemImageUri(expertiseData?.profile_expertise_image, profile_uid);
 
   const userForMiniCard = {
@@ -79,6 +101,78 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
         expertiseResponseUid,
       }),
     });
+  };
+
+  const navigateAfterAcknowledge = () => {
+    if (returnTo === "Profile" && profileState) {
+      navigation.navigate("Profile", profileState);
+    } else if (searchState) {
+      navigation.navigate("Search", {
+        restoreState: true,
+        searchState,
+      });
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  const submitAcknowledgeTakeDown = async () => {
+    if (acknowledging) return;
+    setAcknowledging(true);
+    try {
+      const result = await acknowledgeOfferingModeration({
+        profileExpertiseUid: expertiseUid,
+        profileUid: profile_uid || currentProfileUid,
+      });
+      setExpertiseData((prev) => ({
+        ...prev,
+        profile_expertise_moderated: MODERATED_ACKNOWLEDGED,
+        moderation: {
+          ...(prev?.moderation || {}),
+          moderated: MODERATED_ACKNOWLEDGED,
+          status: "acknowledged",
+        },
+      }));
+      const already = result?.already_acknowledged === true || result?.data?.already_acknowledged === true;
+      const doneTitle = already ? "Already acknowledged" : "Acknowledged";
+      const doneMessage = already
+        ? "This offering was already acknowledged and has been removed from your profile."
+        : "This offering has been acknowledged and removed from your profile.";
+      // Web: Alert.alert button callbacks are unreliable — navigate after a simple alert/confirm.
+      if (Platform.OS === "web") {
+        window.alert(doneMessage);
+        navigateAfterAcknowledge();
+      } else {
+        Alert.alert(doneTitle, doneMessage, [{ text: "OK", onPress: navigateAfterAcknowledge }]);
+      }
+    } catch (error) {
+      console.error("OfferingDetailScreen - acknowledge failed:", error);
+      const message = error?.message || "Failed to acknowledge offering. Please try again.";
+      if (Platform.OS === "web") {
+        window.alert(message);
+      } else {
+        Alert.alert("Error", message);
+      }
+    } finally {
+      setAcknowledging(false);
+    }
+  };
+
+  const handleAcknowledgeTakeDown = () => {
+    if (!canAcknowledge || acknowledging) return;
+    const confirmMessage =
+      "By acknowledging, you confirm you understand this offering was removed for violating our policies. It will be removed from your profile.";
+    // On web, Alert.alert multi-button onPress does not fire — same pattern as Settings logout.
+    if (Platform.OS === "web") {
+      if (window.confirm(`Acknowledge take-down\n\n${confirmMessage}`)) {
+        submitAcknowledgeTakeDown();
+      }
+      return;
+    }
+    Alert.alert("Acknowledge take-down", confirmMessage, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Acknowledge", style: "destructive", onPress: submitAcknowledgeTakeDown },
+    ]);
   };
 
   const handleAddToCartConfirm = async (modalData) => {
@@ -162,7 +256,15 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
           </View>
         </TouchableOpacity>
 
-        <View style={[styles.card, darkMode && styles.darkCard]}>
+        <View
+          style={[
+            styles.card,
+            darkMode && styles.darkCard,
+            offeringTakenDown && (darkMode ? styles.darkTakenDownCard : styles.takenDownCard),
+          ]}
+        >
+          {isOwnExpertise && offeringModeratedBlocked ? <OfferingModerationBanner item={expertiseData} darkMode={darkMode} /> : null}
+
           <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Offering Description</Text>
 
           <ProfileSectionItemImage
@@ -189,8 +291,47 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
           <OfferingCardDetails offering={expertiseData} darkMode={darkMode} variant='detail' />
         </View>
 
-        {isOwnExpertise ? (
-          <Text style={[styles.ownNotice, darkMode && styles.darkOwnNotice]}>You cannot purchase your own expertise.</Text>
+        {isOwnExpertise || offeringModeratedBlocked ? (
+          <View style={styles.ownerActionsBlock}>
+            <Text style={[styles.ownNotice, darkMode && styles.darkOwnNotice]}>
+              {offeringAcknowledged
+                ? "You acknowledged this take-down. The offering has been removed from your profile."
+                : offeringTakenDown
+                  ? "This offering has been taken down. You can view details but cannot edit or sell it."
+                  : offeringModeratedBlocked
+                    ? "This offering is under moderation review. You can view details but cannot edit or sell it."
+                    : "You cannot purchase your own expertise."}
+            </Text>
+            {isOwnExpertise && canAcknowledge ? (
+              <View style={styles.moderationActionRow}>
+                <TouchableOpacity
+                  style={[styles.moderationActionButton, styles.acknowledgeButton, darkMode && styles.darkAcknowledgeButton, acknowledging && styles.actionDisabled]}
+                  onPress={handleAcknowledgeTakeDown}
+                  disabled={acknowledging}
+                  activeOpacity={0.85}
+                >
+                  {acknowledging ? (
+                    <ActivityIndicator size='small' color='#fff' style={styles.actionIcon} />
+                  ) : (
+                    <Ionicons name='checkmark-done-outline' size={17} color='#fff' style={styles.actionIcon} />
+                  )}
+                  <Text style={styles.actionButtonText} numberOfLines={1}>
+                    Acknowledge
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.moderationActionButton, styles.termsButton, darkMode && styles.darkTermsButton]}
+                  onPress={() => navigation.navigate("TermsAndConditions")}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name='document-text-outline' size={17} color='#fff' style={styles.actionIcon} />
+                  <Text style={styles.actionButtonText} numberOfLines={1}>
+                    Terms & Conditions
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
         ) : (
           <View style={detailActionRowStyle}>
             <TouchableOpacity
@@ -215,7 +356,7 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
                 Add to Cart
               </Text>
             </TouchableOpacity>
-            <DetailFlagButton />
+            <DetailFlagButton onPress={() => setShowFlagModal(true)} disabled={!expertiseUid} />
           </View>
         )}
       </ScrollView>
@@ -227,6 +368,13 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
         profileData={profileData}
         onAddToCart={handleAddToCartConfirm}
         onCancel={() => setShowCartModal(false)}
+      />
+
+      <FlagOfferingModal
+        visible={showFlagModal}
+        onClose={() => setShowFlagModal(false)}
+        targetUid={expertiseUid}
+        offeringTitle={offeringTitle}
       />
 
       <BottomNavBar navigation={navigation} />
@@ -332,22 +480,62 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 15,
   },
+  ownerActionsBlock: {
+    marginTop: 4,
+    marginBottom: 20,
+  },
   ownNotice: {
     fontSize: 13,
     color: "#6e1010",
     fontStyle: "italic",
-    marginTop: 4,
-    marginBottom: 20,
     textAlign: "center",
   },
   darkOwnNotice: {
     color: "#e8a0a0",
+  },
+  moderationActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: 14,
+  },
+  moderationActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 24,
+    minWidth: 150,
+  },
+  acknowledgeButton: {
+    backgroundColor: "#B71C1C",
+  },
+  darkAcknowledgeButton: {
+    backgroundColor: "#8B4545",
+  },
+  termsButton: {
+    backgroundColor: "#AF52DE",
+  },
+  darkTermsButton: {
+    backgroundColor: "#8f47b5",
   },
   darkPageContainer: {
     backgroundColor: "#1a1a1a",
   },
   darkCard: {
     backgroundColor: "#2d2d2d",
+  },
+  takenDownCard: {
+    backgroundColor: "#FFF5F5",
+    borderWidth: 1,
+    borderColor: "#E57373",
+  },
+  darkTakenDownCard: {
+    backgroundColor: "#3a2a2a",
+    borderWidth: 1,
+    borderColor: "#8B4545",
   },
   darkCardTitle: {
     color: "#fff",

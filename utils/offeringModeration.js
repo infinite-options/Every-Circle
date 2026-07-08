@@ -9,11 +9,13 @@ import { fetchMiddleware as fetch } from "./httpMiddleware";
 export const MODERATED_ACTIVE = 0;
 export const MODERATED_TAKEN_DOWN = 1;
 export const MODERATED_PENDING_REVIEW = 2;
+export const MODERATED_ACKNOWLEDGED = 3;
 
 export const MODERATION_STATUS = {
   PENDING_REVIEW: "pending_review",
   TAKEN_DOWN: "taken_down",
   REJECTED: "rejected",
+  ACKNOWLEDGED: "acknowledged",
 };
 
 export const FLAG_REASON_CATEGORIES = [
@@ -37,12 +39,14 @@ export function getOfferingModeratedState(item) {
   return MODERATED_ACTIVE;
 }
 
-/** Backend status string: pending_review | taken_down | rejected */
+/** Backend status string: pending_review | taken_down | rejected | acknowledged */
 export function getModerationStatus(item) {
+  const state = getOfferingModeratedState(item);
+  if (state === MODERATED_ACKNOWLEDGED) return MODERATION_STATUS.ACKNOWLEDGED;
+
   const raw = item?.moderation || item;
   const status = raw?.status ?? raw?.resubmissionStatus ?? raw?.resubmission_status;
   if (status) return String(status).toLowerCase();
-  const state = getOfferingModeratedState(item);
   if (state === MODERATED_PENDING_REVIEW) return MODERATION_STATUS.PENDING_REVIEW;
   if (state === MODERATED_TAKEN_DOWN) return MODERATION_STATUS.TAKEN_DOWN;
   return null;
@@ -57,17 +61,23 @@ export function canOfferingBeEdited(item) {
 
 export function isOfferingModeratedBlocked(item) {
   const state = getOfferingModeratedState(item);
-  return state === MODERATED_TAKEN_DOWN || state === MODERATED_PENDING_REVIEW;
+  return state === MODERATED_TAKEN_DOWN || state === MODERATED_PENDING_REVIEW || state === MODERATED_ACKNOWLEDGED;
 }
 
 export function isOfferingVisibilityBlocked(item) {
   return isOfferingModeratedBlocked(item);
 }
 
+/** Taken down after an admin rejected the latest resubmission — owner may acknowledge (moderated → 3). */
+export function canAcknowledgeTakenDownOffering(item) {
+  return getOfferingModeratedState(item) === MODERATED_TAKEN_DOWN && getModerationStatus(item) === MODERATION_STATUS.REJECTED;
+}
+
 export function getModerationStatusLabel(item) {
   const status = typeof item === "object" && item != null ? getModerationStatus(item) : null;
   const state = typeof item === "number" ? item : getOfferingModeratedState(item);
 
+  if (status === MODERATION_STATUS.ACKNOWLEDGED || state === MODERATED_ACKNOWLEDGED) return "Acknowledged";
   if (status === MODERATION_STATUS.PENDING_REVIEW) return "Pending admin review";
   if (status === MODERATION_STATUS.REJECTED) return "Rejected";
   if (status === MODERATION_STATUS.TAKEN_DOWN) return "Taken down";
@@ -82,9 +92,12 @@ export function getModerationOwnerMessage(item) {
   const rejectionNote = String(item?.moderation?.rejectionNote ?? item?.moderation?.rejection_note ?? "").trim();
   const flagPart = flagCount > 0 ? `${flagCount} user${flagCount === 1 ? "" : "s"} flagged this offering. ` : "";
 
+  if (status === MODERATION_STATUS.ACKNOWLEDGED || getOfferingModeratedState(item) === MODERATED_ACKNOWLEDGED) {
+    return "You acknowledged this take-down. The offering has been removed from your profile.";
+  }
   if (status === MODERATION_STATUS.REJECTED) {
     const notePart = rejectionNote ? ` Reason: ${rejectionNote}` : "";
-    return `This offering was rejected by an admin and remains hidden. You cannot edit it.${notePart}`;
+    return `This offering was rejected by an admin and remains hidden. Acknowledge the take-down to remove it from your profile, or review the Terms & Conditions.${notePart}`;
   }
   if (status === MODERATION_STATUS.PENDING_REVIEW || getOfferingModeratedState(item) === MODERATED_PENDING_REVIEW) {
     return `${flagPart}This offering is hidden and awaiting admin review. You cannot edit it until an admin decides.`;
@@ -99,7 +112,10 @@ export function normalizeOfferingModeration(exp) {
   if (!exp) return null;
   const moderated = getOfferingModeratedState(exp);
   const raw = exp.moderation || {};
-  const status = raw.status ?? raw.resubmissionStatus ?? raw.resubmission_status ?? null;
+  const status =
+    moderated === MODERATED_ACKNOWLEDGED
+      ? MODERATION_STATUS.ACKNOWLEDGED
+      : raw.status ?? raw.resubmissionStatus ?? raw.resubmission_status ?? null;
   return {
     moderated,
     status,
@@ -194,6 +210,29 @@ export async function reviewOfferingModeration({ profileExpertiseUid, action, no
   const result = await response.json().catch(() => ({}));
   if (!response.ok || (result.code != null && result.code !== 200)) {
     throw new Error(result.message || "Failed to submit review decision.");
+  }
+  return result;
+}
+
+/** POST acknowledge take-down (moderated 1 + admin-rejected → moderated 3). Idempotent if already acknowledged. */
+export async function acknowledgeOfferingModeration({ profileExpertiseUid, profileUid }) {
+  const ownerUid = String(profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
+  const uid = String(profileExpertiseUid || "").trim();
+  if (!ownerUid) {
+    throw new Error("Please log in to acknowledge this offering.");
+  }
+  if (!uid) {
+    throw new Error("Offering not found.");
+  }
+
+  const response = await fetch(`${MODERATION_OFFERINGS_ENDPOINT}/${encodeURIComponent(uid)}/acknowledge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ profile_uid: ownerUid }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || (result.code != null && result.code !== 200)) {
+    throw new Error(result.message || "Failed to acknowledge offering take-down.");
   }
   return result;
 }
