@@ -56,7 +56,8 @@ import { buildOfferingReplyContext, buildSeekingReplyContext } from "../utils/ch
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
-import { expertiseCartTaxFields } from "../utils/cartLineTax";
+import { expertiseCartPersistedFields } from "../utils/offeringCartUtils";
+import { upsertExpertiseCartItem } from "../utils/expertiseCartStorage";
 import { getHeaderColors } from "../config/headerColors";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -1302,7 +1303,7 @@ const ProfileScreen = ({ route, navigation }) => {
       const { quantity: qty, escrow, subtotal, totalWithFee, taxAmount, taxRatePct } = modalData;
       const cartKey = `cart_expertise_${expertiseData.expertise_uid}`;
       const sellerDisplayName = [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim();
-      const cartItem = {
+      const cartItemDraft = {
         expertise_uid: expertiseData.expertise_uid,
         title: expertiseData.title,
         description: expertiseData.description,
@@ -1317,13 +1318,17 @@ const ProfileScreen = ({ route, navigation }) => {
         subtotal,
         taxAmount,
         totalWithFee,
-        ...expertiseCartTaxFields(expertiseData, { taxRatePct }),
+        ...expertiseCartPersistedFields(expertiseData, { taxRatePct }),
         cart_key: cartKey,
         addedAt: new Date().toISOString(),
       };
-      await AsyncStorage.setItem(cartKey, JSON.stringify(cartItem));
+      const { cartItem, addedQty, mergedQty, capped, maxQty } = await upsertExpertiseCartItem(cartItemDraft);
       setOfferingCartModalItem(null);
-      Alert.alert("Added to Cart", `${expertiseData?.title || "Item"} (x${qty}) has been added to your cart.`, [
+      const title = expertiseData?.title || "Item";
+      const alertMessage = capped && maxQty != null
+        ? `Only ${maxQty} available. ${title} is now at ${mergedQty} in your cart (added ${addedQty}).`
+        : `${title}: added ${addedQty} — ${mergedQty} now in your cart.`;
+      Alert.alert("Added to Cart", alertMessage, [
         { text: "Continue Browsing", style: "cancel" },
         {
           text: "View Cart",
@@ -1986,6 +1991,11 @@ const ProfileScreen = ({ route, navigation }) => {
                                     description: exp.description || "",
                                     cost: exp.cost || "",
                                     bounty: exp.bounty || "",
+                                    quantity: exp.quantity || "",
+                                    profile_expertise_quantity: exp.quantity || "",
+                                    profile_expertise_bounty_type: exp.profile_expertise_bounty_type || "none",
+                                    profile_expertise_is_taxable: exp.profile_expertise_is_taxable ?? 0,
+                                    profile_expertise_tax_rate: exp.profile_expertise_tax_rate || "",
                                   },
                                   profileData: {
                                     firstName: user.firstName,

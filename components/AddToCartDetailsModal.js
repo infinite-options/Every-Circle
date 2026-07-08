@@ -5,49 +5,20 @@ import { View, Text, StyleSheet, TouchableOpacity, Modal, Platform, TextInput } 
 import { Ionicons } from "@expo/vector-icons";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "./MiniCard";
-
-/**
- * Parse cost string to extract numeric value and units.
- * Examples: "$50/hr" -> { value: 50, units: "/hr" }, "$50 total" -> { value: 50, units: "total" }
- */
-const parseCost = (costStr) => {
-  if (!costStr || String(costStr).toLowerCase() === "free") return { value: 0, units: "" };
-  const str = String(costStr).replace(/^\$/, "").trim();
-  if (str.toLowerCase().endsWith("total")) {
-    const amount = str.replace(/total$/i, "").trim();
-    return { value: parseFloat(amount) || 0, units: "total" };
-  }
-  const match = str.match(/^([\d.]+)\s*(\/[\w\s]+)?$/i) || str.match(/^([\d.]+)/);
-  if (!match) return { value: 0, units: "" };
-  const value = parseFloat(match[1]) || 0;
-  const units = (match[2] || "").trim().toLowerCase();
-  return { value, units };
-};
-
-/** Map cost unit to quantity label suffix, e.g. /hr -> "number of hrs" */
-const getQuantityLabelSuffix = (units) => {
-  if (!units) return "";
-  const u = units.replace(/^\//, "").toLowerCase();
-  if (u === "each") return "number of items";
-  if (u === "hr") return "number of hrs";
-  if (u === "day") return "number of days";
-  if (u === "week") return "number of weeks";
-  if (u === "month") return "number of months";
-  if (u === "quarter") return "number of quarters";
-  if (u === "year") return "number of years";
-  return units;
-};
-
-const parseBounty = (bountyStr) => {
-  if (!bountyStr || String(bountyStr).toLowerCase() === "free") return 0;
-  const match = String(bountyStr).match(/[\d.]+/);
-  return match ? parseFloat(match[0]) : 0;
-};
+import {
+  formatOfferingAddToCartStockHint,
+  formatOfferingCostLineLabel,
+  getOfferingBountyLineTotal,
+  getOfferingMaxAddQuantity,
+  getOfferingQuantityLabelSuffix,
+  hasOfferingBounty,
+  parseOfferingCostParts,
+} from "../utils/offeringCartUtils";
+import { loadExpertiseCartQuantity } from "../utils/expertiseCartStorage";
 
 const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAddToCart, onCancel }) => {
   const { darkMode } = useDarkMode();
-  const { value: costValue, units } = parseCost(expertiseData?.cost || "");
-  const bountyAmount = parseBounty(expertiseData?.bounty || "0");
+  const { value: costValue } = parseOfferingCostParts(expertiseData?.cost || "");
 
   const isTaxable = expertiseData?.profile_expertise_is_taxable == 1 || expertiseData?.profile_expertise_is_taxable === true;
   const taxRateStr = String(expertiseData?.profile_expertise_tax_rate ?? "").trim();
@@ -56,27 +27,80 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
   const [escrow, setEscrow] = useState(true);
   const [quantity, setQuantity] = useState("1");
   const [quantityError, setQuantityError] = useState("");
+  const [existingInCart, setExistingInCart] = useState(0);
+  const [cartQtyLoading, setCartQtyLoading] = useState(false);
+
+  const maxCanAdd = getOfferingMaxAddQuantity(expertiseData, existingInCart);
+  const atCartMaximum = maxCanAdd != null && maxCanAdd <= 0;
 
   useEffect(() => {
-    if (show) {
-      setEscrow(true);
-      setQuantity("1");
-      setQuantityError("");
+    if (!show) {
+      setExistingInCart(0);
+      setCartQtyLoading(false);
+      return;
     }
-  }, [show]);
+    setEscrow(true);
+    setQuantity("1");
+    setQuantityError("");
 
-  const isTotalUnit = units === "total";
-  const quantityLabelSuffix = isTotalUnit ? "" : getQuantityLabelSuffix(units);
-  const qtyNum = isTotalUnit ? 1 : parseFloat(quantity) || 0;
+    const expertiseUid = expertiseData?.expertise_uid;
+    if (!expertiseUid) {
+      setExistingInCart(0);
+      setCartQtyLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCartQtyLoading(true);
+    loadExpertiseCartQuantity(expertiseUid).then((qty) => {
+      if (cancelled) return;
+      setExistingInCart(qty);
+      setCartQtyLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [show, expertiseData?.expertise_uid]);
+
+  useEffect(() => {
+    if (!show || cartQtyLoading) return;
+    if (maxCanAdd != null && maxCanAdd > 0) {
+      setQuantity((prev) => {
+        const parsed = parseFloat(prev) || 1;
+        return String(Math.min(parsed, maxCanAdd));
+      });
+    }
+  }, [show, cartQtyLoading, maxCanAdd]);
+
+  const quantityLabelSuffix = getOfferingQuantityLabelSuffix(expertiseData?.cost);
+  const qtyNum = parseFloat(quantity) || 0;
+  const stockHint = formatOfferingAddToCartStockHint(expertiseData, existingInCart, qtyNum);
+  const atSelectionMaximum = maxCanAdd != null && qtyNum > 0 && qtyNum >= maxCanAdd;
   const costAmount = costValue * qtyNum;
   const subtotal = costAmount; // Bounty paid by seller, not included in buyer's total
   const taxAmount = taxRatePct > 0 ? subtotal * (taxRatePct / 100) : 0;
   const processingFee = (subtotal + taxAmount) * 0.03;
   const totalWithFee = subtotal + taxAmount + processingFee;
+  const bountyLineTotal = hasOfferingBounty(expertiseData) ? getOfferingBountyLineTotal(expertiseData, qtyNum) : 0;
+
+  const clampQuantity = (nextQty) => {
+    if (maxCanAdd != null && maxCanAdd <= 0) return 0;
+    let q = Math.max(1, nextQty);
+    if (maxCanAdd != null) q = Math.min(maxCanAdd, q);
+    return q;
+  };
 
   const handleAddToCart = () => {
+    if (atCartMaximum) {
+      setQuantityError("Your cart already has the maximum available for this offering.");
+      return;
+    }
     if (qtyNum <= 0 || qtyNum > 9999) {
       setQuantityError("Enter a valid quantity (1-9999)");
+      return;
+    }
+    if (maxCanAdd != null && qtyNum > maxCanAdd) {
+      setQuantityError(`You can only add ${maxCanAdd} more (${existingInCart} already in cart).`);
       return;
     }
     if (subtotal <= 0) {
@@ -93,7 +117,7 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
       escrow,
       costAmount,
       costValue,
-      bountyAmount,
+      bountyAmount: bountyLineTotal,
     });
     setShow(false);
   };
@@ -141,36 +165,55 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
             </TouchableOpacity>
           </View>
 
-          {!isTotalUnit && (
-            <View style={styles.section}>
-              <Text style={[styles.label, darkMode && styles.darkLabel]}>Quantity {quantityLabelSuffix && `(${quantityLabelSuffix})`}</Text>
-              <View style={styles.quantityRow}>
-                <TouchableOpacity style={[styles.quantityButton, darkMode && styles.darkQuantityButton]} onPress={() => setQuantity(String(Math.max(1, qtyNum - 1)))}>
-                  <Text style={[styles.quantityButtonText, darkMode && styles.darkQuantityButtonText]}>−</Text>
-                </TouchableOpacity>
-                <TextInput
-                  style={[styles.quantityInput, { marginHorizontal: 12 }, darkMode && styles.darkQuantityInput]}
-                  value={quantity}
-                  onChangeText={(t) => {
-                    setQuantity(t.replace(/[^0-9.]/g, ""));
-                    setQuantityError("");
-                  }}
-                  keyboardType='decimal-pad'
-                  placeholder='1'
-                />
-                <TouchableOpacity style={[styles.quantityButton, darkMode && styles.darkQuantityButton]} onPress={() => setQuantity(String(qtyNum + 1))}>
-                  <Text style={[styles.quantityButtonText, darkMode && styles.darkQuantityButtonText]}>+</Text>
-                </TouchableOpacity>
-              </View>
-              {quantityError ? <Text style={styles.errorText}>{quantityError}</Text> : null}
+          <View style={styles.section}>
+            <Text style={[styles.label, darkMode && styles.darkLabel]}>Quantity ({quantityLabelSuffix})</Text>
+            {stockHint ? (
+              <Text style={[styles.stockHint, darkMode && styles.darkStockHint, (atCartMaximum || atSelectionMaximum) && styles.stockHintWarning]}>
+                {stockHint}
+              </Text>
+            ) : cartQtyLoading ? (
+              <Text style={[styles.stockHint, darkMode && styles.darkStockHint]}>Checking cart…</Text>
+            ) : null}
+            <View style={[styles.quantityRow, atCartMaximum && styles.quantityRowDisabled]}>
+              <TouchableOpacity
+                style={[styles.quantityButton, darkMode && styles.darkQuantityButton]}
+                onPress={() => setQuantity(String(clampQuantity(qtyNum - 1)))}
+                disabled={atCartMaximum || qtyNum <= 1}
+              >
+                <Text style={[styles.quantityButtonText, darkMode && styles.darkQuantityButtonText]}>−</Text>
+              </TouchableOpacity>
+              <TextInput
+                style={[styles.quantityInput, { marginHorizontal: 12 }, darkMode && styles.darkQuantityInput, atCartMaximum && styles.quantityInputDisabled]}
+                value={quantity}
+                onChangeText={(t) => {
+                  setQuantity(t.replace(/[^0-9.]/g, ""));
+                  setQuantityError("");
+                }}
+                onBlur={() => {
+                  if (atCartMaximum) return;
+                  const parsed = parseFloat(quantity) || 1;
+                  setQuantity(String(clampQuantity(parsed)));
+                }}
+                keyboardType='decimal-pad'
+                placeholder='1'
+                editable={!atCartMaximum}
+              />
+              <TouchableOpacity
+                style={[styles.quantityButton, darkMode && styles.darkQuantityButton, maxCanAdd != null && qtyNum >= maxCanAdd && styles.quantityButtonDisabled]}
+                onPress={() => setQuantity(String(clampQuantity(qtyNum + 1)))}
+                disabled={atCartMaximum || (maxCanAdd != null && qtyNum >= maxCanAdd)}
+              >
+                <Text style={[styles.quantityButtonText, darkMode && styles.darkQuantityButtonText]}>+</Text>
+              </TouchableOpacity>
             </View>
-          )}
+            {quantityError ? <Text style={styles.errorText}>{quantityError}</Text> : null}
+          </View>
 
           <View style={[styles.summarySection, darkMode && styles.darkSummarySection]}>
             {costValue > 0 && costAmount > 0 && (
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, darkMode && styles.darkSummaryLabel]}>
-                  {isTotalUnit ? `Cost (total)` : `Cost (${qtyNum} × $${costValue.toFixed(2)}${units})`}
+                  {formatOfferingCostLineLabel(qtyNum, expertiseData?.cost)}
                 </Text>
                 <Text style={[styles.summaryValue, darkMode && styles.darkSummaryValue]}>${costAmount.toFixed(2)}</Text>
               </View>
@@ -193,10 +236,10 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
               <Text style={[styles.summaryLabel, styles.totalLabel, darkMode && styles.darkSummaryLabel]}>Total</Text>
               <Text style={[styles.summaryValue, styles.totalValue, darkMode && styles.darkSummaryValue]}>${totalWithFee.toFixed(2)}</Text>
             </View>
-            {bountyAmount > 0 && (
+            {bountyLineTotal > 0 && (
               <View style={[styles.summaryRow, styles.bountyNoteRow, darkMode && styles.darkBountyNoteRow]}>
                 <Text style={[styles.bountyNoteLabel, darkMode && styles.darkBountyNoteLabel]}>Bounty (paid by Seller)</Text>
-                <Text style={[styles.bountyNoteValue, darkMode && styles.darkBountyNoteValue]}>${Math.round(bountyAmount)}</Text>
+                <Text style={[styles.bountyNoteValue, darkMode && styles.darkBountyNoteValue]}>${bountyLineTotal.toFixed(2)}</Text>
               </View>
             )}
           </View>
@@ -205,7 +248,11 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
             <TouchableOpacity style={[styles.button, styles.cancelButton, darkMode && styles.darkCancelButton]} onPress={handleCancel}>
               <Text style={[styles.buttonText, styles.cancelButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.button, styles.continueButton, darkMode && styles.darkContinueButton]} onPress={handleAddToCart}>
+            <TouchableOpacity
+              style={[styles.button, styles.continueButton, darkMode && styles.darkContinueButton, atCartMaximum && styles.continueButtonDisabled]}
+              onPress={handleAddToCart}
+              disabled={atCartMaximum || cartQtyLoading}
+            >
               <Text style={styles.buttonText}>Add to Cart</Text>
             </TouchableOpacity>
           </View>
@@ -353,6 +400,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#f44336",
     marginTop: 4,
+  },
+  stockHint: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 6,
+  },
+  stockHintWarning: {
+    color: "#b45309",
+    fontWeight: "600",
+  },
+  darkStockHint: {
+    color: "#aaa",
+  },
+  quantityRowDisabled: {
+    opacity: 0.5,
+  },
+  quantityInputDisabled: {
+    opacity: 0.7,
+  },
+  quantityButtonDisabled: {
+    opacity: 0.4,
+  },
+  continueButtonDisabled: {
+    opacity: 0.5,
   },
   summarySection: {
     backgroundColor: "#F8F8F8",
