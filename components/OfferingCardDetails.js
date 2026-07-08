@@ -3,7 +3,8 @@ import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { formatDateTimeForDisplay } from "../utils/profileDateTime";
 import { formatExpertiseModeForDisplay } from "../utils/expertiseMode";
-import { getOfferingCardLayout, getOfferingListMetricColumns, offeringCardHasDetails } from "../utils/offeringDisplayLines";
+import { getOfferingCardLayout, getOfferingListMetricColumns } from "../utils/offeringDisplayLines";
+import NoBountyIcon from "./NoBountyIcon";
 
 function FulfillmentRow({ label, value, rowTextStyle }) {
   return (
@@ -17,12 +18,15 @@ function FulfillmentRow({ label, value, rowTextStyle }) {
 }
 
 function MetricBox({ columnLabel, value, subtext, darkMode, align = "left" }) {
-  if (!value && !subtext) return null;
+  const showNoBounty = columnLabel === "Bounty" && !value && !subtext;
+  if (!value && !subtext && !showNoBounty) return null;
   const alignStyle = align === "center" ? styles.metricAlignCenter : align === "right" ? styles.metricAlignRight : null;
   return (
     <View style={[styles.metricBox, darkMode && styles.metricBoxDark, alignStyle]}>
       {columnLabel ? <Text style={[styles.metricLabel, darkMode && styles.metricLabelDark, alignStyle]}>{columnLabel}</Text> : null}
-      {value ? (
+      {showNoBounty ? (
+        <NoBountyIcon darkMode={darkMode} />
+      ) : value ? (
         <Text style={[styles.metricValue, darkMode && styles.metricValueDark, alignStyle]} numberOfLines={2}>
           {value}
         </Text>
@@ -41,9 +45,10 @@ const LIST_METRIC_ALIGN = {
 /** Offering metrics, when/where, and fulfillment — list (Search) or detail (full) variant. */
 export default function OfferingCardDetails({ offering, darkMode = false, style, metaTextStyle, variant = "detail" }) {
   const layout = getOfferingCardLayout(offering);
-  const listMetrics = variant === "list" ? getOfferingListMetricColumns(offering) : [];
-  const hasListContent = variant === "list" && (listMetrics.length > 0 || layout.whenWhere.hasContent);
-  const hasDetailContent = variant === "detail" && offeringCardHasDetails(layout);
+  const metricColumns = getOfferingListMetricColumns(offering);
+  const hasMetrics = metricColumns.length > 0;
+  const hasListContent = variant === "list" && (hasMetrics || layout.whenWhere.hasContent);
+  const hasDetailContent = variant === "detail" && (hasMetrics || layout.whenWhere.hasContent || layout.fulfillmentRows.length > 0);
   if (!hasListContent && !hasDetailContent) return null;
 
   const rowTextStyle = [styles.metaRowText, darkMode && styles.metaRowTextDark, metaTextStyle];
@@ -83,16 +88,18 @@ export default function OfferingCardDetails({ offering, darkMode = false, style,
     </View>
   ) : null;
 
+  const metricsRow = hasMetrics ? (
+    <View style={styles.metricsRow}>
+      {metricColumns.map((col) => (
+        <MetricBox key={col.label} columnLabel={col.label} value={col.value} subtext={col.subtext} darkMode={darkMode} align={LIST_METRIC_ALIGN[col.label] || "left"} />
+      ))}
+    </View>
+  ) : null;
+
   if (variant === "list") {
     return (
       <View style={[styles.container, style]}>
-        {listMetrics.length > 0 ? (
-          <View style={styles.metricsRow}>
-            {listMetrics.map((col) => (
-              <MetricBox key={col.label} columnLabel={col.label} value={col.value} darkMode={darkMode} align={LIST_METRIC_ALIGN[col.label] || "left"} />
-            ))}
-          </View>
-        ) : null}
+        {metricsRow}
         {whenWhereBlock}
       </View>
     );
@@ -100,12 +107,7 @@ export default function OfferingCardDetails({ offering, darkMode = false, style,
 
   return (
     <View style={[styles.container, style]}>
-      {layout.metrics.hasContent ? (
-        <View style={styles.metricsRow}>
-          <MetricBox columnLabel={layout.metrics.costColumnLabel} value={layout.metrics.costValue} subtext={layout.metrics.costSubtext} darkMode={darkMode} />
-          <MetricBox columnLabel='Availability' value={layout.metrics.availabilityValue} subtext={layout.metrics.availabilitySubtext} darkMode={darkMode} align='right' />
-        </View>
-      ) : null}
+      {metricsRow}
       {whenWhereBlock}
       {layout.fulfillmentRows.length > 0 ? (
         <View style={styles.fulfillmentSection}>

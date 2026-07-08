@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Dropdown } from "react-native-element-dropdown";
 import * as ImagePicker from "expo-image-picker";
 import { formatCostValue, parsePrice } from "../utils/priceUtils";
+import { isTruthyTaxableFlag, isValidTaxRate, validateTaxableRate, TAX_RATE_VALIDATION_MESSAGE, taxRateForTaxableSelection } from "../utils/taxValidation";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import { getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import ProfileItemImageColumn from "./ProfileItemImageColumn";
@@ -135,6 +136,28 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
     const updated = [...expertise];
     updated[index][field] = value;
     setExpertise(updated);
+  };
+
+  const handleOfferingTaxableSelect = (index) => {
+    const updated = [...expertise];
+    const item = updated[index];
+    updated[index] = {
+      ...item,
+      profile_expertise_is_taxable: 1,
+      profile_expertise_tax_rate: taxRateForTaxableSelection(item.profile_expertise_tax_rate),
+    };
+    setExpertise(updated);
+  };
+
+  const handleOfferingTaxRateBlur = (index) => {
+    const item = expertise[index];
+    if (!isTruthyTaxableFlag(item?.profile_expertise_is_taxable)) return;
+    const raw = String(item.profile_expertise_tax_rate ?? "").trim();
+    if (!raw) return;
+    if (!isValidTaxRate(raw)) {
+      Alert.alert("Validation", TAX_RATE_VALIDATION_MESSAGE);
+      handleInputChange(index, "profile_expertise_tax_rate", "");
+    }
   };
 
   const onOfferingAddressChange = (index, text) => {
@@ -794,7 +817,7 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.taxBtn, (item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") && styles.taxBtnActive]}
-              onPress={() => handleInputChange(index, "profile_expertise_is_taxable", 1)}
+              onPress={() => handleOfferingTaxableSelect(index)}
             >
               <Text style={[styles.taxBtnText, (item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") && styles.taxBtnTextActive]}>
                 Taxable
@@ -803,9 +826,14 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
             {(item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") ? (
               <View style={styles.taxRateInputWithSuffix}>
                 <TextInput
-                  style={[styles.taxRateInput, styles.taxRateInputCompact, !item.profile_expertise_tax_rate && { borderColor: "#c00", borderWidth: 1 }]}
+                  style={[
+                    styles.taxRateInput,
+                    styles.taxRateInputCompact,
+                    (!item.profile_expertise_tax_rate || !isValidTaxRate(item.profile_expertise_tax_rate)) && { borderColor: "#c00", borderWidth: 1 },
+                  ]}
                   value={String(item.profile_expertise_tax_rate ?? "")}
                   onChangeText={(t) => handleInputChange(index, "profile_expertise_tax_rate", t.replace(/[^0-9.]/g, ""))}
+                  onBlur={() => handleOfferingTaxRateBlur(index)}
                   placeholder='Required'
                   keyboardType='decimal-pad'
                 />
@@ -1464,10 +1492,7 @@ export const validateExpertise = (expertise) => {
 export const validateExpertiseTax = (expertise) => {
   return expertise.every((e) => {
     if (!e.name) return true; // skip empty entries
-    const taxable = e.profile_expertise_is_taxable === 1 || e.profile_expertise_is_taxable === "1";
-    if (!taxable) return true;
-    const rate = String(e.profile_expertise_tax_rate ?? "").trim();
-    return rate !== "" && parseFloat(rate) > 0;
+    return validateTaxableRate(e.profile_expertise_is_taxable, e.profile_expertise_tax_rate);
   });
 };
 export default ExpertiseSection;

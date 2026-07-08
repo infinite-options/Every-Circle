@@ -94,13 +94,16 @@ function getOfferingQtyMetricValue(offering) {
   return raw;
 }
 
-/** Three-column metrics for Search list cards — Cost, Qty, Bounty. */
+/** Three-column metrics — Cost (+ tax subtext), Qty, Bounty (Bounty always shown). */
 export function getOfferingListMetricColumns(offering) {
+  const cost = offering?.cost ?? offering?.profile_expertise_cost ?? "";
+  const costCol = parseOfferingCost(cost);
+  const taxSubtext = costCol ? getOfferingTaxSubtext(offering) : null;
   return [
-    { label: "Cost", value: getOfferingCostMetricValue(offering) },
+    { label: "Cost", value: getOfferingCostMetricValue(offering), subtext: taxSubtext || undefined },
     { label: "Qty", value: getOfferingQtyMetricValue(offering) },
     { label: "Bounty", value: getOfferingBountyMetricValue(offering) },
-  ].filter((col) => col.value);
+  ].filter((col) => col.label === "Bounty" || col.value || (col.label === "Cost" && col.subtext));
 }
 
 export function getOfferingLocationLabel(offering) {

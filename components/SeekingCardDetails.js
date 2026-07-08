@@ -4,15 +4,21 @@ import { Ionicons } from "@expo/vector-icons";
 import { formatDateTimeForDisplay } from "../utils/profileDateTime";
 import { formatExpertiseModeForDisplay } from "../utils/expertiseMode";
 import { getSeekingCardLayout, seekingCardHasDetails } from "../utils/seekingDisplayLines";
+import NoBountyIcon from "./NoBountyIcon";
 
 function MetricBox({ columnLabel, value, darkMode, align = "left" }) {
   const alignStyle = align === "center" ? styles.metricAlignCenter : align === "right" ? styles.metricAlignRight : null;
+  const showNoBounty = columnLabel === "Bounty" && !value;
   return (
     <View style={[styles.metricBox, darkMode && styles.metricBoxDark, alignStyle]}>
       <Text style={[styles.metricLabel, darkMode && styles.metricLabelDark, alignStyle]}>{columnLabel}</Text>
-      <Text style={[styles.metricValue, darkMode && styles.metricValueDark, alignStyle]} numberOfLines={2}>
-        {value}
-      </Text>
+      {showNoBounty ? (
+        <NoBountyIcon darkMode={darkMode} />
+      ) : value ? (
+        <Text style={[styles.metricValue, darkMode && styles.metricValueDark, alignStyle]} numberOfLines={2}>
+          {value}
+        </Text>
+      ) : null}
     </View>
   );
 }

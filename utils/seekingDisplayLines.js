@@ -70,14 +70,14 @@ export function getSeekingLocationLabel(seeking) {
   return [city, state].filter(Boolean).join(", ");
 }
 
-/** Metric columns for Seeking cards — Rate, Desired Qty, Bounty (2–3 boxes). */
+/** Metric columns for Seeking cards — Rate, Desired Qty, Bounty (Bounty always shown). */
 export function getSeekingMetricColumns(seeking) {
   const cost = seeking?.cost ?? seeking?.profile_wish_cost ?? "";
   return [
     { label: "Rate", value: parseSeekingRateValue(cost) },
     { label: "Desired Qty", value: getSeekingQtyValue(seeking) },
     { label: "Bounty", value: getSeekingRewardValue(seeking) },
-  ].filter((col) => col.value);
+  ].filter((col) => col.label === "Bounty" || col.value);
 }
 
 export function getSeekingCardLayout(seeking) {

@@ -14,6 +14,7 @@ import { getHeaderColors } from "../config/headerColors";
 import ExperienceSection from "../components/ExperienceSection";
 import EducationSection from "../components/EducationSection";
 import ExpertiseSection, { validateExpertise, validateExpertiseTax } from "../components/ExpertiseSection";
+import { TAX_RATE_VALIDATION_MESSAGE } from "../utils/taxValidation";
 import SeekingSection, { validateSeeking } from "../components/SeekingSection";
 import BusinessSection from "../components/BusinessSection";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
@@ -703,7 +704,7 @@ const EditProfileScreen = ({ route, navigation }) => {
     }
 
     if (!validateExpertiseTax(formData.expertise)) {
-      Alert.alert("Required Field", "Please enter a tax rate for all taxable offerings.");
+      Alert.alert("Required Field", TAX_RATE_VALIDATION_MESSAGE);
       return;
     }
 

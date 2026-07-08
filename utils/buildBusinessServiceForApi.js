@@ -1,4 +1,5 @@
 import { parsePrice } from "./priceUtils";
+import { isTruthyTaxableFlag, isValidTaxRate } from "./taxValidation";
 import { parseTagList, serializeTagList } from "./tagListUtils";
 
 export const DEFAULT_RETURN_WINDOW_DAYS = "5";
@@ -49,19 +50,14 @@ export function buildBusinessServiceForApi(service, idx = 0) {
     bs_bounty_currency: service.bs_bounty_currency || "USD",
     bs_bounty_type: bountyTypeOut,
     bs_is_taxable: (() => {
-      if (service.bs_is_taxable === 1 || service.bs_is_taxable === "1" || service.bs_is_taxable === true) return 1;
+      if (isTruthyTaxableFlag(service.bs_is_taxable) && isValidTaxRate(service.bs_tax_rate)) return 1;
       if (service.bs_is_taxable === 0 || service.bs_is_taxable === "0" || service.bs_is_taxable === false) return 0;
       return parsePrice(service.bs_tax_rate) > 0 ? 1 : 0;
     })(),
     bs_tax_rate: (() => {
-      const taxable =
-        service.bs_is_taxable === 1 ||
-        service.bs_is_taxable === "1" ||
-        service.bs_is_taxable === true ||
-        (!(service.bs_is_taxable === 0 || service.bs_is_taxable === "0" || service.bs_is_taxable === false) && parsePrice(service.bs_tax_rate) > 0);
+      const taxable = isTruthyTaxableFlag(service.bs_is_taxable) && isValidTaxRate(service.bs_tax_rate);
       if (!taxable) return "0";
-      const s = String(service.bs_tax_rate ?? "").trim();
-      return s !== "" ? s : "0";
+      return String(service.bs_tax_rate ?? "").trim();
     })(),
     bs_discount_allowed: typeof service.bs_discount_allowed === "undefined" ? 1 : service.bs_discount_allowed,
     bs_refund_policy: service.bs_refund_policy || "",

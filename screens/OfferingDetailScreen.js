@@ -14,6 +14,7 @@ import { getHeaderColors } from "../config/headerColors";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import { recordOfferingMessageResponse } from "../utils/offeringMessageResponse";
 import { buildOfferingReplyContext } from "../utils/chatReplyContext";
+import DetailFlagButton, { detailActionRowStyle } from "../components/DetailFlagButton";
 
 const OfferingDetailScreenContent = ({ route, navigation }) => {
   const { expertiseData, profileData, profile_uid, searchState, returnTo, profileState } = route.params || {};
@@ -183,25 +184,30 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
         {isOwnExpertise ? (
           <Text style={[styles.ownNotice, darkMode && styles.darkOwnNotice]}>You cannot purchase your own expertise.</Text>
         ) : (
-          <View style={styles.actionRow}>
+          <View style={detailActionRowStyle}>
             <TouchableOpacity
-              style={[styles.messageButton, darkMode && styles.darkMessageButton, !profile_uid && styles.actionDisabled]}
+              style={[styles.actionButton, styles.messageButton, darkMode && styles.darkMessageButton, !profile_uid && styles.actionDisabled]}
               onPress={handleMessagePress}
               disabled={!profile_uid}
               activeOpacity={0.85}
             >
-              <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' style={{ marginRight: 7 }} />
-              <Text style={styles.actionButtonText}>Messaging</Text>
+              <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' style={styles.actionIcon} />
+              <Text style={styles.actionButtonText} numberOfLines={1}>
+                Messaging
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.cartButton, darkMode && styles.darkCartButton, !expertiseUid && styles.actionDisabled]}
+              style={[styles.actionButton, styles.cartButton, darkMode && styles.darkCartButton, !expertiseUid && styles.actionDisabled]}
               onPress={() => setShowCartModal(true)}
               disabled={!expertiseUid}
               activeOpacity={0.85}
             >
-              <Ionicons name='cart-outline' size={20} color='#fff' style={{ marginRight: 6 }} />
-              <Text style={styles.actionButtonText}>Add to Cart</Text>
+              <Ionicons name='cart-outline' size={20} color='#fff' style={styles.actionIcon} />
+              <Text style={styles.actionButtonText} numberOfLines={1}>
+                Add to Cart
+              </Text>
             </TouchableOpacity>
+            <DetailFlagButton />
           </View>
         )}
       </ScrollView>
@@ -287,36 +293,25 @@ const styles = StyleSheet.create({
     color: "#666",
     lineHeight: 20,
   },
-  actionRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    gap: 12,
-    marginTop: 4,
-    marginBottom: 20,
-  },
-  messageButton: {
+  actionButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#AF52DE",
     paddingVertical: 10,
     paddingHorizontal: 28,
     borderRadius: 24,
-    minWidth: 192,
+  },
+  actionIcon: {
+    marginRight: 6,
+  },
+  messageButton: {
+    backgroundColor: "#AF52DE",
   },
   darkMessageButton: {
     backgroundColor: "#8f47b5",
   },
   cartButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
     backgroundColor: "#00C7BE",
-    paddingVertical: 10,
-    paddingHorizontal: 28,
-    borderRadius: 24,
-    minWidth: 192,
   },
   darkCartButton: {
     backgroundColor: "#009e98",

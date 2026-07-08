@@ -15,6 +15,7 @@ import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri";
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import SeekingCardDetails from "../components/SeekingCardDetails";
+import DetailFlagButton, { detailActionRowStyle } from "../components/DetailFlagButton";
 
 const formatDateForDisplay = (value) => {
   if (!value || typeof value !== "string" || value.trim() === "") return "";
@@ -54,9 +55,7 @@ const WishDetailScreenContent = ({ route, navigation }) => {
         const res = await fetch(`${PROFILE_WISH_RESPONSE_ENDPOINT}/${encodeURIComponent(profileUid)}`);
         const json = await res.json();
         const rows = Array.isArray(json?.data) ? json.data : [];
-        const matches = rows
-          .filter((row) => String(row.wr_profile_wish_id || "").trim() === wishId)
-          .sort((a, b) => String(b.wr_datetime || "").localeCompare(String(a.wr_datetime || "")));
+        const matches = rows.filter((row) => String(row.wr_profile_wish_id || "").trim() === wishId).sort((a, b) => String(b.wr_datetime || "").localeCompare(String(a.wr_datetime || "")));
         if (!cancelled) setExistingResponses(matches);
       } catch (e) {
         console.warn("[WishDetailScreen] fetchMyWishResponse failed:", e);
@@ -317,13 +316,13 @@ const WishDetailScreenContent = ({ route, navigation }) => {
           <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Seeking Description</Text>
 
           <ProfileSectionItemImage
-            section="seeking"
+            section='seeking'
             imageUri={resolveProfileItemImageUri(wishData?.profile_wish_image, profile_uid)}
             imageIsPublic={wishData?.profile_wish_image_is_public}
             size={180}
             darkMode={darkMode}
             style={styles.wishHeroImage}
-            resizeMode="cover"
+            resizeMode='cover'
           />
 
           {wishData?.title && <Text style={[styles.wishTitle, darkMode && styles.darkWishTitle]}>{wishData.title}</Text>}
@@ -355,9 +354,7 @@ const WishDetailScreenContent = ({ route, navigation }) => {
                 {existingResponses.length > 1 && response.wr_datetime ? (
                   <Text style={[styles.existingResponseDate, darkMode && styles.darkExistingResponseDate]}>{formatDateForDisplay(response.wr_datetime)}</Text>
                 ) : null}
-                <Text style={[styles.existingResponseType, darkMode && styles.darkExistingResponseType]}>
-                  {response.wr_type === "refer" ? "I am referring someone else" : "I can help"}
-                </Text>
+                <Text style={[styles.existingResponseType, darkMode && styles.darkExistingResponseType]}>{response.wr_type === "refer" ? "I am referring someone else" : "I can help"}</Text>
                 {response.wr_responder_note ? (
                   <Text style={[styles.existingResponseNote, darkMode && styles.darkExistingResponseNote]}>{response.wr_responder_note}</Text>
                 ) : (
@@ -440,17 +437,8 @@ const WishDetailScreenContent = ({ route, navigation }) => {
                   setReferralFirstName(user.profile_personal_first_name || "");
                   setReferralLastName(user.profile_personal_last_name || "");
                   // Backend returns profile_email_id, profile_personal_email, etc.; populate from whatever is available
-                  const email =
-                    user.profile_email_id ||
-                    user.profile_personal_email ||
-                    user.user_email ||
-                    user.email ||
-                    "";
-                  const phone =
-                    user.profile_personal_phone_number ||
-                    user.phone ||
-                    user.phone_number ||
-                    "";
+                  const email = user.profile_email_id || user.profile_personal_email || user.user_email || user.email || "";
+                  const phone = user.profile_personal_phone_number || user.phone || user.phone_number || "";
                   setReferralEmail(email);
                   setReferralPhone(phone);
                   setReferredProfileUid(user.profile_personal_uid || user.profile_uid || null);
@@ -523,14 +511,20 @@ const WishDetailScreenContent = ({ route, navigation }) => {
           )}
         </View>
 
-        <View style={styles.submitAtEnd}>
+        <View style={detailActionRowStyle}>
           <TouchableOpacity
-            style={[styles.acceptButton, darkMode && styles.darkAcceptButton, (loading || !helpType) && styles.disabledButton]}
+            style={[
+              styles.submitButton,
+              darkMode && styles.darkSubmitButton,
+              (loading || !helpType) && styles.submitButtonDisabled,
+            ]}
             onPress={handleAccept}
             disabled={loading || !helpType}
+            activeOpacity={0.85}
           >
-            <Text style={styles.acceptButtonText}>{loading ? "Submitting..." : "Submit"}</Text>
+            <Text style={styles.submitButtonText}>{loading ? "Submitting..." : "Submit"}</Text>
           </TouchableOpacity>
+          <DetailFlagButton />
         </View>
       </ScrollView>
 
@@ -677,20 +671,22 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     alignItems: "center",
   },
-  acceptButton: {
+  submitButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 28,
+    borderRadius: 24,
     backgroundColor: "#4F8A8B",
-    borderRadius: 30,
-    paddingVertical: 15,
-    paddingHorizontal: 40,
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "center",
-    minWidth: 200,
   },
-  acceptButtonText: {
+  darkSubmitButton: {
+    backgroundColor: "#3D6B6C",
+  },
+  submitButtonDisabled: {
+    opacity: 0.45,
+  },
+  submitButtonText: {
     color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: "600",
+    fontSize: 15,
   },
   // Dark mode styles
   darkPageContainer: {
@@ -731,12 +727,6 @@ const styles = StyleSheet.create({
   },
   darkExistingResponseNoteMuted: {
     color: "#888",
-  },
-  darkAcceptButton: {
-    backgroundColor: "#3D6B6C",
-  },
-  disabledButton: {
-    opacity: 0.6,
   },
   textInput: {
     backgroundColor: "#F5F5F5",
