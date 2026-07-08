@@ -928,6 +928,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
         businessName: "My Cart",
         business_uid: business_uid,
         recommender_profile_id: currentUserProfileId,
+        returnTo: "BusinessProfile",
+        ...(searchState ? { searchState } : {}),
       });
     } catch (error) {
       console.error("Error loading all cart items:", error);
@@ -937,6 +939,8 @@ export default function BusinessProfileScreen({ route, navigation }) {
         businessName: business.business_name,
         business_uid: business_uid,
         recommender_profile_id: currentUserProfileId,
+        returnTo: "BusinessProfile",
+        ...(searchState ? { searchState } : {}),
       });
     }
   };
@@ -1086,6 +1090,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
               navigation.navigate("Chat", route.params.chatParams);
               return;
             }
+          }
+          if (returnTo === "Account") {
+            navigation.navigate("Account");
+            return;
           }
           if (returnTo === "Search" && searchState) {
             navigation.navigate("Search", { restoreState: true, searchState });

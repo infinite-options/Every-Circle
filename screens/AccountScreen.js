@@ -28,8 +28,33 @@ import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines } from "../utils/s
 import ProductOrderSummaryLines from "../components/ProductOrderSummaryLines";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 
-/** 1 = compact: Purchases (Date, Type, Seller, Paid, Amount) + Bounty Results (hide ID); 0 = full tables */
+/** 1 = compact: Purchases (Date, Type, Seller, Status, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
+
+function resolvePurchaseSellerId(transaction) {
+  return String(transaction?.seller_id || transaction?.transaction_business_id || "").trim();
+}
+
+/** Business product purchases use business profile; offerings/seeking use personal profile. */
+function isPurchaseFromBusiness(transaction) {
+  const purchaseType = String(transaction?.purchase_type || "").toLowerCase();
+  if (purchaseType === "business") return true;
+  const serviceId = String(transaction?.ti_bs_id ?? transaction?.bs_uid ?? "").trim();
+  return serviceId.startsWith("250-");
+}
+
+function navigateToPurchaseSeller(navigation, transaction) {
+  const sellerId = resolvePurchaseSellerId(transaction);
+  if (!sellerId) {
+    Alert.alert("Unavailable", "Seller profile is not available for this purchase.");
+    return;
+  }
+  if (isPurchaseFromBusiness(transaction)) {
+    navigation.navigate("BusinessProfile", { business_uid: sellerId, returnTo: "Account" });
+    return;
+  }
+  navigation.navigate("Profile", { profile_uid: sellerId, returnTo: "Account" });
+}
 
 
 /**
@@ -76,12 +101,100 @@ function getReceiptLineQty(row) {
   return q > 0 ? Math.round(q) : 1;
 }
 
+/** Quantity already confirmed received on a receipt line (from backend). */
+function getPreviouslyReceivedQty(row) {
+  const q = parsePrice(row?.ti_received_qty);
+  return q > 0 ? Math.round(q) : 0;
+}
+
+/** Remaining quantity the buyer can still confirm on a line. */
+function getRemainingQtyToReceive(row) {
+  return Math.max(0, getReceiptLineQty(row) - getPreviouslyReceivedQty(row));
+}
+
 /** Stable id for a receipt line in API payloads (prefer transaction line uid). */
 function getReceiptLineTransactionItemUid(row) {
   const uid = row?.ti_uid != null && String(row.ti_uid).trim() !== "" ? String(row.ti_uid).trim() : "";
   if (uid) return uid;
   const bsId = row?.ti_bs_id != null && String(row.ti_bs_id).trim() !== "" ? String(row.ti_bs_id).trim() : "";
   return bsId;
+}
+
+/** Load receipt line items for a transaction (delivery verification, returns, etc.). */
+async function fetchReceiptLinesForTransaction(transaction) {
+  const profileId = transaction.transaction_profile_id || (await AsyncStorage.getItem("profile_uid"));
+  const transactionUid = transaction.transaction_uid;
+  if (!profileId || !transactionUid) {
+    throw new Error("Cannot load receipt: missing transaction data.");
+  }
+
+  const sellerId = transaction.seller_id || "";
+  const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${profileId}/${transactionUid}${sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : ""}`;
+  const response = await fetch(url, { method: "GET" });
+  if (!response.ok) {
+    throw new Error(`Failed to load receipt: ${response.status}`);
+  }
+
+  const result = await response.json();
+  let items = [];
+  if (Array.isArray(result)) {
+    items = result;
+  } else if (Array.isArray(result?.data)) {
+    items = result.data;
+  } else if (result?.data && typeof result.data === "object" && !Array.isArray(result.data)) {
+    items = [result.data];
+  } else if (result?.data) {
+    items = [result.data];
+  }
+
+  const purchaseTypeFallback = (transaction.purchase_type || "").toLowerCase();
+  if (items.length === 0 && (purchaseTypeFallback === "expertise" || purchaseTypeFallback === "offering")) {
+    const qty = Math.max(1, parseInt(transaction.ti_bs_qty || 1, 10));
+    const totalAmt = parseFloat(transaction.seller_total || transaction.transaction_total || 0);
+    const tiCost = parseFloat(transaction.ti_bs_cost);
+    const unitCost = tiCost > 0 ? tiCost : qty > 0 ? totalAmt / qty : totalAmt;
+    const txExpertiseId = String(transaction.ti_bs_id || transaction.transaction_uid || "").trim();
+    items = [
+      {
+        ti_uid: String(transaction.transaction_uid) + "_syn",
+        ti_bs_id: txExpertiseId,
+        bs_uid: txExpertiseId,
+        bs_service_name: transaction.purchased_item || "",
+        bs_service_desc: "",
+        ti_bs_cost: unitCost,
+        ti_bs_qty: qty,
+      },
+    ];
+  }
+
+  if (items.length === 0) {
+    const qty = Math.max(1, parseInt(transaction.ti_bs_qty || 1, 10));
+    items = [
+      {
+        ti_uid: String(transaction.ti_uid || transaction.transaction_uid || "line_0"),
+        ti_bs_id: String(transaction.ti_bs_id || "").trim(),
+        bs_service_name: transaction.purchased_item || "Item",
+        ti_bs_cost: parseFloat(transaction.ti_bs_cost || transaction.seller_total || transaction.transaction_total || 0),
+        ti_bs_qty: qty,
+      },
+    ];
+  }
+
+  return items;
+}
+
+/** True when every receipt line has been fully marked as received. */
+function areAllReceiptLinesFullyReceived(receiptRows, selectedItemIds, receivedQuantities) {
+  if (!Array.isArray(receiptRows) || receiptRows.length === 0) return false;
+  return receiptRows.every((row, index) => {
+    const purchasedQty = getReceiptLineQty(row);
+    const alreadyReceived = getPreviouslyReceivedQty(row);
+    const itemId = String(index);
+    const newlySelected = selectedItemIds.includes(itemId);
+    const raw = receivedQuantities[itemId];
+    const newlyReceived = newlySelected ? (typeof raw === "number" ? raw : parseInt(String(raw), 10) || 0) : 0;
+    return alreadyReceived + newlyReceived >= purchasedQty;
+  });
 }
 
 /** Sum return qty already requested for a line (supports partial multi-qty returns). */
@@ -528,6 +641,21 @@ function mapAccountScreenBusinessResponse(json) {
   return { bountyResult, sellerLines, businessForMiniCardRaw };
 }
 
+/** Drop stale account-screen responses when the API tags type/id or the user switched profiles. */
+function accountScreenResponseMatches(json, expectedType, expectedId) {
+  if (!json || typeof json !== "object") return true;
+  const root = json.data !== undefined && json.data !== null && typeof json.data === "object" && !Array.isArray(json.data) ? json.data : json;
+  const type = json.account_screen_type ?? root.account_screen_type;
+  const id = json.account_screen_id ?? root.account_screen_id;
+  if (type != null && String(type).toLowerCase() !== String(expectedType).toLowerCase()) {
+    return false;
+  }
+  if (id != null && expectedId != null && String(id) !== String(expectedId)) {
+    return false;
+  }
+  return true;
+}
+
 function parseExpertiseInfo(raw) {
   if (raw == null) return [];
   try {
@@ -593,7 +721,6 @@ export default function AccountScreen({ navigation }) {
   const [expertiseLoading, setExpertiseLoading] = useState(true);
   const [sellerTxData, setSellerTxData] = useState([]);
   const [salesModal, setSalesModal] = useState({ visible: false, item: null, transactions: [] });
-  const [accountType, setAccountType] = useState("personal"); // 'personal' or 'business'
   const [businessTransactionData, setBusinessTransactionData] = useState([]);
   const [businessTransactionLoading, setBusinessTransactionLoading] = useState(true);
   const [businessUID, setBusinessUID] = useState(null);
@@ -615,13 +742,16 @@ export default function AccountScreen({ navigation }) {
   const [showProductResults, setShowProductResults] = useState(true);
   const [showBusinessNetEarning, setShowBusinessNetEarning] = useState(true);
   const [showBusinessTransactionHistory, setShowBusinessTransactionHistory] = useState(true);
-  const [showBalance, setShowBalance] = useState(true);
   const [showWallet, setShowWallet] = useState(true);
 
   const [showFeedbackPopup, setShowFeedbackPopup] = useState(false);
   const [showReceiveItemModal, setShowReceiveItemModal] = useState(false);
   const [pendingTransactionForConfirm, setPendingTransactionForConfirm] = useState(null);
   const [updatingEscrow, setUpdatingEscrow] = useState(false);
+  const [deliveryVerificationReceiptData, setDeliveryVerificationReceiptData] = useState([]);
+  const [deliveryVerificationLoading, setDeliveryVerificationLoading] = useState(false);
+  const [selectedReceivedItems, setSelectedReceivedItems] = useState([]);
+  const [receivedItemQuantities, setReceivedItemQuantities] = useState({});
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [receiptData, setReceiptData] = useState([]);
   const [receiptLoading, setReceiptLoading] = useState(false);
@@ -661,6 +791,9 @@ export default function AccountScreen({ navigation }) {
 
   /** Coalesce overlapping refreshAccountScreenPersonal calls (focus + escrow update, Strict Mode, etc.) */
   const refreshPersonalInFlightRef = useRef(null);
+  /** Ignore in-flight account-screen responses after a profile switch. */
+  const personalFetchGenRef = useRef(0);
+  const businessFetchGenRef = useRef(0);
 
   /** Avoid stale `selectedAccount` / `businessUID` / `businesses` inside `refreshAccountScreenBusiness` when invoked from a focus callback with `[]` deps */
   const selectedAccountRef = useRef(selectedAccount);
@@ -678,6 +811,46 @@ export default function AccountScreen({ navigation }) {
   useEffect(() => {
     businessesRef.current = businesses;
   }, [businesses]);
+
+  const clearPersonalAccountSections = () => {
+    setTransactionData([]);
+    setExpertiseData([]);
+    setSellerTxData([]);
+    setBountyData(null);
+    setPersonalWallet(null);
+    setTransactionLoading(true);
+    setBountyLoading(true);
+    setExpertiseLoading(true);
+  };
+
+  const clearBusinessAccountSections = () => {
+    setBusinessTransactionData([]);
+    setBusinessBountyData(null);
+    setBusinessReceiptCache({});
+    businessReceiptFetchedRef.current = new Set();
+    setSelectedBusinessFullData(null);
+    setBusinessTransactionLoading(true);
+    setBusinessBountyLoading(true);
+  };
+
+  const handleProfileSelection = (nextAccount) => {
+    setShowAccountDropdown(false);
+    const current = selectedAccountRef.current;
+    if (nextAccount === current) return;
+
+    if (nextAccount === "personal") {
+      businessFetchGenRef.current += 1;
+      personalFetchGenRef.current += 1;
+      refreshPersonalInFlightRef.current = null;
+      clearBusinessAccountSections();
+      clearPersonalAccountSections();
+    } else {
+      personalFetchGenRef.current += 1;
+      businessFetchGenRef.current += 1;
+      clearBusinessAccountSections();
+    }
+    setSelectedAccount(nextAccount);
+  };
 
   //seller can see return note in transaction details if return requested
   const [showReturnNoteViewModal, setShowReturnNoteViewModal] = useState(false);
@@ -1056,8 +1229,12 @@ export default function AccountScreen({ navigation }) {
     if (refreshPersonalInFlightRef.current) {
       return refreshPersonalInFlightRef.current;
     }
+    const fetchGen = personalFetchGenRef.current;
     const task = (async () => {
       try {
+        setTransactionData([]);
+        setExpertiseData([]);
+        setSellerTxData([]);
         setTransactionLoading(true);
         setBountyLoading(true);
         setExpertiseLoading(true);
@@ -1065,6 +1242,7 @@ export default function AccountScreen({ navigation }) {
         const profileId = rawProfileId ? String(rawProfileId).trim() : "";
         if (!profileId) {
           console.log("No profile ID found, skipping account-screen personal fetch");
+          if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
           setTransactionData([]);
           setBountyData(null);
           setPersonalWallet(null);
@@ -1075,6 +1253,7 @@ export default function AccountScreen({ navigation }) {
         const response = await fetch(url, {
           method: "GET",
         });
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         if (response.status === 400) {
           // Aggregate unavailable: show empty purchases/bounties; expertise from cached profile + no seller lines.
           setTransactionData([]);
@@ -1094,6 +1273,8 @@ export default function AccountScreen({ navigation }) {
           throw new Error("account-screen personal returned non-JSON");
         }
         const json = await response.json();
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
+        if (!accountScreenResponseMatches(json, "personal", profileId)) return;
         const mapped = mapAccountScreenPersonalResponse(json);
 
         const purchaseRows = Array.isArray(mapped.transactions) ? mapped.transactions : [];
@@ -1137,15 +1318,18 @@ export default function AccountScreen({ navigation }) {
         } else if (profileResult?.expertise_info) {
           expertiseList = parseExpertiseInfo(profileResult.expertise_info);
         }
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         setSellerTxData(sellerTx);
         setExpertiseData(buildExpertiseRows(expertiseList, sellerTx));
       } catch (error) {
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         console.error("Error loading account-screen personal:", error);
         setTransactionData([]);
         setBountyData({ error: error.message });
         setPersonalWallet(null);
         setExpertiseData([]);
       } finally {
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
         setTransactionLoading(false);
         setBountyLoading(false);
         setExpertiseLoading(false);
@@ -1160,23 +1344,63 @@ export default function AccountScreen({ navigation }) {
     return task;
   };
 
-  const updateTransactionEscrow = async (transactionUid) => {
+  const resetDeliveryVerificationModal = () => {
+    setShowReceiveItemModal(false);
+    setPendingTransactionForConfirm(null);
+    setDeliveryVerificationReceiptData([]);
+    setSelectedReceivedItems([]);
+    setReceivedItemQuantities({});
+    setDeliveryVerificationLoading(false);
+  };
+
+  const openDeliveryVerification = async (transaction) => {
+    setPendingTransactionForConfirm(transaction);
+    setDeliveryVerificationReceiptData([]);
+    setSelectedReceivedItems([]);
+    setReceivedItemQuantities({});
+    setShowReceiveItemModal(true);
+    setDeliveryVerificationLoading(true);
+    try {
+      const items = await fetchReceiptLinesForTransaction(transaction);
+      setDeliveryVerificationReceiptData(items);
+    } catch (error) {
+      console.error("Error loading delivery verification items:", error);
+      Alert.alert("Error", error.message || "Failed to load order items.");
+      resetDeliveryVerificationModal();
+    } finally {
+      setDeliveryVerificationLoading(false);
+    }
+  };
+
+  const updateTransactionEscrow = async (transactionUid, deliveryVerificationItems, releaseEscrow) => {
+    const profileId =
+      pendingTransactionForConfirm?.transaction_profile_id ||
+      (await getSessionProfile())?.profileUid ||
+      (await AsyncStorage.getItem("profile_uid"));
+    if (!profileId) {
+      Alert.alert("Error", "Cannot confirm delivery: missing profile.");
+      return;
+    }
     try {
       setUpdatingEscrow(true);
       const response = await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          profile_id: profileId,
           transaction_uid: transactionUid,
-          transaction_in_escrow: 0,
+          transaction_in_escrow: releaseEscrow ? 0 : 1,
+          delivery_verification_items: deliveryVerificationItems,
         }),
       });
       if (!response.ok) {
         throw new Error(`Failed to update: ${response.status}`);
       }
-      setShowReceiveItemModal(false);
-      setPendingTransactionForConfirm(null);
+      resetDeliveryVerificationModal();
       await refreshAccountScreenPersonal();
+      if (!releaseEscrow) {
+        Alert.alert("Partial delivery recorded", "Escrow will release when all items in this order are confirmed received.");
+      }
     } catch (error) {
       console.error("Error updating transaction escrow:", error);
       Alert.alert("Error", "Failed to update payment status. Please try again.");
@@ -1334,16 +1558,27 @@ export default function AccountScreen({ navigation }) {
    * @param {string} [primaryBusinessUidOverride] — optional first-business uid before `businessUID` state commits.
    */
   const refreshAccountScreenBusiness = async (primaryBusinessUidOverride) => {
+    const fetchGen = businessFetchGenRef.current;
+    const targetBusinessUID =
+      selectedAccountRef.current !== "personal"
+        ? selectedAccountRef.current
+        : primaryBusinessUidOverride ?? businessUIDRef.current;
+
+    const shouldApplyBusinessResponse = () =>
+      fetchGen === businessFetchGenRef.current &&
+      selectedAccountRef.current !== "personal" &&
+      targetBusinessUID != null &&
+      String(selectedAccountRef.current) === String(targetBusinessUID);
+
     try {
+      setBusinessTransactionData([]);
+      setBusinessBountyData(null);
       setBusinessTransactionLoading(true);
       setBusinessBountyLoading(true);
-      const selectedAcct = selectedAccountRef.current;
-      const targetBusinessUID = selectedAcct !== "personal" ? selectedAcct : (primaryBusinessUidOverride ?? businessUIDRef.current);
 
       if (!targetBusinessUID) {
         console.log("No business UID available");
-        setBusinessTransactionData([]);
-        setBusinessBountyData(null);
+        if (!shouldApplyBusinessResponse()) return;
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
         setSelectedBusinessFullData(null);
@@ -1357,17 +1592,15 @@ export default function AccountScreen({ navigation }) {
         method: "GET",
       });
 
+      if (!shouldApplyBusinessResponse()) return;
+
       if (response.status === 400) {
         setBusinessBountyData({ data: [] });
         setBusinessTransactionData([]);
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
-        if (selectedAcct !== "personal") {
-          const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
-          setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
-        } else {
-          setSelectedBusinessFullData(null);
-        }
+        const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+        setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
         return;
       }
 
@@ -1376,28 +1609,21 @@ export default function AccountScreen({ navigation }) {
         setBusinessTransactionData([]);
         setBusinessBountyData(null);
         businessReceiptFetchedRef.current = new Set();
-        if (selectedAcct !== "personal") {
-          const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
-          setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
-        } else {
-          setSelectedBusinessFullData(null);
-        }
+        const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+        setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
         return;
       }
 
       const json = await response.json();
+      if (!shouldApplyBusinessResponse()) return;
+      if (!accountScreenResponseMatches(json, "business", targetBusinessUID)) return;
+
       const { bountyResult, sellerLines, businessForMiniCardRaw } = mapAccountScreenBusinessResponse(json);
 
       const selectedBusiness = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
 
-      const miniForCard =
-        selectedAcct === "personal"
-          ? null
-          : (() => {
-              let m = businessForMiniCardRaw ? mapRawBusinessToSelectedBusinessFullData(businessForMiniCardRaw) : null;
-              if (!m) m = mapSessionBusinessRowToMiniCard(selectedBusiness);
-              return m;
-            })();
+      let miniForCard = businessForMiniCardRaw ? mapRawBusinessToSelectedBusinessFullData(businessForMiniCardRaw) : null;
+      if (!miniForCard) miniForCard = mapSessionBusinessRowToMiniCard(selectedBusiness);
       setSelectedBusinessFullData(miniForCard);
 
       if (bountyResult?.data && Array.isArray(bountyResult.data)) {
@@ -1412,13 +1638,6 @@ export default function AccountScreen({ navigation }) {
         setBusinessBountyData(bountyResult);
       } else {
         setBusinessBountyData(null);
-      }
-
-      if (selectedAcct === "personal") {
-        setBusinessTransactionData([]);
-        setBusinessReceiptCache({});
-        businessReceiptFetchedRef.current = new Set();
-        return;
       }
 
       const bountyDataByTransaction = {};
@@ -1477,21 +1696,19 @@ export default function AccountScreen({ navigation }) {
         return dateB - dateA;
       });
 
+      if (!shouldApplyBusinessResponse()) return;
       setBusinessTransactionData(filteredTransactions);
     } catch (error) {
+      if (!shouldApplyBusinessResponse()) return;
       console.error("Error loading account-screen business:", error);
       setBusinessTransactionData([]);
       setBusinessBountyData({ error: error.message });
       setBusinessReceiptCache({});
       businessReceiptFetchedRef.current = new Set();
-      const selectedAcct = selectedAccountRef.current;
-      if (selectedAcct !== "personal") {
-        const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === selectedAcct);
-        setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
-      } else {
-        setSelectedBusinessFullData(null);
-      }
+      const row = businessesRef.current.find((b) => (b.business_uid || b.profile_business_uid) === targetBusinessUID);
+      setSelectedBusinessFullData(mapSessionBusinessRowToMiniCard(row));
     } finally {
+      if (!shouldApplyBusinessResponse()) return;
       setBusinessTransactionLoading(false);
       setBusinessBountyLoading(false);
     }
@@ -1529,14 +1746,14 @@ export default function AccountScreen({ navigation }) {
     }, []),
   );
 
-  // Load business aggregate when switching to a business profile; clear MiniCard on personal. Session `businesses` fills dropdown first.
+  // Refresh the active profile's account-screen payload when selection changes.
   useEffect(() => {
     if (selectedAccount === "personal" || !selectedAccount) {
       setSelectedBusinessFullData(null);
+      refreshAccountScreenPersonal();
+      return;
     }
-    if (selectedAccount !== "personal") {
-      refreshAccountScreenBusiness();
-    }
+    refreshAccountScreenBusiness();
   }, [selectedAccount, businesses]);
 
   // Format date to dd/mm format
@@ -2121,6 +2338,8 @@ export default function AccountScreen({ navigation }) {
   const showPurchasesTypeColumn = effectivePurchasesShowDebugColumns;
   const showWebWidePurchasedItemColumn = Platform.OS === "web" && windowWidth > 600;
   const showPurchasesPurchasedItemColumn = !compactPurchasesLayout && (effectivePurchasesShowDebugColumns || showWebWidePurchasedItemColumn);
+  /** Purchases always show item column so receipt opens from the purchased item, not the seller. */
+  const showPurchasesItemColumn = true;
 
   if (isLoading) {
     return (
@@ -2192,11 +2411,7 @@ export default function AccountScreen({ navigation }) {
           <View style={styles.selectProfileMenu}>
             <TouchableOpacity
               style={styles.dropdownItem}
-              onPress={() => {
-                setAccountType("personal");
-                setSelectedAccount("personal");
-                setShowAccountDropdown(false);
-              }}
+              onPress={() => handleProfileSelection("personal")}
             >
               <Text style={[styles.dropdownItemText, selectedAccount === "personal" && styles.dropdownItemTextActive]}>Personal</Text>
             </TouchableOpacity>
@@ -2207,11 +2422,7 @@ export default function AccountScreen({ navigation }) {
                 <TouchableOpacity
                   key={businessId || index}
                   style={styles.dropdownItem}
-                  onPress={() => {
-                    setAccountType("business");
-                    setSelectedAccount(businessId);
-                    setShowAccountDropdown(false);
-                  }}
+                  onPress={() => handleProfileSelection(businessId)}
                 >
                   <Text style={[styles.dropdownItemText, selectedAccount === businessId && styles.dropdownItemTextActive]}>{businessName}</Text>
                 </TouchableOpacity>
@@ -2220,7 +2431,7 @@ export default function AccountScreen({ navigation }) {
           </View>
         )}
 
-        {accountType === "personal" ? (
+        {selectedAccount === "personal" ? (
           <>
             {/* Sales (profile offerings / seller activity) */}
             <View style={styles.sectionContainer}>
@@ -2288,9 +2499,9 @@ export default function AccountScreen({ navigation }) {
                         {showPurchasesTxnIdColumn ? <Text style={styles.transactionHeaderId}>Transaction ID</Text> : null}
                         {showPurchasesTypeColumn ? <Text style={styles.transactionHeaderPurchaseType}>Type</Text> : null}
                         <Text style={styles.transactionHeaderBusiness}>Seller</Text>
-                        {showPurchasesPurchasedItemColumn ? <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text> : null}
+                        {showPurchasesItemColumn ? <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text> : null}
                         {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderQty}>Qty</Text>}
-                        <Text style={styles.transactionHeaderPaid}>Paid</Text>
+                        <Text style={styles.transactionHeaderPaid}>Status</Text>
                         <Text style={styles.transactionHeaderAmount}>Amount</Text>
                       </View>
                       {/* Table Rows */}
@@ -2313,6 +2524,7 @@ export default function AccountScreen({ navigation }) {
                         const showAutoPaid = (isSeeking || isBusiness || isExpertise) && !isPending && isOlderThan5Days;
 
                         const compactTx = compactPurchasesLayout;
+                        const sellerId = resolvePurchaseSellerId(transaction);
 
                         return (
                           <View key={transaction.ti_uid || i} style={styles.transactionRow}>
@@ -2320,15 +2532,26 @@ export default function AccountScreen({ navigation }) {
                             {showPurchasesTxnIdColumn ? <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text> : null}
                             {showPurchasesTypeColumn ? <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "N/A"}</Text> : null}
                             <View style={{ flex: 1, paddingHorizontal: 4, justifyContent: "center", minWidth: 0 }}>
-                              <TouchableOpacity onPress={() => fetchReceipt(transaction)} activeOpacity={0.7}>
-                                <Text style={[styles.transactionBusiness, styles.receiptLink]} numberOfLines={4}>
+                              <TouchableOpacity
+                                onPress={() => navigateToPurchaseSeller(navigation, transaction)}
+                                activeOpacity={0.7}
+                                disabled={!sellerId}
+                              >
+                                <Text
+                                  style={[styles.transactionBusiness, sellerId ? styles.receiptLink : null]}
+                                  numberOfLines={4}
+                                >
                                   {transaction.business_name || "N/A"}
                                 </Text>
                               </TouchableOpacity>
                             </View>
-                            {showPurchasesPurchasedItemColumn ? (
+                            {showPurchasesItemColumn ? (
                               <View style={styles.transactionPurchasedItemCell}>
-                                <Text style={styles.transactionPurchasedItem}>{transaction.purchased_item || "N/A"}</Text>
+                                <TouchableOpacity onPress={() => fetchReceipt(transaction)} activeOpacity={0.7}>
+                                  <Text style={[styles.transactionPurchasedItem, styles.receiptLink]} numberOfLines={4}>
+                                    {transaction.purchased_item || "View receipt"}
+                                  </Text>
+                                </TouchableOpacity>
                               </View>
                             ) : null}
                             {!compactTx && <Text style={styles.transactionQty}>{transaction.ti_bs_qty || 1}</Text>}
@@ -2359,10 +2582,7 @@ export default function AccountScreen({ navigation }) {
                                 if (showPendingLink) {
                                   return (
                                     <TouchableOpacity
-                                      onPress={() => {
-                                        setPendingTransactionForConfirm(transaction);
-                                        setShowReceiveItemModal(true);
-                                      }}
+                                      onPress={() => openDeliveryVerification(transaction)}
                                       activeOpacity={0.7}
                                     >
                                       <Text style={styles.pendingLink}>Pending</Text>
@@ -2395,7 +2615,29 @@ export default function AccountScreen({ navigation }) {
                 <Text style={styles.sectionHeaderText}>EARNINGS</Text>
                 <Ionicons name={showNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
-              {showNetEarning && <NetEarningChart />}
+              {showNetEarning && (
+                <>
+                  {bountyLoading ? (
+                    <Text style={styles.loadingText}>Loading earnings...</Text>
+                  ) : bountyData?.error ? (
+                    <Text style={styles.errorText}>Unable to load earnings.</Text>
+                  ) : (
+                    <View style={styles.balanceSectionBody}>
+                      <View style={styles.balanceContainer}>
+                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
+                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}</Text>
+                      </View>
+                      {personalPendingEscrowBounty > 0 ? (
+                        <View style={styles.balanceContainer}>
+                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending (escrow)</Text>
+                          <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>${personalPendingEscrowBounty.toFixed(2)}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  )}
+                  <NetEarningChart />
+                </>
+              )}
             </View>
 
             {/* Wallet */}
@@ -2427,36 +2669,6 @@ export default function AccountScreen({ navigation }) {
                     </View>
                   ) : (
                     <Text style={styles.noDataText}>No wallet data available.</Text>
-                  )}
-                </>
-              )}
-            </View>
-
-            {/* Balance summary */}
-            <View style={styles.sectionContainer}>
-              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBalance(!showBalance)}>
-                <Text style={styles.sectionHeaderText}>BALANCE</Text>
-                <Ionicons name={showBalance ? "chevron-up" : "chevron-down"} size={20} color='#000' />
-              </TouchableOpacity>
-              {showBalance && (
-                <>
-                  {bountyLoading ? (
-                    <Text style={styles.loadingText}>Loading balance...</Text>
-                  ) : bountyData?.error ? (
-                    <Text style={styles.errorText}>Unable to load balance.</Text>
-                  ) : (
-                    <View style={styles.balanceSectionBody}>
-                      <View style={styles.balanceContainer}>
-                        <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Total bounties earned</Text>
-                        <Text style={[styles.balanceAmount, { color: darkMode ? "#fff" : "#000" }]}>${Number(bountyData?.total_bounty_earned ?? 0).toFixed(2)}</Text>
-                      </View>
-                      {personalPendingEscrowBounty > 0 ? (
-                        <View style={styles.balanceContainer}>
-                          <Text style={[styles.sectionLabel, { color: darkMode ? "#e0e0e0" : "#333" }]}>Pending (escrow)</Text>
-                          <Text style={[styles.balanceAmount, { color: darkMode ? "#ffb74d" : "#e65100" }]}>${personalPendingEscrowBounty.toFixed(2)}</Text>
-                        </View>
-                      ) : null}
-                    </View>
                   )}
                 </>
               )}
@@ -2588,19 +2800,10 @@ export default function AccountScreen({ navigation }) {
                 <Text style={styles.sectionHeaderText}>BOUNTIES</Text>
                 <Ionicons name={showBusinessNetEarning ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
-              {showBusinessNetEarning && <BusinessNetEarningChart />}
-            </View>
-
-            {/* Balance summary */}
-            <View style={styles.sectionContainer}>
-              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowBalance(!showBalance)}>
-                <Text style={styles.sectionHeaderText}>BALANCE</Text>
-                <Ionicons name={showBalance ? "chevron-up" : "chevron-down"} size={20} color='#000' />
-              </TouchableOpacity>
-              {showBalance && (
+              {showBusinessNetEarning && (
                 <>
                   {businessTransactionLoading ? (
-                    <Text style={styles.loadingText}>Loading balance...</Text>
+                    <Text style={styles.loadingText}>Loading earnings...</Text>
                   ) : (
                     <View style={styles.balanceSectionBody}>
                       <View style={styles.balanceContainer}>
@@ -2609,6 +2812,7 @@ export default function AccountScreen({ navigation }) {
                       </View>
                     </View>
                   )}
+                  <BusinessNetEarningChart />
                 </>
               )}
             </View>
@@ -3417,36 +3621,213 @@ export default function AccountScreen({ navigation }) {
       </Modal>
 
       {/* Receive Item Confirmation Modal - for Seeking/Business + Pending transactions */}
-      <Modal animationType='fade' transparent={true} visible={showReceiveItemModal} onRequestClose={() => setShowReceiveItemModal(false)}>
+      <Modal animationType='fade' transparent={true} visible={showReceiveItemModal} onRequestClose={resetDeliveryVerificationModal}>
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
-          <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent]}>
+          <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent, { maxHeight: "80%" }]}>
             <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle]}>Delivery Verification</Text>
-            <Text style={[styles.receiveItemModalTitle, darkMode && styles.darkTitle]}>
-              Did you receive the quantity {pendingTransactionForConfirm?.ti_bs_qty ?? 1} of {pendingTransactionForConfirm?.purchased_item || "item"}?
-            </Text>
-            <View style={styles.receiveItemModalButtons}>
-              <TouchableOpacity
-                style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
-                onPress={() => {
-                  setShowReceiveItemModal(false);
-                  setPendingTransactionForConfirm(null);
-                }}
-                disabled={updatingEscrow}
-              >
-                <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>No</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.receiveItemModalButton, styles.receiveItemYesButton]}
-                onPress={() => {
-                  if (pendingTransactionForConfirm?.transaction_uid) {
-                    updateTransactionEscrow(pendingTransactionForConfirm.transaction_uid);
-                  }
-                }}
-                disabled={updatingEscrow}
-              >
-                {updatingEscrow ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.receiveItemModalButtonText}>Yes</Text>}
-              </TouchableOpacity>
-            </View>
+            <Text style={[styles.receiveItemModalTitle, darkMode && styles.darkTitle]}>Select the item(s) you have received:</Text>
+
+            {deliveryVerificationLoading ? (
+              <ActivityIndicator size='small' color='#9C45F7' style={{ marginVertical: 24 }} />
+            ) : (
+              <ScrollView style={{ maxHeight: 260, marginBottom: 16 }}>
+                {deliveryVerificationReceiptData.map((item, index) => {
+                  const itemId = String(index);
+                  const isSelected = selectedReceivedItems.includes(itemId);
+                  const purchasedQty = getReceiptLineQty(item);
+                  const alreadyReceivedQty = getPreviouslyReceivedQty(item);
+                  const remainingQty = getRemainingQtyToReceive(item);
+                  const fullyReceived = remainingQty <= 0;
+                  const receivedQty = receivedItemQuantities[itemId] ?? remainingQty;
+                  const needsQtyPicker = isSelected && remainingQty > 1;
+
+                  return (
+                    <View
+                      key={itemId}
+                      style={{
+                        paddingVertical: 8,
+                        paddingHorizontal: 4,
+                        borderBottomWidth: 1,
+                        borderBottomColor: darkMode ? "#444" : "#eee",
+                        opacity: fullyReceived ? 0.45 : 1,
+                      }}
+                    >
+                      <TouchableOpacity
+                        disabled={fullyReceived}
+                        style={{ flexDirection: "row", alignItems: "center" }}
+                        onPress={() => {
+                          if (fullyReceived) return;
+                          if (isSelected) {
+                            setSelectedReceivedItems((prev) => prev.filter((id) => id !== itemId));
+                            setReceivedItemQuantities((prev) => {
+                              const next = { ...prev };
+                              delete next[itemId];
+                              return next;
+                            });
+                          } else {
+                            setSelectedReceivedItems((prev) => [...prev, itemId]);
+                            setReceivedItemQuantities((prev) => ({ ...prev, [itemId]: remainingQty }));
+                          }
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name={fullyReceived ? "checkbox" : isSelected ? "checkbox" : "square-outline"} size={18} color={fullyReceived || isSelected ? "#9C45F7" : "#555"} style={{ marginRight: 8 }} />
+                        <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", flex: 1 }}>
+                          {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {purchasedQty}
+                        </Text>
+                        {fullyReceived ? (
+                          <Text style={{ fontSize: 11, color: "#9C45F7", marginLeft: 4 }}>Received</Text>
+                        ) : alreadyReceivedQty > 0 ? (
+                          <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>{remainingQty} left</Text>
+                        ) : null}
+                      </TouchableOpacity>
+
+                      {needsQtyPicker && (
+                        <View style={{ marginTop: 8, marginLeft: 26 }}>
+                          <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 6 }}>How many did you receive?</Text>
+                          <View style={{ flexDirection: "row", alignItems: "center" }}>
+                            <TouchableOpacity
+                              style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: 8,
+                                borderWidth: 1,
+                                borderColor: darkMode ? "#555" : "#ccc",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
+                              }}
+                              onPress={() =>
+                                setReceivedItemQuantities((prev) => ({
+                                  ...prev,
+                                  [itemId]: Math.max(1, (prev[itemId] ?? remainingQty) - 1),
+                                }))
+                              }
+                            >
+                              <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>−</Text>
+                            </TouchableOpacity>
+                            <TextInput
+                              style={{
+                                width: 48,
+                                marginHorizontal: 10,
+                                borderWidth: 1,
+                                borderColor: darkMode ? "#555" : "#ccc",
+                                borderRadius: 8,
+                                paddingVertical: 6,
+                                textAlign: "center",
+                                fontSize: 14,
+                                color: darkMode ? "#fff" : "#333",
+                                backgroundColor: darkMode ? "#3a3a3a" : "#fff",
+                              }}
+                              value={String(receivedQty)}
+                              onChangeText={(t) => {
+                                const digits = t.replace(/[^0-9]/g, "");
+                                const n = digits === "" ? "" : parseInt(digits, 10);
+                                setReceivedItemQuantities((prev) => ({
+                                  ...prev,
+                                  [itemId]: n === "" ? "" : Math.min(remainingQty, Math.max(1, n)),
+                                }));
+                              }}
+                              keyboardType='number-pad'
+                              maxLength={4}
+                            />
+                            <TouchableOpacity
+                              style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: 8,
+                                borderWidth: 1,
+                                borderColor: darkMode ? "#555" : "#ccc",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                backgroundColor: darkMode ? "#3a3a3a" : "#f5f5f5",
+                              }}
+                              onPress={() =>
+                                setReceivedItemQuantities((prev) => ({
+                                  ...prev,
+                                  [itemId]: Math.min(remainingQty, (prev[itemId] ?? remainingQty) + 1),
+                                }))
+                              }
+                            >
+                              <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>+</Text>
+                            </TouchableOpacity>
+                            <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginLeft: 8 }}>of {remainingQty}</Text>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {selectedReceivedItems.length === 0 && !deliveryVerificationLoading ? (
+              <Text style={{ color: "#9C45F7", fontSize: 12, marginBottom: 12, textAlign: "center" }}>Please select at least one received item.</Text>
+            ) : null}
+
+            {(() => {
+              const hasInvalidQty = selectedReceivedItems.some((id) => {
+                const index = parseInt(id, 10);
+                const item = deliveryVerificationReceiptData[index];
+                if (!item) return true;
+                const remainingQty = getRemainingQtyToReceive(item);
+                const raw = receivedItemQuantities[id];
+                const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
+                if (remainingQty > 1) {
+                  return !Number.isFinite(n) || n < 1 || n > remainingQty;
+                }
+                return false;
+              });
+              const canConfirmReceived = selectedReceivedItems.length > 0 && !hasInvalidQty && !deliveryVerificationLoading;
+
+              return (
+                <View style={styles.receiveItemModalButtons}>
+                  <TouchableOpacity
+                    style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
+                    onPress={resetDeliveryVerificationModal}
+                    disabled={updatingEscrow}
+                  >
+                    <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.receiveItemModalButton, styles.receiveItemYesButton, !canConfirmReceived && { opacity: 0.5 }]}
+                    disabled={!canConfirmReceived || updatingEscrow}
+                    onPress={() => {
+                      const transactionUid = pendingTransactionForConfirm?.transaction_uid;
+                      if (!transactionUid) return;
+
+                      const deliveryVerificationItems = [];
+                      for (const id of selectedReceivedItems) {
+                        const index = parseInt(id, 10);
+                        const item = deliveryVerificationReceiptData[index];
+                        if (!item) continue;
+                        const transaction_item_uid = getReceiptLineTransactionItemUid(item);
+                        if (!transaction_item_uid) {
+                          Alert.alert("Error", "Receipt line is missing a transaction item id (ti_uid or ti_bs_id). Cannot confirm delivery.");
+                          return;
+                        }
+                        const purchasedQty = getReceiptLineQty(item);
+                        const remainingQty = getRemainingQtyToReceive(item);
+                        const raw = receivedItemQuantities[id];
+                        const received_quantity = remainingQty > 1 ? (typeof raw === "number" ? raw : parseInt(String(raw), 10) || 1) : Math.min(1, remainingQty);
+                        if (received_quantity < 1) continue;
+                        deliveryVerificationItems.push({ transaction_item_uid, received_quantity });
+                      }
+
+                      if (deliveryVerificationItems.length === 0) {
+                        Alert.alert("Error", "Could not build delivery verification items.");
+                        return;
+                      }
+
+                      const releaseEscrow = areAllReceiptLinesFullyReceived(deliveryVerificationReceiptData, selectedReceivedItems, receivedItemQuantities);
+                      updateTransactionEscrow(transactionUid, deliveryVerificationItems, releaseEscrow);
+                    }}
+                  >
+                    {updatingEscrow ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.receiveItemModalButtonText}>Confirm</Text>}
+                  </TouchableOpacity>
+                </View>
+              );
+            })()}
           </View>
         </View>
       </Modal>

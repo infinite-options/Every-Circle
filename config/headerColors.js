@@ -30,6 +30,7 @@ export const HEADER_COLORS = {
   // Detail/View screens (Orange)
   profileView: "#FF9500", // Orange - for viewing other users' profiles
   wishDetail: "#FF9500", // Orange
+  offeringDetail: "#FF9500", // Orange
   reviewDetail: "#FF9500", // Orange
   wishResponses: "#FF9500", // Orange
 

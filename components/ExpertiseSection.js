@@ -3,7 +3,8 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Platform, A
 import { Ionicons } from "@expo/vector-icons";
 import { Dropdown } from "react-native-element-dropdown";
 import * as ImagePicker from "expo-image-picker";
-import { formatCostValue } from "../utils/priceUtils";
+import { formatCostValue, parsePrice } from "../utils/priceUtils";
+import { isTruthyTaxableFlag, isValidTaxRate, validateTaxableRate, TAX_RATE_VALIDATION_MESSAGE, taxRateForTaxableSelection } from "../utils/taxValidation";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import { getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import ProfileItemImageColumn from "./ProfileItemImageColumn";
@@ -24,6 +25,27 @@ import OfferingModerationBanner from "./OfferingModerationBanner";
 import { isOfferingVisibilityBlocked } from "../utils/offeringModeration";
 
 const CONDITION_DETAIL_MAX_CHARS = 250;
+
+/** Numeric cost amount from an offering cost string (ignores unit suffix). */
+export const getOfferingCostAmount = (cost) => {
+  if (!cost || String(cost).trim().toLowerCase() === "free") return 0;
+  const cleaned = String(cost).replace(/\$/g, "").trim();
+  if (cleaned.toLowerCase().endsWith("total")) {
+    return parsePrice(cleaned.replace(/total$/i, "").trim());
+  }
+  const slashIdx = cleaned.indexOf("/");
+  const amountStr = slashIdx >= 0 ? cleaned.slice(0, slashIdx).trim() : cleaned;
+  return parsePrice(amountStr);
+};
+
+/** True when a per-item or single bounty exceeds the offering's item cost. */
+export const offeringBountyExceedsCost = (item) => {
+  if (!item || item.profile_expertise_bounty_type === "none") return false;
+  const bountyAmount = parsePrice(item.bounty);
+  const costAmount = getOfferingCostAmount(item.cost);
+  if (bountyAmount <= 0 || costAmount <= 0) return false;
+  return bountyAmount > costAmount;
+};
 
 let DateTimePicker = null;
 if (Platform.OS !== "web") {
@@ -128,6 +150,28 @@ const ExpertiseSection = ({
     const updated = [...expertise];
     updated[index][field] = value;
     setExpertise(updated);
+  };
+
+  const handleOfferingTaxableSelect = (index) => {
+    const updated = [...expertise];
+    const item = updated[index];
+    updated[index] = {
+      ...item,
+      profile_expertise_is_taxable: 1,
+      profile_expertise_tax_rate: taxRateForTaxableSelection(item.profile_expertise_tax_rate),
+    };
+    setExpertise(updated);
+  };
+
+  const handleOfferingTaxRateBlur = (index) => {
+    const item = expertise[index];
+    if (!isTruthyTaxableFlag(item?.profile_expertise_is_taxable)) return;
+    const raw = String(item.profile_expertise_tax_rate ?? "").trim();
+    if (!raw) return;
+    if (!isValidTaxRate(raw)) {
+      Alert.alert("Validation", TAX_RATE_VALIDATION_MESSAGE);
+      handleInputChange(index, "profile_expertise_tax_rate", "");
+    }
   };
 
   const onOfferingAddressChange = (index, text) => {
@@ -800,7 +844,7 @@ const ExpertiseSection = ({
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.taxBtn, (item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") && styles.taxBtnActive]}
-              onPress={() => handleInputChange(index, "profile_expertise_is_taxable", 1)}
+              onPress={() => handleOfferingTaxableSelect(index)}
             >
               <Text style={[styles.taxBtnText, (item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") && styles.taxBtnTextActive]}>
                 Taxable
@@ -809,10 +853,15 @@ const ExpertiseSection = ({
             {(item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") ? (
               <View style={styles.taxRateInputWithSuffix}>
                 <TextInput
-                  style={[styles.taxRateInput, styles.taxRateInputCompact]}
+                  style={[
+                    styles.taxRateInput,
+                    styles.taxRateInputCompact,
+                    (!item.profile_expertise_tax_rate || !isValidTaxRate(item.profile_expertise_tax_rate)) && { borderColor: "#c00", borderWidth: 1 },
+                  ]}
                   value={String(item.profile_expertise_tax_rate ?? "")}
                   onChangeText={(t) => handleInputChange(index, "profile_expertise_tax_rate", t.replace(/[^0-9.]/g, ""))}
-                  placeholder='% e.g. 8.25'
+                  onBlur={() => handleOfferingTaxRateBlur(index)}
+                  placeholder='Required'
                   keyboardType='decimal-pad'
                 />
                 <Text style={styles.taxRateInputSuffix}>%</Text>
@@ -916,6 +965,11 @@ const ExpertiseSection = ({
               />
             ) : null}
           </View>
+          {offeringBountyExceedsCost(item) ? (
+            <Text style={[styles.bountyCostWarning, darkMode && styles.bountyCostWarningDark]}>
+              Warning: Bounty is greater than the item cost. You may pay referrers more than you charge per item.
+            </Text>
+          ) : null}
 
           {/* Condition Row */}
           <View style={styles.taxRow}>
@@ -1376,6 +1430,16 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 6,
   },
+  bountyCostWarning: {
+    fontSize: 13,
+    color: "#FF9500",
+    marginTop: -4,
+    marginBottom: 8,
+    lineHeight: 18,
+  },
+  bountyCostWarningDark: {
+    color: "#FFB340",
+  },
   taxBtn: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -1451,6 +1515,13 @@ export const validateExpertise = (expertise) => {
     if (!e.name) return true; // skip empty entries
     const unit = e.cost ? e.cost.match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$|(\btotal\b)/i) : null;
     return !!unit;
+  });
+};
+
+export const validateExpertiseTax = (expertise) => {
+  return expertise.every((e) => {
+    if (!e.name) return true; // skip empty entries
+    return validateTaxableRate(e.profile_expertise_is_taxable, e.profile_expertise_tax_rate);
   });
 };
 export default ExpertiseSection;

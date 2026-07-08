@@ -38,6 +38,7 @@ import TagSectionLabel from "../components/TagSectionLabel";
 import { API_BASE_URL, BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 import { normalizeBusinessServiceFromApi as normalizeBusinessServiceRow, businessPaysCcFeeFromApiPayer, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { parsePrice, formatCostValue } from "../utils/priceUtils";
+import { isTruthyTaxableFlag, isValidTaxRate, TAX_RATE_VALIDATION_MESSAGE, taxRateForTaxableSelection } from "../utils/taxValidation";
 import { mergeCustomTags, parseTagList, serializeTagList } from "../utils/tagListUtils";
 import { buildBusinessServiceForApi, DEFAULT_RETURN_WINDOW_DAYS, normServiceReturnable, normServiceReturnWindowDays, normServiceTags } from "../utils/buildBusinessServiceForApi";
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
@@ -1566,17 +1567,16 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
               return;
             }
           }
-          const formTaxableSave = serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1" || serviceForm.bs_is_taxable === true;
-          const rateSave = parsePrice(serviceForm.bs_tax_rate);
-          if (formTaxableSave && (!Number.isFinite(rateSave) || rateSave <= 0)) {
+          const formTaxableSave = isTruthyTaxableFlag(serviceForm.bs_is_taxable);
+          if (formTaxableSave && !isValidTaxRate(serviceForm.bs_tax_rate)) {
             setServiceFormTaxRateError(true);
             setServiceFormQuantityError(false);
             focusServiceFormSalesTaxSection();
             setTimeout(() => serviceTaxRateInputRef.current?.focus(), 120);
             if (Platform.OS === "web" && typeof window !== "undefined") {
-              window.alert("Fix the product tax rate before saving — taxable items need a rate greater than 0% (for example 8.25).");
+              window.alert(TAX_RATE_VALIDATION_MESSAGE);
             } else {
-              Alert.alert("Validation", "Fix the product tax rate before saving — taxable items need a rate greater than 0% (for example 8.25).");
+              Alert.alert("Validation", TAX_RATE_VALIDATION_MESSAGE);
             }
             return;
           }
@@ -1785,6 +1785,18 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
       // BUSINESS-SPECIFIC: Services/products handling (EditProfileScreen handles experience, education, expertise, wishes, businesses arrays)
       const servicesToSend = servicesForPayload.map((service, idx) => buildBusinessServiceForApi(service, idx));
+      const invalidTaxProduct = servicesForPayload.find(
+        (s) => isTruthyTaxableFlag(s.bs_is_taxable) && !isValidTaxRate(s.bs_tax_rate),
+      );
+      if (invalidTaxProduct) {
+        setIsLoading(false);
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          window.alert(`Fix "${invalidTaxProduct.bs_service_name || "Product"}": ${TAX_RATE_VALIDATION_MESSAGE}`);
+        } else {
+          Alert.alert("Validation", `Fix "${invalidTaxProduct.bs_service_name || "Product"}": ${TAX_RATE_VALIDATION_MESSAGE}`);
+        }
+        return;
+      }
       payload.append("business_services", JSON.stringify(servicesToSend));
 
       if (deletedBusinessServiceUids.length > 0) {
@@ -2712,12 +2724,9 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       }
     }
 
-    const formTaxable = formSource.bs_is_taxable === 1 || formSource.bs_is_taxable === "1" || formSource.bs_is_taxable === true;
-    if (formTaxable) {
-      const rate = parsePrice(formSource.bs_tax_rate);
-      if (!Number.isFinite(rate) || rate <= 0) {
-        return null;
-      }
+    const formTaxable = isTruthyTaxableFlag(formSource.bs_is_taxable);
+    if (formTaxable && !isValidTaxRate(formSource.bs_tax_rate)) {
+      return null;
     }
 
     let nextBsImageKey = existingService?.bs_image_key ?? formSource.bs_image_key ?? "";
@@ -2771,7 +2780,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_buyer_pays_shipping: buyerPaysShippingForList,
       bs_shipping: freeShippingForList || buyerPaysShippingForList ? "" : "",
       bs_is_taxable: formTaxable ? 1 : 0,
-      bs_tax_rate: formTaxable ? String(parsePrice(formSource.bs_tax_rate) || "0") : "0",
+      bs_tax_rate: formTaxable && isValidTaxRate(formSource.bs_tax_rate) ? String(formSource.bs_tax_rate).trim() : "0",
       bs_is_returnable: normServiceReturnable(formSource),
       bs_return_window_days: returnWindowDaysForForm(formSource),
       bs_tags: normServiceTags(formSource),
@@ -3137,21 +3146,20 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   };
 
   const affirmServiceTaxRateOrHighlight = () => {
-    const formTaxable = serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1" || serviceForm.bs_is_taxable === true;
+    const formTaxable = isTruthyTaxableFlag(serviceForm.bs_is_taxable);
     if (!formTaxable) {
       setServiceFormTaxRateError(false);
       return true;
     }
-    const rate = parsePrice(serviceForm.bs_tax_rate);
-    if (!Number.isFinite(rate) || rate <= 0) {
+    if (!isValidTaxRate(serviceForm.bs_tax_rate)) {
       setServiceFormTaxRateError(true);
       setServiceFormQuantityError(false);
       focusServiceFormSalesTaxSection();
       setTimeout(() => serviceTaxRateInputRef.current?.focus(), 120);
       if (Platform.OS === "web" && typeof window !== "undefined") {
-        window.alert("Taxable items need a tax rate greater than 0% (for example 8.25).");
+        window.alert(TAX_RATE_VALIDATION_MESSAGE);
       } else {
-        Alert.alert("Validation", "Taxable items need a tax rate greater than 0% (for example 8.25).");
+        Alert.alert("Validation", TAX_RATE_VALIDATION_MESSAGE);
       }
       return false;
     }
@@ -3217,9 +3225,8 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
   }, []);
 
   const renderProductsServicesForm = () => {
-    const formTaxableFlag = serviceForm.bs_is_taxable === 1 || serviceForm.bs_is_taxable === "1" || serviceForm.bs_is_taxable === true;
-    const taxRateParsed = parsePrice(serviceForm.bs_tax_rate);
-    const taxAddBlocked = formTaxableFlag && (!Number.isFinite(taxRateParsed) || taxRateParsed <= 0);
+    const formTaxableFlag = isTruthyTaxableFlag(serviceForm.bs_is_taxable);
+    const taxAddBlocked = formTaxableFlag && !isValidTaxRate(serviceForm.bs_tax_rate);
     const isUnlimitedFlag = serviceForm.bs_qty_unlimited === 1 || serviceForm.bs_qty_unlimited === "1" || serviceForm.bs_qty_unlimited === true;
     const qFlag = String(serviceForm.bs_available_quantity || "").trim();
     const quantityAddBlocked = !isUnlimitedFlag && (!qFlag || !/^\d+$/.test(qFlag) || parseInt(qFlag, 10) < 1);
@@ -3444,7 +3451,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 setServiceForm((prev) => ({
                   ...prev,
                   bs_is_taxable: 1,
-                  bs_tax_rate: prev.bs_tax_rate && String(prev.bs_tax_rate).trim() !== "" && String(prev.bs_tax_rate).trim() !== "0" ? String(prev.bs_tax_rate) : "",
+                  bs_tax_rate: taxRateForTaxableSelection(prev.bs_tax_rate),
                 }));
                 setServiceFormTaxRateError(false);
                 setIsChanged(true);
@@ -3469,6 +3476,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                     handleServiceChange("bs_tax_rate", t.replace(/[^0-9.]/g, ""));
                     setServiceFormTaxRateError(false);
                     setIsChanged(true);
+                  }}
+                  onBlur={() => {
+                    const formTaxable = isTruthyTaxableFlag(serviceForm.bs_is_taxable);
+                    if (formTaxable && !isValidTaxRate(serviceForm.bs_tax_rate)) {
+                      setServiceFormTaxRateError(true);
+                    }
                   }}
                   placeholder='% e.g. 8.25'
                   keyboardType='decimal-pad'

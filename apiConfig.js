@@ -2,8 +2,8 @@
 // Uncomment the appropriate line for your environment
 
 // Production/Development Environment
-// export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";   
-export const API_BASE_URL = 'http://localhost:4090';
+export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";   
+// export const API_BASE_URL = 'http://localhost:4090';
 // export const SEARCH_BASE_URL = "http://54.183.12.163:5001";
 // export const SEARCH_BASE_URL = "http://13.52.244.236:5001";
 // export const SEARCH_BASE_URL = "http://13.52.82.86:5001";
@@ -81,6 +81,7 @@ export const SEARCH_REFERRAL_ENDPOINT = `${API_BASE_URL}/api/search_referral`;
 
 // Transaction and Rating Endpoints
 export const TRANSACTIONS_ENDPOINT = `${API_BASE_URL}/api/v1/transactions`;
+/** PUT body: profile_id, transaction_uid, transaction_in_escrow, delivery_verification_items */
 /** PUT — buyer submit return request (note + line items) */
 export const TRANSACTIONS_RETURN_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/return`;
 /** GET list / PUT resolve — admin declined returns queue */

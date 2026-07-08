@@ -476,7 +476,8 @@ export default function ReviewDetailScreen({ route, navigation }) {
       onRemoveItem: handleRemoveItem,
       businessName: business.business_name,
       business_uid: business_uid,
-      recommender_profile_id: reviewer_profile_id, // Pass the referral profile ID
+      recommender_profile_id: reviewer_profile_id,
+      returnTo: "BusinessProfile",
     });
   };
 

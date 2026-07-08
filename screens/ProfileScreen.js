@@ -3,6 +3,7 @@ import {
   View,
   Text,
   TextInput,
+  Linking,
   TouchableOpacity,
   Alert,
   StyleSheet,
@@ -19,6 +20,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 // import axios from 'axios';
+import SeekingCardDetails from "../components/SeekingCardDetails";
+import OfferingCardDetails from "../components/OfferingCardDetails";
 import MiniCard from "../components/MiniCard";
 import MicroCard from "../components/MicroCard";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
@@ -55,6 +58,7 @@ import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
 import FlagOfferingModal from "../components/FlagOfferingModal";
 import OfferingModerationBanner from "../components/OfferingModerationBanner";
+import { expertiseCartTaxFields } from "../utils/cartLineTax";
 import { getHeaderColors } from "../config/headerColors";
 import { isOfferingModeratedBlocked, normalizeOfferingModeration } from "../utils/offeringModeration";
 
@@ -106,16 +110,20 @@ function normalizeUserProfileInfoResponse(raw) {
 
   if (cur.social_links == null && Array.isArray(cur.links_info) && cur.links_info.length > 0) {
     const social = {};
+    const socialIcons = {};
     for (const row of cur.links_info) {
       if (!row || typeof row !== "object") continue;
       const name = String(row.social_link_name || row.link_name || row.platform || "").toLowerCase();
-      const url = row.social_link_url || row.url || row.link || "";
-      if (name.includes("facebook")) social.facebook = url;
-      else if (name.includes("twitter") || name === "x") social.twitter = url;
-      else if (name.includes("linkedin")) social.linkedin = url;
-      else if (name.includes("youtube")) social.youtube = url;
+      const url = row.profile_link_url || row.social_link_url || row.url || row.link || "";
+      const icon = row.social_link_icon || null;
+      if (name.includes("facebook")) { social.facebook = url; if (icon) socialIcons.facebook = icon; }
+      else if (name.includes("twitter") || name === "x") { social.twitter = url; if (icon) socialIcons.twitter = icon; }
+      else if (name.includes("linkedin")) { social.linkedin = url; if (icon) socialIcons.linkedin = icon; }
+      else if (name.includes("instagram")) { social.instagram = url; if (icon) socialIcons.instagram = icon; }
+      else if (name.includes("youtube")) { social.youtube = url; if (icon) socialIcons.youtube = icon; }
+      else if (name && url) { social[name] = url; }
     }
-    if (Object.keys(social).length > 0) cur = { ...cur, social_links: social };
+    if (Object.keys(social).length > 0) cur = { ...cur, social_links: social, social_icons: socialIcons };
   }
 
   return cur;
@@ -213,6 +221,7 @@ const ProfileScreen = ({ route, navigation }) => {
   const { darkMode } = useDarkMode();
   const [showExperience, setShowExperience] = useState(true);
   const [showEducation, setShowEducation] = useState(true);
+  const [showSocial, setShowSocial] = useState(true);
   const [showBusiness, setShowBusiness] = useState(true);
   const [showReviews, setShowReviews] = useState(true);
   const [showOffering, setShowOffering] = useState(true);
@@ -577,6 +586,7 @@ const ProfileScreen = ({ route, navigation }) => {
         expertiseIsPublic: apiUser.personal_info?.profile_personal_expertise_is_public === 1,
         wishesIsPublic: apiUser.personal_info?.profile_personal_wishes_is_public === 1,
         businessIsPublic: apiUser.personal_info?.profile_personal_business_is_public === 1,
+        socialLinksIsPublic: apiUser.personal_info?.profile_personal_social_is_public !== 0,
         profileImage: apiUser.personal_info?.profile_personal_image ? String(apiUser.personal_info.profile_personal_image) : "",
       };
       userData.experience = apiUser.experience_info
@@ -696,7 +706,11 @@ const ProfileScreen = ({ route, navigation }) => {
       userData.facebook = socialLinks.facebook || "";
       userData.twitter = socialLinks.twitter || "";
       userData.linkedin = socialLinks.linkedin || "";
+      userData.instagram = socialLinks.instagram || "";
       userData.youtube = socialLinks.youtube || "";
+      userData.social_links = socialLinks;
+      userData.social_icons = apiUser.social_icons || {};
+      userData.links_info = Array.isArray(apiUser.links_info) ? apiUser.links_info : [];
       // console.log("ProfileScreen - Setting user data:", userData);
       // console.log("ProfileScreen - Profile UID in userData:", userData.profile_uid);
       setUser(userData);
@@ -1297,7 +1311,7 @@ const ProfileScreen = ({ route, navigation }) => {
     }
     try {
       const { expertiseData, profileData, profile_uid } = row;
-      const { quantity: qty, escrow, subtotal, totalWithFee } = modalData;
+      const { quantity: qty, escrow, subtotal, totalWithFee, taxAmount, taxRatePct } = modalData;
       const cartKey = `cart_expertise_${expertiseData.expertise_uid}`;
       const sellerDisplayName = [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim();
       const cartItem = {
@@ -1313,7 +1327,9 @@ const ProfileScreen = ({ route, navigation }) => {
         quantity: qty,
         escrow,
         subtotal,
+        taxAmount,
         totalWithFee,
+        ...expertiseCartTaxFields(expertiseData, { taxRatePct }),
         cart_key: cartKey,
         addedAt: new Date().toISOString(),
       };
@@ -1388,6 +1404,7 @@ const ProfileScreen = ({ route, navigation }) => {
             ? () => {
                 // Navigate back to the screen we came from with preserved state
                 const wishDetailState = route.params?.wishDetailState;
+                const offeringDetailState = route.params?.offeringDetailState;
                 if (wishDetailState) {
                   console.log("🔙 Returning to WishDetail");
                   if (navigation.canGoBack()) {
@@ -1400,6 +1417,22 @@ const ProfileScreen = ({ route, navigation }) => {
                       searchState: wishDetailState.searchState,
                       returnTo: wishDetailState.returnTo,
                       profileState: wishDetailState.profileState,
+                    });
+                  }
+                  return;
+                }
+                if (offeringDetailState) {
+                  console.log("🔙 Returning to OfferingDetail");
+                  if (navigation.canGoBack()) {
+                    navigation.goBack();
+                  } else {
+                    navigation.navigate("OfferingDetail", {
+                      expertiseData: offeringDetailState.expertiseData,
+                      profileData: offeringDetailState.profileData,
+                      profile_uid: offeringDetailState.profile_uid,
+                      searchState: offeringDetailState.searchState,
+                      returnTo: offeringDetailState.returnTo,
+                      profileState: offeringDetailState.profileState,
                     });
                   }
                   return;
@@ -1441,6 +1474,8 @@ const ProfileScreen = ({ route, navigation }) => {
                   // Navigate back to Network screen
                   console.log("🔙 Returning to Network");
                   navigation.navigate("Network");
+                } else if (returnTo === "Account") {
+                  navigation.navigate("Account");
                 } else {
                   // Default: Navigate to Network screen when viewing another user's profile
                   navigation.navigate("Network");
@@ -1716,6 +1751,7 @@ const ProfileScreen = ({ route, navigation }) => {
             {shortBioBelowCard ? <Text style={[styles.shortBioBelowCard, darkMode && styles.darkShortBioBelowCard]}>{shortBioBelowCard}</Text> : null}
           </View>
 
+
           {/* Add / View Connection + Message — only when viewing someone else's profile */}
           {routeProfileUID &&
             !isCurrentUserProfile &&
@@ -1762,6 +1798,67 @@ const ProfileScreen = ({ route, navigation }) => {
                 </View>
               );
             })()}
+
+          {/* Social Media Links — dropdown section */}
+          {(isCurrentUserProfile || user.socialLinksIsPublic !== false) && (() => {
+            const defaults = {
+              linkedin:  { label: "LinkedIn",    icon: "logo-linkedin",   color: "#0077B5" },
+              instagram: { label: "Instagram",   icon: "logo-instagram",  color: "#C13584" },
+              twitter:   { label: "Twitter / X", icon: "logo-twitter",    color: "#1DA1F2" },
+              facebook:  { label: "Facebook",    icon: "logo-facebook",   color: "#1877F2" },
+              youtube:   { label: "YouTube",     icon: "logo-youtube",    color: "#FF0000" },
+            };
+            const linksInfo = user.links_info || [];
+            const socialItems = linksInfo
+              .filter((row) => {
+                if (!row.social_link_url) return false;
+                if (!isCurrentUserProfile && row.social_link_is_public === 0) return false;
+                return true;
+              })
+              .map((row) => {
+                const name = String(row.social_link_name || "").toLowerCase();
+                const meta = defaults[name];
+                return {
+                  key: name,
+                  label: meta ? meta.label : (row.social_link_name || name),
+                  icon: meta ? meta.icon : "link-outline",
+                  color: meta ? meta.color : "#555",
+                  url: String(row.social_link_url).trim(),
+                };
+              });
+            if (socialItems.length === 0 && !isCurrentUserProfile) return null;
+            return (
+              <View style={styles.fieldContainer}>
+                <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowSocial(!showSocial)}>
+                  <Text style={styles.sectionHeaderText}>SOCIAL MEDIA</Text>
+                  <Ionicons name={showSocial ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+                </TouchableOpacity>
+                {showSocial && (
+                  socialItems.length > 0 ? (
+                    socialItems.map(({ key, label, icon, color, url }) => (
+                      <TouchableOpacity
+                        key={key}
+                        onPress={() => Linking.openURL(url)}
+                        style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer]}
+                        activeOpacity={0.7}
+                      >
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <Ionicons name={icon} size={22} color={color} style={{ marginRight: 12 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontWeight: "600" }]}>{label}</Text>
+                            <Text style={[styles.inputText, darkMode && styles.darkInputText, { color: darkMode ? "#aaa" : "#666", fontSize: 12 }]} numberOfLines={1}>{url}</Text>
+                          </View>
+                          <Ionicons name="open-outline" size={16} color={darkMode ? "#aaa" : "#999"} />
+                        </View>
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText, { fontStyle: "italic", color: "#666", padding: 12 }]}>No social media links added yet</Text>
+                  )
+                )}
+              </View>
+            );
+          })()}
 
           {/* Only show Expertise section if there are public expertise entries, or if viewing own profile */}
           {/*{(isCurrentUserProfile || (user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0)) && ( */}
@@ -1867,71 +1964,11 @@ const ProfileScreen = ({ route, navigation }) => {
                               ) : null}
                             </View>
                           </View>
-                          {exp.profile_expertise_start ||
-                          exp.profile_expertise_end ||
-                          exp.profile_expertise_location ||
-                          exp.profile_expertise_city ||
-                          exp.profile_expertise_state ||
-                          formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
-                            <View style={[styles.seekingMetaRow, { marginTop: 6 }]}>
-                              {exp.profile_expertise_start || exp.profile_expertise_end ? (
-                                <View style={styles.seekingMetaLine}>
-                                  <Ionicons name='calendar-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
-                                  <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
-                                    {exp.profile_expertise_start ? formatDateTimeForDisplay(exp.profile_expertise_start) : "—"}
-                                    {exp.profile_expertise_start && exp.profile_expertise_end ? " → " : ""}
-                                    {exp.profile_expertise_end ? formatDateTimeForDisplay(exp.profile_expertise_end) : ""}
-                                  </Text>
-                                </View>
-                              ) : null}
-                              {exp.profile_expertise_location || exp.profile_expertise_city || exp.profile_expertise_state || formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
-                                <View style={[styles.seekingMetaLine, styles.seekingMetaLineSpaceBetween, (exp.profile_expertise_start || exp.profile_expertise_end) && { marginTop: 4 }]}>
-                                  {[exp.profile_expertise_city, exp.profile_expertise_state].filter(Boolean).join(", ") || exp.profile_expertise_location ? (
-                                    <View style={styles.seekingMetaLine}>
-                                      <Ionicons name='location-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
-                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
-                                        {[exp.profile_expertise_city, exp.profile_expertise_state].filter(Boolean).join(", ") || exp.profile_expertise_location}
-                                      </Text>
-                                    </View>
-                                  ) : (
-                                    <View style={styles.seekingMetaSpacer} />
-                                  )}
-                                  {formatExpertiseModeForDisplay(exp.profile_expertise_mode) ? (
-                                    <View style={styles.seekingMetaLine}>
-                                      {getExpertiseModeIoniconNames(exp.profile_expertise_mode).map((iconName, iconIdx, arr) => (
-                                        <Ionicons key={iconName} name={iconName} size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: iconIdx < arr.length - 1 ? 4 : 6 }} />
-                                      ))}
-                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
-                                        {formatExpertiseModeForDisplay(exp.profile_expertise_mode)}
-                                      </Text>
-                                    </View>
-                                  ) : null}
-                                </View>
-                              ) : null}
-                            </View>
-                          ) : null}
-                          {exp.cost || exp.quantity || exp.bounty ? (
-                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0, marginTop: 6 }}>
-                              {exp.cost ? (
-                                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                                  <View style={styles.moneyBagIconContainer}>
-                                    <Text style={styles.moneyBagDollarSymbol}>$</Text>
-                                  </View>
-                                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
-                                    {exp.cost.toLowerCase() !== "free" ? `Cost: $${exp.cost.replace(/^\$/, "")}` : `Cost: ${exp.cost}`}
-                                  </Text>
-                                </View>
-                              ) : null}
-                              <View style={{ flexDirection: "row", alignItems: "center", flex: 1, justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
-                                {exp.quantity ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(exp.quantity).trim()}</Text> : null}
-                                {exp.bounty ? (
-                                  <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
-                                    {exp.bounty.toLowerCase() !== "free" ? `💰 $${exp.bounty.replace(/^\$/, "")}` : `💰 ${exp.bounty}`}
-                                  </Text>
-                                ) : null}
-                              </View>
-                            </View>
-                          ) : null}
+                          <OfferingCardDetails
+                            offering={exp}
+                            darkMode={darkMode}
+                            metaTextStyle={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}
+                          />
                         </>
                       );
                       const messageAboutOfferingBtn =
@@ -2088,65 +2125,11 @@ const ProfileScreen = ({ route, navigation }) => {
                               {wish.details ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{wish.details}</Text> : null}
                             </View>
                           </View>
-                          {wish.profile_wish_start || wish.profile_wish_end || wish.profile_wish_location || wish.profile_wish_mode ? (
-                            <View style={[styles.seekingMetaRow, { marginTop: 6 }]}>
-                              {wish.profile_wish_start || wish.profile_wish_end ? (
-                                <View style={styles.seekingMetaLine}>
-                                  <Ionicons name='calendar-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
-                                  <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>
-                                    {wish.profile_wish_start ? formatDateTimeForDisplay(wish.profile_wish_start) : "—"}
-                                    {wish.profile_wish_start && wish.profile_wish_end ? " → " : ""}
-                                    {wish.profile_wish_end ? formatDateTimeForDisplay(wish.profile_wish_end) : ""}
-                                  </Text>
-                                </View>
-                              ) : null}
-                              {wish.profile_wish_location || wish.profile_wish_mode ? (
-                                <View style={[styles.seekingMetaLine, styles.seekingMetaLineSpaceBetween, (wish.profile_wish_start || wish.profile_wish_end) && { marginTop: 4 }]}>
-                                  {wish.profile_wish_location ? (
-                                    <View style={styles.seekingMetaLine}>
-                                      <Ionicons name='location-outline' size={14} color={darkMode ? "#999" : "#666"} style={{ marginRight: 6 }} />
-                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{wish.profile_wish_location}</Text>
-                                    </View>
-                                  ) : (
-                                    <View style={styles.seekingMetaSpacer} />
-                                  )}
-                                  {wish.profile_wish_mode ? (
-                                    <View style={styles.seekingMetaLine}>
-                                      <Ionicons
-                                        name={wish.profile_wish_mode.toLowerCase() === "virtual" ? "videocam-outline" : "people-outline"}
-                                        size={14}
-                                        color={darkMode ? "#999" : "#666"}
-                                        style={{ marginRight: 6 }}
-                                      />
-                                      <Text style={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}>{wish.profile_wish_mode}</Text>
-                                    </View>
-                                  ) : null}
-                                </View>
-                              ) : null}
-                            </View>
-                          ) : null}
-                          {wish.cost || wish.profile_wish_quantity || wish.amount ? (
-                            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginLeft: 0, marginTop: 6 }}>
-                              {wish.cost ? (
-                                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                                  <View style={styles.moneyBagIconContainer}>
-                                    <Text style={styles.moneyBagDollarSymbol}>$</Text>
-                                  </View>
-                                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>
-                                    {wish.cost.toLowerCase() !== "free" ? `Cost: $${wish.cost.replace(/^\$/, "")}` : `Cost: ${wish.cost}`}
-                                  </Text>
-                                </View>
-                              ) : null}
-                              <View style={{ flexDirection: "row", alignItems: "center", flex: 1, justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
-                                {wish.profile_wish_quantity ? <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Qty: {String(wish.profile_wish_quantity).trim()}</Text> : null}
-                                {wish.amount ? (
-                                  <Text style={[styles.inputText, { textAlign: "right", minWidth: 60 }, darkMode && styles.darkInputText]}>
-                                    {wish.amount.toLowerCase() !== "free" ? `💰 $${wish.amount.replace(/^\$/, "")}` : `💰 ${wish.amount}`}
-                                  </Text>
-                                ) : null}
-                              </View>
-                            </View>
-                          ) : null}
+                          <SeekingCardDetails
+                            seeking={wish}
+                            darkMode={darkMode}
+                            metaTextStyle={[styles.inputText, styles.seekingMetaText, darkMode && styles.darkSeekingMetaText]}
+                          />
                         </>
                       );
 
