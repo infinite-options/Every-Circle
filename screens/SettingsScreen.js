@@ -1,6 +1,6 @@
 //SettingsScreen.js
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, TextInput } from "react-native";
 import * as Location from "expo-location";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -13,9 +13,11 @@ import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
-import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
+import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
+import OfferingReviewDetailPanel from "../components/OfferingReviewDetailPanel";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -228,9 +230,7 @@ export default function SettingsScreen() {
   // Define custom questions for the Account page
   const settingsFeedbackQuestions = ["Settings - Question 1?", "Settings - Question 2?", "Settings - Question 3?"];
 
-  //for declined refunds - only show to admins
-  const ADMIN_EMAILS = ["shrutitest20@gmail.com", "admin@everycircle.com", "pmarathay@gmail.com", "cplata@everycircle.com"];
-
+  const [isAdmin, setIsAdmin] = useState(false);
   const [showAdminSection, setShowAdminSection] = useState(false);
   const [adminReturns, setAdminReturns] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
@@ -242,8 +242,16 @@ export default function SettingsScreen() {
   const [adminClaims, setAdminClaims] = useState([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [showClaimsSection, setShowClaimsSection] = useState(false);
+  const [adminOfferings, setAdminOfferings] = useState([]);
+  const [offeringsLoading, setOfferingsLoading] = useState(false);
+  const [showOfferingsSection, setShowOfferingsSection] = useState(false);
+  const [offeringReviewModalVisible, setOfferingReviewModalVisible] = useState(false);
+  const [offeringReviewItem, setOfferingReviewItem] = useState(null);
+  const [offeringReviewDetail, setOfferingReviewDetail] = useState(null);
+  const [offeringReviewNote, setOfferingReviewNote] = useState("");
+  const [offeringReviewLoading, setOfferingReviewLoading] = useState(false);
+  const [offeringReviewSubmitting, setOfferingReviewSubmitting] = useState(false);
   const [hideChangePassword, setHideChangePassword] = useState(false);
-  const [userEmail, setUserEmail] = useState("");
 
   console.log("In SettingsScreen");
 
@@ -260,11 +268,7 @@ export default function SettingsScreen() {
       if (p !== null) setDisplayPhoneNumber(JSON.parse(p));
       if (t !== null) setTermsAccepted(JSON.parse(t));
       if (c !== null) setAllowCookies(JSON.parse(c));
-      if (isThirdPartyAuth !== null) setHideChangePassword(JSON.parse(isThirdPartyAuth));
-
-      // Load email quickly from AsyncStorage for admin check
-      const storedEmail = await AsyncStorage.getItem("user_email");
-      if (storedEmail) setUserEmail(storedEmail);
+      if(isThirdPartyAuth !== null) setHideChangePassword(JSON.parse(isThirdPartyAuth));
 
       try {
         const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
@@ -603,7 +607,6 @@ export default function SettingsScreen() {
             locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
             imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
           });
-          setUserEmail(result.user_email || "");
           const nearbyLat = result.personal_info.profile_personal_nearby_lat;
           const nearbyLng = result.personal_info.profile_personal_nearby_lng;
           const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
@@ -621,6 +624,33 @@ export default function SettingsScreen() {
       }
     };
     loadProfileFromCache();
+  }, []);
+
+  useEffect(() => {
+    const fetchUserInfo = async () => {
+      try {
+        const userUid = await AsyncStorage.getItem("user_uid");
+        if (!userUid) return;
+
+        const response = await fetch(`${USER_INFO_ENDPOINT}/${encodeURIComponent(userUid)}`);
+        const result = await response.json();
+
+        if (!response.ok) {
+          console.warn("userinfo fetch failed:", response.status, result);
+          setIsAdmin(false);
+          return;
+        }
+
+        const row = Array.isArray(result?.result) ? result.result[0] : result?.result ?? result?.data ?? result;
+        const role = row?.user_role;
+        setIsAdmin(role === "ADMIN");
+      } catch (e) {
+        console.error("Failed to fetch user info:", e);
+        setIsAdmin(false);
+      }
+    };
+
+    fetchUserInfo();
   }, []);
 
   // --- Live location sharing ---
@@ -1051,6 +1081,66 @@ export default function SettingsScreen() {
     }
   };
 
+  const fetchAdminOfferings = async () => {
+    setOfferingsLoading(true);
+    try {
+      const rows = await fetchModerationReviewQueue();
+      setAdminOfferings(rows);
+    } catch (e) {
+      console.error("Admin offerings fetch error:", e);
+      Alert.alert("Error", e?.message || "Failed to load offering review queue.");
+    } finally {
+      setOfferingsLoading(false);
+    }
+  };
+
+  const openOfferingReview = async (item) => {
+    const uid = item?.profile_expertise_uid || item?.expertise_uid;
+    if (!uid) return;
+    setOfferingReviewItem(item);
+    setOfferingReviewDetail(null);
+    setOfferingReviewNote("");
+    setOfferingReviewModalVisible(true);
+    setOfferingReviewLoading(true);
+    try {
+      const detail = await fetchOfferingModerationDetail(uid);
+      setOfferingReviewDetail(detail);
+    } catch (e) {
+      console.error("Offering review detail error:", e);
+      Alert.alert("Error", e?.message || "Failed to load offering details.");
+      setOfferingReviewModalVisible(false);
+    } finally {
+      setOfferingReviewLoading(false);
+    }
+  };
+
+  const handleOfferingReview = async (action) => {
+    const uid = offeringReviewItem?.profile_expertise_uid || offeringReviewItem?.expertise_uid || offeringReviewDetail?.profile_expertise_uid;
+    if (!uid) return;
+    if (action === "reject" && !offeringReviewNote.trim()) {
+      Alert.alert("Note required", "Please enter a note explaining the rejection for the offering owner.");
+      return;
+    }
+    setOfferingReviewSubmitting(true);
+    try {
+      await reviewOfferingModeration({
+        profileExpertiseUid: uid,
+        action,
+        note: offeringReviewNote.trim(),
+      });
+      setAdminOfferings((prev) => prev.filter((row) => (row.profile_expertise_uid || row.expertise_uid) !== uid));
+      setOfferingReviewModalVisible(false);
+      setOfferingReviewItem(null);
+      setOfferingReviewDetail(null);
+      Alert.alert("Done", `Offering ${action === "approve" ? "approved" : "rejected"} successfully.`);
+    } catch (e) {
+      console.error("Offering review submit error:", e);
+      Alert.alert("Error", e?.message || "Failed to submit review.");
+    } finally {
+      setOfferingReviewSubmitting(false);
+    }
+  };
+
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Nearby alert banner — floats above everything */}
@@ -1309,9 +1399,8 @@ export default function SettingsScreen() {
             </Text>
           </View>
 
-          {/* ADMIN Section — only visible to authorized emails */}
-          {console.log("Admin check email:", personalProfileData?.email, "in list:", ADMIN_EMAILS.includes(personalProfileData?.email))}
-          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
+          {/* ADMIN Section — only visible to admins */}
+          {isAdmin && (
             <>
               <TouchableOpacity
                 style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.15)", marginTop: 8 }]}
@@ -1442,7 +1531,7 @@ export default function SettingsScreen() {
             </>
           )}
 
-          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
+          {isAdmin && (
             <>
               <TouchableOpacity
                 style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.10)", marginTop: 8 }]}
@@ -1534,6 +1623,78 @@ export default function SettingsScreen() {
             </>
           )}
 
+          {isAdmin && (
+            <>
+              <TouchableOpacity
+                style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.10)", marginTop: 8 }]}
+                onPress={() => {
+                  setShowOfferingsSection(!showOfferingsSection);
+                  if (!showOfferingsSection && adminOfferings.length === 0) fetchAdminOfferings();
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <MaterialIcons name='flag' size={16} color='#B71C1C' />
+                  <Text style={[styles.informationSectionHeaderText, { color: "#B71C1C" }]}>
+                    OFFERING REVIEWS {adminOfferings.length > 0 ? `(${adminOfferings.length})` : ""}
+                  </Text>
+                </View>
+                <Ionicons name={showOfferingsSection ? "chevron-up" : "chevron-down"} size={20} color='#B71C1C' />
+              </TouchableOpacity>
+
+              {showOfferingsSection && (
+                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#B71C1C" }]}>
+                  {offeringsLoading ? (
+                    <ActivityIndicator size='small' color='#B71C1C' style={{ margin: 16 }} />
+                  ) : adminOfferings.length === 0 ? (
+                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No offerings pending review.</Text>
+                  ) : (
+                    adminOfferings.map((row, idx) => {
+                      const uid = row.profile_expertise_uid || row.expertise_uid || "";
+                      const title = row.profile_expertise_title || row.title || uid || "Offering";
+                      const flagCount =
+                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
+                      const description = row.profile_expertise_description || row.description || "";
+                      const ownerName = [row.owner_first_name || row.profile_personal_first_name, row.owner_last_name || row.profile_personal_last_name]
+                        .filter(Boolean)
+                        .join(" ");
+                      return (
+                        <TouchableOpacity
+                          key={uid || idx}
+                          style={{
+                            padding: 12,
+                            borderBottomWidth: idx < adminOfferings.length - 1 ? 1 : 0,
+                            borderBottomColor: darkMode ? "#444" : "#eee",
+                            backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#fff5f5") : "transparent",
+                          }}
+                          onPress={() => openOfferingReview(row)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>{title}</Text>
+                          {description ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
+                              {description}
+                            </Text>
+                          ) : null}
+                          {ownerName ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text>
+                          ) : null}
+                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
+                            {uid}
+                            {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#4B2E83", marginTop: 6, fontWeight: "600" }}>Tap to review →</Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminOfferings}>
+                    <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          )}
+
           {/* Bottom Logout Button - Styled like Submit button */}
           <TouchableOpacity style={[styles.bottomLogoutButton, darkMode && styles.darkBottomLogoutButton]} onPress={handleLogout}>
             <Text style={[styles.bottomLogoutText, darkMode && styles.darkBottomLogoutText]}>Log out</Text>
@@ -1578,6 +1739,64 @@ export default function SettingsScreen() {
 
             <TouchableOpacity onPress={() => setLocationPickerVisible(false)} style={[styles.closeModalButton, { marginTop: 16, alignSelf: "stretch" }]} disabled={locationUpdating !== null}>
               <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Offering moderation review modal */}
+      <Modal visible={offeringReviewModalVisible} transparent animationType='slide' onRequestClose={() => !offeringReviewSubmitting && setOfferingReviewModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox, { maxHeight: "92%", width: "94%", maxWidth: 520 }]}>
+            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Review offering</Text>
+            {offeringReviewLoading ? (
+              <ActivityIndicator size='small' color='#B71C1C' style={{ marginVertical: 24 }} />
+            ) : (
+              <ScrollView style={{ maxHeight: 480 }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
+                <OfferingReviewDetailPanel detail={offeringReviewDetail} queueItem={offeringReviewItem} darkMode={darkMode} />
+                <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6, marginTop: 4 }}>Admin note (required for reject)</Text>
+                <TextInput
+                  style={{
+                    borderWidth: 1,
+                    borderColor: darkMode ? "#555" : "#ddd",
+                    borderRadius: 8,
+                    padding: 10,
+                    minHeight: 72,
+                    fontSize: 13,
+                    color: darkMode ? "#fff" : "#333",
+                    backgroundColor: darkMode ? "#1f1f1f" : "#fafafa",
+                    textAlignVertical: "top",
+                  }}
+                  value={offeringReviewNote}
+                  onChangeText={setOfferingReviewNote}
+                  placeholder='Explain rejection to the owner...'
+                  placeholderTextColor={darkMode ? "#888" : "#aaa"}
+                  multiline
+                />
+              </ScrollView>
+            )}
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: "#18884A", padding: 12, borderRadius: 8, alignItems: "center", opacity: offeringReviewSubmitting ? 0.7 : 1 }}
+                disabled={offeringReviewSubmitting || offeringReviewLoading}
+                onPress={() => handleOfferingReview("approve")}
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>Approve</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: "#B71C1C", padding: 12, borderRadius: 8, alignItems: "center", opacity: offeringReviewSubmitting ? 0.7 : 1 }}
+                disabled={offeringReviewSubmitting || offeringReviewLoading}
+                onPress={() => handleOfferingReview("reject")}
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>Reject</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              onPress={() => !offeringReviewSubmitting && setOfferingReviewModalVisible(false)}
+              style={{ marginTop: 12, alignItems: "center" }}
+              disabled={offeringReviewSubmitting}
+            >
+              <Text style={{ color: darkMode ? "#aaa" : "#666" }}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>

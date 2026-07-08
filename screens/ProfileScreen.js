@@ -53,7 +53,10 @@ import { buildOfferingReplyContext, buildSeekingReplyContext } from "../utils/ch
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
+import FlagOfferingModal from "../components/FlagOfferingModal";
+import OfferingModerationBanner from "../components/OfferingModerationBanner";
 import { getHeaderColors } from "../config/headerColors";
+import { isOfferingModeratedBlocked, normalizeOfferingModeration } from "../utils/offeringModeration";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 console.log(`ProfileScreen - Full endpoint: ${ProfileScreenAPI}`);
@@ -201,6 +204,7 @@ const ProfileScreen = ({ route, navigation }) => {
   const [businessesData, setBusinessesData] = useState([]);
   const [isCurrentUserProfile, setIsCurrentUserProfile] = useState(false);
   const [offeringCartModalItem, setOfferingCartModalItem] = useState(null);
+  const [flagModalOffering, setFlagModalOffering] = useState(null);
   const [showRelationshipDropdown, setShowRelationshipDropdown] = useState(false);
   const [showConnectPopup, setShowConnectPopup] = useState(false);
   const [existingRelationship, setExistingRelationship] = useState(null);
@@ -652,6 +656,8 @@ const ProfileScreen = ({ route, navigation }) => {
         profile_expertise_free_shipping: exp.profile_expertise_free_shipping ?? 0,
         profile_expertise_buyer_pays_shipping: exp.profile_expertise_buyer_pays_shipping ?? 0,
         profile_expertise_refund_policy: exp.profile_expertise_refund_policy || "",
+        moderation: normalizeOfferingModeration(exp),
+        profile_expertise_moderated: exp.profile_expertise_moderated,
       }));
       userData.wishes = parseProfileJsonArray(apiUser.wishes_info).map((wish) => ({
         profile_wish_uid: wish.profile_wish_uid || "",
@@ -722,8 +728,14 @@ const ProfileScreen = ({ route, navigation }) => {
 
   async function fetchUserData(profileUID) {
     try {
-      console.log("ProfileScreen - Profile Endpoint call fetchUserData: ", `${ProfileScreenAPI}/${profileUID}`);
-      const response = await fetch(`${ProfileScreenAPI}/${profileUID}`);
+      const loggedInProfileUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
+      const params = new URLSearchParams();
+      if (loggedInProfileUid) {
+        params.set("viewer_profile_uid", loggedInProfileUid);
+      }
+      const profileUrl = params.toString() ? `${ProfileScreenAPI}/${profileUID}?${params.toString()}` : `${ProfileScreenAPI}/${profileUID}`;
+      console.log("ProfileScreen - Profile Endpoint call fetchUserData: ", profileUrl);
+      const response = await fetch(profileUrl);
       const apiUser = normalizeUserProfileInfoResponse(await response.json());
       await processProfileApiUser(apiUser, profileUID, response);
     } catch (error) {
@@ -1760,13 +1772,16 @@ const ProfileScreen = ({ route, navigation }) => {
                 <Ionicons name={showOffering ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showOffering &&
-                (user.expertise && user.expertise.filter((exp) => exp.isPublic).length > 0 ? (
+                (user.expertise &&
+                user.expertise.filter((exp) => (isCurrentUserProfile ? exp.isPublic || isOfferingModeratedBlocked(exp) : exp.isPublic)).length > 0 ? (
                   user.expertise
-                    .filter((exp) => exp.isPublic)
+                    .filter((exp) => (isCurrentUserProfile ? exp.isPublic || isOfferingModeratedBlocked(exp) : exp.isPublic))
                     .map((exp, index) => {
                       const expImageUri = resolveProfileItemImageUri(exp.profile_expertise_image, profileUID);
+                      const offeringModeratedBlocked = isOfferingModeratedBlocked(exp);
                       const offeringBody = (
                         <>
+                          {isCurrentUserProfile && offeringModeratedBlocked ? <OfferingModerationBanner item={exp} darkMode={darkMode} /> : null}
                           <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 8, gap: 10 }}>
                             <ProfileSectionItemImage section='offering' imageUri={expImageUri} imageIsPublic={exp.profile_expertise_image_is_public} size={56} darkMode={darkMode} />
                             <View style={{ flex: 1, minWidth: 0 }}>
@@ -1832,6 +1847,20 @@ const ProfileScreen = ({ route, navigation }) => {
                                     ) : null}
                                   </View>
                                 )}
+                                {routeProfileUID && !isCurrentUserProfile ? (
+                                  <TouchableOpacity
+                                    onPress={() =>
+                                      setFlagModalOffering({
+                                        uid: exp.profile_expertise_uid,
+                                        title: sanitizeText(exp.name) || "Offering",
+                                      })
+                                    }
+                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                    accessibilityLabel='Report offering'
+                                  >
+                                    <Ionicons name='flag-outline' size={18} color={darkMode ? "#ff8a80" : "#B71C1C"} />
+                                  </TouchableOpacity>
+                                ) : null}
                               </View>
                               {sanitizeText(exp.description) ? (
                                 <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{sanitizeText(exp.description)}</Text>
@@ -1906,7 +1935,7 @@ const ProfileScreen = ({ route, navigation }) => {
                         </>
                       );
                       const messageAboutOfferingBtn =
-                        routeProfileUID && !isCurrentUserProfile ? (
+                        routeProfileUID && !isCurrentUserProfile && !offeringModeratedBlocked ? (
                           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                             <TouchableOpacity
                               style={[styles.contextChatButton, darkMode && styles.darkContextChatButton]}
@@ -2638,6 +2667,12 @@ const ProfileScreen = ({ route, navigation }) => {
         profileData={offeringCartModalItem?.profileData}
         onAddToCart={handleOfferingAddToCartConfirm}
         onCancel={() => setOfferingCartModalItem(null)}
+      />
+      <FlagOfferingModal
+        visible={flagModalOffering != null}
+        onClose={() => setFlagModalOffering(null)}
+        targetUid={flagModalOffering?.uid}
+        offeringTitle={flagModalOffering?.title}
       />
       {/* Full-screen spinner while saving a Google Place business to DB */}
       {savingGooglePlace && (

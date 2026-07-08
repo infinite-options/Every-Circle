@@ -46,6 +46,8 @@ import { buildOfferingReplyContext } from "../utils/chatReplyContext";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
+import FlagOfferingModal from "../components/FlagOfferingModal";
+import { isOfferingModeratedBlocked } from "../utils/offeringModeration";
 import { getHeaderColors } from "../config/headerColors";
 import { isWishEnded } from "../utils/wishUtils";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
@@ -320,6 +322,17 @@ function offeringLocationLabel(expertise) {
   return String(expertise?.profile_expertise_location || "").trim();
 }
 
+/** Drop zero-qty and moderated offerings (profile_expertise_moderated 1 or 2). */
+function shouldIncludeSearchExpertiseRow(item) {
+  const qty = item?.profile_expertise_quantity;
+  if (qty != null && qty !== "" && parseInt(qty, 10) === 0) return false;
+  return !isOfferingModeratedBlocked(item);
+}
+
+function filterPublicSearchExpertiseResults(items) {
+  return (items || []).filter((item) => item?.itemType !== "expertise" || !isOfferingModeratedBlocked(item.expertiseData || item));
+}
+
 function mapSearchExpertiseRow(item, i) {
   return {
     id: `${item.profile_expertise_uid || i}`,
@@ -356,6 +369,8 @@ function mapSearchExpertiseRow(item, i) {
       profile_expertise_image: item.profile_expertise_image || "",
       profile_expertise_image_is_public: item.profile_expertise_image_is_public,
       profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
+      profile_expertise_moderated: item.profile_expertise_moderated,
+      moderation: item.moderation,
     },
     profileData: {
       firstName: item.profile_personal_first_name || "",
@@ -742,6 +757,7 @@ export default function SearchScreen({ route }) {
   const [cartCount, setCartCount] = useState(0);
   /** When set, Add to Cart modal is shown for this search expertise row. */
   const [expertiseCartModalItem, setExpertiseCartModalItem] = useState(null);
+  const [flagModalOffering, setFlagModalOffering] = useState(null);
 
   const [isFirstVisit, setIsFirstVisit] = useState(true);
   const [hasLoadedInitialSearch, setHasLoadedInitialSearch] = useState(false);
@@ -848,9 +864,10 @@ export default function SearchScreen({ route }) {
   const commitSearchResults = useCallback((list, { browseAll = false } = {}) => {
     browseAllActiveRef.current = browseAll;
     setBrowseAllActive(browseAll);
-    rawResultsRef.current = [...list];
+    const filtered = filterPublicSearchExpertiseResults(list);
+    rawResultsRef.current = [...filtered];
     setResults(
-      applyClientSorts(list, {
+      applyClientSorts(filtered, {
         browseAll,
         searchType: "global",
         bounty: bountyRef.current,
@@ -1181,7 +1198,7 @@ export default function SearchScreen({ route }) {
               setSelectedSearchTabs(searchTabsFromLegacyType(savedSearchType));
             }
           }
-          const parsedResults = JSON.parse(savedResults).map((item) =>
+          const parsedResults = filterPublicSearchExpertiseResults(JSON.parse(savedResults).map((item) =>
             item.itemType === "businesses"
               ? {
                   ...item,
@@ -1194,7 +1211,7 @@ export default function SearchScreen({ route }) {
                   max_total_bounty: null,
                 }
               : item,
-          );
+          ));
           setResults(parsedResults);
           setIsFirstVisit(false);
           setHasLoadedInitialSearch(true);
@@ -1638,12 +1655,7 @@ export default function SearchScreen({ route }) {
         ...locationFieldsFromApi(b),
       }));
 
-      const mappedExpertise = expertiseResults
-        .filter((item) => {
-          const qty = item.profile_expertise_quantity;
-          return qty == null || qty === "" || parseInt(qty) !== 0;
-        })
-        .map((item, i) => mapSearchExpertiseRow(item, i));
+      const mappedExpertise = expertiseResults.filter(shouldIncludeSearchExpertiseRow).map((item, i) => mapSearchExpertiseRow(item, i));
       const mappedSeeking = seekingResults.map((item, i) => mapSearchWishRow(item, i)).filter((item) => !isWishEnded(item));
 
       const normalizeByType = (items) => {
@@ -1914,12 +1926,7 @@ export default function SearchScreen({ route }) {
           // }
         } else if (type === "expertise") {
           // For expertise, the response includes profile data directly
-          list = resultsArray
-            .filter((item) => {
-              const qty = item.profile_expertise_quantity;
-              return qty == null || qty === "" || parseInt(qty) !== 0;
-            })
-            .map((item, i) => ({
+          list = resultsArray.filter(shouldIncludeSearchExpertiseRow).map((item, i) => ({
               id: `${item.profile_expertise_uid || i}`,
               company: item.profile_expertise_title || "Untitled Expertise",
               rating: typeof item.score === "number" ? Math.min(5, Math.max(1, Math.round(item.score * 5))) : 4,
@@ -2667,6 +2674,22 @@ export default function SearchScreen({ route }) {
                 <Text style={[styles.expertiseCardActionButtonText, isCompactSearchCard && styles.expertiseCardActionButtonTextCompact]} numberOfLines={1}>
                   {isCompactSearchCard ? "Cart" : "Add to Cart"}
                 </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  isCompactSearchCard ? styles.expertiseCardFlagButtonCompact : styles.expertiseCardFlagButton,
+                  darkMode && styles.darkExpertiseCardFlagButton,
+                ]}
+                onPress={() =>
+                  setFlagModalOffering({
+                    uid: expertiseUid,
+                    title: offeringTitle,
+                  })
+                }
+                activeOpacity={0.85}
+                accessibilityLabel='Report offering'
+              >
+                <Ionicons name='flag-outline' size={isCompactSearchCard ? 11 : 16} color='#fff' />
               </TouchableOpacity>
             </View>
           ) : null}
@@ -3484,6 +3507,12 @@ export default function SearchScreen({ route }) {
           onAddToCart={handleExpertiseAddToCartConfirm}
           onCancel={() => setExpertiseCartModalItem(null)}
         />
+        <FlagOfferingModal
+          visible={flagModalOffering != null}
+          onClose={() => setFlagModalOffering(null)}
+          targetUid={flagModalOffering?.uid}
+          offeringTitle={flagModalOffering?.title}
+        />
 
         {/* Bottom Navigation Bar */}
         <BottomNavBar navigation={navigation} />
@@ -4268,6 +4297,27 @@ const styles = StyleSheet.create({
   },
   darkExpertiseCardCartButton: {
     backgroundColor: "#009e98",
+  },
+  expertiseCardFlagButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#B71C1C",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 24,
+    minWidth: 44,
+  },
+  darkExpertiseCardFlagButton: {
+    backgroundColor: "#9A1616",
+  },
+  expertiseCardFlagButtonCompact: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#B71C1C",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    minWidth: 34,
   },
   expertiseCardMessageButtonCompact: {
     flexGrow: 1,

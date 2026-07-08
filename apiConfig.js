@@ -2,7 +2,8 @@
 // Uncomment the appropriate line for your environment
 
 // Production/Development Environment
-export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";
+// export const API_BASE_URL = "https://o7t5ikn907.execute-api.us-west-1.amazonaws.com/dev";   
+export const API_BASE_URL = 'http://localhost:4090';
 // export const SEARCH_BASE_URL = "http://54.183.12.163:5001";
 // export const SEARCH_BASE_URL = "http://13.52.244.236:5001";
 // export const SEARCH_BASE_URL = "http://13.52.82.86:5001";
@@ -40,6 +41,7 @@ export const CREATE_PAYMENT_INTENT_ENDPOINT = "https://huo8rhh76i.execute-api.us
 export const GET_STRIPE_PUBLIC_KEY_ENDPOINT = "https://huo8rhh76i.execute-api.us-west-1.amazonaws.com/dev/api/v2/stripe_key";
 
 // User Profile Endpoints
+export const USER_INFO_ENDPOINT = `${API_BASE_URL}/userinfo`;
 export const USER_PROFILE_INFO_ENDPOINT = `${API_BASE_URL}/api/v1/userprofileinfo`;
 export const REFERRAL_API_ENDPOINT = `${API_BASE_URL}/api/v1/userprofileinfo/`;
 
@@ -97,6 +99,14 @@ export const PROFILE_WISH_RESPONSE_ENDPOINT = `${API_BASE_URL}/api/profilewishre
 export const PROFILE_EXPERTISE_RESPONSE_ENDPOINT = `${API_BASE_URL}/api/profileexpertiseresponse`;
 /** GET /:profile_expertise_uid — message responses for an offering (owner view) */
 export const PROFILE_EXPERTISE_RESPONSE_OFFERING_ENDPOINT = `${API_BASE_URL}/api/profileexpertiseresponse/offering`;
+
+// Content moderation — flag offerings + admin review
+/** POST submit flag; GET admin list (?status, ?target_uid); PUT dismiss by report_uid */
+export const CONTENT_REPORTS_ENDPOINT = `${API_BASE_URL}/api/v1/reports`;
+/** GET offerings where profile_expertise_moderated = 2 (pending review) */
+export const MODERATION_OFFERINGS_REVIEW_QUEUE_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/offerings/review-queue`;
+/** GET/PUT /:profile_expertise_uid and PUT /:profile_expertise_uid/review */
+export const MODERATION_OFFERINGS_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/offerings`;
 
 // Circles Endpoint
 export const CIRCLES_ENDPOINT = `${API_BASE_URL}/api/v1/circles`;

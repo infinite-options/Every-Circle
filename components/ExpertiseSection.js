@@ -20,6 +20,8 @@ import {
 } from "../utils/profileDateTime";
 import { parseExpertiseModeFlags, serializeExpertiseMode } from "../utils/expertiseMode";
 import { rejectNativeImageAsset, rejectWebImageFile } from "../utils/imageUploadLimits";
+import OfferingModerationBanner from "./OfferingModerationBanner";
+import { isOfferingVisibilityBlocked } from "../utils/offeringModeration";
 
 const CONDITION_DETAIL_MAX_CHARS = 250;
 
@@ -32,7 +34,19 @@ if (Platform.OS !== "web") {
   }
 }
 
-const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic, handleDelete, onInputFocus, profileUid = "", darkMode = false }) => {
+const ExpertiseSection = ({
+  expertise,
+  setExpertise,
+  toggleVisibility,
+  isPublic,
+  handleDelete,
+  onInputFocus,
+  profileUid = "",
+  darkMode = false,
+  singleItemMode = false,
+  disableDelete = false,
+  hideItemVisibilityToggle = false,
+}) => {
   // Stores each rendered card's ref by index so parent can scroll to the new one.
   const cardRefs = useRef({});
   // Tracks which index was just added via "+".
@@ -432,6 +446,14 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
   };
 
   const toggleEntryVisibility = (index) => {
+    const item = expertise[index];
+    if (!item.isPublic && isOfferingVisibilityBlocked(item)) {
+      Alert.alert(
+        "Unavailable",
+        "This offering is under moderation and cannot be made public until an admin approves it."
+      );
+      return;
+    }
     const updated = [...expertise];
     updated[index].isPublic = !updated[index].isPublic;
     setExpertise(updated);
@@ -536,22 +558,24 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
 
   return (
     <View style={styles.sectionContainer}>
-      <View style={styles.headerRow}>
-        <View style={styles.labelRow}>
-          <Text style={styles.label}>Offering</Text>
-          <TouchableOpacity onPress={addExpertise}>
-            <Text style={styles.addText}>+</Text>
-          </TouchableOpacity>
+      {!singleItemMode ? (
+        <View style={styles.headerRow}>
+          <View style={styles.labelRow}>
+            <Text style={styles.label}>Offering</Text>
+            <TouchableOpacity onPress={addExpertise}>
+              <Text style={styles.addText}>+</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.toggleContainer}>
+            <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
+              <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
+              <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-        <View style={styles.toggleContainer}>
-          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, isPublic && styles.togglePillActiveGreen]}>
-            <Text style={[styles.togglePillText, isPublic && styles.togglePillTextActive]}>{isPublic ? "Visible" : "Show"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={toggleVisibility} style={[styles.togglePill, !isPublic && styles.togglePillActiveRed]}>
-            <Text style={[styles.togglePillText, !isPublic && styles.togglePillTextActive]}>{!isPublic ? "Hidden" : "Hide"}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      ) : null}
 
       {expertise.map((item, index) => (
         <View
@@ -562,17 +586,20 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
           }}
           style={[styles.card, index > 0 && styles.cardSpacing]}
         >
-          <View style={styles.rowHeader}>
-            <Text style={styles.label}>Offering #{index + 1}</Text>
-            <View style={styles.toggleContainer}>
-              <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
-                <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}>
-                <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
-              </TouchableOpacity>
+          {!singleItemMode ? <OfferingModerationBanner item={item} darkMode={darkMode} compact /> : null}
+          {!hideItemVisibilityToggle ? (
+            <View style={styles.rowHeader}>
+              <Text style={styles.label}>Offering #{index + 1}</Text>
+              <View style={styles.toggleContainer}>
+                <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
+                  <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}>
+                  <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          ) : null}
 
           <View style={[styles.miniCard, darkMode && styles.miniCardDark]}>
             <ProfileItemImageColumn
@@ -842,9 +869,11 @@ const ExpertiseSection = ({ expertise, setExpertise, toggleVisibility, isPublic,
               value={item.quantity || ""}
               onChangeText={(text) => handleInputChange(index, "quantity", text)}
             />
-            <TouchableOpacity onPress={() => deleteExpertise(index)}>
-              <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
-            </TouchableOpacity>
+            {!disableDelete ? (
+              <TouchableOpacity onPress={() => deleteExpertise(index)}>
+                <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           {/* Bounty Row */}

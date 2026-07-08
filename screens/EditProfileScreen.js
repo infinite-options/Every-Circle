@@ -19,6 +19,8 @@ import BusinessSection from "../components/BusinessSection";
 import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
+import { isOfferingModeratedBlocked } from "../utils/offeringModeration";
+import { mapOfferingFormToPayload, mapProfileOfferingToFormItem } from "../utils/offeringResubmission";
 import { parseCoordinateValue } from "../utils/validateCoordinates";
 import { getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import { Ionicons } from "@expo/vector-icons";
@@ -81,6 +83,43 @@ const EditProfileScreen = ({ route, navigation }) => {
   }, []);
 
   const initialHomeLatLng = getInitialHomeLatLng(user);
+
+  const emptyOfferingEntry = {
+    name: "",
+    description: "",
+    quantity: "",
+    cost: "",
+    bounty: "",
+    profile_expertise_image: "",
+    profile_expertise_image_is_public: 1,
+    profile_expertise_start: "",
+    profile_expertise_end: "",
+    profile_expertise_location: "",
+    profile_expertise_latitude: null,
+    profile_expertise_longitude: null,
+    profile_expertise_city: "",
+    profile_expertise_state: "",
+    profile_expertise_mode: "",
+    isPublic: true,
+    _expNewImageUri: "",
+    _expWebImageFile: null,
+    _expOriginalImage: "",
+    _expDeleteImageUrl: "",
+    _expImageError: false,
+  };
+
+  const initialExpertiseState = (() => {
+    const uid = initialFormProfileUid;
+    const mapped = (user?.expertise || []).map((e) => mapProfileOfferingToFormItem(e, uid));
+    const moderated = mapped.filter(isOfferingModeratedBlocked);
+    const editable = mapped.filter((e) => !isOfferingModeratedBlocked(e));
+    return {
+      moderated,
+      expertise: editable.length > 0 ? editable : mapped.length === 0 ? [emptyOfferingEntry] : [],
+    };
+  })();
+  const moderatedExpertiseRef = useRef(initialExpertiseState.moderated);
+  const moderatedOfferingCount = initialExpertiseState.moderated.length;
 
   const [formData, setFormData] = useState({
     email: user?.email || "",
@@ -199,74 +238,7 @@ const EditProfileScreen = ({ route, navigation }) => {
         ]
       );
     })(),
-    expertise: (() => {
-      const uid = initialFormProfileUid;
-      return (
-        user?.expertise?.map((e) => {
-          const rawImg = e.profile_expertise_image || "";
-          const resolved = resolveProfileItemImageUri(rawImg, uid);
-          return {
-            profile_expertise_uid: e.profile_expertise_uid || "",
-            name: e.name || e.profile_expertise_title || "",
-            description: e.description || e.profile_expertise_description || "",
-            quantity: e.quantity || e.profile_expertise_quantity || "",
-            cost: e.cost || e.profile_expertise_cost || "",
-            bounty: e.bounty || e.profile_expertise_bounty || "",
-            profile_expertise_image: rawImg,
-            profile_expertise_image_is_public: e.profile_expertise_image_is_public === 0 || e.profile_expertise_image_is_public === "0" ? 0 : 1,
-            profile_expertise_start: e.profile_expertise_start || "",
-            profile_expertise_end: e.profile_expertise_end || "",
-            profile_expertise_location: e.profile_expertise_location || "",
-            profile_expertise_latitude: e.profile_expertise_latitude != null ? parseFloat(e.profile_expertise_latitude) : null,
-            profile_expertise_longitude: e.profile_expertise_longitude != null ? parseFloat(e.profile_expertise_longitude) : null,
-            profile_expertise_city: e.profile_expertise_city || "",
-            profile_expertise_state: e.profile_expertise_state || "",
-            profile_expertise_mode: e.profile_expertise_mode || "",
-            profile_expertise_is_taxable: e.profile_expertise_is_taxable ?? 0,
-            profile_expertise_tax_rate: e.profile_expertise_tax_rate ?? "",
-            profile_expertise_condition_type: e.profile_expertise_condition_type || "na",
-            profile_expertise_condition_detail: e.profile_expertise_condition_detail || "",
-            profile_expertise_bounty_type: e.profile_expertise_bounty_type || "none",
-            profile_expertise_is_returnable: e.profile_expertise_is_returnable ?? 0,
-            profile_expertise_return_window_days: e.profile_expertise_return_window_days ?? "",
-            profile_expertise_free_shipping: e.profile_expertise_free_shipping ?? 0,
-            profile_expertise_buyer_pays_shipping: e.profile_expertise_buyer_pays_shipping ?? 0,
-            profile_expertise_refund_policy: e.profile_expertise_refund_policy || "",
-            profile_expertise_updated_at: e.profile_expertise_updated_at ?? e.updated_at,
-            isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_expertise_is_public === 1,
-            _expNewImageUri: "",
-            _expWebImageFile: null,
-            _expOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
-            _expDeleteImageUrl: "",
-            _expImageError: false,
-          };
-        }) || [
-          {
-            name: "",
-            description: "",
-            quantity: "",
-            cost: "",
-            bounty: "",
-            profile_expertise_image: "",
-            profile_expertise_image_is_public: 1,
-            profile_expertise_start: "",
-            profile_expertise_end: "",
-            profile_expertise_location: "",
-            profile_expertise_latitude: null,
-            profile_expertise_longitude: null,
-            profile_expertise_city: "",
-            profile_expertise_state: "",
-            profile_expertise_mode: "",
-            isPublic: true,
-            _expNewImageUri: "",
-            _expWebImageFile: null,
-            _expOriginalImage: "",
-            _expDeleteImageUrl: "",
-            _expImageError: false,
-          },
-        ]
-      );
-    })(),
+    expertise: initialExpertiseState.expertise,
     wishes: (() => {
       const uid = initialFormProfileUid;
       return (
@@ -802,42 +774,17 @@ const EditProfileScreen = ({ route, navigation }) => {
       });
       payload.append("education_info", JSON.stringify(educationPayload));
 
-      const expertisePayload = (formData.expertise || []).map((e) => ({
-        profile_expertise_uid: e.profile_expertise_uid || "",
-        profile_expertise_title: e.name || "",
-        profile_expertise_description: e.description || "",
-        profile_expertise_quantity: e.quantity != null && e.quantity !== "" ? String(e.quantity) : "",
-        profile_expertise_cost: e.cost || "",
-        profile_expertise_bounty: e.bounty || "",
-        profile_expertise_is_public: e.isPublic ? 1 : 0,
-        profile_expertise_image: e.profile_expertise_image || "",
-        profile_expertise_image_is_public: e.profile_expertise_image_is_public === 0 || e.profile_expertise_image_is_public === "0" ? 0 : 1,
-        profile_expertise_start: e.profile_expertise_start || "",
-        profile_expertise_end: e.profile_expertise_end || "",
-        profile_expertise_location: e.profile_expertise_location || "",
-        profile_expertise_latitude: e.profile_expertise_latitude != null ? parseFloat(e.profile_expertise_latitude) : null,
-        profile_expertise_longitude: e.profile_expertise_longitude != null ? parseFloat(e.profile_expertise_longitude) : null,
-        profile_expertise_city: e.profile_expertise_city || "",
-        profile_expertise_state: e.profile_expertise_state || "",
-        profile_expertise_mode: e.profile_expertise_mode || "",
-        profile_expertise_is_taxable: e.profile_expertise_is_taxable === 1 || e.profile_expertise_is_taxable === "1" ? 1 : 0,
-        profile_expertise_tax_rate: e.profile_expertise_tax_rate || "",
-        profile_expertise_condition_type: e.profile_expertise_condition_type || "na",
-        profile_expertise_condition_detail: e.profile_expertise_condition_detail || "",
-        profile_expertise_bounty_type: e.profile_expertise_bounty_type || "none",
-        profile_expertise_is_returnable: e.profile_expertise_is_returnable === 1 || e.profile_expertise_is_returnable === "1" ? 1 : 0,
-        profile_expertise_return_window_days: e.profile_expertise_return_window_days || "",
-        profile_expertise_free_shipping: e.profile_expertise_free_shipping ? 1 : 0,
-        profile_expertise_buyer_pays_shipping: e.profile_expertise_buyer_pays_shipping ? 1 : 0,
-        profile_expertise_refund_policy: e.profile_expertise_refund_policy || "",
-        ...(e.profile_expertise_uid && (e.profile_expertise_updated_at != null || e.updated_at != null) ? { profile_expertise_updated_at: e.profile_expertise_updated_at ?? e.updated_at } : {}),
-        name: e.name || "",
-        description: e.description || "",
-        quantity: e.quantity || "",
-        cost: e.cost || "",
-        bounty: e.bounty || "",
-        isPublic: e.isPublic,
-      }));
+      const editableByUid = new Map((formData.expertise || []).filter((e) => e.profile_expertise_uid).map((e) => [e.profile_expertise_uid, e]));
+      const moderatedByUid = new Map((moderatedExpertiseRef.current || []).map((e) => [e.profile_expertise_uid, e]));
+      const originalOrder = (user?.expertise || []).map((e) => e.profile_expertise_uid).filter(Boolean);
+      const mergedExpertise = [];
+      for (const uid of originalOrder) {
+        if (moderatedByUid.has(uid)) mergedExpertise.push(moderatedByUid.get(uid));
+        else if (editableByUid.has(uid)) mergedExpertise.push(editableByUid.get(uid));
+      }
+      (formData.expertise || []).filter((e) => !e.profile_expertise_uid).forEach((e) => mergedExpertise.push(e));
+
+      const expertisePayload = mergedExpertise.map(mapOfferingFormToPayload);
       payload.append("expertise_info", JSON.stringify(expertisePayload));
       //payload.append("business_info", JSON.stringify(formData.businesses || []));
 
@@ -932,8 +879,8 @@ const EditProfileScreen = ({ route, navigation }) => {
 
       const isBlobOrDataUri = (uri) => uri && (uri.startsWith("blob:") || uri.startsWith("data:"));
 
-      for (let index = 0; index < (formData.expertise || []).length; index++) {
-        const e = formData.expertise[index];
+      for (let index = 0; index < mergedExpertise.length; index++) {
+        const e = mergedExpertise[index];
         if (e._expDeleteImageUrl) {
           payload.append(`delete_profile_expertise_image_${index}`, e._expDeleteImageUrl);
         }
@@ -972,8 +919,8 @@ const EditProfileScreen = ({ route, navigation }) => {
         }
       }
 
-      for (let index = 0; index < (formData.expertise || []).length; index++) {
-        const e = formData.expertise[index];
+      for (let index = 0; index < mergedExpertise.length; index++) {
+        const e = mergedExpertise[index];
         const imgPublic = e.profile_expertise_image_is_public === 1 || e.profile_expertise_image_is_public === "1" || e.profile_expertise_image_is_public === true;
         payload.append(`profile_expertise_image_${index}_is_public`, imgPublic ? "1" : "0");
       }
@@ -1557,22 +1504,29 @@ const EditProfileScreen = ({ route, navigation }) => {
           <Ionicons name={showOffering ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
         </TouchableOpacity>
         {showOffering && (
-          <ExpertiseSection
-            expertise={formData.expertise}
-            setExpertise={(e) => {
-              setFormData((prev) => ({ ...prev, expertise: e }));
-              setIsChanged(true);
-            }}
-            toggleVisibility={() => handleToggleVisibility("expertiseIsPublic")}
-            isPublic={formData.expertiseIsPublic}
-            handleDelete={handleDeleteExpertise}
-            profileUid={profileUID.trim()}
-            darkMode={darkMode}
-            onInputFocus={(inputRef) => {
-              // Called by child after "+" render with new card ref.
-              scrollNewCardToMiddleIfNeeded(inputRef);
-            }}
-          />
+          <>
+            {moderatedOfferingCount > 0 ? (
+              <Text style={[styles.moderatedOfferingNote, darkMode && styles.moderatedOfferingNoteDark]}>
+                {moderatedOfferingCount} moderated offering{moderatedOfferingCount === 1 ? "" : "s"} cannot be edited here and are shown on your profile with their status.
+              </Text>
+            ) : null}
+            <ExpertiseSection
+              expertise={formData.expertise}
+              setExpertise={(e) => {
+                setFormData((prev) => ({ ...prev, expertise: e }));
+                setIsChanged(true);
+              }}
+              toggleVisibility={() => handleToggleVisibility("expertiseIsPublic")}
+              isPublic={formData.expertiseIsPublic}
+              handleDelete={handleDeleteExpertise}
+              profileUid={profileUID.trim()}
+              darkMode={darkMode}
+              onInputFocus={(inputRef) => {
+                // Called by child after "+" render with new card ref.
+                scrollNewCardToMiddleIfNeeded(inputRef);
+              }}
+            />
+          </>
         )}
 
         {/* SEEKING Section */}
@@ -1774,6 +1728,22 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     backgroundColor: "#ccc",
+  },
+  moderatedOfferingNote: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: "#B71C1C",
+    backgroundColor: "#FFF5F5",
+    borderColor: "#F5C6C6",
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+  moderatedOfferingNoteDark: {
+    color: "#ff8a80",
+    backgroundColor: "#3a2a2a",
+    borderColor: "#664444",
   },
   labelRow: {
     flexDirection: "row",
