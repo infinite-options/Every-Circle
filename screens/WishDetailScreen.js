@@ -16,6 +16,7 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import SeekingCardDetails from "../components/SeekingCardDetails";
 import DetailFlagButton, { detailActionRowStyle } from "../components/DetailFlagButton";
+import { useHeaderCart } from "../components/HeaderCartButton";
 
 const formatDateForDisplay = (value) => {
   if (!value || typeof value !== "string" || value.trim() === "") return "";
@@ -31,6 +32,7 @@ const formatDateForDisplay = (value) => {
 const WishDetailScreenContent = ({ route, navigation }) => {
   const { wishData, profileData, profile_uid, searchState, returnTo, profileState } = route.params;
   const { darkMode } = useDarkMode();
+  const { headerCartButton } = useHeaderCart(navigation, { returnTo: "Search", searchState });
   const [loading, setLoading] = useState(false);
   const [helpType, setHelpType] = useState(null); // "help" | "refer"
   const [howICanHelp, setHowICanHelp] = useState("");
@@ -282,7 +284,7 @@ const WishDetailScreenContent = ({ route, navigation }) => {
   return (
     <SafeAreaView style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
       {/* Header with Back Button */}
-      <AppHeader title='SEEKING' {...getHeaderColors("search")} onBackPress={handleBack} />
+      <AppHeader title='SEEKING' {...getHeaderColors("search")} onBackPress={handleBack} rightButton={headerCartButton} />
 
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {/* User MiniCard - Clickable */}

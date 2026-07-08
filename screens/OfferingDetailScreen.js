@@ -15,10 +15,13 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import { recordOfferingMessageResponse } from "../utils/offeringMessageResponse";
 import { buildOfferingReplyContext } from "../utils/chatReplyContext";
 import DetailFlagButton, { detailActionRowStyle } from "../components/DetailFlagButton";
+import { useHeaderCart } from "../components/HeaderCartButton";
+import { expertiseCartTaxFields } from "../utils/cartLineTax";
 
 const OfferingDetailScreenContent = ({ route, navigation }) => {
   const { expertiseData, profileData, profile_uid, searchState, returnTo, profileState } = route.params || {};
   const { darkMode } = useDarkMode();
+  const { refreshCart, headerCartButton } = useHeaderCart(navigation, { returnTo: "Search", searchState });
   const [currentProfileUid, setCurrentProfileUid] = useState(null);
   const [showCartModal, setShowCartModal] = useState(false);
 
@@ -85,7 +88,7 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
       return;
     }
     try {
-      const { quantity: qty, escrow, subtotal, totalWithFee } = modalData;
+      const { quantity: qty, escrow, subtotal, totalWithFee, taxAmount, taxRatePct } = modalData;
       const cartKey = `cart_expertise_${expertiseData.expertise_uid}`;
       const sellerDisplayName = [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim();
       const cartItem = {
@@ -101,11 +104,14 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
         quantity: qty,
         escrow,
         subtotal,
+        taxAmount,
         totalWithFee,
+        ...expertiseCartTaxFields(expertiseData, { taxRatePct }),
         cart_key: cartKey,
         addedAt: new Date().toISOString(),
       };
       await AsyncStorage.setItem(cartKey, JSON.stringify(cartItem));
+      await refreshCart();
       setShowCartModal(false);
       Alert.alert("Added to Cart", `${expertiseData?.title || "Item"} (x${qty}) has been added to your cart.`, [
         { text: "Continue Browsing", style: "cancel" },
@@ -116,6 +122,8 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
               cartItems: [cartItem],
               businessName: "Expertise",
               business_uid: profile_uid,
+              returnTo: "Search",
+              ...(searchState ? { searchState } : {}),
             }),
         },
       ]);
@@ -127,7 +135,7 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
 
   return (
     <SafeAreaView style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
-      <AppHeader title='OFFERING' {...getHeaderColors("offeringDetail")} onBackPress={handleBack} />
+      <AppHeader title='OFFERING' {...getHeaderColors("offeringDetail")} onBackPress={handleBack} rightButton={headerCartButton} />
 
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <TouchableOpacity

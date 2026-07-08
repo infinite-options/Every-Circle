@@ -44,6 +44,7 @@ import { parsePrice } from "../utils/priceUtils";
 import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines } from "../utils/selectedChoiceItems";
 import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { recordServicePurchase } from "../utils/purchaseService";
+import { expertiseLineMerchandiseAndTax, roundCartMoney, taxRatePercentForCalculation } from "../utils/cartLineTax";
 
 const GENERIC_CART_TITLES = ["All Items", "My Cart", "Cart"];
 
@@ -60,7 +61,7 @@ function getCheckoutSellerId(item) {
 }
 
 function roundMoney(n) {
-  return Math.round(Number(n) * 100) / 100;
+  return roundCartMoney(n);
 }
 
 /** Bounty amount string for cart copy (matches Price row currency rules). */
@@ -131,30 +132,14 @@ function isLineTaxable(item) {
 }
 
 /**
- * Tax rate as a percentage for formula: pretax × (rate ÷ 100).
- * Matches product edit: enter "8.25" for 8.25%. Stored value is shown on each cart line for verification.
- */
-function taxRatePercentForCalculation(raw) {
-  return parsePrice(raw != null ? raw : 0);
-}
-
-/**
  * Pretax line total, sales tax, and metadata for cart display / checkout.
  * Services: pretax = bs_cost × qty; tax when taxable and rate > 0.
  */
 function lineMerchandiseAndTax(item) {
   const qty = parseInt(item.quantity, 10) || 1;
   if (item.itemType === "expertise") {
-    const pretax = roundMoney(parsePrice(item.cost) * qty);
-    return {
-      pretax,
-      tax: 0,
-      taxable: false,
-      rawTaxRate: null,
-      ratePercentUsed: null,
-    };
+    return expertiseLineMerchandiseAndTax(item);
   }
-  //const pretax = roundMoney(parsePrice(item.bs_cost) * qty);
   const pretax = roundMoney(parsePrice(item.bs_cost_with_extras || item.bs_cost) * qty);
   const rawTaxRate = item.bs_tax_rate;
   const taxable = isLineTaxable(item);
@@ -231,8 +216,36 @@ function buildSellerCheckoutGroups(cartItems, resolveBusinessName) {
 }
 
 const ShoppingCartScreenContent = ({ route, navigation }) => {
-  const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id } = route.params;
+  const { cartItems: initialCartItems, onRemoveItem, businessName, business_uid, recommender_profile_id, returnTo, searchState } = route.params || {};
   const [cartItems, setCartItems] = useState(Array.isArray(initialCartItems) ? initialCartItems : []);
+
+  const handleReturnPress = () => {
+    if (returnTo === "BusinessProfile") {
+      const uid = business_uid && business_uid !== "all" ? business_uid : null;
+      if (uid) {
+        navigation.navigate("BusinessProfile", {
+          business_uid: uid,
+          ...(searchState ? { returnTo: "Search", searchState } : {}),
+        });
+        return;
+      }
+    }
+    if (returnTo === "Search") {
+      navigation.navigate("Search", {
+        restoreState: Boolean(searchState),
+        ...(searchState ? { searchState } : {}),
+      });
+      return;
+    }
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+    navigation.navigate("Search");
+  };
+
+  const returnButtonLabel =
+    returnTo === "BusinessProfile" ? "Return to Business" : returnTo === "Search" ? "Return to Search" : "Go Back";
 
   const resolveItemBusinessName = (item) => {
     if (item.itemType === "expertise") {
@@ -499,7 +512,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         const group = groups[i];
         console.log(`Native checkout step ${i + 1}/${groups.length}`, group.sellerId, group.total);
 
-        const clientSecret = await createPaymentIntent(group.total);
+        const clientSecret = await createPaymentIntent(group.total, group.salesTaxTotal);
         const ok = await initializePaymentSheetForGroup(clientSecret, group.displayName);
         if (!ok) {
           throw new Error("Failed to initialize payment sheet");
@@ -747,7 +760,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     }, 0);
   };
 
-  const createPaymentIntent = async (paymentTotal) => {
+  const createPaymentIntent = async (paymentTotal, salesTaxTotal = 0) => {
     try {
       console.log("Creating payment intent...");
       const profile_uid = await AsyncStorage.getItem("profile_uid");
@@ -767,7 +780,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         customer_uid: profile_uid,
         business_code: "ECTEST",
         payment_summary: {
-          tax: 0,
+          tax: parseFloat(Number(salesTaxTotal).toFixed(2)),
           total: Number(total).toFixed(2),
         },
       };
@@ -1117,7 +1130,16 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                           </Text>
                         </View>
                         {item.itemType === "expertise" ? (
-                          <Text style={styles.lineTaxMeta}>Sales tax: n/a (expertise)</Text>
+                          <View style={styles.lineTaxBlock}>
+                            <View style={styles.lineTaxRow}>
+                              <Text style={styles.lineTaxMetaLeft} numberOfLines={4}>
+                                Taxable: {lineTax.taxable ? "Yes" : "No"}
+                                {" · "}
+                                <Text style={styles.lineTaxMetaEm}>Offering Tax Rate:</Text> {storedRateWithPercent}
+                              </Text>
+                              <Text style={styles.lineTaxAmount}>${lineTax.tax.toFixed(2)}</Text>
+                            </View>
+                          </View>
                         ) : (
                           <View style={styles.lineTaxBlock}>
                             <View style={styles.lineTaxRow}>
@@ -1150,11 +1172,11 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
               })}
               <View style={styles.totalContainer}>
                 <Text style={styles.multiSellerHint}>
-                  {hasExpertiseInCart ? "Expertise purchases include a 3% credit card processing fee in each seller total below (same as when you added them to the cart). " : null}
+                  {hasExpertiseInCart ? "Offering and expertise purchases include a 3% credit card processing fee in each seller total below (same as when you added them to the cart). " : null}
                   {multiSellerCheckout
                     ? `You will complete ${sellerGroupsPreview.length} separate payments (one per business). Sales tax is computed per item. For business services only, credit card processing (3%) applies when that business has “buyer pays” card fees.`
                     : hasExpertiseInCart
-                      ? "Sales tax is computed per business service item when applicable. For business services only, credit card processing (3%) applies when the business has “buyer pays” card fees."
+                      ? "Sales tax is computed per item when applicable (including taxable offerings). For business services only, credit card processing (3%) applies when the business has “buyer pays” card fees."
                       : "Sales tax is computed per item. Credit card processing (3%) applies only when the business has “buyer pays” card fees."}
                 </Text>
                 {sellerGroupsPreview.map((g) => (
@@ -1245,8 +1267,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
             >
               <Text style={styles.checkoutButtonText}>{loading ? "Processing..." : "Proceed to Checkout"}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.returnButton} onPress={() => navigation.goBack()} disabled={loading}>
-              <Text style={styles.returnButtonText}>Return to Business</Text>
+            <TouchableOpacity style={styles.returnButton} onPress={handleReturnPress} disabled={loading}>
+              <Text style={styles.returnButtonText}>{returnButtonLabel}</Text>
             </TouchableOpacity>
           </View>
         )}

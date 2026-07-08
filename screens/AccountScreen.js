@@ -28,8 +28,33 @@ import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines } from "../utils/s
 import ProductOrderSummaryLines from "../components/ProductOrderSummaryLines";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 
-/** 1 = compact: Purchases (Date, Type, Seller, Paid, Amount) + Bounty Results (hide ID); 0 = full tables */
+/** 1 = compact: Purchases (Date, Type, Seller, Status, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
+
+function resolvePurchaseSellerId(transaction) {
+  return String(transaction?.seller_id || transaction?.transaction_business_id || "").trim();
+}
+
+/** Business product purchases use business profile; offerings/seeking use personal profile. */
+function isPurchaseFromBusiness(transaction) {
+  const purchaseType = String(transaction?.purchase_type || "").toLowerCase();
+  if (purchaseType === "business") return true;
+  const serviceId = String(transaction?.ti_bs_id ?? transaction?.bs_uid ?? "").trim();
+  return serviceId.startsWith("250-");
+}
+
+function navigateToPurchaseSeller(navigation, transaction) {
+  const sellerId = resolvePurchaseSellerId(transaction);
+  if (!sellerId) {
+    Alert.alert("Unavailable", "Seller profile is not available for this purchase.");
+    return;
+  }
+  if (isPurchaseFromBusiness(transaction)) {
+    navigation.navigate("BusinessProfile", { business_uid: sellerId, returnTo: "Account" });
+    return;
+  }
+  navigation.navigate("Profile", { profile_uid: sellerId, returnTo: "Account" });
+}
 
 
 /**
@@ -2313,6 +2338,8 @@ export default function AccountScreen({ navigation }) {
   const showPurchasesTypeColumn = effectivePurchasesShowDebugColumns;
   const showWebWidePurchasedItemColumn = Platform.OS === "web" && windowWidth > 600;
   const showPurchasesPurchasedItemColumn = !compactPurchasesLayout && (effectivePurchasesShowDebugColumns || showWebWidePurchasedItemColumn);
+  /** Purchases always show item column so receipt opens from the purchased item, not the seller. */
+  const showPurchasesItemColumn = true;
 
   if (isLoading) {
     return (
@@ -2472,9 +2499,9 @@ export default function AccountScreen({ navigation }) {
                         {showPurchasesTxnIdColumn ? <Text style={styles.transactionHeaderId}>Transaction ID</Text> : null}
                         {showPurchasesTypeColumn ? <Text style={styles.transactionHeaderPurchaseType}>Type</Text> : null}
                         <Text style={styles.transactionHeaderBusiness}>Seller</Text>
-                        {showPurchasesPurchasedItemColumn ? <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text> : null}
+                        {showPurchasesItemColumn ? <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text> : null}
                         {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderQty}>Qty</Text>}
-                        <Text style={styles.transactionHeaderPaid}>Paid</Text>
+                        <Text style={styles.transactionHeaderPaid}>Status</Text>
                         <Text style={styles.transactionHeaderAmount}>Amount</Text>
                       </View>
                       {/* Table Rows */}
@@ -2497,6 +2524,7 @@ export default function AccountScreen({ navigation }) {
                         const showAutoPaid = (isSeeking || isBusiness || isExpertise) && !isPending && isOlderThan5Days;
 
                         const compactTx = compactPurchasesLayout;
+                        const sellerId = resolvePurchaseSellerId(transaction);
 
                         return (
                           <View key={transaction.ti_uid || i} style={styles.transactionRow}>
@@ -2504,15 +2532,26 @@ export default function AccountScreen({ navigation }) {
                             {showPurchasesTxnIdColumn ? <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text> : null}
                             {showPurchasesTypeColumn ? <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "N/A"}</Text> : null}
                             <View style={{ flex: 1, paddingHorizontal: 4, justifyContent: "center", minWidth: 0 }}>
-                              <TouchableOpacity onPress={() => fetchReceipt(transaction)} activeOpacity={0.7}>
-                                <Text style={[styles.transactionBusiness, styles.receiptLink]} numberOfLines={4}>
+                              <TouchableOpacity
+                                onPress={() => navigateToPurchaseSeller(navigation, transaction)}
+                                activeOpacity={0.7}
+                                disabled={!sellerId}
+                              >
+                                <Text
+                                  style={[styles.transactionBusiness, sellerId ? styles.receiptLink : null]}
+                                  numberOfLines={4}
+                                >
                                   {transaction.business_name || "N/A"}
                                 </Text>
                               </TouchableOpacity>
                             </View>
-                            {showPurchasesPurchasedItemColumn ? (
+                            {showPurchasesItemColumn ? (
                               <View style={styles.transactionPurchasedItemCell}>
-                                <Text style={styles.transactionPurchasedItem}>{transaction.purchased_item || "N/A"}</Text>
+                                <TouchableOpacity onPress={() => fetchReceipt(transaction)} activeOpacity={0.7}>
+                                  <Text style={[styles.transactionPurchasedItem, styles.receiptLink]} numberOfLines={4}>
+                                    {transaction.purchased_item || "View receipt"}
+                                  </Text>
+                                </TouchableOpacity>
                               </View>
                             ) : null}
                             {!compactTx && <Text style={styles.transactionQty}>{transaction.ti_bs_qty || 1}</Text>}

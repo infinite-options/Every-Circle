@@ -56,6 +56,7 @@ import { buildOfferingReplyContext, buildSeekingReplyContext } from "../utils/ch
 import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
+import { expertiseCartTaxFields } from "../utils/cartLineTax";
 import { getHeaderColors } from "../config/headerColors";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
@@ -1298,7 +1299,7 @@ const ProfileScreen = ({ route, navigation }) => {
     }
     try {
       const { expertiseData, profileData, profile_uid } = row;
-      const { quantity: qty, escrow, subtotal, totalWithFee } = modalData;
+      const { quantity: qty, escrow, subtotal, totalWithFee, taxAmount, taxRatePct } = modalData;
       const cartKey = `cart_expertise_${expertiseData.expertise_uid}`;
       const sellerDisplayName = [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim();
       const cartItem = {
@@ -1314,7 +1315,9 @@ const ProfileScreen = ({ route, navigation }) => {
         quantity: qty,
         escrow,
         subtotal,
+        taxAmount,
         totalWithFee,
+        ...expertiseCartTaxFields(expertiseData, { taxRatePct }),
         cart_key: cartKey,
         addedAt: new Date().toISOString(),
       };
@@ -1459,6 +1462,8 @@ const ProfileScreen = ({ route, navigation }) => {
                   // Navigate back to Network screen
                   console.log("🔙 Returning to Network");
                   navigation.navigate("Network");
+                } else if (returnTo === "Account") {
+                  navigation.navigate("Account");
                 } else {
                   // Default: Navigate to Network screen when viewing another user's profile
                   navigation.navigate("Network");

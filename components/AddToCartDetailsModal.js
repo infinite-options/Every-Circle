@@ -71,7 +71,7 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
   const costAmount = costValue * qtyNum;
   const subtotal = costAmount; // Bounty paid by seller, not included in buyer's total
   const taxAmount = taxRatePct > 0 ? subtotal * (taxRatePct / 100) : 0;
-  const processingFee = subtotal * 0.03;
+  const processingFee = (subtotal + taxAmount) * 0.03;
   const totalWithFee = subtotal + taxAmount + processingFee;
 
   const handleAddToCart = () => {

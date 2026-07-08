@@ -2770,6 +2770,8 @@ export default function SearchScreen({ route }) {
                 },
                 businessName: "All Items",
                 business_uid: "all",
+                returnTo: "Search",
+                searchState: getSearchStateForRestore(),
               })
             }
           >
