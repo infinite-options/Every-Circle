@@ -16,6 +16,10 @@ let _sdkPromise = null;
 
 function loadGoogleMapsApi() {
   if (typeof window === "undefined") return Promise.resolve(); // native guard
+  if (!PLACES_KEY) {
+    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY, EXPO_PUBLIC_GOOGLE_PLACES_API_KEY, or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY in .env");
+    return Promise.resolve();
+  }
   if (_sdkPromise) return _sdkPromise;                        // already loading or loaded
 
   _sdkPromise = new Promise((resolve, reject) => {
@@ -67,7 +71,7 @@ async function _getPlacePredictions(input, types) {
   }
 
   if (!PLACES_KEY) {
-    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY in .env / eas.json");
+    console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY, EXPO_PUBLIC_GOOGLE_PLACES_API_KEY, or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY in .env");
     return [];
   }
 
@@ -182,7 +186,7 @@ export async function getPlaceDetails(placeId) {
         document.body.appendChild(dummy);
         const svc = new window.google.maps.places.PlacesService(dummy);
         svc.getDetails(
-          { placeId, fields: ["name", "formatted_address", "address_components", "geometry", "formatted_phone_number", "website", "photos", "rating"] },
+          { placeId, fields: ["name", "formatted_address", "address_components", "geometry", "formatted_phone_number", "website", "photos", "rating", "types"] },
           (result, status) => {
             document.body.removeChild(dummy);
             if (!result || status !== window.google.maps.places.PlacesServiceStatus.OK) {
@@ -215,6 +219,7 @@ export async function getPlaceDetails(placeId) {
         phone: place.formatted_phone_number,
         website: place.website,
         rating: place.rating ?? null,
+        types: Array.isArray(place.types) ? place.types : [],
         photo_urls,
       };
     } catch (e) {
@@ -223,11 +228,11 @@ export async function getPlaceDetails(placeId) {
     }
   } else {
     if (!PLACES_KEY) {
-      console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY in .env / eas.json");
+      console.error("[Places] Missing API key — set EXPO_PUBLIC_GOOGLE_API_KEY, EXPO_PUBLIC_GOOGLE_PLACES_API_KEY, or EXPO_PUBLIC_GOOGLE_MAPS_API_KEY in .env");
       return {};
     }
     try {
-      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&key=${PLACES_KEY}&fields=name,formatted_address,address_components,geometry,formatted_phone_number,website,photos,rating`;
+      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&key=${PLACES_KEY}&fields=name,formatted_address,address_components,geometry,formatted_phone_number,website,photos,rating,types`;
       const res = await fetch(url);
       const json = await res.json();
       if (json.status && json.status !== "OK") {
@@ -250,6 +255,7 @@ export async function getPlaceDetails(placeId) {
         phone: pd.formatted_phone_number,
         website: pd.website,
         rating: pd.rating ?? null,
+        types: Array.isArray(pd.types) ? pd.types : [],
         photo_urls: _photoUrlsFromReferences(pd.photos),
       };
     } catch (e) {

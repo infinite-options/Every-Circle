@@ -254,6 +254,15 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
 
     try {
       const pd = await getPlaceDetails(place.place_id);
+      const googleTypes = Array.isArray(pd.types) ? pd.types : [];
+      const googleTypeTags = googleTypes
+        .map((t) => String(t || "").replace(/_/g, " ").trim())
+        .filter((t) => t && t !== "." && !/^[\s.,;:!?\-_=+]*$/.test(t))
+        .map((t) => t.toLowerCase());
+      const mergedCustomTags = Array.from(
+        new Set([...(formData.customTags || []), ...googleTypeTags]),
+      );
+      console.log("[BusinessStep0] Google place types:", Array.isArray(pd.types) ? pd.types : []);
       const photoUrls = dedupeGooglePhotoUrls(pd.photo_urls || []);
       const streetAddress = pd.address_line_1 || "";
       setAddressSearchText(streetAddress);
@@ -276,7 +285,8 @@ export default function BusinessStep0({ formData, setFormData, navigation }) {
         zip: pd.zip || "",
         latitude: pd.lat ?? "",
         longitude: pd.lng ?? "",
-        types: [],
+        types: googleTypes,
+        customTags: mergedCustomTags,
       };
 
       const canContinue = await fetchProfile(place.place_id);
