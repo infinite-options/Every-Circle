@@ -614,20 +614,27 @@ function parseConnectionDegree(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Closest referral-network degree via review path and/or owner path (lower = closer). */
+/** Network degree used for filter, sort, and badge. Businesses: review path only (owner excluded for now). */
 function getClosestNetworkDegree(item) {
   const reviewDeg = parseConnectionDegree(item.review_connection_degree);
+  if ((item?.itemType || "businesses") === "businesses") {
+    return reviewDeg;
+    // Owner path disabled for business network filter/sort/badge:
+    // const ownerDeg = parseConnectionDegree(item.owner_connection_degree);
+    // const parts = [];
+    // if (reviewDeg != null) parts.push(reviewDeg);
+    // if (ownerDeg != null) parts.push(ownerDeg);
+    // if (parts.length) return Math.min(...parts);
+    // return parseConnectionDegree(item.connection_degree);
+  }
   const ownerDeg = parseConnectionDegree(item.owner_connection_degree);
-  const parts = [];
-  if (reviewDeg != null) parts.push(reviewDeg);
-  if (ownerDeg != null) parts.push(ownerDeg);
-  if (parts.length) return Math.min(...parts);
+  if (ownerDeg != null) return ownerDeg;
   return parseConnectionDegree(item.connection_degree);
 }
 
 /**
  * Cumulative network filter: level 1 appears when max is 2+, but level 2 does not when max is 1.
- * Row passes if closest connection (review or owner) is within maxDegree hops.
+ * Businesses pass only via reviewer network path; owner path does not satisfy the filter.
  */
 function itemPassesNetworkFilter(item, maxDegree) {
   if (maxDegree == null) return true;
@@ -685,8 +692,8 @@ async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
         const row = getBusinessDetailsRow(detailsByUid, resolveBusinessUid(b) || b.id);
         const reviewDeg = parseConnectionDegree(row?.review_connection_degree);
         const ownerDeg = parseConnectionDegree(row?.owner_connection_degree);
-        const nearestDeg = parseConnectionDegree(row?.nearest_connection);
-        const badgeDegrees = [reviewDeg, ownerDeg, nearestDeg].filter((d) => d != null);
+        // const nearestDeg = parseConnectionDegree(row?.nearest_connection);
+        // const badgeDegrees = [reviewDeg, ownerDeg, nearestDeg].filter((d) => d != null);
         const next = {
           ...b,
           ...mergeBountyFieldsFromRow(b, row),
@@ -694,7 +701,9 @@ async function enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(items) {
           ratingCount: row ? row.rating_count : 0,
           review_connection_degree: reviewDeg,
           owner_connection_degree: ownerDeg,
-          connection_degree: badgeDegrees.length ? Math.min(...badgeDegrees) : null,
+          // Badge uses reviewer path only; owner path kept on row but not shown in level badge.
+          connection_degree: reviewDeg,
+          // connection_degree: badgeDegrees.length ? Math.min(...badgeDegrees) : null,
         };
         if (row != null) {
           const raw = row.product_count;
@@ -1665,7 +1674,13 @@ export default function SearchScreen({ route }) {
       }));
 
       const mappedExpertise = expertiseResults.filter(shouldIncludeSearchExpertiseRow).map((item, i) => mapSearchExpertiseRow(item, i));
-      const mappedSeeking = seekingResults.map((item, i) => mapSearchWishRow(item, i)).filter((item) => !isWishEnded(item));
+      const mappedSeeking = seekingResults
+        .filter((item) => {
+          const qty = item.profile_wish_quantity;
+          return qty == null || qty === "" || parseInt(qty) !== 0;
+        })
+        .map((item, i) => mapSearchWishRow(item, i))
+        .filter((item) => !isWishEnded(item));
 
       const normalizeByType = (items) => {
         if (!items.length) return [];
@@ -1850,6 +1865,10 @@ export default function SearchScreen({ route }) {
         if (type === "seeking") {
           // For seeking/wishes, the response includes profile data directly
           list = resultsArray
+            .filter((item) => {
+              const qty = item.profile_wish_quantity;
+              return qty == null || qty === "" || parseInt(qty) !== 0;
+            })
             .map((item, i) => ({
               id: `${item.profile_wish_uid || i}`,
               company: item.profile_wish_title || "Untitled Wish",

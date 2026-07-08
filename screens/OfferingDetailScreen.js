@@ -18,7 +18,6 @@ import DetailFlagButton, { detailActionRowStyle } from "../components/DetailFlag
 import FlagOfferingModal from "../components/FlagOfferingModal";
 import OfferingModerationBanner from "../components/OfferingModerationBanner";
 import { useHeaderCart } from "../components/HeaderCartButton";
-import { expertiseCartTaxFields } from "../utils/cartLineTax";
 import {
   acknowledgeOfferingModeration,
   canAcknowledgeTakenDownOffering,
@@ -27,6 +26,8 @@ import {
   MODERATED_ACKNOWLEDGED,
   MODERATED_TAKEN_DOWN,
 } from "../utils/offeringModeration";
+import { expertiseCartPersistedFields } from "../utils/offeringCartUtils";
+import { upsertExpertiseCartItem } from "../utils/expertiseCartStorage";
 
 const OfferingDetailScreenContent = ({ route, navigation }) => {
   const { expertiseData: initialExpertiseData, profileData, profile_uid, searchState, returnTo, profileState } = route.params || {};
@@ -185,7 +186,7 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
       const { quantity: qty, escrow, subtotal, totalWithFee, taxAmount, taxRatePct } = modalData;
       const cartKey = `cart_expertise_${expertiseData.expertise_uid}`;
       const sellerDisplayName = [profileData?.firstName, profileData?.lastName].filter(Boolean).join(" ").trim();
-      const cartItem = {
+      const cartItemDraft = {
         expertise_uid: expertiseData.expertise_uid,
         title: expertiseData.title,
         description: expertiseData.description,
@@ -200,14 +201,18 @@ const OfferingDetailScreenContent = ({ route, navigation }) => {
         subtotal,
         taxAmount,
         totalWithFee,
-        ...expertiseCartTaxFields(expertiseData, { taxRatePct }),
+        ...expertiseCartPersistedFields(expertiseData, { taxRatePct }),
         cart_key: cartKey,
         addedAt: new Date().toISOString(),
       };
-      await AsyncStorage.setItem(cartKey, JSON.stringify(cartItem));
+      const { cartItem, addedQty, mergedQty, capped, maxQty } = await upsertExpertiseCartItem(cartItemDraft);
       await refreshCart();
       setShowCartModal(false);
-      Alert.alert("Added to Cart", `${expertiseData?.title || "Item"} (x${qty}) has been added to your cart.`, [
+      const title = expertiseData?.title || "Item";
+      const alertMessage = capped && maxQty != null
+        ? `Only ${maxQty} available. ${title} is now at ${mergedQty} in your cart (added ${addedQty}).`
+        : `${title}: added ${addedQty} — ${mergedQty} now in your cart.`;
+      Alert.alert("Added to Cart", alertMessage, [
         { text: "Continue Browsing", style: "cancel" },
         {
           text: "View Cart",

@@ -60,7 +60,10 @@ module.exports = ({ config: expoConfig }) => ({
 
       config: {
         googleMaps: {
-          apiKey: process.env.EXPO_PUBLIC_GOOGLE_API_KEY,
+          apiKey:
+            process.env.EXPO_PUBLIC_GOOGLE_API_KEY ||
+            process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ||
+            process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
         },
       },
     },
@@ -97,7 +100,10 @@ module.exports = ({ config: expoConfig }) => ({
           },
 
           gradleProperties: {
-            MAPS_API_KEY: process.env.EXPO_PUBLIC_GOOGLE_API_KEY,
+            MAPS_API_KEY:
+              process.env.EXPO_PUBLIC_GOOGLE_API_KEY ||
+              process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ||
+              process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
             "android.builder.sdkDownload": "true",
           },
         },
@@ -133,7 +139,10 @@ module.exports = ({ config: expoConfig }) => ({
 
       webClientId: process.env.EXPO_PUBLIC_WEB_CLIENT_ID,
 
-      googleApiKey: process.env.EXPO_PUBLIC_GOOGLE_API_KEY,
+      googleApiKey:
+        process.env.EXPO_PUBLIC_GOOGLE_API_KEY ||
+        process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ||
+        process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY,
 
       appleServicesId: process.env.EXPO_PUBLIC_APPLE_SERVICES_ID,
 

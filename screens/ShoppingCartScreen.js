@@ -45,6 +45,18 @@ import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines } from "../utils/s
 import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { recordServicePurchase } from "../utils/purchaseService";
 import { expertiseLineMerchandiseAndTax, roundCartMoney, taxRatePercentForCalculation } from "../utils/cartLineTax";
+import {
+  getOfferingBountyLineTotal,
+  getOfferingBountyTypeForCheckout,
+  getOfferingLinePretax,
+  getCartLineRemainingAddQuantity,
+  getCartLineStockMax,
+  formatCartLineStockBadge,
+  getCartLineStockBadgeStyle,
+  hasOfferingBounty,
+  formatOfferingUnitPriceLabel,
+  parseOfferingBountyAmount,
+} from "../utils/offeringCartUtils";
 
 const GENERIC_CART_TITLES = ["All Items", "My Cart", "Cart"];
 
@@ -64,6 +76,26 @@ function roundMoney(n) {
   return roundCartMoney(n);
 }
 
+function CartStockBadge({ item }) {
+  const label = formatCartLineStockBadge(item);
+  const colors = getCartLineStockBadgeStyle(item);
+  if (!label || !colors) return null;
+  return (
+    <View
+      style={{
+        alignSelf: "flex-start",
+        backgroundColor: colors.backgroundColor,
+        borderRadius: 10,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        marginBottom: 6,
+      }}
+    >
+      <Text style={{ fontSize: 12, fontWeight: "600", color: colors.color }}>{label}</Text>
+    </View>
+  );
+}
+
 /** Bounty amount string for cart copy (matches Price row currency rules). */
 function formatCartBountyAmountStr(item, amountNum) {
   const n = Number(amountNum);
@@ -77,8 +109,11 @@ function formatCartBountyAmountStr(item, amountNum) {
 /** e.g. "Bounty ($3.50 total paid by Seller)" vs "… per item …" */
 function formatCartBountyPaidBySellerLine(item) {
   if (item.itemType === "expertise") {
-    const amt = parsePrice(item.bounty);
-    return `Bounty (${formatCartBountyAmountStr(item, amt)} per item paid by Seller)`;
+    if (!hasOfferingBounty(item)) return null;
+    const amt = parseOfferingBountyAmount(item);
+    const amountStr = formatCartBountyAmountStr(item, amt);
+    const isTotal = getOfferingBountyTypeForCheckout(item) === "total";
+    return `Bounty (${amountStr} ${isTotal ? "total" : "per item"} paid by Seller)`;
   }
   const amt = parsePrice(item.bs_bounty);
   const amountStr = formatCartBountyAmountStr(item, amt);
@@ -91,7 +126,7 @@ function formatCartBountyLineTotalValueStr(item) {
   const qty = item.quantity || 1;
   let num;
   if (item.itemType === "expertise") {
-    num = parsePrice(item.bounty) * qty;
+    num = getOfferingBountyLineTotal(item, qty);
   } else if (item.bs_bounty_type === "total") {
     num = parsePrice(item.bs_bounty);
   } else {
@@ -674,16 +709,17 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const currentQuantity = item.quantity || 1;
       const newQuantity = Math.max(1, currentQuantity + change);
 
-      // ── NEW: cap at available stock for limited-quantity items ──
-      const availableStock = item.bs_quantity;
-      if (change > 0 && availableStock !== undefined && availableStock !== null && String(availableStock).toLowerCase() !== "unlimited") {
+      const availableStock =
+        item.itemType === "expertise" || item.bs_quantity != null
+          ? getCartLineStockMax(item)
+          : null;
+      if (change > 0 && availableStock != null) {
         const maxQty = parseInt(availableStock, 10);
         if (!isNaN(maxQty) && newQuantity > maxQty) {
           Alert.alert("Stock limit", `Only ${maxQty} available for this item.`);
           return;
         }
       }
-      // ── END NEW ──
 
       if (newCartItems[index].itemType === "expertise") {
         newCartItems[index] = { ...newCartItems[index], quantity: newQuantity };
@@ -870,15 +906,16 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const processingFee = group.processingFee;
       const chargedTotal = group.total;
 
-      const defaultRecommender = recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : "110-000231";
+      const defaultRecommender =
+        recommender_profile_id && recommender_profile_id !== "Charity" ? recommender_profile_id : buyerProfileId;
 
       const transactionInEscrow = escrowValue === true || escrowValue === 1 ? 1 : 0;
 
       // In recordSingleBusinessTransaction, update the items map:
       const items = group.items.map((item) => {
         const qty = parseInt(item.quantity, 10) || 1;
-        const bountyType = item.itemType === "expertise" ? "per_item" : item.bs_bounty_type || "per_item";
-        const bounty = item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty);
+        const bountyType = item.itemType === "expertise" ? getOfferingBountyTypeForCheckout(item) : item.bs_bounty_type || "per_item";
+        const bounty = item.itemType === "expertise" ? parseOfferingBountyAmount(item) : parsePrice(item.bs_bounty);
         const sellerBusinessId = item.business_uid || item.profile_uid;
         const { pretax, tax } = lineMerchandiseAndTax(item);
         return {
@@ -1054,40 +1091,12 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                         <>
                           <Text style={styles.itemName}>{item.title}</Text>
                           <Text style={styles.itemDescription}>{item.description}</Text>
+                          <CartStockBadge item={item} />
                         </>
                       ) : (
                         <>
                           {showLineBusiness ? <Text style={styles.itemBusinessName}>{lineBusiness}</Text> : null}
-                          {(() => {
-                            const qty = item.bs_quantity;
-                            if (!qty || String(qty).toLowerCase() === "unlimited") return null;
-                            const num = parseInt(qty, 10);
-                            if (isNaN(num)) return null;
-                            const isSoldOut = num === 0;
-                            const isLow = num > 0 && num <= 5;
-                            return (
-                              <View
-                                style={{
-                                  alignSelf: "flex-start",
-                                  backgroundColor: isSoldOut ? "#fee2e2" : isLow ? "#fef9c3" : "#dcfce7",
-                                  borderRadius: 10,
-                                  paddingHorizontal: 8,
-                                  paddingVertical: 2,
-                                  marginBottom: 6,
-                                }}
-                              >
-                                <Text
-                                  style={{
-                                    fontSize: 12,
-                                    fontWeight: "600",
-                                    color: isSoldOut ? "#dc2626" : isLow ? "#b45309" : "#166534",
-                                  }}
-                                >
-                                  {isSoldOut ? "Out of stock" : isLow ? `Only ${num} left` : `${num} in stock`}
-                                </Text>
-                              </View>
-                            );
-                          })()}
+                          <CartStockBadge item={item} />
                           <ProductOrderSummaryLines
                             description={resolveProductSummaryDescription(item)}
                             baseCost={item.bs_cost}
@@ -1106,7 +1115,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                         {item.itemType === "expertise" ? (
                           <View style={styles.priceRow}>
                             <Text style={styles.priceLabel}>Price:</Text>
-                            <Text style={styles.priceValue}>${parsePrice(item.cost).toFixed(2)}</Text>
+                            <Text style={styles.priceValue}>{formatOfferingUnitPriceLabel(item.cost)}</Text>
                           </View>
                         ) : null}
                         <View style={styles.quantityContainer}>
@@ -1116,7 +1125,14 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                               <Ionicons name='remove' size={20} color='#9C45F7' />
                             </TouchableOpacity>
                             <Text style={styles.quantityText}>{item.quantity || 1}</Text>
-                            <TouchableOpacity style={styles.quantityButton} onPress={() => handleQuantityChange(index, 1)}>
+                            <TouchableOpacity
+                              style={styles.quantityButton}
+                              onPress={() => handleQuantityChange(index, 1)}
+                              disabled={(() => {
+                                const remaining = getCartLineRemainingAddQuantity(item);
+                                return remaining != null && remaining <= 0;
+                              })()}
+                            >
                               <Ionicons name='add' size={20} color='#9C45F7' />
                             </TouchableOpacity>
                           </View>
@@ -1125,7 +1141,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                           <Text style={styles.totalLabel}>Total Price:</Text>
                           <Text style={styles.totalValue}>
                             {item.itemType === "expertise"
-                              ? `$${(parsePrice(item.cost) * (item.quantity || 1)).toFixed(2)}`
+                              ? `$${getOfferingLinePretax(item.cost, item.quantity || 1).toFixed(2)}`
                               : `${item.bs_cost_currency === "USD" || !item.bs_cost_currency ? "$" : item.bs_cost_currency + " "}${(parsePrice(item.totalPrice) || parsePrice(item.bs_cost_with_extras || item.bs_cost) * (item.quantity || 1)).toFixed(2)}`}
                           </Text>
                         </View>
@@ -1133,9 +1149,15 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                           <View style={styles.lineTaxBlock}>
                             <View style={styles.lineTaxRow}>
                               <Text style={styles.lineTaxMetaLeft} numberOfLines={4}>
-                                Taxable: {lineTax.taxable ? "Yes" : "No"}
-                                {" · "}
-                                <Text style={styles.lineTaxMetaEm}>Offering Tax Rate:</Text> {storedRateWithPercent}
+                                {lineTax.taxable ? (
+                                  <>
+                                    Taxable: Yes
+                                    {" · "}
+                                    <Text style={styles.lineTaxMetaEm}>Offering Tax Rate:</Text> {storedRateWithPercent}
+                                  </>
+                                ) : (
+                                  "Taxable: No"
+                                )}
                               </Text>
                               <Text style={styles.lineTaxAmount}>${lineTax.tax.toFixed(2)}</Text>
                             </View>
@@ -1144,27 +1166,32 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                           <View style={styles.lineTaxBlock}>
                             <View style={styles.lineTaxRow}>
                               <Text style={styles.lineTaxMetaLeft} numberOfLines={4}>
-                                Taxable: {lineTax.taxable ? "Yes" : "No"}
-                                {" · "}
-                                <Text style={styles.lineTaxMetaEm}>Product Tax Rate:</Text> {storedRateWithPercent}
+                                {lineTax.taxable ? (
+                                  <>
+                                    Taxable: Yes
+                                    {" · "}
+                                    <Text style={styles.lineTaxMetaEm}>Product Tax Rate:</Text> {storedRateWithPercent}
+                                  </>
+                                ) : (
+                                  "Taxable: No"
+                                )}
                               </Text>
                               <Text style={styles.lineTaxAmount}>${lineTax.tax.toFixed(2)}</Text>
                             </View>
                           </View>
                         )}
-                        {(item.itemType === "expertise" ? parsePrice(item.bounty) : parsePrice(item.bs_bounty)) > 0 && (
+                        {hasOfferingBounty(item) || (item.itemType !== "expertise" && parsePrice(item.bs_bounty) > 0) ? (
                           <View style={[styles.totalRow, styles.bountyNoteRow]}>
                             <Text style={styles.bountyNoteLabel}>Bounty (paid by Seller)</Text>
                             <Text style={styles.bountyNoteValue}>
-                              $
                               {item.itemType === "expertise"
-                                ? (parsePrice(item.bounty) * (item.quantity || 1)).toFixed(2)
+                                ? `$${getOfferingBountyLineTotal(item, item.quantity || 1).toFixed(2)}`
                                 : item.bs_bounty_type === "total"
-                                  ? parsePrice(item.bs_bounty).toFixed(2)
-                                  : (parsePrice(item.bs_bounty) * (item.quantity || 1)).toFixed(2)}
+                                  ? `$${parsePrice(item.bs_bounty).toFixed(2)}`
+                                  : `$${(parsePrice(item.bs_bounty) * (item.quantity || 1)).toFixed(2)}`}
                             </Text>
                           </View>
-                        )}
+                        ) : null}
                       </View>
                     </View>
                   </View>

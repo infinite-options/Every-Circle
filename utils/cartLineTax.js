@@ -1,5 +1,6 @@
 import { parsePrice } from "./priceUtils";
 import { isTruthyTaxableFlag } from "./taxValidation";
+import { getOfferingLinePretax } from "./offeringCartUtils";
 
 export function roundCartMoney(n) {
   return Math.round(Number(n) * 100) / 100;
@@ -29,7 +30,7 @@ export function expertiseTaxRatePercent(item) {
 
 export function expertiseLinePretax(item) {
   const qty = parseInt(item.quantity, 10) || 1;
-  return roundCartMoney(parsePrice(item.cost) * qty);
+  return roundCartMoney(getOfferingLinePretax(item.cost, qty));
 }
 
 /** Pretax, sales tax, and metadata for an expertise/offering cart line. */

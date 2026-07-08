@@ -120,6 +120,34 @@ function getReceiptLineTransactionItemUid(row) {
   return bsId;
 }
 
+/** Build user-visible error text from a failed fetch response (status, server message, body). */
+async function formatFetchErrorAlertMessage(response, contextLines = []) {
+  const lines = [...contextLines];
+  if (response?.status != null) {
+    const statusText = response.statusText ? ` ${response.statusText}` : "";
+    lines.push(`HTTP ${response.status}${statusText}`);
+  }
+  try {
+    const text = await response.text();
+    if (text?.trim()) {
+      try {
+        const json = JSON.parse(text);
+        if (json.message) lines.push(String(json.message));
+        if (json.error && json.error !== json.message) lines.push(String(json.error));
+        const { message, error, ...rest } = json;
+        if (Object.keys(rest).length > 0) {
+          lines.push(JSON.stringify(rest, null, 2));
+        }
+      } catch {
+        lines.push(text.trim());
+      }
+    }
+  } catch (_) {
+    // ignore body read failures
+  }
+  return lines.filter(Boolean).join("\n\n");
+}
+
 /** Load receipt line items for a transaction (delivery verification, returns, etc.). */
 async function fetchReceiptLinesForTransaction(transaction) {
   const profileId = transaction.transaction_profile_id || (await AsyncStorage.getItem("profile_uid"));
@@ -156,7 +184,7 @@ async function fetchReceiptLinesForTransaction(transaction) {
     const txExpertiseId = String(transaction.ti_bs_id || transaction.transaction_uid || "").trim();
     items = [
       {
-        ti_uid: String(transaction.transaction_uid) + "_syn",
+        ti_uid: String(transaction.ti_uid || transaction.transaction_uid || "").trim(),
         ti_bs_id: txExpertiseId,
         bs_uid: txExpertiseId,
         bs_service_name: transaction.purchased_item || "",
@@ -977,7 +1005,7 @@ export default function AccountScreen({ navigation }) {
           || Object.keys(localEnrichedItems).find((k) => localEnrichedItems[k]?.offeringCostString)
           || String(transaction.transaction_uid || "").trim();
         items = [{
-          ti_uid: String(transaction.transaction_uid) + "_syn",
+          ti_uid: String(transaction.ti_uid || transaction.transaction_uid || "").trim(),
           ti_bs_id: enrichedExpertiseKey,
           bs_uid: enrichedExpertiseKey,
           bs_service_name: transaction.purchased_item || "",
@@ -1381,20 +1409,27 @@ export default function AccountScreen({ navigation }) {
       Alert.alert("Error", "Cannot confirm delivery: missing profile.");
       return;
     }
+    const requestBody = {
+      profile_id: profileId,
+      transaction_uid: transactionUid,
+      transaction_in_escrow: releaseEscrow ? 0 : 1,
+      delivery_verification_items: deliveryVerificationItems,
+    };
     try {
       setUpdatingEscrow(true);
       const response = await fetch(TRANSACTIONS_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          profile_id: profileId,
-          transaction_uid: transactionUid,
-          transaction_in_escrow: releaseEscrow ? 0 : 1,
-          delivery_verification_items: deliveryVerificationItems,
-        }),
+        body: JSON.stringify(requestBody),
       });
       if (!response.ok) {
-        throw new Error(`Failed to update: ${response.status}`);
+        const detail = await formatFetchErrorAlertMessage(response, [
+          "Failed to confirm delivery.",
+          `Request:\n${JSON.stringify(requestBody, null, 2)}`,
+        ]);
+        console.error("Error updating transaction escrow:", detail);
+        Alert.alert("Could not confirm delivery", detail);
+        return;
       }
       resetDeliveryVerificationModal();
       await refreshAccountScreenPersonal();
@@ -1403,7 +1438,14 @@ export default function AccountScreen({ navigation }) {
       }
     } catch (error) {
       console.error("Error updating transaction escrow:", error);
-      Alert.alert("Error", "Failed to update payment status. Please try again.");
+      const detail = [
+        "Failed to confirm delivery.",
+        error?.message ? String(error.message) : "Please try again.",
+        `Request:\n${JSON.stringify(requestBody, null, 2)}`,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      Alert.alert("Could not confirm delivery", detail);
     } finally {
       setUpdatingEscrow(false);
     }

@@ -263,6 +263,7 @@ export default function BusinessSetupController({ navigation, route }) {
         user_uploaded_images_count: currentFormData.images ? currentFormData.images.length : 0,
         custom_tags: JSON.stringify(customTags),
       };
+      console.log("[BusinessSetup] Google place types (not sent):", currentFormData.types || []);
 
       // Create FormData and append all fields
       const data = new FormData();
