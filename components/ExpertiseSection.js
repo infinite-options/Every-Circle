@@ -631,9 +631,17 @@ const ExpertiseSection = ({
           style={[styles.card, index > 0 && styles.cardSpacing]}
         >
           {!singleItemMode ? <OfferingModerationBanner item={item} darkMode={darkMode} compact /> : null}
-          {!hideItemVisibilityToggle ? (
+          {!hideItemVisibilityToggle || !disableDelete ? (
             <View style={styles.rowHeader}>
-              <Text style={styles.label}>Offering #{index + 1}</Text>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>Offering #{index + 1}</Text>
+                {!disableDelete ? (
+                  <TouchableOpacity onPress={() => deleteExpertise(index)}>
+                    <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              {!hideItemVisibilityToggle ? (
               <View style={styles.toggleContainer}>
                 <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
                   <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
@@ -642,6 +650,7 @@ const ExpertiseSection = ({
                   <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
                 </TouchableOpacity>
               </View>
+              ) : null}
             </View>
           ) : null}
 
@@ -829,8 +838,9 @@ const ExpertiseSection = ({
           )}
 
           {/* Sales Tax Row */}
-          <View style={styles.taxRow}>
-            <Text style={styles.costLabel}>Sales tax</Text>
+          <View style={styles.optionRow}>
+            <Text style={styles.dateTimeLabel}>Sales tax</Text>
+            <View style={styles.optionRowControls}>
             <TouchableOpacity
               style={[styles.taxBtn, !(item.profile_expertise_is_taxable === 1 || item.profile_expertise_is_taxable === "1") && styles.taxBtnActive]}
               onPress={() => {
@@ -867,11 +877,13 @@ const ExpertiseSection = ({
                 <Text style={styles.taxRateInputSuffix}>%</Text>
               </View>
             ) : null}
+            </View>
           </View>
 
           {/* Cost Row */}
-          <View style={styles.amountRow}>
-            <Text style={styles.costLabel}>Cost</Text>
+          <View style={styles.optionRow}>
+            <Text style={styles.dateTimeLabel}>Cost</Text>
+            <View style={styles.optionRowControls}>
             <TextInput
               ref={(ref) => {
                 if (ref) costInputRefs.current[index] = ref;
@@ -918,16 +930,13 @@ const ExpertiseSection = ({
               value={item.quantity || ""}
               onChangeText={(text) => handleInputChange(index, "quantity", text)}
             />
-            {!disableDelete ? (
-              <TouchableOpacity onPress={() => deleteExpertise(index)}>
-                <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
-              </TouchableOpacity>
-            ) : null}
+            </View>
           </View>
 
           {/* Bounty Row */}
-          <View style={styles.taxRow}>
-            <Text style={styles.costLabel}>Bounty</Text>
+          <View style={styles.optionRow}>
+            <Text style={styles.dateTimeLabel}>Bounty</Text>
+            <View style={styles.optionRowControls}>
             <TouchableOpacity
               style={[styles.taxBtn, item.profile_expertise_bounty_type === "none" && styles.taxBtnActive]}
               onPress={() => {
@@ -964,6 +973,7 @@ const ExpertiseSection = ({
                 keyboardType='decimal-pad'
               />
             ) : null}
+            </View>
           </View>
           {offeringBountyExceedsCost(item) ? (
             <Text style={[styles.bountyCostWarning, darkMode && styles.bountyCostWarningDark]}>
@@ -972,8 +982,9 @@ const ExpertiseSection = ({
           ) : null}
 
           {/* Condition Row */}
-          <View style={styles.taxRow}>
-            <Text style={styles.costLabel}>Condition</Text>
+          <View style={styles.optionRow}>
+            <Text style={styles.dateTimeLabel}>Condition</Text>
+            <View style={styles.optionRowControls}>
             <TouchableOpacity
               style={[styles.taxBtn, item.profile_expertise_condition_type === "na" && styles.taxBtnActive]}
               onPress={() => {
@@ -1007,11 +1018,13 @@ const ExpertiseSection = ({
                 maxLength={CONDITION_DETAIL_MAX_CHARS}
               />
             ) : null}
+            </View>
           </View>
 
           {/* Shippable Row */}
-          <View style={styles.taxRow}>
-            <Text style={styles.costLabel}>Shipping</Text>
+          <View style={styles.optionRow}>
+            <Text style={styles.dateTimeLabel}>Shipping</Text>
+            <View style={styles.optionRowControls}>
             <TouchableOpacity
               style={[
                 styles.taxBtn,
@@ -1077,11 +1090,13 @@ const ExpertiseSection = ({
                 Buyer pays
               </Text>
             </TouchableOpacity>
+            </View>
           </View>
 
           {/* Returnable Row */}
-          <View style={styles.taxRow}>
-            <Text style={styles.costLabel}>Returnable</Text>
+          <View style={styles.optionRow}>
+            <Text style={styles.dateTimeLabel}>Returnable</Text>
+            <View style={styles.optionRowControls}>
             <TouchableOpacity
               style={[styles.taxBtn, !(item.profile_expertise_is_returnable === 1 || item.profile_expertise_is_returnable === "1") && styles.taxBtnActive]}
               onPress={() => {
@@ -1114,11 +1129,12 @@ const ExpertiseSection = ({
                 <Text style={styles.taxBtnText}>days</Text>
               </>
             ) : null}
+            </View>
           </View>
 
           {/* Refund Policy Row */}
-          <View style={styles.dateTimeRow}>
-            <Text style={styles.costLabel}>Refund Policy</Text>
+          <View style={styles.optionRow}>
+            <Text style={styles.dateTimeLabel}>Refund Policy</Text>
             <TextInput
               style={[styles.locationInput, darkMode && styles.locationInputDark]}
               value={item.profile_expertise_refund_policy || ""}
@@ -1210,6 +1226,20 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     gap: 8,
   },
+  optionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+    gap: 8,
+  },
+  optionRowControls: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+  },
   dateTimeLabel: {
     fontSize: 14,
     fontWeight: "600",
@@ -1258,7 +1288,8 @@ const styles = StyleSheet.create({
     boxSizing: "border-box",
   },
   locationInput: {
-    flex: 2,
+    flex: 1,
+    minWidth: 0,
     borderWidth: 1,
     borderColor: "#ccc",
     padding: 8,
@@ -1354,8 +1385,8 @@ const styles = StyleSheet.create({
     marginRight: 5,
   },
   quantityInlineLabel: {
-    marginLeft: 5,
-    marginRight: 0,
+    fontWeight: "bold",
+    marginLeft: 2,
   },
   amountInput: {
     borderWidth: 1,
@@ -1368,11 +1399,14 @@ const styles = StyleSheet.create({
   costAmountInput: {
     borderWidth: 1,
     borderColor: "#ccc",
-    padding: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
     borderRadius: 5,
     backgroundColor: "#fff",
-    width: "25%",
-    height: 40,
+    width: 68,
+    height: 36,
+    flexShrink: 0,
+    fontSize: 13,
     textAlignVertical: "center",
   },
   costUnitInput: {
@@ -1389,11 +1423,11 @@ const styles = StyleSheet.create({
     borderColor: "#ccc",
     borderRadius: 5,
     backgroundColor: "#fff",
-    width: "30%",
-    marginLeft: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    minHeight: 40,
+    width: 92,
+    height: 36,
+    flexShrink: 0,
+    paddingHorizontal: 6,
+    paddingVertical: 0,
   },
   dropdownContainer: {
     borderRadius: 5,
@@ -1410,16 +1444,20 @@ const styles = StyleSheet.create({
   },
   dropdownSelectedText: {
     color: "#000",
-    fontSize: 14,
+    fontSize: 13,
   },
   bountyInput: {
     borderWidth: 1,
     borderColor: "#ccc",
-    padding: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
     borderRadius: 5,
     backgroundColor: "#fff",
-    width: "20%",
-    marginRight: 5,
+    width: 52,
+    height: 36,
+    flexShrink: 0,
+    fontSize: 13,
+    textAlignVertical: "center",
   },
   dollar: { fontSize: 20, marginHorizontal: 5 },
   deleteIcon: { width: 20, height: 20 },

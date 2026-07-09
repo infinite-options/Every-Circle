@@ -257,7 +257,12 @@ const ExperienceSection = ({
           Then parent scrolls to center it if needed.
           Without this ref, we can’t reliably scroll to the newly added card. */}
           <View style={styles.expHeaderRow}>
-            <Text style={styles.label}>Experience #{index + 1}</Text>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Experience #{index + 1}</Text>
+              <TouchableOpacity onPress={() => deleteExperience(index)}>
+                <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
+              </TouchableOpacity>
+            </View>
             {/* Individual public/private toggle */}
             <View style={styles.toggleContainer}>
               <TouchableOpacity
@@ -313,9 +318,6 @@ const ExperienceSection = ({
             <TextInput style={styles.dateInput} placeholder='MM/YYYY' value={item.startDate} onChangeText={(text) => handleDateChange(index, "startDate", text)} />
             <Text> - </Text>
             <TextInput style={styles.dateInput} placeholder='MM/YYYY' value={item.endDate} onChangeText={(text) => handleDateChange(index, "endDate", text)} />
-            <TouchableOpacity onPress={() => deleteExperience(index)} style={styles.deleteButton}>
-              <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
-            </TouchableOpacity>
           </View>
         </View>
       ))}

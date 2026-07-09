@@ -241,7 +241,12 @@ const EducationSection = ({
           style={[styles.card, index > 0 && styles.cardSpacing]}
         >
           <View style={styles.rowHeader}>
-            <Text style={styles.label}>Entry #{index + 1}</Text>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Education #{index + 1}</Text>
+              <TouchableOpacity onPress={() => deleteEducation(index)}>
+                <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
+              </TouchableOpacity>
+            </View>
 
             {/* Individual public/private toggle */}
             <View style={styles.toggleContainer}>
@@ -287,9 +292,6 @@ const EducationSection = ({
             <TextInput style={styles.dateInput} placeholder='MM/YYYY' value={item.startDate} onChangeText={(text) => handleDateChange(index, "startDate", text)} />
             <Text style={styles.dash}> - </Text>
             <TextInput style={styles.dateInput} placeholder='MM/YYYY' value={item.endDate} onChangeText={(text) => handleDateChange(index, "endDate", text)} />
-            <TouchableOpacity onPress={() => deleteEducation(index)}>
-              <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
-            </TouchableOpacity>
           </View>
         </View>
       ))}

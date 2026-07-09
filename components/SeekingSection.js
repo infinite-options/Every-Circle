@@ -631,7 +631,12 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
           style={[styles.card, index > 0 && styles.cardSpacing]}
         >
           <View style={styles.rowHeader}>
-            <Text style={styles.label}>Seeking #{index + 1}</Text>
+            <View style={styles.labelRow}>
+              <Text style={styles.label}>Seeking #{index + 1}</Text>
+              <TouchableOpacity onPress={() => deleteWish(index)}>
+                <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
+              </TouchableOpacity>
+            </View>
             <View style={styles.toggleContainer}>
               <TouchableOpacity onPress={() => toggleEntryVisibility(index)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
                 <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
@@ -825,8 +830,9 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
           )}
 
           {/*Cost Row*/}
-          <View style={styles.amountRow}>
-            <Text style={styles.costLabel}>Cost</Text>
+          <View style={styles.optionRow}>
+            <Text style={styles.dateTimeLabel}>Cost</Text>
+            <View style={styles.optionRowControls}>
             <TextInput
               style={styles.costAmountInput}
               keyboardType={(() => {
@@ -861,21 +867,21 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
               selectedTextStyle={styles.dropdownSelectedText}
               activeColor='#f0f0f0'
             />
+            <Text style={[styles.costLabel, styles.quantityInlineLabel]}>Quantity</Text>
             <TextInput
               style={styles.bountyInput}
-              placeholder='Desired Quantity'
+              placeholder='Count'
               keyboardType='numeric'
               value={item.profile_wish_quantity || ""}
               onChangeText={(text) => handleInputChange(index, "profile_wish_quantity", text)}
             />
-            <TouchableOpacity onPress={() => deleteWish(index)}>
-              <Image source={require("../assets/delete.png")} style={styles.deleteIcon} />
-            </TouchableOpacity>
+            </View>
           </View>
 
           {/* Bounty Row */}
-          <View style={styles.bountyTypeRow}>
-            <Text style={styles.costLabel}>Bounty</Text>
+          <View style={styles.optionRow}>
+            <Text style={styles.dateTimeLabel}>Bounty</Text>
+            <View style={styles.optionRowControls}>
             <TouchableOpacity
               style={[styles.bountyTypeBtn, item.profile_wish_bounty_type === "none" && styles.bountyTypeBtnActive]}
               onPress={() => {
@@ -912,6 +918,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
                 keyboardType='decimal-pad'
               />
             ) : null}
+            </View>
           </View>
         </View>
       ))}
@@ -995,6 +1002,20 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     gap: 8,
   },
+  optionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+    gap: 8,
+  },
+  optionRowControls: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+  },
   dateTimeLabel: {
     fontSize: 14,
     fontWeight: "600",
@@ -1043,7 +1064,8 @@ const styles = StyleSheet.create({
     boxSizing: "border-box",
   },
   locationInput: {
-    flex: 2,
+    flex: 1,
+    minWidth: 0,
     borderWidth: 1,
     borderColor: "#ccc",
     padding: 8,
@@ -1176,7 +1198,7 @@ const styles = StyleSheet.create({
   },
   dropdownSelectedText: {
     color: "#000",
-    fontSize: 14,
+    fontSize: 13,
   },
   deleteIcon: { width: 20, height: 20 },
   cardSpacing: {
@@ -1202,14 +1224,21 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginRight: 5,
   },
+  quantityInlineLabel: {
+    fontWeight: "bold",
+    marginLeft: 2,
+  },
   costAmountInput: {
     borderWidth: 1,
     borderColor: "#ccc",
-    padding: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
     borderRadius: 5,
     backgroundColor: "#fff",
-    width: "25%",
-    height: 40,
+    width: 68,
+    height: 36,
+    flexShrink: 0,
+    fontSize: 13,
     textAlignVertical: "center",
   },
   costUnitDropdown: {
@@ -1217,11 +1246,11 @@ const styles = StyleSheet.create({
     borderColor: "#ccc",
     borderRadius: 5,
     backgroundColor: "#fff",
-    width: "30%",
-    marginLeft: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    minHeight: 40,
+    width: 92,
+    height: 36,
+    flexShrink: 0,
+    paddingHorizontal: 6,
+    paddingVertical: 0,
   },
   dollar: {
     fontSize: 20,
@@ -1230,20 +1259,18 @@ const styles = StyleSheet.create({
   bountyInput: {
     borderWidth: 1,
     borderColor: "#ccc",
-    padding: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
     borderRadius: 5,
     backgroundColor: "#fff",
-    width: "20%",
-    height: 40,
+    width: 52,
+    height: 36,
+    flexShrink: 0,
+    fontSize: 13,
     textAlignVertical: "center",
   },
-  bountyTypeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 6,
-    marginTop: 8,
-    marginBottom: 4,
+  requiredDropdown: {
+    borderColor: "#f44336",
   },
   bountyTypeBtn: {
     paddingHorizontal: 10,
