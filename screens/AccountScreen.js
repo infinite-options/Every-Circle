@@ -27,12 +27,39 @@ import { parsePrice } from "../utils/priceUtils";
 import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines } from "../utils/selectedChoiceItems";
 import ProductOrderSummaryLines from "../components/ProductOrderSummaryLines";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
+import {
+  formatLocalMonthDayFromKey,
+  formatTransactionDate,
+  lastNDaysKeys,
+  localDateKey,
+  parseTransactionDateTime,
+  parseUtcDateTime,
+  transactionDateMs,
+  withTimeZoneQuery,
+} from "../utils/transactionDateTime";
 
 /** 1 = compact: Purchases (Date, Type, Seller, Status, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
 
 function resolvePurchaseSellerId(transaction) {
-  return String(transaction?.seller_id || transaction?.transaction_business_id || "").trim();
+  if (!transaction || typeof transaction !== "object") return "";
+  const profileId = String(transaction.transaction_profile_id || "").trim();
+  const businessId = String(transaction.transaction_business_id || "").trim();
+  const sellerId = String(transaction.seller_id || "").trim();
+  // API sometimes sets seller_id to the buyer profile; prefer the business/seller uid in that case.
+  if (businessId && sellerId === profileId) return businessId;
+  if (sellerId) return sellerId;
+  return businessId;
+}
+
+/** GET /api/transactionreceipt/:profile_id/:transaction_uid — optional ?seller_id= for business seller view */
+function buildTransactionReceiptUrl(transaction, profileIdOverride, { sellerId } = {}) {
+  const profileId = profileIdOverride || transaction?.transaction_profile_id;
+  const transactionUid = transaction?.transaction_uid;
+  if (!profileId || !transactionUid) return null;
+  const base = `${TRANSACTION_RECEIPT_ENDPOINT}/${profileId}/${transactionUid}`;
+  const resolvedSellerId = String(sellerId || "").trim();
+  return resolvedSellerId ? `${base}?seller_id=${encodeURIComponent(resolvedSellerId)}` : base;
 }
 
 /** Business product purchases use business profile; offerings/seeking use personal profile. */
@@ -156,8 +183,10 @@ async function fetchReceiptLinesForTransaction(transaction) {
     throw new Error("Cannot load receipt: missing transaction data.");
   }
 
-  const sellerId = transaction.seller_id || "";
-  const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${profileId}/${transactionUid}${sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : ""}`;
+  const url = buildTransactionReceiptUrl(transaction, profileId);
+  if (!url) {
+    throw new Error("Cannot load receipt: missing transaction data.");
+  }
   const response = await fetch(url, { method: "GET" });
   if (!response.ok) {
     throw new Error(`Failed to load receipt: ${response.status}`);
@@ -253,10 +282,19 @@ function sumReceiptLineMerchandise(rows) {
   }, 0);
 }
 
+/** Merchandise subtotal from receipt API: transaction_amount only (not transaction_total). */
+function getReceiptTransactionAmount(receiptRows) {
+  if (!Array.isArray(receiptRows)) return null;
+  for (const row of receiptRows) {
+    const amt = receiptMoneyNullable(row?.transaction_amount);
+    if (amt != null) return amt;
+  }
+  return null;
+}
+
 /** Merchandise subtotal: transaction_amount when present, else sum of line unit × qty. */
 function getReceiptMerchandiseSubtotal(receiptRows) {
-  if (!Array.isArray(receiptRows) || receiptRows.length === 0) return null;
-  const txnMerch = receiptMoneyNullable(receiptRows[0]?.transaction_amount);
+  const txnMerch = getReceiptTransactionAmount(receiptRows);
   if (txnMerch != null) return txnMerch;
   return sumReceiptLineMerchandise(receiptRows);
 }
@@ -338,17 +376,42 @@ function enrichFromReceiptRow(row) {
   };
 }
 
-/** Below receipt line items: merchandise, tax, fees, total, and arithmetic check vs amount paid. */
-function ReceiptTransactionTotalsFooter({ receiptRows, darkMode }) {
+/** First non-null money field from a receipt row or transaction summary. */
+function receiptMoneyFromSources(row, fallback, keys) {
+  for (const key of keys) {
+    const fromRow = receiptMoneyNullable(row?.[key]);
+    if (fromRow != null) return fromRow;
+    const fromFallback = receiptMoneyNullable(fallback?.[key]);
+    if (fromFallback != null) return fromFallback;
+  }
+  return null;
+}
+
+/** Below receipt line items: merchandise, tax, fees, shipping, bounty, total, and check vs amount paid. */
+function ReceiptTransactionTotalsFooter({ receiptRows, transactionFallback, darkMode }) {
   if (!Array.isArray(receiptRows) || receiptRows.length === 0) return null;
   const first = receiptRows[0] || {};
+  const fallback = transactionFallback && typeof transactionFallback === "object" ? transactionFallback : {};
   const fromLines = sumReceiptLineMerchandise(receiptRows);
-  const txnMerch = receiptMoneyNullable(first.transaction_amount);
-  const txnTaxes = receiptMoneyNullable(first.transaction_taxes);
-  const txnFees = receiptMoneyNullable(first.transaction_fees);
-  const txnTotal = receiptMoneyNullable(first.transaction_total);
+  const txnMerch = getReceiptTransactionAmount(receiptRows);
+  const txnTaxes = receiptMoneyFromSources(first, fallback, ["transaction_taxes", "total_taxes"]);
+  const txnFees = receiptMoneyFromSources(first, fallback, ["transaction_fees", "total_fees"]);
+  const txnShipping = receiptMoneyFromSources(first, fallback, [
+    "transaction_shipping",
+    "shipping_amount",
+    "shipping_cost",
+    "shipping",
+  ]);
+  const txnBounty = receiptMoneyFromSources(first, fallback, ["bounty_paid", "transaction_bounty", "total_bounty_paid"]);
+  const txnTotal = receiptMoneyFromSources(first, fallback, ["transaction_total", "total_amount_paid", "seller_total"]);
 
-  const hasAnyBreakdown = txnMerch != null || txnTaxes != null || txnFees != null || txnTotal != null;
+  const hasAnyBreakdown =
+    txnMerch != null ||
+    txnTaxes != null ||
+    txnFees != null ||
+    txnShipping != null ||
+    txnBounty != null ||
+    txnTotal != null;
   if (!hasAnyBreakdown) return null;
 
   const merchDisplay = txnMerch != null ? txnMerch : fromLines;
@@ -360,37 +423,48 @@ function ReceiptTransactionTotalsFooter({ receiptRows, darkMode }) {
   const borderColor = darkMode ? "#444" : "#ddd";
 
   const row = (label, valueText) => (
-    <View key={label} style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8, paddingHorizontal: 2 }}>
-      <Text style={{ fontSize: 14, color: labelColor, flex: 1, paddingRight: 10 }}>{label}</Text>
-      <Text style={{ fontSize: 14, fontWeight: "600", color: valueColor }}>{valueText}</Text>
+    <View key={label} style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 5, paddingHorizontal: 2 }}>
+      <Text style={{ fontSize: 12, color: labelColor, flex: 1, paddingRight: 8 }}>{label}</Text>
+      <Text style={{ fontSize: 12, fontWeight: "600", color: valueColor }}>{valueText}</Text>
     </View>
   );
 
   const taxesStr = txnTaxes != null ? formatReceiptUsd(txnTaxes) : "—";
   const feesStr = txnFees != null ? formatReceiptUsd(txnFees) : "—";
+  const shippingStr = txnShipping != null ? formatReceiptUsd(txnShipping) : "—";
   const totalStr = txnTotal != null ? formatReceiptUsd(txnTotal) : "—";
+  const showBounty = txnBounty != null && txnBounty > 0;
 
   const linesVsMerch = txnMerch != null && fromLines > 0 && Math.abs(fromLines - txnMerch) > RECEIPT_TOTAL_EPS;
 
   let verifyText = "";
   let verifyColor = secondaryColor;
-  let verifyBold = false;
 
   if (txnTotal != null) {
-    if (txnTaxes != null && txnFees != null) {
-      const merchForSum = txnMerch != null ? txnMerch : fromLines;
-      const sum = merchForSum + txnTaxes + txnFees;
+    const merchForSum = txnMerch != null ? txnMerch : fromLines;
+    const sumParts = [merchForSum];
+    if (txnTaxes != null) sumParts.push(txnTaxes);
+    if (txnFees != null) sumParts.push(txnFees);
+    if (txnShipping != null) sumParts.push(txnShipping);
+    const sum = sumParts.reduce((a, b) => a + b, 0);
+    if (txnTaxes != null || txnFees != null || txnShipping != null) {
       if (Math.abs(sum - txnTotal) <= RECEIPT_TOTAL_EPS) {
-        verifyText = `Subtotal + sales tax + fees matches amount paid (${formatReceiptUsd(txnTotal)}).`;
+        verifyText = `Subtotal + tax + fees + shipping matches amount paid (${formatReceiptUsd(txnTotal)}).`;
         verifyColor = "#18884A";
-        verifyBold = true;
       } else {
-        verifyText = `Totals do not match: ${formatReceiptUsd(merchForSum)} + ${formatReceiptUsd(txnTaxes)} + ${formatReceiptUsd(txnFees)} = ${formatReceiptUsd(sum)}, but amount paid is ${formatReceiptUsd(txnTotal)}.`;
+        const partsLabel = [
+          formatReceiptUsd(merchForSum),
+          txnTaxes != null ? formatReceiptUsd(txnTaxes) : null,
+          txnFees != null ? formatReceiptUsd(txnFees) : null,
+          txnShipping != null ? formatReceiptUsd(txnShipping) : null,
+        ]
+          .filter(Boolean)
+          .join(" + ");
+        verifyText = `Totals do not match: ${partsLabel} = ${formatReceiptUsd(sum)}, but amount paid is ${formatReceiptUsd(txnTotal)}.`;
         verifyColor = "#B71C1C";
-        verifyBold = true;
       }
     } else {
-      verifyText = "Tax or fee fields were not returned; skipped automatic check against amount paid.";
+      verifyText = "Tax, fee, or shipping fields were not returned; skipped automatic check against amount paid.";
       verifyColor = secondaryColor;
     }
   } else {
@@ -407,19 +481,20 @@ function ReceiptTransactionTotalsFooter({ receiptRows, darkMode }) {
         </Text>
       ) : null}
       {row("Sales tax", taxesStr)}
-      {row("Fees (card processing)", feesStr)}
+      {row("Credit card fees", feesStr)}
+      {row("Shipping", shippingStr)}
+      {showBounty ? row("Bounty (paid by seller)", formatReceiptUsd(txnBounty)) : null}
       {row("Amount paid", totalStr)}
-      {verifyText ? (
+      {verifyText && verifyColor === "#B71C1C" ? (
         <Text
           style={{
-            fontSize: 13,
+            fontSize: 11,
             color: verifyColor,
-            marginTop: 6,
-            fontWeight: verifyBold ? "600" : "400",
+            marginTop: 4,
+            fontWeight: "600",
             paddingHorizontal: 2,
           }}
         >
-          {verifyBold && verifyColor === "#18884A" ? "✓ " : null}
           {verifyText}
         </Text>
       ) : null}
@@ -971,8 +1046,10 @@ export default function AccountScreen({ navigation }) {
         console.warn("fetchReceipt - failed to load enriched items:", e);
       }
 
-      const sellerId = transaction.seller_id || "";
-      const url = `${TRANSACTION_RECEIPT_ENDPOINT}/${profileId}/${transactionUid}${sellerId ? `?seller_id=${encodeURIComponent(sellerId)}` : ""}`;
+      const url = buildTransactionReceiptUrl(transaction, profileId);
+      if (!url) {
+        throw new Error("Cannot load receipt: missing transaction data.");
+      }
 
       const response = await fetch(url, { method: "GET" });
       if (!response.ok) {
@@ -1277,7 +1354,7 @@ export default function AccountScreen({ navigation }) {
           setExpertiseData([]);
           return;
         }
-        const url = `${ACCOUNT_SCREEN_PERSONAL_ENDPOINT}/${profileId}`;
+        const url = withTimeZoneQuery(`${ACCOUNT_SCREEN_PERSONAL_ENDPOINT}/${profileId}`);
         const response = await fetch(url, {
           method: "GET",
         });
@@ -1578,7 +1655,7 @@ export default function AccountScreen({ navigation }) {
       if (businessReceiptFetchedRef.current.has(uid)) return;
       businessReceiptFetchedRef.current.add(uid);
       try {
-        const r = await fetch(`${TRANSACTION_RECEIPT_ENDPOINT}/${txn.transaction_profile_id}/${uid}?seller_id=${encodeURIComponent(biz)}`, {
+        const r = await fetch(buildTransactionReceiptUrl(txn, txn.transaction_profile_id, { sellerId: biz }), {
           method: "GET",
         });
         let items = [];
@@ -1630,7 +1707,7 @@ export default function AccountScreen({ navigation }) {
       businessReceiptFetchedRef.current = new Set();
       setBusinessReceiptCache({});
 
-      const response = await fetch(`${ACCOUNT_SCREEN_BUSINESS_ENDPOINT}/${targetBusinessUID}`, {
+      const response = await fetch(withTimeZoneQuery(`${ACCOUNT_SCREEN_BUSINESS_ENDPOINT}/${targetBusinessUID}`), {
         method: "GET",
       });
 
@@ -1673,9 +1750,9 @@ export default function AccountScreen({ navigation }) {
           bounty.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || "Unknown Business";
         });
         bountyResult.data.sort((a, b) => {
-          const dateA = new Date(a.transaction_datetime);
-          const dateB = new Date(b.transaction_datetime);
-          return dateB - dateA;
+          const dateA = parseTransactionDateTime(a);
+          const dateB = parseTransactionDateTime(b);
+          return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
         });
         setBusinessBountyData(bountyResult);
       } else {
@@ -1733,9 +1810,9 @@ export default function AccountScreen({ navigation }) {
       });
 
       const filteredTransactions = Object.values(transactionMap).sort((a, b) => {
-        const dateA = new Date(a.transaction_datetime);
-        const dateB = new Date(b.transaction_datetime);
-        return dateB - dateA;
+        const dateA = parseTransactionDateTime(a);
+        const dateB = parseTransactionDateTime(b);
+        return (dateB?.getTime() || 0) - (dateA?.getTime() || 0);
       });
 
       if (!shouldApplyBusinessResponse()) return;
@@ -1798,20 +1875,12 @@ export default function AccountScreen({ navigation }) {
     refreshAccountScreenBusiness();
   }, [selectedAccount, businesses]);
 
-  // Format date to dd/mm format
-  const formatTransactionDate = (dateString) => {
-    if (!dateString) return "N/A";
-    const date = new Date(dateString);
-    const day = String(date.getDate()).padStart(2, "0");
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    return `${month}/${day}`;
-  };
-
   // Returns true if a pending transaction is 5+ days old and should auto-pay
   const isAutoPaid = (transaction) => {
     if (transaction.transaction_in_escrow !== 1) return false;
-    if (!transaction.transaction_datetime) return false;
-    const diffDays = (new Date() - new Date(transaction.transaction_datetime)) / (1000 * 60 * 60 * 24);
+    const txMs = transactionDateMs(transaction);
+    if (!Number.isFinite(txMs)) return false;
+    const diffDays = (Date.now() - txMs) / (1000 * 60 * 60 * 24);
     console.log("isAutoPaid check:", transaction.transaction_uid, "diffDays:", diffDays); // ← add
     return diffDays >= 5;
   };
@@ -1860,10 +1929,11 @@ export default function AccountScreen({ navigation }) {
     const bountyByDate = {};
 
     bountyData.data.forEach((transaction) => {
-      if (!transaction.transaction_datetime || !transaction.bounty_earned) return;
+      if (!transaction.transaction_datetime || transaction.bounty_earned == null) return;
 
-      const date = new Date(transaction.transaction_datetime);
-      const dateKey = date.toISOString().split("T")[0]; // YYYY-MM-DD
+      const date = parseTransactionDateTime(transaction);
+      if (!date) return;
+      const dateKey = localDateKey(date);
 
       if (!bountyByDate[dateKey]) {
         bountyByDate[dateKey] = 0;
@@ -1871,20 +1941,15 @@ export default function AccountScreen({ navigation }) {
       bountyByDate[dateKey] += parseFloat(transaction.bounty_earned) || 0;
     });
 
-    // Sort dates
-    const sortedDates = Object.keys(bountyByDate).sort();
+    const recentDates = lastNDaysKeys(12);
 
-    // Get last 12 data points (or all if less than 12)
-    const recentDates = sortedDates.slice(-12);
-
-    // Build daily bounty array (one line)
-    const dailyBounty = recentDates.map((date) => bountyByDate[date]);
+    const dailyBounty = recentDates.map((date) => bountyByDate[date] || 0);
 
     // Build cumulative bounty array (second line)
     const cumulativeBounty = [];
     let runningTotal = 0;
     recentDates.forEach((date) => {
-      runningTotal += bountyByDate[date];
+      runningTotal += bountyByDate[date] || 0;
       cumulativeBounty.push(runningTotal);
     });
 
@@ -1916,26 +1981,25 @@ export default function AccountScreen({ navigation }) {
     const earningsByDate = {};
 
     businessTransactionData.forEach((transaction) => {
-      if (!transaction.transaction_datetime || !transaction.net_earning) return;
+      if (!transaction.transaction_datetime || transaction.net_earning == null) return;
 
-      const date = new Date(transaction.transaction_datetime);
-      const dateKey = date.toISOString().split("T")[0]; // YYYY-MM-DD
+      const date = parseTransactionDateTime(transaction);
+      if (!date) return;
+      const dateKey = localDateKey(date);
 
       if (!earningsByDate[dateKey]) {
         earningsByDate[dateKey] = 0;
       }
-      earningsByDate[dateKey] += parseFloat(transaction.net_earning) || 0; // Changed from transaction_total
+      earningsByDate[dateKey] += parseFloat(transaction.net_earning) || 0;
     });
 
-    // Rest of the function stays the same
-    const sortedDates = Object.keys(earningsByDate).sort();
-    const recentDates = sortedDates.slice(-12);
-    const dailyEarnings = recentDates.map((date) => earningsByDate[date]);
+    const recentDates = lastNDaysKeys(12);
+    const dailyEarnings = recentDates.map((date) => earningsByDate[date] || 0);
 
     const cumulativeEarnings = [];
     let runningTotal = 0;
     recentDates.forEach((date) => {
-      runningTotal += earningsByDate[date];
+      runningTotal += earningsByDate[date] || 0;
       cumulativeEarnings.push(runningTotal);
     });
 
@@ -1960,13 +2024,7 @@ export default function AccountScreen({ navigation }) {
     return isFinite(result) ? result : height;
   };
 
-  // Format date for X-axis (MM/DD) — web and default mobile fallback
-  const formatDateLabel = (dateString) => {
-    const d = new Date(dateString);
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${month}/${day}`;
-  };
+  const formatDateLabel = (dateKey) => formatLocalMonthDayFromKey(dateKey);
 
   /** Mobile earnings charts: month abbr on calendar day 1 only (e.g. Apr); on 7,14,21,28 show day number only; else no label. */
   const formatEarningsChartXAxisLabelMobile = (dateString) => {
@@ -2559,8 +2617,10 @@ export default function AccountScreen({ navigation }) {
                         const isBusiness = purchaseTypeLower === "business";
                         const isExpertise = purchaseTypeLower === "expertise" || purchaseTypeLower === "offering";
                         const isPending = Number(transaction.transaction_in_escrow) === 1;
-                        const purchaseDate = new Date(transaction.transaction_datetime);
-                        const isOlderThan5Days = (new Date() - purchaseDate) / (1000 * 60 * 60 * 24) >= 5;
+                        const purchaseDate = parseTransactionDateTime(transaction);
+                        const isOlderThan5Days =
+                          Number.isFinite(purchaseDate?.getTime()) &&
+                          (Date.now() - purchaseDate.getTime()) / (1000 * 60 * 60 * 24) >= 5;
                         /** Any purchase still in escrow: Pending is tappable (confirm receipt / release). */
                         const showPendingLink = isPending;
                         const showAutoPaid = (isSeeking || isBusiness || isExpertise) && !isPending && isOlderThan5Days;
@@ -2570,7 +2630,7 @@ export default function AccountScreen({ navigation }) {
 
                         return (
                           <View key={transaction.ti_uid || i} style={styles.transactionRow}>
-                            <Text style={styles.transactionDate}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                            <Text style={styles.transactionDate}>{formatTransactionDate(transaction)}</Text>
                             {showPurchasesTxnIdColumn ? <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text> : null}
                             {showPurchasesTypeColumn ? <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "N/A"}</Text> : null}
                             <View style={{ flex: 1, paddingHorizontal: 4, justifyContent: "center", minWidth: 0 }}>
@@ -2746,19 +2806,12 @@ export default function AccountScreen({ navigation }) {
                           <Text style={styles.transactionHeaderAmount}>Bounty</Text>
                         </View>
                         {bountyData.data.map((item, index) => {
-                          const formatDate = (dateString) => {
-                            if (!dateString) return "N/A";
-                            const date = new Date(dateString);
-                            const month = String(date.getMonth() + 1).padStart(2, "0");
-                            const day = String(date.getDate()).padStart(2, "0");
-                            return `${month}/${day}`;
-                          };
                           const paidLabel =
-                            item.in_escrow === 1 && (new Date() - new Date(item.transaction_datetime)) / (1000 * 60 * 60 * 24) >= 30 ? "Paid" : item.in_escrow === 1 ? "Pending" : "Paid";
+                            item.in_escrow === 1 && (Date.now() - (transactionDateMs(item) || 0)) / (1000 * 60 * 60 * 24) >= 30 ? "Paid" : item.in_escrow === 1 ? "Pending" : "Paid";
                           return (
                             <View key={item.tb_uid || item.ti_transaction_id || index} style={styles.transactionRow}>
                               {showPurchasesTxnIdColumn ? <Text style={styles.transactionId}>{item.ti_transaction_id || item.ti_uid || "N/A"}</Text> : null}
-                              <Text style={styles.transactionDate}>{formatDate(item.transaction_datetime)}</Text>
+                              <Text style={styles.transactionDate}>{formatTransactionDate(item)}</Text>
                               <Text style={styles.transactionBusiness} numberOfLines={4}>
                                 {item.purchaser_name || item.transaction_profile_id || "N/A"}
                               </Text>
@@ -2808,17 +2861,9 @@ export default function AccountScreen({ navigation }) {
                         <Text style={styles.businessBountyHeaderCell}>Bounty Paid</Text>
                       </View>
                       {/* Table Rows */}
-                      {businessBountyData.data.map((transaction, index) => {
-                        const formatDate = (dateString) => {
-                          if (!dateString) return "N/A";
-                          const date = new Date(dateString);
-                          const month = String(date.getMonth() + 1).padStart(2, "0");
-                          const day = String(date.getDate()).padStart(2, "0");
-                          return `${month}/${day}`;
-                        };
-                        return (
+                      {businessBountyData.data.map((transaction, index) => (
                           <View key={transaction.transaction_uid || index} style={styles.businessBountyTableRow}>
-                            <Text style={styles.businessBountyCell}>{formatDate(transaction.transaction_datetime)}</Text>
+                            <Text style={styles.businessBountyCell}>{formatTransactionDate(transaction)}</Text>
                             <Text style={styles.businessBountyCell}>{transaction.bs_uid || "N/A"}</Text>
                             <Text style={styles.businessBountyCell}>{transaction.bs_service_name || "N/A"}</Text>
                             <Text style={styles.businessBountyCell}>${parseFloat(transaction.bs_cost || 0).toFixed(2)}</Text>
@@ -2826,8 +2871,7 @@ export default function AccountScreen({ navigation }) {
                             <Text style={styles.businessBountyCell}>{transaction.ti_bs_qty || 0}</Text>
                             <Text style={styles.businessBountyCell}>${parseFloat(transaction.bounty_paid || 0).toFixed(2)}</Text>
                           </View>
-                        );
-                      })}
+                        ))}
                     </View>
                   ) : (
                     <Text style={styles.noDataText}>No business bounty data available.</Text>
@@ -2918,7 +2962,7 @@ export default function AccountScreen({ navigation }) {
                               }}
                               activeOpacity={0.7}
                             >
-                              <Text style={styles.businessTransactionCell}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                              <Text style={styles.businessTransactionCell}>{formatTransactionDate(transaction)}</Text>
                               <Text style={styles.businessTransactionCell}>
                                 {transaction.transaction_uid || "N/A"} {isExpanded ? "▲" : "▼"}
                               </Text>
@@ -3011,7 +3055,7 @@ export default function AccountScreen({ navigation }) {
                                     }}
                                   >
                                     <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>RETURN</Text>
-                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>{formatTransactionDate(transaction.transaction_datetime)}</Text>
+                                    <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>{formatTransactionDate(transaction)}</Text>
                                     <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>Refund</Text>
                                     <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
                                     <Text style={{ flex: 1, fontSize: 11, color: "#B71C1C", textAlign: "center" }}>—</Text>
@@ -3044,136 +3088,97 @@ export default function AccountScreen({ navigation }) {
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiptModalContent, darkMode && styles.darkModalContent]}>
             <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle, { textAlign: "center" }]}>Transaction Receipt</Text>
-            {/* Receipt Table Section */}
-            
-            {receiptData.length > 0 ? (
-              <ScrollView style={styles.receiptScrollView} horizontal>
-                <View>
-                  <View style={styles.receiptTableHeader}>
-                    <Text style={[styles.receiptHeaderCell, { width: 280 }]}>Item</Text>
-                    <Text style={[styles.receiptHeaderCell, { width: 40 }]}>Qty</Text>
-                    <Text style={[styles.receiptHeaderCell, { width: 80 }]}>Unit Price</Text>
-                    <Text style={[styles.receiptHeaderCell, { width: 80 }]}>Total</Text>
-                  </View>
 
-                  {receiptData.map((item, index) => {
-                    const baseCost = parseFloat(item.ti_bs_cost || 0);
-                    const qty = parseInt(item.ti_bs_qty || 1, 10);
+            {receiptLoading ? (
+              <ActivityIndicator size="large" color="#18884A" style={{ marginVertical: 24 }} />
+            ) : receiptData.length > 0 ? (
+              <>
+                <ScrollView style={styles.receiptScrollView} contentContainerStyle={styles.receiptScrollViewContent}>
+                  <View style={styles.receiptTableWrap}>
+                    <View style={styles.receiptTableHeader}>
+                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellItem]}>Item</Text>
+                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellQty]}>Qty</Text>
+                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellCost]}>Unit</Text>
+                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellCost]}>Total</Text>
+                    </View>
 
-                    const enrich = receiptEnrichedItems[item.ti_bs_id]
-                      || receiptEnrichedItems[item.bs_uid]
-                      || {};
+                    {receiptData.map((item, index) => {
+                      const baseCost = parseFloat(item.ti_bs_cost || 0);
+                      const qty = parseInt(item.ti_bs_qty || 1, 10);
 
-                    if (isOfferingReceipt) {
-                      const offeringName = String(item.bs_service_name || item.bs_service_desc || "N/A").trim() || "N/A";
-                      // Direct lookup by ti_bs_id; fall back to scanning all enriched items
-                      // because the buyer transaction row may not carry ti_bs_id = expertise_uid
-                      const costString = enrich.offeringCostString
-                        || Object.values(receiptEnrichedItems).find((e) => e && e.offeringCostString)?.offeringCostString
-                        || "";
-                      const qtyTypeLabel = getOfferingQtyTypeLabel(costString);
-                      const lineTotal = baseCost * qty;
+                      const enrich = receiptEnrichedItems[item.ti_bs_id]
+                        || receiptEnrichedItems[item.bs_uid]
+                        || {};
+
+                      if (isOfferingReceipt) {
+                        const offeringName = String(item.bs_service_name || item.bs_service_desc || "N/A").trim() || "N/A";
+                        const costString = enrich.offeringCostString
+                          || Object.values(receiptEnrichedItems).find((e) => e && e.offeringCostString)?.offeringCostString
+                          || "";
+                        const qtyTypeLabel = getOfferingQtyTypeLabel(costString);
+                        const lineTotal = baseCost * qty;
+                        return (
+                          <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
+                            <View style={styles.receiptTableCellItem}>
+                              <Text style={{ fontSize: 12, color: darkMode ? "#eee" : "#333", lineHeight: 17 }} numberOfLines={3}>
+                                {offeringName}
+                              </Text>
+                              {qtyTypeLabel ? (
+                                <Text style={{ fontSize: 10, color: darkMode ? "#aaa" : "#777", fontStyle: "italic", lineHeight: 14 }}>
+                                  {qtyTypeLabel}
+                                </Text>
+                              ) : null}
+                            </View>
+                            <Text style={[styles.receiptTableCell, styles.receiptTableCellQty]}>{qty}</Text>
+                            <Text style={[styles.receiptTableCell, styles.receiptTableCellCost]}>${baseCost.toFixed(2)}</Text>
+                            <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, { fontWeight: "600" }]}>
+                              ${lineTotal.toFixed(2)}
+                            </Text>
+                          </View>
+                        );
+                      }
+
+                      const choicesExtraCost = parseFloat(enrich.choicesExtraCost || 0);
+                      const unitPrice = baseCost + choicesExtraCost;
+                      const lineTotal = unitPrice * qty;
+                      const summaryDescription =
+                        String(item.bs_service_desc || item.bs_service_name || "N/A").trim() || "N/A";
+
                       return (
                         <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
-                          <View style={{ width: 280, paddingHorizontal: 4, justifyContent: "center" }}>
-                            <Text style={{ fontSize: 12, color: darkMode ? "#eee" : "#333", lineHeight: 18 }}>
-                              {offeringName}
-                            </Text>
-                            {qtyTypeLabel ? (
-                              <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#777", fontStyle: "italic", lineHeight: 16 }}>
-                                {qtyTypeLabel}
-                              </Text>
-                            ) : null}
+                          <View style={styles.receiptTableCellItem}>
+                            <ProductOrderSummaryLines
+                              description={summaryDescription}
+                              baseCost={baseCost}
+                              choiceSource={enrich}
+                              specialInstructions={enrich.specialInstructions}
+                              baseTextStyle={{ fontSize: 12, color: darkMode ? "#eee" : "#333", lineHeight: 17, marginBottom: 2 }}
+                              choiceTextStyle={{ fontSize: 10, color: darkMode ? "#ccc" : "#555", lineHeight: 14 }}
+                              noteTextStyle={{
+                                fontSize: 10,
+                                color: darkMode ? "#aaa" : "#888",
+                                fontStyle: "italic",
+                                lineHeight: 14,
+                                marginTop: 2,
+                              }}
+                            />
                           </View>
-                          <Text style={[styles.receiptTableCell, { width: 40, textAlign: "center" }]}>
-                            {qty}
-                          </Text>
-                          <Text style={[styles.receiptTableCell, { width: 80, textAlign: "right" }]}>
-                            ${baseCost.toFixed(2)}
-                          </Text>
-                          <Text style={[styles.receiptTableCell, { width: 80, textAlign: "right", fontWeight: "600" }]}>
+                          <Text style={[styles.receiptTableCell, styles.receiptTableCellQty]}>{qty}</Text>
+                          <Text style={[styles.receiptTableCell, styles.receiptTableCellCost]}>${unitPrice.toFixed(2)}</Text>
+                          <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, { fontWeight: "600" }]}>
                             ${lineTotal.toFixed(2)}
                           </Text>
                         </View>
                       );
-                    }
-
-                    const choicesExtraCost = parseFloat(enrich.choicesExtraCost || 0);
-                    const unitPrice = baseCost + choicesExtraCost;
-                    const lineTotal = unitPrice * qty;
-                    const summaryDescription =
-                      String(item.bs_service_desc || item.bs_service_name || "N/A").trim() || "N/A";
-
-                    return (
-                      <View key={item.ti_uid || item.ti_bs_id || index} style={styles.receiptTableRow}>
-                        <View style={{ width: 280, paddingHorizontal: 4, justifyContent: "center" }}>
-                          <ProductOrderSummaryLines
-                            description={summaryDescription}
-                            baseCost={baseCost}
-                            choiceSource={enrich}
-                            specialInstructions={enrich.specialInstructions}
-                            baseTextStyle={{ fontSize: 12, color: darkMode ? "#eee" : "#333", lineHeight: 18, marginBottom: 3 }}
-                            choiceTextStyle={{ fontSize: 11, color: darkMode ? "#ccc" : "#555", lineHeight: 16 }}
-                            noteTextStyle={{
-                              fontSize: 11,
-                              color: darkMode ? "#aaa" : "#888",
-                              fontStyle: "italic",
-                              lineHeight: 16,
-                              marginTop: 3,
-                            }}
-                          />
-                        </View>
-
-                        <Text style={[styles.receiptTableCell, { width: 40, textAlign: "center" }]}>
-                          {qty}
-                        </Text>
-
-                        <Text style={[styles.receiptTableCell, { width: 80, textAlign: "right" }]}>
-                          ${unitPrice.toFixed(2)}
-                        </Text>
-
-                        <Text style={[styles.receiptTableCell, { width: 80, textAlign: "right", fontWeight: "600" }]}>
-                          ${lineTotal.toFixed(2)}
-                        </Text>
-                      </View>
-                    );
-                  })}
-
-                  {/* Grand total */}
-                  {(() => {
-                    const grandTotal = receiptData.reduce((sum, item) => {
-                      const enrich = receiptEnrichedItems[item.ti_bs_id]
-                        || receiptEnrichedItems[item.bs_uid]
-                        || {};
-                      const baseCost = parseFloat(item.ti_bs_cost || 0);
-                      const qty = parseInt(item.ti_bs_qty || 1, 10);
-                      const choicesExtra = isOfferingReceipt ? 0 : parseFloat(enrich.choicesExtraCost || 0);
-                      return sum + (baseCost + choicesExtra) * qty;
-                    }, 0);
-                    return (
-                      <View style={[styles.receiptTableRow, {
-                        borderTopWidth: 2,
-                        borderTopColor: "#18884A",
-                        marginTop: 4,
-                      }]}>
-                        <Text style={[styles.receiptTableCell, {
-                          width: 280, fontWeight: "700", textAlign: "right", paddingRight: 8,
-                        }]}>
-                          Grand Total
-                        </Text>
-                        <Text style={{ width: 40 }} />
-                        <Text style={{ width: 80 }} />
-                        <Text style={[styles.receiptTableCell, {
-                          width: 80, fontWeight: "700",
-                          color: "#18884A", textAlign: "right"
-                        }]}>
-                          ${grandTotal.toFixed(2)}
-                        </Text>
-                      </View>
-                    );
-                  })()}
-                </View>
-              </ScrollView>
+                    })}
+                  </View>
+                </ScrollView>
+                <ReceiptTransactionTotalsFooter
+                  receiptRows={receiptData}
+                  transactionFallback={receiptTransaction}
+                  darkMode={darkMode}
+                />
+              </>
             ) : (
               <Text style={[styles.noDataText, { marginVertical: 24 }]}>No receipt data available.</Text>
             )}
@@ -3897,8 +3902,9 @@ export default function AccountScreen({ navigation }) {
                   const showEmail = tx.buyer_email_is_public == 1 && tx.buyer_email;
                   const showPhone = tx.buyer_phone_is_public == 1 && tx.buyer_phone;
                   const showLocation = tx.buyer_location_is_public == 1 && (tx.buyer_city || tx.buyer_state);
-                  const purchaseDate = tx.transaction_datetime
-                    ? new Date(tx.transaction_datetime).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+                  const purchaseDateObj = parseTransactionDateTime(tx);
+                  const purchaseDate = purchaseDateObj
+                    ? purchaseDateObj.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
                     : null;
                   return (
                     <View key={i} style={{ borderTopWidth: i > 0 ? 1 : 0, borderTopColor: "#eee", paddingTop: i > 0 ? 14 : 0, marginBottom: 14 }}>
@@ -4364,18 +4370,19 @@ const styles = StyleSheet.create({
   receiptModalContent: {
     backgroundColor: "#fff",
     borderRadius: 20,
-    padding: 24,
-    width: "90%",
+    padding: 20,
+    width: "92%",
     maxWidth: 500,
-    maxHeight: "80%",
+    maxHeight: "85%",
     ...(Platform.OS === "web" && {
       position: "relative",
       zIndex: 9999,
     }),
   },
   receiptScrollView: {
-    maxHeight: 300,
-    marginVertical: 16,
+    maxHeight: 200,
+    marginTop: 12,
+    marginBottom: 4,
     width: "100%",
     alignSelf: "stretch",
   },
@@ -4389,17 +4396,18 @@ const styles = StyleSheet.create({
   receiptTableHeader: {
     flexDirection: "row",
     backgroundColor: "#18884A",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
     borderRadius: 8,
     marginBottom: 2,
     width: "100%",
+    alignItems: "center",
   },
   receiptHeaderCell: {
-    fontSize: 13,
+    fontSize: 11,
     color: "#fff",
     fontWeight: "bold",
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
   },
   receiptHeaderCellItem: {
     flex: 1,
@@ -4407,38 +4415,39 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   receiptHeaderCellQty: {
-    width: 52,
-    textAlign: "right",
+    width: 30,
+    textAlign: "center",
   },
   receiptHeaderCellCost: {
-    width: 88,
+    width: 54,
     textAlign: "right",
   },
   receiptTableRow: {
     flexDirection: "row",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
     width: "100%",
     alignItems: "flex-start",
   },
   receiptTableCell: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#333",
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
   },
   receiptTableCellItem: {
     flex: 1,
     flexShrink: 1,
     minWidth: 0,
+    paddingRight: 4,
   },
   receiptTableCellQty: {
-    width: 52,
-    textAlign: "right",
+    width: 30,
+    textAlign: "center",
   },
   receiptTableCellCost: {
-    width: 88,
+    width: 54,
     textAlign: "right",
   },
   receiptCloseButton: {
