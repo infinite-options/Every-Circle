@@ -31,7 +31,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
       // Fallback: add entry if navigation not provided
       // Mark the next card index before state update, then notify parent after render.
       pendingNewIndexRef.current = businesses.length;
-      const newEntry = { name: "", role: "", isPublic: true, isNew: false };
+      const newEntry = { name: "", role: "", isPublic: true, individualIsPublic: true, isNew: false };
       setBusinesses([...businesses, newEntry]);
     }
   };
@@ -77,13 +77,13 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
 
   const toggleEntryVisibility = (index) => {
     const updated = [...businesses];
-    updated[index].isPublic = !updated[index].isPublic;
-    setBusinesses(updated);
-  };
-
-  const toggleIndividualVisibility = (index) => {
-    const updated = [...businesses];
-    updated[index].individualIsPublic = !updated[index].individualIsPublic;
+    const currentVisible = !!(updated[index]?.individualIsPublic ?? updated[index]?.isPublic);
+    const nextVisible = !currentVisible;
+    updated[index] = {
+      ...updated[index],
+      isPublic: nextVisible,
+      individualIsPublic: nextVisible,
+    };
     setBusinesses(updated);
   };
 
@@ -250,17 +250,18 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
         businessesData.map((business, idx) => {
           const originalIndex = business.index;
           const originalBusiness = businesses[originalIndex];
+          const entryVisible = !!(originalBusiness?.individualIsPublic ?? originalBusiness?.isPublic);
           return (
             <View key={business.business_uid || business.profile_business_uid || idx} style={[styles.card, darkMode && styles.darkCard, idx > 0 && { marginTop: 10 }]}>
               {/* Header with toggle */}
               <View style={styles.rowHeader}>
                 <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{idx + 1}</Text>
                 <View style={styles.toggleContainer}>
-                  <TouchableOpacity onPress={() => toggleEntryVisibility(originalIndex)} style={[styles.togglePill, originalBusiness?.isPublic && styles.togglePillActiveGreen]}>
-                    <Text style={[styles.togglePillText, originalBusiness?.isPublic && styles.togglePillTextActive]}>{originalBusiness?.isPublic ? "Visible" : "Show"}</Text>
+                  <TouchableOpacity onPress={() => toggleEntryVisibility(originalIndex)} style={[styles.togglePill, entryVisible && styles.togglePillActiveGreen]}>
+                    <Text style={[styles.togglePillText, entryVisible && styles.togglePillTextActive]}>{entryVisible ? "Visible" : "Show"}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => toggleEntryVisibility(originalIndex)} style={[styles.togglePill, !originalBusiness?.isPublic && styles.togglePillActiveRed]}>
-                    <Text style={[styles.togglePillText, !originalBusiness?.isPublic && styles.togglePillTextActive]}>{!originalBusiness?.isPublic ? "Hidden" : "Hide"}</Text>
+                  <TouchableOpacity onPress={() => toggleEntryVisibility(originalIndex)} style={[styles.togglePill, !entryVisible && styles.togglePillActiveRed]}>
+                    <Text style={[styles.togglePillText, !entryVisible && styles.togglePillTextActive]}>{!entryVisible ? "Hidden" : "Hide"}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -292,6 +293,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
           .filter((item) => !item.profile_business_uid && !item.business_uid)
           .map((item, index) => {
             const actualIndex = businesses.indexOf(item);
+            const entryVisible = !!(item.individualIsPublic ?? item.isPublic);
             return (
               <View
                 key={index}
@@ -304,11 +306,11 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                 <View style={styles.rowHeader}>
                   <Text style={[styles.label, darkMode && styles.darkLabel]}>Business #{actualIndex + 1}</Text>
                   <View style={styles.toggleContainer}>
-                    <TouchableOpacity onPress={() => toggleEntryVisibility(actualIndex)} style={[styles.togglePill, item.isPublic && styles.togglePillActiveGreen]}>
-                      <Text style={[styles.togglePillText, item.isPublic && styles.togglePillTextActive]}>{item.isPublic ? "Visible" : "Show"}</Text>
+                    <TouchableOpacity onPress={() => toggleEntryVisibility(actualIndex)} style={[styles.togglePill, entryVisible && styles.togglePillActiveGreen]}>
+                      <Text style={[styles.togglePillText, entryVisible && styles.togglePillTextActive]}>{entryVisible ? "Visible" : "Show"}</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => toggleEntryVisibility(actualIndex)} style={[styles.togglePill, !item.isPublic && styles.togglePillActiveRed]}>
-                      <Text style={[styles.togglePillText, !item.isPublic && styles.togglePillTextActive]}>{!item.isPublic ? "Hidden" : "Hide"}</Text>
+                    <TouchableOpacity onPress={() => toggleEntryVisibility(actualIndex)} style={[styles.togglePill, !entryVisible && styles.togglePillActiveRed]}>
+                      <Text style={[styles.togglePillText, !entryVisible && styles.togglePillTextActive]}>{!entryVisible ? "Hidden" : "Hide"}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -381,6 +383,7 @@ const BusinessSection = ({ businesses, setBusinesses, toggleVisibility, isPublic
                         business_uid: biz.business_uid,
                         isNew: false,
                         isPublic: true,
+                        individualIsPublic: true,
                         isApproved: false,
                         role: updated[activeBusinessIndex].role || "",
                       };

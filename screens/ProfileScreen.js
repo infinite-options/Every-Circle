@@ -628,16 +628,22 @@ const ProfileScreen = ({ route, navigation }) => {
 
       // Map business_info to userData.businesses
       // Ensure business_info is parsed correctly
-      userData.businesses = parseProfileJsonArray(apiUser.business_info).map((bus) => ({
-        profile_business_uid: bus.business_uid || bus.profile_business_uid || "",
-        name: bus.business_name || bus.profile_business_name || "",
-        role: bus.profile_business_role || bus.role || bus.bu_role || "",
-        isApproved: bus.profile_business_approved === "1" || bus.profile_business_approved === 1 || bus.isApproved === true || bus.isApproved === "1",
-        isPublic: bus.profile_business_is_visible === "1" || bus.profile_business_is_visible === 1 || bus.isPublic === true || bus.isPublic === "1",
-        bu_individual_business_is_public: bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === true,
-        individualIsPublic: bus.bu_individual_business_is_public === true || bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1",
-        business_updated_at: bus.business_updated_at ?? bus.updated_at,
-      }));
+      userData.businesses = parseProfileJsonArray(apiUser.business_info).map((bus) => {
+        const entryVisible =
+          bus.bu_individual_business_is_public === "1" ||
+          bus.bu_individual_business_is_public === 1 ||
+          bus.bu_individual_business_is_public === true;
+        return {
+          profile_business_uid: bus.business_uid || bus.profile_business_uid || "",
+          name: bus.business_name || bus.profile_business_name || "",
+          role: bus.profile_business_role || bus.role || bus.bu_role || "",
+          isApproved: bus.profile_business_approved === "1" || bus.profile_business_approved === 1 || bus.isApproved === true || bus.isApproved === "1",
+          isPublic: entryVisible,
+          bu_individual_business_is_public: entryVisible,
+          individualIsPublic: entryVisible,
+          business_updated_at: bus.business_updated_at ?? bus.updated_at,
+        };
+      });
 
       // console.log("ProfileScreen - userData.businesses (after mapping):", JSON.stringify(userData.businesses, null, 2));
       // console.log("ProfileScreen - userData.businesses.length:", userData.businesses.length);
@@ -909,8 +915,12 @@ const ProfileScreen = ({ route, navigation }) => {
             profile_business_uid: bus.profile_business_uid || "",
             role: sanitizeText(originalBusiness?.role, ""),
             isApproved: originalBusiness?.isApproved || false,
-            individualIsPublic:
-              originalBusiness?.bu_individual_business_is_public === 1 || originalBusiness?.bu_individual_business_is_public === "1" || originalBusiness?.bu_individual_business_is_public === true,
+            individualIsPublic: !!(
+              originalBusiness?.individualIsPublic ??
+              (originalBusiness?.bu_individual_business_is_public === 1 ||
+                originalBusiness?.bu_individual_business_is_public === "1" ||
+                originalBusiness?.bu_individual_business_is_public === true)
+            ),
             index,
           };
         } catch (error) {

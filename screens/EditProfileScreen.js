@@ -23,6 +23,31 @@ import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolvePro
 import { getOfferingModeratedState, isOfferingModeratedBlocked, MODERATED_ACKNOWLEDGED } from "../utils/offeringModeration";
 import { mapOfferingFormToPayload, mapProfileOfferingToFormItem } from "../utils/offeringResubmission";
 import { parseCoordinateValue } from "../utils/validateCoordinates";
+
+function isPublicFlag(value) {
+  return value === 1 || value === "1" || value === true;
+}
+
+function businessEntryVisibilityFromApi(biz) {
+  if (biz?.individualIsPublic !== undefined) return !!biz.individualIsPublic;
+  if (biz?.isPublic !== undefined) return !!biz.isPublic;
+  return isPublicFlag(biz?.bu_individual_business_is_public);
+}
+
+function mapBusinessEntryForEdit(biz) {
+  const visible = businessEntryVisibilityFromApi(biz);
+  return {
+    profile_business_uid: biz.profile_business_uid || "",
+    business_uid: biz.business_uid || biz.profile_business_business_id || "",
+    name: biz.name || biz.profile_business_name || "",
+    role: biz.role || biz.profile_business_role || "",
+    isPublic: visible,
+    individualIsPublic: visible,
+    isApproved: biz.isApproved !== undefined ? biz.isApproved : biz.profile_business_approved === "1",
+    isNew: biz.isNew || false,
+    business_updated_at: biz.business_updated_at ?? biz.updated_at,
+  };
+}
 import { getAddressSuggestions, getPlaceDetails } from "../utils/googlePlaces";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -148,21 +173,9 @@ const EditProfileScreen = ({ route, navigation }) => {
     businessIsPublic: user?.businessIsPublic || false,
     socialLinksIsPublic: user?.socialLinksIsPublic ?? true,
     imageIsPublic: user?.imageIsPublic || false,
-    businesses: user?.businesses?.map((biz) => ({
-      profile_business_uid: biz.profile_business_uid || "",
-      business_uid: biz.business_uid || biz.profile_business_business_id || "",
-      name: biz.name || biz.profile_business_name || "",
-      role: biz.role || biz.profile_business_role || "",
-      // isPublic: biz.isPublic !== undefined ? biz.isPublic : biz.profile_business_is_visible === 1,
-      isPublic: biz.isPublic !== undefined ? biz.isPublic : biz.bu_individual_business_is_public === 1 || biz.bu_individual_business_is_public === "1" || biz.bu_individual_business_is_public === true,
-      isApproved: biz.isApproved !== undefined ? biz.isApproved : biz.profile_business_approved === "1",
-      individualIsPublic:
-        biz.individualIsPublic !== undefined
-          ? biz.individualIsPublic
-          : biz.bu_individual_business_is_public === true || biz.bu_individual_business_is_public === 1 || biz.bu_individual_business_is_public === "1",
-      isNew: biz.isNew || false,
-      business_updated_at: biz.business_updated_at ?? biz.updated_at,
-    })) || [{ name: "", role: "", isPublic: true, isApproved: 0, isNew: false }],
+    businesses: user?.businesses?.map(mapBusinessEntryForEdit) || [
+      { name: "", role: "", isPublic: true, individualIsPublic: true, isApproved: 0, isNew: false },
+    ],
     experience: (() => {
       const uid = initialFormProfileUid;
       return (
@@ -841,29 +854,27 @@ const EditProfileScreen = ({ route, navigation }) => {
           // Only process if business name is present
           if (!biz.name) return null;
 
+          const visible = !!(biz.individualIsPublic ?? biz.isPublic);
+
           // If it's an existing business (has profile_business_uid)
           if (biz.profile_business_uid) {
             return {
               profile_business_uid: biz.profile_business_uid,
-              business_id: biz.business_uid || "",
+              business_uid: biz.business_uid || biz.profile_business_uid || "",
               profile_business_role: biz.role || "",
-              isPublic: biz.isPublic ? 1 : 0,
               isApproved: biz.isApproved ? 1 : 0,
-              // individualIsPublic: biz.individualIsPublic ? 1 : 0,
-              individualIsPublic: biz.isPublic ? 1 : 0,
+              individualIsPublic: visible ? 1 : 0,
               ...(biz.business_updated_at != null || biz.updated_at != null ? { business_updated_at: biz.business_updated_at ?? biz.updated_at } : {}),
             };
           }
 
           // If it's a new business, don't include profile_business_uid at all
           return {
-            business_id: biz.business_uid || "",
+            business_uid: biz.business_uid || "",
             profile_business_role: biz.role || "",
-            isPublic: biz.isPublic ? 1 : 0,
             isApproved: 1, // Set to approved for new businesses
             profile_business_approver_id: profileUID, // Use the current user's profile UID as approver
-            // individualIsPublic: biz.individualIsPublic ? 1 : 0,
-            individualIsPublic: biz.isPublic ? 1 : 0,
+            individualIsPublic: visible ? 1 : 0,
           };
         })
         .filter(Boolean);

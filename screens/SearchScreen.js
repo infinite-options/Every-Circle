@@ -8,11 +8,9 @@ import {
   TouchableOpacity,
   ScrollView,
   SafeAreaView,
-  FlatList,
   ActivityIndicator,
   Alert,
   Dimensions,
-  Modal,
   Image,
   Platform,
   useWindowDimensions,
@@ -787,14 +785,6 @@ export default function SearchScreen({ route }) {
   // Define custom questions for the Account page
   const searchFeedbackQuestions = ["Search - Question 1?", "Search - Question 2?", "Search - Question 3?"];
 
-  // --- stub initial data, so you see the four items by default ---
-  const initialResults = [
-    { id: "1", company: "ABC Plumbing", rating: 4, hasPriceTag: false, hasX: false, hasDollar: true },
-    { id: "2", company: "Speedy Roto", rating: 3, hasPriceTag: false, hasX: true, hasDollar: false },
-    { id: "3", company: "Fast Rooter", rating: 4, hasPriceTag: true, hasX: false, hasDollar: false },
-    { id: "4", company: "Hector Handyman", rating: 4, hasPriceTag: false, hasX: false, hasDollar: true },
-  ];
-
   // Declare all state variables first
   const [searchQuery, setSearchQuery] = useState("");
   const [searchSuggestions, setSearchSuggestions] = useState([]);
@@ -802,7 +792,7 @@ export default function SearchScreen({ route }) {
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const suggestDebounceRef = useRef(null);
   const suggestPressRef = useRef(false);
-  const [results, setResults] = useState(initialResults);
+  const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // Filter states
@@ -1186,6 +1176,8 @@ export default function SearchScreen({ route }) {
 
         if (!userUid) {
           console.log("⚠️ No user_uid found yet, will retry...");
+          setHasLoadedInitialSearch(true);
+          setLoading(false);
           return;
         }
 
@@ -1233,6 +1225,7 @@ export default function SearchScreen({ route }) {
           setResults(parsedResults);
           setIsFirstVisit(false);
           setHasLoadedInitialSearch(true);
+          setLoading(false);
           const bizItems = parsedResults.filter((r) => r.itemType === "businesses" && r.id);
           if (bizItems.length > 0) {
             enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(parsedResults)
@@ -1249,6 +1242,7 @@ export default function SearchScreen({ route }) {
         } else {
           // First time user, search for "Chinese"
           console.log("🆕 First visit for user:", userUid, "- searching for 'Chinese'");
+          setLoading(true);
           setSearchQuery("Chinese");
           setIsFirstVisit(true);
           setHasLoadedInitialSearch(true);
@@ -1260,6 +1254,7 @@ export default function SearchScreen({ route }) {
       } catch (error) {
         console.error("Error loading saved search:", error);
         // On error, default to Chinese search
+        setLoading(true);
         setSearchQuery("Chinese");
         setHasLoadedInitialSearch(true);
         setTimeout(() => {
@@ -1351,13 +1346,16 @@ export default function SearchScreen({ route }) {
     }
   }, [results, loading]);
 
-  // Modal visibility states
-  const [distanceModalVisible, setDistanceModalVisible] = useState(false);
-  const [networkModalVisible, setNetworkModalVisible] = useState(false);
-  const [bountyModalVisible, setBountyModalVisible] = useState(false);
-  const [sortAlphabeticalModalVisible, setSortAlphabeticalModalVisible] = useState(false);
-  const [ratingModalVisible, setRatingModalVisible] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [activeFilterMenu, setActiveFilterMenu] = useState(null);
+  const [filterPanelDraft, setFilterPanelDraft] = useState({
+    distance: null,
+    network: null,
+    rating: null,
+    bounty: null,
+    sortAlphabetical: null,
+  });
   const [showGlobalBusinesses, setShowGlobalBusinesses] = useState(true);
   const [showGlobalOffering, setShowGlobalOffering] = useState(true);
   const [showGlobalSeeking, setShowGlobalSeeking] = useState(true);
@@ -1380,9 +1378,91 @@ export default function SearchScreen({ route }) {
   const distanceModalOptions = [{ key: "any", label: "Any distance (no filter)", miles: null }, ...distanceOptions.map((d) => ({ key: String(d), label: `${d} mi`, miles: d }))];
   const networkOptions = [1, 2, 3, 4, 5];
 
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (distance !== null) count += 1;
+    if (network !== null) count += 1;
+    if (bounty !== null) count += 1;
+    if (sortAlphabetical !== null) count += 1;
+    if (rating !== null) count += 1;
+    return count;
+  }, [distance, network, bounty, sortAlphabetical, rating]);
+
+  const syncFilterPanelDraft = () => {
+    setFilterPanelDraft({
+      distance,
+      network,
+      rating,
+      bounty,
+      sortAlphabetical,
+    });
+  };
+
+  const handleFilterIconPress = () => {
+    if (!showFilters) {
+      syncFilterPanelDraft();
+      setShowFilters(true);
+      setShowFilterPanel(true);
+      setActiveFilterMenu(null);
+      return;
+    }
+    if (showFilterPanel) {
+      setShowFilters(false);
+      setShowFilterPanel(false);
+      setActiveFilterMenu(null);
+      return;
+    }
+    syncFilterPanelDraft();
+    setShowFilterPanel(true);
+    setActiveFilterMenu(null);
+  };
+
+  const toggleFilterMenu = (menuKey) => {
+    setShowFilterPanel(false);
+    setActiveFilterMenu((prev) => (prev === menuKey ? null : menuKey));
+  };
+
+  const clearAllFilters = () => {
+    setDistance(null);
+    setNetwork(null);
+    setRating(null);
+    setBounty(null);
+    setSortAlphabetical(null);
+    setActiveFilterMenu(null);
+    setFilterPanelDraft({
+      distance: null,
+      network: null,
+      rating: null,
+      bounty: null,
+      sortAlphabetical: null,
+    });
+    performSearch(searchQuery, { distanceMiles: null, networkValue: null, ratingValue: null });
+  };
+
+  const applyFilterPanel = () => {
+    const nextDistance = filterPanelDraft.distance;
+    const nextNetwork = filterPanelDraft.network;
+    const nextRating = filterPanelDraft.rating;
+    const nextBounty = filterPanelDraft.bounty;
+    const nextSort = filterPanelDraft.sortAlphabetical;
+
+    setDistance(nextDistance);
+    setNetwork(nextNetwork);
+    setRating(nextRating);
+    setBounty(nextBounty);
+    setSortAlphabetical(nextSort);
+    setShowFilterPanel(false);
+    setActiveFilterMenu(null);
+    performSearch(searchQuery, {
+      distanceMiles: nextDistance,
+      networkValue: nextNetwork,
+      ratingValue: nextRating,
+    });
+  };
+
   const clearDistanceFilter = (reRunSearch = true) => {
     setDistance(null);
-    setDistanceModalVisible(false);
+    setActiveFilterMenu(null);
     if (reRunSearch) {
       performSearch(searchQuery, { distanceMiles: null });
     }
@@ -1390,13 +1470,13 @@ export default function SearchScreen({ route }) {
 
   const applyRatingFilter = (ratingValue) => {
     setRating(ratingValue);
-    setRatingModalVisible(false);
+    setActiveFilterMenu(null);
     performSearch(searchQuery, { ratingValue });
   };
 
   const applyNetworkFilter = (networkValue) => {
     setNetwork(networkValue);
-    setNetworkModalVisible(false);
+    setActiveFilterMenu(null);
     performSearch(searchQuery, { networkValue });
   };
 
@@ -1435,6 +1515,7 @@ export default function SearchScreen({ route }) {
   const sortAlphabeticalOptions = ["Ascending", "Descending"];
   const sortAlphabeticalLabels = { Ascending: "A -> Z", Descending: "Z -> A" };
   const ratingOptions = ["> 1", "> 2", "> 3", "> 4", "> 4.5", "> 4.6", "> 4.8"];
+  const showSearchResultsLoading = !hasLoadedInitialSearch || loading;
 
   const businessSectionResults = results.filter((item) => (item?.itemType || "businesses") === "businesses");
   const offeringSectionResults = results.filter((item) => item?.itemType === "expertise");
@@ -2223,37 +2304,190 @@ export default function SearchScreen({ route }) {
     setResults([]);
   };
 
-  // Render option item for modals
-  const renderOptionItem = (options, selectedValue, onSelect, isRating = false) => {
-    return ({ item }) => {
-      let isSelected = false;
-      if (isRating) {
-        // For rating, compare the string format
-        const selectedStr = selectedValue !== null ? `> ${selectedValue}` : null;
-        isSelected = item === selectedStr;
-      } else if (typeof item === "string") {
-        isSelected = item === selectedValue;
-      } else {
-        isSelected = selectedValue === item;
-      }
+  // Render option chip for inline filter menus / panel
+  const renderFilterChip = (label, selected, onPress, key) => (
+    <TouchableOpacity
+      key={key || label}
+      style={[styles.filterChip, darkMode && styles.darkFilterChip, selected && styles.filterChipSelected, darkMode && selected && styles.darkFilterChipSelected]}
+      onPress={onPress}
+      activeOpacity={0.75}
+    >
+      <Text style={[styles.filterChipText, darkMode && styles.darkFilterChipText, selected && styles.filterChipTextSelected, darkMode && selected && styles.darkFilterChipTextSelected]}>{label}</Text>
+    </TouchableOpacity>
+  );
 
-      return (
-        <TouchableOpacity
-          style={[styles.optionItem, isSelected && styles.selectedOption, darkMode && styles.darkOptionItem, darkMode && isSelected && styles.darkSelectedOption]}
-          onPress={() => {
-            if (isRating) {
-              onSelect(parseFloat(item.slice(1).trim()));
-            } else {
-              onSelect(item);
+  const renderFilterPanelSection = (title, hint, children) => (
+    <View style={styles.filterPanelSection}>
+      <Text style={[styles.filterPanelSectionTitle, darkMode && styles.darkFilterPanelSectionTitle]}>{title}</Text>
+      {hint ? <Text style={[styles.filterPanelHint, darkMode && styles.darkFilterPanelHint]}>{hint}</Text> : null}
+      <View style={styles.filterChipRow}>{children}</View>
+    </View>
+  );
+
+  const renderActiveFilterMenu = () => {
+    if (!activeFilterMenu) return null;
+
+    let chips = null;
+    if (activeFilterMenu === "distance") {
+      chips = distanceModalOptions.map((item) =>
+        renderFilterChip(
+          item.label,
+          item.miles == null ? distance == null : distance === item.miles,
+          () => {
+            if (item.miles == null) {
+              clearDistanceFilter(true);
+              return;
             }
-          }}
-        >
-          <Text style={[styles.optionText, isSelected && styles.selectedOptionText, darkMode && styles.darkOptionText, darkMode && isSelected && styles.darkSelectedOptionText]}>{item}</Text>
-          {isSelected && <Ionicons name='checkmark' size={24} color={darkMode ? "#9C45F7" : "#9C45F7"} />}
-        </TouchableOpacity>
+            setDistance(item.miles);
+            setActiveFilterMenu(null);
+            performSearch(searchQuery, { distanceMiles: item.miles });
+          },
+          item.key,
+        ),
       );
+    } else if (activeFilterMenu === "network") {
+      chips = [
+        renderFilterChip("Any", network == null, () => applyNetworkFilter(null), "network-any"),
+        ...networkOptions.map((value) => renderFilterChip(String(value), network === value, () => applyNetworkFilter(value), `network-${value}`)),
+      ];
+    } else if (activeFilterMenu === "bounty") {
+      chips = [
+        renderFilterChip("Any", bounty == null, () => {
+          setBounty(null);
+          setActiveFilterMenu(null);
+        }, "bounty-any"),
+        ...bountyOptions.map((value) =>
+          renderFilterChip(value, bounty === value, () => {
+            setBounty(value);
+            setActiveFilterMenu(null);
+          }, `bounty-${value}`),
+        ),
+      ];
+    } else if (activeFilterMenu === "sort") {
+      chips = [
+        renderFilterChip("Default", sortAlphabetical == null, () => {
+          setSortAlphabetical(null);
+          setActiveFilterMenu(null);
+        }, "sort-any"),
+        ...sortAlphabeticalOptions.map((value) =>
+          renderFilterChip(sortAlphabeticalLabels[value], sortAlphabetical === value, () => {
+            setSortAlphabetical(value);
+            setActiveFilterMenu(null);
+          }, `sort-${value}`),
+        ),
+      ];
+    } else if (activeFilterMenu === "rating") {
+      chips = [
+        renderFilterChip("Any", rating == null, () => applyRatingFilter(null), "rating-any"),
+        ...ratingOptions.map((item) =>
+          renderFilterChip(
+            item,
+            rating !== null && item === `> ${rating}`,
+            () => applyRatingFilter(parseFloat(item.slice(1).trim())),
+            item,
+          ),
+        ),
+      ];
+    }
+
+    const menuTitles = {
+      distance: "Distance",
+      network: "Network",
+      bounty: "Bounty sort",
+      sort: "Alphabetical",
+      rating: "Minimum rating",
     };
+
+    return (
+      <View style={[styles.filterInlineMenu, darkMode && styles.darkFilterInlineMenu]}>
+        <Text style={[styles.filterInlineMenuTitle, darkMode && styles.darkFilterInlineMenuTitle]}>{menuTitles[activeFilterMenu]}</Text>
+        <View style={styles.filterChipRow}>{chips}</View>
+      </View>
+    );
   };
+
+  const renderFilterPanel = () => (
+    <View style={[styles.filterPanel, darkMode && styles.darkFilterPanel]}>
+      <View style={[styles.filterPanelHeader, darkMode && styles.darkFilterPanelHeader]}>
+        <Text style={[styles.filterPanelTitle, darkMode && styles.darkFilterPanelTitle]}>Filters</Text>
+        <TouchableOpacity onPress={() => setShowFilterPanel(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Ionicons name='close' size={22} color={darkMode ? "#fff" : "#333"} />
+        </TouchableOpacity>
+      </View>
+
+      {renderFilterPanelSection(
+        "Distance",
+        filterPanelDraft.distance == null ? "Showing all results regardless of location." : "Results are limited to your home address coordinates in Settings.",
+        distanceModalOptions.map((item) =>
+          renderFilterChip(
+            item.label,
+            item.miles == null ? filterPanelDraft.distance == null : filterPanelDraft.distance === item.miles,
+            () => setFilterPanelDraft((prev) => ({ ...prev, distance: item.miles })),
+            `panel-distance-${item.key}`,
+          ),
+        ),
+      )}
+
+      {renderFilterPanelSection(
+        "Network",
+        "Show results within this many degrees of connection.",
+        [
+          renderFilterChip("Any", filterPanelDraft.network == null, () => setFilterPanelDraft((prev) => ({ ...prev, network: null })), "panel-network-any"),
+          ...networkOptions.map((value) =>
+            renderFilterChip(String(value), filterPanelDraft.network === value, () => setFilterPanelDraft((prev) => ({ ...prev, network: value })), `panel-network-${value}`),
+          ),
+        ],
+      )}
+
+      {renderFilterPanelSection(
+        "Minimum rating",
+        "Applies to businesses with Google ratings.",
+        [
+          renderFilterChip("Any", filterPanelDraft.rating == null, () => setFilterPanelDraft((prev) => ({ ...prev, rating: null })), "panel-rating-any"),
+          ...ratingOptions.map((item) =>
+            renderFilterChip(
+              item,
+              filterPanelDraft.rating !== null && item === `> ${filterPanelDraft.rating}`,
+              () => setFilterPanelDraft((prev) => ({ ...prev, rating: parseFloat(item.slice(1).trim()) })),
+              `panel-${item}`,
+            ),
+          ),
+        ],
+      )}
+
+      {renderFilterPanelSection(
+        "Bounty sort",
+        "Client-side sort for businesses with bounties.",
+        [
+          renderFilterChip("Default", filterPanelDraft.bounty == null, () => setFilterPanelDraft((prev) => ({ ...prev, bounty: null })), "panel-bounty-any"),
+          ...bountyOptions.map((value) =>
+            renderFilterChip(value, filterPanelDraft.bounty === value, () => setFilterPanelDraft((prev) => ({ ...prev, bounty: value })), `panel-bounty-${value}`),
+          ),
+        ],
+      )}
+
+      {renderFilterPanelSection("Alphabetical", null, [
+        renderFilterChip("Default", filterPanelDraft.sortAlphabetical == null, () => setFilterPanelDraft((prev) => ({ ...prev, sortAlphabetical: null })), "panel-sort-any"),
+        ...sortAlphabeticalOptions.map((value) =>
+          renderFilterChip(
+            sortAlphabeticalLabels[value],
+            filterPanelDraft.sortAlphabetical === value,
+            () => setFilterPanelDraft((prev) => ({ ...prev, sortAlphabetical: value })),
+            `panel-sort-${value}`,
+          ),
+        ),
+      ])}
+
+      <View style={styles.filterPanelActions}>
+        <TouchableOpacity style={[styles.filterPanelClearButton, darkMode && styles.darkFilterPanelClearButton]} onPress={clearAllFilters}>
+          <Text style={[styles.filterPanelClearText, darkMode && styles.darkFilterPanelClearText]}>Clear all</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.filterPanelApplyButton, darkMode && styles.darkFilterPanelApplyButton]} onPress={applyFilterPanel}>
+          <Text style={styles.filterPanelApplyText}>Apply</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
   const renderStars = (rating) => {
     return (
@@ -2961,8 +3195,23 @@ export default function SearchScreen({ route }) {
               <TouchableOpacity style={[styles.searchBarIconButton, darkMode && styles.darkSearchBarIconButton]} onPress={onSearch}>
                 <Ionicons name='search' size={20} color={darkMode ? "#ffffff" : "#000000"} />
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.searchBarIconButton, darkMode && styles.darkSearchBarIconButton]} onPress={() => setShowFilters(!showFilters)}>
+              <TouchableOpacity
+                style={[
+                  styles.searchBarIconButton,
+                  darkMode && styles.darkSearchBarIconButton,
+                  (showFilters || activeFilterCount > 0) && styles.filterIconButtonActive,
+                  darkMode && (showFilters || activeFilterCount > 0) && styles.darkFilterIconButtonActive,
+                ]}
+                onPress={handleFilterIconPress}
+                accessibilityLabel={activeFilterCount > 0 ? `Filters, ${activeFilterCount} active` : "Filters"}
+                accessibilityRole='button'
+              >
                 <MaterialIcons name='filter-list' size={20} color={darkMode ? "#ffffff" : "#000000"} />
+                {activeFilterCount > 0 ? (
+                  <View style={styles.filterBadge}>
+                    <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+                  </View>
+                ) : null}
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.searchBarIconButton, darkMode && styles.darkSearchBarIconButton, mapLoading && { opacity: 0.6 }]}
@@ -3006,115 +3255,122 @@ export default function SearchScreen({ route }) {
             )}
           </View>
 
-          {/* Distance, Network, Bounty, Rating filters - TOGGLE BELOW SEARCH BAR */}
+          {/* Distance, Network, Bounty, Rating filters */}
           {showFilters && (
-            <View style={styles.filterButtonsContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.filterButtonOption,
-                  darkMode && styles.darkFilterButtonOption,
-                  distance !== null && styles.activeFilterButton,
-                  darkMode && distance !== null && styles.darkActiveFilterButton,
-                ]}
-                onPress={() => setDistanceModalVisible(true)}
-              >
-                <Text
+            <>
+              <View style={styles.filterButtonsContainer}>
+                <TouchableOpacity
                   style={[
-                    styles.filterButtonText,
-                    darkMode && styles.darkFilterButtonText,
-                    distance !== null && styles.activeFilterButtonText,
-                    darkMode && distance !== null && styles.darkActiveFilterButtonText,
+                    styles.filterButtonOption,
+                    darkMode && styles.darkFilterButtonOption,
+                    (distance !== null || activeFilterMenu === "distance") && styles.activeFilterButton,
+                    darkMode && (distance !== null || activeFilterMenu === "distance") && styles.darkActiveFilterButton,
                   ]}
+                  onPress={() => toggleFilterMenu("distance")}
                 >
-                  {distance !== null ? `${distance} mi` : "Distance"}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.filterButtonOption,
-                  darkMode && styles.darkFilterButtonOption,
-                  network !== null && styles.activeFilterButton,
-                  darkMode && network !== null && styles.darkActiveFilterButton,
-                ]}
-                onPress={() => setNetworkModalVisible(true)}
-              >
-                <Text
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      darkMode && styles.darkFilterButtonText,
+                      (distance !== null || activeFilterMenu === "distance") && styles.activeFilterButtonText,
+                      darkMode && (distance !== null || activeFilterMenu === "distance") && styles.darkActiveFilterButtonText,
+                    ]}
+                  >
+                    {distance !== null ? `${distance} mi` : "Distance"}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={[
-                    styles.filterButtonText,
-                    darkMode && styles.darkFilterButtonText,
-                    network !== null && styles.activeFilterButtonText,
-                    darkMode && network !== null && styles.darkActiveFilterButtonText,
+                    styles.filterButtonOption,
+                    darkMode && styles.darkFilterButtonOption,
+                    (network !== null || activeFilterMenu === "network") && styles.activeFilterButton,
+                    darkMode && (network !== null || activeFilterMenu === "network") && styles.darkActiveFilterButton,
                   ]}
+                  onPress={() => toggleFilterMenu("network")}
                 >
-                  {network !== null ? network : "Network"}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.filterButtonOption,
-                  darkMode && styles.darkFilterButtonOption,
-                  bounty !== null && styles.activeFilterButton,
-                  darkMode && bounty !== null && styles.darkActiveFilterButton,
-                ]}
-                onPress={() => setBountyModalVisible(true)}
-              >
-                <Text
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      darkMode && styles.darkFilterButtonText,
+                      (network !== null || activeFilterMenu === "network") && styles.activeFilterButtonText,
+                      darkMode && (network !== null || activeFilterMenu === "network") && styles.darkActiveFilterButtonText,
+                    ]}
+                  >
+                    {network !== null ? network : "Network"}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={[
-                    styles.filterButtonText,
-                    darkMode && styles.darkFilterButtonText,
-                    bounty !== null && styles.activeFilterButtonText,
-                    darkMode && bounty !== null && styles.darkActiveFilterButtonText,
+                    styles.filterButtonOption,
+                    darkMode && styles.darkFilterButtonOption,
+                    (bounty !== null || activeFilterMenu === "bounty") && styles.activeFilterButton,
+                    darkMode && (bounty !== null || activeFilterMenu === "bounty") && styles.darkActiveFilterButton,
                   ]}
+                  onPress={() => toggleFilterMenu("bounty")}
                 >
-                  {bounty !== null ? bounty : "Bounty"}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.filterButtonOption,
-                  darkMode && styles.darkFilterButtonOption,
-                  sortAlphabetical !== null && styles.activeFilterButton,
-                  darkMode && sortAlphabetical !== null && styles.darkActiveFilterButton,
-                ]}
-                onPress={() => setSortAlphabeticalModalVisible(true)}
-              >
-                <Text
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      darkMode && styles.darkFilterButtonText,
+                      (bounty !== null || activeFilterMenu === "bounty") && styles.activeFilterButtonText,
+                      darkMode && (bounty !== null || activeFilterMenu === "bounty") && styles.darkActiveFilterButtonText,
+                    ]}
+                  >
+                    {bounty !== null ? bounty : "Bounty"}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={[
-                    styles.filterButtonText,
-                    darkMode && styles.darkFilterButtonText,
-                    sortAlphabetical !== null && styles.activeFilterButtonText,
-                    darkMode && sortAlphabetical !== null && styles.darkActiveFilterButtonText,
+                    styles.filterButtonOption,
+                    darkMode && styles.darkFilterButtonOption,
+                    (sortAlphabetical !== null || activeFilterMenu === "sort") && styles.activeFilterButton,
+                    darkMode && (sortAlphabetical !== null || activeFilterMenu === "sort") && styles.darkActiveFilterButton,
                   ]}
+                  onPress={() => toggleFilterMenu("sort")}
                 >
-                  {sortAlphabetical !== null ? sortAlphabeticalLabels[sortAlphabetical] : "A -> Z"}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.filterButtonOption,
-                  darkMode && styles.darkFilterButtonOption,
-                  rating !== null && styles.activeFilterButton,
-                  darkMode && rating !== null && styles.darkActiveFilterButton,
-                ]}
-                onPress={() => setRatingModalVisible(true)}
-              >
-                <Text
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      darkMode && styles.darkFilterButtonText,
+                      (sortAlphabetical !== null || activeFilterMenu === "sort") && styles.activeFilterButtonText,
+                      darkMode && (sortAlphabetical !== null || activeFilterMenu === "sort") && styles.darkActiveFilterButtonText,
+                    ]}
+                  >
+                    {sortAlphabetical !== null ? sortAlphabeticalLabels[sortAlphabetical] : "A -> Z"}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={[
-                    styles.filterButtonText,
-                    darkMode && styles.darkFilterButtonText,
-                    rating !== null && styles.activeFilterButtonText,
-                    darkMode && rating !== null && styles.darkActiveFilterButtonText,
+                    styles.filterButtonOption,
+                    darkMode && styles.darkFilterButtonOption,
+                    (rating !== null || activeFilterMenu === "rating") && styles.activeFilterButton,
+                    darkMode && (rating !== null || activeFilterMenu === "rating") && styles.darkActiveFilterButton,
                   ]}
+                  onPress={() => toggleFilterMenu("rating")}
                 >
-                  {rating !== null ? `> ${rating}` : "Rating"}
-                </Text>
-              </TouchableOpacity>
-            </View>
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      darkMode && styles.darkFilterButtonText,
+                      (rating !== null || activeFilterMenu === "rating") && styles.activeFilterButtonText,
+                      darkMode && (rating !== null || activeFilterMenu === "rating") && styles.darkActiveFilterButtonText,
+                    ]}
+                  >
+                    {rating !== null ? `> ${rating}` : "Rating"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {renderActiveFilterMenu()}
+              {showFilterPanel && renderFilterPanel()}
+            </>
           )}
 
           <ScrollView style={styles.resultsContainer}>
-            {loading ? (
-              <Text style={[styles.loadingText, darkMode && styles.darkLoadingText]}>Loading…</Text>
+            {showSearchResultsLoading ? (
+              <View style={styles.searchLoadingContainer}>
+                <ActivityIndicator size='large' color={darkMode ? "#ffffff" : "#333333"} />
+                <Text style={[styles.loadingText, darkMode && styles.darkLoadingText]}>Loading search results…</Text>
+              </View>
             ) : (
               <>
                 {selectedSearchTabs.individuals && (
@@ -3170,172 +3426,6 @@ export default function SearchScreen({ route }) {
             <Text style={[styles.bannerAdText, darkMode && styles.darkBannerAdText]}>Relevant Banner Ad</Text>
           </View>
         </View>
-
-        {/* Distance Selection Modal */}
-        <Modal animationType='slide' transparent={true} visible={distanceModalVisible} onRequestClose={() => setDistanceModalVisible(false)}>
-          <SafeAreaView style={[styles.modalContainer, darkMode && styles.darkModalContainer]}>
-            <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
-              <View style={[styles.modalHeader, darkMode && styles.darkModalHeader]}>
-                <Text style={[styles.modalTitle, darkMode && styles.darkModalTitle]}>Select Distance</Text>
-                <TouchableOpacity onPress={() => setDistanceModalVisible(false)}>
-                  <Ionicons name='close' size={28} color={darkMode ? "#ffffff" : "#333"} />
-                </TouchableOpacity>
-              </View>
-              <Text style={[styles.distanceModalHint, darkMode && styles.darkDistanceModalHint]}>
-                {distance == null ? "Showing all results regardless of location." : "Results are limited to your home address coordinates in Settings."}
-              </Text>
-              <FlatList
-                data={distanceModalOptions}
-                renderItem={({ item }) => {
-                  const isSelected = item.miles == null ? distance == null : distance === item.miles;
-                  return (
-                    <TouchableOpacity
-                      style={[styles.optionItem, isSelected && styles.selectedOption, darkMode && styles.darkOptionItem, darkMode && isSelected && styles.darkSelectedOption]}
-                      onPress={() => {
-                        if (item.miles == null) {
-                          clearDistanceFilter(true);
-                          return;
-                        }
-                        setDistance(item.miles);
-                        setDistanceModalVisible(false);
-                        performSearch(searchQuery, { distanceMiles: item.miles });
-                      }}
-                    >
-                      <Text style={[styles.optionText, isSelected && styles.selectedOptionText, darkMode && styles.darkOptionText, darkMode && isSelected && styles.darkSelectedOptionText]}>
-                        {item.label}
-                      </Text>
-                      {isSelected && <Ionicons name='checkmark' size={24} color='#9C45F7' />}
-                    </TouchableOpacity>
-                  );
-                }}
-                keyExtractor={(item) => item.key}
-                style={styles.optionsList}
-              />
-            </View>
-          </SafeAreaView>
-        </Modal>
-
-        {/* Network Selection Modal */}
-        <Modal animationType='slide' transparent={true} visible={networkModalVisible} onRequestClose={() => setNetworkModalVisible(false)}>
-          <SafeAreaView style={[styles.modalContainer, darkMode && styles.darkModalContainer]}>
-            <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
-              <View style={[styles.modalHeader, darkMode && styles.darkModalHeader]}>
-                <Text style={[styles.modalTitle, darkMode && styles.darkModalTitle]}>Select Network</Text>
-                <TouchableOpacity onPress={() => setNetworkModalVisible(false)}>
-                  <Ionicons name='close' size={28} color={darkMode ? "#ffffff" : "#333"} />
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity style={[styles.resetOption, darkMode && styles.darkResetOption]} onPress={() => applyNetworkFilter(null)}>
-                <Text style={[styles.resetOptionText, darkMode && styles.darkResetOptionText]}>Reset</Text>
-              </TouchableOpacity>
-              <FlatList
-                data={networkOptions}
-                renderItem={renderOptionItem(networkOptions, network, (value) => applyNetworkFilter(value))}
-                keyExtractor={(item) => item.toString()}
-                style={styles.optionsList}
-              />
-            </View>
-          </SafeAreaView>
-        </Modal>
-
-        {/* Bounty Selection Modal */}
-        <Modal animationType='slide' transparent={true} visible={bountyModalVisible} onRequestClose={() => setBountyModalVisible(false)}>
-          <SafeAreaView style={[styles.modalContainer, darkMode && styles.darkModalContainer]}>
-            <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
-              <View style={[styles.modalHeader, darkMode && styles.darkModalHeader]}>
-                <Text style={[styles.modalTitle, darkMode && styles.darkModalTitle]}>Select Bounty</Text>
-                <TouchableOpacity onPress={() => setBountyModalVisible(false)}>
-                  <Ionicons name='close' size={28} color={darkMode ? "#ffffff" : "#333"} />
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity
-                style={[styles.resetOption, darkMode && styles.darkResetOption]}
-                onPress={() => {
-                  setBounty(null);
-                  setBountyModalVisible(false);
-                }}
-              >
-                <Text style={[styles.resetOptionText, darkMode && styles.darkResetOptionText]}>Reset</Text>
-              </TouchableOpacity>
-              <FlatList
-                data={bountyOptions}
-                renderItem={renderOptionItem(bountyOptions, bounty, (value) => {
-                  setBounty(value);
-                  setBountyModalVisible(false);
-                })}
-                keyExtractor={(item) => item.toString()}
-                style={styles.optionsList}
-              />
-            </View>
-          </SafeAreaView>
-        </Modal>
-
-        {/* Alphabetical sort modal */}
-        <Modal animationType='slide' transparent={true} visible={sortAlphabeticalModalVisible} onRequestClose={() => setSortAlphabeticalModalVisible(false)}>
-          <SafeAreaView style={[styles.modalContainer, darkMode && styles.darkModalContainer]}>
-            <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
-              <View style={[styles.modalHeader, darkMode && styles.darkModalHeader]}>
-                <Text style={[styles.modalTitle, darkMode && styles.darkModalTitle]}>Arrange Alphabetically</Text>
-                <TouchableOpacity onPress={() => setSortAlphabeticalModalVisible(false)}>
-                  <Ionicons name='close' size={28} color={darkMode ? "#ffffff" : "#333"} />
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity
-                style={[styles.resetOption, darkMode && styles.darkResetOption]}
-                onPress={() => {
-                  setSortAlphabetical(null);
-                  setSortAlphabeticalModalVisible(false);
-                }}
-              >
-                <Text style={[styles.resetOptionText, darkMode && styles.darkResetOptionText]}>Reset</Text>
-              </TouchableOpacity>
-              <FlatList
-                data={sortAlphabeticalOptions}
-                renderItem={({ item }) => {
-                  const isSelected = item === sortAlphabetical;
-                  return (
-                    <TouchableOpacity
-                      style={[styles.optionItem, isSelected && styles.selectedOption, darkMode && styles.darkOptionItem, darkMode && isSelected && styles.darkSelectedOption]}
-                      onPress={() => {
-                        setSortAlphabetical(item);
-                        setSortAlphabeticalModalVisible(false);
-                      }}
-                    >
-                      <Text style={[styles.optionText, isSelected && styles.selectedOptionText, darkMode && styles.darkOptionText, darkMode && isSelected && styles.darkSelectedOptionText]}>
-                        {sortAlphabeticalLabels[item]}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                }}
-                keyExtractor={(item) => item}
-                style={styles.optionsList}
-              />
-            </View>
-          </SafeAreaView>
-        </Modal>
-
-        {/* Rating Selection Modal */}
-        <Modal animationType='slide' transparent={true} visible={ratingModalVisible} onRequestClose={() => setRatingModalVisible(false)}>
-          <SafeAreaView style={[styles.modalContainer, darkMode && styles.darkModalContainer]}>
-            <View style={[styles.modalContent, darkMode && styles.darkModalContent]}>
-              <View style={[styles.modalHeader, darkMode && styles.darkModalHeader]}>
-                <Text style={[styles.modalTitle, darkMode && styles.darkModalTitle]}>Select Rating</Text>
-                <TouchableOpacity onPress={() => setRatingModalVisible(false)}>
-                  <Ionicons name='close' size={28} color={darkMode ? "#ffffff" : "#333"} />
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity style={[styles.resetOption, darkMode && styles.darkResetOption]} onPress={() => applyRatingFilter(null)}>
-                <Text style={[styles.resetOptionText, darkMode && styles.darkResetOptionText]}>Reset</Text>
-              </TouchableOpacity>
-              <FlatList
-                data={ratingOptions}
-                renderItem={renderOptionItem(ratingOptions, rating !== null ? `> ${rating}` : null, (value) => applyRatingFilter(value), true)}
-                keyExtractor={(item) => item.toString()}
-                style={styles.optionsList}
-              />
-            </View>
-          </SafeAreaView>
-        </Modal>
 
         {/* Bottom Navigation Bar */}
         <BottomNavBar navigation={navigation} />
@@ -3466,6 +3556,12 @@ const styles = StyleSheet.create({
   searchBarIconButton: { marginLeft: 6, backgroundColor: "#f0f0f0", borderRadius: 8, padding: 8 },
 
   resultsContainer: { flex: 1, marginBottom: 15 },
+  searchLoadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 48,
+    gap: 12,
+  },
   loadingText: { textAlign: "center", marginVertical: 10 },
 
   individualResultItem: {
@@ -3669,8 +3765,188 @@ const styles = StyleSheet.create({
   activeFilterButtonText: {
     color: "#fff",
   },
+  filterIconButtonActive: {
+    backgroundColor: "#dcefeb",
+  },
+  darkFilterIconButtonActive: {
+    backgroundColor: "#3a524f",
+  },
+  filterBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: "#4F8A8B",
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 4,
+  },
+  filterBadgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  filterInlineMenu: {
+    backgroundColor: "#fafafa",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#e5e5e5",
+    padding: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  darkFilterInlineMenu: {
+    backgroundColor: "#2a2a2a",
+    borderColor: "#404040",
+  },
+  filterInlineMenuTitle: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  darkFilterInlineMenuTitle: {
+    color: "#aaa",
+  },
+  filterChipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  filterChip: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  darkFilterChip: {
+    backgroundColor: "#333",
+    borderColor: "#555",
+  },
+  filterChipSelected: {
+    backgroundColor: "#4F8A8B",
+    borderColor: "#4F8A8B",
+  },
+  darkFilterChipSelected: {
+    backgroundColor: "#4F8A8B",
+    borderColor: "#4F8A8B",
+  },
+  filterChipText: {
+    fontSize: 13,
+    color: "#333",
+    fontWeight: "500",
+  },
+  darkFilterChipText: {
+    color: "#eee",
+  },
+  filterChipTextSelected: {
+    color: "#fff",
+  },
+  darkFilterChipTextSelected: {
+    color: "#fff",
+  },
+  filterPanel: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    marginBottom: 15,
+    overflow: "hidden",
+  },
+  darkFilterPanel: {
+    backgroundColor: "#2d2d2d",
+    borderColor: "#404040",
+  },
+  filterPanelHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  darkFilterPanelHeader: {
+    borderBottomColor: "#404040",
+  },
+  filterPanelTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#222",
+  },
+  darkFilterPanelTitle: {
+    color: "#fff",
+  },
+  filterPanelSection: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 4,
+    gap: 6,
+  },
+  filterPanelSectionTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#444",
+  },
+  darkFilterPanelSectionTitle: {
+    color: "#ddd",
+  },
+  filterPanelHint: {
+    fontSize: 12,
+    color: "#777",
+    lineHeight: 16,
+  },
+  darkFilterPanelHint: {
+    color: "#999",
+  },
+  filterPanelActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+    marginTop: 10,
+  },
+  darkFilterPanelActions: {},
+  filterPanelClearButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  darkFilterPanelClearButton: {},
+  filterPanelClearText: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#9C45F7",
+  },
+  darkFilterPanelClearText: {
+    color: "#b794f6",
+  },
+  filterPanelApplyButton: {
+    backgroundColor: "#4F8A8B",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    minWidth: 100,
+    alignItems: "center",
+  },
+  darkFilterPanelApplyButton: {
+    backgroundColor: "#4F8A8B",
+  },
+  filterPanelApplyText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
+  },
 
-  // Modal styles
+  // Legacy modal styles (unused)
   modalContainer: {
     flex: 1,
     justifyContent: "flex-end",
