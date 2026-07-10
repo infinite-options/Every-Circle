@@ -21,7 +21,9 @@ import { USER_PROFILE_INFO_ENDPOINT } from "../apiConfig";
 import { refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import { getOfferingModeratedState, isOfferingModeratedBlocked, MODERATED_ACKNOWLEDGED } from "../utils/offeringModeration";
+import { getSeekingModeratedState, isSeekingModeratedBlocked } from "../utils/seekingModeration";
 import { mapOfferingFormToPayload, mapProfileOfferingToFormItem } from "../utils/offeringResubmission";
+import { mapProfileWishToFormItem, mapWishFormToPayload } from "../utils/wishResubmission";
 import { parseCoordinateValue } from "../utils/validateCoordinates";
 
 function isPublicFlag(value) {
@@ -111,30 +113,6 @@ const EditProfileScreen = ({ route, navigation }) => {
 
   const initialHomeLatLng = getInitialHomeLatLng(user);
 
-  const emptyOfferingEntry = {
-    name: "",
-    description: "",
-    quantity: "",
-    cost: "",
-    bounty: "",
-    profile_expertise_image: "",
-    profile_expertise_image_is_public: 1,
-    profile_expertise_start: "",
-    profile_expertise_end: "",
-    profile_expertise_location: "",
-    profile_expertise_latitude: null,
-    profile_expertise_longitude: null,
-    profile_expertise_city: "",
-    profile_expertise_state: "",
-    profile_expertise_mode: "",
-    isPublic: true,
-    _expNewImageUri: "",
-    _expWebImageFile: null,
-    _expOriginalImage: "",
-    _expDeleteImageUrl: "",
-    _expImageError: false,
-  };
-
   const initialExpertiseState = (() => {
     const uid = initialFormProfileUid;
     const mapped = (user?.expertise || []).map((e) => mapProfileOfferingToFormItem(e, uid));
@@ -144,11 +122,51 @@ const EditProfileScreen = ({ route, navigation }) => {
     const editable = mapped.filter((e) => !isOfferingModeratedBlocked(e));
     return {
       moderated,
-      expertise: editable.length > 0 ? editable : mapped.length === 0 ? [emptyOfferingEntry] : [],
+      expertise: editable.length > 0 ? editable : [],
     };
   })();
   const moderatedExpertiseRef = useRef(initialExpertiseState.moderated);
   const moderatedOfferingCount = initialExpertiseState.moderated.length;
+
+  const emptyWishEntry = {
+    helpNeeds: "",
+    details: "",
+    amount: "",
+    cost: "",
+    profile_wish_quantity: "",
+    profile_wish_image: "",
+    profile_wish_image_is_public: 1,
+    profile_wish_start: "",
+    profile_wish_end: "",
+    profile_wish_bounty_type: "none",
+    profile_wish_location: "",
+    profile_wish_latitude: null,
+    profile_wish_longitude: null,
+    profile_wish_city: "",
+    profile_wish_state: "",
+    profile_wish_mode: "",
+    isPublic: true,
+    _wishNewImageUri: "",
+    _wishWebImageFile: null,
+    _wishOriginalImage: "",
+    _wishDeleteImageUrl: "",
+    _wishImageError: false,
+  };
+
+  const initialWishState = (() => {
+    const uid = initialFormProfileUid;
+    const mapped = (user?.wishes || []).map((w) => mapProfileWishToFormItem(w, uid));
+    const moderated = mapped.filter(
+      (w) => isSeekingModeratedBlocked(w) && getSeekingModeratedState(w) !== MODERATED_ACKNOWLEDGED
+    );
+    const editable = mapped.filter((w) => !isSeekingModeratedBlocked(w));
+    return {
+      moderated,
+      wishes: editable.length > 0 ? editable : mapped.length === 0 ? [emptyWishEntry] : [],
+    };
+  })();
+  const moderatedWishesRef = useRef(initialWishState.moderated);
+  const moderatedSeekingCount = initialWishState.moderated.length;
 
   const [formData, setFormData] = useState({
     email: user?.email || "",
@@ -257,66 +275,7 @@ const EditProfileScreen = ({ route, navigation }) => {
       );
     })(),
     expertise: initialExpertiseState.expertise,
-    wishes: (() => {
-      const uid = initialFormProfileUid;
-      return (
-        user?.wishes?.map((e) => {
-          const rawImg = e.profile_wish_image || "";
-          const resolved = resolveProfileItemImageUri(rawImg, uid);
-          return {
-            profile_wish_uid: e.profile_wish_uid || "",
-            helpNeeds: e.helpNeeds || e.profile_wish_title || "",
-            details: e.details || e.profile_wish_description || "",
-            amount: e.amount || e.profile_wish_bounty || "",
-            profile_wish_bounty_type: e.profile_wish_bounty_type || "none",
-            cost: e.cost || e.profile_wish_cost || "",
-            profile_wish_quantity: e.profile_wish_quantity != null ? String(e.profile_wish_quantity) : "",
-            profile_wish_image: rawImg,
-            profile_wish_image_is_public: e.profile_wish_image_is_public === 0 || e.profile_wish_image_is_public === "0" ? 0 : 1,
-            profile_wish_start: e.profile_wish_start || "",
-            profile_wish_end: e.profile_wish_end || "",
-            profile_wish_location: e.profile_wish_location || "",
-            profile_wish_latitude: e.profile_wish_latitude != null ? parseFloat(e.profile_wish_latitude) : null,
-            profile_wish_longitude: e.profile_wish_longitude != null ? parseFloat(e.profile_wish_longitude) : null,
-            profile_wish_city: e.profile_wish_city || "",
-            profile_wish_state: e.profile_wish_state || "",
-            profile_wish_mode: e.profile_wish_mode || "",
-            profile_wish_updated_at: e.profile_wish_updated_at ?? e.updated_at,
-            isPublic: e.isPublic !== undefined ? e.isPublic : e.profile_wish_is_public === 1,
-            _wishNewImageUri: "",
-            _wishWebImageFile: null,
-            _wishOriginalImage: isRemoteHttpUrl(resolved) ? resolved : "",
-            _wishDeleteImageUrl: "",
-            _wishImageError: false,
-          };
-        }) || [
-          {
-            helpNeeds: "",
-            details: "",
-            amount: "",
-            profile_wish_bounty_type: "none",
-            cost: "",
-            profile_wish_quantity: "",
-            profile_wish_image: "",
-            profile_wish_image_is_public: 1,
-            profile_wish_start: "",
-            profile_wish_end: "",
-            profile_wish_location: "",
-            profile_wish_latitude: null,
-            profile_wish_longitude: null,
-            profile_wish_city: "",
-            profile_wish_state: "",
-            profile_wish_mode: "",
-            isPublic: true,
-            _wishNewImageUri: "",
-            _wishWebImageFile: null,
-            _wishOriginalImage: "",
-            _wishDeleteImageUrl: "",
-            _wishImageError: false,
-          },
-        ]
-      );
-    })(),
+    wishes: initialWishState.wishes,
     socialLinks: (() => {
       const fixed = [
         { platform: "linkedin",  label: "LinkedIn",    icon: "logo-linkedin"  },
@@ -686,7 +645,7 @@ const EditProfileScreen = ({ route, navigation }) => {
 
   const handleSave = async () => {
     if (!validateExpertise(formData.expertise)) {
-      Alert.alert("Required Field", "Please select a unit for all Offering entries before submitting.");
+      Alert.alert("Required Field", "Please fill in title, description, and unit for all Offering entries before submitting.");
       return;
     }
 
@@ -750,32 +709,12 @@ const EditProfileScreen = ({ route, navigation }) => {
       console.log("EditProfileScreen - As value:", formData.businessIsPublic ? 1 : 0);
       payload.append("profile_personal_image_is_public", formData.imageIsPublic ? 1 : 0);
 
-      const wishesPayload = (formData.wishes || []).map((w) => ({
-        profile_wish_uid: w.profile_wish_uid || "",
-        profile_wish_title: w.helpNeeds || "",
-        profile_wish_description: w.details || "",
-        profile_wish_cost: w.cost || "",
-        profile_wish_quantity: w.profile_wish_quantity != null && w.profile_wish_quantity !== "" ? String(w.profile_wish_quantity) : "",
-        profile_wish_bounty: w.amount || "",
-        profile_wish_bounty_type: w.profile_wish_bounty_type || "none",
-        profile_wish_is_public: w.isPublic ? 1 : 0,
-        profile_wish_image: w.profile_wish_image || "",
-        profile_wish_image_is_public: w.profile_wish_image_is_public === 0 || w.profile_wish_image_is_public === "0" ? 0 : 1,
-        profile_wish_start: w.profile_wish_start || "",
-        profile_wish_end: w.profile_wish_end || "",
-        profile_wish_location: w.profile_wish_location || "",
-        profile_wish_latitude: w.profile_wish_latitude != null ? parseFloat(w.profile_wish_latitude) : null,
-        profile_wish_longitude: w.profile_wish_longitude != null ? parseFloat(w.profile_wish_longitude) : null,
-        profile_wish_city: w.profile_wish_city || "",
-        profile_wish_state: w.profile_wish_state || "",
-        profile_wish_mode: w.profile_wish_mode || "",
-        ...(w.profile_wish_uid && (w.profile_wish_updated_at != null || w.updated_at != null) ? { profile_wish_updated_at: w.profile_wish_updated_at ?? w.updated_at } : {}),
-        helpNeeds: w.helpNeeds || "",
-        details: w.details || "",
-        amount: w.amount || "",
-        cost: w.cost || "",
-        isPublic: w.isPublic,
-      }));
+      const moderatedWishUids = new Set(
+        (moderatedWishesRef.current || []).map((w) => w.profile_wish_uid).filter(Boolean)
+      );
+      const wishesPayload = (formData.wishes || [])
+        .filter((w) => !w.profile_wish_uid || !moderatedWishUids.has(w.profile_wish_uid))
+        .map((w) => mapWishFormToPayload(w));
       console.log(
         "[EditProfile] wishesPayload lat/lng:",
         wishesPayload.map((w) => ({ lat: w.profile_wish_latitude, lng: w.profile_wish_longitude })),
@@ -1713,7 +1652,13 @@ const EditProfileScreen = ({ route, navigation }) => {
           <Ionicons name={showSeeking ? "chevron-up" : "chevron-down"} size={20} color={darkMode ? "#ffffff" : "#000"} />
         </TouchableOpacity>
         {showSeeking && (
-          <SeekingSection
+          <>
+            {moderatedSeekingCount > 0 ? (
+              <Text style={[styles.moderatedOfferingNote, darkMode && styles.moderatedOfferingNoteDark]}>
+                {moderatedSeekingCount} moderated seeking post{moderatedSeekingCount === 1 ? "" : "s"} cannot be edited here and are shown on your profile with their status.
+              </Text>
+            ) : null}
+            <SeekingSection
             wishes={formData.wishes}
             setWishes={(e) => {
               setFormData((prev) => ({ ...prev, wishes: e }));
@@ -1729,6 +1674,7 @@ const EditProfileScreen = ({ route, navigation }) => {
               scrollNewCardToMiddleIfNeeded(inputRef);
             }}
           />
+          </>
         )}
 
         {/* EXPERIENCE Section */}
@@ -1804,9 +1750,13 @@ const EditProfileScreen = ({ route, navigation }) => {
         )}
 
         <TouchableOpacity
-          style={[styles.saveButton, !isChanged && (darkMode ? styles.darkDisabledButton : styles.disabledButton), darkMode && styles.darkSaveButton]}
+          style={[
+            styles.saveButton,
+            (!isChanged || !validateExpertise(formData.expertise)) && (darkMode ? styles.darkDisabledButton : styles.disabledButton),
+            darkMode && styles.darkSaveButton,
+          ]}
           onPress={handleSave}
-          disabled={!isChanged || isLoading}
+          disabled={!isChanged || isLoading || !validateExpertise(formData.expertise)}
         >
           {isLoading ? <ActivityIndicator size='small' color={darkMode ? "#ffffff" : "#fff"} /> : <Text style={[styles.saveText, darkMode && styles.darkSaveText]}>Submit</Text>}
         </TouchableOpacity>

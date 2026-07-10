@@ -43,6 +43,7 @@ import { fetchMyOfferingMessageResponses } from "../utils/offeringMessageRespons
 import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { isOfferingModeratedBlocked } from "../utils/offeringModeration";
+import { isSeekingModeratedBlocked } from "../utils/seekingModeration";
 import { getHeaderColors } from "../config/headerColors";
 import { isWishEnded } from "../utils/wishUtils";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
@@ -326,8 +327,23 @@ function shouldIncludeSearchExpertiseRow(item) {
   return !isOfferingModeratedBlocked(item);
 }
 
-function filterPublicSearchExpertiseResults(items) {
-  return (items || []).filter((item) => item?.itemType !== "expertise" || !isOfferingModeratedBlocked(item.expertiseData || item));
+function filterPublicSearchModeratedResults(items) {
+  return (items || []).filter((item) => {
+    if (item?.itemType === "expertise") {
+      return !isOfferingModeratedBlocked(item.expertiseData || item);
+    }
+    if (item?.itemType === "seeking") {
+      return !isSeekingModeratedBlocked(item.wishData || item);
+    }
+    return true;
+  });
+}
+
+/** Drop zero-qty and moderated seeking posts (profile_wish_moderated 1, 2, or 3). */
+function shouldIncludeSearchSeekingRow(item) {
+  const qty = item?.profile_wish_quantity;
+  if (qty != null && qty !== "" && parseInt(qty, 10) === 0) return false;
+  return !isSeekingModeratedBlocked(item);
 }
 
 function mapSearchExpertiseRow(item, i) {
@@ -434,6 +450,8 @@ function mapSearchWishRow(item, i) {
       profile_wish_mode: item.profile_wish_mode || "",
       profile_wish_bounty_type: item.profile_wish_bounty_type || (item.profile_wish_bounty ? "per_item" : "none"),
       profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
+      profile_wish_moderated: item.profile_wish_moderated,
+      moderation: item.moderation,
     },
     profileData: {
       firstName: item.profile_personal_first_name || "",
@@ -872,7 +890,7 @@ export default function SearchScreen({ route }) {
   const commitSearchResults = useCallback((list, { browseAll = false } = {}) => {
     browseAllActiveRef.current = browseAll;
     setBrowseAllActive(browseAll);
-    const filtered = filterPublicSearchExpertiseResults(list);
+    const filtered = filterPublicSearchModeratedResults(list);
     rawResultsRef.current = [...filtered];
     setResults(
       applyClientSorts(filtered, {
@@ -1208,7 +1226,7 @@ export default function SearchScreen({ route }) {
               setSelectedSearchTabs(searchTabsFromLegacyType(savedSearchType));
             }
           }
-          const parsedResults = filterPublicSearchExpertiseResults(JSON.parse(savedResults).map((item) =>
+          const parsedResults = filterPublicSearchModeratedResults(JSON.parse(savedResults).map((item) =>
             item.itemType === "businesses"
               ? {
                   ...item,
@@ -1756,10 +1774,7 @@ export default function SearchScreen({ route }) {
 
       const mappedExpertise = expertiseResults.filter(shouldIncludeSearchExpertiseRow).map((item, i) => mapSearchExpertiseRow(item, i));
       const mappedSeeking = seekingResults
-        .filter((item) => {
-          const qty = item.profile_wish_quantity;
-          return qty == null || qty === "" || parseInt(qty) !== 0;
-        })
+        .filter(shouldIncludeSearchSeekingRow)
         .map((item, i) => mapSearchWishRow(item, i))
         .filter((item) => !isWishEnded(item));
 
@@ -1946,10 +1961,7 @@ export default function SearchScreen({ route }) {
         if (type === "seeking") {
           // For seeking/wishes, the response includes profile data directly
           list = resultsArray
-            .filter((item) => {
-              const qty = item.profile_wish_quantity;
-              return qty == null || qty === "" || parseInt(qty) !== 0;
-            })
+            .filter(shouldIncludeSearchSeekingRow)
             .map((item, i) => ({
               id: `${item.profile_wish_uid || i}`,
               company: item.profile_wish_title || "Untitled Wish",
@@ -1990,6 +2002,8 @@ export default function SearchScreen({ route }) {
                 profile_wish_state: item.profile_wish_state || "",
                 profile_wish_bounty_type: item.profile_wish_bounty_type || (item.profile_wish_bounty ? "per_item" : "none"),
                 profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
+                profile_wish_moderated: item.profile_wish_moderated,
+                moderation: item.moderation,
               },
               // Store profile data for MiniCard-like display
               profileData: {

@@ -18,6 +18,8 @@ import {
   isStartDateValid,
   isEndDateValid,
 } from "../utils/profileDateTime";
+import SeekingModerationBanner from "./SeekingModerationBanner";
+import { isSeekingVisibilityBlocked } from "../utils/seekingModeration";
 
 // DateTimePicker only works on native (not web)
 let DateTimePicker = null;
@@ -531,6 +533,14 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
   };
 
   const toggleEntryVisibility = (index) => {
+    const item = wishes[index];
+    if (!item.isPublic && isSeekingVisibilityBlocked(item)) {
+      Alert.alert(
+        "Unavailable",
+        "This seeking post is under moderation and cannot be made public until an admin approves it."
+      );
+      return;
+    }
     const updated = [...wishes];
     updated[index].isPublic = !updated[index].isPublic;
     setWishes(updated);
@@ -630,6 +640,7 @@ const SeekingSection = ({ wishes, setWishes, toggleVisibility, isPublic, handleD
           }}
           style={[styles.card, index > 0 && styles.cardSpacing]}
         >
+          <SeekingModerationBanner item={item} darkMode={darkMode} compact />
           <View style={styles.rowHeader}>
             <View style={styles.labelRow}>
               <Text style={styles.label}>Seeking #{index + 1}</Text>

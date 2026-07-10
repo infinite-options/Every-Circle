@@ -16,7 +16,19 @@ import { resolveProfileItemImageUri } from "../utils/resolveProfileItemImageUri"
 import ProfileSectionItemImage from "../components/ProfileSectionItemImage";
 import SeekingCardDetails from "../components/SeekingCardDetails";
 import DetailFlagButton, { detailActionRowStyle } from "../components/DetailFlagButton";
+import FlagSeekingModal from "../components/FlagSeekingModal";
+import SeekingModerationBanner from "../components/SeekingModerationBanner";
 import { useHeaderCart } from "../components/HeaderCartButton";
+import {
+  acknowledgeSeekingModeration,
+  canAcknowledgeTakenDownSeeking,
+  fetchSeekingModerationDetail,
+  getSeekingModeratedState,
+  isSeekingModeratedBlocked,
+  MODERATED_ACKNOWLEDGED,
+  MODERATED_TAKEN_DOWN,
+  normalizeSeekingReviewDetail,
+} from "../utils/seekingModeration";
 
 const formatDateForDisplay = (value) => {
   if (!value || typeof value !== "string" || value.trim() === "") return "";
@@ -30,10 +42,14 @@ const formatDateForDisplay = (value) => {
 };
 
 const WishDetailScreenContent = ({ route, navigation }) => {
-  const { wishData, profileData, profile_uid, searchState, returnTo, profileState } = route.params;
+  const { wishData: initialWishData, profileData, profile_uid, searchState, returnTo, profileState } = route.params;
   const { darkMode } = useDarkMode();
   const { headerCartButton } = useHeaderCart(navigation, { returnTo: "Search", searchState });
   const [loading, setLoading] = useState(false);
+  const [currentProfileUid, setCurrentProfileUid] = useState(null);
+  const [wishData, setWishData] = useState(initialWishData);
+  const [showFlagModal, setShowFlagModal] = useState(false);
+  const [acknowledging, setAcknowledging] = useState(false);
   const [helpType, setHelpType] = useState(null); // "help" | "refer"
   const [howICanHelp, setHowICanHelp] = useState("");
   const [referralFirstName, setReferralFirstName] = useState("");
@@ -43,6 +59,23 @@ const WishDetailScreenContent = ({ route, navigation }) => {
   const [referralNote, setReferralNote] = useState("");
   const [referredProfileUid, setReferredProfileUid] = useState(null); // Seller - the person being referred (can help)
   const [existingResponses, setExistingResponses] = useState([]);
+
+  useEffect(() => {
+    AsyncStorage.getItem("profile_uid").then((uid) => setCurrentProfileUid(uid));
+  }, []);
+
+  useEffect(() => {
+    setWishData(initialWishData);
+  }, [initialWishData]);
+
+  const isOwnWish = currentProfileUid && profile_uid === currentProfileUid;
+  const moderatedState = getSeekingModeratedState(wishData);
+  const seekingTakenDown = moderatedState === MODERATED_TAKEN_DOWN;
+  const seekingAcknowledged = moderatedState === MODERATED_ACKNOWLEDGED;
+  const seekingModeratedBlocked = isSeekingModeratedBlocked(wishData);
+  const canAcknowledge = isOwnWish && canAcknowledgeTakenDownSeeking(wishData);
+  const wishUid = String(wishData?.wish_uid || wishData?.profile_wish_uid || wishData?.profile_wish_id || "").trim();
+  const seekingTitle = wishData?.title ? String(wishData.title).trim() : "";
 
   useEffect(() => {
     let cancelled = false;
@@ -67,7 +100,107 @@ const WishDetailScreenContent = ({ route, navigation }) => {
     return () => {
       cancelled = true;
     };
-  }, [wishData?.wish_uid, wishData?.profile_wish_id]);
+  }, [wishData?.wish_uid, wishData?.profile_wish_id, wishData?.profile_wish_uid]);
+
+  useEffect(() => {
+    if (!currentProfileUid || !profile_uid || currentProfileUid !== profile_uid || !wishUid) return;
+    if (getSeekingModeratedState(wishData) !== MODERATED_TAKEN_DOWN) return;
+    if (canAcknowledgeTakenDownSeeking(wishData)) return;
+
+    const mod = wishData?.moderation || {};
+    const hasRejectionMeta =
+      mod?.resubmissionStatus ||
+      mod?.resubmission_status ||
+      mod?.status === "rejected" ||
+      mod?.rejectionNote ||
+      mod?.rejection_note;
+    if (hasRejectionMeta) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const detail = await fetchSeekingModerationDetail(wishUid);
+        if (cancelled) return;
+        const { seeking, moderation } = normalizeSeekingReviewDetail(detail);
+        setWishData((prev) => ({
+          ...prev,
+          profile_wish_moderated: seeking?.profile_wish_moderated ?? prev?.profile_wish_moderated,
+          moderation: {
+            ...(prev?.moderation || {}),
+            ...(seeking?.moderation || {}),
+            ...(moderation || {}),
+          },
+        }));
+      } catch (e) {
+        console.warn("[WishDetailScreen] fetch moderation detail failed:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProfileUid, profile_uid, wishUid, wishData?.profile_wish_moderated, wishData?.moderation]);
+
+  const navigateAfterAcknowledge = () => {
+    if (returnTo === "Profile" && profileState) {
+      navigation.navigate("Profile", profileState);
+    } else if (searchState) {
+      navigation.navigate("Search", { restoreState: true, searchState });
+    } else {
+      navigation.goBack();
+    }
+  };
+
+  const submitAcknowledgeTakeDown = async () => {
+    if (acknowledging) return;
+    setAcknowledging(true);
+    try {
+      const result = await acknowledgeSeekingModeration({
+        profileWishUid: wishUid,
+        profileUid: profile_uid || currentProfileUid,
+      });
+      setWishData((prev) => ({
+        ...prev,
+        profile_wish_moderated: MODERATED_ACKNOWLEDGED,
+        moderation: {
+          ...(prev?.moderation || {}),
+          moderated: MODERATED_ACKNOWLEDGED,
+          status: "acknowledged",
+        },
+      }));
+      const already = result?.already_acknowledged === true || result?.data?.already_acknowledged === true;
+      const doneTitle = already ? "Already acknowledged" : "Acknowledged";
+      const doneMessage = already
+        ? "This seeking post was already acknowledged and has been removed from your profile."
+        : "This seeking post has been acknowledged and removed from your profile.";
+      if (Platform.OS === "web") {
+        window.alert(doneMessage);
+        navigateAfterAcknowledge();
+      } else {
+        Alert.alert(doneTitle, doneMessage, [{ text: "OK", onPress: navigateAfterAcknowledge }]);
+      }
+    } catch (error) {
+      console.error("WishDetailScreen - acknowledge failed:", error);
+      Alert.alert("Error", error?.message || "Failed to acknowledge take-down.");
+    } finally {
+      setAcknowledging(false);
+    }
+  };
+
+  const handleAcknowledgeTakeDown = () => {
+    if (!canAcknowledge || acknowledging) return;
+    const confirmMessage =
+      "By acknowledging, you confirm you understand this seeking post was removed for violating our policies. It will be removed from your profile.";
+    if (Platform.OS === "web") {
+      if (window.confirm(`Acknowledge take-down\n\n${confirmMessage}`)) {
+        submitAcknowledgeTakeDown();
+      }
+      return;
+    }
+    Alert.alert("Acknowledge take-down", confirmMessage, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Acknowledge", style: "destructive", onPress: submitAcknowledgeTakeDown },
+    ]);
+  };
 
   // Create user object for MiniCard
   const userForMiniCard = {
@@ -314,7 +447,15 @@ const WishDetailScreenContent = ({ route, navigation }) => {
         </TouchableOpacity>
 
         {/* Wish Description */}
-        <View style={[styles.card, darkMode && styles.darkCard]}>
+        <View
+          style={[
+            styles.card,
+            darkMode && styles.darkCard,
+            seekingTakenDown && (darkMode ? styles.darkTakenDownCard : styles.takenDownCard),
+          ]}
+        >
+          {isOwnWish && seekingModeratedBlocked ? <SeekingModerationBanner item={wishData} darkMode={darkMode} /> : null}
+
           <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>Seeking Description</Text>
 
           <ProfileSectionItemImage
@@ -368,6 +509,7 @@ const WishDetailScreenContent = ({ route, navigation }) => {
         )}
 
         {/* Help Type Selection */}
+        {!isOwnWish && !seekingModeratedBlocked ? (
         <View style={[styles.card, darkMode && styles.darkCard]}>
           <Text style={[styles.cardTitle, darkMode && styles.darkCardTitle]}>How I Can Help</Text>
           <View style={styles.helpTypeOptions}>
@@ -512,7 +654,46 @@ const WishDetailScreenContent = ({ route, navigation }) => {
             </>
           )}
         </View>
+        ) : null}
 
+        {isOwnWish || seekingModeratedBlocked ? (
+          <View style={[styles.ownerActionsBlock, darkMode && styles.darkCard]}>
+            <Text style={[styles.ownNotice, darkMode && styles.darkOwnNotice]}>
+              {seekingAcknowledged
+                ? "You acknowledged this take-down. The seeking post has been removed from your profile."
+                : seekingTakenDown
+                  ? "This seeking post has been taken down. You can view details but cannot edit or receive responses."
+                  : seekingModeratedBlocked
+                    ? "This seeking post is under moderation review. You can view details but cannot edit or receive responses."
+                    : "You cannot respond to your own seeking post."}
+            </Text>
+            {isOwnWish && canAcknowledge ? (
+              <View style={styles.moderationActionRow}>
+                <TouchableOpacity
+                  style={[styles.moderationActionButton, styles.acknowledgeButton, darkMode && styles.darkAcknowledgeButton, acknowledging && styles.submitButtonDisabled]}
+                  onPress={handleAcknowledgeTakeDown}
+                  disabled={acknowledging}
+                  activeOpacity={0.85}
+                >
+                  {acknowledging ? (
+                    <ActivityIndicator size='small' color='#fff' style={{ marginRight: 6 }} />
+                  ) : (
+                    <Ionicons name='checkmark-done-outline' size={17} color='#fff' style={{ marginRight: 6 }} />
+                  )}
+                  <Text style={styles.moderationActionButtonText}>Acknowledge</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.moderationActionButton, styles.termsButton, darkMode && styles.darkTermsButton]}
+                  onPress={() => navigation.navigate("TermsAndConditions")}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name='document-text-outline' size={17} color='#fff' style={{ marginRight: 6 }} />
+                  <Text style={styles.moderationActionButtonText}>Terms & Conditions</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </View>
+        ) : (
         <View style={detailActionRowStyle}>
           <TouchableOpacity
             style={[
@@ -526,9 +707,17 @@ const WishDetailScreenContent = ({ route, navigation }) => {
           >
             <Text style={styles.submitButtonText}>{loading ? "Submitting..." : "Submit"}</Text>
           </TouchableOpacity>
-          <DetailFlagButton />
+          <DetailFlagButton onPress={() => setShowFlagModal(true)} disabled={!wishUid} />
         </View>
+        )}
       </ScrollView>
+
+      <FlagSeekingModal
+        visible={showFlagModal}
+        onClose={() => setShowFlagModal(false)}
+        targetUid={wishUid}
+        seekingTitle={seekingTitle}
+      />
 
       <BottomNavBar navigation={navigation} />
     </SafeAreaView>
@@ -822,5 +1011,62 @@ const styles = StyleSheet.create({
   darkSearchSectionHeader: {
     backgroundColor: "rgba(61, 107, 108, 0.6)",
     color: "#ffffff",
+  },
+  takenDownCard: {
+    borderWidth: 1,
+    borderColor: "#F5C6C6",
+    backgroundColor: "#FFFAFA",
+  },
+  darkTakenDownCard: {
+    borderColor: "#664444",
+    backgroundColor: "#3a2a2a",
+  },
+  ownerActionsBlock: {
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: "#fff",
+    ...(Platform.OS !== "web" && { elevation: 2 }),
+  },
+  ownNotice: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#555",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  darkOwnNotice: {
+    color: "#ccc",
+  },
+  moderationActionRow: {
+    flexDirection: "row",
+    gap: 10,
+    justifyContent: "center",
+  },
+  moderationActionButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  moderationActionButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 13,
+  },
+  acknowledgeButton: {
+    backgroundColor: "#18884A",
+  },
+  darkAcknowledgeButton: {
+    backgroundColor: "#2E7D32",
+  },
+  termsButton: {
+    backgroundColor: "#4B2E83",
+  },
+  darkTermsButton: {
+    backgroundColor: "#6A4C9C",
   },
 });

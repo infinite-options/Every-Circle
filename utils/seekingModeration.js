@@ -1,8 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   CONTENT_REPORTS_ENDPOINT,
-  MODERATION_OFFERINGS_ENDPOINT,
-  MODERATION_OFFERINGS_REVIEW_QUEUE_ENDPOINT,
+  MODERATION_SEEKING_ENDPOINT,
+  MODERATION_SEEKING_REVIEW_QUEUE_ENDPOINT,
 } from "../apiConfig";
 import { fetchMiddleware as fetch } from "./httpMiddleware";
 
@@ -28,13 +28,13 @@ export const FLAG_REASON_CATEGORIES = [
 ];
 
 /** Read moderated state from API row or nested moderation object. */
-export function getOfferingModeratedState(item) {
+export function getSeekingModeratedState(item) {
   if (!item) return MODERATED_ACTIVE;
   if (item.moderation != null && item.moderation.moderated != null) {
     return Number(item.moderation.moderated) || 0;
   }
-  if (item.profile_expertise_moderated != null) {
-    return Number(item.profile_expertise_moderated) || 0;
+  if (item.profile_wish_moderated != null) {
+    return Number(item.profile_wish_moderated) || 0;
   }
   return MODERATED_ACTIVE;
 }
@@ -49,14 +49,14 @@ function getRawModerationFields(item) {
 }
 
 /** True when an admin rejected the post (may appear as status or resubmissionStatus). */
-export function isOfferingAdminRejected(item) {
+export function isSeekingAdminRejected(item) {
   const { status, resubmissionStatus } = getRawModerationFields(item);
   return status === MODERATION_STATUS.REJECTED || resubmissionStatus === MODERATION_STATUS.REJECTED;
 }
 
 /** Backend status string: pending_review | taken_down | rejected | acknowledged */
-export function getModerationStatus(item) {
-  const state = getOfferingModeratedState(item);
+export function getSeekingModerationStatus(item) {
+  const state = getSeekingModeratedState(item);
   if (state === MODERATED_ACKNOWLEDGED) return MODERATION_STATUS.ACKNOWLEDGED;
 
   const { status, resubmissionStatus } = getRawModerationFields(item);
@@ -67,30 +67,30 @@ export function getModerationStatus(item) {
   return null;
 }
 
-/** True only when offering is active (moderated === 0) or API explicitly allows edit. */
-export function canOfferingBeEdited(item) {
+/** True only when seeking post is active (moderated === 0) or API explicitly allows edit. */
+export function canSeekingBeEdited(item) {
   const mod = item?.moderation;
   if (mod && typeof mod.canEdit === "boolean") return mod.canEdit;
-  return getOfferingModeratedState(item) === MODERATED_ACTIVE;
+  return getSeekingModeratedState(item) === MODERATED_ACTIVE;
 }
 
-export function isOfferingModeratedBlocked(item) {
-  const state = getOfferingModeratedState(item);
+export function isSeekingModeratedBlocked(item) {
+  const state = getSeekingModeratedState(item);
   return state === MODERATED_TAKEN_DOWN || state === MODERATED_PENDING_REVIEW || state === MODERATED_ACKNOWLEDGED;
 }
 
-export function isOfferingVisibilityBlocked(item) {
-  return isOfferingModeratedBlocked(item);
+export function isSeekingVisibilityBlocked(item) {
+  return isSeekingModeratedBlocked(item);
 }
 
-/** Taken down after an admin rejected the latest resubmission — owner may acknowledge (moderated → 3). */
-export function canAcknowledgeTakenDownOffering(item) {
-  return getOfferingModeratedState(item) === MODERATED_TAKEN_DOWN && isOfferingAdminRejected(item);
+/** Taken down after an admin rejected — owner may acknowledge (moderated → 3). */
+export function canAcknowledgeTakenDownSeeking(item) {
+  return getSeekingModeratedState(item) === MODERATED_TAKEN_DOWN && isSeekingAdminRejected(item);
 }
 
-export function getModerationStatusLabel(item) {
-  const status = typeof item === "object" && item != null ? getModerationStatus(item) : null;
-  const state = typeof item === "number" ? item : getOfferingModeratedState(item);
+export function getSeekingModerationStatusLabel(item) {
+  const status = typeof item === "object" && item != null ? getSeekingModerationStatus(item) : null;
+  const state = typeof item === "number" ? item : getSeekingModeratedState(item);
 
   if (status === MODERATION_STATUS.ACKNOWLEDGED || state === MODERATED_ACKNOWLEDGED) return "Acknowledged";
   if (status === MODERATION_STATUS.PENDING_REVIEW) return "Pending admin review";
@@ -101,32 +101,32 @@ export function getModerationStatusLabel(item) {
   return "Active";
 }
 
-export function getModerationOwnerMessage(item) {
-  const status = getModerationStatus(item);
+export function getSeekingModerationOwnerMessage(item) {
+  const status = getSeekingModerationStatus(item);
   const flagCount = Number(item?.moderation?.flagCount ?? item?.moderation?.flag_count) || 0;
   const rejectionNote = String(item?.moderation?.rejectionNote ?? item?.moderation?.rejection_note ?? "").trim();
-  const flagPart = flagCount > 0 ? `${flagCount} user${flagCount === 1 ? "" : "s"} flagged this offering. ` : "";
+  const flagPart = flagCount > 0 ? `${flagCount} user${flagCount === 1 ? "" : "s"} flagged this seeking post. ` : "";
 
-  if (status === MODERATION_STATUS.ACKNOWLEDGED || getOfferingModeratedState(item) === MODERATED_ACKNOWLEDGED) {
-    return "You acknowledged this take-down. The offering has been removed from your profile.";
+  if (status === MODERATION_STATUS.ACKNOWLEDGED || getSeekingModeratedState(item) === MODERATED_ACKNOWLEDGED) {
+    return "You acknowledged this take-down. The seeking post has been removed from your profile.";
   }
   if (status === MODERATION_STATUS.REJECTED) {
     const notePart = rejectionNote ? ` Reason: ${rejectionNote}` : "";
-    return `This offering was rejected by an admin and remains hidden. Acknowledge the take-down to remove it from your profile, or review the Terms & Conditions.${notePart}`;
+    return `This seeking post was rejected by an admin and remains hidden. Acknowledge the take-down to remove it from your profile, or review the Terms & Conditions.${notePart}`;
   }
-  if (status === MODERATION_STATUS.PENDING_REVIEW || getOfferingModeratedState(item) === MODERATED_PENDING_REVIEW) {
-    return `${flagPart}This offering is hidden and awaiting admin review. You cannot edit it until an admin decides.`;
+  if (status === MODERATION_STATUS.PENDING_REVIEW || getSeekingModeratedState(item) === MODERATED_PENDING_REVIEW) {
+    return `${flagPart}This seeking post is hidden and awaiting admin review. You cannot edit it until an admin decides.`;
   }
-  if (status === MODERATION_STATUS.TAKEN_DOWN || getOfferingModeratedState(item) === MODERATED_TAKEN_DOWN) {
-    return `${flagPart}This offering has been taken down and is hidden from others. You cannot edit it while it is taken down.`;
+  if (status === MODERATION_STATUS.TAKEN_DOWN || getSeekingModeratedState(item) === MODERATED_TAKEN_DOWN) {
+    return `${flagPart}This seeking post has been taken down and is hidden from others. You cannot edit it while it is taken down.`;
   }
   return "";
 }
 
-export function normalizeOfferingModeration(exp) {
-  if (!exp) return null;
-  const moderated = getOfferingModeratedState(exp);
-  const raw = exp.moderation || {};
+export function normalizeSeekingModeration(wish) {
+  if (!wish) return null;
+  const moderated = getSeekingModeratedState(wish);
+  const raw = wish.moderation || {};
   const status =
     moderated === MODERATED_ACKNOWLEDGED
       ? MODERATION_STATUS.ACKNOWLEDGED
@@ -140,15 +140,15 @@ export function normalizeOfferingModeration(exp) {
   };
 }
 
-/** Normalize GET /moderation/offerings/:uid admin detail payload. */
-export function normalizeOfferingReviewDetail(raw) {
+/** Normalize GET /moderation/seeking/:uid admin detail payload. */
+export function normalizeSeekingReviewDetail(raw) {
   const data = raw?.data ?? raw?.result ?? raw ?? {};
-  const offering = data.offering && typeof data.offering === "object" ? data.offering : data;
-  const moderation = data.moderation ?? offering?.moderation ?? {};
+  const seeking = data.seeking && typeof data.seeking === "object" ? data.seeking : data.wish && typeof data.wish === "object" ? data.wish : data;
+  const moderation = data.moderation ?? seeking?.moderation ?? {};
   const pendingFlags = Array.isArray(data.pendingFlags) ? data.pendingFlags : Array.isArray(data.pending_flags) ? data.pending_flags : [];
   const latestResubmission = data.latestResubmission ?? data.latest_resubmission ?? null;
   const snapshot = latestResubmission?.resubmission_snapshot ?? latestResubmission?.resubmissionSnapshot ?? null;
-  return { offering, moderation, pendingFlags, latestResubmission, snapshot };
+  return { seeking, moderation, pendingFlags, latestResubmission, snapshot };
 }
 
 export function getFlagReasonLabel(value) {
@@ -157,14 +157,14 @@ export function getFlagReasonLabel(value) {
   return found?.label || key || "Report";
 }
 
-export async function submitOfferingFlag({ targetUid, reasonCategory, reasonText }) {
+export async function submitSeekingFlag({ targetUid, reasonCategory, reasonText }) {
   const reporterProfileUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
   if (!reporterProfileUid) {
-    throw new Error("Please log in to report an offering.");
+    throw new Error("Please log in to report a seeking post.");
   }
   const target_uid = String(targetUid || "").trim();
   if (!target_uid) {
-    throw new Error("Offering not found.");
+    throw new Error("Seeking post not found.");
   }
 
   const response = await fetch(CONTENT_REPORTS_ENDPOINT, {
@@ -180,7 +180,7 @@ export async function submitOfferingFlag({ targetUid, reasonCategory, reasonText
   const result = await response.json().catch(() => ({}));
 
   if (response.status === 409) {
-    const err = new Error(result.message || "You have already reported this offering.");
+    const err = new Error(result.message || "You have already reported this seeking post.");
     err.code = 409;
     throw err;
   }
@@ -190,30 +190,30 @@ export async function submitOfferingFlag({ targetUid, reasonCategory, reasonText
   return result;
 }
 
-export async function fetchModerationReviewQueue() {
-  const response = await fetch(MODERATION_OFFERINGS_REVIEW_QUEUE_ENDPOINT);
+export async function fetchSeekingModerationReviewQueue() {
+  const response = await fetch(MODERATION_SEEKING_REVIEW_QUEUE_ENDPOINT);
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(result.message || "Failed to load review queue.");
+    throw new Error(result.message || "Failed to load seeking review queue.");
   }
   const rows = result.data ?? result.result ?? [];
   return Array.isArray(rows) ? rows : [];
 }
 
-export async function fetchOfferingModerationDetail(profileExpertiseUid) {
-  const uid = encodeURIComponent(String(profileExpertiseUid || "").trim());
-  const response = await fetch(`${MODERATION_OFFERINGS_ENDPOINT}/${uid}`);
+export async function fetchSeekingModerationDetail(profileWishUid) {
+  const uid = encodeURIComponent(String(profileWishUid || "").trim());
+  const response = await fetch(`${MODERATION_SEEKING_ENDPOINT}/${uid}`);
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(result.message || "Failed to load offering review details.");
+    throw new Error(result.message || "Failed to load seeking review details.");
   }
   return result.data ?? result.result ?? result;
 }
 
-export async function reviewOfferingModeration({ profileExpertiseUid, action, note }) {
+export async function reviewSeekingModeration({ profileWishUid, action, note }) {
   const adminUid = ((await AsyncStorage.getItem("profile_uid")) || "").trim();
-  const uid = encodeURIComponent(String(profileExpertiseUid || "").trim());
-  const response = await fetch(`${MODERATION_OFFERINGS_ENDPOINT}/${uid}/review`, {
+  const uid = encodeURIComponent(String(profileWishUid || "").trim());
+  const response = await fetch(`${MODERATION_SEEKING_ENDPOINT}/${uid}/review`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -230,24 +230,24 @@ export async function reviewOfferingModeration({ profileExpertiseUid, action, no
 }
 
 /** POST acknowledge take-down (moderated 1 + admin-rejected → moderated 3). Idempotent if already acknowledged. */
-export async function acknowledgeOfferingModeration({ profileExpertiseUid, profileUid }) {
+export async function acknowledgeSeekingModeration({ profileWishUid, profileUid }) {
   const ownerUid = String(profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
-  const uid = String(profileExpertiseUid || "").trim();
+  const uid = String(profileWishUid || "").trim();
   if (!ownerUid) {
-    throw new Error("Please log in to acknowledge this offering.");
+    throw new Error("Please log in to acknowledge this seeking post.");
   }
   if (!uid) {
-    throw new Error("Offering not found.");
+    throw new Error("Seeking post not found.");
   }
 
-  const response = await fetch(`${MODERATION_OFFERINGS_ENDPOINT}/${encodeURIComponent(uid)}/acknowledge`, {
+  const response = await fetch(`${MODERATION_SEEKING_ENDPOINT}/${encodeURIComponent(uid)}/acknowledge`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ profile_uid: ownerUid }),
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok || (result.code != null && result.code !== 200)) {
-    throw new Error(result.message || "Failed to acknowledge offering take-down.");
+    throw new Error(result.message || "Failed to acknowledge seeking take-down.");
   }
   return result;
 }

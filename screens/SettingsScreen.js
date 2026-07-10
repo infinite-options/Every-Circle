@@ -17,7 +17,9 @@ import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUS
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
+import { fetchSeekingModerationReviewQueue, fetchSeekingModerationDetail, reviewSeekingModeration } from "../utils/seekingModeration";
 import OfferingReviewDetailPanel from "../components/OfferingReviewDetailPanel";
+import SeekingReviewDetailPanel from "../components/SeekingReviewDetailPanel";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -251,6 +253,15 @@ export default function SettingsScreen() {
   const [offeringReviewNote, setOfferingReviewNote] = useState("");
   const [offeringReviewLoading, setOfferingReviewLoading] = useState(false);
   const [offeringReviewSubmitting, setOfferingReviewSubmitting] = useState(false);
+  const [adminSeeking, setAdminSeeking] = useState([]);
+  const [seekingLoading, setSeekingLoading] = useState(false);
+  const [showSeekingSection, setShowSeekingSection] = useState(false);
+  const [seekingReviewModalVisible, setSeekingReviewModalVisible] = useState(false);
+  const [seekingReviewItem, setSeekingReviewItem] = useState(null);
+  const [seekingReviewDetail, setSeekingReviewDetail] = useState(null);
+  const [seekingReviewNote, setSeekingReviewNote] = useState("");
+  const [seekingReviewLoading, setSeekingReviewLoading] = useState(false);
+  const [seekingReviewSubmitting, setSeekingReviewSubmitting] = useState(false);
   const [hideChangePassword, setHideChangePassword] = useState(false);
 
   console.log("In SettingsScreen");
@@ -1141,6 +1152,66 @@ export default function SettingsScreen() {
     }
   };
 
+  const fetchAdminSeeking = async () => {
+    setSeekingLoading(true);
+    try {
+      const rows = await fetchSeekingModerationReviewQueue();
+      setAdminSeeking(rows);
+    } catch (e) {
+      console.error("Admin seeking fetch error:", e);
+      Alert.alert("Error", e?.message || "Failed to load seeking review queue.");
+    } finally {
+      setSeekingLoading(false);
+    }
+  };
+
+  const openSeekingReview = async (item) => {
+    const uid = item?.profile_wish_uid || item?.wish_uid;
+    if (!uid) return;
+    setSeekingReviewItem(item);
+    setSeekingReviewDetail(null);
+    setSeekingReviewNote("");
+    setSeekingReviewModalVisible(true);
+    setSeekingReviewLoading(true);
+    try {
+      const detail = await fetchSeekingModerationDetail(uid);
+      setSeekingReviewDetail(detail);
+    } catch (e) {
+      console.error("Seeking review detail error:", e);
+      Alert.alert("Error", e?.message || "Failed to load seeking details.");
+      setSeekingReviewModalVisible(false);
+    } finally {
+      setSeekingReviewLoading(false);
+    }
+  };
+
+  const handleSeekingReview = async (action) => {
+    const uid = seekingReviewItem?.profile_wish_uid || seekingReviewItem?.wish_uid || seekingReviewDetail?.profile_wish_uid;
+    if (!uid) return;
+    if (action === "reject" && !seekingReviewNote.trim()) {
+      Alert.alert("Note required", "Please enter a note explaining the rejection for the seeking post owner.");
+      return;
+    }
+    setSeekingReviewSubmitting(true);
+    try {
+      await reviewSeekingModeration({
+        profileWishUid: uid,
+        action,
+        note: seekingReviewNote.trim(),
+      });
+      setAdminSeeking((prev) => prev.filter((row) => (row.profile_wish_uid || row.wish_uid) !== uid));
+      setSeekingReviewModalVisible(false);
+      setSeekingReviewItem(null);
+      setSeekingReviewDetail(null);
+      Alert.alert("Done", `Seeking post ${action === "approve" ? "approved" : "rejected"} successfully.`);
+    } catch (e) {
+      console.error("Seeking review submit error:", e);
+      Alert.alert("Error", e?.message || "Failed to submit review.");
+    } finally {
+      setSeekingReviewSubmitting(false);
+    }
+  };
+
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Nearby alert banner — floats above everything */}
@@ -1695,6 +1766,78 @@ export default function SettingsScreen() {
             </>
           )}
 
+          {isAdmin && (
+            <>
+              <TouchableOpacity
+                style={[styles.informationSectionHeader, { backgroundColor: "rgba(79, 138, 139, 0.12)", marginTop: 8 }]}
+                onPress={() => {
+                  setShowSeekingSection(!showSeekingSection);
+                  if (!showSeekingSection && adminSeeking.length === 0) fetchAdminSeeking();
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <MaterialIcons name='flag' size={16} color='#4F8A8B' />
+                  <Text style={[styles.informationSectionHeaderText, { color: "#4F8A8B" }]}>
+                    SEEKING REVIEWS {adminSeeking.length > 0 ? `(${adminSeeking.length})` : ""}
+                  </Text>
+                </View>
+                <Ionicons name={showSeekingSection ? "chevron-up" : "chevron-down"} size={20} color='#4F8A8B' />
+              </TouchableOpacity>
+
+              {showSeekingSection && (
+                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#4F8A8B" }]}>
+                  {seekingLoading ? (
+                    <ActivityIndicator size='small' color='#4F8A8B' style={{ margin: 16 }} />
+                  ) : adminSeeking.length === 0 ? (
+                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No seeking posts pending review.</Text>
+                  ) : (
+                    adminSeeking.map((row, idx) => {
+                      const uid = row.profile_wish_uid || row.wish_uid || "";
+                      const title = row.profile_wish_title || row.title || uid || "Seeking";
+                      const flagCount =
+                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
+                      const description = row.profile_wish_description || row.description || "";
+                      const ownerName = [row.owner_first_name || row.profile_personal_first_name, row.owner_last_name || row.profile_personal_last_name]
+                        .filter(Boolean)
+                        .join(" ");
+                      return (
+                        <TouchableOpacity
+                          key={uid || idx}
+                          style={{
+                            padding: 12,
+                            borderBottomWidth: idx < adminSeeking.length - 1 ? 1 : 0,
+                            borderBottomColor: darkMode ? "#444" : "#eee",
+                            backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#f5fbfb") : "transparent",
+                          }}
+                          onPress={() => openSeekingReview(row)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>{title}</Text>
+                          {description ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
+                              {description}
+                            </Text>
+                          ) : null}
+                          {ownerName ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text>
+                          ) : null}
+                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
+                            {uid}
+                            {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#4F8A8B", marginTop: 6, fontWeight: "600" }}>Tap to review →</Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminSeeking}>
+                    <Text style={{ color: "#4F8A8B", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          )}
+
           {/* Bottom Logout Button - Styled like Submit button */}
           <TouchableOpacity style={[styles.bottomLogoutButton, darkMode && styles.darkBottomLogoutButton]} onPress={handleLogout}>
             <Text style={[styles.bottomLogoutText, darkMode && styles.darkBottomLogoutText]}>Log out</Text>
@@ -1795,6 +1938,64 @@ export default function SettingsScreen() {
               onPress={() => !offeringReviewSubmitting && setOfferingReviewModalVisible(false)}
               style={{ marginTop: 12, alignItems: "center" }}
               disabled={offeringReviewSubmitting}
+            >
+              <Text style={{ color: darkMode ? "#aaa" : "#666" }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Seeking moderation review modal */}
+      <Modal visible={seekingReviewModalVisible} transparent animationType='slide' onRequestClose={() => !seekingReviewSubmitting && setSeekingReviewModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox, { maxHeight: "92%", width: "94%", maxWidth: 520 }]}>
+            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Review seeking</Text>
+            {seekingReviewLoading ? (
+              <ActivityIndicator size='small' color='#4F8A8B' style={{ marginVertical: 24 }} />
+            ) : (
+              <ScrollView style={{ maxHeight: 480 }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
+                <SeekingReviewDetailPanel detail={seekingReviewDetail} queueItem={seekingReviewItem} darkMode={darkMode} />
+                <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6, marginTop: 4 }}>Admin note (required for reject)</Text>
+                <TextInput
+                  style={{
+                    borderWidth: 1,
+                    borderColor: darkMode ? "#555" : "#ddd",
+                    borderRadius: 8,
+                    padding: 10,
+                    minHeight: 72,
+                    fontSize: 13,
+                    color: darkMode ? "#fff" : "#333",
+                    backgroundColor: darkMode ? "#1f1f1f" : "#fafafa",
+                    textAlignVertical: "top",
+                  }}
+                  value={seekingReviewNote}
+                  onChangeText={setSeekingReviewNote}
+                  placeholder='Explain rejection to the owner...'
+                  placeholderTextColor={darkMode ? "#888" : "#aaa"}
+                  multiline
+                />
+              </ScrollView>
+            )}
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: "#18884A", padding: 12, borderRadius: 8, alignItems: "center", opacity: seekingReviewSubmitting ? 0.7 : 1 }}
+                disabled={seekingReviewSubmitting || seekingReviewLoading}
+                onPress={() => handleSeekingReview("approve")}
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>Approve</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: "#B71C1C", padding: 12, borderRadius: 8, alignItems: "center", opacity: seekingReviewSubmitting ? 0.7 : 1 }}
+                disabled={seekingReviewSubmitting || seekingReviewLoading}
+                onPress={() => handleSeekingReview("reject")}
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>Reject</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              onPress={() => !seekingReviewSubmitting && setSeekingReviewModalVisible(false)}
+              style={{ marginTop: 12, alignItems: "center" }}
+              disabled={seekingReviewSubmitting}
             >
               <Text style={{ color: darkMode ? "#aaa" : "#666" }}>Cancel</Text>
             </TouchableOpacity>
