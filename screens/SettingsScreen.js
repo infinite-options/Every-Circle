@@ -1,6 +1,6 @@
 //SettingsScreen.js
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, TextInput } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, TextInput, Platform } from "react-native";
 import * as Location from "expo-location";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -1173,7 +1173,7 @@ export default function SettingsScreen() {
           {/* Profile MiniCard at top */}
           {personalProfileData && (
             <TouchableOpacity activeOpacity={0.7} onPress={handleNavigateProfile}>
-              <View style={{ marginBottom: 16 }}>
+              <View style={styles.profileMiniCardWrap}>
                 <MiniCard user={personalProfileData} />
               </View>
             </TouchableOpacity>
@@ -1342,7 +1342,7 @@ export default function SettingsScreen() {
 
           {/* Information & Links Container */}
           {showInformation && (
-            <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { marginBottom: 16 }]}>
+            <View style={[styles.settingsGroupContainer, styles.informationGroupContainer, darkMode && styles.darkSettingsGroupContainer]}>
               {/* How It Works */}
               <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("HowItWorksScreen")}>
                 <View style={styles.itemLabel}>
@@ -2091,6 +2091,15 @@ const styles = StyleSheet.create({
   settingsContainer: {
     padding: 15,
     paddingBottom: 80,
+    ...Platform.select({
+      web: { padding: 13, paddingBottom: 74 },
+    }),
+  },
+  profileMiniCardWrap: {
+    marginBottom: 16,
+    ...Platform.select({
+      web: { marginBottom: 12 },
+    }),
   },
   settingItem: {
     borderRadius: 8,
@@ -2100,10 +2109,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    ...Platform.select({
+      web: {
+        paddingVertical: 10,
+        paddingHorizontal: 12,
+        marginBottom: 6,
+      },
+    }),
   },
   /** Tighter vertical padding so title-to-title spacing matches single-line rows above/below */
   settingItemWithHelp: {
     paddingVertical: 7,
+    ...Platform.select({
+      web: { paddingVertical: 6 },
+    }),
   },
   darkSettingItem: {
     backgroundColor: COLORS.darkItemBackground,
@@ -2232,6 +2251,13 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginVertical: 20,
     marginBottom: 30,
+    ...Platform.select({
+      web: {
+        paddingVertical: 11,
+        marginVertical: 12,
+        marginBottom: 18,
+      },
+    }),
   },
   darkBottomLogoutButton: {
     backgroundColor: "#4B2E83",
@@ -2274,6 +2300,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     paddingHorizontal: 16,
     alignItems: "center",
+    ...Platform.select({
+      web: { marginTop: 10, marginBottom: 6 },
+    }),
   },
   dateTimeText: {
     fontSize: 12,
@@ -2290,6 +2319,15 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.lightGroupBackground,
     marginBottom: 16,
     overflow: "hidden",
+    ...Platform.select({
+      web: { marginBottom: 12 },
+    }),
+  },
+  informationGroupContainer: {
+    marginBottom: 16,
+    ...Platform.select({
+      web: { marginBottom: 12 },
+    }),
   },
   darkSettingsGroupContainer: {
     backgroundColor: COLORS.darkGroupBackground,
@@ -2368,6 +2406,9 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,
+    ...Platform.select({
+      web: { paddingVertical: 10, paddingHorizontal: 12, marginBottom: 8 },
+    }),
   },
   settingsSectionHeaderText: {
     fontSize: 14,
@@ -2384,6 +2425,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 8,
     marginTop: 16,
+    ...Platform.select({
+      web: { paddingVertical: 10, paddingHorizontal: 12, marginBottom: 8, marginTop: 10 },
+    }),
   },
   informationSectionHeaderText: {
     fontSize: 14,

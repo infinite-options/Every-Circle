@@ -1,5 +1,5 @@
 // BusinessProfileScreen.js
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Image, TouchableOpacity, Alert, Modal, Platform, Linking, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -17,6 +17,7 @@ import { parsePrice } from "../utils/priceUtils";
 import { buildSelectedChoiceItems, sumChoiceExtraCost } from "../utils/selectedChoiceItems";
 import { getHeaderColors } from "../config/headerColors";
 import FeedbackPopup from "../components/FeedbackPopup";
+import ReviewImageStrip from "../components/ReviewImageStrip";
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import {
   parseBusinessGooglePhotos,
@@ -123,37 +124,51 @@ export default function BusinessProfileScreen({ route, navigation }) {
     }
   }, []);
 
-  // Load cart items when component mounts
-  useEffect(() => {
-    const loadCartItems = async () => {
-      try {
-        const storedCartData = await AsyncStorage.getItem(`cart_${business_uid}`);
-        if (storedCartData) {
-          const cartData = JSON.parse(storedCartData);
-          setCartItems(cartData.items || []);
-          if (cartData.bounty_recipient) {
-            setSelectedBountyRecipient(cartData.bounty_recipient);
-          }
+  // Load / refresh cart from AsyncStorage (mount + when returning after checkout).
+  const refreshCartFromStorage = useCallback(async () => {
+    try {
+      const storedCartData = await AsyncStorage.getItem(`cart_${business_uid}`);
+      if (storedCartData) {
+        const cartData = JSON.parse(storedCartData);
+        const items = cartData.items || [];
+        setCartItems(items);
+        if (cartData.bounty_recipient) {
+          setSelectedBountyRecipient(cartData.bounty_recipient);
+        } else if (items.length === 0) {
+          setSelectedBountyRecipient(null);
         }
-
-        // Count ALL cart items across all businesses
-        const keys = await AsyncStorage.getAllKeys();
-        const cartKeys = keys.filter((key) => key.startsWith("cart_") && !key.startsWith("cart_expertise_"));
-        let total = 0;
-        for (const key of cartKeys) {
-          const data = await AsyncStorage.getItem(key);
-          if (data) {
-            const parsed = JSON.parse(data);
-            total += (parsed.items || []).length;
-          }
-        }
-        setTotalCartCount(total);
-      } catch (error) {
-        console.error("Error loading cart items:", error);
+      } else {
+        setCartItems([]);
+        setSelectedBountyRecipient(null);
       }
-    };
-    loadCartItems();
+
+      const keys = await AsyncStorage.getAllKeys();
+      const cartKeys = keys.filter((key) => key.startsWith("cart_") && !key.startsWith("cart_expertise_"));
+      let total = 0;
+      for (const key of cartKeys) {
+        const data = await AsyncStorage.getItem(key);
+        if (data) {
+          const parsed = JSON.parse(data);
+          total += (parsed.items || []).length;
+        }
+      }
+      setTotalCartCount(total);
+    } catch (error) {
+      console.error("Error loading cart items:", error);
+      setCartItems([]);
+      setTotalCartCount(0);
+    }
   }, [business_uid]);
+
+  useEffect(() => {
+    refreshCartFromStorage();
+  }, [refreshCartFromStorage]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshCartFromStorage();
+    }, [refreshCartFromStorage]),
+  );
 
   // Get current user's profile ID
   useEffect(() => {
@@ -838,7 +853,6 @@ export default function BusinessProfileScreen({ route, navigation }) {
       }
 
       setCartItems(newCartItems);
-      setTotalCartCount((prev) => prev + 1);
 
       await AsyncStorage.setItem(
         `cart_${business_uid}`,
@@ -847,6 +861,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
           bounty_recipient: selectedBountyRecipient || null,
         }),
       );
+      await refreshCartFromStorage();
 
       setQuantityModalVisible(false);
     } catch (error) {
@@ -869,6 +884,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         }),
       );
       if (newCartItems.length === 0) setSelectedBountyRecipient(null);
+      await refreshCartFromStorage();
     } catch (error) {
       console.error("Error removing item from cart:", error);
       Alert.alert("Error", "Failed to remove item from cart");
@@ -1411,6 +1427,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                   <Text style={[styles.userReviewLabel, darkMode && styles.darkUserReviewLabel]}>Comments:</Text>
                   <Text style={[styles.userReviewValue, darkMode && styles.darkUserReviewValue]}>{userReview.rating_description}</Text>
                 </View>
+                <ReviewImageStrip review={userReview} darkMode={darkMode} style={styles.userReviewImages} />
                 <View style={styles.userReviewRow}>
                   <Text style={[styles.userReviewLabel, darkMode && styles.darkUserReviewLabel]}>Date:</Text>
                   <Text style={[styles.userReviewValue, darkMode && styles.darkUserReviewValue]}>{userReview.rating_receipt_date}</Text>
@@ -1782,8 +1799,10 @@ export default function BusinessProfileScreen({ route, navigation }) {
                       {review.rating_description && (
                         <View style={styles.reviewContent}>
                           <Text style={[styles.reviewDescription, darkMode && styles.darkReviewDescription]}>{review.rating_description}</Text>
+                          <ReviewImageStrip review={review} darkMode={darkMode} />
                         </View>
                       )}
+                      {!review.rating_description ? <ReviewImageStrip review={review} darkMode={darkMode} style={styles.reviewContent} /> : null}
 
                       <View style={styles.reviewFooter}>
                         <View style={styles.reviewMetadata}>
@@ -1907,7 +1926,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
                 <Text style={styles.sectionHeaderText}>PRODUCTS & SERVICES</Text>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                   {/*checkout from the business*/}
-                  {cartItems.length > 0 && (
+                  {totalCartCount > 0 && cartItems.length > 0 && (
                     <TouchableOpacity style={[styles.cartButton, darkMode && styles.darkCartButton]} onPress={handleViewCart}>
                       <Ionicons name='cart' size={24} color={darkMode ? "#fff" : "#9C45F7"} />
                       <Text style={[styles.cartCount, darkMode && styles.darkCartCount]}>{totalCartCount}</Text>
@@ -2516,6 +2535,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
+  },
+  userReviewImages: {
+    marginTop: 4,
+    marginBottom: 4,
   },
   userReviewValue: {
     flex: 1,
