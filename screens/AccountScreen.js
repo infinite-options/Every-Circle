@@ -346,23 +346,28 @@ function enrichFromReceiptRow(row) {
         : "";
   if (!bsId) return null;
 
-  const choicesExtraCost = parseFloat(row.choices_extra_cost ?? row.ti_choices_extra_cost ?? 0) || 0;
   const selectedChoices = parseReceiptJsonField(row.selected_choices ?? row.ti_selected_choices, {});
   const selectedChoiceLabels = parseReceiptJsonField(row.selected_choice_labels ?? row.ti_selected_choice_labels, {});
   const selectedChoiceItems = parseReceiptJsonField(row.selected_choice_items ?? row.ti_selected_choice_items, []);
+  const selectedOptions = Array.isArray(row.selected_options) ? row.selected_options : [];
   const specialInstructions = String(row.special_instructions ?? row.ti_special_instructions ?? "").trim();
   const unitPriceRaw = row.unit_price ?? row.ti_unit_price;
   const unitPrice = unitPriceRaw != null && unitPriceRaw !== "" ? parseFloat(unitPriceRaw) : undefined;
+  const optionsExtraCost = selectedOptions.reduce((sum, opt) => sum + (parseFloat(opt?.extra_cost) || 0), 0);
+  const choicesExtraCost =
+    parseFloat(row.choices_extra_cost ?? row.ti_choices_extra_cost ?? 0) || optionsExtraCost || 0;
   const itemizedLines = getItemizedChoiceLines({
     selectedChoiceItems,
     selectedChoiceLabels,
+    selected_options: selectedOptions,
     choicesExtraCost,
   });
   const hasLabels = selectedChoiceLabels && typeof selectedChoiceLabels === "object" && Object.keys(selectedChoiceLabels).length > 0;
   const hasChoices = selectedChoices && typeof selectedChoices === "object" && Object.keys(selectedChoices).length > 0;
   const hasItemized = itemizedLines.length > 0;
+  const hasSelectedOptions = selectedOptions.length > 0;
 
-  if (choicesExtraCost <= 0 && !hasLabels && !hasChoices && !hasItemized && !specialInstructions) return null;
+  if (choicesExtraCost <= 0 && !hasLabels && !hasChoices && !hasItemized && !hasSelectedOptions && !specialInstructions) return null;
 
   return {
     [bsId]: {
@@ -370,6 +375,7 @@ function enrichFromReceiptRow(row) {
       selectedChoiceLabels: hasLabels ? selectedChoiceLabels : {},
       selectedChoiceItems: itemizedLines,
       selectedChoices: hasChoices ? selectedChoices : {},
+      selected_options: hasSelectedOptions ? selectedOptions : [],
       specialInstructions,
       unitPrice,
     },
@@ -3106,9 +3112,10 @@ export default function AccountScreen({ navigation }) {
                       const baseCost = parseFloat(item.ti_bs_cost || 0);
                       const qty = parseInt(item.ti_bs_qty || 1, 10);
 
-                      const enrich = receiptEnrichedItems[item.ti_bs_id]
-                        || receiptEnrichedItems[item.bs_uid]
-                        || {};
+                      const enrich = {
+                        ...(receiptEnrichedItems[item.ti_bs_id] || receiptEnrichedItems[item.bs_uid] || {}),
+                        ...(Array.isArray(item.selected_options) && item.selected_options.length > 0 ? { selected_options: item.selected_options } : {}),
+                      };
 
                       if (isOfferingReceipt) {
                         const offeringName = String(item.bs_service_name || item.bs_service_desc || "N/A").trim() || "N/A";

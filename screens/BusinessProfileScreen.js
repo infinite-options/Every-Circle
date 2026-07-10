@@ -35,7 +35,7 @@ import { getSessionProfile, getViewerProfilePersonalPath, refreshSessionProfileF
 import { enrichReviewWithConnectionDegree } from "../utils/profilePathConnectionDegree";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
 import * as DocumentPicker from "expo-document-picker";
-import { bountyPickerRequiresSelection, getDefaultBountyRecipient, isBountyReviewDisabled, mergeBountyEligibleReviews, resolveBountyRecommenderProfileId } from "../utils/bountyRecipientUtils";
+import { bountyPickerRequiresSelection, getDefaultBountyRecipient, isBountyReviewDisabled, isReviewVerified, mergeBountyEligibleReviews, resolveBountyRecommenderProfileId } from "../utils/bountyRecipientUtils";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 
 const BusinessProfileApi = BUSINESS_INFO_ENDPOINT;
@@ -332,10 +332,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       if (!cachedViewerPath) {
         try {
           const refreshed = await refreshSessionProfileFromNetwork();
-          cachedViewerPath =
-            refreshed?.personalInfo?.profile_personal_path ??
-            refreshed?.rawProfile?.personal_info?.profile_personal_path ??
-            (await getViewerProfilePersonalPath());
+          cachedViewerPath = refreshed?.personalInfo?.profile_personal_path ?? refreshed?.rawProfile?.personal_info?.profile_personal_path ?? (await getViewerProfilePersonalPath());
         } catch (_) {}
       }
       if (cachedViewerPath) setViewerProfilePath(cachedViewerPath);
@@ -702,10 +699,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
     return !!(business.facebook || business.instagram || business.linkedin || business.youtube || isSafeForConditional(business.business_website));
   }, [business]);
 
-  const modalSelectedChoiceItems = useMemo(
-    () => buildSelectedChoiceItems(serviceOptions, selectedChoices),
-    [serviceOptions, selectedChoices],
-  );
+  const modalSelectedChoiceItems = useMemo(() => buildSelectedChoiceItems(serviceOptions, selectedChoices), [serviceOptions, selectedChoices]);
 
   const modalUnitPrice = useMemo(() => {
     if (!selectedService) return 0;
@@ -823,9 +817,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
       };
 
       const choicesKey = JSON.stringify(selectedChoices);
-      const existingItemIndex = cartItems.findIndex(
-        (item) => item.bs_uid === selectedService.bs_uid && JSON.stringify(item.selectedChoices || {}) === choicesKey,
-      );
+      const existingItemIndex = cartItems.findIndex((item) => item.bs_uid === selectedService.bs_uid && JSON.stringify(item.selectedChoices || {}) === choicesKey);
 
       let newCartItems;
       if (existingItemIndex !== -1) {
@@ -1207,43 +1199,43 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
           {/* Contact Information */}
           {SHOW_BUSINESS_PROFILE_CONTACT_SECTION && (
-          <View style={styles.fieldContainer}>
-            <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowContact(!showContact)}>
-              <Text style={styles.sectionHeaderText}>CONTACT INFORMATION</Text>
-              <Ionicons name={showContact ? "chevron-up" : "chevron-down"} size={20} color='#000' />
-            </TouchableOpacity>
-            {showContact && (
-              <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
-                {renderField(
-                  "Location",
-                  (() => {
-                    const parts = [
-                      sanitizeText(business.business_location),
-                      sanitizeText(business.business_address_line_1),
-                      sanitizeText(business.business_city),
-                      sanitizeText(business.business_state),
-                      sanitizeText(business.business_zip_code),
-                      sanitizeText(business.business_country),
-                    ].filter((part) => part && part !== ".");
-                    return parts.length > 0 ? parts.join(", ") : "N/A";
-                  })(),
-                  business.business_location_is_public === "1" || business.business_location_is_public === 1 || business.locationIsPublic === true,
-                )}
-                {business.phoneIsPublic && isSafeForConditional(business.business_phone_number) && (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Phone: {sanitizeText(business.business_phone_number)}</Text>
-                )}
-                {business.emailIsPublic && isSafeForConditional(business.business_email_id) && (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Email: {sanitizeText(business.business_email_id)}</Text>
-                )}
-                {isSafeForConditional(business.business_role || business.role || business.bu_role) && (
-                  <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Business Role: {sanitizeText(business.business_role || business.role || business.bu_role)}</Text>
-                )}
-                {/* {isSafeForConditional(business.ein_number) && (
+            <View style={styles.fieldContainer}>
+              <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowContact(!showContact)}>
+                <Text style={styles.sectionHeaderText}>CONTACT INFORMATION</Text>
+                <Ionicons name={showContact ? "chevron-up" : "chevron-down"} size={20} color='#000' />
+              </TouchableOpacity>
+              {showContact && (
+                <View style={[styles.inputContainer, darkMode && styles.darkInputContainer]}>
+                  {renderField(
+                    "Location",
+                    (() => {
+                      const parts = [
+                        sanitizeText(business.business_location),
+                        sanitizeText(business.business_address_line_1),
+                        sanitizeText(business.business_city),
+                        sanitizeText(business.business_state),
+                        sanitizeText(business.business_zip_code),
+                        sanitizeText(business.business_country),
+                      ].filter((part) => part && part !== ".");
+                      return parts.length > 0 ? parts.join(", ") : "N/A";
+                    })(),
+                    business.business_location_is_public === "1" || business.business_location_is_public === 1 || business.locationIsPublic === true,
+                  )}
+                  {business.phoneIsPublic && isSafeForConditional(business.business_phone_number) && (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Phone: {sanitizeText(business.business_phone_number)}</Text>
+                  )}
+                  {business.emailIsPublic && isSafeForConditional(business.business_email_id) && (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Email: {sanitizeText(business.business_email_id)}</Text>
+                  )}
+                  {isSafeForConditional(business.business_role || business.role || business.bu_role) && (
+                    <Text style={[styles.inputText, darkMode && styles.darkInputText]}>Business Role: {sanitizeText(business.business_role || business.role || business.bu_role)}</Text>
+                  )}
+                  {/* {isSafeForConditional(business.ein_number) && (
                   <Text style={[styles.inputText, darkMode && styles.darkInputText]}>EIN Number: {sanitizeText(business.ein_number)}</Text>
                 )} */}
-              </View>
-            )}
-          </View>
+                </View>
+              )}
+            </View>
           )}
 
           {/* Business Hours */}
@@ -1806,7 +1798,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
 
                       <View style={styles.reviewFooter}>
                         <View style={styles.reviewMetadata}>
-                          {review.is_verified ? (
+                          {isReviewVerified(review) ? (
                             <Text style={[styles.reviewMetadataText, styles.verifiedText]}>Verified Purchase</Text>
                           ) : (
                             <Text style={[styles.reviewMetadataText, styles.unverifiedText]}>Purchase Not Verified</Text>

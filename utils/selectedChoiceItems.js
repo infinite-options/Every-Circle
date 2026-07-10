@@ -26,15 +26,29 @@ export function sumChoiceExtraCost(items) {
 /** Itemized lines for display; falls back to grouped labels when per-option costs were not stored. */
 export function getItemizedChoiceLines(data) {
   if (!data || typeof data !== "object") return [];
+
+  const rawSelectedOptions = data.selected_options ?? data.selectedOptions;
+  if (Array.isArray(rawSelectedOptions) && rawSelectedOptions.length > 0) {
+    return rawSelectedOptions
+      .map((opt) => ({
+        groupTitle: opt.groupTitle || opt.group_title || "",
+        label: opt.label || opt.option_label || opt.optionLabel || "",
+        extra_cost: parseFloat(opt.extra_cost) || 0,
+      }))
+      .filter((line) => line.label || line.groupTitle);
+  }
+
   const rawItems = data.selectedChoiceItems ?? data.selected_choice_items;
   if (Array.isArray(rawItems) && rawItems.length > 0) {
-    return rawItems.map((item) => ({
-      groupTitle: item.groupTitle || item.group_title || "",
-      label: item.label || "",
-      extra_cost: parseFloat(item.extra_cost) || 0,
-    }));
+    return rawItems
+      .map((item) => ({
+        groupTitle: item.groupTitle || item.group_title || "",
+        label: item.label || item.option_label || item.optionLabel || "",
+        extra_cost: parseFloat(item.extra_cost) || 0,
+      }))
+      .filter((line) => line.label || line.groupTitle);
   }
-  const labels = data.selectedChoiceLabels || {};
+  const labels = data.selectedChoiceLabels || data.selected_choice_labels || {};
   return Object.entries(labels).flatMap(([groupTitle, labelStr]) =>
     String(labelStr)
       .split(",")

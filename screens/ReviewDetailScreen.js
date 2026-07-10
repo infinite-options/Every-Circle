@@ -11,13 +11,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, RATINGS_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import BountyRecipientPicker from "../components/BountyRecipientPicker";
-import {
-  bountyPickerRequiresSelection,
-  getDefaultBountyRecipient,
-  isBountyReviewDisabled,
-  mergeBountyEligibleReviews,
-  resolveBountyRecommenderProfileId,
-} from "../utils/bountyRecipientUtils";
+import { bountyPickerRequiresSelection, getDefaultBountyRecipient, isBountyReviewDisabled, mergeBountyEligibleReviews, resolveBountyRecommenderProfileId } from "../utils/bountyRecipientUtils";
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
@@ -239,9 +233,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
         }
       }
 
-      const profileCcFeePayer = canonicalBusinessCcFeePayer(
-        rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer,
-      );
+      const profileCcFeePayer = canonicalBusinessCcFeePayer(rawBusiness.business_cc_fee_payer ?? rawBusiness.bs_cc_fee_payer ?? rawBusiness.business_bs_cc_fee_payer ?? rawBusiness.cc_fee_payer);
 
       const enrichedRatings = await enrichRatingsWithVerification(result.ratings || []);
 
@@ -842,13 +834,7 @@ export default function ReviewDetailScreen({ route, navigation }) {
                 )}
               </View>
               {business.business_services.map((service, idx) => (
-                <ProductCard
-                  key={idx}
-                  service={service}
-                  businessUid={business_uid}
-                  showEditButton={false}
-                  onPress={() => handleProductPress(service)}
-                />
+                <ProductCard key={idx} service={service} businessUid={business_uid} showEditButton={false} onPress={() => handleProductPress(service)} />
               ))}
             </View>
           )}
@@ -861,22 +847,22 @@ export default function ReviewDetailScreen({ route, navigation }) {
             <View style={[styles.modalContent, styles.quantityModalContent]}>
               <ScrollView style={styles.quantityModalScroll} showsVerticalScrollIndicator={false} contentContainerStyle={styles.quantityModalScrollContent}>
                 <View style={styles.quantityModalHeader}>
-                <Text style={styles.modalTitle}>Add to Cart</Text>
-                <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
+                  <Text style={styles.modalTitle}>Add to Cart</Text>
+                  <Text style={styles.serviceName}>{selectedService?.bs_service_name}</Text>
 
-                <View style={styles.quantityContainer}>
-                  <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => Math.max(1, prev - 1))}>
-                    <Ionicons name='remove' size={24} color='#9C45F7' />
-                  </TouchableOpacity>
+                  <View style={styles.quantityContainer}>
+                    <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => Math.max(1, prev - 1))}>
+                      <Ionicons name='remove' size={24} color='#9C45F7' />
+                    </TouchableOpacity>
 
-                  <Text style={styles.quantityText}>{quantity}</Text>
+                    <Text style={styles.quantityText}>{quantity}</Text>
 
-                  <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => prev + 1)}>
-                    <Ionicons name='add' size={24} color='#9C45F7' />
-                  </TouchableOpacity>
-                </View>
+                    <TouchableOpacity style={styles.quantityButton} onPress={() => setQuantity((prev) => prev + 1)}>
+                      <Ionicons name='add' size={24} color='#9C45F7' />
+                    </TouchableOpacity>
+                  </View>
 
-                <Text style={styles.totalPrice}>Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
+                  <Text style={styles.totalPrice}>Total: ${selectedService ? (parsePrice(selectedService.bs_cost) * quantity).toFixed(2) : "0.00"}</Text>
                 </View>
 
                 <BountyRecipientPicker
