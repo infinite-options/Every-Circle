@@ -40,7 +40,7 @@ import { normalizeBusinessServiceFromApi as normalizeBusinessServiceRow, busines
 import { parsePrice, formatCostValue } from "../utils/priceUtils";
 import { isTruthyTaxableFlag, isValidTaxRate, TAX_RATE_VALIDATION_MESSAGE, taxRateForTaxableSelection } from "../utils/taxValidation";
 import { mergeCustomTags, parseTagList, serializeTagList } from "../utils/tagListUtils";
-import { buildBusinessServiceForApi, DEFAULT_RETURN_WINDOW_DAYS, normServiceReturnable, normServiceReturnWindowDays, normServiceTags } from "../utils/buildBusinessServiceForApi";
+import { buildBusinessServiceForApi, DEFAULT_RETURN_WINDOW_DAYS, normServiceReturnable, normServiceReturnWindowDays, normServiceTags, productImageFileFieldName, productImageUploadKey } from "../utils/buildBusinessServiceForApi";
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
 import { getAddressSuggestions, getBusinessSuggestions, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
 import {
@@ -594,7 +594,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   const businessGoogleId = business?.business_google_id || business?.googleId || "";
 
-  // Product/service row image (multipart bs_service_image_{index} on save; bs_image_key in business_services JSON)
+  // Product/service images: index 0 → bs_service_image_0; index 1+ → {bs_image_key}_img_0 in multipart + bs_image_key in JSON
   const [serviceProductImageUri, setServiceProductImageUri] = useState("");
   const [originalServiceProductImage, setOriginalServiceProductImage] = useState("");
   const [serviceProductWebFile, setServiceProductWebFile] = useState(null);
@@ -1785,9 +1785,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
       // BUSINESS-SPECIFIC: Services/products handling (EditProfileScreen handles experience, education, expertise, wishes, businesses arrays)
       const servicesToSend = servicesForPayload.map((service, idx) => buildBusinessServiceForApi(service, idx));
-      const invalidTaxProduct = servicesForPayload.find(
-        (s) => isTruthyTaxableFlag(s.bs_is_taxable) && !isValidTaxRate(s.bs_tax_rate),
-      );
+      const invalidTaxProduct = servicesForPayload.find((s) => isTruthyTaxableFlag(s.bs_is_taxable) && !isValidTaxRate(s.bs_tax_rate));
       if (invalidTaxProduct) {
         setIsLoading(false);
         if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -1819,21 +1817,22 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
       for (let index = 0; index < servicesForPayload.length; index++) {
         const svc = servicesForPayload[index];
-        if (svc._svcDeleteImageUrl) {
-          payload.append(`delete_bs_service_image_${index}`, svc._svcDeleteImageUrl);
+        if (index === 0 && svc._svcDeleteImageUrl) {
+          payload.append("delete_bs_service_image_0", svc._svcDeleteImageUrl);
         }
         const newUri = svc._svcNewImageUri;
         const webFile = svc._svcWebImageFile;
         if (!newUri && !(Platform.OS === "web" && webFile)) continue;
 
         let fileToAppend = null;
+        const fileBaseName = index === 0 ? "bs_service_image_0" : productImageFileFieldName(servicesToSend[index]?.bs_image_key || productImageUploadKey(index), 0);
         if (Platform.OS === "web" && webFile) {
           fileToAppend = webFile;
         } else if (Platform.OS === "web" && newUri && isBlobOrDataUriLocal(newUri)) {
           try {
             const response = await fetch(newUri);
             const blob = await response.blob();
-            fileToAppend = new File([blob], `bs_service_image_${index}.jpg`, { type: blob.type || "image/jpeg" });
+            fileToAppend = new File([blob], `${fileBaseName}.jpg`, { type: blob.type || "image/jpeg" });
           } catch (err) {
             console.error("Failed to prepare web product image:", err);
           }
@@ -1841,26 +1840,35 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           const uriParts = newUri.split(".");
           const fileType = uriParts.length > 1 ? uriParts[uriParts.length - 1].split(/[?#]/)[0] : "jpg";
           const mimeType = ["jpg", "jpeg", "png", "gif", "webp"].includes(fileType.toLowerCase()) ? `image/${fileType === "jpg" ? "jpeg" : fileType}` : "image/jpeg";
-          fileToAppend = { uri: newUri, type: mimeType, name: `bs_service_image_${index}.${fileType}` };
+          fileToAppend = { uri: newUri, type: mimeType, name: `${fileBaseName}.${fileType}` };
         } else if (newUri && newUri.startsWith("data:")) {
           try {
             const response = await fetch(newUri);
             const blob = await response.blob();
-            fileToAppend = new File([blob], `bs_service_image_${index}.jpg`, { type: blob.type || "image/jpeg" });
+            fileToAppend = new File([blob], `${fileBaseName}.jpg`, { type: blob.type || "image/jpeg" });
           } catch (err) {
             console.error("Failed to prepare product image:", err);
           }
         }
 
         if (fileToAppend) {
-          payload.append(`bs_service_image_${index}`, fileToAppend);
+          if (index === 0) {
+            payload.append("bs_service_image_0", fileToAppend);
+          } else {
+            const imgKey = servicesToSend[index]?.bs_image_key;
+            if (imgKey) {
+              payload.append(productImageFileFieldName(imgKey, 0), fileToAppend);
+            } else {
+              console.warn(`EditBusinessProfileScreen - skipping product image upload at index ${index}: missing bs_image_key`);
+            }
+          }
         }
       }
 
-      for (let index = 0; index < servicesForPayload.length; index++) {
-        const svc = servicesForPayload[index];
-        const imgPublic = svc.bs_service_image_is_public === 1 || svc.bs_service_image_is_public === "1" || svc.bs_service_image_is_public === true;
-        payload.append(`bs_service_image_${index}_is_public`, imgPublic ? "1" : "0");
+      if (servicesForPayload.length > 0) {
+        const firstSvc = servicesForPayload[0];
+        const imgPublic = firstSvc.bs_service_image_is_public === 1 || firstSvc.bs_service_image_is_public === "1" || firstSvc.bs_service_image_is_public === true;
+        payload.append("bs_service_image_0_is_public", imgPublic ? "1" : "0");
       }
 
       // BUSINESS-SPECIFIC: Business users handling (EditProfileScreen doesn't have this)
@@ -2734,6 +2742,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     let _svcWebImageFile = null;
     let _svcDeleteImageUrl = null;
 
+    const arrayIndex = editingServiceIndex !== null ? editingServiceIndex : services.length;
     const orig = originalServiceProductImage;
     const cur = serviceProductImageUri;
 
@@ -2750,7 +2759,17 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         if (orig && (orig.startsWith("http://") || orig.startsWith("https://"))) {
           _svcDeleteImageUrl = orig;
         }
-        nextBsImageKey = "";
+        // Product #1 uses bs_service_image_0 (no bs_image_key). Index 1+ needs a stable multipart key.
+        nextBsImageKey = arrayIndex === 0 ? "" : productImageUploadKey(arrayIndex);
+      }
+    } else if (existingService?._svcNewImageUri || existingService?._svcWebImageFile) {
+      // Preserve pending upload when form fields change but image was not touched.
+      _svcNewImageUri = existingService._svcNewImageUri || null;
+      _svcWebImageFile = existingService._svcWebImageFile || null;
+      _svcDeleteImageUrl = existingService._svcDeleteImageUrl || null;
+      if (arrayIndex > 0) {
+        const keyRaw = existingService.bs_image_key != null ? String(existingService.bs_image_key).trim() : "";
+        nextBsImageKey = keyRaw && !keyRaw.startsWith("http://") && !keyRaw.startsWith("https://") ? keyRaw : productImageUploadKey(arrayIndex);
       }
     }
 
@@ -2762,8 +2781,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     const conditionTypeForList = condLow === "used" ? "used" : condLow === "new" ? "new" : "";
     const conditionDetailForList = condLow === "used" ? String(formSource.bs_condition_detail || "").trim() : "";
     const freeShippingForList = formSource.bs_free_shipping === 1 || formSource.bs_free_shipping === "1" || formSource.bs_free_shipping === true ? 1 : 0;
-    const buyerPaysShippingForList =
-      formSource.bs_buyer_pays_shipping === 1 || formSource.bs_buyer_pays_shipping === "1" || formSource.bs_buyer_pays_shipping === true ? 1 : 0;
+    const buyerPaysShippingForList = formSource.bs_buyer_pays_shipping === 1 || formSource.bs_buyer_pays_shipping === "1" || formSource.bs_buyer_pays_shipping === true ? 1 : 0;
 
     return {
       ...formSource,
@@ -3736,35 +3754,18 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 setIsChanged(true);
               }}
             >
-              <Text
-                style={[
-                  styles.bountyTypeBtnText,
-                  styles.bountyTypeBtnTextCompact,
-                  styles.bountyTypeBtnTextLong,
-                  isShippingNotApplicable(serviceForm) && styles.bountyTypeBtnTextActive,
-                ]}
-              >
+              <Text style={[styles.bountyTypeBtnText, styles.bountyTypeBtnTextCompact, styles.bountyTypeBtnTextLong, isShippingNotApplicable(serviceForm) && styles.bountyTypeBtnTextActive]}>
                 Not Applicable
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[
-                styles.bountyTypeBtn,
-                styles.bountyTypeBtnCompact,
-                (serviceForm.bs_free_shipping === 1 || serviceForm.bs_free_shipping === "1") && styles.bountyTypeBtnActive,
-              ]}
+              style={[styles.bountyTypeBtn, styles.bountyTypeBtnCompact, (serviceForm.bs_free_shipping === 1 || serviceForm.bs_free_shipping === "1") && styles.bountyTypeBtnActive]}
               onPress={() => {
                 setServiceForm((prev) => ({ ...prev, bs_free_shipping: 1, bs_buyer_pays_shipping: 0 }));
                 setIsChanged(true);
               }}
             >
-              <Text
-                style={[
-                  styles.bountyTypeBtnText,
-                  styles.bountyTypeBtnTextCompact,
-                  (serviceForm.bs_free_shipping === 1 || serviceForm.bs_free_shipping === "1") && styles.bountyTypeBtnTextActive,
-                ]}
-              >
+              <Text style={[styles.bountyTypeBtnText, styles.bountyTypeBtnTextCompact, (serviceForm.bs_free_shipping === 1 || serviceForm.bs_free_shipping === "1") && styles.bountyTypeBtnTextActive]}>
                 Free
               </Text>
             </TouchableOpacity>

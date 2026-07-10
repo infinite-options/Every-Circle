@@ -26,6 +26,25 @@ export function normServiceTags(service) {
   return serializeTagList(parseTagList(service?.bs_tags));
 }
 
+/** Stable multipart key for product images at array index 1+ (e.g. product_2). */
+export function productImageUploadKey(arrayIndex) {
+  return `product_${arrayIndex + 1}`;
+}
+
+/** Multipart file field for a product image upload (e.g. product_2_img_0). */
+export function productImageFileFieldName(bsImageKey, imageIndex = 0) {
+  return `${bsImageKey}_img_${imageIndex}`;
+}
+
+function isHttpUrl(value) {
+  const s = value == null ? "" : String(value).trim();
+  return s.startsWith("http://") || s.startsWith("https://");
+}
+
+function hasPendingServiceImageUpload(service) {
+  return Boolean(service?._svcNewImageUri || service?._svcWebImageFile);
+}
+
 /**
  * Build one business_services row for PUT/POST (backend contract).
  * Strips client-only fields (_svc*, business_cc_fee_payer).
@@ -72,7 +91,6 @@ export function buildBusinessServiceForApi(service, idx = 0) {
     bs_cost_currency: service.bs_cost_currency || "USD",
     bs_is_visible: typeof service.bs_is_visible === "undefined" ? 1 : service.bs_is_visible,
     bs_status: service.bs_status || "active",
-    bs_image_key: service.bs_image_key || "",
     bs_qty_unlimited: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? 0 : 1,
     bs_available_quantity: service.bs_qty_unlimited === 0 || service.bs_qty_unlimited === "0" ? String(service.bs_available_quantity || "").trim() : "",
     bs_condition_type: condType,
@@ -84,6 +102,25 @@ export function buildBusinessServiceForApi(service, idx = 0) {
     bs_special_instructions_enabled: service.bs_special_instructions_enabled || 0,
     bs_special_instructions_max_chars: service.bs_special_instructions_max_chars || 80,
   };
+
+  const hasNewUpload = hasPendingServiceImageUpload(service);
+  const deleteUrl = isHttpUrl(service._svcDeleteImageUrl) ? String(service._svcDeleteImageUrl).trim() : "";
+
+  if (idx === 0) {
+    // Product #1: file upload uses top-level bs_service_image_0 only — never bs_image_key when uploading.
+    // Unchanged or delete-only rows omit bs_image_key; delete uses top-level delete_bs_service_image_0.
+  } else if (hasNewUpload) {
+    const keyRaw = service.bs_image_key != null ? String(service.bs_image_key).trim() : "";
+    baseSchema.bs_image_key = keyRaw && !isHttpUrl(keyRaw) ? keyRaw : productImageUploadKey(idx);
+    if (deleteUrl) {
+      baseSchema.delete_images = JSON.stringify([deleteUrl]);
+    }
+  } else if (deleteUrl) {
+    baseSchema.delete_images = JSON.stringify([deleteUrl]);
+  } else if (isHttpUrl(service.bs_image_key)) {
+    // URL-based image without file upload.
+    baseSchema.bs_image_key = String(service.bs_image_key).trim();
+  }
 
   if (service.bs_uid && String(service.bs_uid).trim() !== "") {
     return { ...baseSchema, bs_uid: String(service.bs_uid).trim() };
