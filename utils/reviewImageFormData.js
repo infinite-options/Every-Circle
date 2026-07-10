@@ -20,6 +20,10 @@ function extensionFromName(name, fallback = "jpg") {
   return ext || fallback;
 }
 
+function isReceiptPdfName(name) {
+  return extensionFromName(name, "") === "pdf";
+}
+
 function mimeFromName(name, fallback = "image/jpeg") {
   const ext = extensionFromName(name, "");
   if (!ext) return fallback;
@@ -81,7 +85,8 @@ export async function appendReviewImagesToFormData(formData, { receiptFile, uplo
   const log = [];
 
   if (receiptFile) {
-    const file = await resolveUploadFile(receiptFile, "img_receipt.jpg");
+    const receiptFallback = isReceiptPdfName(receiptFile.name) || String(receiptFile.mimeType || "").toLowerCase() === "application/pdf" ? "img_receipt.pdf" : "img_receipt.jpg";
+    const file = await resolveUploadFile(receiptFile, receiptFallback);
     if (file) {
       formData.append("img_receipt", file);
       log.push("img_receipt");

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity, Platform, Modal, Alert, TextInput, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -346,23 +346,28 @@ function enrichFromReceiptRow(row) {
         : "";
   if (!bsId) return null;
 
-  const choicesExtraCost = parseFloat(row.choices_extra_cost ?? row.ti_choices_extra_cost ?? 0) || 0;
   const selectedChoices = parseReceiptJsonField(row.selected_choices ?? row.ti_selected_choices, {});
   const selectedChoiceLabels = parseReceiptJsonField(row.selected_choice_labels ?? row.ti_selected_choice_labels, {});
   const selectedChoiceItems = parseReceiptJsonField(row.selected_choice_items ?? row.ti_selected_choice_items, []);
+  const selectedOptions = Array.isArray(row.selected_options) ? row.selected_options : [];
   const specialInstructions = String(row.special_instructions ?? row.ti_special_instructions ?? "").trim();
   const unitPriceRaw = row.unit_price ?? row.ti_unit_price;
   const unitPrice = unitPriceRaw != null && unitPriceRaw !== "" ? parseFloat(unitPriceRaw) : undefined;
+  const optionsExtraCost = selectedOptions.reduce((sum, opt) => sum + (parseFloat(opt?.extra_cost) || 0), 0);
+  const choicesExtraCost =
+    parseFloat(row.choices_extra_cost ?? row.ti_choices_extra_cost ?? 0) || optionsExtraCost || 0;
   const itemizedLines = getItemizedChoiceLines({
     selectedChoiceItems,
     selectedChoiceLabels,
+    selected_options: selectedOptions,
     choicesExtraCost,
   });
   const hasLabels = selectedChoiceLabels && typeof selectedChoiceLabels === "object" && Object.keys(selectedChoiceLabels).length > 0;
   const hasChoices = selectedChoices && typeof selectedChoices === "object" && Object.keys(selectedChoices).length > 0;
   const hasItemized = itemizedLines.length > 0;
+  const hasSelectedOptions = selectedOptions.length > 0;
 
-  if (choicesExtraCost <= 0 && !hasLabels && !hasChoices && !hasItemized && !specialInstructions) return null;
+  if (choicesExtraCost <= 0 && !hasLabels && !hasChoices && !hasItemized && !hasSelectedOptions && !specialInstructions) return null;
 
   return {
     [bsId]: {
@@ -370,6 +375,7 @@ function enrichFromReceiptRow(row) {
       selectedChoiceLabels: hasLabels ? selectedChoiceLabels : {},
       selectedChoiceItems: itemizedLines,
       selectedChoices: hasChoices ? selectedChoices : {},
+      selected_options: hasSelectedOptions ? selectedOptions : [],
       specialInstructions,
       unitPrice,
     },
@@ -665,6 +671,116 @@ function isBusinessProductSellerLine(item) {
   return serviceId.startsWith("250-");
 }
 
+function resolveProductUidFromSaleLine(row) {
+  return String(row?.ti_bs_id ?? row?.bs_uid ?? "").trim();
+}
+
+function getSaleLineQty(row) {
+  const q = parseInt(row?.ti_bs_qty, 10);
+  return Number.isFinite(q) && q > 0 ? q : 1;
+}
+
+function getSaleLineUnitCost(row) {
+  const cost = parseFloat(row?.ti_bs_cost ?? row?.bs_cost ?? 0);
+  return Number.isFinite(cost) ? cost : 0;
+}
+
+function aggregateBusinessProductSales(bountyLines) {
+  if (!Array.isArray(bountyLines)) return [];
+  const byProduct = {};
+  for (const row of bountyLines) {
+    const productUid = resolveProductUidFromSaleLine(row);
+    if (!productUid) continue;
+
+    const qty = getSaleLineQty(row);
+    const unitCost = getSaleLineUnitCost(row);
+    const bountyPaid = parseFloat(row?.bounty_paid ?? 0) || 0;
+    const productName = String(row?.bs_service_name || row?.bs_service_desc || "Unknown product").trim() || "Unknown product";
+
+    if (!byProduct[productUid]) {
+      byProduct[productUid] = {
+        productUid,
+        productName,
+        unitsSold: 0,
+        revenue: 0,
+        bountyPaid: 0,
+        sales: [],
+      };
+    }
+
+    const bucket = byProduct[productUid];
+    bucket.unitsSold += qty;
+    bucket.revenue += unitCost * qty;
+    bucket.bountyPaid += bountyPaid;
+    if (bucket.productName === "Unknown product" && productName !== "Unknown product") {
+      bucket.productName = productName;
+    }
+    bucket.sales.push(row);
+  }
+
+  return Object.values(byProduct)
+    .map((product) => ({
+      ...product,
+      sales: [...product.sales].sort((a, b) => (transactionDateMs(b) || 0) - (transactionDateMs(a) || 0)),
+    }))
+    .sort((a, b) => a.productName.localeCompare(b.productName));
+}
+
+function resolveSaleBuyerName(saleRow) {
+  const full = [saleRow?.buyer_first_name, saleRow?.buyer_last_name].filter(Boolean).join(" ").trim();
+  if (full) return full;
+  const purchaser = String(saleRow?.purchaser_name || "").trim();
+  if (purchaser) return purchaser;
+  const profileId = String(saleRow?.transaction_profile_id || "").trim();
+  return profileId || "Unknown buyer";
+}
+
+function findReceiptLineForProductSale(receiptLines, saleRow, productUid) {
+  if (!Array.isArray(receiptLines)) return null;
+  const tiUid = saleRow?.ti_uid != null ? String(saleRow.ti_uid).trim() : "";
+  if (tiUid) {
+    const byTiUid = receiptLines.find((line) => String(line?.ti_uid ?? "").trim() === tiUid);
+    if (byTiUid) return byTiUid;
+  }
+  return receiptLines.find((line) => resolveProductUidFromSaleLine(line) === productUid) || null;
+}
+
+function getProductSaleChoiceEnrichment(receiptLine) {
+  if (!receiptLine) return null;
+  const enrichMap = enrichFromReceiptRow(receiptLine);
+  if (!enrichMap) return null;
+  return Object.values(enrichMap)[0] || null;
+}
+
+function formatProductSaleReceivedStatus(receiptLine, saleRow) {
+  const purchasedQty = receiptLine ? getReceiptLineQty(receiptLine) : getSaleLineQty(saleRow);
+  const receivedQty = receiptLine ? getPreviouslyReceivedQty(receiptLine) : Math.max(0, Math.round(parsePrice(saleRow?.ti_received_qty)));
+  if (receivedQty >= purchasedQty) return "Yes";
+  if (receivedQty > 0) return `${receivedQty}/${purchasedQty}`;
+  return "No";
+}
+
+function formatProductSaleDeliveryStatus(saleRow, receiptLine) {
+  const inEscrow = saleRow?.transaction_in_escrow ?? saleRow?.in_escrow;
+  if (Number(inEscrow) === 1) return "Pending";
+  if (receiptLine) {
+    const purchasedQty = getReceiptLineQty(receiptLine);
+    const receivedQty = getPreviouslyReceivedQty(receiptLine);
+    if (receivedQty >= purchasedQty) return "Complete";
+  }
+  return "Released";
+}
+
+function getProductSaleAmountCharged(saleRow, receiptLine) {
+  const qty = receiptLine ? getReceiptLineQty(receiptLine) : getSaleLineQty(saleRow);
+  const baseCost = receiptLine ? parseFloat(receiptLine.ti_bs_cost ?? 0) || getSaleLineUnitCost(saleRow) : getSaleLineUnitCost(saleRow);
+  const enrich = getProductSaleChoiceEnrichment(receiptLine);
+  const choicesExtra = parseFloat(enrich?.choicesExtraCost || 0) || 0;
+  const unitFromReceipt = parseFloat(receiptLine?.unit_price ?? receiptLine?.ti_unit_price);
+  const unitPrice = Number.isFinite(unitFromReceipt) && unitFromReceipt > 0 ? unitFromReceipt : baseCost + choicesExtra;
+  return unitPrice * qty;
+}
+
 function extractBusinessRawFromAccountScreenPayload(root, payload) {
   const tryNode = (node) => {
     if (node == null || typeof node !== "object") return null;
@@ -824,6 +940,13 @@ export default function AccountScreen({ navigation }) {
   const [expertiseLoading, setExpertiseLoading] = useState(true);
   const [sellerTxData, setSellerTxData] = useState([]);
   const [salesModal, setSalesModal] = useState({ visible: false, item: null, transactions: [] });
+  const [productSalesModal, setProductSalesModal] = useState({
+    visible: false,
+    product: null,
+    sales: [],
+    receiptByTxn: {},
+    loading: false,
+  });
   const [businessTransactionData, setBusinessTransactionData] = useState([]);
   const [businessTransactionLoading, setBusinessTransactionLoading] = useState(true);
   const [businessUID, setBusinessUID] = useState(null);
@@ -1672,6 +1795,70 @@ export default function AccountScreen({ navigation }) {
     [selectedAccount, businessUID],
   );
 
+  const openProductSalesModal = useCallback(
+    async (product) => {
+      if (!product) return;
+      setProductSalesModal({
+        visible: true,
+        product,
+        sales: product.sales || [],
+        receiptByTxn: {},
+        loading: true,
+      });
+
+      const biz = selectedAccount !== "personal" ? selectedAccount : businessUID;
+      const uniqueTxnIds = [...new Set((product.sales || []).map((sale) => sale.transaction_uid).filter(Boolean))];
+      const receiptByTxn = {};
+
+      await Promise.all(
+        uniqueTxnIds.map(async (txnUid) => {
+          const sale = (product.sales || []).find((row) => row.transaction_uid === txnUid);
+          if (!sale?.transaction_profile_id || !biz) return;
+
+          if (businessReceiptCache[txnUid]) {
+            receiptByTxn[txnUid] = businessReceiptCache[txnUid];
+            return;
+          }
+
+          try {
+            const txn = {
+              transaction_uid: txnUid,
+              transaction_profile_id: sale.transaction_profile_id,
+            };
+            const response = await fetch(buildTransactionReceiptUrl(txn, sale.transaction_profile_id, { sellerId: biz }), {
+              method: "GET",
+            });
+            if (response.ok) {
+              const data = await response.json();
+              receiptByTxn[txnUid] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+            } else {
+              receiptByTxn[txnUid] = [];
+            }
+          } catch {
+            receiptByTxn[txnUid] = [];
+          }
+        }),
+      );
+
+      setProductSalesModal((prev) => ({
+        ...prev,
+        receiptByTxn,
+        loading: false,
+      }));
+    },
+    [selectedAccount, businessUID, businessReceiptCache],
+  );
+
+  const closeProductSalesModal = useCallback(() => {
+    setProductSalesModal({
+      visible: false,
+      product: null,
+      sales: [],
+      receiptByTxn: {},
+      loading: false,
+    });
+  }, []);
+
   /**
    * GET /api/v1/account-screen/business/:business_uid — product results + seller lines for grouping/receipts.
    * @param {string} [primaryBusinessUidOverride] — optional first-business uid before `businessUID` state commits.
@@ -2427,6 +2614,10 @@ export default function AccountScreen({ navigation }) {
     bountyData?.data && Array.isArray(bountyData.data) ? bountyData.data.filter((i) => i.in_escrow === 1).reduce((s, i) => s + parseFloat(i.bounty_earned || 0), 0) : 0;
 
   const businessNetEarningsTotal = businessTransactionData.reduce((s, t) => s + parseFloat(t.net_earning || 0), 0);
+  const productSalesSummary = useMemo(
+    () => aggregateBusinessProductSales(businessBountyData?.data || []),
+    [businessBountyData],
+  );
 
   /** Debug Mode Yes (Settings): show Transaction ID, Type, Purchased Item. Narrow web (<700px) uses the same compact layout as mobile without those debug columns. Purchased Item also shows on web when width > 600 regardless of Debug Mode (unless compact dev flag hides it). */
   const purchasesShowDebugColumns = SHOW_NETWORK_DEBUG_UI !== 0 && settingsDebugModeEnabled;
@@ -2836,45 +3027,46 @@ export default function AccountScreen({ navigation }) {
           </>
         ) : (
           <>
-            {/* Product Results formerly Business Bounty Results */}
+            {/* Product Sales formerly Product Results / Business Bounty Results */}
             <View style={styles.sectionContainer}>
               <TouchableOpacity style={styles.sectionHeader} onPress={() => setShowProductResults(!showProductResults)}>
-                <Text style={styles.sectionHeaderText}>PRODUCT RESULTS</Text>
+                <Text style={styles.sectionHeaderText}>PRODUCT SALES</Text>
                 <Ionicons name={showProductResults ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showProductResults && (
                 <>
                   {businessBountyLoading ? (
-                    <Text style={styles.loadingText}>Loading business bounty data...</Text>
+                    <Text style={styles.loadingText}>Loading product sales...</Text>
                   ) : businessBountyData?.error ? (
                     <Text style={styles.errorText}>Error: {businessBountyData.error}</Text>
-                  ) : businessBountyData?.data ? (
+                  ) : productSalesSummary.length > 0 ? (
                     <View>
-                      {/* Table Header */}
-                      <View style={styles.businessBountyTableHeader}>
-                        <Text style={styles.businessBountyHeaderCell}>Date</Text>
-                        <Text style={styles.businessBountyHeaderCell}>Product UID</Text>
-                        <Text style={styles.businessBountyHeaderCell}>Product Name</Text>
-                        <Text style={styles.businessBountyHeaderCell}>Cost</Text>
-                        <Text style={styles.businessBountyHeaderCell}>Bounty</Text>
-                        <Text style={styles.businessBountyHeaderCell}>Qty</Text>
-                        <Text style={styles.businessBountyHeaderCell}>Bounty Paid</Text>
+                      <View style={styles.productSalesTableHeader}>
+                        <Text style={[styles.productSalesHeaderCell, styles.productSalesHeaderCellProduct]}>Product</Text>
+                        <Text style={styles.productSalesHeaderCell}>UID</Text>
+                        <Text style={styles.productSalesHeaderCell}>Units sold</Text>
+                        <Text style={styles.productSalesHeaderCell}>Revenue</Text>
+                        <Text style={styles.productSalesHeaderCell}>Bounty paid</Text>
                       </View>
-                      {/* Table Rows */}
-                      {businessBountyData.data.map((transaction, index) => (
-                          <View key={transaction.transaction_uid || index} style={styles.businessBountyTableRow}>
-                            <Text style={styles.businessBountyCell}>{formatTransactionDate(transaction)}</Text>
-                            <Text style={styles.businessBountyCell}>{transaction.bs_uid || "N/A"}</Text>
-                            <Text style={styles.businessBountyCell}>{transaction.bs_service_name || "N/A"}</Text>
-                            <Text style={styles.businessBountyCell}>${parseFloat(transaction.bs_cost || 0).toFixed(2)}</Text>
-                            <Text style={styles.businessBountyCell}>${parseFloat(transaction.bs_bounty || 0).toFixed(2)}</Text>
-                            <Text style={styles.businessBountyCell}>{transaction.ti_bs_qty || 0}</Text>
-                            <Text style={styles.businessBountyCell}>${parseFloat(transaction.bounty_paid || 0).toFixed(2)}</Text>
-                          </View>
-                        ))}
+                      {productSalesSummary.map((product) => (
+                        <TouchableOpacity
+                          key={product.productUid}
+                          style={styles.productSalesTableRow}
+                          onPress={() => openProductSalesModal(product)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.productSalesCell, styles.productSalesCellProduct, styles.productSalesCellLink]} numberOfLines={2}>
+                            {product.productName}
+                          </Text>
+                          <Text style={styles.productSalesCell}>{product.productUid}</Text>
+                          <Text style={styles.productSalesCell}>{product.unitsSold}</Text>
+                          <Text style={styles.productSalesCell}>${product.revenue.toFixed(2)}</Text>
+                          <Text style={styles.productSalesCell}>${product.bountyPaid.toFixed(2)}</Text>
+                        </TouchableOpacity>
+                      ))}
                     </View>
                   ) : (
-                    <Text style={styles.noDataText}>No business bounty data available.</Text>
+                    <Text style={styles.noDataText}>No product sales available.</Text>
                   )}
                 </>
               )}
@@ -3106,9 +3298,10 @@ export default function AccountScreen({ navigation }) {
                       const baseCost = parseFloat(item.ti_bs_cost || 0);
                       const qty = parseInt(item.ti_bs_qty || 1, 10);
 
-                      const enrich = receiptEnrichedItems[item.ti_bs_id]
-                        || receiptEnrichedItems[item.bs_uid]
-                        || {};
+                      const enrich = {
+                        ...(receiptEnrichedItems[item.ti_bs_id] || receiptEnrichedItems[item.bs_uid] || {}),
+                        ...(Array.isArray(item.selected_options) && item.selected_options.length > 0 ? { selected_options: item.selected_options } : {}),
+                      };
 
                       if (isOfferingReceipt) {
                         const offeringName = String(item.bs_service_name || item.bs_service_desc || "N/A").trim() || "N/A";
@@ -3879,6 +4072,111 @@ export default function AccountScreen({ navigation }) {
         </View>
       </Modal>
 
+      {/* Product Sales Detail Modal */}
+      <Modal animationType='slide' transparent={true} visible={productSalesModal.visible} onRequestClose={closeProductSalesModal}>
+        <View style={[styles.productSalesModalOverlay, darkMode && styles.darkModalOverlay]}>
+          <View style={[styles.productSalesModalContent, darkMode && styles.darkModalContent]}>
+            <Text style={[styles.productSalesModalTitle, darkMode && styles.darkTitle]}>{productSalesModal.product?.productName || "Product"}</Text>
+            <Text style={[styles.productSalesModalSubtitle, darkMode && { color: "#aaa" }]}>
+              {productSalesModal.product?.productUid || "—"}
+              {productSalesModal.sales?.length
+                ? ` · ${productSalesModal.sales.length} sale${productSalesModal.sales.length !== 1 ? "s" : ""}`
+                : ""}
+            </Text>
+
+            {productSalesModal.loading ? (
+              <ActivityIndicator size='large' color='#18884A' style={{ marginVertical: 24 }} />
+            ) : (
+              <ScrollView style={styles.productSalesModalScroll}>
+                {productSalesModal.sales?.length === 0 ? (
+                  <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No sales recorded for this product yet.</Text>
+                ) : (
+                  productSalesModal.sales.map((sale, index) => {
+                    const productUid = productSalesModal.product?.productUid || resolveProductUidFromSaleLine(sale);
+                    const receiptLines = productSalesModal.receiptByTxn?.[sale.transaction_uid] || [];
+                    const receiptLine = findReceiptLineForProductSale(receiptLines, sale, productUid);
+                    const enrich = getProductSaleChoiceEnrichment(receiptLine);
+                    const qty = receiptLine ? getReceiptLineQty(receiptLine) : getSaleLineQty(sale);
+                    const baseCost = receiptLine ? parseFloat(receiptLine.ti_bs_cost ?? 0) || getSaleLineUnitCost(sale) : getSaleLineUnitCost(sale);
+                    const amountCharged = getProductSaleAmountCharged(sale, receiptLine);
+                    const bountyPaid = parseFloat(sale.bounty_paid ?? 0) || 0;
+                    const summaryDescription = String(
+                      receiptLine?.bs_service_desc || receiptLine?.bs_service_name || sale.bs_service_name || sale.bs_service_desc || "Item",
+                    ).trim() || "Item";
+                    const purchaseDateObj = parseTransactionDateTime(sale);
+                    const purchaseDate = purchaseDateObj
+                      ? purchaseDateObj.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+                      : formatTransactionDate(sale);
+
+                    return (
+                      <View
+                        key={`${sale.transaction_uid || "sale"}-${sale.ti_uid || index}`}
+                        style={[styles.productSaleDetailCard, index > 0 && styles.productSaleDetailCardSpaced, darkMode && styles.productSaleDetailCardDark]}
+                      >
+                        <View style={styles.productSaleDetailHeaderRow}>
+                          <Text style={[styles.productSaleDetailBuyer, darkMode && styles.darkTitle]}>{resolveSaleBuyerName(sale)}</Text>
+                          <Text style={[styles.productSaleDetailDate, darkMode && { color: "#aaa" }]}>{purchaseDate}</Text>
+                        </View>
+
+                        <View style={styles.productSaleDetailOptions}>
+                          <ProductOrderSummaryLines
+                            description={summaryDescription}
+                            baseCost={baseCost}
+                            choiceSource={enrich}
+                            specialInstructions={enrich?.specialInstructions}
+                            baseTextStyle={{ fontSize: 13, color: darkMode ? "#eee" : "#333", lineHeight: 18, marginBottom: 2 }}
+                            choiceTextStyle={{ fontSize: 11, color: darkMode ? "#ccc" : "#555", lineHeight: 16 }}
+                            noteTextStyle={{
+                              fontSize: 11,
+                              color: darkMode ? "#aaa" : "#777",
+                              fontStyle: "italic",
+                              lineHeight: 16,
+                              marginTop: 2,
+                            }}
+                          />
+                        </View>
+
+                        <View style={styles.productSaleDetailMetrics}>
+                          <Text style={[styles.productSaleDetailMetric, darkMode && { color: "#ddd" }]}>
+                            Qty: <Text style={[styles.productSaleDetailMetricValue, darkMode && { color: "#fff" }]}>{qty}</Text>
+                          </Text>
+                          <Text style={[styles.productSaleDetailMetric, darkMode && { color: "#ddd" }]}>
+                            Price: <Text style={[styles.productSaleDetailMetricValue, darkMode && { color: "#fff" }]}>${baseCost.toFixed(2)}</Text>
+                          </Text>
+                          <Text style={[styles.productSaleDetailMetric, darkMode && { color: "#ddd" }]}>
+                            Charged: <Text style={[styles.productSaleDetailMetricValue, darkMode && { color: "#fff" }]}>${amountCharged.toFixed(2)}</Text>
+                          </Text>
+                        </View>
+
+                        <View style={styles.productSaleDetailMetrics}>
+                          <Text style={[styles.productSaleDetailMetric, darkMode && { color: "#ddd" }]}>
+                            Delivered: <Text style={[styles.productSaleDetailMetricValue, darkMode && { color: "#fff" }]}>{formatProductSaleDeliveryStatus(sale, receiptLine)}</Text>
+                          </Text>
+                          <Text style={[styles.productSaleDetailMetric, darkMode && { color: "#ddd" }]}>
+                            Received: <Text style={[styles.productSaleDetailMetricValue, darkMode && { color: "#fff" }]}>{formatProductSaleReceivedStatus(receiptLine, sale)}</Text>
+                          </Text>
+                          <Text style={[styles.productSaleDetailMetric, darkMode && { color: "#ddd" }]}>
+                            Bounty: <Text style={[styles.productSaleDetailMetricValue, darkMode && { color: "#fff" }]}>${bountyPaid.toFixed(2)}</Text>
+                          </Text>
+                        </View>
+
+                        {sale.transaction_uid ? (
+                          <Text style={[styles.productSaleDetailTxnId, darkMode && { color: "#888" }]}>Transaction {sale.transaction_uid}</Text>
+                        ) : null}
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity onPress={closeProductSalesModal} style={styles.productSalesModalCloseButton}>
+              <Text style={styles.productSalesModalCloseButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Sales Detail Modal */}
       <Modal animationType='slide' transparent={true} visible={salesModal.visible} onRequestClose={() => setSalesModal({ visible: false, item: null, transactions: [] })}>
         <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" }}>
@@ -4128,6 +4426,147 @@ const styles = StyleSheet.create({
     color: "#333",
     paddingHorizontal: 2,
     textAlign: "center",
+  },
+  productSalesTableHeader: {
+    flexDirection: "row",
+    backgroundColor: "#18884A",
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    marginBottom: 2,
+    width: "100%",
+  },
+  productSalesHeaderCell: {
+    flex: 1,
+    fontSize: 12,
+    color: "#fff",
+    fontWeight: "bold",
+    paddingHorizontal: 2,
+    textAlign: "center",
+  },
+  productSalesHeaderCellProduct: {
+    flex: 1.6,
+    textAlign: "left",
+    paddingLeft: 6,
+  },
+  productSalesTableRow: {
+    flexDirection: "row",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+    width: "100%",
+    alignItems: "center",
+  },
+  productSalesCell: {
+    flex: 1,
+    fontSize: 11,
+    color: "#333",
+    paddingHorizontal: 2,
+    textAlign: "center",
+  },
+  productSalesCellProduct: {
+    flex: 1.6,
+    textAlign: "left",
+    paddingLeft: 6,
+  },
+  productSalesCellLink: {
+    color: "#1a73e8",
+    textDecorationLine: "underline",
+  },
+  productSalesModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  productSalesModalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 20,
+    width: "92%",
+    maxWidth: 640,
+    maxHeight: "85%",
+  },
+  productSalesModalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#222",
+    marginBottom: 4,
+  },
+  productSalesModalSubtitle: {
+    fontSize: 13,
+    color: "#888",
+    marginBottom: 16,
+  },
+  productSalesModalScroll: {
+    maxHeight: 420,
+  },
+  productSaleDetailCard: {
+    borderWidth: 1,
+    borderColor: "#eee",
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: "#fafafa",
+  },
+  productSaleDetailCardSpaced: {
+    marginTop: 12,
+  },
+  productSaleDetailCardDark: {
+    backgroundColor: "#2a2a2a",
+    borderColor: "#444",
+  },
+  productSaleDetailHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 8,
+    gap: 12,
+  },
+  productSaleDetailBuyer: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#222",
+  },
+  productSaleDetailDate: {
+    fontSize: 12,
+    color: "#999",
+  },
+  productSaleDetailOptions: {
+    marginBottom: 10,
+  },
+  productSaleDetailMetrics: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginBottom: 4,
+  },
+  productSaleDetailMetric: {
+    fontSize: 12,
+    color: "#444",
+  },
+  productSaleDetailMetricValue: {
+    fontWeight: "600",
+    color: "#222",
+  },
+  productSaleDetailTxnId: {
+    fontSize: 11,
+    color: "#999",
+    marginTop: 8,
+  },
+  productSalesModalCloseButton: {
+    marginTop: 16,
+    alignSelf: "center",
+    paddingHorizontal: 32,
+    paddingVertical: 10,
+    backgroundColor: "#222",
+    borderRadius: 8,
+  },
+  productSalesModalCloseButtonText: {
+    color: "#fff",
+    fontWeight: "600",
   },
   businessTransactionHeaderRow: {
     flexDirection: "row",

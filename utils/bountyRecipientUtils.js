@@ -1,8 +1,17 @@
-/** True when API marks a review as a verified purchase. */
+/** True when a review counts as a verified purchase (API flag or linked transaction/receipt). */
 export function isReviewVerified(review) {
   if (!review) return false;
-  const v = review.is_verified;
-  return v === true || v === 1 || v === "1";
+
+  const apiFlag = review.is_verified;
+  if (apiFlag === true || apiFlag === 1 || apiFlag === "1") return true;
+
+  const transactionId = String(review.ratings_transaction_id ?? review.transaction_uid ?? "").trim();
+  if (transactionId) return true;
+
+  const receiptUrl = String(review.rating_receipt_url ?? review.ratings_receipt_url ?? "").trim();
+  if (receiptUrl) return true;
+
+  return false;
 }
 
 /** Verified reviewers eligible to receive a product bounty. */
