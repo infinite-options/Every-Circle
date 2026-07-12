@@ -7,6 +7,7 @@ import AppHeader from "../components/AppHeader";
 import {
   ACCOUNT_SCREEN_PERSONAL_ENDPOINT,
   ACCOUNT_SCREEN_BUSINESS_ENDPOINT,
+  ORDERS_ENDPOINT,
   API_BASE_URL,
   TRANSACTION_RECEIPT_ENDPOINT,
   TRANSACTIONS_ENDPOINT,
@@ -703,6 +704,7 @@ function aggregateBusinessProductSales(bountyLines) {
   if (!Array.isArray(bountyLines)) return [];
   const byProduct = {};
   for (const row of bountyLines) {
+    if (isReturnListRow(row)) continue;
     const productUid = resolveProductUidFromSaleLine(row);
     if (!productUid) continue;
 
@@ -787,8 +789,423 @@ function formatProductSaleShortDate(saleRow) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+function resolveListRowOrderUid(row) {
+  return String(row?.order_uid ?? row?.transaction_uid ?? "").trim() || "—";
+}
+
 function resolveSaleOrderUid(saleRow) {
-  return String(saleRow?.transaction_uid ?? "").trim() || "—";
+  return resolveListRowOrderUid(saleRow);
+}
+
+function isReturnListRow(row) {
+  return Number(row?.is_return) === 1 || String(row?.transaction_type || "").toLowerCase() === "return";
+}
+
+function buildBountyPaidByOrderUid(bountyLines) {
+  const map = {};
+  for (const row of bountyLines || []) {
+    const orderUid = resolveListRowOrderUid(row);
+    if (orderUid === "—" || isReturnListRow(row)) continue;
+    map[orderUid] = (map[orderUid] || 0) + (parseFloat(row.bounty_paid ?? 0) || 0);
+  }
+  return map;
+}
+
+function buildBountyPaidByTransactionUid(bountyLines) {
+  const map = {};
+  for (const row of bountyLines || []) {
+    const txnUid = String(row?.transaction_uid ?? "").trim();
+    if (!txnUid) continue;
+    map[txnUid] = (map[txnUid] || 0) + (parseFloat(row.bounty_paid ?? 0) || 0);
+  }
+  return map;
+}
+
+function resolveListRowBountyPaid(row, bountyLines, bountyByOrderUid, bountyByTransactionUid) {
+  const isReturn = isReturnListRow(row);
+  const listTxnUid = String(row?.transaction_uid ?? "").trim();
+  const fromRow = parseFloat(row?.bounty_paid);
+  if (Number.isFinite(fromRow) && fromRow !== 0) return fromRow;
+  if (listTxnUid && bountyByTransactionUid?.[listTxnUid] != null) {
+    return bountyByTransactionUid[listTxnUid];
+  }
+  if (isReturn) return 0;
+  const orderUid = resolveListRowOrderUid(row);
+  return bountyByOrderUid?.[orderUid] ?? 0;
+}
+
+function mapTransactionListRowToOrderTableRow(row, bountyByOrderUid, bountyByTransactionUid) {
+  const orderUid = resolveListRowOrderUid(row);
+  const isReturn = isReturnListRow(row);
+  const dateMs = transactionDateMs(row);
+  const total = parseFloat(row.transaction_total);
+  const bountyPaid = resolveListRowBountyPaid(row, null, bountyByOrderUid, bountyByTransactionUid);
+  return {
+    key: String(row.transaction_uid || `${orderUid}-${dateMs}`),
+    orderUid,
+    rowLabel: isReturn ? "Return" : "Order",
+    listTransactionUid: String(row.transaction_uid || "").trim(),
+    isReturn,
+    placedBy: resolveSalePlacedByUid(row),
+    dateLabel: formatOrderShortDate(dateMs),
+    dateMs,
+    total: Number.isFinite(total) ? total : 0,
+    bountyPaid: Number.isFinite(bountyPaid) ? bountyPaid : 0,
+    delivered: isReturn ? "—" : getOrderDeliveredStatus([row]),
+    received: isReturn ? "—" : getOrderReceivedStatusFromSaleRows([row]),
+    daysOpen: isReturn ? "—" : formatOrderDaysOpen(dateMs),
+    rawRow: row,
+  };
+}
+
+function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines) {
+  if (!Array.isArray(sellerLines)) return [];
+  const bountyByOrderUid = buildBountyPaidByOrderUid(bountyLines);
+  const bountyByTransactionUid = buildBountyPaidByTransactionUid(bountyLines);
+  return sellerLines
+    .map((row) => mapTransactionListRowToOrderTableRow(row, bountyByOrderUid, bountyByTransactionUid))
+    .sort((a, b) => (b.dateMs || 0) - (a.dateMs || 0));
+}
+
+function normalizeOrderDetailPayload(json) {
+  const root = json && typeof json === "object" ? json : {};
+  const payload = root.data !== undefined && root.data !== null && typeof root.data === "object" && !Array.isArray(root.data) ? root.data : root;
+  if (!isApiSuccessCode(payload.code ?? root.code) && payload.sale == null && root.sale == null) {
+    throw new Error(String(payload.message || root.message || "Failed to load order detail."));
+  }
+  return payload.sale != null ? payload : root;
+}
+
+function buildOrderDetailUrl(orderUid, { profileId, businessUid } = {}) {
+  const params = new URLSearchParams();
+  if (profileId) params.set("profile_id", profileId);
+  if (businessUid) params.set("business_uid", businessUid);
+  const qs = params.toString();
+  const base = `${ORDERS_ENDPOINT}/${encodeURIComponent(orderUid)}`;
+  return withTimeZoneQuery(qs ? `${base}?${qs}` : base);
+}
+
+async function fetchOrderDetailApi(orderUid, ctx = {}) {
+  const url = buildOrderDetailUrl(orderUid, ctx);
+  const response = await fetch(url, { method: "GET" });
+  if (!response.ok) {
+    throw new Error(`Failed to load order (${response.status})`);
+  }
+  const json = await response.json();
+  return normalizeOrderDetailPayload(json);
+}
+
+function formatOrderMoney(value) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? `$${n.toFixed(2)}` : "—";
+}
+
+function formatSignedOrderMoney(value) {
+  const n = parseFloat(value);
+  if (!Number.isFinite(n)) return "—";
+  if (n < 0) return `-$${Math.abs(n).toFixed(2)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequestData) {
+  if (Array.isArray(orderLines) && orderLines.length > 0) {
+    return orderLines
+      .map((line) => {
+        const purchasedQty = Math.max(0, parseInt(line.ti_bs_qty, 10) || 0);
+        const remainingQty = Math.max(0, parseInt(line.remaining_qty, 10) ?? purchasedQty - (parseInt(line.returned_qty, 10) || 0));
+        const transactionItemUid = String(line.ti_uid || "").trim();
+        if (!transactionItemUid) return null;
+        return {
+          itemId: transactionItemUid,
+          itemName: line.item_name || "Item",
+          unitCost: line.ti_bs_cost,
+          purchasedQty,
+          remainingQty,
+          transactionItemUid,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  return (receiptLines || []).map((item, index) => {
+    const purchasedQty = getReceiptLineQty(item);
+    const alreadyReturnedQty = getReturnedQtyForLine(returnRequestData, index, purchasedQty);
+    const remainingQty = Math.max(0, purchasedQty - alreadyReturnedQty);
+    return {
+      itemId: String(index),
+      itemName: item.bs_service_name || "Item",
+      unitCost: item.ti_bs_cost,
+      purchasedQty,
+      remainingQty,
+      transactionItemUid: getReceiptLineTransactionItemUid(item),
+      receiptIndex: index,
+    };
+  });
+}
+
+function parseOrderMoneyField(value) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function buildOrderDetailFinancialBreakdown(sale, returns, summary) {
+  const saleAmount = parseOrderMoneyField(sale?.transaction_amount);
+  const saleTaxes = parseOrderMoneyField(sale?.transaction_taxes);
+  const saleFees = parseOrderMoneyField(sale?.transaction_fees);
+  const saleTotal = parseOrderMoneyField(sale?.transaction_total) || parseOrderMoneyField(summary?.gross_total);
+
+  let returnedAmount = 0;
+  let returnedTaxes = 0;
+  let returnedFees = 0;
+  let returnedTotal = 0;
+  for (const ret of returns || []) {
+    returnedAmount += parseOrderMoneyField(ret.transaction_amount);
+    returnedTaxes += parseOrderMoneyField(ret.transaction_taxes);
+    returnedFees += parseOrderMoneyField(ret.transaction_fees);
+    returnedTotal += parseOrderMoneyField(ret.transaction_total);
+  }
+
+  const hasReturns = (returns || []).length > 0;
+  const netAmount = saleAmount + returnedAmount;
+  const netTaxes = saleTaxes + returnedTaxes;
+  const netFees = saleFees + returnedFees;
+  const netTotal = parseOrderMoneyField(summary?.net_total) || saleTotal + returnedTotal;
+
+  return {
+    saleAmount,
+    saleTaxes,
+    saleFees,
+    saleTotal,
+    returnedAmount,
+    returnedTaxes,
+    returnedFees,
+    returnedTotal: parseOrderMoneyField(summary?.returned_total) || returnedTotal,
+    netAmount,
+    netTaxes,
+    netFees,
+    netTotal,
+    hasReturns,
+  };
+}
+
+function OrderDetailFinancialSummary({ sale, returns, summary, darkMode }) {
+  const breakdown = buildOrderDetailFinancialBreakdown(sale, returns, summary);
+  const labelStyle = [styles.orderDetailSectionText, darkMode && { color: "#ddd" }];
+  const valueStyle = [styles.orderDetailSummaryValue, darkMode && { color: "#eee" }];
+  const sectionTitle = (text) => (
+    <Text style={[styles.orderDetailSummarySectionLabel, darkMode && { color: "#aaa" }]}>{text}</Text>
+  );
+  const row = (label, value, { signed = false, emphasize = false } = {}) => (
+    <View style={styles.orderDetailSummaryRow} key={label}>
+      <Text style={labelStyle}>{label}</Text>
+      <Text
+        style={[
+          ...valueStyle,
+          emphasize && styles.orderDetailSummaryNet,
+          signed && parseFloat(value) < 0 && { color: "#B71C1C" },
+        ]}
+      >
+        {signed ? formatSignedOrderMoney(value) : formatOrderMoney(value)}
+      </Text>
+    </View>
+  );
+
+  return (
+    <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark]}>
+      {breakdown.hasReturns ? sectionTitle("Original order") : null}
+      {row("Merchandise (subtotal)", breakdown.saleAmount)}
+      {row("Sales tax", breakdown.saleTaxes)}
+      {row("Credit card fees", breakdown.saleFees)}
+      {breakdown.hasReturns ? row("Order total", breakdown.saleTotal, { emphasize: true }) : null}
+
+      {breakdown.hasReturns ? (
+        <>
+          {sectionTitle("Returns")}
+          {row("Returned merchandise", breakdown.returnedAmount, { signed: true })}
+          {row("Returned sales tax", breakdown.returnedTaxes, { signed: true })}
+          {row("Returned credit card fees", breakdown.returnedFees, { signed: true })}
+          {row("Returned total", breakdown.returnedTotal, { signed: true, emphasize: true })}
+          {sectionTitle("Net after returns")}
+          {row("Net merchandise", breakdown.netAmount, { signed: breakdown.netAmount < 0 })}
+          {row("Net sales tax", breakdown.netTaxes, { signed: breakdown.netTaxes < 0 })}
+          {row("Net credit card fees", breakdown.netFees, { signed: breakdown.netFees < 0 })}
+        </>
+      ) : null}
+
+      <View style={[styles.orderDetailSummaryRow, styles.orderDetailSummaryRowTotal]}>
+        <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>{breakdown.hasReturns ? "Net total" : "Amount paid"}</Text>
+        <Text style={[styles.orderDetailSummaryValue, styles.orderDetailSummaryNet, darkMode && { color: "#eee" }]}>
+          {formatOrderMoney(breakdown.hasReturns ? breakdown.netTotal : breakdown.saleTotal)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function OrderDetailReturnHeader({ transaction, darkMode }) {
+  const txnId = transaction?.transaction_uid || "—";
+  const dateLabel = transaction?.transaction_datetime
+    ? formatTransactionDate({ transaction_datetime: transaction.transaction_datetime })
+    : "—";
+  const buyerNote = String(transaction?.transaction_return_note || "").trim();
+
+  return (
+    <Text style={[styles.productSalesModalSubtitle, styles.orderDetailReturnSubtitle, darkMode && { color: "#aaa" }]}>
+      {txnId}
+      {dateLabel !== "—" ? ` · ${dateLabel}` : ""}
+      {buyerNote ? ` · Buyer's note: ${buyerNote}` : ""}
+    </Text>
+  );
+}
+
+function OrderDetailLinesTable({ lines, darkMode, footerLabel, footerAmount, footerAmountSigned, signedRows: signedRowsProp }) {
+  const signedRows = signedRowsProp ?? !!footerAmountSigned;
+  const detailRows = (lines || []).map((line, index) => {
+    const unitCost = Math.abs(parseFloat(line.ti_bs_cost) || 0);
+    const qty = Math.abs(
+      line.return_quantity != null ? parseInt(line.return_quantity, 10) || 0 : parseInt(line.ti_bs_qty, 10) || 0,
+    );
+    const lineTotal = unitCost * qty;
+    const displayQty = signedRows ? -qty : qty;
+    const displayUnitCost = signedRows ? -unitCost : unitCost;
+    const displayLineTotal = signedRows ? -lineTotal : lineTotal;
+    return {
+      key: line.ti_uid || `${line.ti_bs_id}-${index}`,
+      productId: line.ti_bs_id || "—",
+      description: line.item_name || "—",
+      unitCost: displayUnitCost,
+      qty: displayQty,
+      lineTotal: displayLineTotal,
+      isLast: index === lines.length - 1,
+    };
+  });
+
+  if (!detailRows.length) {
+    return <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No line items.</Text>;
+  }
+
+  const formatFooterAmount = footerAmountSigned ? formatSignedOrderMoney : formatOrderMoney;
+  const formatCellAmount = signedRows ? formatSignedOrderMoney : formatOrderMoney;
+  const footerValue = footerAmount ?? detailRows.reduce((sum, row) => sum + row.lineTotal, 0);
+  const signedCellStyle = signedRows ? { color: "#B71C1C" } : null;
+
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <View style={styles.businessOrderDetailTable}>
+        <View style={[styles.businessOrderDetailHeaderRow, darkMode && styles.productSalesDetailHeaderRowDark]}>
+          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColProductId]}>Product ID</Text>
+          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColDescription]}>Description</Text>
+          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColUnitCost]}>Unit cost</Text>
+          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColQty]}>Qty</Text>
+          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColMoney]}>Line total</Text>
+        </View>
+        {detailRows.map((row) => (
+          <View
+            key={row.key}
+            style={[
+              styles.businessOrderDetailDataRow,
+              !row.isLast && styles.productSalesDetailDataRowBorder,
+              darkMode && styles.productSalesDetailDataRowDark,
+            ]}
+          >
+            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColProductId, styles.businessOrderDetailProductId, darkMode && { color: "#eee" }]}>
+              {row.productId}
+            </Text>
+            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColDescription, darkMode && { color: "#ccc" }]} numberOfLines={3}>
+              {row.description}
+            </Text>
+            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
+              {formatCellAmount(row.unitCost)}
+            </Text>
+            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
+              {row.qty}
+            </Text>
+            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColMoney, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
+              {formatCellAmount(row.lineTotal)}
+            </Text>
+          </View>
+        ))}
+        {footerLabel ? (
+          <View style={[styles.orderDetailLineTableFooterRow, darkMode && styles.productSalesDetailTotalRowDark]}>
+            <Text style={[styles.orderDetailLineTableFooterLabel, styles.businessOrderDetailColProductId, darkMode && { color: "#eee" }]}>{footerLabel}</Text>
+            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColDescription]} />
+            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost]} />
+            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty]} />
+            <Text
+              style={[
+                styles.orderDetailLineTableFooterValue,
+                styles.businessOrderDetailColMoney,
+                footerAmountSigned && { color: "#B71C1C" },
+                darkMode && !footerAmountSigned && { color: "#eee" },
+              ]}
+            >
+              {formatFooterAmount(footerValue)}
+            </Text>
+          </View>
+        ) : null}
+      </View>
+    </ScrollView>
+  );
+}
+
+function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, error, darkMode, isSellerView }) {
+  if (!visible) return null;
+
+  const sale = orderDetail?.sale || null;
+  const returns = Array.isArray(orderDetail?.returns) ? orderDetail.returns : [];
+  const summary = orderDetail?.summary || null;
+  const saleLines = Array.isArray(sale?.lines) ? sale.lines : [];
+  const normalizedReturnStatus = String(sale?.transaction_return_status || "").toLowerCase();
+
+  return (
+    <Modal animationType='slide' transparent visible={visible} onRequestClose={onClose}>
+      <View style={[styles.productSalesModalOverlay, darkMode && styles.darkModalOverlay]}>
+        <View style={[styles.productSalesModalContent, styles.businessOrderDetailModalContent, darkMode && styles.darkModalContent]}>
+          <Text style={[styles.productSalesModalTitle, darkMode && styles.darkTitle]}>Order Details</Text>
+          <Text style={[styles.productSalesModalSubtitle, darkMode && { color: "#aaa" }]}>
+            {orderDetail?.order_uid || orderUid || "—"}
+            {sale?.transaction_datetime ? ` · ${formatTransactionDate({ transaction_datetime: sale.transaction_datetime })}` : ""}
+            {isSellerView && sale?.transaction_profile_id ? ` · Placed by ${sale.transaction_profile_id}` : ""}
+          </Text>
+
+          {loading ? (
+            <ActivityIndicator size='large' color='#18884A' style={{ marginVertical: 24 }} />
+          ) : error ? (
+            <Text style={[styles.errorText, darkMode && { color: "#f88" }]}>{error}</Text>
+          ) : !sale ? (
+            <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No order data available.</Text>
+          ) : (
+            <ScrollView style={styles.businessOrderDetailScroll} nestedScrollEnabled>
+              <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { marginTop: 8 }]}>Items purchased</Text>
+              <OrderDetailLinesTable lines={saleLines} darkMode={darkMode} />
+
+              {returns.length > 0 ? (
+                <>
+                  <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { marginTop: 16 }]}>Returns</Text>
+                  {returns.map((ret, retIndex) => (
+                    <View key={ret.transaction_uid || retIndex} style={styles.orderDetailReturnBlock}>
+                      <OrderDetailReturnHeader transaction={ret} darkMode={darkMode} />
+                      <OrderDetailLinesTable lines={ret.lines || []} darkMode={darkMode} signedRows />
+                    </View>
+                  ))}
+                </>
+              ) : null}
+
+              <OrderDetailFinancialSummary sale={sale} returns={returns} summary={summary} darkMode={darkMode} />
+
+              {normalizedReturnStatus === "accepted" ? (
+                <Text style={[styles.businessOrderDetailReturnBanner, styles.businessOrderDetailReturnBannerAccepted]}>This order has an accepted return.</Text>
+              ) : null}
+            </ScrollView>
+          )}
+
+          <TouchableOpacity onPress={onClose} style={styles.productSalesModalCloseButton}>
+            <Text style={styles.productSalesModalCloseButtonText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 function resolveSalePlacedByUid(saleRow) {
@@ -827,102 +1244,6 @@ function getOrderReceivedStatusFromSaleRows(saleRows) {
   return "Partial";
 }
 
-function resolveOrderAmountPaid(saleRows, businessTransactionData, txnUid) {
-  const txnId = txnUid || saleRows?.[0]?.transaction_uid;
-  const txnSummary = (businessTransactionData || []).find((row) => row.transaction_uid === txnId);
-  if (txnSummary?.transaction_total != null) {
-    const n = parseFloat(txnSummary.transaction_total);
-    if (Number.isFinite(n)) return n;
-  }
-  if (Array.isArray(saleRows)) {
-    for (const row of saleRows) {
-      const total = receiptMoneyNullable(row.transaction_total);
-      if (total != null) return total;
-    }
-  }
-  return (saleRows || []).reduce((sum, sale) => sum + getSaleLineUnitCost(sale) * getSaleLineQty(sale), 0);
-}
-
-function resolveOrderBountyPaid(saleRows, businessTransactionData, txnUid) {
-  const txnId = txnUid || saleRows?.[0]?.transaction_uid;
-  const txnSummary = (businessTransactionData || []).find((row) => row.transaction_uid === txnId);
-  if (txnSummary?.bounty_paid != null) {
-    const n = parseFloat(txnSummary.bounty_paid);
-    if (Number.isFinite(n)) return n;
-  }
-  return (saleRows || []).reduce((sum, sale) => sum + (parseFloat(sale.bounty_paid ?? 0) || 0), 0);
-}
-
-function aggregateBusinessOrders(bountyLines, businessTransactionData) {
-  if (!Array.isArray(bountyLines)) return [];
-  const byTxn = {};
-
-  for (const row of bountyLines) {
-    const txnId = resolveSaleOrderUid(row);
-    if (txnId === "—") continue;
-    if (!byTxn[txnId]) {
-      byTxn[txnId] = {
-        transactionUid: txnId,
-        placedBy: resolveSalePlacedByUid(row),
-        dateMs: transactionDateMs(row),
-        saleRows: [],
-      };
-    }
-    const bucket = byTxn[txnId];
-    bucket.saleRows.push(row);
-    const ms = transactionDateMs(row);
-    if (ms && (!bucket.dateMs || ms < bucket.dateMs)) {
-      bucket.dateMs = ms;
-    }
-    if (bucket.placedBy === "—") {
-      bucket.placedBy = resolveSalePlacedByUid(row);
-    }
-  }
-
-  return Object.values(byTxn)
-    .map((group) => {
-      const total = resolveOrderAmountPaid(group.saleRows, businessTransactionData, group.transactionUid);
-      const bountyPaid = resolveOrderBountyPaid(group.saleRows, businessTransactionData, group.transactionUid);
-      const received = getOrderReceivedStatusFromSaleRows(group.saleRows);
-      return {
-        key: group.transactionUid,
-        orderUid: group.transactionUid,
-        placedBy: group.placedBy,
-        dateLabel: formatOrderShortDate(group.dateMs),
-        dateMs: group.dateMs,
-        total,
-        bountyPaid,
-        delivered: getOrderDeliveredStatus(group.saleRows),
-        received,
-        daysOpen: formatOrderDaysOpen(group.dateMs),
-        saleRows: group.saleRows,
-      };
-    })
-    .sort((a, b) => (b.dateMs || 0) - (a.dateMs || 0));
-}
-
-function buildBusinessOrderRowFromProductSale(sale, receiptByTxn, productUid, businessTransactionData, allBountyLines) {
-  const receiptLines = receiptByTxn?.[sale.transaction_uid] || [];
-  const receiptLine = findReceiptLineForProductSale(receiptLines, sale, productUid);
-  const dateMs = transactionDateMs(sale);
-  const txnUid = sale.transaction_uid;
-  const saleRowsForTxn = (allBountyLines || []).filter((row) => row.transaction_uid === txnUid);
-  const orderSaleRows = saleRowsForTxn.length ? saleRowsForTxn : [sale];
-  return {
-    key: `${sale.transaction_uid || "order"}-${sale.ti_uid || productUid}`,
-    orderUid: resolveSaleOrderUid(sale),
-    placedBy: resolveSalePlacedByUid(sale),
-    dateLabel: formatProductSaleShortDate(sale),
-    dateMs,
-    total: resolveOrderAmountPaid(orderSaleRows, businessTransactionData, txnUid),
-    bountyPaid: resolveOrderBountyPaid(orderSaleRows, businessTransactionData, txnUid),
-    delivered: formatProductSaleDeliveryStatus(sale, receiptLine),
-    received: formatProductSaleReceivedStatus(receiptLine, sale),
-    daysOpen: formatOrderDaysOpen(dateMs),
-    saleRows: orderSaleRows,
-  };
-}
-
 function sumBusinessOrderRows(rows) {
   return (rows || []).reduce(
     (acc, row) => ({
@@ -933,223 +1254,17 @@ function sumBusinessOrderRows(rows) {
   );
 }
 
-function resolveOrderReturnStatus(saleRows, returnRequestData, returnStatusByTxn) {
-  const txnUid = saleRows?.[0]?.transaction_uid;
-  const statusFromMap = txnUid ? returnStatusByTxn?.[txnUid] : "";
-  const statusFromRow = saleRows?.find((row) => row.transaction_return_status)?.transaction_return_status || "";
-  return statusFromMap || statusFromRow || "";
-}
-
-function formatOrderLineReturnLabel({ returnStatus, returnRequested, returnedQty, purchasedQty }) {
-  const normalized = String(returnStatus || "").toLowerCase();
-  if (normalized === "accepted") return "Refunded";
-  if (normalized === "resolved") return "Resolved";
-  if (normalized === "declined") return "Declined";
-  if (returnedQty > 0) {
-    return returnedQty >= purchasedQty ? `Returned (${purchasedQty})` : `Partial (${returnedQty}/${purchasedQty})`;
+function buildProductSalesOrderRows(product, sellerLines, bountyLines) {
+  const orderUids = new Set();
+  for (const sale of product?.sales || []) {
+    const uid = resolveListRowOrderUid(sale);
+    if (uid !== "—") orderUids.add(uid);
   }
-  if (returnRequested) return "Requested";
-  return "—";
-}
-
-function buildOrderDetailLineItems(receiptRows, saleRows, returnRequestData, returnStatus) {
-  const returnRequested =
-    Boolean(returnRequestData?.requested) ||
-    (Array.isArray(returnRequestData?.items) && returnRequestData.items.length > 0) ||
-    (saleRows || []).some((row) => Number(row.transaction_return_requested) === 1);
-
-  const bountyByProduct = {};
-  for (const sale of saleRows || []) {
-    const productUid = resolveProductUidFromSaleLine(sale);
-    if (!productUid) continue;
-    bountyByProduct[productUid] = (bountyByProduct[productUid] || 0) + (parseFloat(sale.bounty_paid) || 0);
-  }
-
-  if (Array.isArray(receiptRows) && receiptRows.length > 0) {
-    return receiptRows.map((row, index) => {
-      const productUid = resolveProductUidFromSaleLine(row);
-      const qty = getReceiptLineQty(row);
-      const enrich = getProductSaleChoiceEnrichment(row);
-      const unitCost = getReceiptLineUnitPrice(row, enrich);
-      const returnedQty = getReturnedQtyForLine(returnRequestData, index, qty);
-      return {
-        key: String(row.ti_uid || `${productUid}-${index}`),
-        productUid: productUid || "—",
-        productName: String(row.bs_service_name || row.bs_service_desc || "").trim(),
-        unitCost,
-        qty,
-        lineTotal: unitCost * qty,
-        bountyPaid: bountyByProduct[productUid] ?? (parseFloat(row.bounty_paid) || 0),
-        returnLabel: formatOrderLineReturnLabel({ returnStatus, returnRequested, returnedQty, purchasedQty: qty }),
-      };
-    });
-  }
-
-  return (saleRows || []).map((sale, index) => {
-    const productUid = resolveProductUidFromSaleLine(sale);
-    const qty = getSaleLineQty(sale);
-    const unitCost = getSaleLineUnitCost(sale);
-    return {
-      key: String(sale.ti_uid || `${productUid}-${index}`),
-      productUid: productUid || "—",
-      productName: String(sale.bs_service_name || sale.bs_service_desc || "").trim(),
-      unitCost,
-      qty,
-      lineTotal: unitCost * qty,
-      bountyPaid: parseFloat(sale.bounty_paid ?? 0) || 0,
-      returnLabel: formatOrderLineReturnLabel({
-        returnStatus: sale.transaction_return_status || returnStatus,
-        returnRequested: Number(sale.transaction_return_requested) === 1 || returnRequested,
-        returnedQty: 0,
-        purchasedQty: qty,
-      }),
-    };
-  });
-}
-
-function buildOrderDetailTransactionFallback(orderRow, receiptRows, businessTransactionData) {
-  const saleRows = orderRow?.saleRows || [];
-  const firstSale = saleRows[0] || {};
-  const txnUid = orderRow?.orderUid;
-  const txnSummary = (businessTransactionData || []).find((row) => row.transaction_uid === txnUid);
-  const firstReceipt = Array.isArray(receiptRows) && receiptRows.length ? receiptRows[0] : {};
-
-  return {
-    transaction_uid: txnUid,
-    transaction_profile_id: orderRow?.placedBy || firstSale.transaction_profile_id,
-    transaction_total: txnSummary?.transaction_total ?? firstReceipt.transaction_total ?? firstSale.transaction_total,
-    transaction_taxes: txnSummary?.transaction_taxes ?? firstReceipt.transaction_taxes ?? firstSale.transaction_taxes,
-    transaction_fees: firstReceipt.transaction_fees ?? firstSale.transaction_fees,
-    transaction_shipping: firstReceipt.transaction_shipping ?? firstSale.transaction_shipping,
-    transaction_amount: firstReceipt.transaction_amount ?? firstSale.transaction_amount,
-    bounty_paid: orderRow?.bountyPaid ?? txnSummary?.bounty_paid ?? firstSale.bounty_paid,
-    transaction_return_requested: firstSale.transaction_return_requested,
-    transaction_return_status: firstSale.transaction_return_status,
-    transaction_return_note: firstSale.transaction_return_note,
-  };
-}
-
-function BusinessOrderDetailModal({
-  visible,
-  onClose,
-  order,
-  receiptLines,
-  loading,
-  returnRequestData,
-  returnStatus,
-  businessTransactionData,
-  darkMode,
-}) {
-  if (!visible) return null;
-
-  const lineItems = buildOrderDetailLineItems(receiptLines, order?.saleRows || [], returnRequestData, returnStatus);
-  const transactionFallback = buildOrderDetailTransactionFallback(order, receiptLines, businessTransactionData);
-  const returnRequested =
-    Number(transactionFallback.transaction_return_requested) === 1 ||
-    Boolean(returnRequestData?.requested) ||
-    (Array.isArray(returnRequestData?.items) && returnRequestData.items.length > 0);
-  const normalizedReturnStatus = String(returnStatus || transactionFallback.transaction_return_status || "").toLowerCase();
-
-  return (
-    <Modal animationType='slide' transparent visible={visible} onRequestClose={onClose}>
-      <View style={[styles.productSalesModalOverlay, darkMode && styles.darkModalOverlay]}>
-        <View style={[styles.productSalesModalContent, styles.businessOrderDetailModalContent, darkMode && styles.darkModalContent]}>
-          <Text style={[styles.productSalesModalTitle, darkMode && styles.darkTitle]}>Order {order?.orderUid || "—"}</Text>
-          <Text style={[styles.productSalesModalSubtitle, darkMode && { color: "#aaa" }]}>
-            Placed by {order?.placedBy || "—"} · {order?.dateLabel || "—"}
-          </Text>
-
-          {loading ? (
-            <ActivityIndicator size='large' color='#18884A' style={{ marginVertical: 24 }} />
-          ) : lineItems.length === 0 ? (
-            <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No line items available for this order.</Text>
-          ) : (
-            <ScrollView style={styles.businessOrderDetailScroll} nestedScrollEnabled>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.businessOrderDetailTable}>
-                  <View style={[styles.businessOrderDetailHeaderRow, darkMode && styles.productSalesDetailHeaderRowDark]}>
-                    <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColProductId]}>Product ID</Text>
-                    <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColUnitCost]}>Unit cost</Text>
-                    <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColQty]}>Qty</Text>
-                    <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColReturns]}>Returns</Text>
-                    <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColMoney]}>Line total</Text>
-                    <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColMoney]}>Bounty paid</Text>
-                  </View>
-
-                  {lineItems.map((line, index) => (
-                    <View
-                      key={line.key}
-                      style={[
-                        styles.businessOrderDetailDataRow,
-                        index < lineItems.length - 1 && styles.productSalesDetailDataRowBorder,
-                        darkMode && styles.productSalesDetailDataRowDark,
-                      ]}
-                    >
-                      <View style={styles.businessOrderDetailColProductId}>
-                        <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailProductId, darkMode && { color: "#eee" }]}>
-                          {line.productUid}
-                        </Text>
-                        {line.productName ? (
-                          <Text style={[styles.businessOrderDetailProductName, darkMode && { color: "#aaa" }]} numberOfLines={2}>
-                            {line.productName}
-                          </Text>
-                        ) : null}
-                      </View>
-                      <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost, darkMode && { color: "#ccc" }]}>
-                        ${line.unitCost.toFixed(2)}
-                      </Text>
-                      <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty, darkMode && { color: "#ccc" }]}>{line.qty}</Text>
-                      <Text
-                        style={[
-                          styles.businessOrderDetailCell,
-                          styles.businessOrderDetailColReturns,
-                          line.returnLabel !== "—" && styles.businessOrderDetailReturnActive,
-                          normalizedReturnStatus === "accepted" && styles.businessOrderDetailReturnRefunded,
-                        ]}
-                      >
-                        {line.returnLabel}
-                      </Text>
-                      <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColMoney, darkMode && { color: "#ccc" }]}>
-                        ${line.lineTotal.toFixed(2)}
-                      </Text>
-                      <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColMoney, darkMode && { color: "#ccc" }]}>
-                        ${line.bountyPaid.toFixed(2)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </ScrollView>
-
-              <ReceiptTransactionTotalsFooter
-                receiptRows={receiptLines?.length ? receiptLines : lineItems.map((line) => ({
-                  ti_bs_cost: line.unitCost,
-                  ti_bs_qty: line.qty,
-                  ti_bs_id: line.productUid,
-                  bs_uid: line.productUid,
-                }))}
-                transactionFallback={transactionFallback}
-                darkMode={darkMode}
-              />
-
-              {returnRequested ? (
-                <Text style={[styles.businessOrderDetailReturnBanner, normalizedReturnStatus === "accepted" && styles.businessOrderDetailReturnBannerAccepted]}>
-                  {normalizedReturnStatus === "accepted"
-                    ? "This order has an accepted return."
-                    : normalizedReturnStatus === "declined"
-                      ? "A return was requested but declined."
-                      : "A return has been requested for this order."}
-                </Text>
-              ) : null}
-            </ScrollView>
-          )}
-
-          <TouchableOpacity onPress={onClose} style={styles.productSalesModalCloseButton}>
-            <Text style={styles.productSalesModalCloseButtonText}>Close</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
-  );
+  const bountyByOrderUid = buildBountyPaidByOrderUid(bountyLines);
+  return (sellerLines || [])
+    .filter((row) => orderUids.has(resolveListRowOrderUid(row)))
+    .map((row) => mapTransactionListRowToOrderTableRow(row, bountyByOrderUid))
+    .sort((a, b) => (b.dateMs || 0) - (a.dateMs || 0));
 }
 
 function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress }) {
@@ -1173,6 +1288,7 @@ function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.productSalesDetailTableScroll}>
       <View style={styles.productSalesDetailTable}>
         <View style={[styles.productSalesDetailHeaderRow, darkMode && styles.productSalesDetailHeaderRowDark]}>
+          <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColType]}>Type</Text>
           <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColOrder]}>Order</Text>
           <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColPlacedBy]}>Placed by</Text>
           <Text style={[styles.productSalesDetailHeaderCell, styles.productSalesDetailColDate]}>Date</Text>
@@ -1193,6 +1309,9 @@ function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress
                 darkMode && styles.productSalesDetailDataRowDark,
               ]}
             >
+              <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColType, row.isReturn && { color: "#B71C1C", fontWeight: "600" }, darkMode && !row.isReturn && { color: "#ccc" }]}>
+                {row.rowLabel || "Order"}
+              </Text>
               {onOrderPress ? (
                 <TouchableOpacity
                   style={styles.productSalesDetailColOrder}
@@ -1208,8 +1327,12 @@ function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress
                 {row.placedBy}
               </Text>
               <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDate, darkMode && { color: "#ccc" }]}>{row.dateLabel}</Text>
-              <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColMoney, darkMode && { color: "#ccc" }]}>${row.total.toFixed(2)}</Text>
-              <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColMoney, darkMode && { color: "#ccc" }]}>${row.bountyPaid.toFixed(2)}</Text>
+              <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColMoney, row.isReturn && { color: "#B71C1C" }, darkMode && !row.isReturn && { color: "#ccc" }]}>
+                {formatSignedOrderMoney(row.total)}
+              </Text>
+              <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColMoney, row.isReturn && { color: "#B71C1C" }, darkMode && !row.isReturn && { color: "#ccc" }]}>
+                {formatSignedOrderMoney(row.bountyPaid)}
+              </Text>
               <View style={[styles.productSalesDetailColStatus, styles.productSalesDetailStatusCell]}>{renderStatusBadge("delivered", row.delivered)}</View>
               <View style={[styles.productSalesDetailColStatus, styles.productSalesDetailStatusCell]}>{renderStatusBadge("received", row.received)}</View>
               <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDaysOpen, darkMode && { color: "#ccc" }]}>{row.daysOpen}</Text>
@@ -1218,14 +1341,15 @@ function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress
         </ScrollView>
 
         <View style={[styles.productSalesDetailTotalRow, darkMode && styles.productSalesDetailTotalRowDark]}>
-          <Text style={[styles.productSalesDetailTotalLabel, styles.productSalesDetailColOrder, darkMode && { color: "#eee" }]}>Total</Text>
+          <Text style={[styles.productSalesDetailTotalLabel, styles.productSalesDetailColType, darkMode && { color: "#eee" }]}>Total</Text>
+          <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColOrder]} />
           <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColPlacedBy]} />
           <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColDate]} />
           <Text style={[styles.productSalesDetailTotalValue, styles.productSalesDetailColMoney, darkMode && { color: "#eee" }]}>
-            ${totals.total.toFixed(2)}
+            {formatSignedOrderMoney(totals.total)}
           </Text>
           <Text style={[styles.productSalesDetailTotalValue, styles.productSalesDetailColMoney, darkMode && { color: "#eee" }]}>
-            ${totals.bountyPaid.toFixed(2)}
+            {formatSignedOrderMoney(totals.bountyPaid)}
           </Text>
           <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColStatus]} />
           <Text style={[styles.productSalesDetailCell, styles.productSalesDetailColStatus]} />
@@ -1419,12 +1543,14 @@ export default function AccountScreen({ navigation }) {
     receiptByTxn: {},
     loading: false,
   });
-  const [businessOrderDetailModal, setBusinessOrderDetailModal] = useState({
+  const [businessSellerTransactionList, setBusinessSellerTransactionList] = useState([]);
+  const [orderDetailModal, setOrderDetailModal] = useState({
     visible: false,
-    order: null,
-    receiptLines: [],
+    orderUid: null,
+    orderDetail: null,
     loading: false,
-    returnRequestData: null,
+    error: null,
+    isSellerView: false,
   });
   const [businessTransactionData, setBusinessTransactionData] = useState([]);
   const [businessTransactionLoading, setBusinessTransactionLoading] = useState(true);
@@ -1570,6 +1696,9 @@ export default function AccountScreen({ navigation }) {
   const [selectedReturnItems, setSelectedReturnItems] = useState([]);
   const [returnItemQuantities, setReturnItemQuantities] = useState({});
   const [returnModalReceiptData, setReturnModalReceiptData] = useState([]);
+  const [returnModalOrderLines, setReturnModalOrderLines] = useState([]);
+  const [returnModalLoading, setReturnModalLoading] = useState(false);
+  const [receiptOrderDetail, setReceiptOrderDetail] = useState(null);
 
   const [businessReceiptCache, setBusinessReceiptCache] = useState({});
   /** Avoid duplicate receipt GETs when re-expanding the same business transaction */
@@ -1601,6 +1730,7 @@ export default function AccountScreen({ navigation }) {
     try {
       setReceiptLoading(true);
       setReceiptData([]);
+      setReceiptOrderDetail(null);
       setShowReceiptModal(true);
       const storedReturn = await AsyncStorage.getItem(`return_request_${transaction.transaction_uid}`);
       const parsedReturn = storedReturn ? JSON.parse(storedReturn) : null;
@@ -1711,6 +1841,17 @@ export default function AccountScreen({ navigation }) {
       });
       setReceiptEnrichedItems({ ...localEnrichedItems, ...apiEnrichMap });
       setReceiptData(items);
+
+      const orderUid = resolveListRowOrderUid(transaction);
+      if (orderUid && orderUid !== "—") {
+        try {
+          const orderDetail = await fetchOrderDetailApi(orderUid, { profileId });
+          setReceiptOrderDetail(orderDetail);
+        } catch (orderErr) {
+          console.warn("fetchReceipt - order detail unavailable:", orderErr?.message || orderErr);
+          setReceiptOrderDetail(null);
+        }
+      }
     } catch (error) {
       console.error("Error fetching receipt:", error);
       Alert.alert("Error", error.message || "Failed to load receipt.");
@@ -1721,8 +1862,8 @@ export default function AccountScreen({ navigation }) {
   };
 
   const handleReturnRequest = async (transaction, buyerNote, transactionReturnItems) => {
-    const uid = transaction?.transaction_uid;
-    if (!uid) return false;
+    const saleUid = resolveListRowOrderUid(transaction);
+    if (!saleUid || saleUid === "—") return false;
     if (!Array.isArray(transactionReturnItems) || transactionReturnItems.length === 0) {
       Alert.alert("Error", "No return line items to submit.");
       return false;
@@ -1734,14 +1875,14 @@ export default function AccountScreen({ navigation }) {
     }
     try {
       const note = (buyerNote || "").trim();
-      const existingNote = returnRequests[uid]?.notes?.map((n) => n.note).join("\n\n---RETURN---\n\n") || "";
+      const existingNote = returnRequests[saleUid]?.notes?.map((n) => n.note).join("\n\n---RETURN---\n\n") || "";
       const allNotes = existingNote ? `${existingNote}\n\n---RETURN---\n\n${note}` : note;
       const response = await fetch(TRANSACTIONS_RETURN_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           profile_id: profileId,
-          transaction_uid: uid,
+          transaction_uid: saleUid,
           transaction_return_requested: 1,
           transaction_return_note: allNotes,
           transaction_return_items: transactionReturnItems,
@@ -1750,7 +1891,7 @@ export default function AccountScreen({ navigation }) {
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      const existing = returnRequests[uid] || { items: [], notes: [] };
+      const existing = returnRequests[saleUid] || { items: [], notes: [] };
       const itemQuantities = selectedReturnItems.reduce((acc, id) => {
         acc[id] = returnItemQuantities[id] ?? 1;
         return acc;
@@ -1769,10 +1910,13 @@ export default function AccountScreen({ navigation }) {
           },
         ],
       };
-      setReturnRequests((prev) => ({ ...prev, [uid]: updated }));
-      await AsyncStorage.setItem(`return_request_${uid}`, JSON.stringify(updated));
+      setReturnRequests((prev) => ({ ...prev, [saleUid]: updated }));
+      await AsyncStorage.setItem(`return_request_${saleUid}`, JSON.stringify(updated));
       setReturnNote("");
       setReturnItemQuantities({});
+      if (selectedAccountRef.current === "personal") {
+        await refreshAccountScreenPersonal();
+      }
       return true;
     } catch (error) {
       console.error("Error requesting return:", error);
@@ -2284,62 +2428,16 @@ export default function AccountScreen({ navigation }) {
     [selectedAccount, businessUID],
   );
 
-  const openProductSalesModal = useCallback(
-    async (product) => {
-      if (!product) return;
-      setProductSalesModal({
-        visible: true,
-        product,
-        sales: product.sales || [],
-        receiptByTxn: {},
-        loading: true,
-      });
-
-      const biz = selectedAccount !== "personal" ? selectedAccount : businessUID;
-      const uniqueTxnIds = [...new Set((product.sales || []).map((sale) => sale.transaction_uid).filter(Boolean))];
-      const receiptByTxn = {};
-
-      await Promise.all(
-        uniqueTxnIds.map(async (txnUid) => {
-          const sale = (product.sales || []).find((row) => row.transaction_uid === txnUid);
-          if (!sale?.transaction_profile_id || !biz) return;
-
-          if (businessReceiptCache[txnUid]) {
-            receiptByTxn[txnUid] = businessReceiptCache[txnUid];
-            return;
-          }
-
-          try {
-            const txn = {
-              transaction_uid: txnUid,
-              transaction_profile_id: sale.transaction_profile_id,
-            };
-            const response = await fetch(buildTransactionReceiptUrl(txn, sale.transaction_profile_id, { sellerId: biz }), {
-              method: "GET",
-            });
-            if (response.ok) {
-              const data = await response.json();
-              receiptByTxn[txnUid] = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
-            } else {
-              receiptByTxn[txnUid] = [];
-            }
-          } catch {
-            receiptByTxn[txnUid] = [];
-          }
-        }),
-      );
-
-      setProductSalesModal((prev) => ({
-        ...prev,
-        receiptByTxn,
-        loading: false,
-      }));
-      if (Object.keys(receiptByTxn).length > 0) {
-        setBusinessReceiptCache((prev) => ({ ...prev, ...receiptByTxn }));
-      }
-    },
-    [selectedAccount, businessUID, businessReceiptCache],
-  );
+  const openProductSalesModal = useCallback((product) => {
+    if (!product) return;
+    setProductSalesModal({
+      visible: true,
+      product,
+      sales: product.sales || [],
+      receiptByTxn: {},
+      loading: false,
+    });
+  }, []);
 
   const closeProductSalesModal = useCallback(() => {
     setProductSalesModal({
@@ -2351,74 +2449,98 @@ export default function AccountScreen({ navigation }) {
     });
   }, []);
 
-  const closeBusinessOrderDetailModal = useCallback(() => {
-    setBusinessOrderDetailModal({
+  const closeOrderDetailModal = useCallback(() => {
+    setOrderDetailModal({
       visible: false,
-      order: null,
-      receiptLines: [],
+      orderUid: null,
+      orderDetail: null,
       loading: false,
-      returnRequestData: null,
+      error: null,
+      isSellerView: false,
     });
   }, []);
 
-  const openBusinessOrderDetail = useCallback(
+  const openOrderDetail = useCallback(
     async (orderRow) => {
-      if (!orderRow?.orderUid || orderRow.orderUid === "—") return;
+      const orderUid = orderRow?.orderUid || resolveListRowOrderUid(orderRow?.rawRow || orderRow);
+      if (!orderUid || orderUid === "—") return;
 
-      const saleRows = orderRow.saleRows || [];
-      const firstSale = saleRows[0];
-      const txnUid = orderRow.orderUid;
-      const biz = selectedAccount !== "personal" ? selectedAccount : businessUID;
-
-      setBusinessOrderDetailModal({
+      const isSellerView = selectedAccount !== "personal";
+      setOrderDetailModal({
         visible: true,
-        order: orderRow,
-        receiptLines: [],
+        orderUid,
+        orderDetail: null,
         loading: true,
-        returnRequestData: null,
+        error: null,
+        isSellerView,
       });
 
-      let receiptLines = businessReceiptCache[txnUid] || [];
-      if (!receiptLines.length && firstSale?.transaction_profile_id && biz) {
-        try {
-          const response = await fetch(
-            buildTransactionReceiptUrl(
-              { transaction_uid: txnUid, transaction_profile_id: firstSale.transaction_profile_id },
-              firstSale.transaction_profile_id,
-              { sellerId: biz },
-            ),
-            { method: "GET" },
-          );
-          if (response.ok) {
-            const data = await response.json();
-            receiptLines = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
-            setBusinessReceiptCache((prev) => ({ ...prev, [txnUid]: receiptLines }));
-          }
-        } catch {
-          receiptLines = [];
+      try {
+        const ctx = {};
+        if (isSellerView) {
+          const bizUid = selectedAccount || businessUID;
+          if (bizUid) ctx.businessUid = bizUid;
+        } else {
+          const profileId = (await AsyncStorage.getItem("profile_uid")) || "";
+          if (profileId) ctx.profileId = String(profileId).trim();
         }
+        const orderDetail = await fetchOrderDetailApi(orderUid, ctx);
+        setOrderDetailModal((prev) => ({
+          ...prev,
+          orderDetail,
+          loading: false,
+          error: null,
+        }));
+      } catch (error) {
+        setOrderDetailModal((prev) => ({
+          ...prev,
+          loading: false,
+          error: error?.message || "Failed to load order.",
+        }));
       }
-
-      let returnRequestData = returnRequests[txnUid] || null;
-      if (!returnRequestData) {
-        try {
-          const stored = await AsyncStorage.getItem(`return_request_${txnUid}`);
-          returnRequestData = stored ? JSON.parse(stored) : null;
-        } catch {
-          returnRequestData = null;
-        }
-      }
-
-      setBusinessOrderDetailModal({
-        visible: true,
-        order: orderRow,
-        receiptLines,
-        loading: false,
-        returnRequestData,
-      });
     },
-    [selectedAccount, businessUID, businessReceiptCache, returnRequests],
+    [selectedAccount, businessUID],
   );
+
+  const openReturnNoteModalFromReceipt = useCallback(async () => {
+    const orderUid = resolveListRowOrderUid(receiptTransaction);
+    setReturnModalOrderLines([]);
+    setReturnModalReceiptData([]);
+    setSelectedReturnItems([]);
+    setReturnItemQuantities({});
+    setShowReceiptModal(false);
+    setShowReturnNoteModal(true);
+    setReturnModalLoading(true);
+
+    const saleLines = receiptOrderDetail?.sale?.lines;
+    if (Array.isArray(saleLines) && saleLines.length > 0) {
+      setReturnModalOrderLines(saleLines);
+      setReturnModalLoading(false);
+      return;
+    }
+
+    try {
+      const profileId = receiptTransaction?.transaction_profile_id || (await AsyncStorage.getItem("profile_uid"));
+      if (!profileId || !orderUid || orderUid === "—") {
+        throw new Error("Missing profile or order id.");
+      }
+      const orderDetail = await fetchOrderDetailApi(orderUid, { profileId: String(profileId).trim() });
+      setReturnModalOrderLines(Array.isArray(orderDetail?.sale?.lines) ? orderDetail.sale.lines : []);
+      setReceiptOrderDetail(orderDetail);
+    } catch (error) {
+      console.warn("openReturnNoteModalFromReceipt:", error?.message || error);
+      if (Array.isArray(receiptData) && receiptData.length > 0) {
+        setReturnModalReceiptData(receiptData);
+        setReturnModalOrderLines([]);
+      } else {
+        setReturnModalOrderLines([]);
+        Alert.alert("Error", "Could not load order lines for return. Please try again.");
+        setShowReturnNoteModal(false);
+      }
+    } finally {
+      setReturnModalLoading(false);
+    }
+  }, [receiptTransaction, receiptOrderDetail, receiptData]);
 
   /**
    * GET /api/v1/account-screen/business/:business_uid — product results + seller lines for grouping/receipts.
@@ -2440,6 +2562,7 @@ export default function AccountScreen({ navigation }) {
     try {
       setBusinessTransactionData([]);
       setBusinessBountyData(null);
+      setBusinessSellerTransactionList([]);
       setBusinessTransactionLoading(true);
       setBusinessBountyLoading(true);
 
@@ -2521,13 +2644,16 @@ export default function AccountScreen({ navigation }) {
       }
 
       if (!sellerLines.length) {
+        setBusinessSellerTransactionList([]);
         setBusinessTransactionData([]);
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
         return;
       }
 
-      const businessTransactions = sellerLines.filter(isBusinessProductSellerLine);
+      setBusinessSellerTransactionList(sellerLines);
+
+      const businessTransactions = sellerLines.filter(isBusinessProductSellerLine).filter((row) => !isReturnListRow(row));
       businessTransactions.forEach((txn) => {
         txn.business_name = selectedBusiness?.business_name || selectedBusiness?.profile_business_name || "Unknown Business";
       });
@@ -2617,6 +2743,7 @@ export default function AccountScreen({ navigation }) {
   useEffect(() => {
     if (selectedAccount === "personal" || !selectedAccount) {
       setSelectedBusinessFullData(null);
+      setBusinessSellerTransactionList([]);
       refreshAccountScreenPersonal();
       return;
     }
@@ -3180,8 +3307,8 @@ export default function AccountScreen({ navigation }) {
     [businessBountyData],
   );
   const businessOrdersSummary = useMemo(
-    () => aggregateBusinessOrders(businessBountyData?.data || [], businessTransactionData),
-    [businessBountyData, businessTransactionData],
+    () => buildBusinessOrdersListFromSellerTransactions(businessSellerTransactionList, businessBountyData?.data || []),
+    [businessSellerTransactionList, businessBountyData],
   );
 
   /** Debug Mode Yes (Settings): show Transaction ID, Type, Purchased Item. Narrow web (<700px) uses the same compact layout as mobile without those debug columns. Purchased Item also shows on web when width > 600 regardless of Debug Mode (unless compact dev flag hides it). */
@@ -3362,33 +3489,37 @@ export default function AccountScreen({ navigation }) {
                       </View>
                       {/* Table Rows */}
                       {transactionData.map((transaction, i) => {
-                        // const isSeeking = (transaction.purchase_type || "").toLowerCase() === "seeking";
-                        // const isBusiness = (transaction.purchase_type || "").toLowerCase() === "business";
-                        // const isPending = transaction.transaction_in_escrow === 1;
-                        // const showPendingLink = (isSeeking || isBusiness) && isPending;
-                        // const wasAutoPaid = autoPaidTransactionIds.has(transaction.transaction_uid);
-
                         const purchaseTypeLower = (transaction.purchase_type || "").toLowerCase();
+                        const isReturnRow = isReturnListRow(transaction);
+                        const orderUid = resolveListRowOrderUid(transaction);
                         const isSeeking = purchaseTypeLower === "seeking";
                         const isBusiness = purchaseTypeLower === "business";
                         const isExpertise = purchaseTypeLower === "expertise" || purchaseTypeLower === "offering";
-                        const isPending = Number(transaction.transaction_in_escrow) === 1;
+                        const isPending = !isReturnRow && Number(transaction.transaction_in_escrow) === 1;
                         const purchaseDate = parseTransactionDateTime(transaction);
                         const isOlderThan5Days =
                           Number.isFinite(purchaseDate?.getTime()) &&
                           (Date.now() - purchaseDate.getTime()) / (1000 * 60 * 60 * 24) >= 5;
-                        /** Any purchase still in escrow: Pending is tappable (confirm receipt / release). */
                         const showPendingLink = isPending;
-                        const showAutoPaid = (isSeeking || isBusiness || isExpertise) && !isPending && isOlderThan5Days;
+                        const showAutoPaid = !isReturnRow && (isSeeking || isBusiness || isExpertise) && !isPending && isOlderThan5Days;
 
                         const compactTx = compactPurchasesLayout;
                         const sellerId = resolvePurchaseSellerId(transaction);
+                        const displayAmount = parseFloat(transaction.transaction_total ?? transaction.seller_total ?? 0);
 
                         return (
-                          <View key={transaction.ti_uid || i} style={styles.transactionRow}>
+                          <View key={transaction.transaction_uid || transaction.ti_uid || i} style={styles.transactionRow}>
                             <Text style={styles.transactionDate}>{formatTransactionDate(transaction)}</Text>
-                            {showPurchasesTxnIdColumn ? <Text style={styles.transactionId}>{transaction.transaction_uid || "N/A"}</Text> : null}
-                            {showPurchasesTypeColumn ? <Text style={styles.transactionPurchaseType}>{transaction.purchase_type || "N/A"}</Text> : null}
+                            {showPurchasesTxnIdColumn ? (
+                              <TouchableOpacity onPress={() => openOrderDetail({ orderUid })} activeOpacity={0.7} disabled={orderUid === "—"}>
+                                <Text style={[styles.transactionId, orderUid !== "—" && styles.receiptLink]}>{transaction.transaction_uid || "N/A"}</Text>
+                              </TouchableOpacity>
+                            ) : null}
+                            {showPurchasesTypeColumn ? (
+                              <Text style={styles.transactionPurchaseType}>
+                                {isReturnRow ? "Return" : transaction.purchase_type || "N/A"}
+                              </Text>
+                            ) : null}
                             <View style={{ flex: 1, paddingHorizontal: 4, justifyContent: "center", minWidth: 0 }}>
                               <TouchableOpacity
                                 onPress={() => navigateToPurchaseSeller(navigation, transaction)}
@@ -3405,38 +3536,49 @@ export default function AccountScreen({ navigation }) {
                             </View>
                             {showPurchasesItemColumn ? (
                               <View style={styles.transactionPurchasedItemCell}>
-                                <TouchableOpacity onPress={() => fetchReceipt(transaction)} activeOpacity={0.7}>
-                                  <Text style={[styles.transactionPurchasedItem, styles.receiptLink]} numberOfLines={4}>
-                                    {transaction.purchased_item || "View receipt"}
-                                  </Text>
-                                </TouchableOpacity>
+                                {isReturnRow ? (
+                                  <TouchableOpacity onPress={() => openOrderDetail({ orderUid })} activeOpacity={0.7}>
+                                    <Text style={[styles.transactionPurchasedItem, styles.receiptLink]} numberOfLines={4}>
+                                      {transaction.purchased_item || "View order"}
+                                    </Text>
+                                  </TouchableOpacity>
+                                ) : (
+                                  <TouchableOpacity onPress={() => fetchReceipt(transaction)} activeOpacity={0.7}>
+                                    <Text style={[styles.transactionPurchasedItem, styles.receiptLink]} numberOfLines={4}>
+                                      {transaction.purchased_item || "View receipt"}
+                                    </Text>
+                                  </TouchableOpacity>
+                                )}
                               </View>
                             ) : null}
-                            {!compactTx && <Text style={styles.transactionQty}>{transaction.ti_bs_qty || 1}</Text>}
+                            {!compactTx && (
+                              <Text style={[styles.transactionQty, isReturnRow && { color: "#B71C1C" }]}>
+                                {isReturnRow ? Math.abs(parseInt(transaction.ti_bs_qty, 10) || 1) : transaction.ti_bs_qty || 1}
+                              </Text>
+                            )}
                             <View style={styles.transactionPaidCell}>
                               {(() => {
-                                const uid = transaction.transaction_uid;
-                                const returnStatus = returnStatuses[uid] || transaction.transaction_return_status || "";
-                                const returnRequested = returnRequests[uid]?.items?.length > 0 || transaction.transaction_return_requested === 1;
+                                if (isReturnRow) {
+                                  return <Text style={[styles.transactionPaidText, { color: "#B71C1C", fontWeight: "600" }]}>Return</Text>;
+                                }
 
-                                // 1. Return accepted → Returned (final state)
+                                const returnStatus = returnStatuses[orderUid] || transaction.transaction_return_status || "";
+                                const returnRequested =
+                                  returnRequests[orderUid]?.items?.length > 0 || transaction.transaction_return_requested === 1;
+
                                 if (returnStatus === "accepted") {
                                   return <Text style={[styles.transactionPaidText, { color: "#B71C1C", fontWeight: "600" }]}>Returned</Text>;
                                 }
-                                // 2. Return requested but not yet resolved → Returning
                                 if (returnRequested && returnStatus !== "declined" && returnStatus !== "resolved") {
                                   return <Text style={[styles.transactionPaidText, { color: "#E65100", fontWeight: "600" }]}>Returning</Text>;
                                 }
-                                // 3. Auto-paid (older than 5 days, already released from escrow)
                                 if (showAutoPaid) {
                                   return <Text style={styles.transactionPaidText}>Auto</Text>;
                                 }
-                                // 4. Pending but older than 5 days → trigger auto-pay
                                 if (showPendingLink && isOlderThan5Days) {
                                   triggerAutoPay(transaction.transaction_uid);
                                   return <Text style={styles.transactionPaidText}>Auto</Text>;
                                 }
-                                // 5. Pending and within 5 days → show Pending link
                                 if (showPendingLink) {
                                   return (
                                     <TouchableOpacity
@@ -3447,11 +3589,14 @@ export default function AccountScreen({ navigation }) {
                                     </TouchableOpacity>
                                   );
                                 }
-                                // 6. Default → Pending or Received
                                 return <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Received"}</Text>;
                               })()}
                             </View>
-                            <Text style={styles.transactionAmount}>${parseFloat(transaction.seller_total || transaction.transaction_total || 0).toFixed(2)}</Text>
+                            <TouchableOpacity onPress={() => openOrderDetail({ orderUid })} activeOpacity={0.7} disabled={orderUid === "—"}>
+                              <Text style={[styles.transactionAmount, isReturnRow && { color: "#B71C1C" }, orderUid !== "—" && styles.receiptLink]}>
+                                {formatSignedOrderMoney(displayAmount)}
+                              </Text>
+                            </TouchableOpacity>
                           </View>
                         );
                       })}
@@ -3654,7 +3799,7 @@ export default function AccountScreen({ navigation }) {
                       rows={businessOrdersSummary}
                       darkMode={darkMode}
                       maxBodyHeight={360}
-                      onOrderPress={openBusinessOrderDetail}
+                      onOrderPress={openOrderDetail}
                     />
                   ) : (
                     <Text style={styles.noDataText}>No orders available.</Text>
@@ -3971,35 +4116,30 @@ export default function AccountScreen({ navigation }) {
 
 
             {/* Return requested confirmation message */}
-            {(returnRequests[receiptTransaction?.transaction_uid]?.requested || receiptTransaction?.transaction_return_requested === 1) && (
+            {(returnRequests[resolveListRowOrderUid(receiptTransaction)]?.requested || receiptTransaction?.transaction_return_requested === 1) && (
               <Text style={{ color: "#B71C1C", textAlign: "center", marginTop: 12, fontWeight: "600", fontSize: 14 }}>✓ Return has been requested</Text>
             )}
 
             {!receiptIsReturnReceipt &&
               (() => {
-                const uid = receiptTransaction?.transaction_uid;
-                const returnData = returnRequests[uid];
-                const totalItems = receiptData.length;
-
+                const orderUid = resolveListRowOrderUid(receiptTransaction);
+                const saleLines = receiptOrderDetail?.sale?.lines;
                 const allItemsReturned =
-                  totalItems > 0 &&
-                  receiptData.every((row, index) => {
-                    const purchasedQty = getReceiptLineQty(row);
-                    return getReturnedQtyForLine(returnData, index, purchasedQty) >= purchasedQty;
-                  });
+                  Array.isArray(saleLines) && saleLines.length > 0
+                    ? saleLines.every((line) => Math.max(0, parseInt(line.remaining_qty, 10) ?? 0) <= 0)
+                    : receiptData.length > 0 &&
+                      receiptData.every((row, index) => {
+                        const purchasedQty = getReceiptLineQty(row);
+                        const returnData = returnRequests[orderUid];
+                        return getReturnedQtyForLine(returnData, index, purchasedQty) >= purchasedQty;
+                      });
 
                 return (
                   <TouchableOpacity
                     style={[styles.receiptCloseButton, { borderColor: "#B71C1C", marginTop: 12 }, allItemsReturned && { opacity: 0.4 }]}
                     disabled={allItemsReturned}
                     onPress={() => {
-                      if (!allItemsReturned) {
-                        setReturnModalReceiptData(receiptData);
-                        setSelectedReturnItems([]);
-                        setReturnItemQuantities({});
-                        setShowReceiptModal(false);
-                        setTimeout(() => setShowReturnNoteModal(true), 300);
-                      }
+                      if (!allItemsReturned) openReturnNoteModalFromReceipt();
                     }}
                   >
                     <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>{allItemsReturned ? "All Items Returned" : "Request Return"}</Text>
@@ -4049,17 +4189,23 @@ export default function AccountScreen({ navigation }) {
           <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent, { maxHeight: "80%" }]}>
             <Text style={[styles.receiveItemModalHeader, { color: "#B71C1C" }, darkMode && styles.darkTitle]}>Request Return</Text>
 
+            {returnModalLoading ? (
+              <ActivityIndicator size='large' color='#B71C1C' style={{ marginVertical: 24 }} />
+            ) : (
+              <>
             {/* Item selection */}
             <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>Select item(s) to return:</Text>
             <ScrollView style={{ maxHeight: 220, marginBottom: 12 }}>
-              {returnModalReceiptData.map((item, index) => {
-                const itemId = String(index);
+              {buildReturnModalSelectableLines(
+                returnModalOrderLines,
+                returnModalReceiptData,
+                returnRequests[resolveListRowOrderUid(receiptTransaction)],
+              ).map((row) => {
+                const itemId = row.itemId;
                 const isSelected = selectedReturnItems.includes(itemId);
-                const purchasedQty = getReceiptLineQty(item);
-                const returnRequestData = returnRequests[receiptTransaction?.transaction_uid];
-                const alreadyReturnedQty = getReturnedQtyForLine(returnRequestData, index, purchasedQty);
-                const alreadyReturned = alreadyReturnedQty >= purchasedQty;
-                const remainingQty = Math.max(0, purchasedQty - alreadyReturnedQty);
+                const purchasedQty = row.purchasedQty;
+                const remainingQty = row.remainingQty;
+                const alreadyReturned = remainingQty <= 0;
                 const returnQty = returnItemQuantities[itemId] ?? 1;
                 const needsQtyPicker = isSelected && purchasedQty > 1 && remainingQty > 1;
 
@@ -4098,11 +4244,11 @@ export default function AccountScreen({ navigation }) {
                     >
                       <Ionicons name={isSelected ? "checkbox" : "square-outline"} size={18} color={isSelected ? "#B71C1C" : "#555"} style={{ marginRight: 8 }} />
                       <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", flex: 1 }}>
-                        {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {purchasedQty}
+                        {row.itemName} — ${parseFloat(row.unitCost || 0).toFixed(2)} x {purchasedQty}
                       </Text>
                       {alreadyReturned ? (
                         <Text style={{ fontSize: 11, color: "#B71C1C", marginLeft: 4 }}>Already returned</Text>
-                      ) : alreadyReturnedQty > 0 ? (
+                      ) : purchasedQty > remainingQty ? (
                         <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>{remainingQty} left</Text>
                       ) : null}
                     </TouchableOpacity>
@@ -4210,22 +4356,24 @@ export default function AccountScreen({ navigation }) {
             {selectedReturnItems.length === 0 && <Text style={{ color: "#B71C1C", fontSize: 12, marginBottom: 8, textAlign: "center" }}>Please select at least one item to return.</Text>}
 
             {(() => {
-              const returnRequestData = returnRequests[receiptTransaction?.transaction_uid];
+              const selectableLines = buildReturnModalSelectableLines(
+                returnModalOrderLines,
+                returnModalReceiptData,
+                returnRequests[resolveListRowOrderUid(receiptTransaction)],
+              );
+              const lineById = Object.fromEntries(selectableLines.map((line) => [line.itemId, line]));
               const hasInvalidQty = selectedReturnItems.some((id) => {
-                const index = parseInt(id, 10);
-                const item = returnModalReceiptData[index];
-                if (!item) return true;
-                const purchasedQty = getReceiptLineQty(item);
-                const alreadyReturnedQty = getReturnedQtyForLine(returnRequestData, index, purchasedQty);
-                const remainingQty = purchasedQty - alreadyReturnedQty;
+                const row = lineById[id];
+                if (!row) return true;
+                const remainingQty = row.remainingQty;
                 const raw = returnItemQuantities[id];
                 const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
-                if (purchasedQty > 1 && remainingQty > 1) {
+                if (row.purchasedQty > 1 && remainingQty > 1) {
                   return !Number.isFinite(n) || n < 1 || n > remainingQty;
                 }
                 return false;
               });
-              const canSubmitReturn = selectedReturnItems.length > 0 && !hasInvalidQty;
+              const canSubmitReturn = selectedReturnItems.length > 0 && !hasInvalidQty && !returnModalLoading;
 
               return (
                 <View style={{ flexDirection: "row", gap: 12 }}>
@@ -4236,6 +4384,7 @@ export default function AccountScreen({ navigation }) {
                       setReturnNote("");
                       setSelectedReturnItems([]);
                       setReturnItemQuantities({});
+                      setReturnModalOrderLines([]);
                     }}
                   >
                     <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
@@ -4244,22 +4393,23 @@ export default function AccountScreen({ navigation }) {
                     style={[styles.receiveItemModalButton, { backgroundColor: canSubmitReturn ? "#B71C1C" : "#ccc" }]}
                     disabled={!canSubmitReturn}
                     onPress={async () => {
-                      const returnRequestData = returnRequests[receiptTransaction?.transaction_uid];
                       const transactionReturnItems = [];
                       for (const id of selectedReturnItems) {
-                        const index = parseInt(id, 10);
-                        const item = returnModalReceiptData[index];
-                        if (!item) continue;
-                        const transaction_item_uid = getReceiptLineTransactionItemUid(item);
+                        const row = lineById[id];
+                        if (!row) continue;
+                        const transaction_item_uid = row.transactionItemUid;
                         if (!transaction_item_uid) {
-                          Alert.alert("Error", "Receipt line is missing a transaction item id (ti_uid or ti_bs_id). Cannot submit return.");
+                          Alert.alert("Error", "Order line is missing ti_uid. Cannot submit return.");
                           return;
                         }
-                        const purchasedQty = getReceiptLineQty(item);
-                        const alreadyReturnedQty = getReturnedQtyForLine(returnRequestData, index, purchasedQty);
-                        const remainingQty = purchasedQty - alreadyReturnedQty;
+                        const remainingQty = row.remainingQty;
                         const raw = returnItemQuantities[id];
-                        const return_quantity = purchasedQty > 1 && remainingQty > 1 ? (typeof raw === "number" ? raw : parseInt(String(raw), 10) || 1) : Math.min(1, remainingQty) || 1;
+                        const return_quantity =
+                          row.purchasedQty > 1 && remainingQty > 1
+                            ? typeof raw === "number"
+                              ? raw
+                              : parseInt(String(raw), 10) || 1
+                            : Math.min(1, remainingQty) || 1;
                         transactionReturnItems.push({ transaction_item_uid, return_quantity });
                       }
                       if (transactionReturnItems.length === 0) {
@@ -4272,6 +4422,7 @@ export default function AccountScreen({ navigation }) {
                       setReturnNote("");
                       setSelectedReturnItems([]);
                       setReturnItemQuantities({});
+                      setReturnModalOrderLines([]);
                     }}
                   >
                     <Text style={styles.receiveItemModalButtonText}>Submit</Text>
@@ -4279,6 +4430,8 @@ export default function AccountScreen({ navigation }) {
                 </View>
               );
             })()}
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -4679,17 +4832,13 @@ export default function AccountScreen({ navigation }) {
               <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No orders recorded for this product yet.</Text>
             ) : (
               <BusinessOrdersTable
-                rows={(productSalesModal.sales || []).map((sale) =>
-                  buildBusinessOrderRowFromProductSale(
-                    sale,
-                    productSalesModal.receiptByTxn,
-                    productSalesModal.product?.productUid || "",
-                    businessTransactionData,
-                    businessBountyData?.data || [],
-                  ),
+                rows={buildProductSalesOrderRows(
+                  productSalesModal.product,
+                  businessSellerTransactionList,
+                  businessBountyData?.data || [],
                 )}
                 darkMode={darkMode}
-                onOrderPress={openBusinessOrderDetail}
+                onOrderPress={openOrderDetail}
               />
             )}
 
@@ -4700,19 +4849,14 @@ export default function AccountScreen({ navigation }) {
         </View>
       </Modal>
 
-      <BusinessOrderDetailModal
-        visible={businessOrderDetailModal.visible}
-        onClose={closeBusinessOrderDetailModal}
-        order={businessOrderDetailModal.order}
-        receiptLines={businessOrderDetailModal.receiptLines}
-        loading={businessOrderDetailModal.loading}
-        returnRequestData={businessOrderDetailModal.returnRequestData}
-        returnStatus={resolveOrderReturnStatus(
-          businessOrderDetailModal.order?.saleRows,
-          businessOrderDetailModal.returnRequestData,
-          returnStatuses,
-        )}
-        businessTransactionData={businessTransactionData}
+      <OrderDetailModal
+        visible={orderDetailModal.visible}
+        onClose={closeOrderDetailModal}
+        orderUid={orderDetailModal.orderUid}
+        orderDetail={orderDetailModal.orderDetail}
+        loading={orderDetailModal.loading}
+        error={orderDetailModal.error}
+        isSellerView={orderDetailModal.isSellerView}
         darkMode={darkMode}
       />
 
@@ -5086,6 +5230,9 @@ const styles = StyleSheet.create({
   productSalesDetailColOrder: {
     width: 118,
   },
+  productSalesDetailColType: {
+    width: 64,
+  },
   productSalesDetailColPlacedBy: {
     width: 108,
   },
@@ -5173,7 +5320,7 @@ const styles = StyleSheet.create({
     maxHeight: 460,
   },
   businessOrderDetailTable: {
-    minWidth: 640,
+    minWidth: 520,
     marginBottom: 8,
   },
   businessOrderDetailHeaderRow: {
@@ -5202,7 +5349,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   businessOrderDetailColProductId: {
-    width: 150,
+    width: 100,
+  },
+  businessOrderDetailColDescription: {
+    width: 180,
   },
   businessOrderDetailProductId: {
     fontWeight: "600",
@@ -5211,6 +5361,35 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#777",
     marginTop: 2,
+  },
+  orderDetailLineTableFooterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 12,
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+  },
+  orderDetailLineTableFooterLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#222",
+    paddingHorizontal: 6,
+  },
+  orderDetailLineTableFooterValue: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#222",
+    paddingHorizontal: 6,
+    textAlign: "right",
+  },
+  orderDetailReturnBlock: {
+    marginBottom: 14,
+    paddingBottom: 4,
+  },
+  orderDetailReturnSubtitle: {
+    marginBottom: 12,
+    marginTop: -4,
   },
   businessOrderDetailColUnitCost: {
     width: 80,
@@ -5249,6 +5428,88 @@ const styles = StyleSheet.create({
   businessOrderDetailReturnBannerAccepted: {
     backgroundColor: "#FDECEA",
     color: "#B71C1C",
+  },
+  orderDetailSectionCard: {
+    marginTop: 8,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#eee",
+    backgroundColor: "#fafafa",
+  },
+  orderDetailSectionCardDark: {
+    borderColor: "#444",
+    backgroundColor: "#2a2a2a",
+  },
+  orderDetailSectionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#222",
+    marginBottom: 6,
+  },
+  orderDetailSectionText: {
+    fontSize: 13,
+    color: "#444",
+    marginBottom: 4,
+  },
+  orderDetailSectionNote: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 4,
+    fontStyle: "italic",
+  },
+  orderDetailReturnLine: {
+    fontSize: 12,
+    color: "#555",
+    marginTop: 4,
+  },
+  orderDetailReturnTotal: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#B71C1C",
+    marginTop: 8,
+    textAlign: "right",
+  },
+  orderDetailSummaryCard: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    backgroundColor: "#f9f9f9",
+  },
+  orderDetailSummaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  orderDetailSummaryRowTotal: {
+    marginTop: 4,
+    marginBottom: 0,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#ddd",
+  },
+  orderDetailSummaryValue: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#222",
+  },
+  orderDetailSummaryNet: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#18884A",
+  },
+  orderDetailSummarySectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#888",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    marginTop: 10,
+    marginBottom: 6,
   },
   businessTransactionHeaderRow: {
     flexDirection: "row",

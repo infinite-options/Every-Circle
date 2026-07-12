@@ -89,6 +89,8 @@ export const TRANSACTIONS_RETURNS_DECLINED_ENDPOINT = `${API_BASE_URL}/api/v1/tr
 /** Aggregated Account screen payloads (Flask: AccountScreenPersonal / AccountScreenBusiness) */
 export const ACCOUNT_SCREEN_PERSONAL_ENDPOINT = `${API_BASE_URL}/api/v1/account-screen/personal`;
 export const ACCOUNT_SCREEN_BUSINESS_ENDPOINT = `${API_BASE_URL}/api/v1/account-screen/business`;
+/** GET /:orderUid?profile_id= | ?business_uid= — combined sale + returns order detail */
+export const ORDERS_ENDPOINT = `${API_BASE_URL}/api/v1/orders`;
 export const TRANSACTION_RECEIPT_ENDPOINT = `${API_BASE_URL}/api/transactionreceipt`;
 export const RATINGS_ENDPOINT = `${API_BASE_URL}/ratings`;
 
