@@ -1,6 +1,6 @@
 // ShoppingCartScreen.js
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, InteractionManager } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform, InteractionManager, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import MiniCard from "../components/MiniCard";
@@ -145,6 +145,28 @@ function cartItemsFromRouteParams(raw) {
   if (Array.isArray(raw)) return raw;
   if (typeof raw === "object" && Array.isArray(raw.items)) return raw.items;
   return [];
+}
+
+/** True when shipping is off, or all required shipping fields are non-empty (line 2 optional). */
+function isShippingAddressComplete({ enabled, firstName, lastName, streetLine1, city, state, zip }) {
+  if (!enabled) return true;
+  return [firstName, lastName, streetLine1, city, state, zip].every((value) => String(value || "").trim() !== "");
+}
+
+/** Shipping address payload for transaction POST when the Shipping checkbox is checked. */
+function buildShippingAddressPayload({ enabled, firstName, lastName, streetLine1, streetLine2, city, state, zip }) {
+  if (!enabled) return null;
+  const payload = {
+    first_name: String(firstName || "").trim(),
+    last_name: String(lastName || "").trim(),
+    address_line_1: String(streetLine1 || "").trim(),
+    city: String(city || "").trim(),
+    state: String(state || "").trim(),
+    zip: String(zip || "").trim(),
+  };
+  const line2 = String(streetLine2 || "").trim();
+  if (line2) payload.address_line_2 = line2;
+  return payload;
 }
 
 /** Whether this service line is subject to sales tax (expertise handled separately). */
@@ -325,6 +347,14 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   const [escrowBySeller, setEscrowBySeller] = useState({});
   const [refundAcknowledged, setRefundAcknowledged] = useState(false); //refund acknowledgement state
   const [refundError, setRefundError] = useState(false);
+  const [shippingEnabled, setShippingEnabled] = useState(false);
+  const [shippingFirstName, setShippingFirstName] = useState("");
+  const [shippingLastName, setShippingLastName] = useState("");
+  const [shippingStreetLine1, setShippingStreetLine1] = useState("");
+  const [shippingStreetLine2, setShippingStreetLine2] = useState("");
+  const [shippingCity, setShippingCity] = useState("");
+  const [shippingState, setShippingState] = useState("");
+  const [shippingZip, setShippingZip] = useState("");
   const scrollViewRef = useRef(null);
   /** Y offset of refund policy block within ScrollView content (from onLayout). */
   const refundSectionScrollYRef = useRef(0);
@@ -507,6 +537,11 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       return;
     }
     setRefundError(false);
+
+    if (shippingEnabled && !shippingAddressComplete) {
+      Alert.alert("Shipping address required", "Please complete all required shipping fields before checkout.");
+      return;
+    }
 
     // Web Stripe flow
     if (isWeb) {
@@ -941,6 +976,16 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       // total_taxes / total_fees break out the tax and fee portions of the charge.
       const salesTaxRounded = parseFloat(Number(salesTaxTotal).toFixed(2));
       const merchandiseRounded = parseFloat(Number(merchandiseSubtotal).toFixed(2));
+      const shippingAddress = buildShippingAddressPayload({
+        enabled: shippingEnabled,
+        firstName: shippingFirstName,
+        lastName: shippingLastName,
+        streetLine1: shippingStreetLine1,
+        streetLine2: shippingStreetLine2,
+        city: shippingCity,
+        state: shippingState,
+        zip: shippingZip,
+      });
       const transactionData = {
         profile_id: buyerProfileId,
         business_id: group.sellerId,
@@ -952,6 +997,9 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         transaction_in_escrow: transactionInEscrow,
         items,
       };
+      if (shippingAddress) {
+        transactionData.shipping_address = shippingAddress;
+      }
 
       console.log("[ShoppingCart] Transaction POST — each field before endpoint:");
       console.log({
@@ -1055,6 +1103,17 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     (webCheckoutSession?.groups?.[webCheckoutSession.index]?.displayName && String(webCheckoutSession.groups[webCheckoutSession.index].displayName).trim()) ||
     (feeDialogFirstGroup?.displayName && String(feeDialogFirstGroup.displayName).trim()) ||
     null;
+  const shippingAddressComplete = isShippingAddressComplete({
+    enabled: shippingEnabled,
+    firstName: shippingFirstName,
+    lastName: shippingLastName,
+    streetLine1: shippingStreetLine1,
+    city: shippingCity,
+    state: shippingState,
+    zip: shippingZip,
+  });
+  const checkoutBlockedByShipping = shippingEnabled && !shippingAddressComplete;
+  const checkoutDisabled = loading || checkoutBlockedByShipping;
 
   const content = (
     <View style={styles.container}>
@@ -1197,6 +1256,92 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                   </View>
                 );
               })}
+              <View style={styles.shippingCard}>
+                <TouchableOpacity
+                  style={styles.escrowRow}
+                  onPress={() => setShippingEnabled((prev) => !prev)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.checkbox, shippingEnabled && styles.checkboxChecked]}>
+                    {shippingEnabled && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.escrowLabel}>Shipping</Text>
+                </TouchableOpacity>
+                {shippingEnabled ? (
+                  <View style={styles.shippingFields}>
+                    <Text style={styles.shippingFieldLabel}>First Name</Text>
+                    <TextInput
+                      style={styles.shippingInput}
+                      value={shippingFirstName}
+                      onChangeText={setShippingFirstName}
+                      placeholder="First Name"
+                      autoCapitalize="words"
+                      autoCorrect={false}
+                    />
+                    <Text style={styles.shippingFieldLabel}>Last Name</Text>
+                    <TextInput
+                      style={styles.shippingInput}
+                      value={shippingLastName}
+                      onChangeText={setShippingLastName}
+                      placeholder="Last Name"
+                      autoCapitalize="words"
+                      autoCorrect={false}
+                    />
+                    <Text style={styles.shippingFieldLabel}>Street Address</Text>
+                    <TextInput
+                      style={styles.shippingInput}
+                      value={shippingStreetLine1}
+                      onChangeText={setShippingStreetLine1}
+                      placeholder="Street Address Line 1"
+                      autoCapitalize="words"
+                      autoCorrect={false}
+                    />
+                    <TextInput
+                      style={styles.shippingInput}
+                      value={shippingStreetLine2}
+                      onChangeText={setShippingStreetLine2}
+                      placeholder="Street Address Line 2"
+                      autoCapitalize="words"
+                      autoCorrect={false}
+                    />
+                    <View style={styles.shippingCityStateZipRow}>
+                      <View style={styles.shippingCityField}>
+                        <Text style={styles.shippingFieldLabel}>City</Text>
+                        <TextInput
+                          style={styles.shippingInput}
+                          value={shippingCity}
+                          onChangeText={setShippingCity}
+                          placeholder="City"
+                          autoCapitalize="words"
+                          autoCorrect={false}
+                        />
+                      </View>
+                      <View style={styles.shippingStateField}>
+                        <Text style={styles.shippingFieldLabel}>State</Text>
+                        <TextInput
+                          style={styles.shippingInput}
+                          value={shippingState}
+                          onChangeText={setShippingState}
+                          placeholder="State"
+                          autoCapitalize="words"
+                          autoCorrect={false}
+                        />
+                      </View>
+                      <View style={styles.shippingZipField}>
+                        <Text style={styles.shippingFieldLabel}>Zip</Text>
+                        <TextInput
+                          style={[styles.shippingInput, styles.shippingInputLast]}
+                          value={shippingZip}
+                          onChangeText={setShippingZip}
+                          placeholder="Zip"
+                          keyboardType="number-pad"
+                          autoCorrect={false}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
               <View style={styles.totalContainer}>
                 <Text style={styles.multiSellerHint}>
                   {hasExpertiseInCart ? "Offering and expertise purchases include a 3% credit card processing fee in each seller total below (same as when you added them to the cart). " : null}
@@ -1285,14 +1430,16 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
         {cartItems.length > 0 && (
           <View style={styles.footer}>
             <TouchableOpacity
-              style={[styles.checkoutButton, loading && styles.disabledButton]}
+              style={[styles.checkoutButton, checkoutDisabled && styles.checkoutButtonDisabled]}
               onPress={() => {
                 console.log("Checkout button pressed - direct handler");
                 handleCheckout();
               }}
-              disabled={loading}
+              disabled={checkoutDisabled}
             >
-              <Text style={styles.checkoutButtonText}>{loading ? "Processing..." : "Proceed to Checkout"}</Text>
+              <Text style={[styles.checkoutButtonText, checkoutDisabled && styles.checkoutButtonTextDisabled]}>
+                {loading ? "Processing..." : "Proceed to Checkout"}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.returnButton} onPress={handleReturnPress} disabled={loading}>
               <Text style={styles.returnButtonText}>{returnButtonLabel}</Text>
@@ -1451,6 +1598,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
   },
+  checkoutButtonDisabled: {
+    backgroundColor: "#B8B8B8",
+    opacity: 1,
+  },
+  checkoutButtonTextDisabled: {
+    color: "#F5F5F5",
+  },
   returnButton: {
     backgroundColor: "#F5F5F5",
     padding: 15,
@@ -1461,6 +1615,55 @@ const styles = StyleSheet.create({
     color: "#9C45F7",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  shippingCard: {
+    backgroundColor: "#fff",
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 10,
+  },
+  shippingFields: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E5E5",
+  },
+  shippingFieldLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 6,
+  },
+  shippingInput: {
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    padding: 12,
+    width: "100%",
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    fontSize: 16,
+    color: "#333",
+    ...(Platform.OS === "web" && {
+      outlineStyle: "none",
+    }),
+  },
+  shippingInputLast: {
+    marginBottom: 0,
+  },
+  shippingCityStateZipRow: {
+    flexDirection: "row",
+    width: "100%",
+    gap: 10,
+  },
+  shippingCityField: {
+    flex: 2,
+  },
+  shippingStateField: {
+    flex: 1,
+  },
+  shippingZipField: {
+    flex: 1.2,
   },
   totalContainer: {
     backgroundColor: "#fff",
