@@ -44,6 +44,7 @@ import { useDarkMode } from "../contexts/DarkModeContext";
 import FeedbackPopup from "../components/FeedbackPopup";
 import { isOfferingModeratedBlocked } from "../utils/offeringModeration";
 import { isSeekingModeratedBlocked } from "../utils/seekingModeration";
+import { isProfileVisibilityBlocked } from "../utils/profileModeration";
 import { getHeaderColors } from "../config/headerColors";
 import { isWishEnded } from "../utils/wishUtils";
 import { formatExpertiseModeForDisplay, getExpertiseModeIoniconNames } from "../utils/expertiseMode";
@@ -320,30 +321,73 @@ function offeringLocationLabel(expertise) {
   return String(expertise?.profile_expertise_location || "").trim();
 }
 
-/** Drop zero-qty and moderated offerings (profile_expertise_moderated 1, 2, or 3). */
+/** True when the owner profile is taken down (1), pending review (2), or acknowledged (3). */
+function isSearchOwnerProfileBlocked(item) {
+  if (!item) return false;
+  const profileModeration =
+    item.profile_moderation ??
+    item.owner_moderation ??
+    item.moderation?.profile ??
+    null;
+  const moderatedValue =
+    item.profile_personal_moderated ??
+    item.owner_profile_moderated ??
+    item.profile_moderated ??
+    profileModeration?.moderated ??
+    null;
+  if (moderatedValue != null && moderatedValue !== "") {
+    return isProfileVisibilityBlocked({
+      profile_personal_moderated: moderatedValue,
+      moderation: profileModeration,
+    });
+  }
+  const status = String(
+    profileModeration?.status ??
+      item.profile_moderation_status ??
+      item.owner_profile_status ??
+      "",
+  )
+    .trim()
+    .toLowerCase();
+  return status === "pending_review" || status === "taken_down" || status === "acknowledged" || status === "rejected";
+}
+
+/** Drop zero-qty, moderated offerings, and offerings from taken-down / pending-review profiles. */
 function shouldIncludeSearchExpertiseRow(item) {
   const qty = item?.profile_expertise_quantity;
   if (qty != null && qty !== "" && parseInt(qty, 10) === 0) return false;
-  return !isOfferingModeratedBlocked(item);
+  if (isOfferingModeratedBlocked(item)) return false;
+  if (isSearchOwnerProfileBlocked(item)) return false;
+  return true;
 }
 
 function filterPublicSearchModeratedResults(items) {
   return (items || []).filter((item) => {
     if (item?.itemType === "expertise") {
-      return !isOfferingModeratedBlocked(item.expertiseData || item);
+      if (isOfferingModeratedBlocked(item.expertiseData || item)) return false;
+      return !isSearchOwnerProfileBlocked(item) && !isSearchOwnerProfileBlocked(item.expertiseData);
     }
     if (item?.itemType === "seeking") {
-      return !isSeekingModeratedBlocked(item.wishData || item);
+      if (isSeekingModeratedBlocked(item.wishData || item)) return false;
+      return !isSearchOwnerProfileBlocked(item) && !isSearchOwnerProfileBlocked(item.wishData);
+    }
+    if (item?.itemType === "individuals") {
+      return !isProfileVisibilityBlocked({
+        profile_personal_moderated: item.profile_personal_moderated,
+        moderation: item.moderation,
+      });
     }
     return true;
   });
 }
 
-/** Drop zero-qty and moderated seeking posts (profile_wish_moderated 1, 2, or 3). */
+/** Drop zero-qty, moderated seeking posts, and seekings from taken-down / pending-review profiles. */
 function shouldIncludeSearchSeekingRow(item) {
   const qty = item?.profile_wish_quantity;
   if (qty != null && qty !== "" && parseInt(qty, 10) === 0) return false;
-  return !isSeekingModeratedBlocked(item);
+  if (isSeekingModeratedBlocked(item)) return false;
+  if (isSearchOwnerProfileBlocked(item)) return false;
+  return true;
 }
 
 function mapSearchExpertiseRow(item, i) {
@@ -361,6 +405,7 @@ function mapSearchExpertiseRow(item, i) {
     score_breakdown: item.score_breakdown || null,
     itemType: "expertise",
     profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
+    profile_personal_moderated: item.profile_personal_moderated ?? item.owner_profile_moderated ?? null,
     ...profileLocationFieldsFromApi(item),
     expertiseData: {
       title: item.profile_expertise_title,
@@ -383,6 +428,7 @@ function mapSearchExpertiseRow(item, i) {
       profile_expertise_image_is_public: item.profile_expertise_image_is_public,
       profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
       profile_expertise_moderated: item.profile_expertise_moderated,
+      profile_personal_moderated: item.profile_personal_moderated ?? item.owner_profile_moderated ?? null,
       moderation: item.moderation,
       profile_expertise_bounty_type: item.profile_expertise_bounty_type || "none",
       profile_expertise_is_taxable: item.profile_expertise_is_taxable,
@@ -430,6 +476,7 @@ function mapSearchWishRow(item, i) {
     itemType: "seeking",
     profile_uid: item.profile_wish_profile_personal_id,
     profile_wish_end: item.profile_wish_end || "",
+    profile_personal_moderated: item.profile_personal_moderated ?? item.owner_profile_moderated ?? null,
     ...profileLocationFieldsFromApi(item),
     wishData: {
       title: item.profile_wish_title,
@@ -451,6 +498,7 @@ function mapSearchWishRow(item, i) {
       profile_wish_bounty_type: item.profile_wish_bounty_type || (item.profile_wish_bounty ? "per_item" : "none"),
       profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
       profile_wish_moderated: item.profile_wish_moderated,
+      profile_personal_moderated: item.profile_personal_moderated ?? item.owner_profile_moderated ?? null,
       moderation: item.moderation,
     },
     profileData: {
@@ -1979,6 +2027,7 @@ export default function SearchScreen({ route }) {
               itemType: "seeking",
               profile_uid: item.profile_wish_profile_personal_id,
               profile_wish_end: item.profile_wish_end || "",
+              profile_personal_moderated: item.profile_personal_moderated ?? item.owner_profile_moderated ?? null,
               ...locationFieldsFromApi(item),
               profile_personal_latitude: item.profile_personal_latitude ?? null,
               profile_personal_longitude: item.profile_personal_longitude ?? null,
@@ -2003,6 +2052,7 @@ export default function SearchScreen({ route }) {
                 profile_wish_bounty_type: item.profile_wish_bounty_type || (item.profile_wish_bounty ? "per_item" : "none"),
                 profile_wish_updated_at: item.profile_wish_updated_at ?? item.updated_at,
                 profile_wish_moderated: item.profile_wish_moderated,
+                profile_personal_moderated: item.profile_personal_moderated ?? item.owner_profile_moderated ?? null,
                 moderation: item.moderation,
               },
               // Store profile data for MiniCard-like display
@@ -2066,6 +2116,7 @@ export default function SearchScreen({ route }) {
               score_breakdown: item.score_breakdown || null,
               itemType: "expertise",
               profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
+              profile_personal_moderated: item.profile_personal_moderated ?? item.owner_profile_moderated ?? null,
               ...locationFieldsFromApi(item),
               profile_personal_latitude: item.profile_personal_latitude ?? null,
               profile_personal_longitude: item.profile_personal_longitude ?? null,
@@ -2085,6 +2136,9 @@ export default function SearchScreen({ route }) {
                 profile_expertise_image: item.profile_expertise_image || "",
                 profile_expertise_image_is_public: item.profile_expertise_image_is_public,
                 profile_expertise_updated_at: item.profile_expertise_updated_at ?? item.updated_at,
+                profile_expertise_moderated: item.profile_expertise_moderated,
+                profile_personal_moderated: item.profile_personal_moderated ?? item.owner_profile_moderated ?? null,
+                moderation: item.moderation,
                 profile_expertise_bounty_type: item.profile_expertise_bounty_type || "none",
                 profile_expertise_is_taxable: item.profile_expertise_is_taxable,
                 profile_expertise_tax_rate: item.profile_expertise_tax_rate || "",

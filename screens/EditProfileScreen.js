@@ -22,6 +22,7 @@ import { refreshSessionProfileFromNetwork } from "../utils/sessionProfile";
 import { resolveProfileItemImageUri, isRemoteHttpUrl } from "../utils/resolveProfileItemImageUri";
 import { getOfferingModeratedState, isOfferingModeratedBlocked, MODERATED_ACKNOWLEDGED } from "../utils/offeringModeration";
 import { getSeekingModeratedState, isSeekingModeratedBlocked } from "../utils/seekingModeration";
+import { buildProfileModerationItem, isProfileOwnerRestricted } from "../utils/profileModeration";
 import { mapOfferingFormToPayload, mapProfileOfferingToFormItem } from "../utils/offeringResubmission";
 import { mapProfileWishToFormItem, mapWishFormToPayload } from "../utils/wishResubmission";
 import { parseCoordinateValue } from "../utils/validateCoordinates";
@@ -107,9 +108,15 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [showSocial, setShowSocial] = useState(true);
 
   useEffect(() => {
-    // This useEffect is only used to log the screen being mounted
     console.log("EditProfileScreen - Screen Mounted");
-  }, []);
+    const moderationItem = user?.profileModerationItem || buildProfileModerationItem(user);
+    if (moderationItem && isProfileOwnerRestricted(moderationItem)) {
+      navigation.replace("ProfileModeration", {
+        moderationItem,
+        profileName: `${user?.firstName || ""} ${user?.lastName || ""}`.trim(),
+      });
+    }
+  }, [user, navigation]);
 
   const initialHomeLatLng = getInitialHomeLatLng(user);
 

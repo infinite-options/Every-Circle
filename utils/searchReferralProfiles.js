@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SEARCH_REFERRAL_ENDPOINT, REFERRAL_API_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "./httpMiddleware";
 import { sanitizeText } from "./textSanitizer";
+import { isProfileVisibilityBlocked } from "./profileModeration";
 
 const ASYNC_NETWORK_DATA_CONNECTIONS = "network_data_connections";
 const ASYNC_NETWORK_DATA_CIRCLES = "network_data_circles";
@@ -59,13 +60,29 @@ export async function searchReferralProfiles(query) {
     const response = await fetch(REFERRAL_API_ENDPOINT + encodeURIComponent(email));
     const data = await response.json();
     const profile = data.personal_info;
-    return profile?.profile_personal_uid ? [profile] : [];
+    if (!profile?.profile_personal_uid) return [];
+    if (
+      isProfileVisibilityBlocked({
+        profile_personal_moderated: profile?.profile_personal_moderated,
+        moderation: profile?.moderation,
+      })
+    ) {
+      return [];
+    }
+    return [profile];
   }
 
   const url = `${SEARCH_REFERRAL_ENDPOINT}?query=${encodeURIComponent(trimmedQuery)}`;
   const response = await fetch(url);
   const data = await response.json();
-  if (data.code === 200) return data.results || [];
+  if (data.code === 200) {
+    return (data.results || []).filter((profile) =>
+      !isProfileVisibilityBlocked({
+        profile_personal_moderated: profile?.profile_personal_moderated,
+        moderation: profile?.moderation,
+      }),
+    );
+  }
   return [];
 }
 
@@ -106,5 +123,7 @@ export function mapReferralProfileToSearchItem(profile, networkNode = null) {
     company: displayName,
     microCardUser,
     profileData: microCardUser,
+    profile_personal_moderated: profile.profile_personal_moderated,
+    moderation: profile.moderation,
   };
 }

@@ -18,8 +18,14 @@ import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
 import { fetchSeekingModerationReviewQueue, fetchSeekingModerationDetail, reviewSeekingModeration } from "../utils/seekingModeration";
+import {
+  fetchProfileModerationReviewQueue,
+  fetchProfileModerationDetail,
+  reviewProfileModeration,
+} from "../utils/profileModeration";
 import OfferingReviewDetailPanel from "../components/OfferingReviewDetailPanel";
 import SeekingReviewDetailPanel from "../components/SeekingReviewDetailPanel";
+import ProfileReviewDetailPanel from "../components/ProfileReviewDetailPanel";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -262,6 +268,15 @@ export default function SettingsScreen() {
   const [seekingReviewNote, setSeekingReviewNote] = useState("");
   const [seekingReviewLoading, setSeekingReviewLoading] = useState(false);
   const [seekingReviewSubmitting, setSeekingReviewSubmitting] = useState(false);
+  const [adminProfiles, setAdminProfiles] = useState([]);
+  const [profilesLoading, setProfilesLoading] = useState(false);
+  const [showProfilesSection, setShowProfilesSection] = useState(false);
+  const [profileReviewModalVisible, setProfileReviewModalVisible] = useState(false);
+  const [profileReviewItem, setProfileReviewItem] = useState(null);
+  const [profileReviewDetail, setProfileReviewDetail] = useState(null);
+  const [profileReviewNote, setProfileReviewNote] = useState("");
+  const [profileReviewLoading, setProfileReviewLoading] = useState(false);
+  const [profileReviewSubmitting, setProfileReviewSubmitting] = useState(false);
   const [hideChangePassword, setHideChangePassword] = useState(false);
 
   console.log("In SettingsScreen");
@@ -1212,6 +1227,71 @@ export default function SettingsScreen() {
     }
   };
 
+  const fetchAdminProfiles = async () => {
+    setProfilesLoading(true);
+    try {
+      const rows = await fetchProfileModerationReviewQueue();
+      setAdminProfiles(rows);
+    } catch (e) {
+      console.error("Admin profiles fetch error:", e);
+      Alert.alert("Error", e?.message || "Failed to load profile review queue.");
+    } finally {
+      setProfilesLoading(false);
+    }
+  };
+
+  const openProfileReview = async (item) => {
+    const uid = item?.profile_personal_uid || item?.profile_uid;
+    if (!uid) return;
+    setProfileReviewItem(item);
+    setProfileReviewDetail(null);
+    setProfileReviewNote("");
+    setProfileReviewModalVisible(true);
+    setProfileReviewLoading(true);
+    try {
+      const detail = await fetchProfileModerationDetail(uid);
+      setProfileReviewDetail(detail);
+    } catch (e) {
+      console.error("Profile review detail error:", e);
+      Alert.alert("Error", e?.message || "Failed to load profile details.");
+      setProfileReviewModalVisible(false);
+    } finally {
+      setProfileReviewLoading(false);
+    }
+  };
+
+  const handleProfileReview = async (action) => {
+    const uid =
+      profileReviewItem?.profile_personal_uid ||
+      profileReviewItem?.profile_uid ||
+      profileReviewDetail?.profile_personal_uid ||
+      profileReviewDetail?.profile?.profile_personal_uid ||
+      profileReviewDetail?.personal_info?.profile_personal_uid;
+    if (!uid) return;
+    if (action === "reject" && !profileReviewNote.trim()) {
+      Alert.alert("Note required", "Please enter a note explaining the rejection for the profile owner.");
+      return;
+    }
+    setProfileReviewSubmitting(true);
+    try {
+      await reviewProfileModeration({
+        profilePersonalUid: uid,
+        action,
+        note: profileReviewNote.trim(),
+      });
+      setAdminProfiles((prev) => prev.filter((row) => (row.profile_personal_uid || row.profile_uid) !== uid));
+      setProfileReviewModalVisible(false);
+      setProfileReviewItem(null);
+      setProfileReviewDetail(null);
+      Alert.alert("Done", `Profile ${action === "approve" ? "approved" : "rejected"} successfully.`);
+    } catch (e) {
+      console.error("Profile review submit error:", e);
+      Alert.alert("Error", e?.message || "Failed to submit review.");
+    } finally {
+      setProfileReviewSubmitting(false);
+    }
+  };
+
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Nearby alert banner — floats above everything */}
@@ -1838,6 +1918,80 @@ export default function SettingsScreen() {
             </>
           )}
 
+          {isAdmin && (
+            <>
+              <TouchableOpacity
+                style={[styles.informationSectionHeader, { backgroundColor: "rgba(106, 27, 154, 0.10)", marginTop: 8 }]}
+                onPress={() => {
+                  setShowProfilesSection(!showProfilesSection);
+                  if (!showProfilesSection && adminProfiles.length === 0) fetchAdminProfiles();
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <MaterialIcons name='person' size={16} color='#6A1B9A' />
+                  <Text style={[styles.informationSectionHeaderText, { color: "#6A1B9A" }]}>
+                    PROFILE REVIEWS {adminProfiles.length > 0 ? `(${adminProfiles.length})` : ""}
+                  </Text>
+                </View>
+                <Ionicons name={showProfilesSection ? "chevron-up" : "chevron-down"} size={20} color='#6A1B9A' />
+              </TouchableOpacity>
+
+              {showProfilesSection && (
+                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#6A1B9A" }]}>
+                  {profilesLoading ? (
+                    <ActivityIndicator size='small' color='#6A1B9A' style={{ margin: 16 }} />
+                  ) : adminProfiles.length === 0 ? (
+                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No profiles pending review.</Text>
+                  ) : (
+                    adminProfiles.map((row, idx) => {
+                      const uid = row.profile_personal_uid || row.profile_uid || "";
+                      const name = [row.profile_personal_first_name || row.owner_first_name || row.first_name, row.profile_personal_last_name || row.owner_last_name || row.last_name]
+                        .filter(Boolean)
+                        .join(" ");
+                      const flagCount =
+                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
+                      const tagLine = row.profile_personal_tag_line || row.tag_line || "";
+                      const email = row.user_email || row.user_email_id || row.email || "";
+                      return (
+                        <TouchableOpacity
+                          key={uid || idx}
+                          style={{
+                            padding: 12,
+                            borderBottomWidth: idx < adminProfiles.length - 1 ? 1 : 0,
+                            borderBottomColor: darkMode ? "#444" : "#eee",
+                            backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#faf5ff") : "transparent",
+                          }}
+                          onPress={() => openProfileReview(row)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>
+                            {name || uid || "Profile"}
+                          </Text>
+                          {tagLine ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
+                              {tagLine}
+                            </Text>
+                          ) : null}
+                          {email ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>{email}</Text>
+                          ) : null}
+                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
+                            {uid}
+                            {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#6A1B9A", marginTop: 6, fontWeight: "600" }}>Tap to review →</Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminProfiles}>
+                    <Text style={{ color: "#6A1B9A", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          )}
+
           {/* Bottom Logout Button - Styled like Submit button */}
           <TouchableOpacity style={[styles.bottomLogoutButton, darkMode && styles.darkBottomLogoutButton]} onPress={handleLogout}>
             <Text style={[styles.bottomLogoutText, darkMode && styles.darkBottomLogoutText]}>Log out</Text>
@@ -1996,6 +2150,64 @@ export default function SettingsScreen() {
               onPress={() => !seekingReviewSubmitting && setSeekingReviewModalVisible(false)}
               style={{ marginTop: 12, alignItems: "center" }}
               disabled={seekingReviewSubmitting}
+            >
+              <Text style={{ color: darkMode ? "#aaa" : "#666" }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Profile moderation review modal */}
+      <Modal visible={profileReviewModalVisible} transparent animationType='slide' onRequestClose={() => !profileReviewSubmitting && setProfileReviewModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox, { maxHeight: "92%", width: "94%", maxWidth: 520 }]}>
+            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Review profile</Text>
+            {profileReviewLoading ? (
+              <ActivityIndicator size='small' color='#6A1B9A' style={{ marginVertical: 24 }} />
+            ) : (
+              <ScrollView style={{ maxHeight: 480 }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
+                <ProfileReviewDetailPanel detail={profileReviewDetail} queueItem={profileReviewItem} darkMode={darkMode} />
+                <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6, marginTop: 4 }}>Admin note (required for reject)</Text>
+                <TextInput
+                  style={{
+                    borderWidth: 1,
+                    borderColor: darkMode ? "#555" : "#ddd",
+                    borderRadius: 8,
+                    padding: 10,
+                    minHeight: 72,
+                    fontSize: 13,
+                    color: darkMode ? "#fff" : "#333",
+                    backgroundColor: darkMode ? "#1f1f1f" : "#fafafa",
+                    textAlignVertical: "top",
+                  }}
+                  value={profileReviewNote}
+                  onChangeText={setProfileReviewNote}
+                  placeholder='Explain rejection to the profile owner...'
+                  placeholderTextColor={darkMode ? "#888" : "#aaa"}
+                  multiline
+                />
+              </ScrollView>
+            )}
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: "#18884A", padding: 12, borderRadius: 8, alignItems: "center", opacity: profileReviewSubmitting ? 0.7 : 1 }}
+                disabled={profileReviewSubmitting || profileReviewLoading}
+                onPress={() => handleProfileReview("approve")}
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>Approve</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: "#B71C1C", padding: 12, borderRadius: 8, alignItems: "center", opacity: profileReviewSubmitting ? 0.7 : 1 }}
+                disabled={profileReviewSubmitting || profileReviewLoading}
+                onPress={() => handleProfileReview("reject")}
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>Reject</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              onPress={() => !profileReviewSubmitting && setProfileReviewModalVisible(false)}
+              style={{ marginTop: 12, alignItems: "center" }}
+              disabled={profileReviewSubmitting}
             >
               <Text style={{ color: darkMode ? "#aaa" : "#666" }}>Cancel</Text>
             </TouchableOpacity>

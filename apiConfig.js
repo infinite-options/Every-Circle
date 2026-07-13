@@ -101,7 +101,7 @@ export const PROFILE_EXPERTISE_RESPONSE_ENDPOINT = `${API_BASE_URL}/api/profilee
 /** GET /:profile_expertise_uid — message responses for an offering (owner view) */
 export const PROFILE_EXPERTISE_RESPONSE_OFFERING_ENDPOINT = `${API_BASE_URL}/api/profileexpertiseresponse/offering`;
 
-// Content moderation — flag offerings/seeking + admin review
+// Content moderation — flag offerings/seeking/profiles + admin review
 /** POST submit flag; GET admin list (?status, ?target_uid); PUT dismiss by report_uid */
 export const CONTENT_REPORTS_ENDPOINT = `${API_BASE_URL}/api/v1/reports`;
 /** GET offerings where profile_expertise_moderated = 2 (pending review) */
@@ -112,6 +112,10 @@ export const MODERATION_OFFERINGS_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/
 export const MODERATION_SEEKING_REVIEW_QUEUE_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/seeking/review-queue`;
 /** GET/PUT /:profile_wish_uid, PUT /:profile_wish_uid/review, POST /:profile_wish_uid/acknowledge */
 export const MODERATION_SEEKING_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/seeking`;
+/** GET profiles where profile_personal_moderated = 2 (pending review) */
+export const MODERATION_USERS_REVIEW_QUEUE_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/users/review-queue`;
+/** GET/PUT /:profile_personal_uid, PUT /:profile_personal_uid/review, POST /:profile_personal_uid/acknowledge */
+export const MODERATION_USERS_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/users`;
 
 // Circles Endpoint
 export const CIRCLES_ENDPOINT = `${API_BASE_URL}/api/v1/circles`;
