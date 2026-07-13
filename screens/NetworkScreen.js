@@ -488,6 +488,7 @@ const NetworkScreen = ({ navigation }) => {
   const [myNearbyLocation, setMyNearbyLocation] = useState(null);
   const [ignoredNearbyUids, setIgnoredNearbyUids] = useState(new Set());
   const [nearbyRadiusMiles, setNearbyRadiusMiles] = useState(null);
+  const [nearbySearchQuery, setNearbySearchQuery] = useState("");
   const nearbyRadiusMilesRef = useRef(null);
   const [expandedDegrees, setExpandedDegrees] = useState({}); // { [deg]: boolean } - undefined/true = expanded
 
@@ -2115,6 +2116,14 @@ const NetworkScreen = ({ navigation }) => {
   });
   const filteredGroupedNetwork = groupNetworkByDegree(filteredNetworkData);
 
+  // Filters "Who's Nearby" results by name against nearbySearchQuery
+  const nearbySearchLower = nearbySearchQuery.trim().toLowerCase();
+  const matchesNearbySearch = (u) => {
+    if (!nearbySearchLower) return true;
+    const fullName = `${u.profile_personal_first_name || ""} ${u.profile_personal_last_name || ""}`.toLowerCase();
+    return fullName.includes(nearbySearchLower);
+  };
+
   const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
   const NEARBY_SETTINGS_KEY = "nearby_share_settings";
 
@@ -2695,6 +2704,24 @@ const NetworkScreen = ({ navigation }) => {
 
           {showNearby && (
             <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
+              {nearbyUsers.length > 0 && (
+                <View style={{ width: "100%", marginBottom: 12 }}>
+                  <View style={[styles.searchInputWrapper, darkMode && styles.darkSearchInputWrapper]}>
+                    <WebTextInput
+                      style={[styles.searchInputInner, darkMode && { color: "#fff" }]}
+                      value={nearbySearchQuery}
+                      onChangeText={setNearbySearchQuery}
+                      placeholder='Search Nearby...'
+                      placeholderTextColor={darkMode ? "#888" : "#999"}
+                      borderless
+                      accessibilitylabel='Search nearby profiles'
+                      accessibilityHint='Type to search nearby profiles by name'
+                      accessibilityRole='search'
+                      aria-label='search nearby profiles'
+                    />
+                  </View>
+                </View>
+              )}
               {myNearbyLocation && !nearbyLoading && !nearbyError && (
                 <View style={styles.nearbyMapWrap}>
                   <NearbyPeopleMapView
@@ -2703,6 +2730,7 @@ const NetworkScreen = ({ navigation }) => {
                       nearbyUsers
                         .filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))
                         .filter((u) => nearbyRadiusMiles == null || u.distance_meters == null || u.distance_meters / 1609 <= nearbyRadiusMiles)
+                        .filter(matchesNearbySearch)
                     )}
                     radiusMiles={nearbyRadiusMiles}
                     onPersonPress={(person) => navigation.navigate("Profile", { profile_uid: person.uid })}
@@ -2746,10 +2774,21 @@ const NetworkScreen = ({ navigation }) => {
                 </View>
               ) : (
                 <>
-                  {/* Active (non-ignored) users, filtered by radius */}
+                  {/* Active (non-ignored) users, filtered by radius and search */}
+                  {nearbySearchLower &&
+                    nearbyUsers
+                      .filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))
+                      .filter((u) => nearbyRadiusMiles == null || u.distance_meters == null || u.distance_meters / 1609 <= nearbyRadiusMiles)
+                      .filter(matchesNearbySearch).length === 0 && (
+                      <View style={styles.messagesEmpty}>
+                        <Ionicons name='search-outline' size={40} color={darkMode ? "#555" : "#ccc"} />
+                        <Text style={[styles.messagesEmptyText, darkMode && styles.messagesEmptyTextDark]}>No matches for "{nearbySearchQuery.trim()}"</Text>
+                      </View>
+                    )}
                   {nearbyUsers
                     .filter((u) => !ignoredNearbyUids.has(u.profile_personal_uid))
                     .filter((u) => nearbyRadiusMiles == null || u.distance_meters == null || u.distance_meters / 1609 <= nearbyRadiusMiles)
+                    .filter(matchesNearbySearch)
                     .map((item, idx) => {
                       const fullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
                       const initials = `${(item.profile_personal_first_name || "?")[0]}${(item.profile_personal_last_name || "?")[0]}`.toUpperCase();
@@ -2807,16 +2846,17 @@ const NetworkScreen = ({ navigation }) => {
                     })}
 
                   {/* Ignored section */}
-                  {nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length > 0 && (
+                  {nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).filter(matchesNearbySearch).length > 0 && (
                     <>
                       <View style={[styles.nearbyIgnoredHeader, darkMode && styles.nearbyIgnoredHeaderDark]}>
                         <Ionicons name='eye-off-outline' size={13} color={darkMode ? "#888" : "#aaa"} style={{ marginRight: 5 }} />
                         <Text style={[styles.nearbyIgnoredTitle, darkMode && styles.nearbyIgnoredTitleDark]}>
-                          Ignored ({nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).length})
+                          Ignored ({nearbyUsers.filter((u) => ignoredNearbyUids.has(u.profile_personal_uid)).filter(matchesNearbySearch).length})
                         </Text>
                       </View>
                       {nearbyUsers
                         .filter((u) => ignoredNearbyUids.has(u.profile_personal_uid))
+                        .filter(matchesNearbySearch)
                         .map((item) => {
                           const iName = `${(item.profile_personal_first_name || "?")[0]}${(item.profile_personal_last_name || "?")[0]}`.toUpperCase();
                           const iFullName = `${item.profile_personal_first_name || ""} ${item.profile_personal_last_name || ""}`.trim();
