@@ -407,6 +407,7 @@ function mapSearchExpertiseRow(item, i) {
     profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
     profile_personal_moderated: item.profile_personal_moderated ?? item.owner_profile_moderated ?? null,
     ...profileLocationFieldsFromApi(item),
+    ...locationFieldsFromApi(item),
     expertiseData: {
       title: item.profile_expertise_title,
       description: item.profile_expertise_description,
@@ -478,6 +479,7 @@ function mapSearchWishRow(item, i) {
     profile_wish_end: item.profile_wish_end || "",
     profile_personal_moderated: item.profile_personal_moderated ?? item.owner_profile_moderated ?? null,
     ...profileLocationFieldsFromApi(item),
+    ...locationFieldsFromApi(item),
     wishData: {
       title: item.profile_wish_title,
       description: item.profile_wish_description,
@@ -516,9 +518,38 @@ function mapSearchWishRow(item, i) {
   };
 }
 
+function formatSearchDistanceMiles(miles) {
+  if (!Number.isFinite(miles)) return null;
+  if (miles < 10) return `${miles.toFixed(1)} mi`;
+  return `${Math.round(miles)} mi`;
+}
+
 function LocationBoostIcon({ darkMode, distanceMiles }) {
   const label = distanceMiles != null ? `Boosted: within ${distanceMiles.toFixed(1)} miles of your home` : "Boosted: near your home address";
   return <Ionicons name='navigate' size={14} color={darkMode ? "#7DD3FC" : "#0EA5E9"} style={{ marginLeft: 6 }} accessibilityLabel={label} />;
+}
+
+function SearchCardDistanceLabel({ miles, darkMode, style, centered = false }) {
+  const label = formatSearchDistanceMiles(miles);
+  if (!label) return null;
+  return (
+    <View style={[styles.searchCardDistancePill, centered && styles.searchCardDistancePillCentered, darkMode && styles.darkSearchCardDistancePill, style]}>
+      <Ionicons name='navigate-outline' size={12} color={darkMode ? "#7DD3FC" : "#0EA5E9"} />
+      <Text style={[styles.searchCardDistanceText, darkMode && styles.darkSearchCardDistanceText]}>{label}</Text>
+    </View>
+  );
+}
+
+function SearchCardNetworkBadge({ degree, darkMode, style }) {
+  if (degree == null) return null;
+  return (
+    <View style={[styles.searchCardNetworkBadge, style]} accessibilityLabel={`Network degree ${degree}`}>
+      <Image source={require("../assets/connect.png")} style={[styles.searchCardNetworkIcon, { tintColor: darkMode ? "#ffffff" : "#000000" }]} />
+      <View style={styles.connectionBadge}>
+        <Text style={styles.connectionBadgeText}>{degree}</Text>
+      </View>
+    </View>
+  );
 }
 
 const SEARCH_SCORE_DETAIL_LABELS = {
@@ -1293,18 +1324,22 @@ export default function SearchScreen({ route }) {
           setHasLoadedInitialSearch(true);
           setLoading(false);
           const bizItems = parsedResults.filter((r) => r.itemType === "businesses" && r.id);
-          if (bizItems.length > 0) {
-            enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(parsedResults)
-              .then((updated) => {
-                commitSearchResults(updated, { browseAll: false });
-              })
-              .catch((e) => {
-                console.error("Could not fetch ratings/bounty from cache:", e);
-                rawResultsRef.current = [...parsedResults];
-              });
-          } else {
-            rawResultsRef.current = [...parsedResults];
-          }
+          const enrichCachedResults = async () => {
+            let updated = parsedResults;
+            if (bizItems.length > 0) {
+              updated = await enrichBusinessSearchResultsWithAvgRatingsAndMaxBounty(updated);
+            }
+            updated = await enrichOfferingOwnerConnectionDegrees(updated);
+            return updated;
+          };
+          enrichCachedResults()
+            .then((updated) => {
+              commitSearchResults(updated, { browseAll: false });
+            })
+            .catch((e) => {
+              console.error("Could not enrich cached search results:", e);
+              rawResultsRef.current = [...parsedResults];
+            });
         } else {
           // First time user, search for "Chinese"
           console.log("🆕 First visit for user:", userUid, "- searching for 'Chinese'");
@@ -1582,6 +1617,35 @@ export default function SearchScreen({ route }) {
   const sortAlphabeticalLabels = { Ascending: "A -> Z", Descending: "Z -> A" };
   const ratingOptions = ["> 1", "> 2", "> 3", "> 4", "> 4.5", "> 4.6", "> 4.8"];
   const showSearchResultsLoading = !hasLoadedInitialSearch || loading;
+
+  const getSearchCardDistanceMiles = (item) => {
+    if (distance == null) return null;
+    return itemDistanceMiles(item, userHomeCoords);
+  };
+
+  const renderBusinessCardHeaderAccessory = (item) => {
+    if (distance != null) return null;
+    if (item.location_boosted) {
+      return <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} />;
+    }
+    return null;
+  };
+
+  const renderOfferingSearchDistance = (item) => {
+    const miles = getSearchCardDistanceMiles(item);
+    if (miles == null) return null;
+    return (
+      <View style={styles.searchCardMetaRowCentered}>
+        <SearchCardDistanceLabel miles={miles} darkMode={darkMode} centered />
+      </View>
+    );
+  };
+
+  const renderOfferingNetworkBadge = (item) => {
+    const networkDeg = getClosestNetworkDegree(item);
+    if (networkDeg == null) return null;
+    return <SearchCardNetworkBadge degree={networkDeg} darkMode={darkMode} />;
+  };
 
   const businessSectionResults = results.filter((item) => (item?.itemType || "businesses") === "businesses");
   const offeringSectionResults = results.filter((item) => item?.itemType === "expertise");
@@ -2716,6 +2780,14 @@ export default function SearchScreen({ route }) {
                 </Text>
                 {hasResponded && <Text style={[styles.wishRespondedFlag, darkMode && styles.darkWishRespondedFlag]}>Responded{respondedDateLabel ? ` ${respondedDateLabel}` : ""}</Text>}
               </View>
+              {(() => {
+                const miles = getSearchCardDistanceMiles(item);
+                return miles != null ? (
+                  <View style={styles.searchCardMetaRowCentered}>
+                    <SearchCardDistanceLabel miles={miles} darkMode={darkMode} centered />
+                  </View>
+                ) : null;
+              })()}
               {isSafeForConditional(wish.description) ? <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{sanitizeText(wish.description)}</Text> : null}
             </View>
           </View>
@@ -2766,6 +2838,8 @@ export default function SearchScreen({ route }) {
       });
     };
 
+    const offeringNetworkBadge = renderOfferingNetworkBadge(item);
+
     return (
       <TouchableOpacity
         key={`${item.id}-${idx}`}
@@ -2784,7 +2858,12 @@ export default function SearchScreen({ route }) {
           accessibilityLabel='View seller profile'
         >
           {isCompactSearchCard ? (
-            <MicroCard user={microCardUser} showRelationship={false} embedded />
+            <View style={styles.wishProfileContainer}>
+              <View style={styles.wishProfileMain}>
+                <MicroCard user={microCardUser} showRelationship={false} embedded />
+              </View>
+              {offeringNetworkBadge ? <View style={styles.wishProfileNetworkBadge}>{offeringNetworkBadge}</View> : null}
+            </View>
           ) : (
             <View style={styles.wishProfileContainer}>
               <Image
@@ -2807,6 +2886,7 @@ export default function SearchScreen({ route }) {
                   return isSafeForConditional(phone) ? <Text style={[styles.wishProfileText, darkMode && styles.darkWishProfileText]}>{sanitizeText(phone)}</Text> : null;
                 })()}
               </View>
+              {offeringNetworkBadge ? <View style={styles.wishProfileNetworkBadge}>{offeringNetworkBadge}</View> : null}
             </View>
           )}
         </TouchableOpacity>
@@ -2827,6 +2907,7 @@ export default function SearchScreen({ route }) {
               {isSafeForConditional(expertise.description) ? <Text style={[styles.wishDescription, darkMode && styles.darkWishDescription]}>{sanitizeText(expertise.description)}</Text> : null}
             </View>
           </View>
+          {renderOfferingSearchDistance(item)}
           <OfferingCardDetails
             offering={expertise}
             darkMode={darkMode}
@@ -2839,8 +2920,17 @@ export default function SearchScreen({ route }) {
     );
   };
 
-  const renderBusinessResultActions = (item, { compact = false } = {}) => (
+  const renderBusinessResultActions = (item, { compact = false } = {}) => {
+    const miles = getSearchCardDistanceMiles(item);
+    const showDistanceCol = distance != null;
+
+    return (
     <View style={[styles.businessResultActions, compact && styles.businessResultActionsCompact, compact && darkMode && styles.darkBusinessResultActionsCompact]}>
+      {showDistanceCol ? (
+        <View style={[styles.businessTableDistanceCol, compact && styles.businessTableColCompact]}>
+          {miles != null ? <SearchCardDistanceLabel miles={miles} darkMode={darkMode} centered /> : <Text style={[styles.metricPlaceholder, darkMode && styles.darkMetricPlaceholder]}>—</Text>}
+        </View>
+      ) : null}
       <View style={[styles.businessTableRatingCol, compact && styles.businessTableColCompact]}>
         {Number.isFinite(item.rating) ? (
           <View style={styles.ratingContainer}>
@@ -2927,13 +3017,14 @@ export default function SearchScreen({ route }) {
         </View>
       )}
     </View>
-  );
+    );
+  };
 
   const renderBusinessResultItem = (item, idx) => {
     const miniCardBusiness = mapBusinessToMiniCard(item);
     const microCardBusiness = mapBusinessToMicroCard(item);
     const scoreSuffix = showSearchScores ? formatBusinessSearchScoreSuffix(item) : null;
-    const locationBoost = item.location_boosted ? <LocationBoostIcon darkMode={darkMode} distanceMiles={item.distance_miles} /> : null;
+    const headerAccessory = renderBusinessCardHeaderAccessory(item);
 
     return (
       <TouchableOpacity
@@ -2952,7 +3043,7 @@ export default function SearchScreen({ route }) {
         {isCompactSearchCard ? (
           <>
             {microCardBusiness ? (
-              <MicroCard user={microCardBusiness} showRelationship={false} embedded nameSuffix={scoreSuffix} headerAccessory={locationBoost} />
+              <MicroCard user={microCardBusiness} showRelationship={false} embedded nameSuffix={scoreSuffix} headerAccessory={headerAccessory} />
             ) : (
               <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
             )}
@@ -2962,7 +3053,7 @@ export default function SearchScreen({ route }) {
           <>
             <View style={styles.searchMiniCardWrap}>
               {miniCardBusiness ? (
-                <MiniCard business={miniCardBusiness} embedded nameSuffix={scoreSuffix} headerAccessory={locationBoost} />
+                <MiniCard business={miniCardBusiness} embedded nameSuffix={scoreSuffix} headerAccessory={headerAccessory} />
               ) : (
                 <Text style={[styles.companyName, darkMode && styles.darkCompanyName]}>{item.company ? String(item.company).trim() : ""}</Text>
               )}
@@ -3693,6 +3784,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  businessTableDistanceCol: {
+    width: 72,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   businessTableBountyCol: {
     width: 40,
     justifyContent: "center",
@@ -4191,6 +4287,7 @@ const styles = StyleSheet.create({
     padding: 15,
     borderWidth: 1,
     borderColor: "#000",
+    position: "relative",
   },
   wishProfileContainer: {
     flexDirection: "row",
@@ -4205,6 +4302,19 @@ const styles = StyleSheet.create({
   },
   wishProfileInfo: {
     flex: 1,
+  },
+  wishProfileMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+  wishProfileNetworkBadge: {
+    alignSelf: "center",
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 8,
+    paddingTop: 6,
+    paddingRight: 6,
+    flexShrink: 0,
   },
   wishProfileName: {
     fontSize: 16,
@@ -4314,6 +4424,58 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#ffffff",
     lineHeight: 12,
+  },
+  searchCardMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  searchCardMetaRowCentered: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "stretch",
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  searchCardDistancePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#e8f4fc",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  searchCardDistancePillCentered: {
+    alignSelf: "center",
+    justifyContent: "center",
+  },
+  darkSearchCardDistancePill: {
+    backgroundColor: "#1e3a4f",
+  },
+  searchCardDistanceText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#0EA5E9",
+  },
+  darkSearchCardDistanceText: {
+    color: "#7DD3FC",
+  },
+  searchCardNetworkBadge: {
+    position: "relative",
+    width: 22,
+    height: 22,
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "visible",
+  },
+  searchCardNetworkIcon: {
+    width: 22,
+    height: 22,
   },
   bountyEmojiIcon: {
     fontSize: 20,

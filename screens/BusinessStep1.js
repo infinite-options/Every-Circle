@@ -2,62 +2,25 @@ import React, { useEffect, useState, useMemo } from "react";
 import { View, Text, TextInput, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, TouchableOpacity } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Dropdown } from "react-native-element-dropdown";
-import { CATEGORY_LIST_ENDPOINT } from "../apiConfig";
-import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import MiniCard from "../components/MiniCard";
 import TagSectionLabel from "../components/TagSectionLabel";
+import BusinessCategoryPicker from "../components/BusinessCategoryPicker";
 import { mapBusinessToMiniCard } from "../utils/mapBusinessToMiniCard";
 import { mergeCustomTags } from "../utils/tagListUtils";
 
 export default function BusinessStep1({ formData, setFormData, onPendingTagsChange }) {
   const { darkMode } = useDarkMode();
-  const [allCategories, setAllCategories] = useState([]);
-  const [mainCategories, setMainCategories] = useState([]);
-  const [subCategories, setSubCategories] = useState([]);
-  const [subSubCategories, setSubSubCategories] = useState([]);
-  const [selectedMain, setSelectedMain] = useState(null);
-  const [selectedSub, setSelectedSub] = useState(null);
-  const [selectedSubSub, setSelectedSubSub] = useState(null);
   const [customTag, setCustomTag] = useState("");
   const customTags = formData.customTags || [];
 
-  useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const res = await fetch(CATEGORY_LIST_ENDPOINT);
-        const json = await res.json();
-        setAllCategories(json.result);
-        setMainCategories(json.result.filter((cat) => cat.category_parent_id === null));
-      } catch (e) {
-        console.error("Fetch category error:", e);
-      }
-    };
-    fetchCategories();
-  }, []);
-
-  useEffect(() => {
-    const updated = allCategories.filter((c) => c.category_parent_id === selectedMain);
-    setSubCategories(updated);
-    setSelectedSub(null);
-    setSelectedSubSub(null);
-    setSubSubCategories([]);
-  }, [selectedMain, allCategories]);
-
-  useEffect(() => {
-    const updated = allCategories.filter((c) => c.category_parent_id === selectedSub);
-    setSubSubCategories(updated);
-    setSelectedSubSub(null);
-  }, [selectedSub, allCategories]);
-
-  useEffect(() => {
-    const selectedIds = [selectedMain, selectedSub, selectedSubSub].filter(Boolean);
+  const updateCategoryIds = (categoryIds) => {
     setFormData((prev) => {
-      const updated = { ...prev, businessCategoryId: selectedIds };
+      const updated = { ...prev, businessCategoryId: categoryIds };
       AsyncStorage.setItem("businessFormData", JSON.stringify(updated)).catch((err) => console.error("Save error", err));
       return updated;
     });
-  }, [selectedMain, selectedSub, selectedSubSub, setFormData]);
+  };
 
   useEffect(() => {
     onPendingTagsChange?.(customTag.trim().length > 0);
@@ -189,85 +152,7 @@ export default function BusinessStep1({ formData, setFormData, onPendingTagsChan
               onChangeText={(text) => updateFormData("einNumber", formatEINNumber(text))}
             />
 
-            <Text style={[styles.label, darkMode && styles.darkLabel]}>Main Category *</Text>
-            <Dropdown
-              style={[styles.input, darkMode && styles.darkInput, styles.categoryInput]}
-              data={mainCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-              labelField='label'
-              valueField='value'
-              placeholder='Select Main Category'
-              placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-              value={selectedMain}
-              onChange={(item) => setSelectedMain(item.value)}
-              containerStyle={[{ borderRadius: 10, zIndex: 1000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
-              itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
-              selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
-              activeColor={darkMode ? "#404040" : "#f0f0f0"}
-              maxHeight={250}
-              renderItem={(item) => (
-                <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
-                  <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}>{item.label}</Text>
-                </View>
-              )}
-              flatListProps={{
-                nestedScrollEnabled: true,
-                ItemSeparatorComponent: () => <View style={{ height: 2 }} />,
-              }}
-            />
-
-            <Text style={[styles.label, darkMode && styles.darkLabel, styles.subCategoryLabel]}>Sub Category (Optional)</Text>
-            <Dropdown
-              style={[styles.input, darkMode && styles.darkInput]}
-              data={subCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-              labelField='label'
-              valueField='value'
-              placeholder={subCategories.length > 0 ? "Select Sub Category" : "Select Main Category first"}
-              placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-              value={selectedSub}
-              onChange={(item) => setSelectedSub(item.value)}
-              disabled={subCategories.length === 0}
-              containerStyle={[{ borderRadius: 10, zIndex: 1000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
-              itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
-              selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
-              activeColor={darkMode ? "#404040" : "#f0f0f0"}
-              maxHeight={250}
-              renderItem={(item) => (
-                <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
-                  <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}>{item.label}</Text>
-                </View>
-              )}
-              flatListProps={{
-                nestedScrollEnabled: true,
-                ItemSeparatorComponent: () => <View style={{ height: 2 }} />,
-              }}
-            />
-
-            <Text style={[styles.label, darkMode && styles.darkLabel]}>Sub-Sub Category (Optional)</Text>
-            <Dropdown
-              style={[styles.input, darkMode && styles.darkInput]}
-              data={subSubCategories.map((c) => ({ label: c.category_name, value: c.category_uid }))}
-              labelField='label'
-              valueField='value'
-              placeholder={subSubCategories.length > 0 ? "Select Sub-Sub Category" : "Select Sub Category first"}
-              placeholderTextColor={darkMode ? "#ffffff" : "#666"}
-              value={selectedSubSub}
-              onChange={(item) => setSelectedSubSub(item.value)}
-              disabled={subSubCategories.length === 0}
-              containerStyle={[{ borderRadius: 10, zIndex: 1000 }, darkMode && { backgroundColor: "#2d2d2d", borderColor: "#404040" }]}
-              itemTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
-              selectedTextStyle={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}
-              activeColor={darkMode ? "#404040" : "#f0f0f0"}
-              maxHeight={250}
-              renderItem={(item) => (
-                <View style={{ paddingVertical: 6, paddingHorizontal: 12 }}>
-                  <Text style={{ color: darkMode ? "#ffffff" : "#000000", fontSize: 16 }}>{item.label}</Text>
-                </View>
-              )}
-              flatListProps={{
-                nestedScrollEnabled: true,
-                ItemSeparatorComponent: () => <View style={{ height: 2 }} />,
-              }}
-            />
+            <BusinessCategoryPicker categoryIds={formData.businessCategoryId || []} onCategoryIdsChange={updateCategoryIds} darkMode={darkMode} />
 
             <TagSectionLabel title='Custom Tags' style={[styles.label, darkMode && styles.darkLabel]} darkMode={darkMode} />
             {customTag.trim().length > 0 ? <Text style={[styles.pendingTagsHint, darkMode && styles.darkPendingTagsHint]}>Click Add to save your tags before submitting.</Text> : null}
