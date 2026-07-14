@@ -2217,8 +2217,11 @@ const NetworkScreen = ({ navigation }) => {
   const nearbySearchLower = nearbySearchQuery.trim().toLowerCase();
   const matchesNearbySearch = (u) => {
     if (!nearbySearchLower) return true;
-    const fullName = `${u.profile_personal_first_name || ""} ${u.profile_personal_last_name || ""}`.toLowerCase();
-    return fullName.includes(nearbySearchLower);
+    const searchableText = [u.profile_personal_first_name, u.profile_personal_last_name, u.profile_personal_tag_line, u.profile_personal_short_bio]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return searchableText.includes(nearbySearchLower);
   };
 
   const NEARBY_IGNORED_KEY = "nearby_ignored_uids";
@@ -2914,7 +2917,7 @@ const NetworkScreen = ({ navigation }) => {
                       placeholderTextColor={darkMode ? "#888" : "#999"}
                       borderless
                       accessibilitylabel='Search nearby profiles'
-                      accessibilityHint='Type to search nearby profiles by name'
+                      accessibilityHint='Type to search nearby profiles by name, tagline, or bio'
                       accessibilityRole='search'
                       aria-label='search nearby profiles'
                     />
