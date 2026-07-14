@@ -18,6 +18,7 @@ import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
 import OfferingReviewDetailPanel from "../components/OfferingReviewDetailPanel";
+import { parseCoordinateValue } from "../utils/validateCoordinates";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -607,14 +608,14 @@ export default function SettingsScreen() {
             locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
             imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
           });
-          const nearbyLat = result.personal_info.profile_personal_nearby_lat;
-          const nearbyLng = result.personal_info.profile_personal_nearby_lng;
+          const nearbyLat = parseCoordinateValue(result.personal_info.profile_personal_nearby_lat);
+          const nearbyLng = parseCoordinateValue(result.personal_info.profile_personal_nearby_lng);
           const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
           if (nearbyLat != null && nearbyLng != null) {
             setStoredCoords({ lat: nearbyLat, lng: nearbyLng, updatedAt: nearbyAt });
           }
-          const homeLat = result.personal_info.profile_personal_latitude;
-          const homeLng = result.personal_info.profile_personal_longitude;
+          const homeLat = parseCoordinateValue(result.personal_info.profile_personal_latitude);
+          const homeLng = parseCoordinateValue(result.personal_info.profile_personal_longitude);
           if (homeLat != null && homeLng != null) {
             setHomeAddressCoords({ lat: homeLat, lng: homeLng });
           }
@@ -1310,7 +1311,11 @@ export default function SettingsScreen() {
                       <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Update Nearby Location</Text>
                     </Text>
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
-                      {storedCoords.lat != null ? `${parseFloat(storedCoords.lat).toFixed(5)}, ${parseFloat(storedCoords.lng).toFixed(5)}` : "No location set"}
+                      {(() => {
+                        const lat = parseCoordinateValue(storedCoords.lat);
+                        const lng = parseCoordinateValue(storedCoords.lng);
+                        return lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "No location set";
+                      })()}
                     </Text>
                   </View>
                 </View>
@@ -1325,7 +1330,11 @@ export default function SettingsScreen() {
                       <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Home Address Coordinates</Text>
                     </Text>
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
-                      {homeAddressCoords.lat != null ? `${parseFloat(homeAddressCoords.lat).toFixed(5)}, ${parseFloat(homeAddressCoords.lng).toFixed(5)}` : "No home coordinates set"}
+                      {(() => {
+                        const lat = parseCoordinateValue(homeAddressCoords.lat);
+                        const lng = parseCoordinateValue(homeAddressCoords.lng);
+                        return lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "No home coordinates set";
+                      })()}
                     </Text>
                   </View>
                 </View>

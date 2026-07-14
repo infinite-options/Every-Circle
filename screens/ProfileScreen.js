@@ -578,6 +578,7 @@ const ProfileScreen = ({ route, navigation }) => {
         tagLine: apiUser.personal_info?.profile_personal_tag_line || "",
         city: apiUser.personal_info?.profile_personal_city || "",
         state: apiUser.personal_info?.profile_personal_state || "",
+        homeAddress: apiUser.personal_info?.profile_personal_home_address || "",
         homeCoordinates: (() => {
           const lat = apiUser.personal_info?.profile_personal_latitude;
           const lng = apiUser.personal_info?.profile_personal_longitude;
