@@ -116,6 +116,10 @@ export const MODERATION_SEEKING_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/se
 export const MODERATION_USERS_REVIEW_QUEUE_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/users/review-queue`;
 /** GET/PUT /:profile_personal_uid, PUT /:profile_personal_uid/review, POST /:profile_personal_uid/acknowledge */
 export const MODERATION_USERS_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/users`;
+/** GET businesses where business_moderated = 2 (pending review) */
+export const MODERATION_BUSINESSES_REVIEW_QUEUE_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/businesses/review-queue`;
+/** GET/PUT /:business_uid, PUT /:business_uid/review, POST /:business_uid/acknowledge */
+export const MODERATION_BUSINESSES_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/businesses`;
 
 // Circles Endpoint
 export const CIRCLES_ENDPOINT = `${API_BASE_URL}/api/v1/circles`;

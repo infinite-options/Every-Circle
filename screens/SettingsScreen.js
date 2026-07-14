@@ -23,9 +23,15 @@ import {
   fetchProfileModerationDetail,
   reviewProfileModeration,
 } from "../utils/profileModeration";
+import {
+  fetchBusinessModerationReviewQueue,
+  fetchBusinessModerationDetail,
+  reviewBusinessModeration,
+} from "../utils/businessModeration";
 import OfferingReviewDetailPanel from "../components/OfferingReviewDetailPanel";
 import SeekingReviewDetailPanel from "../components/SeekingReviewDetailPanel";
 import ProfileReviewDetailPanel from "../components/ProfileReviewDetailPanel";
+import BusinessReviewDetailPanel from "../components/BusinessReviewDetailPanel";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -277,6 +283,15 @@ export default function SettingsScreen() {
   const [profileReviewNote, setProfileReviewNote] = useState("");
   const [profileReviewLoading, setProfileReviewLoading] = useState(false);
   const [profileReviewSubmitting, setProfileReviewSubmitting] = useState(false);
+  const [adminBusinesses, setAdminBusinesses] = useState([]);
+  const [businessesLoading, setBusinessesLoading] = useState(false);
+  const [showBusinessesSection, setShowBusinessesSection] = useState(false);
+  const [businessReviewModalVisible, setBusinessReviewModalVisible] = useState(false);
+  const [businessReviewItem, setBusinessReviewItem] = useState(null);
+  const [businessReviewDetail, setBusinessReviewDetail] = useState(null);
+  const [businessReviewNote, setBusinessReviewNote] = useState("");
+  const [businessReviewLoading, setBusinessReviewLoading] = useState(false);
+  const [businessReviewSubmitting, setBusinessReviewSubmitting] = useState(false);
   const [hideChangePassword, setHideChangePassword] = useState(false);
 
   console.log("In SettingsScreen");
@@ -1292,6 +1307,66 @@ export default function SettingsScreen() {
     }
   };
 
+  const fetchAdminBusinesses = async () => {
+    setBusinessesLoading(true);
+    try {
+      const rows = await fetchBusinessModerationReviewQueue();
+      setAdminBusinesses(rows);
+    } catch (e) {
+      console.error("Admin businesses fetch error:", e);
+      Alert.alert("Error", e?.message || "Failed to load business review queue.");
+    } finally {
+      setBusinessesLoading(false);
+    }
+  };
+
+  const openBusinessReview = async (item) => {
+    const uid = item?.business_uid;
+    if (!uid) return;
+    setBusinessReviewItem(item);
+    setBusinessReviewDetail(null);
+    setBusinessReviewNote("");
+    setBusinessReviewModalVisible(true);
+    setBusinessReviewLoading(true);
+    try {
+      const detail = await fetchBusinessModerationDetail(uid);
+      setBusinessReviewDetail(detail);
+    } catch (e) {
+      console.error("Business review detail error:", e);
+      Alert.alert("Error", e?.message || "Failed to load business details.");
+      setBusinessReviewModalVisible(false);
+    } finally {
+      setBusinessReviewLoading(false);
+    }
+  };
+
+  const handleBusinessReview = async (action) => {
+    const uid = businessReviewItem?.business_uid || businessReviewDetail?.business_uid || businessReviewDetail?.business?.business_uid;
+    if (!uid) return;
+    if (action === "reject" && !businessReviewNote.trim()) {
+      Alert.alert("Note required", "Please enter a note explaining the rejection for the business owner.");
+      return;
+    }
+    setBusinessReviewSubmitting(true);
+    try {
+      await reviewBusinessModeration({
+        businessUid: uid,
+        action,
+        note: businessReviewNote.trim(),
+      });
+      setAdminBusinesses((prev) => prev.filter((row) => row.business_uid !== uid));
+      setBusinessReviewModalVisible(false);
+      setBusinessReviewItem(null);
+      setBusinessReviewDetail(null);
+      Alert.alert("Done", `Business ${action === "approve" ? "approved" : "rejected"} successfully.`);
+    } catch (e) {
+      console.error("Business review submit error:", e);
+      Alert.alert("Error", e?.message || "Failed to submit review.");
+    } finally {
+      setBusinessReviewSubmitting(false);
+    }
+  };
+
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Nearby alert banner — floats above everything */}
@@ -1992,6 +2067,76 @@ export default function SettingsScreen() {
             </>
           )}
 
+          {isAdmin && (
+            <>
+              <TouchableOpacity
+                style={[styles.informationSectionHeader, { backgroundColor: "rgba(156, 69, 247, 0.10)", marginTop: 8 }]}
+                onPress={() => {
+                  setShowBusinessesSection(!showBusinessesSection);
+                  if (!showBusinessesSection && adminBusinesses.length === 0) fetchAdminBusinesses();
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <MaterialIcons name='storefront' size={16} color='#9C45F7' />
+                  <Text style={[styles.informationSectionHeaderText, { color: "#9C45F7" }]}>
+                    BUSINESS REVIEWS {adminBusinesses.length > 0 ? `(${adminBusinesses.length})` : ""}
+                  </Text>
+                </View>
+                <Ionicons name={showBusinessesSection ? "chevron-up" : "chevron-down"} size={20} color='#9C45F7' />
+              </TouchableOpacity>
+
+              {showBusinessesSection && (
+                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#9C45F7" }]}>
+                  {businessesLoading ? (
+                    <ActivityIndicator size='small' color='#9C45F7' style={{ margin: 16 }} />
+                  ) : adminBusinesses.length === 0 ? (
+                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No businesses pending review.</Text>
+                  ) : (
+                    adminBusinesses.map((row, idx) => {
+                      const uid = row.business_uid || "";
+                      const name = row.business_name || uid || "Business";
+                      const flagCount =
+                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
+                      const category = row.business_category || "";
+                      const ownerName = [row.owner_first_name, row.owner_last_name].filter(Boolean).join(" ");
+                      return (
+                        <TouchableOpacity
+                          key={uid || idx}
+                          style={{
+                            padding: 12,
+                            borderBottomWidth: idx < adminBusinesses.length - 1 ? 1 : 0,
+                            borderBottomColor: darkMode ? "#444" : "#eee",
+                            backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#f7f0ff") : "transparent",
+                          }}
+                          onPress={() => openBusinessReview(row)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>{name}</Text>
+                          {category ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
+                              {category}
+                            </Text>
+                          ) : null}
+                          {ownerName ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text>
+                          ) : null}
+                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
+                            {uid}
+                            {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#9C45F7", marginTop: 6, fontWeight: "600" }}>Tap to review →</Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminBusinesses}>
+                    <Text style={{ color: "#9C45F7", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          )}
+
           {/* Bottom Logout Button - Styled like Submit button */}
           <TouchableOpacity style={[styles.bottomLogoutButton, darkMode && styles.darkBottomLogoutButton]} onPress={handleLogout}>
             <Text style={[styles.bottomLogoutText, darkMode && styles.darkBottomLogoutText]}>Log out</Text>
@@ -2208,6 +2353,64 @@ export default function SettingsScreen() {
               onPress={() => !profileReviewSubmitting && setProfileReviewModalVisible(false)}
               style={{ marginTop: 12, alignItems: "center" }}
               disabled={profileReviewSubmitting}
+            >
+              <Text style={{ color: darkMode ? "#aaa" : "#666" }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Business moderation review modal */}
+      <Modal visible={businessReviewModalVisible} transparent animationType='slide' onRequestClose={() => !businessReviewSubmitting && setBusinessReviewModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox, { maxHeight: "92%", width: "94%", maxWidth: 520 }]}>
+            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Review business</Text>
+            {businessReviewLoading ? (
+              <ActivityIndicator size='small' color='#9C45F7' style={{ marginVertical: 24 }} />
+            ) : (
+              <ScrollView style={{ maxHeight: 480 }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
+                <BusinessReviewDetailPanel detail={businessReviewDetail} queueItem={businessReviewItem} darkMode={darkMode} />
+                <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6, marginTop: 4 }}>Admin note (required for reject)</Text>
+                <TextInput
+                  style={{
+                    borderWidth: 1,
+                    borderColor: darkMode ? "#555" : "#ddd",
+                    borderRadius: 8,
+                    padding: 10,
+                    minHeight: 72,
+                    fontSize: 13,
+                    color: darkMode ? "#fff" : "#333",
+                    backgroundColor: darkMode ? "#1f1f1f" : "#fafafa",
+                    textAlignVertical: "top",
+                  }}
+                  value={businessReviewNote}
+                  onChangeText={setBusinessReviewNote}
+                  placeholder='Explain rejection to the business owner...'
+                  placeholderTextColor={darkMode ? "#888" : "#aaa"}
+                  multiline
+                />
+              </ScrollView>
+            )}
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: "#18884A", padding: 12, borderRadius: 8, alignItems: "center", opacity: businessReviewSubmitting ? 0.7 : 1 }}
+                disabled={businessReviewSubmitting || businessReviewLoading}
+                onPress={() => handleBusinessReview("approve")}
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>Approve</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: "#B71C1C", padding: 12, borderRadius: 8, alignItems: "center", opacity: businessReviewSubmitting ? 0.7 : 1 }}
+                disabled={businessReviewSubmitting || businessReviewLoading}
+                onPress={() => handleBusinessReview("reject")}
+              >
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>Reject</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              onPress={() => !businessReviewSubmitting && setBusinessReviewModalVisible(false)}
+              style={{ marginTop: 12, alignItems: "center" }}
+              disabled={businessReviewSubmitting}
             >
               <Text style={{ color: darkMode ? "#aaa" : "#666" }}>Cancel</Text>
             </TouchableOpacity>

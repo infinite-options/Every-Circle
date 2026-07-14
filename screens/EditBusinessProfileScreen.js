@@ -43,6 +43,7 @@ import { mergeCustomTags, parseTagList, serializeTagList } from "../utils/tagLis
 import { buildBusinessServiceForApi, DEFAULT_RETURN_WINDOW_DAYS, normServiceReturnable, normServiceReturnWindowDays, normServiceTags, productImageFileFieldName, productImageUploadKey } from "../utils/buildBusinessServiceForApi";
 import { formatCoordinatePairForInput, parseCoordinatePairInput } from "../utils/validateCoordinates";
 import { getAddressSuggestions, getBusinessSuggestions, getPlaceDetails, resolveRestGooglePhotoUrl } from "../utils/googlePlaces";
+import { buildBusinessModerationItem, isBusinessOwnerRestricted } from "../utils/businessModeration";
 import {
   resolveBusinessProfileImage,
   resolveBusinessProfileImgUrl,
@@ -638,7 +639,15 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
 
   useEffect(() => {
     console.log("EditBusinessProfileScreen - Screen Mounted");
-  }, []);
+    const moderationItem = buildBusinessModerationItem(business);
+    if (moderationItem && isBusinessOwnerRestricted(moderationItem)) {
+      navigation.replace("BusinessModeration", {
+        moderationItem,
+        businessUid: business?.business_uid || businessUID,
+        businessName: business?.business_name || "",
+      });
+    }
+  }, [business, businessUID, navigation]);
 
   useFocusEffect(
     useCallback(() => {

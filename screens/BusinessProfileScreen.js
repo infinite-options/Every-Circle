@@ -9,7 +9,16 @@ import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import { API_BASE_URL, BUSINESS_CLAIM_ENDPOINT, BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT, RATINGS_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
+import {
+  API_BASE_URL,
+  BUSINESS_CLAIM_ENDPOINT,
+  BUSINESS_INFO_ENDPOINT,
+  USER_PROFILE_INFO_ENDPOINT,
+  USER_INFO_ENDPOINT,
+  CATEGORY_LIST_ENDPOINT,
+  RATINGS_ENDPOINT,
+  PROFILE_VIEWS_ENDPOINT,
+} from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
@@ -18,6 +27,13 @@ import { buildSelectedChoiceItems, sumChoiceExtraCost } from "../utils/selectedC
 import { getHeaderColors } from "../config/headerColors";
 import FeedbackPopup from "../components/FeedbackPopup";
 import ReviewImageStrip from "../components/ReviewImageStrip";
+import FlagBusinessModal from "../components/FlagBusinessModal";
+import {
+  buildBusinessModerationItem,
+  getBusinessModerationStatusLabel,
+  isBusinessOwnerRestricted,
+  isBusinessVisibilityBlocked,
+} from "../utils/businessModeration";
 import { normalizeBusinessServiceFromApi, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import {
   parseBusinessGooglePhotos,
@@ -107,6 +123,9 @@ export default function BusinessProfileScreen({ route, navigation }) {
   const [claimSubmitting, setClaimSubmitting] = useState(false);
   const [claimStatus, setClaimStatus] = useState(null); // null | 'pending' | 'approved'
   const [claimSubmittedAt, setClaimSubmittedAt] = useState(null);
+
+  const [showFlagBusinessModal, setShowFlagBusinessModal] = useState(false);
+  const [isAdminViewer, setIsAdminViewer] = useState(false);
 
   // Handle viewport resize on web (for DevTools opening/closing)
   useEffect(() => {
@@ -688,6 +707,46 @@ export default function BusinessProfileScreen({ route, navigation }) {
     }, []),
   );
 
+  const businessModerationItem = useMemo(() => (business ? buildBusinessModerationItem(business) : null), [business]);
+  const businessVisibilityBlocked = !!(businessModerationItem && isBusinessVisibilityBlocked(businessModerationItem));
+
+  // Admin viewers can still see moderated businesses (banner instead of a hard block).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const userUid = ((await AsyncStorage.getItem("user_uid")) || "").trim();
+        if (!userUid) {
+          if (!cancelled) setIsAdminViewer(false);
+          return;
+        }
+        const response = await fetch(`${USER_INFO_ENDPOINT}/${encodeURIComponent(userUid)}`);
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          if (!cancelled) setIsAdminViewer(false);
+          return;
+        }
+        const row = Array.isArray(result?.result) ? result.result[0] : result?.result ?? result?.data ?? result;
+        if (!cancelled) setIsAdminViewer(row?.user_role === "ADMIN");
+      } catch (_) {
+        if (!cancelled) setIsAdminViewer(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Owner must see the restriction screen when this business was taken down / is pending review / was acknowledged.
+  useEffect(() => {
+    if (loading || !isOwner || !businessModerationItem || !isBusinessOwnerRestricted(businessModerationItem)) return;
+    navigation.replace("BusinessModeration", {
+      moderationItem: businessModerationItem,
+      businessUid: business_uid,
+      businessName: business?.business_name || "",
+    });
+  }, [loading, isOwner, businessModerationItem, business_uid, business?.business_name, navigation]);
+
   const miniCardBusiness = useMemo(() => (business ? buildBusinessMiniCardBusiness(business, business_uid) : null), [business, business_uid]);
   const shortBioBelowCard = useMemo(() => {
     if (!business?.shortBioIsPublic || !isSafeForConditional(business.business_short_bio)) return "";
@@ -1081,6 +1140,32 @@ export default function BusinessProfileScreen({ route, navigation }) {
     );
   }
 
+  // Owner: hold on a spinner while the redirect effect above navigates to BusinessModeration.
+  if (isOwner && businessModerationItem && isBusinessOwnerRestricted(businessModerationItem)) {
+    return (
+      <View style={[styles.pageContainer, darkMode && styles.darkPageContainer, { flex: 1, justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size='large' color={darkMode ? "#ffffff" : "#007BFF"} />
+      </View>
+    );
+  }
+
+  // Non-owners/non-admins must not see a taken down, pending review, or acknowledged business.
+  if (!isOwner && businessVisibilityBlocked && !isAdminViewer) {
+    return (
+      <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
+        <AppHeader title='BUSINESS PROFILE' {...getHeaderColors("businessProfile")} onBackPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate("Search"))} />
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
+          <Ionicons name='eye-off-outline' size={48} color={darkMode ? "#aaa" : "#888"} style={{ marginBottom: 16 }} />
+          <Text style={[styles.errorText, darkMode && styles.darkErrorText, { textAlign: "center", marginBottom: 8 }]}>This business is unavailable.</Text>
+          <Text style={{ color: darkMode ? "#bbb" : "#666", textAlign: "center", fontSize: 14, lineHeight: 20 }}>
+            This business has been taken down, is under review, or was acknowledged as removed and cannot be viewed right now.
+          </Text>
+        </View>
+        <BottomNavBar navigation={navigation} />
+      </View>
+    );
+  }
+
   const hasBusinessOwner = businessUsers.some((bu) => (bu.bu_role || bu.business_role || bu.role || "").trim() !== "");
 
   return (
@@ -1142,6 +1227,26 @@ export default function BusinessProfileScreen({ route, navigation }) {
             style: [styles.scrollContainer, darkMode && styles.darkScrollContainer, { zIndex: 1 }],
           })}
         >
+          {!isOwner && isAdminViewer && businessVisibilityBlocked ? (
+            <View
+              style={{
+                backgroundColor: darkMode ? "#3a2a2a" : "#FFF5F5",
+                borderColor: darkMode ? "#664444" : "#F5C6C6",
+                borderWidth: 1,
+                borderRadius: 8,
+                padding: 12,
+                marginBottom: 14,
+              }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: "700", color: darkMode ? "#ff8a80" : "#B71C1C", marginBottom: 4 }}>
+                Admin view · {getBusinessModerationStatusLabel(businessModerationItem)}
+              </Text>
+              <Text style={{ fontSize: 12, lineHeight: 17, color: darkMode ? "#ccc" : "#555" }}>
+                This business is hidden from other users (taken down, pending review, or acknowledged).
+              </Text>
+            </View>
+          ) : null}
+
           {/* Business MiniCard — same presentation as Edit Business Profile */}
           {miniCardBusiness ? (
             <View style={[styles.previewSection, darkMode && styles.darkPreviewSection]}>
@@ -1469,6 +1574,20 @@ export default function BusinessProfileScreen({ route, navigation }) {
             >
               <Ionicons name='chatbubble-ellipses-outline' size={18} color='#fff' style={{ marginRight: 8 }} />
               <Text style={styles.chatButtonText}>Message Business</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Report Business Button — visible to non-owners only */}
+          {!isOwner && (
+            <TouchableOpacity
+              style={[styles.chatButton, { backgroundColor: "#B71C1C", marginTop: 10 }]}
+              onPress={() => setShowFlagBusinessModal(true)}
+              activeOpacity={0.85}
+              accessibilityRole='button'
+              accessibilityLabel='Report business'
+            >
+              <Ionicons name='flag-outline' size={17} color='#fff' style={{ marginRight: 8 }} />
+              <Text style={styles.chatButtonText}>Report Business</Text>
             </TouchableOpacity>
           )}
 
@@ -1963,6 +2082,13 @@ export default function BusinessProfileScreen({ route, navigation }) {
         pageName='Business Profile'
         instructions={businessFeedbackInstructions}
         questions={businessFeedbackQuestions}
+      />
+
+      <FlagBusinessModal
+        visible={showFlagBusinessModal}
+        onClose={() => setShowFlagBusinessModal(false)}
+        targetUid={business_uid}
+        businessName={business?.business_name || ""}
       />
 
       <Modal animationType='slide' transparent={true} visible={quantityModalVisible} onRequestClose={() => setQuantityModalVisible(false)}>

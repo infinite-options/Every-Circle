@@ -62,6 +62,7 @@ import FlagSeekingModal from "../components/FlagSeekingModal";
 import FlagProfileModal from "../components/FlagProfileModal";
 import OfferingModerationBanner from "../components/OfferingModerationBanner";
 import SeekingModerationBanner from "../components/SeekingModerationBanner";
+import BusinessModerationBanner from "../components/BusinessModerationBanner";
 import { expertiseCartPersistedFields } from "../utils/offeringCartUtils";
 import { upsertExpertiseCartItem } from "../utils/expertiseCartStorage";
 import { getHeaderColors } from "../config/headerColors";
@@ -74,6 +75,12 @@ import {
   isProfileVisibilityBlocked,
   normalizeProfileModeration,
 } from "../utils/profileModeration";
+import {
+  getBusinessModeratedState,
+  isBusinessModeratedBlocked,
+  normalizeBusinessModeration,
+  MODERATED_ACKNOWLEDGED as BUSINESS_MODERATED_ACKNOWLEDGED,
+} from "../utils/businessModeration";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 console.log(`ProfileScreen - Full endpoint: ${ProfileScreenAPI}`);
@@ -800,6 +807,8 @@ const ProfileScreen = ({ route, navigation }) => {
         individualIsPublic: bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === true,
         index,
         business_updated_at: bus.business_updated_at ?? bus.updated_at,
+        moderation: normalizeBusinessModeration(bus),
+        business_moderated: bus.business_moderated,
       }));
       // console.log("mappedBusinesses result:", JSON.stringify(mappedBusinesses, null, 2));
       setBusinessesData(mappedBusinesses);
@@ -2585,13 +2594,27 @@ const ProfileScreen = ({ route, navigation }) => {
               </View>
               {showBusiness &&
                 (() => {
-                  const businessesToShow = Array.isArray(businessesData) ? businessesData.filter((b) => b.individualIsPublic === true) : [];
+                  const businessesToShow = Array.isArray(businessesData)
+                    ? businessesData.filter((b) => {
+                        if (getBusinessModeratedState(b) === BUSINESS_MODERATED_ACKNOWLEDGED) return false;
+                        return isCurrentUserProfile ? b.individualIsPublic === true || isBusinessModeratedBlocked(b) : b.individualIsPublic === true;
+                      })
+                    : [];
                   return businessesToShow.length > 0 ? (
-                    businessesToShow.map((business, index) => (
+                    businessesToShow.map((business, index) => {
+                      const businessModeratedBlocked = isCurrentUserProfile && isBusinessModeratedBlocked(business);
+                      const businessTakenDown = getBusinessModeratedState(business) === MODERATED_TAKEN_DOWN;
+                      return (
                       <View
                         key={business.profile_business_uid || business.business_uid || index}
-                        style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}
+                        style={[
+                          styles.sectionItemContainer,
+                          darkMode && styles.darkSectionItemContainer,
+                          businessTakenDown && (darkMode ? styles.darkTakenDownOfferingCard : styles.takenDownOfferingCard),
+                          index > 0 && { marginTop: 4 },
+                        ]}
                       >
+                        {businessModeratedBlocked ? <BusinessModerationBanner item={business} darkMode={darkMode} /> : null}
                         <TouchableOpacity
                           onPress={() => {
                             const uid = business.business_uid || business.profile_business_uid;
@@ -2628,7 +2651,8 @@ const ProfileScreen = ({ route, navigation }) => {
                           </TouchableOpacity>
                         ) : null}
                       </View>
-                    ))
+                      );
+                    })
                   ) : (
                     <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No businesses added yet</Text>
                   );
