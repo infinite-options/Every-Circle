@@ -2310,33 +2310,48 @@ const NetworkScreen = ({ navigation }) => {
   }, [profileUid]);
 
   const resolveMyUid = async () => {
+    if (profileUid) return profileUid.trim();
     const session = await getSessionProfile();
-    return (profileUid || session?.profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
+    if (session?.profileUid) return String(session.profileUid).trim();
+    const stored = await AsyncStorage.getItem("profile_uid");
+    if (!stored) return "";
+    try {
+      const parsed = JSON.parse(stored);
+      return (typeof parsed === "string" ? parsed : String(parsed)).trim();
+    } catch (e) {
+      return String(stored).trim();
+    }
   };
 
-  const fetchBlockedUsers = useCallback(async () => {
+  const fetchBlockedUsers = useCallback(async (isRetry = false) => {
     const uid = await resolveMyUid();
     if (!uid) return;
     try {
       const res = await fetch(`${BLOCKED_USERS_ENDPOINT}/${encodeURIComponent(uid)}`);
+      if (!res.ok) throw new Error(`Blocked-users fetch failed: ${res.status}`);
       const json = await res.json();
       const list = Array.isArray(json.result) ? json.result : [];
       setBlockedList(list);
       setBlockedUids(new Set(list.map((b) => b.blocked_uid)));
-    } catch (_) {
-      /* keep previous state on failure */
+    } catch (e) {
+      console.warn("fetchBlockedUsers failed", isRetry ? "(retry)" : "", e);
+      // Local dev server can briefly restart on file changes — retry once after a short delay
+      // instead of silently leaving stale/empty blocked state on screen.
+      if (!isRetry) setTimeout(() => fetchBlockedUsers(true), 1500);
     }
   }, [profileUid]);
 
-  const fetchMessagesOffSetting = useCallback(async () => {
+  const fetchMessagesOffSetting = useCallback(async (isRetry = false) => {
     const uid = await resolveMyUid();
     if (!uid) return;
     try {
       const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${encodeURIComponent(uid)}`);
+      if (!res.ok) throw new Error(`Profile fetch failed: ${res.status}`);
       const json = await res.json();
       setMessagesOff(json?.personal_info?.profile_personal_messages_off === 1);
-    } catch (_) {
-      /* keep previous state on failure */
+    } catch (e) {
+      console.warn("fetchMessagesOffSetting failed", isRetry ? "(retry)" : "", e);
+      if (!isRetry) setTimeout(() => fetchMessagesOffSetting(true), 1500);
     }
   }, [profileUid]);
 
@@ -2396,10 +2411,13 @@ const NetworkScreen = ({ navigation }) => {
     useCallback(() => {
       if (showMessages) {
         fetchConversations();
-        fetchBlockedUsers();
-        fetchMessagesOffSetting();
         clearUnread();
       }
+      // Always keep block/mute status current on focus (not gated on the accordion being open),
+      // so the "Blocked" badge is correct as soon as Messages is expanded — no stale state after
+      // a refresh, sign-out/sign-in, or navigating back from elsewhere in the app.
+      fetchBlockedUsers();
+      fetchMessagesOffSetting();
     }, [showMessages, fetchConversations, fetchBlockedUsers, fetchMessagesOffSetting, clearUnread]),
   );
 

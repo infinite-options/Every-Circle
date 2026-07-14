@@ -5,9 +5,7 @@ import { createAblyRealtimeClient } from "../utils/ablyClient";
 
 const UnreadContext = createContext({
   hasUnread: false,
-  notification: null,
   clearUnread: () => {},
-  dismissNotification: () => {},
   setActiveChat: () => {},
   clearActiveChat: () => {},
   enterChatView: () => {},
@@ -25,8 +23,6 @@ export function reinitializeUnreadFromOutside() {
 
 export function UnreadProvider({ children }) {
   const [hasUnread, setHasUnread] = useState(false);
-  // notification: { senderName, senderImage, body, conversationUid, senderUid } | null
-  const [notification, setNotification] = useState(null);
 
   const ablyClientRef = useRef(null);
   // All subscribed channels (personal + owned businesses)
@@ -68,7 +64,6 @@ export function UnreadProvider({ children }) {
     if (!uid) {
       teardown();
       setHasUnread(false);
-      setNotification(null);
       return false;
     }
 
@@ -102,15 +97,6 @@ export function UnreadProvider({ children }) {
         const data = msg.data || {};
         if (activeChatRef.current === data.conversation_uid) return;
         setHasUnread(true);
-        if (!inChatViewRef.current) {
-          setNotification({
-            senderUid: data.sender_uid,
-            senderName: data.sender_name || "New message",
-            senderImage: data.sender_image || null,
-            body: data.body || "",
-            conversationUid: data.conversation_uid,
-          });
-        }
       };
 
       // Subscribe to personal channel
@@ -172,7 +158,6 @@ export function UnreadProvider({ children }) {
   }, []);
 
   const clearUnread = () => setHasUnread(false);
-  const dismissNotification = () => setNotification(null);
   const setActiveChat = (convUid) => {
     activeChatRef.current = convUid;
   };
@@ -190,9 +175,7 @@ export function UnreadProvider({ children }) {
     <UnreadContext.Provider
       value={{
         hasUnread,
-        notification,
         clearUnread,
-        dismissNotification,
         setActiveChat,
         clearActiveChat,
         enterChatView,
