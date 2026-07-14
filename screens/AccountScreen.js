@@ -39,8 +39,21 @@ import {
   withTimeZoneQuery,
 } from "../utils/transactionDateTime";
 
-/** 1 = compact: Purchases (Date, Type, Seller, Status, Amount) + Bounty Results (hide ID); 0 = full tables */
+/** 1 = compact: Purchases (Date, Type, Seller, Delivered, Received, Amount) + Bounty Results (hide ID); 0 = full tables */
 const ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS = 0;
+
+/** Purchased Item cell: list up to two comma-separated names; more than two → "Multiple". */
+function formatPurchasedItemDisplay(purchasedItem) {
+  const raw = String(purchasedItem || "").trim();
+  if (!raw) return "";
+  const parts = raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return "";
+  if (parts.length <= 2) return parts.join(", ");
+  return "Multiple";
+}
 
 function resolvePurchaseSellerId(transaction) {
   if (!transaction || typeof transaction !== "object") return "";
@@ -406,6 +419,79 @@ function receiptMoneyFromSources(row, fallback, keys) {
     if (fromFallback != null) return fromFallback;
   }
   return null;
+}
+
+/** Match personal bounty_results row to a receipt line (ti_uid / tb_ti_id). */
+function findBountyResultForReceiptLine(bountyRows, receiptLine, transactionUid) {
+  if (!Array.isArray(bountyRows) || !receiptLine) return null;
+  const tiUid = String(receiptLine.ti_uid || receiptLine.transaction_item_uid || "").trim();
+  const txnUid = String(transactionUid || "").trim();
+  if (tiUid) {
+    const byTi = bountyRows.find((row) => String(row?.ti_uid || row?.tb_ti_id || "").trim() === tiUid);
+    if (byTi) return byTi;
+  }
+  if (txnUid) {
+    const bsId = String(receiptLine.ti_bs_id || receiptLine.bs_uid || "").trim();
+    if (bsId) {
+      return (
+        bountyRows.find(
+          (row) =>
+            String(row?.ti_transaction_id || row?.transaction_uid || "").trim() === txnUid &&
+            String(row?.ti_bs_id || row?.bs_uid || "").trim() === bsId,
+        ) || null
+      );
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve item bounty (seller pool for the line) and this user's share.
+ * Prefers receipt fields; falls back to bounty_results (amount + percentage).
+ */
+function resolveReceiptLineBountyDisplay(receiptLine, bountyRow) {
+  const qty = getReceiptLineQty(receiptLine);
+  const bountyType = String(
+    receiptLine?.bs_bounty_type || receiptLine?.ti_bs_bounty_type || bountyRow?.bs_bounty_type || "",
+  )
+    .trim()
+    .toLowerCase();
+  const unitRaw = parseFloat(
+    receiptLine?.bs_bounty ?? receiptLine?.ti_bs_bounty ?? receiptLine?.bounty_amount ?? receiptLine?.item_bounty ?? NaN,
+  );
+  let lineBounty = Number.isFinite(unitRaw) && unitRaw > 0 ? (bountyType === "total" ? unitRaw : unitRaw * Math.max(1, qty)) : null;
+
+  const earnedRaw = parseFloat(bountyRow?.bounty_earned ?? bountyRow?.tb_amount ?? receiptLine?.bounty_earned ?? receiptLine?.tb_amount ?? NaN);
+  const earned = Number.isFinite(earnedRaw) ? earnedRaw : null;
+  const pctRaw = parseFloat(bountyRow?.tb_percentage ?? receiptLine?.tb_percentage ?? receiptLine?.bounty_percentage ?? NaN);
+  const percentage = Number.isFinite(pctRaw) ? pctRaw : null;
+
+  if (lineBounty == null && earned != null && percentage != null && percentage > 0) {
+    lineBounty = earned / percentage;
+  }
+
+  if (lineBounty == null && earned == null) return null;
+
+  const pctLabel =
+    percentage != null
+      ? percentage > 0 && percentage <= 1
+        ? `${Math.round(percentage * 1000) / 10}%`
+        : `${Math.round(percentage * 10) / 10}%`
+      : null;
+
+  let itemLabel = null;
+  if (lineBounty != null) {
+    if (bountyType === "per_item" && Number.isFinite(unitRaw) && unitRaw > 0 && qty > 1) {
+      itemLabel = `$${lineBounty.toFixed(2)} ($${unitRaw.toFixed(2)} × ${qty})`;
+    } else {
+      itemLabel = `$${lineBounty.toFixed(2)}${bountyType === "per_item" ? " / item total" : bountyType === "total" ? " total" : ""}`;
+    }
+  }
+
+  const shareLabel =
+    earned != null ? `$${earned.toFixed(2)}${pctLabel ? ` (${pctLabel})` : ""}` : null;
+
+  return { itemLabel, shareLabel, lineBounty, earned, percentage };
 }
 
 /** Below receipt line items: merchandise, tax, fees, shipping, bounty, total, and check vs amount paid. */
@@ -778,7 +864,7 @@ function formatProductSaleDeliveryStatus(saleRow, receiptLine) {
     const receivedQty = getPreviouslyReceivedQty(receiptLine);
     if (receivedQty >= purchasedQty) return "Complete";
   }
-  return "Released";
+  return "Paid";
 }
 
 function getProductSaleAmountCharged(saleRow, receiptLine) {
@@ -846,8 +932,10 @@ function mapTransactionListRowToOrderTableRow(row, bountyByOrderUid, bountyByTra
   const total = parseFloat(row.transaction_total);
   const bountyPaid = resolveListRowBountyPaid(row, null, bountyByOrderUid, bountyByTransactionUid);
   const listTransactionUid = String(row.transaction_uid || "").trim();
-  const shippingProgressOverride =
-    (shippingProgressByKey && (shippingProgressByKey[orderUid] || shippingProgressByKey[listTransactionUid])) || null;
+  // Prefer fulfillment fields from account-screen list rows over hydration overrides.
+  const shippingProgressOverride = listRowHasExplicitShippingProgress(row)
+    ? null
+    : (shippingProgressByKey && (shippingProgressByKey[orderUid] || shippingProgressByKey[listTransactionUid])) || null;
   return {
     key: String(row.transaction_uid || `${orderUid}-${dateMs}`),
     orderUid,
@@ -1607,9 +1695,13 @@ function isTruthyShippingFlag(value) {
   return value === true || value === 1 || value === "1" || String(value || "").trim().toLowerCase() === "true";
 }
 
+const SHIPPED_FULFILLMENT_STATUSES = new Set(["in_transit", "shipped", "delivered", "fulfilled"]);
+const NOT_REQUIRED_FULFILLMENT_STATUSES = new Set(["not_required", "n/a", "na", "none"]);
+
 /** True when buyer opted into shipping / a ship-to address exists. */
 function orderNeedsShipping(source) {
   if (!source || typeof source !== "object") return false;
+  if (orderFulfillmentIsNotRequired(source)) return false;
   if (
     isTruthyShippingFlag(source.needs_shipping) ||
     isTruthyShippingFlag(source.requires_shipping) ||
@@ -1625,8 +1717,37 @@ function orderNeedsShipping(source) {
   return false;
 }
 
-const SHIPPED_FULFILLMENT_STATUSES = new Set(["in_transit", "shipped", "delivered", "fulfilled"]);
-const NOT_REQUIRED_FULFILLMENT_STATUSES = new Set(["not_required", "n/a", "na", "none"]);
+/**
+ * Order/line does not require shipping (pickup, digital, or fulfillment_status=not_required).
+ * Delivered should show "—" in that case — not Shipped / Pending.
+ */
+function orderFulfillmentIsNotRequired(row) {
+  if (!row || typeof row !== "object") return false;
+  const status = String(
+    row.fulfillment_status || row.shipping_status || row.order_fulfillment_status || row.transaction_fulfillment_status || "",
+  )
+    .trim()
+    .toLowerCase();
+  if (NOT_REQUIRED_FULFILLMENT_STATUSES.has(status)) return true;
+  if (isTruthyShippingFlag(row.shipping_not_required) || isTruthyShippingFlag(row.fulfillment_not_required)) return true;
+
+  if (row.has_shippable_items === 0 || row.has_shippable_items === "0" || row.has_shippable_items === false) return true;
+
+  const shippableCount = parseInt(row.shippable_item_count ?? row.items_requiring_shipping, 10);
+  if (row.shippable_item_count != null && String(row.shippable_item_count).trim() !== "" && Number.isFinite(shippableCount) && shippableCount <= 0) {
+    return true;
+  }
+
+  if (
+    (row.requires_shipping === false || row.requires_shipping === 0 || row.requires_shipping === "0") &&
+    !extractShippingAddress(row) &&
+    !isTruthyShippingFlag(row.needs_shipping) &&
+    !isTruthyShippingFlag(row.needs_shipment)
+  ) {
+    return true;
+  }
+  return false;
+}
 
 function getLineFulfillmentStatus(line) {
   return String(line?.fulfillment_status || line?.ti_fulfillment_status || line?.shipping_status || line?.ti_shipping_status || "")
@@ -1726,6 +1847,45 @@ function formatLineFulfillmentDisplay(line) {
 }
 
 /**
+ * How many units on a receipt line the buyer may still mark received.
+ * Shipping-required lines are capped to shipped − already received.
+ * Lines with fulfillment_status=not_required (no shipping) stay fully verifiable.
+ */
+function getVerifiableReceiveRemaining(line, orderRow) {
+  const remaining = getRemainingQtyToReceive(line);
+  if (remaining <= 0) return 0;
+
+  const status = getLineFulfillmentStatus(line);
+  if (NOT_REQUIRED_FULFILLMENT_STATUSES.has(status)) return remaining;
+
+  const hasShipFields =
+    !!status ||
+    line?.shipped_qty != null ||
+    line?.ti_shipped_qty != null ||
+    line?.shipped_quantity != null ||
+    line?.ti_shipped_quantity != null ||
+    line?.fulfillment_shipped_qty != null ||
+    isTruthyShippingFlag(line?.shipped) ||
+    isTruthyShippingFlag(line?.is_shipped) ||
+    !!line?.ti_shipped_at ||
+    !!line?.shipped_at;
+
+  const orderNeedsShip = orderRow ? orderNeedsShipping(orderRow) : false;
+  // Pickup / non-ship orders (or lines with no ship signal and no order shipping) → fully verifiable.
+  if (!hasShipFields && !orderNeedsShip) return remaining;
+  if (!hasShipFields && !lineRequiresShipping(line) && !orderNeedsShip) return remaining;
+
+  const shipped = getLineShippedQty(line);
+  const alreadyReceived = getPreviouslyReceivedQty(line);
+  const shippedNotYetReceived = Math.max(0, shipped - alreadyReceived);
+  return Math.min(remaining, shippedNotYetReceived);
+}
+
+function canSelectReceiptLineForVerification(line, orderRow) {
+  return getVerifiableReceiveRemaining(line, orderRow) > 0;
+}
+
+/**
  * Shipping progress for an order: none | partial | complete | unknown.
  * Works for transaction summary rows and order-detail `sale` objects with `lines`.
  * Lines with fulfillment_status=not_required are ignored.
@@ -1733,6 +1893,8 @@ function formatLineFulfillmentDisplay(line) {
 function getOrderShippingProgress(sources) {
   const rows = Array.isArray(sources) ? sources.filter(Boolean) : sources ? [sources] : [];
   if (!rows.length) return "unknown";
+
+  if (rows.every(orderFulfillmentIsNotRequired)) return "not_required";
 
   let candidateLines = [];
   for (const row of rows) {
@@ -1752,6 +1914,15 @@ function getOrderShippingProgress(sources) {
   const unshippedCount = parseInt(first.unshipped_item_count ?? first.unshipped_count ?? first.items_unshipped ?? first.open_shipping_count, 10);
   const shippedCountField = parseInt(first.shipped_item_count ?? first.shipped_count ?? first.items_shipped, 10);
   const shippableCount = parseInt(first.shippable_item_count ?? first.items_requiring_shipping ?? first.shipping_required_count, 10);
+  const txnStatus = String(first.fulfillment_status || first.shipping_status || first.order_fulfillment_status || first.transaction_fulfillment_status || "")
+    .trim()
+    .toLowerCase();
+
+  if (NOT_REQUIRED_FULFILLMENT_STATUSES.has(txnStatus)) return "not_required";
+  if (Number.isFinite(shippableCount) && shippableCount <= 0 && (first.shippable_item_count != null || first.has_shippable_items != null)) {
+    return "not_required";
+  }
+
   if (Number.isFinite(unshippedCount)) {
     if (unshippedCount <= 0) return "complete";
     if (Number.isFinite(shippedCountField) && shippedCountField > 0) return "partial";
@@ -1759,15 +1930,12 @@ function getOrderShippingProgress(sources) {
     return "none";
   }
   if (Number.isFinite(shippableCount) && Number.isFinite(shippedCountField)) {
-    if (shippableCount <= 0) return "complete";
+    if (shippableCount <= 0) return "not_required";
     if (shippedCountField >= shippableCount) return "complete";
     if (shippedCountField > 0) return "partial";
     return "none";
   }
 
-  const txnStatus = String(first.fulfillment_status || first.shipping_status || first.order_fulfillment_status || first.transaction_fulfillment_status || "")
-    .trim()
-    .toLowerCase();
   if (isTruthyShippingFlag(first.all_items_shipped) || ["in_transit", "shipped", "delivered", "fulfilled", "complete"].includes(txnStatus)) {
     return "complete";
   }
@@ -1775,9 +1943,9 @@ function getOrderShippingProgress(sources) {
   if (["not_shipped", "pending_shipment", "awaiting_shipment", "unfulfilled"].includes(txnStatus)) return "none";
 
   if (!scoreLines.length) {
-    // Nested lines present but all not_required → nothing left to ship.
+    // Nested lines present but all not_required → shipping N/A.
     if (withItemUid.length > 0 && withItemUid.every((line) => !lineRequiresShipping(line))) {
-      return "complete";
+      return "not_required";
     }
     // Summary-only list row (shipping address, no line statuses) → unknown until hydrated from order detail.
     return "unknown";
@@ -1839,38 +2007,131 @@ function collectOrderUidsNeedingShippingProgressHydration(sellerLines) {
 
 function getOrderDeliveredStatus(saleRows, shippingProgressOverride) {
   if (!Array.isArray(saleRows) || !saleRows.length) return "—";
+  const inEscrow = saleRows.some((row) => Number(row.transaction_in_escrow ?? row.in_escrow) === 1);
+
+  // No shipping needed: "—" while still in escrow; "Paid" once funds are released.
+  if (saleRows.every(orderFulfillmentIsNotRequired)) {
+    return inEscrow ? "—" : "Paid";
+  }
+
   const progress =
-    shippingProgressOverride === "complete" || shippingProgressOverride === "partial" || shippingProgressOverride === "none"
+    shippingProgressOverride === "complete" ||
+    shippingProgressOverride === "partial" ||
+    shippingProgressOverride === "none" ||
+    shippingProgressOverride === "not_required"
       ? shippingProgressOverride
       : getOrderShippingProgress(saleRows);
+  if (progress === "not_required") return inEscrow ? "—" : "Paid";
   if (progress === "none") return "Not Shipped";
   if (progress === "partial") return "Partial";
-  // progress === "complete": all shipping work done (or only not_required items) → fall through to escrow status
+  // progress === "complete": all shipping work done → escrow-aware Shipped / Paid
   // progress === "unknown" with shipping but no line-level data: wait for order-detail hydration (don't flash Not Shipped)
   if (progress === "unknown" && saleRows.some((row) => orderNeedsShipping(row))) {
     return "—";
   }
   if (progress === "complete") {
-    if (saleRows.some((row) => Number(row.transaction_in_escrow ?? row.in_escrow) === 1)) return "Shipped";
-    return "Released";
+    if (inEscrow) return "Shipped";
+    return "Paid";
   }
-  if (saleRows.some((row) => Number(row.transaction_in_escrow ?? row.in_escrow) === 1)) return "Pending";
-  return "Released";
+  if (inEscrow) return "Pending";
+  return "Paid";
 }
 
+/** True when purchase qty evidence shows the buyer has confirmed full receipt (ignores escrow). */
+function isPurchaseFullyReceivedByQty(transaction) {
+  if (!transaction || typeof transaction !== "object") return false;
+  const purchased = Math.max(0, parseInt(transaction.ti_bs_qty, 10) || 0);
+  if (purchased > 0 && transaction.ti_received_qty != null && String(transaction.ti_received_qty).trim() !== "") {
+    const received = Math.max(0, Math.round(parsePrice(transaction.ti_received_qty)));
+    if (received >= purchased) return true;
+  }
+  const receivedCount = parseInt(transaction.received_item_count ?? transaction.delivered_item_count, 10);
+  const totalItems = parseInt(
+    transaction.item_count ?? transaction.total_item_count ?? transaction.shippable_item_count ?? purchased,
+    10,
+  );
+  if (Number.isFinite(receivedCount) && Number.isFinite(totalItems) && totalItems > 0 && receivedCount >= totalItems) {
+    return true;
+  }
+  return false;
+}
+
+/** Buyer PURCHASES Delivered column — same shipping progress labels as seller ORDERS. */
+function getBuyerPurchaseDeliveredLabel(transaction) {
+  if (!transaction || isReturnListRow(transaction)) return "—";
+  if (orderFulfillmentIsNotRequired(transaction)) {
+    return Number(transaction.transaction_in_escrow) === 1 ? "—" : "Paid";
+  }
+  return getOrderDeliveredStatus([transaction]);
+}
+
+/**
+ * Buyer PURCHASES Received column.
+ * Prefers explicit received/delivered counts when present; otherwise escrow (in → No, out → Yes).
+ * Return / returning labels surface here when applicable.
+ */
+function getBuyerPurchaseReceivedLabel(transaction, returnStatus, returnRequested) {
+  if (!transaction || isReturnListRow(transaction)) return "—";
+  const normalizedReturn = String(returnStatus || "").toLowerCase();
+  if (normalizedReturn === "accepted") return "Returned";
+  if (returnRequested && normalizedReturn !== "declined" && normalizedReturn !== "resolved") return "Returning";
+
+  const receivedCount = parseInt(transaction.received_item_count ?? transaction.delivered_item_count, 10);
+  const shippableCount = parseInt(transaction.shippable_item_count ?? transaction.items_requiring_shipping, 10);
+  if (Number.isFinite(receivedCount) && Number.isFinite(shippableCount) && shippableCount > 0) {
+    if (receivedCount <= 0) return "No";
+    if (receivedCount >= shippableCount) return "Yes";
+    return "Partial";
+  }
+
+  if (transaction.ti_received_qty != null && String(transaction.ti_received_qty).trim() !== "") {
+    return getOrderReceivedStatusFromSaleRows([transaction]);
+  }
+
+  if (Number(transaction.transaction_in_escrow) === 1) return "No";
+  return "Yes";
+}
+
+/**
+ * Received status for seller ORDERS (and product-sales order rows).
+ * Prefers list/order counts and per-line ti_received_qty; if those are absent,
+ * out-of-escrow (Paid) means the buyer confirmed receipt (or auto-release).
+ */
 function getOrderReceivedStatusFromSaleRows(saleRows) {
   if (!Array.isArray(saleRows) || !saleRows.length) return "—";
+  const first = saleRows[0] || {};
+
+  const receivedCount = parseInt(first.received_item_count ?? first.delivered_item_count, 10);
+  const shippableCount = parseInt(first.shippable_item_count ?? first.items_requiring_shipping, 10);
+  if (Number.isFinite(receivedCount) && Number.isFinite(shippableCount) && shippableCount > 0) {
+    if (receivedCount >= shippableCount) return "Yes";
+    if (receivedCount > 0) return "Partial";
+    // receivedCount === 0: fall through — may still be Paid via escrow without count fields
+  }
+
+  let hasExplicitLineReceived = false;
   let anyReceived = false;
   let allReceived = true;
   for (const row of saleRows) {
+    if (row?.ti_received_qty == null || String(row.ti_received_qty).trim() === "") continue;
+    hasExplicitLineReceived = true;
     const purchased = getSaleLineQty(row);
     const received = Math.max(0, Math.round(parsePrice(row.ti_received_qty)));
     if (received > 0) anyReceived = true;
     if (received < purchased) allReceived = false;
   }
-  if (allReceived) return "Yes";
-  if (!anyReceived) return "No";
-  return "Partial";
+  if (hasExplicitLineReceived) {
+    if (allReceived) return "Yes";
+    if (!anyReceived) return "No";
+    return "Partial";
+  }
+
+  // Account-screen seller summary rows often omit ti_received_qty.
+  // Escrow released ⇒ Delivered shows Paid ⇒ treat as received for list display.
+  if (saleRows.every((row) => Number(row.transaction_in_escrow ?? row.in_escrow) !== 1)) {
+    return "Yes";
+  }
+  return "No";
 }
 
 function sumBusinessOrderRows(rows) {
@@ -1992,6 +2253,9 @@ function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress
 function getProductSaleStatusBadgeStyle(kind, label) {
   const normalized = String(label || "").toLowerCase();
   if (kind === "delivered") {
+    if (normalized === "—" || normalized === "-" || normalized === "–" || normalized === "n/a") {
+      return { badge: { backgroundColor: "#F5F5F5" }, text: { color: "#9E9E9E" } };
+    }
     if (normalized === "not shipped") {
       return { badge: { backgroundColor: "#FFF3E0" }, text: { color: "#E65100" } };
     }
@@ -2020,6 +2284,18 @@ function getProductSaleStatusBadgeStyle(kind, label) {
   }
   if (normalized === "yes" || normalized === "complete") {
     return { badge: { backgroundColor: "#E8F5E9" }, text: { color: "#2E7D32" } };
+  }
+  if (normalized === "verify") {
+    return { badge: { backgroundColor: "#E3F2FD" }, text: { color: "#1565C0" } };
+  }
+  if (normalized === "partial") {
+    return { badge: { backgroundColor: "#FFF8E1" }, text: { color: "#F57F17" } };
+  }
+  if (normalized === "returning") {
+    return { badge: { backgroundColor: "#FFF3E0" }, text: { color: "#E65100" } };
+  }
+  if (normalized === "returned") {
+    return { badge: { backgroundColor: "#FFEBEE" }, text: { color: "#B71C1C" } };
   }
   if (normalized.startsWith("no")) {
     return { badge: { backgroundColor: "#FFF3E0" }, text: { color: "#E65100" } };
@@ -3505,10 +3781,13 @@ export default function AccountScreen({ navigation }) {
         setBusinessTransactionData([]);
         setBusinessReceiptCache({});
         businessReceiptFetchedRef.current = new Set();
+        setOrderShippingProgressByKey({});
         return;
       }
 
       setBusinessSellerTransactionList(sellerLines);
+      // Reset hydration overrides so account-screen list fulfillment fields win on first paint.
+      setOrderShippingProgressByKey({});
 
       // List rows are usually transaction summaries without fulfillment line status; hydrate from order detail.
       const orderUidsToHydrate = collectOrderUidsNeedingShippingProgressHydration(sellerLines);
@@ -4385,25 +4664,20 @@ export default function AccountScreen({ navigation }) {
                         <Text style={styles.transactionHeaderBusiness}>Seller</Text>
                         {showPurchasesItemColumn ? <Text style={styles.transactionHeaderPurchasedItem}>Purchased Item</Text> : null}
                         {ACCOUNT_TRANSACTION_HISTORY_COMPACT_COLUMNS !== 1 && <Text style={styles.transactionHeaderQty}>Qty</Text>}
-                        <Text style={styles.transactionHeaderPaid}>Status</Text>
+                        <Text style={styles.transactionHeaderDelivered}>Delivered</Text>
+                        <Text style={styles.transactionHeaderReceived}>Received</Text>
                         <Text style={styles.transactionHeaderAmount}>Amount</Text>
                       </View>
                       {/* Table Rows */}
                       {transactionData.map((transaction, i) => {
-                        const purchaseTypeLower = (transaction.purchase_type || "").toLowerCase();
                         const isReturnRow = isReturnListRow(transaction);
                         const orderUid = resolveListRowOrderUid(transaction);
-                        const isSeeking = purchaseTypeLower === "seeking";
-                        const isBusiness = purchaseTypeLower === "business";
-                        const isExpertise = purchaseTypeLower === "expertise" || purchaseTypeLower === "offering";
                         const isPending = !isReturnRow && Number(transaction.transaction_in_escrow) === 1;
                         const purchaseDate = parseTransactionDateTime(transaction);
                         const isOlderThan5Days =
                           Number.isFinite(purchaseDate?.getTime()) &&
                           (Date.now() - purchaseDate.getTime()) / (1000 * 60 * 60 * 24) >= 5;
                         const showPendingLink = isPending;
-                        const showAutoPaid = !isReturnRow && (isSeeking || isBusiness || isExpertise) && !isPending && isOlderThan5Days;
-
                         const compactTx = compactPurchasesLayout;
                         const sellerId = resolvePurchaseSellerId(transaction);
                         const displayAmount = parseFloat(transaction.transaction_total ?? transaction.seller_total ?? 0);
@@ -4440,13 +4714,13 @@ export default function AccountScreen({ navigation }) {
                                 {isReturnRow ? (
                                   <TouchableOpacity onPress={() => openOrderDetail({ orderUid })} activeOpacity={0.7}>
                                     <Text style={[styles.transactionPurchasedItem, styles.receiptLink]} numberOfLines={4}>
-                                      {transaction.purchased_item || "View order"}
+                                      {formatPurchasedItemDisplay(transaction.purchased_item) || "View order"}
                                     </Text>
                                   </TouchableOpacity>
                                 ) : (
                                   <TouchableOpacity onPress={() => fetchReceipt(transaction)} activeOpacity={0.7}>
                                     <Text style={[styles.transactionPurchasedItem, styles.receiptLink]} numberOfLines={4}>
-                                      {transaction.purchased_item || "View receipt"}
+                                      {formatPurchasedItemDisplay(transaction.purchased_item) || "View receipt"}
                                     </Text>
                                   </TouchableOpacity>
                                 )}
@@ -4457,42 +4731,59 @@ export default function AccountScreen({ navigation }) {
                                 {isReturnRow ? Math.abs(parseInt(transaction.ti_bs_qty, 10) || 1) : transaction.ti_bs_qty || 1}
                               </Text>
                             )}
-                            <View style={styles.transactionPaidCell}>
-                              {(() => {
-                                if (isReturnRow) {
-                                  return <Text style={[styles.transactionPaidText, { color: "#B71C1C", fontWeight: "600" }]}>Return</Text>;
-                                }
+                            {(() => {
+                              if (showPendingLink && isOlderThan5Days) {
+                                triggerAutoPay(transaction.transaction_uid);
+                              } else if (
+                                showPendingLink &&
+                                orderFulfillmentIsNotRequired(transaction) &&
+                                isPurchaseFullyReceivedByQty(transaction)
+                              ) {
+                                // No shipping required and buyer already confirmed receipt → release escrow.
+                                triggerAutoPay(transaction.transaction_uid);
+                              }
 
-                                const returnStatus = returnStatuses[orderUid] || transaction.transaction_return_status || "";
-                                const returnRequested =
-                                  returnRequests[orderUid]?.items?.length > 0 || transaction.transaction_return_requested === 1;
+                              const returnStatus = returnStatuses[orderUid] || transaction.transaction_return_status || "";
+                              const returnRequested =
+                                returnRequests[orderUid]?.items?.length > 0 || transaction.transaction_return_requested === 1;
+                              const deliveredLabel = getBuyerPurchaseDeliveredLabel(transaction);
+                              const receivedLabel = getBuyerPurchaseReceivedLabel(transaction, returnStatus, returnRequested);
+                              const deliveredBadge = getProductSaleStatusBadgeStyle("delivered", deliveredLabel);
+                              const canVerifyReceipt =
+                                !isReturnRow &&
+                                showPendingLink &&
+                                (receivedLabel === "No" || receivedLabel === "Partial");
+                              const receivedDisplayLabel = canVerifyReceipt ? "Verify" : receivedLabel;
+                              const receivedBadge = getProductSaleStatusBadgeStyle(
+                                "received",
+                                canVerifyReceipt ? "verify" : receivedLabel,
+                              );
 
-                                if (returnStatus === "accepted") {
-                                  return <Text style={[styles.transactionPaidText, { color: "#B71C1C", fontWeight: "600" }]}>Returned</Text>;
-                                }
-                                if (returnRequested && returnStatus !== "declined" && returnStatus !== "resolved") {
-                                  return <Text style={[styles.transactionPaidText, { color: "#E65100", fontWeight: "600" }]}>Returning</Text>;
-                                }
-                                if (showAutoPaid) {
-                                  return <Text style={styles.transactionPaidText}>Auto</Text>;
-                                }
-                                if (showPendingLink && isOlderThan5Days) {
-                                  triggerAutoPay(transaction.transaction_uid);
-                                  return <Text style={styles.transactionPaidText}>Auto</Text>;
-                                }
-                                if (showPendingLink) {
-                                  return (
-                                    <TouchableOpacity
-                                      onPress={() => openDeliveryVerification(transaction)}
-                                      activeOpacity={0.7}
-                                    >
-                                      <Text style={styles.pendingLink}>Pending</Text>
-                                    </TouchableOpacity>
-                                  );
-                                }
-                                return <Text style={styles.transactionPaidText}>{isPending ? "Pending" : "Received"}</Text>;
-                              })()}
-                            </View>
+                              const renderBadge = (label, badgeStyle) => (
+                                <View style={[styles.purchaseStatusBadge, badgeStyle.badge]}>
+                                  <Text style={[styles.purchaseStatusBadgeText, badgeStyle.text]} numberOfLines={1}>
+                                    {label}
+                                  </Text>
+                                </View>
+                              );
+
+                              return (
+                                <>
+                                  <View style={styles.transactionDeliveredCell}>
+                                    {renderBadge(deliveredLabel, deliveredBadge)}
+                                  </View>
+                                  <View style={styles.transactionReceivedCell}>
+                                    {canVerifyReceipt ? (
+                                      <TouchableOpacity onPress={() => openDeliveryVerification(transaction)} activeOpacity={0.7}>
+                                        {renderBadge(receivedDisplayLabel, receivedBadge)}
+                                      </TouchableOpacity>
+                                    ) : (
+                                      renderBadge(receivedLabel, receivedBadge)
+                                    )}
+                                  </View>
+                                </>
+                              );
+                            })()}
                             <TouchableOpacity onPress={() => openOrderDetail({ orderUid })} activeOpacity={0.7} disabled={orderUid === "—"}>
                               <Text style={[styles.transactionAmount, isReturnRow && { color: "#B71C1C" }, orderUid !== "—" && styles.receiptLink]}>
                                 {formatSignedOrderMoney(displayAmount)}
@@ -4935,6 +5226,13 @@ export default function AccountScreen({ navigation }) {
                       const baseCost = parseFloat(item.ti_bs_cost || 0);
                       const qty = parseInt(item.ti_bs_qty || 1, 10);
                       const tiUid = item.ti_uid != null ? String(item.ti_uid).trim() : "";
+                      const bountyRow = findBountyResultForReceiptLine(
+                        bountyData?.data,
+                        item,
+                        receiptTransaction?.transaction_uid,
+                      );
+                      const bountyDisplay = resolveReceiptLineBountyDisplay(item, bountyRow);
+                      const bountyMetaColor = darkMode ? "#aaa" : "#666";
 
                       const enrich = {
                         ...(receiptEnrichedItems[tiUid] || enrichFromReceiptRow(item) || receiptEnrichedItems[item.ti_bs_id] || receiptEnrichedItems[item.bs_uid] || {}),
@@ -4957,6 +5255,16 @@ export default function AccountScreen({ navigation }) {
                               {qtyTypeLabel ? (
                                 <Text style={{ fontSize: 10, color: darkMode ? "#aaa" : "#777", fontStyle: "italic", lineHeight: 14 }}>
                                   {qtyTypeLabel}
+                                </Text>
+                              ) : null}
+                              {bountyDisplay?.itemLabel ? (
+                                <Text style={{ fontSize: 10, color: bountyMetaColor, lineHeight: 14, marginTop: 2 }}>
+                                  Bounty: {bountyDisplay.itemLabel}
+                                </Text>
+                              ) : null}
+                              {bountyDisplay?.shareLabel ? (
+                                <Text style={{ fontSize: 10, color: bountyMetaColor, lineHeight: 14 }}>
+                                  Your share: {bountyDisplay.shareLabel}
                                 </Text>
                               ) : null}
                             </View>
@@ -4993,6 +5301,16 @@ export default function AccountScreen({ navigation }) {
                                 marginTop: 2,
                               }}
                             />
+                            {bountyDisplay?.itemLabel ? (
+                              <Text style={{ fontSize: 10, color: bountyMetaColor, lineHeight: 14, marginTop: 2 }}>
+                                Bounty: {bountyDisplay.itemLabel}
+                              </Text>
+                            ) : null}
+                            {bountyDisplay?.shareLabel ? (
+                              <Text style={{ fontSize: 10, color: bountyMetaColor, lineHeight: 14 }}>
+                                Your share: {bountyDisplay.shareLabel}
+                              </Text>
+                            ) : null}
                           </View>
                           <Text style={[styles.receiptTableCell, styles.receiptTableCellQty]}>{qty}</Text>
                           <Text style={[styles.receiptTableCell, styles.receiptTableCellCost]}>${unitPrice.toFixed(2)}</Text>
@@ -5511,7 +5829,7 @@ export default function AccountScreen({ navigation }) {
         <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
           <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent, { maxHeight: "80%" }]}>
             <Text style={[styles.receiveItemModalHeader, darkMode && styles.darkTitle]}>Delivery Verification</Text>
-            <Text style={[styles.receiveItemModalTitle, darkMode && styles.darkTitle]}>Select the item(s) you have received:</Text>
+            <Text style={[styles.receiveItemModalTitle, darkMode && styles.darkTitle]}>Select shipped item(s) you have received:</Text>
 
             {deliveryVerificationLoading ? (
               <ActivityIndicator size='small' color='#9C45F7' style={{ marginVertical: 24 }} />
@@ -5523,9 +5841,21 @@ export default function AccountScreen({ navigation }) {
                   const purchasedQty = getReceiptLineQty(item);
                   const alreadyReceivedQty = getPreviouslyReceivedQty(item);
                   const remainingQty = getRemainingQtyToReceive(item);
+                  const verifiableQty = getVerifiableReceiveRemaining(item, pendingTransactionForConfirm);
                   const fullyReceived = remainingQty <= 0;
-                  const receivedQty = receivedItemQuantities[itemId] ?? remainingQty;
-                  const needsQtyPicker = isSelected && remainingQty > 1;
+                  const awaitingShipment = !fullyReceived && verifiableQty <= 0;
+                  const canSelect = canSelectReceiptLineForVerification(item, pendingTransactionForConfirm);
+                  const receivedQty = receivedItemQuantities[itemId] ?? verifiableQty;
+                  const needsQtyPicker = isSelected && verifiableQty > 1;
+                  const shipDisplay = formatLineFulfillmentDisplay(item);
+                  const shippedQty = getLineShippedQty(item);
+                  const showShipMeta =
+                    orderNeedsShipping(item) ||
+                    orderNeedsShipping(pendingTransactionForConfirm) ||
+                    listRowHasExplicitShippingProgress(item) ||
+                    shippedQty > 0 ||
+                    awaitingShipment ||
+                    (shipDisplay.statusLabel && shipDisplay.statusLabel !== "—");
 
                   return (
                     <View
@@ -5535,14 +5865,14 @@ export default function AccountScreen({ navigation }) {
                         paddingHorizontal: 4,
                         borderBottomWidth: 1,
                         borderBottomColor: darkMode ? "#444" : "#eee",
-                        opacity: fullyReceived ? 0.45 : 1,
+                        opacity: fullyReceived || awaitingShipment ? 0.45 : 1,
                       }}
                     >
                       <TouchableOpacity
-                        disabled={fullyReceived}
+                        disabled={!canSelect}
                         style={{ flexDirection: "row", alignItems: "center" }}
                         onPress={() => {
-                          if (fullyReceived) return;
+                          if (!canSelect) return;
                           if (isSelected) {
                             setSelectedReceivedItems((prev) => prev.filter((id) => id !== itemId));
                             setReceivedItemQuantities((prev) => {
@@ -5552,19 +5882,46 @@ export default function AccountScreen({ navigation }) {
                             });
                           } else {
                             setSelectedReceivedItems((prev) => [...prev, itemId]);
-                            setReceivedItemQuantities((prev) => ({ ...prev, [itemId]: remainingQty }));
+                            setReceivedItemQuantities((prev) => ({ ...prev, [itemId]: verifiableQty }));
                           }
                         }}
                         activeOpacity={0.7}
                       >
-                        <Ionicons name={fullyReceived ? "checkbox" : isSelected ? "checkbox" : "square-outline"} size={18} color={fullyReceived || isSelected ? "#9C45F7" : "#555"} style={{ marginRight: 8 }} />
-                        <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", flex: 1 }}>
-                          {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {purchasedQty}
-                        </Text>
+                        <Ionicons
+                          name={fullyReceived ? "checkbox" : isSelected ? "checkbox" : "square-outline"}
+                          size={18}
+                          color={fullyReceived || isSelected ? "#9C45F7" : awaitingShipment ? "#aaa" : "#555"}
+                          style={{ marginRight: 8 }}
+                        />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333" }}>
+                            {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {purchasedQty}
+                          </Text>
+                          {showShipMeta ? (
+                            <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#666", marginTop: 2 }}>
+                              {awaitingShipment
+                                ? shipDisplay.statusLabel === "—"
+                                  ? "Not shipped yet — verify after shipping"
+                                  : `${shipDisplay.statusLabel === "Not shipped" ? "Not shipped yet" : shipDisplay.statusLabel} — verify after shipping`
+                                : shipDisplay.statusLabel === "—"
+                                  ? "Ready to verify"
+                                  : shipDisplay.statusLabel === "Shipped" && shippedQty > 0 && purchasedQty > 1
+                                    ? `Shipped ${shippedQty}/${purchasedQty}`
+                                    : shipDisplay.statusLabel.includes("/")
+                                      ? `Shipped ${shipDisplay.statusLabel}`
+                                      : shipDisplay.statusLabel}
+                              {!awaitingShipment && shipDisplay.trackingLabel && shipDisplay.trackingLabel !== "—"
+                                ? ` · ${shipDisplay.trackingLabel}`
+                                : ""}
+                            </Text>
+                          ) : null}
+                        </View>
                         {fullyReceived ? (
                           <Text style={{ fontSize: 11, color: "#9C45F7", marginLeft: 4 }}>Received</Text>
-                        ) : alreadyReceivedQty > 0 ? (
-                          <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>{remainingQty} left</Text>
+                        ) : awaitingShipment ? (
+                          <Text style={{ fontSize: 11, color: "#E65100", marginLeft: 4 }}>Awaiting ship</Text>
+                        ) : alreadyReceivedQty > 0 || (shippedQty > 0 && shippedQty < purchasedQty) ? (
+                          <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>{verifiableQty} to verify</Text>
                         ) : null}
                       </TouchableOpacity>
 
@@ -5586,7 +5943,7 @@ export default function AccountScreen({ navigation }) {
                               onPress={() =>
                                 setReceivedItemQuantities((prev) => ({
                                   ...prev,
-                                  [itemId]: Math.max(1, (prev[itemId] ?? remainingQty) - 1),
+                                  [itemId]: Math.max(1, (prev[itemId] ?? verifiableQty) - 1),
                                 }))
                               }
                             >
@@ -5611,7 +5968,7 @@ export default function AccountScreen({ navigation }) {
                                 const n = digits === "" ? "" : parseInt(digits, 10);
                                 setReceivedItemQuantities((prev) => ({
                                   ...prev,
-                                  [itemId]: n === "" ? "" : Math.min(remainingQty, Math.max(1, n)),
+                                  [itemId]: n === "" ? "" : Math.min(verifiableQty, Math.max(1, n)),
                                 }));
                               }}
                               keyboardType='number-pad'
@@ -5631,13 +5988,13 @@ export default function AccountScreen({ navigation }) {
                               onPress={() =>
                                 setReceivedItemQuantities((prev) => ({
                                   ...prev,
-                                  [itemId]: Math.min(remainingQty, (prev[itemId] ?? remainingQty) + 1),
+                                  [itemId]: Math.min(verifiableQty, (prev[itemId] ?? verifiableQty) + 1),
                                 }))
                               }
                             >
                               <Text style={{ fontSize: 18, color: darkMode ? "#fff" : "#333" }}>+</Text>
                             </TouchableOpacity>
-                            <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginLeft: 8 }}>of {remainingQty}</Text>
+                            <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#666", marginLeft: 8 }}>of {verifiableQty} shipped</Text>
                           </View>
                         </View>
                       )}
@@ -5648,7 +6005,11 @@ export default function AccountScreen({ navigation }) {
             )}
 
             {selectedReceivedItems.length === 0 && !deliveryVerificationLoading ? (
-              <Text style={{ color: "#9C45F7", fontSize: 12, marginBottom: 12, textAlign: "center" }}>Please select at least one received item.</Text>
+              <Text style={{ color: "#9C45F7", fontSize: 12, marginBottom: 12, textAlign: "center" }}>
+                {deliveryVerificationReceiptData.some((line) => canSelectReceiptLineForVerification(line, pendingTransactionForConfirm))
+                  ? "Please select at least one shipped item you received."
+                  : "No shipped items available to verify yet."}
+              </Text>
             ) : null}
 
             {(() => {
@@ -5656,11 +6017,12 @@ export default function AccountScreen({ navigation }) {
                 const index = parseInt(id, 10);
                 const item = deliveryVerificationReceiptData[index];
                 if (!item) return true;
-                const remainingQty = getRemainingQtyToReceive(item);
+                const verifiableQty = getVerifiableReceiveRemaining(item, pendingTransactionForConfirm);
+                if (verifiableQty <= 0) return true;
                 const raw = receivedItemQuantities[id];
                 const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
-                if (remainingQty > 1) {
-                  return !Number.isFinite(n) || n < 1 || n > remainingQty;
+                if (verifiableQty > 1) {
+                  return !Number.isFinite(n) || n < 1 || n > verifiableQty;
                 }
                 return false;
               });
@@ -5692,11 +6054,15 @@ export default function AccountScreen({ navigation }) {
                           Alert.alert("Error", "Receipt line is missing a transaction item id (ti_uid or ti_bs_id). Cannot confirm delivery.");
                           return;
                         }
-                        const purchasedQty = getReceiptLineQty(item);
-                        const remainingQty = getRemainingQtyToReceive(item);
+                        const verifiableQty = getVerifiableReceiveRemaining(item, pendingTransactionForConfirm);
+                        if (verifiableQty <= 0) {
+                          Alert.alert("Not shipped yet", "You can only verify items after the seller has marked them shipped.");
+                          return;
+                        }
                         const raw = receivedItemQuantities[id];
-                        const received_quantity = remainingQty > 1 ? (typeof raw === "number" ? raw : parseInt(String(raw), 10) || 1) : Math.min(1, remainingQty);
-                        if (received_quantity < 1) continue;
+                        const received_quantity =
+                          verifiableQty > 1 ? (typeof raw === "number" ? raw : parseInt(String(raw), 10) || 1) : Math.min(1, verifiableQty);
+                        if (received_quantity < 1 || received_quantity > verifiableQty) continue;
                         deliveryVerificationItems.push({ transaction_item_uid, received_quantity });
                       }
 
@@ -5886,8 +6252,24 @@ const styles = StyleSheet.create({
   transactionAmount: { width: 70, fontSize: 11, color: "#333", textAlign: "right" },
   transactionPaid: { width: 60, fontSize: 11, color: "#333", textAlign: "center" },
   transactionPaidCell: { width: 60, justifyContent: "center", alignItems: "center" },
+  transactionDeliveredCell: { width: 96, justifyContent: "center", alignItems: "center", paddingHorizontal: 2 },
+  transactionReceivedCell: { width: 72, justifyContent: "center", alignItems: "center", paddingHorizontal: 2 },
   transactionPaidText: { fontSize: 11, color: "#333", textAlign: "center" },
-  pendingLink: { fontSize: 11, color: "#007AFF", textDecorationLine: "underline" },
+  pendingLink: { fontSize: 11, color: "#007AFF", textDecorationLine: "underline", textAlign: "center", marginTop: 2 },
+  buyerStatusStack: { alignItems: "center", justifyContent: "center", gap: 2 },
+  buyerStatusTracking: { fontSize: 10, color: "#666", textAlign: "center", maxWidth: 90 },
+  purchaseStatusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    minWidth: 52,
+    alignItems: "center",
+  },
+  purchaseStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    textAlign: "center",
+  },
   // Header styles
   transactionHeaderDate: { width: 50, fontSize: 13, color: "#fff", fontWeight: "bold" },
   transactionHeaderId: { width: 100, fontSize: 13, color: "#fff", fontWeight: "bold" },
@@ -5896,6 +6278,8 @@ const styles = StyleSheet.create({
   transactionHeaderPurchasedItem: { flex: 1, fontSize: 13, color: "#fff", fontWeight: "bold", paddingHorizontal: 4 },
   transactionHeaderAmount: { width: 70, fontSize: 13, color: "#fff", fontWeight: "bold", textAlign: "right" },
   transactionHeaderPaid: { width: 60, fontSize: 13, color: "#fff", fontWeight: "bold", textAlign: "center" },
+  transactionHeaderDelivered: { width: 96, fontSize: 12, color: "#fff", fontWeight: "bold", textAlign: "center" },
+  transactionHeaderReceived: { width: 72, fontSize: 12, color: "#fff", fontWeight: "bold", textAlign: "center" },
   centeredContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
 
   bountyTotals: {
