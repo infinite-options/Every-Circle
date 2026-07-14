@@ -125,6 +125,8 @@ export default function ChatScreen() {
   const [pendingReplyContext, setPendingReplyContext] = useState(reply_context || null);
   /** Fetched profile for MiniCard; when null, `paramMiniCardUser` is used. */
   const [fetchedMiniCard, setFetchedMiniCard] = useState(null);
+  /** True when the other participant has blocked me or turned off all messages. */
+  const [recipientMessagesDisabled, setRecipientMessagesDisabled] = useState(false);
 
   const flatListRef = useRef(null);
   const ablyClientRef = useRef(null);
@@ -275,11 +277,12 @@ export default function ChatScreen() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${CHAT_MESSAGES_ENDPOINT}/${encodeURIComponent(cid)}`);
+      const res = await fetch(`${CHAT_MESSAGES_ENDPOINT}/${encodeURIComponent(cid)}?viewer_uid=${encodeURIComponent(myUid || "")}`);
       const json = await res.json();
       const raw = Array.isArray(json.result) ? json.result : [];
       const mapped = raw.map(normalizeMessageForUi);
       setMessages(orderMessagesForChatList(mapped));
+      setRecipientMessagesDisabled(!!json.recipient_messages_disabled);
     } catch (e) {
       setError("Could not load messages.");
     } finally {
@@ -457,6 +460,9 @@ export default function ChatScreen() {
         const without = prev.filter((m) => m.message_uid !== optimistic.message_uid && m.message_uid !== mid);
         return [...without, confirmed];
       });
+      if (typeof json.recipient_messages_disabled === "boolean") {
+        setRecipientMessagesDisabled(json.recipient_messages_disabled);
+      }
       if (pendingReplyContext) {
         setPendingReplyContext(null);
       }
@@ -598,6 +604,12 @@ export default function ChatScreen() {
             }
             onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
           />
+        )}
+
+        {recipientMessagesDisabled && (
+          <View style={styles.dayLabelWrap}>
+            <Text style={[styles.dayLabel, styles.messagesOffBanner, darkMode && styles.dayLabelDark]}>Messages turned off by {otherName}</Text>
+          </View>
         )}
 
         <View style={[styles.inputBar, darkMode && styles.inputBarDark]}>
@@ -748,6 +760,7 @@ const styles = StyleSheet.create({
   msgTime: { fontSize: 10, color: "#bbb", marginTop: 2, marginHorizontal: 4 },
   msgTimeMine: { textAlign: "right" },
   msgTimeDark: { color: "#555" },
+  messagesOffBanner: { color: "#c0392b", backgroundColor: "#ffe0e0", fontWeight: "600" },
 
   // Empty messages
   emptyMessages: {

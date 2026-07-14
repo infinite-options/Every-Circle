@@ -1,6 +1,6 @@
 // NetworkScreen.js - Web-compatible version
 import React, { useEffect, useState, useRef, useMemo, useCallback } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image, Modal, PanResponder } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, ActivityIndicator, Platform, Switch, InteractionManager, Image, Modal, PanResponder, Alert, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import BottomNavBar from "../components/BottomNavBar";
 import AppHeader from "../components/AppHeader";
@@ -8,7 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
 import { useFocusEffect, useRoute } from "@react-navigation/native";
-import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT, CHAT_CONVERSATIONS_ENDPOINT, NEARBY_USERS_ENDPOINT, PROFILE_VIEWS_ENDPOINT } from "../apiConfig";
+import { API_BASE_URL, USER_PROFILE_INFO_ENDPOINT, CIRCLES_ENDPOINT, CHAT_CONVERSATIONS_ENDPOINT, NEARBY_USERS_ENDPOINT, PROFILE_VIEWS_ENDPOINT, BLOCKED_USERS_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import MiniCard from "../components/MiniCard";
 import MicroCard from "../components/MicroCard";
@@ -104,6 +104,95 @@ function ConnectionFilterModal({ visible, title, options, selected, onSelect, on
             })}
           </ScrollView>
           <Text style={{ fontSize: 12, color: labelColor, padding: 12, textAlign: "center" }}>Tap a row to apply</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+/**
+ * Popover for a single conversation row's "..." menu (Block/Unblock), anchored just under the
+ * tapped button via measured screen coordinates. Renders in a top-level Modal so it floats above
+ * everything and isn't clipped by the accordion's overflow:hidden.
+ */
+function RowActionModal({ visible, name, isBlocked, anchor, onToggleBlock, onClose, darkMode }) {
+  const bg = darkMode ? "#1e1e2e" : "#ffffff";
+  const borderColor = darkMode ? "#3a3a5c" : "#e0e4f7";
+  const textColor = darkMode ? "#e8eaf6" : "#1a1a2e";
+  const screenWidth = Dimensions.get("window").width;
+  const popupWidth = 200;
+  const top = (anchor?.y ?? 0) + (anchor?.height ?? 0) + 4;
+  const right = Math.max(8, screenWidth - ((anchor?.x ?? 0) + (anchor?.width ?? 0)));
+
+  return (
+    <Modal visible={visible} transparent animationType='fade' onRequestClose={onClose}>
+      <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={(e) => e.stopPropagation()}
+          style={{ position: "absolute", top, right, width: popupWidth, backgroundColor: bg, borderRadius: 10, borderWidth: 1, borderColor, overflow: "hidden" }}
+        >
+          <TouchableOpacity
+            style={{ paddingVertical: 12, paddingHorizontal: 16 }}
+            onPress={() => {
+              onToggleBlock();
+              onClose();
+            }}
+          >
+            <Text style={{ fontSize: 14, color: textColor, fontWeight: "600" }}>{isBlocked ? `Unblock ${name}` : `Block ${name}`}</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+/** Lists blocked people with an Unblock action for each. Modeled on ConnectionFilterModal. */
+function BlockedPeopleModal({ visible, blockedList, onUnblock, onClose, darkMode }) {
+  const bg = darkMode ? "#1e1e2e" : "#ffffff";
+  const borderColor = darkMode ? "#3a3a5c" : "#e0e4f7";
+  const textColor = darkMode ? "#e8eaf6" : "#1a1a2e";
+
+  return (
+    <Modal visible={visible} transparent animationType='fade' onRequestClose={onClose}>
+      <TouchableOpacity style={connectionFilterModalStyles.overlay} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()} style={[connectionFilterModalStyles.sheet, { backgroundColor: bg, borderColor }]}>
+          <View style={[connectionFilterModalStyles.header, { borderBottomColor: borderColor, backgroundColor: darkMode ? "#252538" : "#f0f2ff" }]}>
+            <Text style={[connectionFilterModalStyles.headerTitle, { color: textColor }]}>Blocked People</Text>
+            <TouchableOpacity onPress={onClose} style={{ padding: 4 }} accessibilityRole='button' accessibilityLabel='Close'>
+              <Ionicons name='close-circle' size={26} color={darkMode ? "#7880c0" : "#8890c8"} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={{ maxHeight: 360 }} keyboardShouldPersistTaps='handled'>
+            {blockedList.length === 0 ? (
+              <Text style={{ fontSize: 14, color: textColor, padding: 16, textAlign: "center" }}>You haven't blocked anyone.</Text>
+            ) : (
+              blockedList.map((person) => {
+                const name = `${person.first_name || ""} ${person.last_name || ""}`.trim() || person.blocked_uid;
+                const initials = `${(person.first_name || "?")[0]}${(person.last_name || "?")[0]}`.toUpperCase();
+                return (
+                  <View
+                    key={person.blocked_uid}
+                    style={{ flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: borderColor }}
+                  >
+                    {person.image ? (
+                      <Image source={{ uri: person.image }} style={{ width: 36, height: 36, borderRadius: 18, marginRight: 10 }} />
+                    ) : (
+                      <View style={{ width: 36, height: 36, borderRadius: 18, marginRight: 10, backgroundColor: "#AF52DE", alignItems: "center", justifyContent: "center" }}>
+                        <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>{initials}</Text>
+                      </View>
+                    )}
+                    <Text style={{ flex: 1, fontSize: 14, color: textColor }} numberOfLines={1}>
+                      {name}
+                    </Text>
+                    <TouchableOpacity onPress={() => onUnblock(person.blocked_uid)} style={{ paddingVertical: 6, paddingHorizontal: 12, borderRadius: 14, backgroundColor: "#AF52DE" }}>
+                      <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>Unblock</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
         </TouchableOpacity>
       </TouchableOpacity>
     </Modal>
@@ -479,6 +568,14 @@ const NetworkScreen = ({ navigation }) => {
   const [showMessages, setShowMessages] = useState(false);
   const [conversations, setConversations] = useState([]);
   const [conversationsLoading, setConversationsLoading] = useState(false);
+  const [showMessagesMenu, setShowMessagesMenu] = useState(false);
+  const [messagesOff, setMessagesOff] = useState(false);
+  const [blockedUids, setBlockedUids] = useState(new Set());
+  const [blockedList, setBlockedList] = useState([]);
+  const [showBlockedManager, setShowBlockedManager] = useState(false);
+  const [openRowMenuUid, setOpenRowMenuUid] = useState(null);
+  const [rowMenuAnchor, setRowMenuAnchor] = useState(null);
+  const rowMenuButtonRefs = useRef({});
 
   const [showNearby, setShowNearby] = useState(false);
   const [nearbyUsers, setNearbyUsers] = useState([]);
@@ -2212,14 +2309,98 @@ const NetworkScreen = ({ navigation }) => {
     setConversationsLoading(false);
   }, [profileUid]);
 
+  const resolveMyUid = async () => {
+    const session = await getSessionProfile();
+    return (profileUid || session?.profileUid || (await AsyncStorage.getItem("profile_uid")) || "").trim();
+  };
+
+  const fetchBlockedUsers = useCallback(async () => {
+    const uid = await resolveMyUid();
+    if (!uid) return;
+    try {
+      const res = await fetch(`${BLOCKED_USERS_ENDPOINT}/${encodeURIComponent(uid)}`);
+      const json = await res.json();
+      const list = Array.isArray(json.result) ? json.result : [];
+      setBlockedList(list);
+      setBlockedUids(new Set(list.map((b) => b.blocked_uid)));
+    } catch (_) {
+      /* keep previous state on failure */
+    }
+  }, [profileUid]);
+
+  const fetchMessagesOffSetting = useCallback(async () => {
+    const uid = await resolveMyUid();
+    if (!uid) return;
+    try {
+      const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}/${encodeURIComponent(uid)}`);
+      const json = await res.json();
+      setMessagesOff(json?.personal_info?.profile_personal_messages_off === 1);
+    } catch (_) {
+      /* keep previous state on failure */
+    }
+  }, [profileUid]);
+
+  const toggleMessagesOff = async () => {
+    const uid = await resolveMyUid();
+    if (!uid) return;
+    const next = !messagesOff;
+    setMessagesOff(next);
+    setShowMessagesMenu(false);
+    try {
+      const formData = new FormData();
+      formData.append("profile_uid", uid);
+      formData.append("profile_personal_messages_off", next ? "1" : "0");
+      const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(uid)}`, {
+        method: "PUT",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Failed to update");
+    } catch (e) {
+      setMessagesOff(!next);
+      Alert.alert("Error", "Could not update your messages setting.");
+    }
+  };
+
+  const toggleBlock = async (otherUid) => {
+    const uid = await resolveMyUid();
+    if (!uid || !otherUid) return;
+    const wasBlocked = blockedUids.has(otherUid);
+    setOpenRowMenuUid(null);
+    setBlockedUids((prev) => {
+      const next = new Set(prev);
+      if (wasBlocked) next.delete(otherUid);
+      else next.add(otherUid);
+      return next;
+    });
+    try {
+      const res = await fetch(BLOCKED_USERS_ENDPOINT, {
+        method: wasBlocked ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blocker_uid: uid, blocked_uid: otherUid }),
+      });
+      if (!res.ok) throw new Error("Failed to update block status");
+      fetchBlockedUsers();
+    } catch (e) {
+      setBlockedUids((prev) => {
+        const next = new Set(prev);
+        if (wasBlocked) next.add(otherUid);
+        else next.delete(otherUid);
+        return next;
+      });
+      Alert.alert("Error", "Could not update block status.");
+    }
+  };
+
   // When returning from Chat, refresh the list so the just-sent message appears immediately.
   useFocusEffect(
     useCallback(() => {
       if (showMessages) {
         fetchConversations();
+        fetchBlockedUsers();
+        fetchMessagesOffSetting();
         clearUnread();
       }
-    }, [showMessages, fetchConversations, clearUnread]),
+    }, [showMessages, fetchConversations, fetchBlockedUsers, fetchMessagesOffSetting, clearUnread]),
   );
 
   useFocusEffect(
@@ -2893,21 +3074,56 @@ const NetworkScreen = ({ navigation }) => {
           )}
 
           {/* ── Messages Accordion ─────────────────────────────────────── */}
-          <TouchableOpacity
-            style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader, { marginTop: 8 }]}
-            onPress={() => {
-              const willExpand = !showMessages;
-              setShowMessages(willExpand);
-              if (willExpand) {
-                fetchConversations();
-                clearUnread();
-              }
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>Messages</Text>
-            <Ionicons name={showMessages ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
-          </TouchableOpacity>
+          <View style={[styles.viewMyNetworkHeader, darkMode && styles.darkViewMyNetworkHeader, { marginTop: 8, flexDirection: "row" }]}>
+            <TouchableOpacity
+              style={{ flex: 1, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+              onPress={() => {
+                const willExpand = !showMessages;
+                setShowMessages(willExpand);
+                if (willExpand) {
+                  fetchConversations();
+                  fetchBlockedUsers();
+                  fetchMessagesOffSetting();
+                  clearUnread();
+                } else {
+                  setShowMessagesMenu(false);
+                  setOpenRowMenuUid(null);
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.viewMyNetworkHeaderText, darkMode && styles.darkViewMyNetworkHeaderText]}>Messages</Text>
+              <Ionicons name={showMessages ? "chevron-up" : "chevron-down"} size={24} color={darkMode ? "#e0e0e0" : "#333"} />
+            </TouchableOpacity>
+            {showMessages && (
+              <TouchableOpacity
+                onPress={() => setShowMessagesMenu((p) => !p)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={{ marginLeft: 10, justifyContent: "center" }}
+                accessibilityLabel='Messages options'
+              >
+                <Ionicons name='ellipsis-vertical' size={20} color={darkMode ? "#e0e0e0" : "#333"} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {showMessages && showMessagesMenu && (
+            <View style={[styles.viewersDropdownMenu, darkMode && { backgroundColor: "#2a2a2a", borderColor: "#444" }]}>
+              <TouchableOpacity style={styles.viewersDropdownItem} onPress={toggleMessagesOff}>
+                <Text style={[styles.viewersDropdownItemText, darkMode && { color: "#e0e0e0" }]}>{messagesOff ? "Turn on all messages" : "Turn off all messages"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.viewersDropdownItem}
+                onPress={() => {
+                  setShowMessagesMenu(false);
+                  setShowBlockedManager(true);
+                  fetchBlockedUsers();
+                }}
+              >
+                <Text style={[styles.viewersDropdownItemText, darkMode && { color: "#e0e0e0" }]}>Manage blocked people</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {showMessages && (
             <View style={[styles.messagesAccordionBody, darkMode && styles.messagesAccordionBodyDark]}>
@@ -2925,41 +3141,75 @@ const NetworkScreen = ({ navigation }) => {
                   const preview = conv.last_message || "No messages yet";
                   const time = _convRelTime(conv.last_sent_at || conv.last_message_at);
                   const chatHeaderName = conv.displayName || listTitle;
+                  const isBlocked = blockedUids.has(conv.other_uid);
                   return (
-                    <TouchableOpacity
+                    <View
                       key={conv.conversation_uid}
                       style={[styles.messagesRow, darkMode && styles.messagesRowDark, idx > 0 && (darkMode ? styles.messagesRowBorderDark : styles.messagesRowBorder)]}
-                      onPress={() => {
-                        navigation.navigate("Chat", {
-                          conversation_uid: conv.conversation_uid,
-                          other_uid: conv.other_uid,
-                          other_name: chatHeaderName,
-                          other_image: conv.image || null,
-                        });
-                      }}
-                      activeOpacity={0.7}
                     >
-                      <View style={styles.messagesAvatar}>
-                        {conv.image ? (
-                          <Image source={{ uri: conv.image }} style={styles.messagesAvatarImg} />
-                        ) : (
-                          <View style={[styles.messagesAvatarImg, styles.messagesAvatarFallback]}>
-                            <Text style={styles.messagesAvatarText}>{initials}</Text>
-                          </View>
-                        )}
-                      </View>
-                      <View style={styles.messagesTextBlock}>
-                        <View style={styles.messagesNameRow}>
-                          <Text style={[styles.messagesName, darkMode && styles.messagesNameDark]} numberOfLines={2}>
-                            {listTitle}
-                          </Text>
-                          <Text style={[styles.messagesTime, darkMode && styles.messagesTimeDark]}>{time}</Text>
+                      <TouchableOpacity
+                        style={{ flex: 1, flexDirection: "row", alignItems: "center" }}
+                        onPress={() => {
+                          navigation.navigate("Chat", {
+                            conversation_uid: conv.conversation_uid,
+                            other_uid: conv.other_uid,
+                            other_name: chatHeaderName,
+                            other_image: conv.image || null,
+                          });
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <View style={styles.messagesAvatar}>
+                          {conv.image ? (
+                            <Image source={{ uri: conv.image }} style={[styles.messagesAvatarImg, isBlocked && { opacity: 0.4 }]} />
+                          ) : (
+                            <View style={[styles.messagesAvatarImg, styles.messagesAvatarFallback, isBlocked && { opacity: 0.4 }]}>
+                              <Text style={styles.messagesAvatarText}>{initials}</Text>
+                            </View>
+                          )}
                         </View>
-                        <Text style={[styles.messagesPreview, darkMode && styles.messagesPreviewDark]} numberOfLines={1}>
-                          {preview}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
+                        <View style={styles.messagesTextBlock}>
+                          <View style={styles.messagesNameRow}>
+                            <View style={{ flex: 1, flexDirection: "row", alignItems: "center", marginRight: 8 }}>
+                              <Text style={[styles.messagesName, darkMode && styles.messagesNameDark, { marginRight: 0, flexShrink: 1 }]} numberOfLines={2}>
+                                {listTitle}
+                              </Text>
+                              {isBlocked && (
+                                <View style={styles.blockedBadge}>
+                                  <Text style={styles.blockedBadgeText}>Blocked</Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text style={[styles.messagesTime, darkMode && styles.messagesTimeDark]}>{time}</Text>
+                          </View>
+                          <Text style={[styles.messagesPreview, darkMode && styles.messagesPreviewDark]} numberOfLines={1}>
+                            {preview}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        ref={(el) => {
+                          rowMenuButtonRefs.current[conv.other_uid] = el;
+                        }}
+                        onPress={() => {
+                          const node = rowMenuButtonRefs.current[conv.other_uid];
+                          if (node && node.measureInWindow) {
+                            node.measureInWindow((x, y, width, height) => {
+                              setRowMenuAnchor({ x, y, width, height });
+                              setOpenRowMenuUid(conv.other_uid);
+                            });
+                          } else {
+                            setRowMenuAnchor(null);
+                            setOpenRowMenuUid(conv.other_uid);
+                          }
+                        }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={{ marginLeft: 6, paddingHorizontal: 4 }}
+                        accessibilityLabel={`Options for ${listTitle}`}
+                      >
+                        <Ionicons name='ellipsis-vertical' size={18} color={darkMode ? "#888" : "#999"} />
+                      </TouchableOpacity>
+                    </View>
                   );
                 })
               )}
@@ -3272,6 +3522,25 @@ const NetworkScreen = ({ navigation }) => {
           darkMode={darkMode}
         />
       )}
+      {showBlockedManager && (
+        <BlockedPeopleModal visible blockedList={blockedList} onUnblock={toggleBlock} onClose={() => setShowBlockedManager(false)} darkMode={darkMode} />
+      )}
+      {openRowMenuUid != null &&
+        (() => {
+          const conv = conversations.find((c) => c.other_uid === openRowMenuUid);
+          const name = conv?.connectListTitle || conv?.displayName || `${conv?.first_name || ""} ${conv?.last_name || ""}`.trim() || openRowMenuUid;
+          return (
+            <RowActionModal
+              visible
+              name={name}
+              isBlocked={blockedUids.has(openRowMenuUid)}
+              anchor={rowMenuAnchor}
+              onToggleBlock={() => toggleBlock(openRowMenuUid)}
+              onClose={() => setOpenRowMenuUid(null)}
+              darkMode={darkMode}
+            />
+          );
+        })()}
     </View>
   );
 };
@@ -3345,6 +3614,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     backgroundColor: "#fff",
+    position: "relative",
   },
   messagesRowDark: { backgroundColor: "#1e1e1e" },
   messagesRowBorder: { borderTopWidth: 1, borderTopColor: "#f0f0f0" },
@@ -3370,6 +3640,14 @@ const styles = StyleSheet.create({
   messagesTimeDark: { color: "#666" },
   messagesPreview: { fontSize: 12, color: "#666" },
   messagesPreviewDark: { color: "#aaa" },
+  blockedBadge: {
+    marginLeft: 6,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 8,
+    backgroundColor: "#ffe0e0",
+  },
+  blockedBadgeText: { fontSize: 10, fontWeight: "700", color: "#c0392b" },
   viewersDropdownBtn: {
     flexDirection: "row",
     justifyContent: "space-between",
