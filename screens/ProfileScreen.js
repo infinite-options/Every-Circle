@@ -32,6 +32,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import {
   API_BASE_URL,
   USER_PROFILE_INFO_ENDPOINT,
+  USER_INFO_ENDPOINT,
   BUSINESS_INFO_ENDPOINT,
   CIRCLES_ENDPOINT,
   PROFILE_VIEWS_ENDPOINT,
@@ -57,11 +58,29 @@ import FeedbackPopup from "../components/FeedbackPopup";
 import ScannedProfilePopup from "../components/ScannedProfilePopup";
 import AddToCartDetailsModal from "../components/AddToCartDetailsModal";
 import FlagOfferingModal from "../components/FlagOfferingModal";
+import FlagSeekingModal from "../components/FlagSeekingModal";
+import FlagProfileModal from "../components/FlagProfileModal";
 import OfferingModerationBanner from "../components/OfferingModerationBanner";
+import SeekingModerationBanner from "../components/SeekingModerationBanner";
+import BusinessModerationBanner from "../components/BusinessModerationBanner";
 import { expertiseCartPersistedFields } from "../utils/offeringCartUtils";
 import { upsertExpertiseCartItem } from "../utils/expertiseCartStorage";
 import { getHeaderColors } from "../config/headerColors";
 import { getOfferingModeratedState, isOfferingModeratedBlocked, MODERATED_ACKNOWLEDGED, MODERATED_TAKEN_DOWN, normalizeOfferingModeration } from "../utils/offeringModeration";
+import { getSeekingModeratedState, isSeekingModeratedBlocked, normalizeSeekingModeration } from "../utils/seekingModeration";
+import {
+  buildProfileModerationItem,
+  getProfileModerationStatusLabel,
+  isProfileOwnerRestricted,
+  isProfileVisibilityBlocked,
+  normalizeProfileModeration,
+} from "../utils/profileModeration";
+import {
+  getBusinessModeratedState,
+  isBusinessModeratedBlocked,
+  normalizeBusinessModeration,
+  MODERATED_ACKNOWLEDGED as BUSINESS_MODERATED_ACKNOWLEDGED,
+} from "../utils/businessModeration";
 
 const ProfileScreenAPI = USER_PROFILE_INFO_ENDPOINT;
 console.log(`ProfileScreen - Full endpoint: ${ProfileScreenAPI}`);
@@ -226,6 +245,9 @@ const ProfileScreen = ({ route, navigation }) => {
   const [isCurrentUserProfile, setIsCurrentUserProfile] = useState(false);
   const [offeringCartModalItem, setOfferingCartModalItem] = useState(null);
   const [flagModalOffering, setFlagModalOffering] = useState(null);
+  const [flagModalSeeking, setFlagModalSeeking] = useState(null);
+  const [showFlagProfileModal, setShowFlagProfileModal] = useState(false);
+  const [isAdminViewer, setIsAdminViewer] = useState(false);
   const [showRelationshipDropdown, setShowRelationshipDropdown] = useState(false);
   const [showConnectPopup, setShowConnectPopup] = useState(false);
   const [existingRelationship, setExistingRelationship] = useState(null);
@@ -507,6 +529,42 @@ const ProfileScreen = ({ route, navigation }) => {
     }, [routeProfileUID, JSON.stringify(route.params?.oauthPrefill ?? null)]), // oauthPrefill: OAuth → Profile → UserInfo prefill
   );
 
+  useEffect(() => {
+    if (loading || !user || !isCurrentUserProfile) return;
+    const moderationItem = user.profileModerationItem;
+    if (!moderationItem || !isProfileOwnerRestricted(moderationItem)) return;
+    navigation.replace("ProfileModeration", {
+      moderationItem,
+      profileName: `${user.firstName || ""} ${user.lastName || ""}`.trim(),
+    });
+  }, [loading, user, isCurrentUserProfile, navigation]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const userUid = ((await AsyncStorage.getItem("user_uid")) || "").trim();
+        if (!userUid) {
+          if (!cancelled) setIsAdminViewer(false);
+          return;
+        }
+        const response = await fetch(`${USER_INFO_ENDPOINT}/${encodeURIComponent(userUid)}`);
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          if (!cancelled) setIsAdminViewer(false);
+          return;
+        }
+        const row = Array.isArray(result?.result) ? result.result[0] : result?.result ?? result?.data ?? result;
+        if (!cancelled) setIsAdminViewer(row?.user_role === "ADMIN");
+      } catch (_) {
+        if (!cancelled) setIsAdminViewer(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function recordProfileView(viewedProfileId, viewerProfileId) {
     try {
       console.log("[ProfileScreen] recordProfileView - view_profile_id:", viewedProfileId, "view_viewer_id:", viewerProfileId);
@@ -602,6 +660,8 @@ const ProfileScreen = ({ route, navigation }) => {
         businessIsPublic: apiUser.personal_info?.profile_personal_business_is_public === 1,
         socialLinksIsPublic: apiUser.personal_info?.profile_personal_social_is_public !== 0,
         profileImage: apiUser.personal_info?.profile_personal_image ? String(apiUser.personal_info.profile_personal_image) : "",
+        profileModerationItem: buildProfileModerationItem(apiUser),
+        moderation: normalizeProfileModeration(buildProfileModerationItem(apiUser)),
       };
       userData.experience = apiUser.experience_info
         ? (typeof apiUser.experience_info === "string" ? JSON.parse(apiUser.experience_info) : apiUser.experience_info).map((exp) => ({
@@ -707,6 +767,8 @@ const ProfileScreen = ({ route, navigation }) => {
         profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
         isPublic: wish.profile_wish_is_public === 1 || wish.isPublic === true,
         wish_responses: wish.wish_responses || 0,
+        moderation: normalizeSeekingModeration(wish),
+        profile_wish_moderated: wish.profile_wish_moderated,
       }));
       const socialLinks =
         typeof apiUser.social_links === "string"
@@ -746,6 +808,8 @@ const ProfileScreen = ({ route, navigation }) => {
         individualIsPublic: bus.bu_individual_business_is_public === 1 || bus.bu_individual_business_is_public === "1" || bus.bu_individual_business_is_public === true,
         index,
         business_updated_at: bus.business_updated_at ?? bus.updated_at,
+        moderation: normalizeBusinessModeration(bus),
+        business_moderated: bus.business_moderated,
       }));
       // console.log("mappedBusinesses result:", JSON.stringify(mappedBusinesses, null, 2));
       setBusinessesData(mappedBusinesses);
@@ -1401,6 +1465,44 @@ const ProfileScreen = ({ route, navigation }) => {
     );
   }
 
+  const profileModerationItem = user.profileModerationItem;
+  const profileVisibilityBlocked = profileModerationItem && isProfileVisibilityBlocked(profileModerationItem);
+  // Backend hides offerings/seekings for other viewers when moderated is 1, 2, or 3.
+  // Owners use ProfileModerationScreen for 1/2; admins may still view full content.
+  const viewingUnavailableProfile =
+    routeProfileUID && !isCurrentUserProfile && profileVisibilityBlocked && !isAdminViewer;
+
+  if (viewingUnavailableProfile) {
+    return (
+      <View style={[styles.pageContainer, darkMode && styles.darkPageContainer]}>
+        <AppHeader
+          title='PROFILE'
+          {...getHeaderColors("profileView")}
+          onBackPress={() => {
+            if (navigation.canGoBack()) navigation.goBack();
+            else navigation.navigate("Network");
+          }}
+        />
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
+          <Ionicons name='eye-off-outline' size={48} color={darkMode ? "#aaa" : "#888"} style={{ marginBottom: 16 }} />
+          <Text style={[styles.errorText, darkMode && styles.darkErrorText, { textAlign: "center", marginBottom: 8 }]}>This profile is unavailable.</Text>
+          <Text style={{ color: darkMode ? "#bbb" : "#666", textAlign: "center", fontSize: 14, lineHeight: 20 }}>
+            This profile has been taken down, is under review, or was acknowledged as removed and cannot be viewed right now.
+          </Text>
+        </View>
+        <BottomNavBar navigation={navigation} />
+      </View>
+    );
+  }
+
+  if (isCurrentUserProfile && profileModerationItem && isProfileOwnerRestricted(profileModerationItem)) {
+    return (
+      <View style={[styles.pageContainer, darkMode && styles.darkPageContainer, { flex: 1, justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator size='large' color={darkMode ? "#ffffff" : "#007BFF"} />
+      </View>
+    );
+  }
+
   const isWeb = Platform.OS === "web";
   const shortBioBelowCard = (() => {
     if (!user.shortBioIsPublic) return "";
@@ -1612,6 +1714,25 @@ const ProfileScreen = ({ route, navigation }) => {
             style: [styles.scrollContainer, darkMode && styles.darkScrollContainer, { zIndex: 1 }],
           })}
         >
+          {routeProfileUID && !isCurrentUserProfile && isAdminViewer && profileVisibilityBlocked ? (
+            <View
+              style={{
+                backgroundColor: darkMode ? "#3a2a2a" : "#FFF5F5",
+                borderColor: darkMode ? "#664444" : "#F5C6C6",
+                borderWidth: 1,
+                borderRadius: 8,
+                padding: 12,
+                marginBottom: 14,
+              }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: "700", color: darkMode ? "#ff8a80" : "#B71C1C", marginBottom: 4 }}>
+                Admin view · {getProfileModerationStatusLabel(profileModerationItem)}
+              </Text>
+              <Text style={{ fontSize: 12, lineHeight: 17, color: darkMode ? "#ccc" : "#555" }}>
+                This profile is hidden from other users (taken down, pending review, or acknowledged). Offerings and seekings are filtered at read time only.
+              </Text>
+            </View>
+          ) : null}
           {/* <View style={[styles.cardContainer, darkMode && styles.darkCardContainer]}>
             <View style={styles.profileHeaderContainer}>
               <Image
@@ -1815,6 +1936,16 @@ const ProfileScreen = ({ route, navigation }) => {
                   >
                     <Ionicons name='chatbubble-ellipses-outline' size={17} color='#fff' style={{ marginRight: 7 }} />
                     <Text style={styles.chatButtonText}>Message</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.profileActionButtonPill, { backgroundColor: "#B71C1C" }]}
+                    activeOpacity={0.85}
+                    onPress={() => setShowFlagProfileModal(true)}
+                    accessibilityRole='button'
+                    accessibilityLabel='Report profile'
+                  >
+                    <Ionicons name='flag-outline' size={17} color='#fff' style={{ marginRight: 6 }} />
+                    <Text style={styles.connectionActionButtonText}>Report</Text>
                   </TouchableOpacity>
                 </View>
               );
@@ -2166,16 +2297,33 @@ const ProfileScreen = ({ route, navigation }) => {
                 <Ionicons name={showSeeking ? "chevron-up" : "chevron-down"} size={20} color='#000' />
               </TouchableOpacity>
               {showSeeking &&
-                (user.wishes && user.wishes.filter((wish) => wish.isPublic && !isWishEnded(wish)).length > 0 ? (
+                (user.wishes &&
+                user.wishes.filter((wish) => {
+                  if (getSeekingModeratedState(wish) === MODERATED_ACKNOWLEDGED) return false;
+                  if (isWishEnded(wish)) return false;
+                  return isCurrentUserProfile ? wish.isPublic || isSeekingModeratedBlocked(wish) : wish.isPublic;
+                }).length > 0 ? (
                   user.wishes
-                    .filter((wish) => wish.isPublic && !isWishEnded(wish))
+                    .filter((wish) => {
+                      if (getSeekingModeratedState(wish) === MODERATED_ACKNOWLEDGED) return false;
+                      if (isWishEnded(wish)) return false;
+                      return isCurrentUserProfile ? wish.isPublic || isSeekingModeratedBlocked(wish) : wish.isPublic;
+                    })
                     .map((wish, index) => {
                       const wishImageUri = resolveProfileItemImageUri(wish.profile_wish_image, profileUID);
                       const wishKey = wish.profile_wish_uid || String(index);
-                      const shellStyle = [styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }];
+                      const seekingModeratedBlocked = isSeekingModeratedBlocked(wish);
+                      const seekingTakenDown = getSeekingModeratedState(wish) === MODERATED_TAKEN_DOWN;
+                      const shellStyle = [
+                        styles.sectionItemContainer,
+                        darkMode && styles.darkSectionItemContainer,
+                        seekingTakenDown && (darkMode ? styles.darkTakenDownOfferingCard : styles.takenDownOfferingCard),
+                        index > 0 && { marginTop: 4 },
+                      ];
 
                       const wishCardContent = (
                         <>
+                          {isCurrentUserProfile && seekingModeratedBlocked ? <SeekingModerationBanner item={wish} darkMode={darkMode} /> : null}
                           <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 2 }}>
                             <ProfileSectionItemImage section='seeking' imageUri={wishImageUri} imageIsPublic={wish.profile_wish_image_is_public} size={56} darkMode={darkMode} />
                             <View style={{ flex: 1, minWidth: 0 }}>
@@ -2226,6 +2374,20 @@ const ProfileScreen = ({ route, navigation }) => {
                                     <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Responses: {wish.wish_responses || 0}</Text>
                                   </TouchableOpacity>
                                 )}
+                                {routeProfileUID && !isCurrentUserProfile ? (
+                                  <TouchableOpacity
+                                    onPress={() =>
+                                      setFlagModalSeeking({
+                                        uid: wish.profile_wish_uid,
+                                        title: sanitizeText(wish.helpNeeds) || "Seeking",
+                                      })
+                                    }
+                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                    accessibilityLabel='Report seeking'
+                                  >
+                                    <Ionicons name='flag-outline' size={18} color={darkMode ? "#ff8a80" : "#B71C1C"} />
+                                  </TouchableOpacity>
+                                ) : null}
                               </View>
                               {wish.details ? <Text style={[styles.inputText, darkMode && styles.darkInputText, { marginLeft: 0, color: "#666" }]}>{wish.details}</Text> : null}
                             </View>
@@ -2249,6 +2411,8 @@ const ProfileScreen = ({ route, navigation }) => {
                           profile_wish_location: wish.profile_wish_location,
                           profile_wish_mode: wish.profile_wish_mode,
                           profile_wish_updated_at: wish.profile_wish_updated_at ?? wish.updated_at,
+                          moderation: wish.moderation,
+                          profile_wish_moderated: wish.profile_wish_moderated,
                         };
                         const profileData = {
                           firstName: user.firstName,
@@ -2275,7 +2439,7 @@ const ProfileScreen = ({ route, navigation }) => {
                       };
 
                       const messageAboutSeekingBtn =
-                        routeProfileUID && !isCurrentUserProfile ? (
+                        routeProfileUID && !isCurrentUserProfile && !seekingModeratedBlocked ? (
                           <TouchableOpacity
                             style={[styles.contextChatButton, darkMode && styles.darkContextChatButton]}
                             activeOpacity={0.8}
@@ -2304,6 +2468,21 @@ const ProfileScreen = ({ route, navigation }) => {
                             </TouchableOpacity>
                             {messageAboutSeekingBtn}
                           </View>
+                        );
+                      }
+
+                      if (isCurrentUserProfile && seekingTakenDown) {
+                        return (
+                          <TouchableOpacity
+                            key={wishKey}
+                            style={shellStyle}
+                            onPress={openWishDetail}
+                            activeOpacity={0.75}
+                            accessibilityRole='button'
+                            accessibilityLabel='View taken-down seeking post details'
+                          >
+                            {wishCardContent}
+                          </TouchableOpacity>
                         );
                       }
 
@@ -2416,13 +2595,27 @@ const ProfileScreen = ({ route, navigation }) => {
               </View>
               {showBusiness &&
                 (() => {
-                  const businessesToShow = Array.isArray(businessesData) ? businessesData.filter((b) => b.individualIsPublic === true) : [];
+                  const businessesToShow = Array.isArray(businessesData)
+                    ? businessesData.filter((b) => {
+                        if (getBusinessModeratedState(b) === BUSINESS_MODERATED_ACKNOWLEDGED) return false;
+                        return isCurrentUserProfile ? b.individualIsPublic === true || isBusinessModeratedBlocked(b) : b.individualIsPublic === true;
+                      })
+                    : [];
                   return businessesToShow.length > 0 ? (
-                    businessesToShow.map((business, index) => (
+                    businessesToShow.map((business, index) => {
+                      const businessModeratedBlocked = isCurrentUserProfile && isBusinessModeratedBlocked(business);
+                      const businessTakenDown = getBusinessModeratedState(business) === MODERATED_TAKEN_DOWN;
+                      return (
                       <View
                         key={business.profile_business_uid || business.business_uid || index}
-                        style={[styles.sectionItemContainer, darkMode && styles.darkSectionItemContainer, index > 0 && { marginTop: 4 }]}
+                        style={[
+                          styles.sectionItemContainer,
+                          darkMode && styles.darkSectionItemContainer,
+                          businessTakenDown && (darkMode ? styles.darkTakenDownOfferingCard : styles.takenDownOfferingCard),
+                          index > 0 && { marginTop: 4 },
+                        ]}
                       >
+                        {businessModeratedBlocked ? <BusinessModerationBanner item={business} darkMode={darkMode} /> : null}
                         <TouchableOpacity
                           onPress={() => {
                             const uid = business.business_uid || business.profile_business_uid;
@@ -2459,7 +2652,8 @@ const ProfileScreen = ({ route, navigation }) => {
                           </TouchableOpacity>
                         ) : null}
                       </View>
-                    ))
+                      );
+                    })
                   ) : (
                     <Text style={[styles.inputText, darkMode && styles.darkInputText, styles.emptySectionPlaceholder, { fontStyle: "italic", color: "#666" }]}>No businesses added yet</Text>
                   );
@@ -2753,6 +2947,13 @@ const ProfileScreen = ({ route, navigation }) => {
         onCancel={() => setOfferingCartModalItem(null)}
       />
       <FlagOfferingModal visible={flagModalOffering != null} onClose={() => setFlagModalOffering(null)} targetUid={flagModalOffering?.uid} offeringTitle={flagModalOffering?.title} />
+      <FlagSeekingModal visible={flagModalSeeking != null} onClose={() => setFlagModalSeeking(null)} targetUid={flagModalSeeking?.uid} seekingTitle={flagModalSeeking?.title} />
+      <FlagProfileModal
+        visible={showFlagProfileModal}
+        onClose={() => setShowFlagProfileModal(false)}
+        targetUid={routeProfileUID || profileUID}
+        profileName={`${user.firstName || ""} ${user.lastName || ""}`.trim()}
+      />
       {/* Full-screen spinner while saving a Google Place business to DB */}
       {savingGooglePlace && (
         <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "center", alignItems: "center", zIndex: 9999 }}>

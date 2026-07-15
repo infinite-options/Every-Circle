@@ -82,8 +82,10 @@ export const SEARCH_REFERRAL_ENDPOINT = `${API_BASE_URL}/api/search_referral`;
 // Transaction and Rating Endpoints
 export const TRANSACTIONS_ENDPOINT = `${API_BASE_URL}/api/v1/transactions`;
 /** PUT body: profile_id, transaction_uid, transaction_in_escrow, delivery_verification_items */
-/** PUT — buyer submit return request (note + line items) */
+/** POST — buyer submit return request (note + line items) */
 export const TRANSACTIONS_RETURN_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/return`;
+/** PUT — seller confirm receipt (action=confirm) or reject return (action=decline) */
+export const TRANSACTIONS_RETURN_CONFIRM_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/return/confirm`;
 /** GET list / PUT resolve — admin declined returns queue */
 export const TRANSACTIONS_RETURNS_DECLINED_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/returns/declined`;
 /** Aggregated Account screen payloads (Flask: AccountScreenPersonal / AccountScreenBusiness) */
@@ -103,13 +105,25 @@ export const PROFILE_EXPERTISE_RESPONSE_ENDPOINT = `${API_BASE_URL}/api/profilee
 /** GET /:profile_expertise_uid — message responses for an offering (owner view) */
 export const PROFILE_EXPERTISE_RESPONSE_OFFERING_ENDPOINT = `${API_BASE_URL}/api/profileexpertiseresponse/offering`;
 
-// Content moderation — flag offerings + admin review
+// Content moderation — flag offerings/seeking/profiles + admin review
 /** POST submit flag; GET admin list (?status, ?target_uid); PUT dismiss by report_uid */
 export const CONTENT_REPORTS_ENDPOINT = `${API_BASE_URL}/api/v1/reports`;
 /** GET offerings where profile_expertise_moderated = 2 (pending review) */
 export const MODERATION_OFFERINGS_REVIEW_QUEUE_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/offerings/review-queue`;
 /** GET/PUT /:profile_expertise_uid, PUT /:profile_expertise_uid/review, POST /:profile_expertise_uid/acknowledge */
 export const MODERATION_OFFERINGS_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/offerings`;
+/** GET seeking posts where profile_wish_moderated = 2 (pending review) */
+export const MODERATION_SEEKING_REVIEW_QUEUE_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/seeking/review-queue`;
+/** GET/PUT /:profile_wish_uid, PUT /:profile_wish_uid/review, POST /:profile_wish_uid/acknowledge */
+export const MODERATION_SEEKING_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/seeking`;
+/** GET profiles where profile_personal_moderated = 2 (pending review) */
+export const MODERATION_USERS_REVIEW_QUEUE_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/users/review-queue`;
+/** GET/PUT /:profile_personal_uid, PUT /:profile_personal_uid/review, POST /:profile_personal_uid/acknowledge */
+export const MODERATION_USERS_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/users`;
+/** GET businesses where business_moderated = 2 (pending review) */
+export const MODERATION_BUSINESSES_REVIEW_QUEUE_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/businesses/review-queue`;
+/** GET/PUT /:business_uid, PUT /:business_uid/review, POST /:business_uid/acknowledge */
+export const MODERATION_BUSINESSES_ENDPOINT = `${API_BASE_URL}/api/v1/moderation/businesses`;
 
 // Circles Endpoint
 export const CIRCLES_ENDPOINT = `${API_BASE_URL}/api/v1/circles`;

@@ -1,6 +1,6 @@
 //SettingsScreen.js
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, TextInput, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator } from "react-native";
 import * as Location from "expo-location";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -13,7 +13,7 @@ import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
-import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
@@ -42,9 +42,15 @@ import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../confi
 import versionData from "../version.json";
 import Constants from "expo-constants";
 import appConfig from "../config";
-import { obscureApiKey } from "../utils/obscureApiKey";
 
-/** LoginScreen-style helper for dev OAuth client fingerprint (partial, for debugging). */
+/** LoginScreen-style helpers for dev API key fingerprint (partial, for debugging). */
+function getApiKeyLastTwoDigits(clientId) {
+  if (!clientId) return "Not set";
+  const match = clientId.match(/(.+)\.apps\.googleusercontent\.com$/);
+  if (match) return "..." + match[1].slice(-2);
+  return "..." + clientId.slice(-2);
+}
+
 function getApiKeyFirstFourDigits(clientId) {
   if (!clientId) return "Not set";
   const match = clientId.match(/([\w-]+)-([\w]+)\.apps\.googleusercontent\.com$/);
@@ -169,12 +175,12 @@ async function resolveLocationOptionCoords(option) {
 }
 
 /** Two tappable labels (Edit Profile–style) instead of a Switch. */
-function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMode }) {
+function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMode, variant = "yesNo" }) {
   const leftOn = !value;
   const rightOn = value;
-  const leftBgStyle = leftOn ? styles.togglePillActiveRed : null;
-  const rightBgStyle = rightOn ? styles.togglePillActiveGreen : null;
-  const leftTextActiveStyle = leftOn ? styles.togglePillTextActive : null;
+  const leftBgStyle = variant === "background" ? (leftOn ? styles.togglePillThemeLight : null) : leftOn ? styles.togglePillActiveRed : null;
+  const rightBgStyle = variant === "background" ? (rightOn ? styles.togglePillThemeDark : null) : rightOn ? styles.togglePillActiveGreen : null;
+  const leftTextActiveStyle = variant === "background" && leftOn ? styles.togglePillTextDarkEmphasis : leftOn ? styles.togglePillTextActive : null;
   const rightTextActiveStyle = rightOn ? styles.togglePillTextActive : null;
 
   return (
@@ -256,7 +262,9 @@ export default function SettingsScreen() {
   // Define custom questions for the Account page
   const settingsFeedbackQuestions = ["Settings - Question 1?", "Settings - Question 2?", "Settings - Question 3?"];
 
-  const [isAdmin, setIsAdmin] = useState(false);
+  //for declined refunds - only show to admins
+  const ADMIN_EMAILS = ["shrutitest20@gmail.com", "admin@everycircle.com", "pmarathay@gmail.com", "cplata@everycircle.com"];
+
   const [showAdminSection, setShowAdminSection] = useState(false);
   const [adminReturns, setAdminReturns] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
@@ -268,16 +276,8 @@ export default function SettingsScreen() {
   const [adminClaims, setAdminClaims] = useState([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [showClaimsSection, setShowClaimsSection] = useState(false);
-  const [adminOfferings, setAdminOfferings] = useState([]);
-  const [offeringsLoading, setOfferingsLoading] = useState(false);
-  const [showOfferingsSection, setShowOfferingsSection] = useState(false);
-  const [offeringReviewModalVisible, setOfferingReviewModalVisible] = useState(false);
-  const [offeringReviewItem, setOfferingReviewItem] = useState(null);
-  const [offeringReviewDetail, setOfferingReviewDetail] = useState(null);
-  const [offeringReviewNote, setOfferingReviewNote] = useState("");
-  const [offeringReviewLoading, setOfferingReviewLoading] = useState(false);
-  const [offeringReviewSubmitting, setOfferingReviewSubmitting] = useState(false);
   const [hideChangePassword, setHideChangePassword] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
 
   console.log("In SettingsScreen");
 
@@ -295,6 +295,10 @@ export default function SettingsScreen() {
       if (t !== null) setTermsAccepted(JSON.parse(t));
       if (c !== null) setAllowCookies(JSON.parse(c));
       if(isThirdPartyAuth !== null) setHideChangePassword(JSON.parse(isThirdPartyAuth));
+      
+      // Load email quickly from AsyncStorage for admin check
+      const storedEmail = await AsyncStorage.getItem("user_email");
+      if (storedEmail) setUserEmail(storedEmail);
 
       try {
         const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
@@ -654,33 +658,6 @@ export default function SettingsScreen() {
       }
     };
     loadProfileFromCache();
-  }, []);
-
-  useEffect(() => {
-    const fetchUserInfo = async () => {
-      try {
-        const userUid = await AsyncStorage.getItem("user_uid");
-        if (!userUid) return;
-
-        const response = await fetch(`${USER_INFO_ENDPOINT}/${encodeURIComponent(userUid)}`);
-        const result = await response.json();
-
-        if (!response.ok) {
-          console.warn("userinfo fetch failed:", response.status, result);
-          setIsAdmin(false);
-          return;
-        }
-
-        const row = Array.isArray(result?.result) ? result.result[0] : result?.result ?? result?.data ?? result;
-        const role = row?.user_role;
-        setIsAdmin(role === "ADMIN");
-      } catch (e) {
-        console.error("Failed to fetch user info:", e);
-        setIsAdmin(false);
-      }
-    };
-
-    fetchUserInfo();
   }, []);
 
   // --- Live location sharing ---
@@ -1134,66 +1111,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const fetchAdminOfferings = async () => {
-    setOfferingsLoading(true);
-    try {
-      const rows = await fetchModerationReviewQueue();
-      setAdminOfferings(rows);
-    } catch (e) {
-      console.error("Admin offerings fetch error:", e);
-      Alert.alert("Error", e?.message || "Failed to load offering review queue.");
-    } finally {
-      setOfferingsLoading(false);
-    }
-  };
-
-  const openOfferingReview = async (item) => {
-    const uid = item?.profile_expertise_uid || item?.expertise_uid;
-    if (!uid) return;
-    setOfferingReviewItem(item);
-    setOfferingReviewDetail(null);
-    setOfferingReviewNote("");
-    setOfferingReviewModalVisible(true);
-    setOfferingReviewLoading(true);
-    try {
-      const detail = await fetchOfferingModerationDetail(uid);
-      setOfferingReviewDetail(detail);
-    } catch (e) {
-      console.error("Offering review detail error:", e);
-      Alert.alert("Error", e?.message || "Failed to load offering details.");
-      setOfferingReviewModalVisible(false);
-    } finally {
-      setOfferingReviewLoading(false);
-    }
-  };
-
-  const handleOfferingReview = async (action) => {
-    const uid = offeringReviewItem?.profile_expertise_uid || offeringReviewItem?.expertise_uid || offeringReviewDetail?.profile_expertise_uid;
-    if (!uid) return;
-    if (action === "reject" && !offeringReviewNote.trim()) {
-      Alert.alert("Note required", "Please enter a note explaining the rejection for the offering owner.");
-      return;
-    }
-    setOfferingReviewSubmitting(true);
-    try {
-      await reviewOfferingModeration({
-        profileExpertiseUid: uid,
-        action,
-        note: offeringReviewNote.trim(),
-      });
-      setAdminOfferings((prev) => prev.filter((row) => (row.profile_expertise_uid || row.expertise_uid) !== uid));
-      setOfferingReviewModalVisible(false);
-      setOfferingReviewItem(null);
-      setOfferingReviewDetail(null);
-      Alert.alert("Done", `Offering ${action === "approve" ? "approved" : "rejected"} successfully.`);
-    } catch (e) {
-      console.error("Offering review submit error:", e);
-      Alert.alert("Error", e?.message || "Failed to submit review.");
-    } finally {
-      setOfferingReviewSubmitting(false);
-    }
-  };
-
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Nearby alert banner — floats above everything */}
@@ -1226,7 +1143,7 @@ export default function SettingsScreen() {
           {/* Profile MiniCard at top */}
           {personalProfileData && (
             <TouchableOpacity activeOpacity={0.7} onPress={handleNavigateProfile}>
-              <View style={styles.profileMiniCardWrap}>
+              <View style={{ marginBottom: 16 }}>
                 <MiniCard user={personalProfileData} />
               </View>
             </TouchableOpacity>
@@ -1271,7 +1188,7 @@ export default function SettingsScreen() {
                     <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Background</Text>
                   </Text>
                 </View>
-                <SettingsBoolPills value={darkMode} onValueChange={(v) => toggleDarkMode(v)} leftLabel='Light' rightLabel='Dark' darkMode={darkMode} />
+                <SettingsBoolPills value={darkMode} onValueChange={(v) => toggleDarkMode(v)} leftLabel='Light' rightLabel='Dark' darkMode={darkMode} variant='background' />
               </View>
 
               {/* Privacy Mode */}
@@ -1423,7 +1340,7 @@ export default function SettingsScreen() {
 
           {/* Information & Links Container */}
           {showInformation && (
-            <View style={[styles.settingsGroupContainer, styles.informationGroupContainer, darkMode && styles.darkSettingsGroupContainer]}>
+            <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { marginBottom: 16 }]}>
               {/* How It Works */}
               <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("HowItWorksScreen")}>
                 <View style={styles.itemLabel}>
@@ -1461,15 +1378,13 @@ export default function SettingsScreen() {
               </TouchableOpacity>
 
               {/* Change Password */}
-              {!hideChangePassword && (
-                <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
-                  <View style={styles.itemLabel}>
-                    <MaterialIcons name='lock' size={20} style={styles.icon} color={settingsMenuIconColor} />
-                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
-                  </View>
-                  <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
-                </TouchableOpacity>
-              )}
+              {!hideChangePassword && <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
+                <View style={styles.itemLabel}>
+                  <MaterialIcons name='lock' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
+                </View>
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
+              </TouchableOpacity>} 
             </View>
           )}
 
@@ -1480,8 +1395,9 @@ export default function SettingsScreen() {
             </Text>
           </View>
 
-          {/* ADMIN Section — only visible to admins */}
-          {isAdmin && (
+          {/* ADMIN Section — only visible to authorized emails */}
+          {console.log("Admin check email:", personalProfileData?.email, "in list:", ADMIN_EMAILS.includes(personalProfileData?.email))}
+          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
             <>
               <TouchableOpacity
                 style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.15)", marginTop: 8 }]}
@@ -1612,7 +1528,7 @@ export default function SettingsScreen() {
             </>
           )}
 
-          {isAdmin && (
+          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
             <>
               <TouchableOpacity
                 style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.10)", marginTop: 8 }]}
@@ -1704,78 +1620,6 @@ export default function SettingsScreen() {
             </>
           )}
 
-          {isAdmin && (
-            <>
-              <TouchableOpacity
-                style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.10)", marginTop: 8 }]}
-                onPress={() => {
-                  setShowOfferingsSection(!showOfferingsSection);
-                  if (!showOfferingsSection && adminOfferings.length === 0) fetchAdminOfferings();
-                }}
-              >
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <MaterialIcons name='flag' size={16} color='#B71C1C' />
-                  <Text style={[styles.informationSectionHeaderText, { color: "#B71C1C" }]}>
-                    OFFERING REVIEWS {adminOfferings.length > 0 ? `(${adminOfferings.length})` : ""}
-                  </Text>
-                </View>
-                <Ionicons name={showOfferingsSection ? "chevron-up" : "chevron-down"} size={20} color='#B71C1C' />
-              </TouchableOpacity>
-
-              {showOfferingsSection && (
-                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#B71C1C" }]}>
-                  {offeringsLoading ? (
-                    <ActivityIndicator size='small' color='#B71C1C' style={{ margin: 16 }} />
-                  ) : adminOfferings.length === 0 ? (
-                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No offerings pending review.</Text>
-                  ) : (
-                    adminOfferings.map((row, idx) => {
-                      const uid = row.profile_expertise_uid || row.expertise_uid || "";
-                      const title = row.profile_expertise_title || row.title || uid || "Offering";
-                      const flagCount =
-                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
-                      const description = row.profile_expertise_description || row.description || "";
-                      const ownerName = [row.owner_first_name || row.profile_personal_first_name, row.owner_last_name || row.profile_personal_last_name]
-                        .filter(Boolean)
-                        .join(" ");
-                      return (
-                        <TouchableOpacity
-                          key={uid || idx}
-                          style={{
-                            padding: 12,
-                            borderBottomWidth: idx < adminOfferings.length - 1 ? 1 : 0,
-                            borderBottomColor: darkMode ? "#444" : "#eee",
-                            backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#fff5f5") : "transparent",
-                          }}
-                          onPress={() => openOfferingReview(row)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>{title}</Text>
-                          {description ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
-                              {description}
-                            </Text>
-                          ) : null}
-                          {ownerName ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text>
-                          ) : null}
-                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
-                            {uid}
-                            {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
-                          </Text>
-                          <Text style={{ fontSize: 11, color: "#4B2E83", marginTop: 6, fontWeight: "600" }}>Tap to review →</Text>
-                        </TouchableOpacity>
-                      );
-                    })
-                  )}
-                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminOfferings}>
-                    <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </>
-          )}
-
           {/* Bottom Logout Button - Styled like Submit button */}
           <TouchableOpacity style={[styles.bottomLogoutButton, darkMode && styles.darkBottomLogoutButton]} onPress={handleLogout}>
             <Text style={[styles.bottomLogoutText, darkMode && styles.darkBottomLogoutText]}>Log out</Text>
@@ -1788,7 +1632,8 @@ export default function SettingsScreen() {
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Android: {getApiKeyFirstFourDigits(appConfig.googleClientIds.android)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Web: {getApiKeyFirstFourDigits(appConfig.googleClientIds.web)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>URL Scheme: {appConfig.googleURLScheme ? appConfig.googleURLScheme.split("-").pop().slice(0, 4) : "Not set"}</Text>
-              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Google API: {obscureApiKey(appConfig.googleApiKey)}</Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Maps API: {getApiKeyLastTwoDigits(appConfig.googleMapsApiKey)}</Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Places API: {getApiKeyLastTwoDigits(appConfig.googlePlacesApiKey)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Environment: {__DEV__ ? "Development" : "Production"}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>iOS Build: {Constants.expoConfig?.ios?.buildNumber || "Not set"}</Text>
             </View>
@@ -1820,64 +1665,6 @@ export default function SettingsScreen() {
 
             <TouchableOpacity onPress={() => setLocationPickerVisible(false)} style={[styles.closeModalButton, { marginTop: 16, alignSelf: "stretch" }]} disabled={locationUpdating !== null}>
               <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Offering moderation review modal */}
-      <Modal visible={offeringReviewModalVisible} transparent animationType='slide' onRequestClose={() => !offeringReviewSubmitting && setOfferingReviewModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox, { maxHeight: "92%", width: "94%", maxWidth: 520 }]}>
-            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Review offering</Text>
-            {offeringReviewLoading ? (
-              <ActivityIndicator size='small' color='#B71C1C' style={{ marginVertical: 24 }} />
-            ) : (
-              <ScrollView style={{ maxHeight: 480 }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
-                <OfferingReviewDetailPanel detail={offeringReviewDetail} queueItem={offeringReviewItem} darkMode={darkMode} />
-                <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6, marginTop: 4 }}>Admin note (required for reject)</Text>
-                <TextInput
-                  style={{
-                    borderWidth: 1,
-                    borderColor: darkMode ? "#555" : "#ddd",
-                    borderRadius: 8,
-                    padding: 10,
-                    minHeight: 72,
-                    fontSize: 13,
-                    color: darkMode ? "#fff" : "#333",
-                    backgroundColor: darkMode ? "#1f1f1f" : "#fafafa",
-                    textAlignVertical: "top",
-                  }}
-                  value={offeringReviewNote}
-                  onChangeText={setOfferingReviewNote}
-                  placeholder='Explain rejection to the owner...'
-                  placeholderTextColor={darkMode ? "#888" : "#aaa"}
-                  multiline
-                />
-              </ScrollView>
-            )}
-            <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
-              <TouchableOpacity
-                style={{ flex: 1, backgroundColor: "#18884A", padding: 12, borderRadius: 8, alignItems: "center", opacity: offeringReviewSubmitting ? 0.7 : 1 }}
-                disabled={offeringReviewSubmitting || offeringReviewLoading}
-                onPress={() => handleOfferingReview("approve")}
-              >
-                <Text style={{ color: "#fff", fontWeight: "bold" }}>Approve</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={{ flex: 1, backgroundColor: "#B71C1C", padding: 12, borderRadius: 8, alignItems: "center", opacity: offeringReviewSubmitting ? 0.7 : 1 }}
-                disabled={offeringReviewSubmitting || offeringReviewLoading}
-                onPress={() => handleOfferingReview("reject")}
-              >
-                <Text style={{ color: "#fff", fontWeight: "bold" }}>Reject</Text>
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity
-              onPress={() => !offeringReviewSubmitting && setOfferingReviewModalVisible(false)}
-              style={{ marginTop: 12, alignItems: "center" }}
-              disabled={offeringReviewSubmitting}
-            >
-              <Text style={{ color: darkMode ? "#aaa" : "#666" }}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2103,7 +1890,7 @@ export default function SettingsScreen() {
           <View style={[styles.modalBox, darkMode && styles.darkModalBox]}>
             <MaterialIcons name='warning' size={48} color={COLORS.warningRed} style={{ marginBottom: 15 }} />
             <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle]}>Cookies Required</Text>
-            <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>If you do not allow cookies, you will only have access to the Settings screen.</Text>
+            <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>If you do not allow cookies, you will only have access to the Settings scresen.</Text>
             <View style={styles.warningButtonContainer}>
               <TouchableOpacity onPress={cancelCookiesRejection} style={[styles.warningButton, styles.cancelButton]}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -2222,15 +2009,6 @@ const styles = StyleSheet.create({
   settingsContainer: {
     padding: 15,
     paddingBottom: 80,
-    ...Platform.select({
-      web: { padding: 13, paddingBottom: 74 },
-    }),
-  },
-  profileMiniCardWrap: {
-    marginBottom: 16,
-    ...Platform.select({
-      web: { marginBottom: 12 },
-    }),
   },
   settingItem: {
     borderRadius: 8,
@@ -2240,20 +2018,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    ...Platform.select({
-      web: {
-        paddingVertical: 10,
-        paddingHorizontal: 12,
-        marginBottom: 6,
-      },
-    }),
   },
   /** Tighter vertical padding so title-to-title spacing matches single-line rows above/below */
   settingItemWithHelp: {
     paddingVertical: 7,
-    ...Platform.select({
-      web: { paddingVertical: 6 },
-    }),
   },
   darkSettingItem: {
     backgroundColor: COLORS.darkItemBackground,
@@ -2298,6 +2066,12 @@ const styles = StyleSheet.create({
   togglePillActiveGreen: {
     backgroundColor: "#4CAF50",
   },
+  togglePillThemeLight: {
+    backgroundColor: "#FFE082",
+  },
+  togglePillThemeDark: {
+    backgroundColor: COLORS.primary,
+  },
   togglePillText: {
     fontSize: 12,
     color: "#4e4e4e",
@@ -2307,6 +2081,10 @@ const styles = StyleSheet.create({
   },
   togglePillTextActive: {
     color: "#fff",
+    fontWeight: "bold",
+  },
+  togglePillTextDarkEmphasis: {
+    color: "#333",
     fontWeight: "bold",
   },
   darkTogglePillText: {
@@ -2382,13 +2160,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginVertical: 20,
     marginBottom: 30,
-    ...Platform.select({
-      web: {
-        paddingVertical: 11,
-        marginVertical: 12,
-        marginBottom: 18,
-      },
-    }),
   },
   darkBottomLogoutButton: {
     backgroundColor: "#4B2E83",
@@ -2431,9 +2202,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     paddingHorizontal: 16,
     alignItems: "center",
-    ...Platform.select({
-      web: { marginTop: 10, marginBottom: 6 },
-    }),
   },
   dateTimeText: {
     fontSize: 12,
@@ -2450,15 +2218,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.lightGroupBackground,
     marginBottom: 16,
     overflow: "hidden",
-    ...Platform.select({
-      web: { marginBottom: 12 },
-    }),
-  },
-  informationGroupContainer: {
-    marginBottom: 16,
-    ...Platform.select({
-      web: { marginBottom: 12 },
-    }),
   },
   darkSettingsGroupContainer: {
     backgroundColor: COLORS.darkGroupBackground,
@@ -2537,9 +2296,6 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,
-    ...Platform.select({
-      web: { paddingVertical: 10, paddingHorizontal: 12, marginBottom: 8 },
-    }),
   },
   settingsSectionHeaderText: {
     fontSize: 14,
@@ -2556,9 +2312,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 8,
     marginTop: 16,
-    ...Platform.select({
-      web: { paddingVertical: 10, paddingHorizontal: 12, marginBottom: 8, marginTop: 10 },
-    }),
   },
   informationSectionHeaderText: {
     fontSize: 14,

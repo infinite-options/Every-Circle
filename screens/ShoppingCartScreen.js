@@ -39,7 +39,7 @@ if (isWeb) {
 import StripePayment from "../components/StripePaymentWeb";
 import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
-import ProductOrderSummaryLines, { resolveProductSummaryDescription } from "../components/ProductOrderSummaryLines";
+import ProductOrderSummaryLines from "../components/ProductOrderSummaryLines";
 import { parsePrice } from "../utils/priceUtils";
 import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines } from "../utils/selectedChoiceItems";
 import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
@@ -1140,6 +1140,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                 const lineTax = lineMerchandiseAndTax(item);
                 const rawRateLabel = lineTax.rawTaxRate === undefined || lineTax.rawTaxRate === null || String(lineTax.rawTaxRate).trim() === "" ? "—" : String(lineTax.rawTaxRate);
                 const storedRateWithPercent = rawRateLabel === "—" ? "—" : `${String(rawRateLabel).replace(/%+\s*$/, "")}%`;
+                const productName = String(item.bs_service_name || "").trim();
+                const productDesc = String(item.bs_service_desc || "").trim();
                 return (
                   <View key={index} style={styles.cartItemContainer}>
                     <TouchableOpacity style={styles.removeButton} onPress={() => handleRemoveItem(index)}>
@@ -1155,9 +1157,10 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                       ) : (
                         <>
                           {showLineBusiness ? <Text style={styles.itemBusinessName}>{lineBusiness}</Text> : null}
+                          {productName ? <Text style={styles.itemName}>{productName}</Text> : null}
                           <CartStockBadge item={item} />
                           <ProductOrderSummaryLines
-                            description={resolveProductSummaryDescription(item)}
+                            description={productDesc || (productName ? "" : "Item")}
                             baseCost={item.bs_cost}
                             currency={item.bs_cost_currency}
                             choiceSource={item}

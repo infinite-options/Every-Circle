@@ -46,6 +46,8 @@ import HowItWorksScreen from "./screens/HowItWorksScreen";
 import ContactUsScreen from "./screens/ContactUsScreen";
 import UserInfoScreen from "./screens/UserInfoScreen";
 import ProfileScreen from "./screens/ProfileScreen";
+import ProfileModerationScreen from "./screens/ProfileModerationScreen";
+import BusinessModerationScreen from "./screens/BusinessModerationScreen";
 import EditProfileScreen from "./screens/EditProfileScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import AccountScreen from "./screens/AccountScreen";
@@ -1019,6 +1021,7 @@ export default function App() {
                 {/* <Stack.Screen name="UserProfile" component={UserProfile} /> */}
                 <Stack.Screen name='AccountType' component={AccountTypeScreen} />
                 <Stack.Screen name='Profile' component={ProfileScreen} />
+                <Stack.Screen name='ProfileModeration' component={ProfileModerationScreen} options={{ headerShown: false }} />
                 <Stack.Screen name='EditProfile' component={EditProfileScreen} />
                 <Stack.Screen name='Settings' component={SettingsScreen} />
                 <Stack.Screen name='Account' component={AccountScreen} />
@@ -1026,6 +1029,7 @@ export default function App() {
                 <Stack.Screen name='Search' component={SearchScreen} />
                 <Stack.Screen name='BusinessSetup' component={BusinessSetupController} />
                 <Stack.Screen name='BusinessProfile' component={BusinessProfileScreen} />
+                <Stack.Screen name='BusinessModeration' component={BusinessModerationScreen} options={{ headerShown: false }} />
                 <Stack.Screen name='ChangePassword' component={ChangePasswordScreen} />
                 <Stack.Screen name='Filters' component={FilterScreen} />
                 <Stack.Screen name='SearchTab' component={SearchTab} />

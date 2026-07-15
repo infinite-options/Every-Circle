@@ -1548,17 +1548,23 @@ const styles = StyleSheet.create({
   togglePillTextActive: { color: "#fff", fontWeight: "bold" },
 });
 
+const getOfferingCostUnit = (cost) => {
+  if (!cost) return null;
+  return cost.match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$|(\btotal\b)/i);
+};
+
 export const validateExpertise = (expertise) => {
-  return expertise.every((e) => {
-    if (!e.name) return true; // skip empty entries
-    const unit = e.cost ? e.cost.match(/\/(hr|day|week|2 weeks|month|quarter|year|each)$|(\btotal\b)/i) : null;
-    return !!unit;
+  return (expertise || []).every((e) => {
+    const hasTitle = !!String(e.name || "").trim();
+    const hasDescription = !!String(e.description || "").trim();
+    const hasUnit = !!getOfferingCostUnit(e.cost);
+    return hasTitle && hasDescription && hasUnit;
   });
 };
 
 export const validateExpertiseTax = (expertise) => {
-  return expertise.every((e) => {
-    if (!e.name) return true; // skip empty entries
+  return (expertise || []).every((e) => {
+    if (!String(e.name || "").trim()) return true;
     return validateTaxableRate(e.profile_expertise_is_taxable, e.profile_expertise_tax_rate);
   });
 };
