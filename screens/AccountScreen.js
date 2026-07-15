@@ -878,12 +878,12 @@ function extractReturnRefundState(source = {}, override = {}) {
   let refundStatus = pick(override.refund_status, override.refundStatus, source.refund_status, source.transaction_refund_status);
   let displayStatus = String(override.display_status ?? source.display_status ?? "").trim();
 
-  const returnDisplayMatch = displayStatus.match(/^(returning|returned)\s*[-–]\s*(pending|refunded|rejected|stripe\s*fail|stripe_fail|stripe_failed)$/i);
+  const returnDisplayMatch = displayStatus.match(/^(returning|returned)\s*[-–]\s*(pending|refunded|rejected|stripe\s*fail|stripe_fail|stripe_failed|cc\s*issue)$/i);
   if (returnDisplayMatch) {
     if (!returnStatus) returnStatus = returnDisplayMatch[1].toLowerCase();
     if (!refundStatus) {
       const received = returnDisplayMatch[2].toLowerCase().replace(/\s+/g, "_");
-      refundStatus = received === "stripe_fail" || received === "stripe_failed" ? "stripe_fail" : received;
+      refundStatus = received === "stripe_fail" || received === "stripe_failed" || received === "cc_issue" ? "stripe_fail" : received;
     }
   }
 
@@ -945,11 +945,13 @@ function extractReturnRefundState(source = {}, override = {}) {
 
   if (!displayStatus && returnStatus && refundStatus) {
     const deliveredWord = returnStatus === "returned" ? "Returned" : "Returning";
-    const receivedWord = refundStatus === "refunded" ? "Refunded" : refundStatus === "stripe_fail" ? "Stripe Fail" : refundStatus === "rejected" ? "Rejected" : "Pending";
+    const receivedWord = refundStatus === "refunded" ? "Refunded" : refundStatus === "stripe_fail" ? "CC Issue" : refundStatus === "rejected" ? "Rejected" : "Pending";
     displayStatus = `${deliveredWord} - ${receivedWord}`;
   } else if (displayStatus) {
-    // Normalize API "Returned - Rejected" (post-confirm Stripe fail) for chips.
-    displayStatus = displayStatus.replace(/Returned\s*[-–]\s*Rejected/i, "Returned - Stripe Fail");
+    // Normalize API "Returned - Rejected" / "Stripe Fail" (post-confirm Stripe fail) for chips.
+    displayStatus = displayStatus
+      .replace(/Returned\s*[-–]\s*Rejected/i, "Returned - CC Issue")
+      .replace(/Returned\s*[-–]\s*Stripe\s*Fail/i, "Returned - CC Issue");
   }
 
   return {
@@ -966,7 +968,7 @@ function extractReturnRefundState(source = {}, override = {}) {
  *   Returning - Pending
  *   Returned  - Pending
  *   Returned  - Refunded
- *   Returned  - Stripe Fail  (confirm ok, Stripe refund failed/skipped)
+ *   Returned  - CC Issue     (confirm ok, Stripe refund failed/skipped)
  *   Returning - Rejected     (seller rejects before receiving)
  */
 function resolveReturnLogisticsLabels(row, override = {}) {
@@ -992,7 +994,14 @@ function resolveReturnLogisticsLabels(row, override = {}) {
   }
 
   const delivered = returnStatus === "returned" ? "Returned" : "Returning";
-  const received = refundStatus === "refunded" ? "Refunded" : refundStatus === "stripe_fail" ? "Stripe Fail" : refundStatus === "rejected" ? "Rejected" : "Pending";
+  const received =
+    refundStatus === "refunded"
+      ? "Refunded"
+      : refundStatus === "stripe_fail"
+        ? "CC Issue"
+        : refundStatus === "rejected"
+          ? "Rejected"
+          : "Pending";
 
   return {
     delivered,
@@ -2704,7 +2713,7 @@ function ReturnDetailsModal({
     }
     if (isRefunded) return "Delivered: Returned · Received: Refunded";
     if (isStripeFail) {
-      return "Stripe Fail — Delivered: Returned · Received: Stripe Fail (refund not completed)";
+      return "CC Issue — Delivered: Returned · Received: CC Issue (refund not completed)";
     }
     if (isRejected && returnStatus === "returning") {
       return "Return rejected — Delivered: Returning · Received: Rejected";
@@ -3601,7 +3610,7 @@ function getProductSaleStatusBadgeStyle(kind, label) {
   if (normalized === "returning") {
     return { badge: { backgroundColor: "#FFF3E0" }, text: { color: "#E65100" } };
   }
-  if (normalized === "stripe fail" || normalized === "stripe_fail" || normalized === "stripe_failed") {
+  if (normalized === "stripe fail" || normalized === "stripe_fail" || normalized === "stripe_failed" || normalized === "cc issue" || normalized === "cc_issue") {
     return { badge: { backgroundColor: "#FFF3E0" }, text: { color: "#E65100" } };
   }
   if (normalized === "returned" || normalized === "rejected") {
@@ -4328,13 +4337,13 @@ export default function AccountScreen({ navigation }) {
       const state = extractReturnRefundState(payload, {
         return_status: payload.return_status || defaults.return_status,
         refund_status: stripeFailedOnConfirm ? "stripe_fail" : payload.refund_status || defaults.refund_status,
-        display_status: stripeFailedOnConfirm ? "Returned - Stripe Fail" : payload.display_status || defaults.display_status,
+        display_status: stripeFailedOnConfirm ? "Returned - CC Issue" : payload.display_status || defaults.display_status,
         returnRequested: 1,
       });
       if (stripeFailedOnConfirm) {
         state.return_status = "returned";
         state.refund_status = "stripe_fail";
-        state.display_status = "Returned - Stripe Fail";
+        state.display_status = "Returned - CC Issue";
         Alert.alert(
           "Stripe Fail",
           stripeRefund?.message ||
