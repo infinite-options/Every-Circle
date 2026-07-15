@@ -878,6 +878,19 @@ function extractReturnRefundState(source = {}, override = {}) {
   let refundStatus = pick(override.refund_status, override.refundStatus, source.refund_status, source.transaction_refund_status);
   let displayStatus = String(override.display_status ?? source.display_status ?? "").trim();
 
+  // If the list/API row itself says CC Issue / stripe_fail, don't let a stale cache "refunded" win.
+  const sourceRefund = pick(source.refund_status, source.transaction_refund_status);
+  const sourceDisplay = String(source.display_status || "").trim();
+  if (
+    sourceRefund === "stripe_fail" ||
+    sourceRefund === "stripe_failed" ||
+    /returned\s*[-–]\s*(cc\s*issue|stripe\s*fail|stripe_fail|stripe_failed)/i.test(sourceDisplay)
+  ) {
+    refundStatus = "stripe_fail";
+    returnStatus = pick(source.return_status, source.transaction_return_status) || "returned";
+    if (sourceDisplay) displayStatus = sourceDisplay;
+  }
+
   const returnDisplayMatch = displayStatus.match(/^(returning|returned)\s*[-–]\s*(pending|refunded|rejected|stripe\s*fail|stripe_fail|stripe_failed|cc\s*issue)$/i);
   if (returnDisplayMatch) {
     if (!returnStatus) returnStatus = returnDisplayMatch[1].toLowerCase();
@@ -937,9 +950,26 @@ function extractReturnRefundState(source = {}, override = {}) {
 
   const stripeRefund = override.stripe_refund || source.stripe_refund || null;
   const stripeRefundFailed = stripeRefund && typeof stripeRefund === "object" && (stripeRefund.ok === false || stripeRefund.skipped === true);
+  const displayIndicatesStripeFail =
+    /returned\s*[-–]\s*(cc\s*issue|stripe\s*fail|stripe_fail|stripe_failed)/i.test(String(displayStatus || "")) ||
+    (returnDisplayMatch &&
+      ["stripe_fail", "stripe_failed", "cc_issue"].includes(
+        String(returnDisplayMatch[2] || "")
+          .toLowerCase()
+          .replace(/\s+/g, "_"),
+      ));
 
-  // Returned + rejected (or stripe_refund fail) = Stripe refund failure, not seller decline.
-  if ((returnStatus === "returned" && refundStatus === "rejected") || refundStatus === "stripe_fail" || refundStatus === "stripe_failed" || (returnStatus === "returned" && stripeRefundFailed)) {
+  // Returned + rejected / stripe_refund fail / display_status CC Issue = Stripe fail (not a completed refund).
+  // Prefer these signals over a stale refund_status=refunded (common on buyer list rows).
+  if (
+    refundStatus === "stripe_fail" ||
+    refundStatus === "stripe_failed" ||
+    (returnStatus === "returned" && refundStatus === "rejected") ||
+    (returnStatus === "returned" && stripeRefundFailed) ||
+    displayIndicatesStripeFail ||
+    stripeRefundFailed
+  ) {
+    returnStatus = "returned";
     refundStatus = "stripe_fail";
   }
 
@@ -952,6 +982,9 @@ function extractReturnRefundState(source = {}, override = {}) {
     displayStatus = displayStatus
       .replace(/Returned\s*[-–]\s*Rejected/i, "Returned - CC Issue")
       .replace(/Returned\s*[-–]\s*Stripe\s*Fail/i, "Returned - CC Issue");
+  }
+  if (refundStatus === "stripe_fail") {
+    displayStatus = "Returned - CC Issue";
   }
 
   return {
@@ -981,9 +1014,16 @@ function resolveReturnLogisticsLabels(row, override = {}) {
   let refundStatus = state.refund_status;
 
   // Return txn rows without status fields are post-confirm refunds.
+  // Do not guess "refunded" when stripe fail signals are present on the row.
   if (isReturnTxn && !returnStatus) {
     returnStatus = "returned";
-    refundStatus = refundStatus || (Number(row.transaction_in_escrow ?? row.in_escrow) === 1 ? "pending" : "refunded");
+    if (!refundStatus) {
+      const stripeRefund = row.stripe_refund;
+      const stripeRefundFailed = stripeRefund && typeof stripeRefund === "object" && (stripeRefund.ok === false || stripeRefund.skipped === true);
+      const displayFail = /cc\s*issue|stripe\s*fail|stripe_fail|stripe_failed/i.test(String(row.display_status || state.display_status || ""));
+      if (stripeRefundFailed || displayFail) refundStatus = "stripe_fail";
+      else refundStatus = Number(row.transaction_in_escrow ?? row.in_escrow) === 1 ? "pending" : "refunded";
+    }
   }
   if (!returnStatus) returnStatus = "returning";
   if (!refundStatus) refundStatus = "pending";
@@ -1664,30 +1704,70 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, returnStatusesByKey
       .filter((uid) => uid && uid !== "—"),
   );
 
+  const orderSaleByUid = {};
+  for (const row of purchaseRows) {
+    if (isReturnListRow(row)) continue;
+    const orderUid = resolveListRowOrderUid(row);
+    if (orderUid && orderUid !== "—") orderSaleByUid[orderUid] = row;
+  }
+
   const normalizedPurchaseRows = purchaseRows.map((row) => {
     if (!isReturnListRow(row)) return row;
     const orderUid = resolveListRowOrderUid(row);
     const txnUid = String(row.original_transaction_uid || row.transaction_uid || "").trim();
+    const saleSibling = orderSaleByUid[orderUid] || null;
+    // Prefer return-row fields, but inherit Stripe-fail / display_status from the parent sale when the
+    // reverse-txn list row still says refunded (buyer account-screen quirk).
+    const siblingState = saleSibling ? extractReturnRefundState(saleSibling, { returnRequested: 1 }) : null;
+    const rowRefund = String(row.refund_status || row.transaction_refund_status || "")
+      .trim()
+      .toLowerCase();
+    const preferSiblingStripeFail = siblingState?.refund_status === "stripe_fail" && (rowRefund === "refunded" || !rowRefund);
+    const statusSource = {
+      ...row,
+      return_status:
+        (preferSiblingStripeFail ? "returned" : null) ||
+        row.return_status ||
+        row.transaction_return_status ||
+        saleSibling?.return_status ||
+        saleSibling?.transaction_return_status,
+      refund_status: preferSiblingStripeFail
+        ? "stripe_fail"
+        : row.refund_status || row.transaction_refund_status || saleSibling?.refund_status || saleSibling?.transaction_refund_status,
+      display_status:
+        (preferSiblingStripeFail ? siblingState.display_status || "Returned - CC Issue" : null) ||
+        row.display_status ||
+        saleSibling?.display_status ||
+        saleSibling?.pending_return?.display_status,
+      stripe_refund: row.stripe_refund || saleSibling?.stripe_refund || saleSibling?.pending_return?.stripe_refund,
+      pending_return: row.pending_return || saleSibling?.pending_return,
+    };
+    const statusOverride = getReturnStatusOverrideFromCache(returnStatusesByKey, orderUid, txnUid, row.transaction_uid);
+    const logistics = resolveReturnLogisticsLabels(statusSource, { ...statusOverride, returnRequested: true });
     const returnRequestData = returnRequestsByKey?.[orderUid] || returnRequestsByKey?.[txnUid] || null;
     const money = resolveReturnRowMoney(row, null, bountyLines);
     const estimated = estimatePendingReturnMoney(
       {
         ...row,
-        pending_return: row.pending_return,
-        lines: Array.isArray(row.lines) ? row.lines : [],
+        pending_return: row.pending_return || saleSibling?.pending_return,
+        lines: Array.isArray(row.lines) ? row.lines : Array.isArray(saleSibling?.lines) ? saleSibling.lines : [],
       },
       returnRequestData,
       bountyLines,
     );
     const total = money.total || estimated.total || 0;
     const bountyPaid = money.bountyPaid || estimated.bountyPaid || 0;
-    return {
+    const withMoney = {
       ...row,
       transaction_total: total,
       seller_total: total,
       bounty_paid: bountyPaid,
       _pending_return_money: { total, bountyPaid },
+      stripe_refund: statusSource.stripe_refund || row.stripe_refund,
+      display_status: statusSource.display_status || row.display_status,
     };
+    if (!logistics) return withMoney;
+    return applyReturnRefundFieldsToRow(withMoney, logistics);
   });
 
   const syntheticReturns = [];
@@ -4340,25 +4420,20 @@ export default function AccountScreen({ navigation }) {
       return next;
     });
     await Promise.all(statusKeys.map((key) => AsyncStorage.setItem(`return_status_${key}`, JSON.stringify(payload))));
-    setBusinessSellerTransactionList((prev) =>
+    const patchRows = (prev) =>
       (prev || []).map((row) => {
         const uid = String(row.transaction_uid || "").trim();
         const orderUid = resolveListRowOrderUid(row);
-        if (statusKeys.includes(uid) || statusKeys.includes(orderUid)) {
+        const originalUid = String(row.original_transaction_uid || "").trim();
+        if (statusKeys.includes(uid) || statusKeys.includes(orderUid) || (originalUid && statusKeys.includes(originalUid))) {
           return applyReturnRefundFieldsToRow(row, payload);
         }
         return row;
-      }),
-    );
-    setBusinessTransactionData((prev) =>
-      (prev || []).map((row) => {
-        const uid = String(row.transaction_uid || "").trim();
-        if (statusKeys.includes(uid)) {
-          return applyReturnRefundFieldsToRow(row, payload);
-        }
-        return row;
-      }),
-    );
+      });
+    setBusinessSellerTransactionList(patchRows);
+    setBusinessTransactionData(patchRows);
+    // Buyer PURCHASES list — keep Delivered/Received chips in sync with return-detail / confirm outcomes.
+    setTransactionData(patchRows);
   };
 
   /**
@@ -5088,13 +5163,34 @@ export default function AccountScreen({ navigation }) {
           if (profileId) ctx.profileId = String(profileId).trim();
         }
         const orderDetail = await fetchOrderDetailApi(orderUid, ctx);
+        const saleTxnUid = String(orderDetail?.sale?.transaction_uid || transactionUid || orderUid).trim();
         setReturnDetailModal((prev) => ({
           ...prev,
           orderDetail,
           loading: false,
           error: null,
-          transactionUid: String(orderDetail?.sale?.transaction_uid || prev.transactionUid || orderUid).trim(),
+          transactionUid: saleTxnUid,
         }));
+
+        // Keep PURCHASES chips aligned when order-detail is the authoritative Stripe-fail source.
+        const sale = orderDetail?.sale || orderDetail || {};
+        const detailState = extractReturnRefundState(sale, {
+          returnRequested: 1,
+          stripe_refund: orderDetail?.stripe_refund || sale?.stripe_refund,
+        });
+        if (detailState.active && detailState.refund_status === "stripe_fail") {
+          const returnTxnUids = (Array.isArray(orderDetail?.returns) ? orderDetail.returns : [])
+            .map((ret) => String(ret?.transaction_uid || "").trim())
+            .filter(Boolean);
+          const statusKeys = [orderUid, saleTxnUid, transactionUid, ...returnTxnUids]
+            .map((k) => String(k || "").trim())
+            .filter(Boolean);
+          await persistReturnRefundState(statusKeys, {
+            return_status: "returned",
+            refund_status: "stripe_fail",
+            display_status: detailState.display_status || "Returned - CC Issue",
+          });
+        }
       } catch (err) {
         setReturnDetailModal((prev) => ({
           ...prev,
@@ -5103,7 +5199,7 @@ export default function AccountScreen({ navigation }) {
         }));
       }
     },
-    [selectedAccount, businessUID],
+    [selectedAccount, businessUID, persistReturnRefundState],
   );
 
   const openOrderDetail = useCallback(
