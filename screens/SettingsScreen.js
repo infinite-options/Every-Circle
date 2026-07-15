@@ -109,6 +109,27 @@ const DEFAULT_NEARBY_SETTINGS = {
   //       and survive across devices/sessions without relying on AsyncStorage alone.
 };
 
+// Default settings for Messages Privacy — persisted server-side on profile_personal
+// (profile_personal_messages_receive_from + profile_personal_messages_receive_types).
+// There is no sender-side restriction — everyone can always attempt to message anyone;
+// only the recipient's own "Can Message Me" audience setting can block it.
+const DEFAULT_MESSAGES_SETTINGS = {
+  receiveFrom: "all_circles", // who can message me: 'everyone' | 'all_circles' | 'specific'
+  receiveFromTypes: { friends: true, colleagues: true, family: true },
+};
+
+/** "friends,family" -> { friends: true, colleagues: false, family: true }; empty/missing -> all true (default). */
+function parseCircleTypesCsv(csv) {
+  if (!csv) return { friends: true, colleagues: true, family: true };
+  const active = new Set(
+    String(csv)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  return { friends: active.has("friends"), colleagues: active.has("colleagues"), family: active.has("family") };
+}
+
 // --- Live location sharing constants ---
 const SHARE_LOCATION_DURATION_HOURS = 1; // how long a sharing session lasts
 const SHARE_LOCATION_DISTANCE_METERS = 50; // min movement before watcher fires a callback
@@ -204,6 +225,10 @@ export default function SettingsScreen() {
   const [homeAddressUpdating, setHomeAddressUpdating] = useState(null);
   const [homeAddressCoords, setHomeAddressCoords] = useState({ lat: null, lng: null });
   const [nearbyPrivacyModalVisible, setNearbyPrivacyModalVisible] = useState(false);
+
+  // Messages Privacy (who can message me) — persisted server-side
+  const [messagesSettings, setMessagesSettings] = useState(DEFAULT_MESSAGES_SETTINGS);
+  const [messagesPrivacyModalVisible, setMessagesPrivacyModalVisible] = useState(false);
 
   // Live location sharing refs (stable across renders — no state needed)
   const locationWatcherRef = useRef(null); // expo-location subscription
@@ -619,6 +644,10 @@ export default function SettingsScreen() {
           if (homeLat != null && homeLng != null) {
             setHomeAddressCoords({ lat: homeLat, lng: homeLng });
           }
+          setMessagesSettings({
+            receiveFrom: result.personal_info.profile_personal_messages_receive_from || "all_circles",
+            receiveFromTypes: parseCircleTypesCsv(result.personal_info.profile_personal_messages_receive_types),
+          });
         }
       } catch (e) {
         console.error("Error loading cached profile for settings:", e);
@@ -816,6 +845,29 @@ export default function SettingsScreen() {
         });
       }
     } catch (_) {}
+  };
+
+  const updateMessagesSettings = async (newSettings) => {
+    setMessagesSettings(newSettings);
+    try {
+      const uid = await AsyncStorage.getItem("profile_uid");
+      if (!uid) return;
+      const formData = new FormData();
+      formData.append("profile_uid", uid);
+      formData.append("profile_personal_messages_receive_from", newSettings.receiveFrom);
+      formData.append(
+        "profile_personal_messages_receive_types",
+        Object.keys(newSettings.receiveFromTypes)
+          .filter((k) => newSettings.receiveFromTypes[k])
+          .join(","),
+      );
+      await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(uid)}`, {
+        method: "PUT",
+        body: formData,
+      });
+    } catch (_) {
+      /* keep local state on failure — next load will resync from the server */
+    }
   };
 
   // Stop live sharing (manual off, auto-off, or logout)
@@ -1340,6 +1392,26 @@ export default function SettingsScreen() {
                 </View>
                 <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
               </TouchableOpacity>
+
+              {/* Messages Privacy — opens modal */}
+              {(() => {
+                const PRIVACY_LABEL = { everyone: "Everyone", all_circles: "All Circles", specific: "Specific" };
+                const receiveLabel = PRIVACY_LABEL[messagesSettings.receiveFrom] || messagesSettings.receiveFrom;
+                return (
+                  <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setMessagesPrivacyModalVisible(true)} activeOpacity={0.8}>
+                    <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
+                      <Ionicons name='chatbubble-ellipses' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                      <View>
+                        <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                          <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Messages Privacy</Text>
+                        </Text>
+                        <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>Can message me: {receiveLabel}</Text>
+                      </View>
+                    </View>
+                    <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
+                  </TouchableOpacity>
+                );
+              })()}
             </View>
           )}
 
@@ -1923,6 +1995,56 @@ export default function SettingsScreen() {
             )}
 
             <TouchableOpacity onPress={() => setNearbyPrivacyModalVisible(false)} style={[styles.closeModalButton, { marginTop: 20, alignSelf: "stretch" }]}>
+              <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Messages Privacy Modal */}
+      <Modal visible={messagesPrivacyModalVisible} transparent={true} animationType='slide' onRequestClose={() => setMessagesPrivacyModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox]}>
+            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Messages Privacy</Text>
+            <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>Control who can message you.</Text>
+
+            <Text style={[styles.nearbyPrivacyGroupLabel, darkMode && styles.darkItemText, { marginTop: 8 }]}>Can Message Me</Text>
+            {[
+              { key: "everyone", label: "Everyone (all app users)" },
+              { key: "all_circles", label: "All Circle Members" },
+              { key: "specific", label: "Specific Circles" },
+            ].map(({ key, label }) => (
+              <TouchableOpacity key={key} style={styles.nearbyPrivacyOptionRow} onPress={() => updateMessagesSettings({ ...messagesSettings, receiveFrom: key })} activeOpacity={0.7}>
+                <Ionicons name={messagesSettings.receiveFrom === key ? "radio-button-on" : "radio-button-off"} size={18} color={COLORS.primary} style={{ marginRight: 10 }} />
+                <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+            {messagesSettings.receiveFrom === "specific" && (
+              <View style={styles.nearbyPrivacyCheckboxGroup}>
+                {[
+                  { key: "friends", label: "Friends" },
+                  { key: "colleagues", label: "Colleagues" },
+                  { key: "family", label: "Family" },
+                ].map(({ key, label }) => (
+                  <TouchableOpacity
+                    key={key}
+                    style={styles.nearbyPrivacyCheckboxRow}
+                    onPress={() =>
+                      updateMessagesSettings({
+                        ...messagesSettings,
+                        receiveFromTypes: { ...messagesSettings.receiveFromTypes, [key]: !messagesSettings.receiveFromTypes[key] },
+                      })
+                    }
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name={messagesSettings.receiveFromTypes[key] ? "checkbox" : "square-outline"} size={17} color={COLORS.primary} style={{ marginRight: 10 }} />
+                    <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            <TouchableOpacity onPress={() => setMessagesPrivacyModalVisible(false)} style={[styles.closeModalButton, { marginTop: 20, alignSelf: "stretch" }]}>
               <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Done</Text>
             </TouchableOpacity>
           </View>
