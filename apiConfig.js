@@ -84,7 +84,10 @@ export const TRANSACTIONS_ENDPOINT = `${API_BASE_URL}/api/v1/transactions`;
 /** PUT body: profile_id, transaction_uid, transaction_in_escrow, delivery_verification_items */
 /** POST — buyer submit return request (note + line items) */
 export const TRANSACTIONS_RETURN_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/return`;
-/** PUT — seller confirm receipt (action=confirm) or reject return (action=decline) */
+/** PUT — seller confirm receipt (action=confirm) or reject return (action=decline).
+ *  Also action=set_refund_status to persist return_status / refund_status after Stripe outcome
+ *  (e.g. returned + stripe_fail) without re-attempting the Stripe refund.
+ */
 export const TRANSACTIONS_RETURN_CONFIRM_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/return/confirm`;
 /** GET list / PUT resolve — admin declined returns queue */
 export const TRANSACTIONS_RETURNS_DECLINED_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/returns/declined`;
