@@ -1078,6 +1078,86 @@ function applyReturnRefundFieldsToRow(row, state) {
   };
 }
 
+/** Order UIDs that need return/refund chip hydration from GET /orders/:uid (buyer PURCHASES). */
+function collectOrderUidsNeedingReturnStatusHydration(purchaseRows) {
+  const uids = new Set();
+  if (!Array.isArray(purchaseRows)) return [];
+  for (const row of purchaseRows) {
+    if (!row || typeof row !== "object") continue;
+    const hasReturn =
+      isReturnListRow(row) ||
+      Number(row.transaction_return_requested) === 1 ||
+      row.return_status ||
+      row.refund_status ||
+      row.transaction_return_status ||
+      row.transaction_refund_status ||
+      row.display_status ||
+      row.pending_return ||
+      row.stripe_refund;
+    if (!hasReturn) continue;
+    const orderUid = resolveListRowOrderUid(row);
+    if (orderUid && orderUid !== "—") uids.add(orderUid);
+  }
+  return [...uids];
+}
+
+/**
+ * Prefer order-detail return/refund fields (and stripe_refund) over thin account-screen list rows.
+ * Buyer list often shows Returned/Pending until Return Details is opened otherwise.
+ */
+function extractReturnRefundStateFromOrderDetail(orderDetail) {
+  if (!orderDetail || typeof orderDetail !== "object") return null;
+  const sale = orderDetail.sale || orderDetail;
+  const returns = Array.isArray(orderDetail.returns) ? orderDetail.returns : [];
+  const firstReturn = returns[0] || null;
+  const state = extractReturnRefundState(
+    {
+      ...sale,
+      display_status: sale?.display_status || firstReturn?.display_status || orderDetail.display_status,
+      return_status: sale?.return_status || sale?.transaction_return_status || firstReturn?.return_status || firstReturn?.transaction_return_status,
+      refund_status: sale?.refund_status || sale?.transaction_refund_status || firstReturn?.refund_status || firstReturn?.transaction_refund_status,
+      stripe_refund: orderDetail.stripe_refund || sale?.stripe_refund || firstReturn?.stripe_refund,
+      transaction_return_requested: 1,
+      is_return: firstReturn ? 1 : sale?.is_return,
+    },
+    {
+      returnRequested: 1,
+      stripe_refund: orderDetail.stripe_refund || sale?.stripe_refund || firstReturn?.stripe_refund,
+      display_status: sale?.display_status || firstReturn?.display_status || orderDetail.display_status,
+    },
+  );
+  if (!state?.active || !state.return_status || !state.refund_status) return null;
+  const delivered = state.return_status === "returned" ? "Returned" : "Returning";
+  const received =
+    state.refund_status === "refunded"
+      ? "Refunded"
+      : state.refund_status === "stripe_fail"
+        ? "CC Issue"
+        : state.refund_status === "rejected"
+          ? "Rejected"
+          : "Pending";
+  return {
+    return_status: state.return_status,
+    refund_status: state.refund_status,
+    display_status: state.display_status || `${delivered} - ${received}`,
+    stripe_refund: orderDetail.stripe_refund || sale?.stripe_refund || firstReturn?.stripe_refund || null,
+    saleTxnUid: String(sale?.transaction_uid || "").trim(),
+    returnTxnUids: returns.map((ret) => String(ret?.transaction_uid || "").trim()).filter(Boolean),
+  };
+}
+
+function applyHydratedReturnStateToPurchaseRows(rows, stateByOrderUid) {
+  if (!Array.isArray(rows) || !stateByOrderUid || !Object.keys(stateByOrderUid).length) return rows;
+  return rows.map((row) => {
+    const orderUid = resolveListRowOrderUid(row);
+    const state = stateByOrderUid[orderUid];
+    if (!state) return row;
+    const next = applyReturnRefundFieldsToRow(row, state);
+    if (state.stripe_refund) next.stripe_refund = state.stripe_refund;
+    return next;
+  });
+}
+
 /** Normalize list/API return rows so stripe_fail (and returned+rejected) surface consistently when read. */
 function normalizeListRowReturnRefundFields(row) {
   if (!row || typeof row !== "object") return row;
@@ -4798,7 +4878,50 @@ export default function AccountScreen({ navigation }) {
         const mapped = mapAccountScreenPersonalResponse(json);
 
         const purchaseRows = Array.isArray(mapped.transactions) ? mapped.transactions : [];
-        setTransactionData(purchaseRows.map(normalizeListRowReturnRefundFields));
+        let normalizedPurchases = purchaseRows.map(normalizeListRowReturnRefundFields);
+
+        // Buyer list rows often omit Stripe-fail; hydrate return chips from order-detail before first paint
+        // so PURCHASES matches Return Details (e.g. Returned / CC Issue instead of Returned / Pending).
+        const returnOrderUids = collectOrderUidsNeedingReturnStatusHydration(normalizedPurchases);
+        if (returnOrderUids.length) {
+          const results = await Promise.allSettled(
+            returnOrderUids.map(async (orderUid) => {
+              const orderDetail = await fetchOrderDetailApi(orderUid, { profileId });
+              const hydrated = extractReturnRefundStateFromOrderDetail(orderDetail);
+              return { orderUid, hydrated };
+            }),
+          );
+          if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
+
+          const stateByOrderUid = {};
+          const statusPatch = {};
+          for (const result of results) {
+            if (result.status !== "fulfilled") continue;
+            const { orderUid, hydrated } = result.value;
+            if (!hydrated) continue;
+            stateByOrderUid[orderUid] = hydrated;
+            const payload = {
+              return_status: hydrated.return_status,
+              refund_status: hydrated.refund_status,
+              display_status: hydrated.display_status,
+            };
+            statusPatch[orderUid] = payload;
+            if (hydrated.saleTxnUid) statusPatch[hydrated.saleTxnUid] = payload;
+            for (const returnTxnUid of hydrated.returnTxnUids || []) {
+              statusPatch[returnTxnUid] = payload;
+            }
+          }
+          if (Object.keys(stateByOrderUid).length) {
+            normalizedPurchases = applyHydratedReturnStateToPurchaseRows(normalizedPurchases, stateByOrderUid);
+            setReturnStatuses((prev) => ({ ...prev, ...statusPatch }));
+            await Promise.all(
+              Object.keys(statusPatch).map((key) => AsyncStorage.setItem(`return_status_${key}`, JSON.stringify(statusPatch[key]))),
+            );
+          }
+        }
+
+        if (fetchGen !== personalFetchGenRef.current || selectedAccountRef.current !== "personal") return;
+        setTransactionData(normalizedPurchases);
 
         if (mapped.bounty) {
           setBountyData(mapped.bounty);
@@ -5707,9 +5830,12 @@ export default function AccountScreen({ navigation }) {
     useCallback(() => {
       checkAuth();
       loadAutoPaidIds();
-      loadReturnRequests();
-      loadReturnStatuses();
-      refreshAccountScreenPersonal();
+      // Load cached return state first, then personal list (which may hydrate over thin API rows).
+      void (async () => {
+        await loadReturnRequests();
+        await loadReturnStatuses();
+        await refreshAccountScreenPersonal();
+      })();
 
       const loadBusinessData = async () => {
         await fetchUserBusinesses();
