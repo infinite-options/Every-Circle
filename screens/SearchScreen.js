@@ -60,6 +60,13 @@ import { mapBusinessToMiniCard, mapBusinessToMicroCard } from "../utils/mapBusin
 import { searchBusinessLocationFieldsFromApi, searchResultsToMapBusinesses } from "../utils/searchResultsToMapBusinesses";
 import { searchResultsToMapProfiles } from "../utils/searchResultsToMapProfiles";
 import { searchReferralProfiles, loadReferralNetworkByUid, mapReferralProfileToSearchItem } from "../utils/searchReferralProfiles";
+import {
+  SEARCH_LOCATION_HOME,
+  MAJOR_US_SEARCH_CITIES,
+  resolveSearchLocationCoords,
+  getSearchLocationFilterLabel,
+  getSearchLocationFullLabel,
+} from "../utils/searchLocationOptions";
 import { sanitizeText, isSafeForConditional } from "../utils/textSanitizer";
 import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../config/networkDebug";
 /** Matches 💰 bounty indicator: same emoji with a slash for “no bounty”. `muted` = grayed (e.g. no products / inactive bounty from API). */
@@ -390,6 +397,14 @@ function shouldIncludeSearchSeekingRow(item) {
   return true;
 }
 
+/** Strong matches by default; weaker ones available via Show more. Missing flag = keep (legacy/browse). */
+function itemPassesRelevanceCutoff(item) {
+  if (!item || item.itemType === "individuals") return true;
+  if (item?.score_breakdown?.browse_mode === true) return true;
+  if (item.passes_relevance_cutoff === false) return false;
+  return true;
+}
+
 function mapSearchExpertiseRow(item, i) {
   return {
     id: `${item.profile_expertise_uid || i}`,
@@ -403,6 +418,7 @@ function mapSearchExpertiseRow(item, i) {
     tags: [],
     score: item.score || 0,
     score_breakdown: item.score_breakdown || null,
+    passes_relevance_cutoff: item.passes_relevance_cutoff !== false,
     itemType: "expertise",
     profile_uid: item.profile_expertise_profile_personal_id || item.profile_personal_uid || item.expertise_owner_profile_uid || null,
     profile_personal_moderated: item.profile_personal_moderated ?? item.owner_profile_moderated ?? null,
@@ -474,6 +490,7 @@ function mapSearchWishRow(item, i) {
     tags: [],
     score: item.score || 0,
     score_breakdown: item.score_breakdown || null,
+    passes_relevance_cutoff: item.passes_relevance_cutoff !== false,
     itemType: "seeking",
     profile_uid: item.profile_wish_profile_personal_id,
     profile_wish_end: item.profile_wish_end || "",
@@ -894,6 +911,8 @@ export default function SearchScreen({ route }) {
 
   // Filter states
   const [distance, setDistance] = useState(null);
+  /** Search origin for distance filter and proximity ranking — home or a preset US city. */
+  const [searchLocation, setSearchLocation] = useState(SEARCH_LOCATION_HOME);
   /** Home address from profile_personal_latitude/longitude (Settings → Home Address Coordinates) */
   const [userHomeCoords, setUserHomeCoords] = useState({ lat: null, lng: null });
   const [network, setNetwork] = useState(null);
@@ -906,6 +925,11 @@ export default function SearchScreen({ route }) {
   const [selectedSearchTabs, setSelectedSearchTabs] = useState({ ...DEFAULT_SELECTED_SEARCH_TABS });
   /** True after an empty-query browse-all search completes (drives per-section network sort). */
   const [browseAllActive, setBrowseAllActive] = useState(false);
+  /**
+   * Progressive reveal of weaker matches:
+   * 0 = strong (+ min 4), 1 = +4 more, 2 = all remaining.
+   */
+  const [showMoreStage, setShowMoreStage] = useState(0);
 
   const [currentProfileUid, setCurrentProfileUid] = useState(null);
   /** Settings → Debug Mode = Yes: show search ranking scores on result cards. */
@@ -969,7 +993,8 @@ export default function SearchScreen({ route }) {
   const commitSearchResults = useCallback((list, { browseAll = false } = {}) => {
     browseAllActiveRef.current = browseAll;
     setBrowseAllActive(browseAll);
-    const filtered = filterPublicSearchModeratedResults(list);
+    setShowMoreStage(0);
+    const filtered = filterPublicSearchExpertiseResults(list);
     rawResultsRef.current = [...filtered];
     setResults(
       applyClientSorts(filtered, {
@@ -1205,6 +1230,7 @@ export default function SearchScreen({ route }) {
           setResults(state.results);
         }
         if (state.distance !== undefined) setDistance(state.distance);
+        if (state.searchLocation !== undefined) setSearchLocation(state.searchLocation);
         if (state.network !== undefined) setNetwork(state.network);
         if (state.bounty !== undefined) setBounty(state.bounty);
         if (state.sortAlphabetical !== undefined) setSortAlphabetical(state.sortAlphabetical);
@@ -1451,6 +1477,7 @@ export default function SearchScreen({ route }) {
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [activeFilterMenu, setActiveFilterMenu] = useState(null);
   const [filterPanelDraft, setFilterPanelDraft] = useState({
+    searchLocation: SEARCH_LOCATION_HOME,
     distance: null,
     network: null,
     rating: null,
@@ -1481,16 +1508,18 @@ export default function SearchScreen({ route }) {
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
+    if (searchLocation !== SEARCH_LOCATION_HOME) count += 1;
     if (distance !== null) count += 1;
     if (network !== null) count += 1;
     if (bounty !== null) count += 1;
     if (sortAlphabetical !== null) count += 1;
     if (rating !== null) count += 1;
     return count;
-  }, [distance, network, bounty, sortAlphabetical, rating]);
+  }, [searchLocation, distance, network, bounty, sortAlphabetical, rating]);
 
   const syncFilterPanelDraft = () => {
     setFilterPanelDraft({
+      searchLocation,
       distance,
       network,
       rating,
@@ -1524,6 +1553,7 @@ export default function SearchScreen({ route }) {
   };
 
   const clearAllFilters = () => {
+    setSearchLocation(SEARCH_LOCATION_HOME);
     setDistance(null);
     setNetwork(null);
     setRating(null);
@@ -1531,22 +1561,25 @@ export default function SearchScreen({ route }) {
     setSortAlphabetical(null);
     setActiveFilterMenu(null);
     setFilterPanelDraft({
+      searchLocation: SEARCH_LOCATION_HOME,
       distance: null,
       network: null,
       rating: null,
       bounty: null,
       sortAlphabetical: null,
     });
-    performSearch(searchQuery, { distanceMiles: null, networkValue: null, ratingValue: null });
+    performSearch(searchQuery, { distanceMiles: null, networkValue: null, ratingValue: null, searchLocationValue: SEARCH_LOCATION_HOME });
   };
 
   const applyFilterPanel = () => {
+    const nextSearchLocation = filterPanelDraft.searchLocation;
     const nextDistance = filterPanelDraft.distance;
     const nextNetwork = filterPanelDraft.network;
     const nextRating = filterPanelDraft.rating;
     const nextBounty = filterPanelDraft.bounty;
     const nextSort = filterPanelDraft.sortAlphabetical;
 
+    setSearchLocation(nextSearchLocation);
     setDistance(nextDistance);
     setNetwork(nextNetwork);
     setRating(nextRating);
@@ -1558,6 +1591,7 @@ export default function SearchScreen({ route }) {
       distanceMiles: nextDistance,
       networkValue: nextNetwork,
       ratingValue: nextRating,
+      searchLocationValue: nextSearchLocation,
     });
   };
 
@@ -1617,10 +1651,11 @@ export default function SearchScreen({ route }) {
   const sortAlphabeticalLabels = { Ascending: "A -> Z", Descending: "Z -> A" };
   const ratingOptions = ["> 1", "> 2", "> 3", "> 4", "> 4.5", "> 4.6", "> 4.8"];
   const showSearchResultsLoading = !hasLoadedInitialSearch || loading;
+  const activeSearchCoords = resolveSearchLocationCoords(searchLocation, userHomeCoords);
 
   const getSearchCardDistanceMiles = (item) => {
     if (distance == null) return null;
-    return itemDistanceMiles(item, userHomeCoords);
+    return itemDistanceMiles(item, activeSearchCoords);
   };
 
   const renderBusinessCardHeaderAccessory = (item) => {
@@ -1647,10 +1682,64 @@ export default function SearchScreen({ route }) {
     return <SearchCardNetworkBadge degree={networkDeg} darkMode={darkMode} />;
   };
 
-  const businessSectionResults = results.filter((item) => (item?.itemType || "businesses") === "businesses");
-  const offeringSectionResults = results.filter((item) => item?.itemType === "expertise");
-  const seekingSectionResults = results.filter((item) => item?.itemType === "seeking");
+  const businessSectionResultsAll = results.filter((item) => (item?.itemType || "businesses") === "businesses");
+  const offeringSectionResultsAll = results.filter((item) => item?.itemType === "expertise");
+  const seekingSectionResultsAll = results.filter((item) => item?.itemType === "seeking");
   const individualsSectionResults = results.filter((item) => item?.itemType === "individuals");
+
+  // Keep all strong matches, but guarantee at least four visible results across
+  // the selected tabs by backfilling with the highest-ranked weaker matches.
+  // Show more: first tap adds 4 more; second tap reveals the rest.
+  const selectedRankedResults = results.filter((item) => {
+    const type = item?.itemType || "businesses";
+    return (
+      (type === "businesses" && selectedSearchTabs.businesses) ||
+      (type === "expertise" && selectedSearchTabs.expertise) ||
+      (type === "seeking" && selectedSearchTabs.seeking)
+    );
+  });
+  const defaultVisibleResults = selectedRankedResults.filter(itemPassesRelevanceCutoff);
+  if (!browseAllActive && defaultVisibleResults.length < 4) {
+    const visibleSet = new Set(defaultVisibleResults);
+    for (const item of selectedRankedResults) {
+      if (visibleSet.has(item)) continue;
+      defaultVisibleResults.push(item);
+      visibleSet.add(item);
+      if (defaultVisibleResults.length >= 4) break;
+    }
+  }
+  const defaultVisibleResultSet = new Set(defaultVisibleResults);
+  const remainingWeakerResults = selectedRankedResults.filter((item) => !defaultVisibleResultSet.has(item));
+  const extraVisibleCount = browseAllActive || showMoreStage >= 2 ? remainingWeakerResults.length : showMoreStage >= 1 ? Math.min(4, remainingWeakerResults.length) : 0;
+  const visibleResultSet = new Set([...defaultVisibleResults, ...remainingWeakerResults.slice(0, extraVisibleCount)]);
+  const shouldDisplayResult = (item) => browseAllActive || visibleResultSet.has(item);
+
+  const businessSectionResults = businessSectionResultsAll.filter(shouldDisplayResult);
+  const offeringSectionResults = offeringSectionResultsAll.filter(shouldDisplayResult);
+  const seekingSectionResults = seekingSectionResultsAll.filter(shouldDisplayResult);
+
+  const hiddenWeakerMatchCount = browseAllActive ? 0 : Math.max(0, selectedRankedResults.length - visibleResultSet.size);
+  const showMoreButtonVisible = !browseAllActive && (hiddenWeakerMatchCount > 0 || showMoreStage > 0);
+  const nextShowMoreCount = showMoreStage === 0 ? Math.min(4, hiddenWeakerMatchCount) : hiddenWeakerMatchCount;
+  const showMoreButtonLabel =
+    showMoreStage >= 2 || hiddenWeakerMatchCount === 0
+      ? "Show fewer"
+      : showMoreStage === 0
+        ? `Show more (${nextShowMoreCount})`
+        : `Show all (${hiddenWeakerMatchCount})`;
+
+  const handleShowMorePress = () => {
+    if (showMoreStage >= 2 || hiddenWeakerMatchCount === 0) {
+      setShowMoreStage(0);
+      return;
+    }
+    if (showMoreStage === 0) {
+      // If 4 or fewer remain, first tap already shows everything.
+      setShowMoreStage(hiddenWeakerMatchCount <= 4 ? 2 : 1);
+      return;
+    }
+    setShowMoreStage(2);
+  };
 
   const handleOpenSearchMap = useCallback(async () => {
     const isProfileType = selectedSearchTabs.expertise || selectedSearchTabs.seeking;
@@ -1781,6 +1870,10 @@ export default function SearchScreen({ route }) {
     const effectiveDistance = opts.distanceMiles !== undefined ? opts.distanceMiles : distance;
     const effectiveRating = opts.ratingValue !== undefined ? opts.ratingValue : rating;
     const effectiveNetwork = opts.networkValue !== undefined ? opts.networkValue : network;
+    const effectiveSearchLocation = opts.searchLocationValue !== undefined ? opts.searchLocationValue : searchLocation;
+    if (opts.searchLocationValue !== undefined) {
+      setSearchLocation(opts.searchLocationValue);
+    }
 
     if (selectedSearchTabsRef.current.individuals) {
       setLoading(true);
@@ -1810,8 +1903,8 @@ export default function SearchScreen({ route }) {
       return;
     }
 
-    let searchCoords = userHomeCoords;
-    if (effectiveDistance != null || searchTypeSupportsDistanceFilter()) {
+    let searchCoords = resolveSearchLocationCoords(effectiveSearchLocation, userHomeCoords);
+    if (effectiveSearchLocation === SEARCH_LOCATION_HOME && (effectiveDistance != null || searchTypeSupportsDistanceFilter())) {
       const freshCoords = await loadUserHomeCoords();
       if (freshCoords?.lat != null && freshCoords?.lng != null) {
         searchCoords = freshCoords;
@@ -1819,9 +1912,15 @@ export default function SearchScreen({ route }) {
     }
 
     if (effectiveDistance != null && (searchCoords.lat == null || searchCoords.lng == null)) {
-      Alert.alert("Home address needed", "Set your home address coordinates in Settings to filter search results by distance.", [
+      const alertMessage =
+        effectiveSearchLocation === SEARCH_LOCATION_HOME
+          ? "Set your home address coordinates in Settings to filter search results by distance."
+          : "Unable to use the selected search location for distance filtering.";
+      Alert.alert("Location needed", alertMessage, [
         { text: "Cancel", style: "cancel" },
-        { text: "Open Settings", onPress: () => navigation.navigate("Settings") },
+        ...(effectiveSearchLocation === SEARCH_LOCATION_HOME
+          ? [{ text: "Open Settings", onPress: () => navigation.navigate("Settings") }]
+          : []),
       ]);
       return;
     }
@@ -1834,7 +1933,8 @@ export default function SearchScreen({ route }) {
     console.log("🔍 Rating filter:", effectiveRating);
     console.log("🔍 Network filter:", effectiveNetwork);
     console.log("🔍 Distance filter (mi):", effectiveDistance);
-    console.log("🔍 User home coords:", searchCoords);
+    console.log("🔍 Search location:", getSearchLocationFullLabel(effectiveSearchLocation));
+    console.log("🔍 Search coords:", searchCoords);
 
     setLoading(true);
     try {
@@ -1878,6 +1978,7 @@ export default function SearchScreen({ route }) {
         tags: b.tags || [],
         score: b.score || 0,
         score_breakdown: b.score_breakdown || null,
+        passes_relevance_cutoff: b.passes_relevance_cutoff !== false,
         itemType: "businesses",
         profile_uid: b.profile_personal_uid || b.business_profile_personal_uid || b.owner_profile_uid || null,
         ...searchBusinessLocationFieldsFromApi(b),
@@ -2460,7 +2561,32 @@ export default function SearchScreen({ route }) {
     if (!activeFilterMenu) return null;
 
     let chips = null;
-    if (activeFilterMenu === "distance") {
+    if (activeFilterMenu === "searchLocation") {
+      chips = [
+        renderFilterChip(
+          "My home",
+          searchLocation === SEARCH_LOCATION_HOME,
+          () => {
+            setSearchLocation(SEARCH_LOCATION_HOME);
+            setActiveFilterMenu(null);
+            performSearch(searchQuery, { searchLocationValue: SEARCH_LOCATION_HOME });
+          },
+          "search-location-home",
+        ),
+        ...MAJOR_US_SEARCH_CITIES.map((city) =>
+          renderFilterChip(
+            city.label,
+            searchLocation === city.key,
+            () => {
+              setSearchLocation(city.key);
+              setActiveFilterMenu(null);
+              performSearch(searchQuery, { searchLocationValue: city.key });
+            },
+            `search-location-${city.key}`,
+          ),
+        ),
+      ];
+    } else if (activeFilterMenu === "distance") {
       chips = distanceModalOptions.map((item) =>
         renderFilterChip(
           item.label,
@@ -2523,6 +2649,7 @@ export default function SearchScreen({ route }) {
     }
 
     const menuTitles = {
+      searchLocation: "Search location",
       distance: "Distance",
       network: "Network",
       bounty: "Bounty sort",
@@ -2548,8 +2675,33 @@ export default function SearchScreen({ route }) {
       </View>
 
       {renderFilterPanelSection(
+        "Search location",
+        filterPanelDraft.searchLocation === SEARCH_LOCATION_HOME
+          ? "Distance and proximity use your home address from Settings."
+          : `Distance and proximity use ${getSearchLocationFullLabel(filterPanelDraft.searchLocation)}.`,
+        [
+          renderFilterChip(
+            "My home",
+            filterPanelDraft.searchLocation === SEARCH_LOCATION_HOME,
+            () => setFilterPanelDraft((prev) => ({ ...prev, searchLocation: SEARCH_LOCATION_HOME })),
+            "panel-search-location-home",
+          ),
+          ...MAJOR_US_SEARCH_CITIES.map((city) =>
+            renderFilterChip(
+              city.label,
+              filterPanelDraft.searchLocation === city.key,
+              () => setFilterPanelDraft((prev) => ({ ...prev, searchLocation: city.key })),
+              `panel-search-location-${city.key}`,
+            ),
+          ),
+        ],
+      )}
+
+      {renderFilterPanelSection(
         "Distance",
-        filterPanelDraft.distance == null ? "Showing all results regardless of location." : "Results are limited to your home address coordinates in Settings.",
+        filterPanelDraft.distance == null
+          ? "Showing all results regardless of distance."
+          : `Results are limited to ${getSearchLocationFullLabel(filterPanelDraft.searchLocation)}.`,
         distanceModalOptions.map((item) =>
           renderFilterChip(
             item.label,
@@ -2681,6 +2833,7 @@ export default function SearchScreen({ route }) {
     selectedSearchTabs,
     results,
     rawResults: rawResultsRef.current.length > 0 ? rawResultsRef.current : results,
+    searchLocation,
     distance,
     network,
     bounty,
@@ -3415,9 +3568,29 @@ export default function SearchScreen({ route }) {
           </View>
 
           {/* Distance, Network, Bounty, Rating filters */}
-          {showFilters && (
+          {showFilters && !selectedSearchTabs.individuals && (
             <>
               <View style={styles.filterButtonsContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterButtonOption,
+                    darkMode && styles.darkFilterButtonOption,
+                    (searchLocation !== SEARCH_LOCATION_HOME || activeFilterMenu === "searchLocation") && styles.activeFilterButton,
+                    darkMode && (searchLocation !== SEARCH_LOCATION_HOME || activeFilterMenu === "searchLocation") && styles.darkActiveFilterButton,
+                  ]}
+                  onPress={() => toggleFilterMenu("searchLocation")}
+                >
+                  <Text
+                    style={[
+                      styles.filterButtonText,
+                      darkMode && styles.darkFilterButtonText,
+                      (searchLocation !== SEARCH_LOCATION_HOME || activeFilterMenu === "searchLocation") && styles.activeFilterButtonText,
+                      darkMode && (searchLocation !== SEARCH_LOCATION_HOME || activeFilterMenu === "searchLocation") && styles.darkActiveFilterButtonText,
+                    ]}
+                  >
+                    {getSearchLocationFilterLabel(searchLocation)}
+                  </Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={[
                     styles.filterButtonOption,
@@ -3577,6 +3750,16 @@ export default function SearchScreen({ route }) {
                     {showGlobalSeeking && seekingSectionResults.map((item, idx) => renderResultItem(item, idx))}
                   </>
                 )}
+
+                {!showSearchResultsLoading && showMoreButtonVisible ? (
+                  <TouchableOpacity
+                    style={[styles.showMoreResultsButton, darkMode && styles.darkShowMoreResultsButton]}
+                    onPress={handleShowMorePress}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.showMoreResultsButtonText, darkMode && styles.darkShowMoreResultsButtonText]}>{showMoreButtonLabel}</Text>
+                  </TouchableOpacity>
+                ) : null}
               </>
             )}
           </ScrollView>
@@ -4683,6 +4866,30 @@ const styles = StyleSheet.create({
   },
   darkGlobalSectionHeaderText: {
     color: "#fff",
+  },
+  showMoreResultsButton: {
+    marginTop: 12,
+    marginBottom: 8,
+    marginHorizontal: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#000",
+    backgroundColor: "#f5f5f5",
+    alignItems: "center",
+  },
+  darkShowMoreResultsButton: {
+    borderColor: "#666",
+    backgroundColor: "#3a3a3a",
+  },
+  showMoreResultsButtonText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333",
+  },
+  darkShowMoreResultsButtonText: {
+    color: "#ffffff",
   },
   individualsSearchHint: {
     fontSize: 14,
