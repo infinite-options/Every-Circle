@@ -4,9 +4,10 @@ import { parsePrice } from "../utils/priceUtils";
 import { formatChoiceLineText, getItemizedChoiceLines } from "../utils/selectedChoiceItems";
 
 export function formatProductBaseLine(description, baseCost, currency = "USD") {
-  const desc = String(description || "").trim() || "Item";
+  const desc = String(description || "").trim();
   const symbol = !currency || currency === "USD" ? "$" : `${currency} `;
-  return `${desc}  ${symbol}${parsePrice(baseCost).toFixed(2)}`;
+  const price = `${symbol}${parsePrice(baseCost).toFixed(2)}`;
+  return desc ? `${desc}  ${price}` : price;
 }
 
 export function resolveProductSummaryDescription(item) {

@@ -1062,8 +1062,18 @@ function resolveListRowBountyPaid(row, bountyLines, bountyByOrderUid, bountyByTr
     const reclaim = parseFloat(row?.pending_return?.bounty_to_reclaim ?? row?.bounty_to_reclaim ?? NaN);
     if (Number.isFinite(reclaim) && reclaim !== 0) return -Math.abs(reclaim);
     if (Number.isFinite(fromRow) && fromRow !== 0) return fromRow;
+    const returnedBounty = parseFloat(
+      row?.returned_bounty ??
+        row?.return_bounty_paid ??
+        row?.pending_return?.bounty_paid ??
+        row?.pending_return?.bounty ??
+        row?.transaction_bounty ??
+        NaN,
+    );
+    if (Number.isFinite(returnedBounty) && returnedBounty !== 0) return -Math.abs(returnedBounty);
     if (listTxnUid && bountyByTransactionUid?.[listTxnUid] != null) {
-      return bountyByTransactionUid[listTxnUid];
+      const mapped = bountyByTransactionUid[listTxnUid];
+      if (Number.isFinite(mapped) && mapped !== 0) return mapped > 0 ? -Math.abs(mapped) : mapped;
     }
     return 0;
   }
@@ -1178,38 +1188,43 @@ function resolveReturnLineBountyAmounts(line, returnQty, bountyRows, transaction
 /** Prefer the return/refund money fields — never fall back to the original sale total. */
 function resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines) {
   const fromPending = resolvePendingReturnTableMoney(row);
-  if (fromPending.total || fromPending.bountyPaid) {
-    return fromPending;
-  }
-
   const listTxnUid = String(row?.transaction_uid ?? "").trim();
   const orderUid = resolveListRowOrderUid(row);
   const cached = row?._pending_return_money;
+
+  let total = fromPending.total;
+  let bountyPaid = fromPending.bountyPaid;
+
+  // pending_return often has customer credit but omits bounty_to_reclaim — keep looking for bounty.
   if (cached && typeof cached === "object") {
-    const total = Number(cached.total);
-    const bountyPaid = Number(cached.bountyPaid);
-    if ((Number.isFinite(total) && total !== 0) || (Number.isFinite(bountyPaid) && bountyPaid !== 0)) {
-      return {
-        total: Number.isFinite(total) ? (total > 0 ? -Math.abs(total) : total) : 0,
-        bountyPaid: Number.isFinite(bountyPaid) ? (bountyPaid > 0 ? -Math.abs(bountyPaid) : bountyPaid) : 0,
-      };
+    const cachedTotal = Number(cached.total);
+    const cachedBounty = Number(cached.bountyPaid);
+    if (!total && Number.isFinite(cachedTotal) && cachedTotal !== 0) {
+      total = cachedTotal > 0 ? -Math.abs(cachedTotal) : cachedTotal;
+    }
+    if (!bountyPaid && Number.isFinite(cachedBounty) && cachedBounty !== 0) {
+      bountyPaid = cachedBounty > 0 ? -Math.abs(cachedBounty) : cachedBounty;
     }
   }
 
-  const totalRaw = parseFloat(
-    row?.transaction_total ??
-      row?.returned_total ??
-      row?.return_total ??
-      row?.refund_total ??
-      row?.pending_return?.total ??
-      row?.pending_return?.transaction_total ??
-      NaN,
-  );
-  let total = Number.isFinite(totalRaw) ? totalRaw : 0;
-  // Display returns as credits (negative). Keep already-negative API values.
-  if (total > 0) total = -Math.abs(total);
+  if (!total) {
+    const totalRaw = parseFloat(
+      row?.transaction_total ??
+        row?.returned_total ??
+        row?.return_total ??
+        row?.refund_total ??
+        row?.pending_return?.total ??
+        row?.pending_return?.transaction_total ??
+        NaN,
+    );
+    total = Number.isFinite(totalRaw) ? totalRaw : 0;
+    // Display returns as credits (negative). Keep already-negative API values.
+    if (total > 0) total = -Math.abs(total);
+  }
 
-  let bountyPaid = resolveListRowBountyPaid(row, null, null, bountyByTransactionUid);
+  if (!bountyPaid) {
+    bountyPaid = resolveListRowBountyPaid(row, null, null, bountyByTransactionUid);
+  }
   // Real return txns may omit bounty_paid — derive from matching sale bounty lines / return lines.
   if ((!Number.isFinite(bountyPaid) || bountyPaid === 0) && Array.isArray(bountyLines) && bountyLines.length) {
     const returnLines = Array.isArray(row?.lines) ? row.lines : [];
@@ -1289,20 +1304,24 @@ function collectPendingReturnItemsFromRequestData(returnRequestData, saleLines =
  */
 function estimatePendingReturnMoney(saleRow, returnRequestData, bountyLines = []) {
   const fromApi = resolvePendingReturnTableMoney(saleRow);
-  if (fromApi.total || fromApi.bountyPaid) {
-    return fromApi;
-  }
+  let total = fromApi.total;
+  let bountyPaid = fromApi.bountyPaid;
 
   const cached = saleRow?._pending_return_money;
   if (cached && typeof cached === "object") {
-    const total = Number(cached.total);
-    const bountyPaid = Number(cached.bountyPaid);
-    if (Number.isFinite(total) || Number.isFinite(bountyPaid)) {
-      return {
-        total: Number.isFinite(total) ? (total > 0 ? -Math.abs(total) : total) : 0,
-        bountyPaid: Number.isFinite(bountyPaid) ? (bountyPaid > 0 ? -Math.abs(bountyPaid) : bountyPaid) : 0,
-      };
+    const cachedTotal = Number(cached.total);
+    const cachedBounty = Number(cached.bountyPaid);
+    if (!total && Number.isFinite(cachedTotal) && cachedTotal !== 0) {
+      total = cachedTotal > 0 ? -Math.abs(cachedTotal) : cachedTotal;
     }
+    if (!bountyPaid && Number.isFinite(cachedBounty) && cachedBounty !== 0) {
+      bountyPaid = cachedBounty > 0 ? -Math.abs(cachedBounty) : cachedBounty;
+    }
+  }
+
+  // Prefer API total+bounty when both present; otherwise keep deriving the missing side.
+  if (total && bountyPaid) {
+    return { total, bountyPaid };
   }
 
   const explicitTotal = parseFloat(
@@ -1354,13 +1373,15 @@ function estimatePendingReturnMoney(saleRow, returnRequestData, bountyLines = []
     ) || 0,
   );
 
-  let total = 0;
-  if (Number.isFinite(explicitTotal) && explicitTotal !== 0) total = -Math.abs(explicitTotal);
-  else if (merchandise > 0) total = -(merchandise + taxes);
+  if (!total) {
+    if (Number.isFinite(explicitTotal) && explicitTotal !== 0) total = -Math.abs(explicitTotal);
+    else if (merchandise > 0) total = -(merchandise + taxes);
+  }
 
-  let bountyPaid = 0;
-  if (bountyFromLines > 0) bountyPaid = -Math.abs(bountyFromLines);
-  else if (Number.isFinite(explicitBounty) && explicitBounty !== 0) bountyPaid = -Math.abs(explicitBounty);
+  if (!bountyPaid) {
+    if (bountyFromLines > 0) bountyPaid = -Math.abs(bountyFromLines);
+    else if (Number.isFinite(explicitBounty) && explicitBounty !== 0) bountyPaid = -Math.abs(explicitBounty);
+  }
 
   return { total, bountyPaid };
 }
@@ -1419,12 +1440,8 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, return
 
   // Keep Order rows on shipping/receipt chips. Return logistics belong on the Return row only.
   if (isReturn) {
-    // Prefer pending_return money if present; else return txn amounts.
-    const pendingMoney = resolvePendingReturnTableMoney(row);
-    const money =
-      pendingMoney.total || pendingMoney.bountyPaid
-        ? pendingMoney
-        : resolveReturnRowMoney(row, null, null);
+    // Prefer pending_return for total/bounty when present, but still fill missing bounty via return txn / lines.
+    const money = resolveReturnRowMoney(row, null, null);
     return {
       key: String(row.transaction_uid || `return-${orderUid}-${dateMs}`),
       orderUid,
@@ -1468,9 +1485,9 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, return
 }
 
 /** Companion Return row while a return is requested but no reverse txn exists in the seller list yet. */
-function buildSyntheticReturnOrderRow(orderRow, logistics) {
+function buildSyntheticReturnOrderRow(orderRow, logistics, returnRequestData, bountyLines) {
   const raw = orderRow?.rawRow || {};
-  const money = resolvePendingReturnTableMoney(raw);
+  const money = estimatePendingReturnMoney(raw, returnRequestData, bountyLines || []);
   // Slightly newer than the order so Return sorts above Order when dates match.
   const dateMs = (orderRow.dateMs || transactionDateMs(raw) || Date.now()) + 1;
   return {
@@ -1510,19 +1527,26 @@ function buildSyntheticReturnOrderRow(orderRow, logistics) {
  * Business ORDERS table from account-screen seller_transactions.
  * Order bounty: order_bounty_paid
  * Return money: pending_return.estimated_refund.total_customer_credit + bounty_to_reclaim
+ *   (falls back to return txn / bounty lines when reclaim is missing)
  * Return chips: display_status / return_status + refund_status on the list row
  */
 function buildBusinessOrdersListFromSellerTransactions(
   sellerLines,
-  _bountyLines,
+  bountyLines,
   shippingProgressByKey,
   returnStatusesByKey,
-  _returnRequestsByKey,
+  returnRequestsByKey,
 ) {
   if (!Array.isArray(sellerLines)) return [];
-  const mapped = sellerLines.map((row) =>
-    mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, returnStatusesByKey),
-  );
+  const bountyByTransactionUid = buildBountyPaidByTransactionUid(bountyLines);
+  const mapped = sellerLines.map((row) => {
+    const mappedRow = mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, returnStatusesByKey);
+    if (mappedRow.isReturn && !mappedRow.isSyntheticReturn) {
+      const money = resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines);
+      return { ...mappedRow, total: money.total, bountyPaid: money.bountyPaid };
+    }
+    return mappedRow;
+  });
 
   const orderUidsWithReturnTxn = new Set(
     mapped.filter((row) => row.isReturn && !row.isSyntheticReturn).map((row) => row.orderUid),
@@ -1542,7 +1566,32 @@ function buildBusinessOrdersListFromSellerTransactions(
       resolveReturnLogisticsLabels(orderRow.rawRow || {}, statusOverride);
     // Backend: if both return_status and refund_status are null → no return row.
     if (!logistics) continue;
-    syntheticReturns.push(buildSyntheticReturnOrderRow(orderRow, logistics));
+    const returnRequestData =
+      returnRequestsByKey?.[orderRow.orderUid] || returnRequestsByKey?.[orderRow.listTransactionUid] || null;
+    // Join sale-line / bounty-result rows so pending return items can resolve bounty_paid.
+    const saleLinesForOrder = (sellerLines || []).filter(
+      (line) => !isReturnListRow(line) && resolveListRowOrderUid(line) === orderRow.orderUid,
+    );
+    const bountyLinesForOrder = (bountyLines || []).filter(
+      (line) => !isReturnListRow(line) && resolveListRowOrderUid(line) === orderRow.orderUid,
+    );
+    const linesForJoin = [...saleLinesForOrder];
+    for (const bountyLine of bountyLinesForOrder) {
+      const bountyTi = String(bountyLine.ti_uid || bountyLine.tb_ti_id || "").trim();
+      if (!bountyTi) continue;
+      if (linesForJoin.some((line) => String(line.ti_uid || line.transaction_item_uid || "").trim() === bountyTi)) {
+        continue;
+      }
+      linesForJoin.push(bountyLine);
+    }
+    const saleRaw = {
+      ...(orderRow.rawRow || {}),
+      lines:
+        Array.isArray(orderRow.rawRow?.lines) && orderRow.rawRow.lines.length ? orderRow.rawRow.lines : linesForJoin,
+    };
+    syntheticReturns.push(
+      buildSyntheticReturnOrderRow({ ...orderRow, rawRow: saleRaw }, logistics, returnRequestData, bountyLines),
+    );
   }
 
   return [...mapped, ...syntheticReturns].sort((a, b) => {
@@ -1551,6 +1600,100 @@ function buildBusinessOrdersListFromSellerTransactions(
     if (a.orderUid === b.orderUid) {
       // Same order: Return above Order (processed after the original purchase).
       return (b.isReturn ? 1 : 0) - (a.isReturn ? 1 : 0);
+    }
+    return 0;
+  });
+}
+
+function getBuyerPendingReturnQty(saleRow, returnRequestData) {
+  const pendingItems = [
+    ...(Array.isArray(saleRow?.pending_return?.items) ? saleRow.pending_return.items : []),
+    ...(Array.isArray(saleRow?.transaction_return_items) ? saleRow.transaction_return_items : []),
+    ...collectPendingReturnItemsFromRequestData(returnRequestData, Array.isArray(saleRow?.lines) ? saleRow.lines : []),
+  ];
+  if (pendingItems.length) {
+    return pendingItems.reduce((sum, item) => sum + Math.max(1, parseInt(item.return_quantity ?? item.quantity ?? item.qty ?? item.ti_bs_qty, 10) || 1), 0);
+  }
+  if (Array.isArray(returnRequestData?.items) && returnRequestData.items.length) {
+    const quantities = returnRequestData.itemQuantities || returnRequestData.notes?.[0]?.itemQuantities || {};
+    return returnRequestData.items.reduce((sum, id) => sum + Math.max(1, parseInt(quantities?.[id], 10) || 1), 0);
+  }
+  return Math.abs(parseInt(saleRow?.ti_bs_qty, 10) || 1);
+}
+
+/**
+ * Personal PURCHASES list: keep API rows, and add a companion Return line when a refund
+ * is requested but no reverse transaction exists yet (mirrors business ORDERS).
+ */
+function buildPersonalPurchasesListWithReturns(purchaseRows, returnStatusesByKey, returnRequestsByKey) {
+  if (!Array.isArray(purchaseRows) || purchaseRows.length === 0) return [];
+
+  const orderUidsWithReturnTxn = new Set(
+    purchaseRows
+      .filter((row) => isReturnListRow(row))
+      .map((row) => resolveListRowOrderUid(row))
+      .filter((uid) => uid && uid !== "—"),
+  );
+
+  const syntheticReturns = [];
+  for (const row of purchaseRows) {
+    if (isReturnListRow(row)) continue;
+    const orderUid = resolveListRowOrderUid(row);
+    const txnUid = String(row.transaction_uid || "").trim();
+    if (!orderUid || orderUid === "—") continue;
+    if (orderUidsWithReturnTxn.has(orderUid)) continue;
+
+    const returnRequestData =
+      returnRequestsByKey?.[orderUid] || returnRequestsByKey?.[txnUid] || null;
+    const statusOverride = {
+      ...getReturnStatusOverrideFromCache(returnStatusesByKey, orderUid, txnUid),
+      returnRequested:
+        returnRequestData?.items?.length > 0 ||
+        returnRequestData?.requested === true ||
+        Number(row.transaction_return_requested) === 1,
+    };
+    const logistics = resolveReturnLogisticsLabels(row, statusOverride);
+    if (!logistics) continue;
+
+    const money = estimatePendingReturnMoney(row, returnRequestData, []);
+    const returnQty = getBuyerPendingReturnQty(row, returnRequestData);
+    const dateMs = (transactionDateMs(row) || Date.now()) + 1;
+
+    syntheticReturns.push({
+      ...row,
+      is_return: 1,
+      transaction_type: "return",
+      _isSyntheticReturn: true,
+      // Unique list key; order_uid keeps openOrderDetail pointed at the parent purchase.
+      transaction_uid: `return-request-${orderUid}`,
+      order_uid: orderUid,
+      original_transaction_uid: txnUid,
+      transaction_total: money.total || 0,
+      seller_total: money.total || 0,
+      bounty_paid: money.bountyPaid || 0,
+      ti_bs_qty: returnQty,
+      purchased_item: row.purchased_item,
+      return_status: logistics.return_status,
+      refund_status: logistics.refund_status,
+      display_status: logistics.display_status,
+      transaction_return_status: logistics.return_status,
+      transaction_refund_status: logistics.refund_status,
+      transaction_return_requested: 1,
+      pending_return: row.pending_return,
+      transaction_datetime: row.transaction_datetime,
+      _sortDateMs: dateMs,
+    });
+  }
+
+  return [...purchaseRows, ...syntheticReturns].sort((a, b) => {
+    const aMs = a._sortDateMs || transactionDateMs(a) || 0;
+    const bMs = b._sortDateMs || transactionDateMs(b) || 0;
+    const byDate = bMs - aMs;
+    if (byDate !== 0) return byDate;
+    const aOrder = resolveListRowOrderUid(a);
+    const bOrder = resolveListRowOrderUid(b);
+    if (aOrder === bOrder) {
+      return (isReturnListRow(b) ? 1 : 0) - (isReturnListRow(a) ? 1 : 0);
     }
     return 0;
   });
@@ -3159,11 +3302,14 @@ function isPurchaseFullyReceivedByQty(transaction) {
   return false;
 }
 
-/** Buyer PURCHASES Delivered column — return logistics first, then shipping progress. */
+/** Buyer PURCHASES Delivered column — return logistics only on Return rows; Order rows show shipping. */
 function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}) {
-  const returnLogistics = resolveReturnLogisticsLabels(transaction, statusOverride);
-  if (returnLogistics) return returnLogistics.delivered;
-  if (!transaction || isReturnListRow(transaction)) return "—";
+  if (isReturnListRow(transaction)) {
+    const returnLogistics = resolveReturnLogisticsLabels(transaction, statusOverride);
+    if (returnLogistics) return returnLogistics.delivered;
+    return "—";
+  }
+  if (!transaction) return "—";
   if (orderFulfillmentIsNotRequired(transaction)) {
     return Number(transaction.transaction_in_escrow) === 1 ? "—" : "Paid";
   }
@@ -3172,12 +3318,15 @@ function getBuyerPurchaseDeliveredLabel(transaction, statusOverride = {}) {
 
 /**
  * Buyer PURCHASES Received column.
- * Return money state (Pending / Refunded / Rejected) first; otherwise shipping receipt Yes/No/Partial.
+ * Return money state only on Return rows; Order rows show Yes/No/Partial shipping receipt.
  */
 function getBuyerPurchaseReceivedLabel(transaction, statusOverride = {}) {
-  const returnLogistics = resolveReturnLogisticsLabels(transaction, statusOverride);
-  if (returnLogistics) return returnLogistics.received;
-  if (!transaction || isReturnListRow(transaction)) return "—";
+  if (isReturnListRow(transaction)) {
+    const returnLogistics = resolveReturnLogisticsLabels(transaction, statusOverride);
+    if (returnLogistics) return returnLogistics.received;
+    return "—";
+  }
+  if (!transaction) return "—";
 
   const fromRows = getOrderReceivedStatusFromSaleRows([transaction]);
   if (fromRows === "Yes" || fromRows === "Partial" || fromRows === "No") return fromRows;
@@ -5940,6 +6089,10 @@ export default function AccountScreen({ navigation }) {
     () => buildBusinessOrdersListFromSellerTransactions(businessSellerTransactionList, businessBountyData?.data || [], orderShippingProgressByKey, returnStatuses, returnRequests),
     [businessSellerTransactionList, businessBountyData, orderShippingProgressByKey, returnStatuses, returnRequests],
   );
+  const personalPurchasesDisplayList = useMemo(
+    () => buildPersonalPurchasesListWithReturns(transactionData, returnStatuses, returnRequests),
+    [transactionData, returnStatuses, returnRequests],
+  );
 
   /** Debug Mode Yes (Settings): show Transaction ID, Type, Purchased Item. Narrow web (<700px) uses the same compact layout as mobile without those debug columns. Purchased Item also shows on web when width > 600 regardless of Debug Mode (unless compact dev flag hides it). */
   const purchasesShowDebugColumns = SHOW_NETWORK_DEBUG_UI !== 0 && settingsDebugModeEnabled;
@@ -6093,7 +6246,7 @@ export default function AccountScreen({ navigation }) {
                 <>
                   {transactionLoading ? (
                     <Text style={styles.loadingText}>Loading transaction data...</Text>
-                  ) : transactionData.length > 0 ? (
+                  ) : personalPurchasesDisplayList.length > 0 ? (
                     <View style={styles.transactionsContainer}>
                       {/* Table Header */}
                       <View style={styles.transactionHeaderRow}>
@@ -6108,21 +6261,25 @@ export default function AccountScreen({ navigation }) {
                         <Text style={styles.transactionHeaderAmount}>Amount</Text>
                       </View>
                       {/* Table Rows */}
-                      {transactionData.map((transaction, i) => {
+                      {personalPurchasesDisplayList.map((transaction, i) => {
                         const isReturnRow = isReturnListRow(transaction);
+                        const isSyntheticReturn = !!transaction._isSyntheticReturn;
                         const orderUid = resolveListRowOrderUid(transaction);
                         const isPending = !isReturnRow && Number(transaction.transaction_in_escrow) === 1;
                         const showPendingLink = isPending;
                         const compactTx = compactPurchasesLayout;
                         const sellerId = resolvePurchaseSellerId(transaction);
                         const displayAmount = parseFloat(transaction.transaction_total ?? transaction.seller_total ?? 0);
+                        const rowKey = transaction.transaction_uid || transaction.ti_uid || `purchase-${i}`;
 
                         return (
-                          <View key={transaction.transaction_uid || transaction.ti_uid || i} style={styles.transactionRow}>
+                          <View key={rowKey} style={styles.transactionRow}>
                             <Text style={styles.transactionDate}>{formatTransactionDate(transaction)}</Text>
                             {showPurchasesTxnIdColumn ? (
                               <TouchableOpacity onPress={() => openOrderDetail({ orderUid })} activeOpacity={0.7} disabled={orderUid === "—"}>
-                                <Text style={[styles.transactionId, orderUid !== "—" && styles.receiptLink]}>{transaction.transaction_uid || "N/A"}</Text>
+                                <Text style={[styles.transactionId, orderUid !== "—" && styles.receiptLink]}>
+                                  {isSyntheticReturn ? orderUid : transaction.transaction_uid || "N/A"}
+                                </Text>
                               </TouchableOpacity>
                             ) : null}
                             {showPurchasesTypeColumn ? <Text style={styles.transactionPurchaseType}>{isReturnRow ? "Return" : transaction.purchase_type || "N/A"}</Text> : null}
@@ -6156,11 +6313,13 @@ export default function AccountScreen({ navigation }) {
                               </Text>
                             )}
                             {(() => {
-                              const txnUid = String(transaction.transaction_uid || "").trim();
-                              const statusOverride = {
-                                ...getReturnStatusOverrideFromCache(returnStatuses, orderUid, txnUid),
-                                returnRequested: returnRequests[orderUid]?.items?.length > 0 || returnRequests[txnUid]?.items?.length > 0 || transaction.transaction_return_requested === 1,
-                              };
+                              const txnUid = String(transaction.original_transaction_uid || transaction.transaction_uid || "").trim();
+                              const statusOverride = isReturnRow
+                                ? {
+                                    ...getReturnStatusOverrideFromCache(returnStatuses, orderUid, txnUid),
+                                    returnRequested: true,
+                                  }
+                                : getReturnStatusOverrideFromCache(returnStatuses, orderUid, txnUid);
                               const deliveredLabel = getBuyerPurchaseDeliveredLabel(transaction, statusOverride);
                               const receivedLabel = getBuyerPurchaseReceivedLabel(transaction, statusOverride);
                               const deliveredBadge = getProductSaleStatusBadgeStyle("delivered", deliveredLabel);
