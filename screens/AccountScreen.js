@@ -2306,9 +2306,14 @@ function OrderDetailLinesTable({
   bountyRows = [],
   transactionUid = "",
   isSellerView = false,
+  selectable = false,
+  selectedKeys = [],
+  onToggleSelect,
+  selectionDisabled = false,
 }) {
   const signedRows = signedRowsProp ?? !!footerAmountSigned;
   const includeFulfillment = !!showFulfillmentColumns && !signedRows;
+  const selected = Array.isArray(selectedKeys) ? selectedKeys : [];
   const detailRows = (lines || []).map((line, index) => {
     const qty = Math.abs(line.return_quantity != null ? parseInt(line.return_quantity, 10) || 0 : parseInt(line.ti_bs_qty, 10) || 0);
     const enrichment = enrichFromReceiptRow(line);
@@ -2338,8 +2343,9 @@ function OrderDetailLinesTable({
     const displayBounty = signedRows ? -Math.abs(bountyAmount) : Math.abs(bountyAmount);
     const displayShare = signedRows ? -shareAmount : shareAmount;
     const fulfillment = includeFulfillment ? formatLineFulfillmentDisplay(line) : null;
+    const rowKey = String(line.ti_uid || line.transaction_item_uid || `${line.ti_bs_id}-${index}`).trim();
     return {
-      key: line.ti_uid || `${line.ti_bs_id}-${index}`,
+      key: rowKey,
       productId: line.ti_bs_id || "—",
       description: line.item_name || line.bs_service_name || line.bs_service_desc || "—",
       choiceLines,
@@ -2353,6 +2359,7 @@ function OrderDetailLinesTable({
       shippedStatus: fulfillment?.statusLabel || "—",
       tracking: fulfillment?.trackingLabel || "—",
       isLast: index === lines.length - 1,
+      isSelected: selected.includes(rowKey),
     };
   });
 
@@ -2379,6 +2386,7 @@ function OrderDetailLinesTable({
         ]}
       >
         <View style={[styles.businessOrderDetailHeaderRow, darkMode && styles.productSalesDetailHeaderRowDark]}>
+          {selectable ? <View style={styles.businessOrderDetailColSelect} /> : null}
           <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColProductId]} numberOfLines={1}>
             Product ID
           </Text>
@@ -2418,63 +2426,91 @@ function OrderDetailLinesTable({
             </>
           ) : null}
         </View>
-        {detailRows.map((row) => (
-          <View key={row.key} style={[styles.businessOrderDetailDataRow, !row.isLast && styles.productSalesDetailDataRowBorder, darkMode && styles.productSalesDetailDataRowDark]}>
-            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColProductId, styles.businessOrderDetailProductId, darkMode && { color: "#eee" }]}>{row.productId}</Text>
-            <View style={[styles.businessOrderDetailCell, styles.businessOrderDetailColDescription]}>
-              <Text style={[{ fontSize: 13, color: darkMode ? "#ccc" : "#333" }]} numberOfLines={3}>
-                {row.description}
-              </Text>
-              {(row.choiceLines || []).map((choiceLine, choiceIdx) => (
-                <Text key={`${row.key}-opt-${choiceIdx}`} style={{ fontSize: 11, color: optionTextColor, marginTop: 2, lineHeight: 15 }} numberOfLines={2}>
-                  {formatChoiceLineText(choiceLine)}
-                </Text>
-              ))}
-              {row.specialInstructions ? (
-                <Text style={{ fontSize: 11, color: noteTextColor, marginTop: 2, fontStyle: "italic", lineHeight: 15 }} numberOfLines={2}>
-                  Note: {row.specialInstructions}
-                </Text>
-              ) : null}
-            </View>
-            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>{row.qty}</Text>
-            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>{formatCellAmount(row.unitCost)}</Text>
-            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColMoney, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>{formatCellAmount(row.lineTotal)}</Text>
-            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBounty, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
-              {Math.abs(row.bounty) > 0 ? formatCellAmount(row.bounty) : "—"}
-            </Text>
-            {showBuyerShareColumns ? (
-              <>
-                <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBountyPct, darkMode && { color: "#ccc" }]}>{row.bountyPctLabel || "—"}</Text>
-                <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColShare, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
-                  {Math.abs(row.share) > 0 ? formatCellAmount(row.share) : "—"}
-                </Text>
-              </>
-            ) : null}
-            {includeFulfillment ? (
-              <>
-                <View style={[styles.businessOrderDetailColShipped, styles.productSalesDetailStatusCell]}>
-                  {row.shippedStatus && row.shippedStatus !== "—" ? (
-                    (() => {
-                      const badgeStyle = getProductSaleStatusBadgeStyle("shippedLine", row.shippedStatus);
-                      return (
-                        <View style={[styles.productSalesDetailStatusBadge, badgeStyle.badge]}>
-                          <Text style={[styles.productSalesDetailStatusBadgeText, badgeStyle.text]}>{row.shippedStatus}</Text>
-                        </View>
-                      );
-                    })()
-                  ) : (
-                    <Text style={[styles.businessOrderDetailCell, darkMode && { color: "#aaa" }]}>—</Text>
-                  )}
+        {detailRows.map((row) => {
+          const rowContent = (
+            <>
+              {selectable ? (
+                <View style={[styles.businessOrderDetailColSelect, { justifyContent: "flex-start", paddingTop: 2 }]}>
+                  <Ionicons
+                    name={row.isSelected ? "checkbox" : "square-outline"}
+                    size={20}
+                    color={row.isSelected ? "#18884A" : darkMode ? "#aaa" : "#555"}
+                  />
                 </View>
-                <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColTracking, darkMode && { color: "#ccc" }]} numberOfLines={2}>
-                  {row.tracking}
+              ) : null}
+              <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColProductId, styles.businessOrderDetailProductId, darkMode && { color: "#eee" }]}>{row.productId}</Text>
+              <View style={[styles.businessOrderDetailCell, styles.businessOrderDetailColDescription]}>
+                <Text style={[{ fontSize: 13, color: darkMode ? "#ccc" : "#333" }]} numberOfLines={3}>
+                  {row.description}
                 </Text>
-              </>
-            ) : null}
-          </View>
-        ))}
+                {(row.choiceLines || []).map((choiceLine, choiceIdx) => (
+                  <Text key={`${row.key}-opt-${choiceIdx}`} style={{ fontSize: 11, color: optionTextColor, marginTop: 2, lineHeight: 15 }} numberOfLines={2}>
+                    {formatChoiceLineText(choiceLine)}
+                  </Text>
+                ))}
+                {row.specialInstructions ? (
+                  <Text style={{ fontSize: 11, color: noteTextColor, marginTop: 2, fontStyle: "italic", lineHeight: 15 }} numberOfLines={2}>
+                    Note: {row.specialInstructions}
+                  </Text>
+                ) : null}
+              </View>
+              <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>{row.qty}</Text>
+              <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>{formatCellAmount(row.unitCost)}</Text>
+              <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColMoney, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>{formatCellAmount(row.lineTotal)}</Text>
+              <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBounty, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
+                {Math.abs(row.bounty) > 0 ? formatCellAmount(row.bounty) : "—"}
+              </Text>
+              {showBuyerShareColumns ? (
+                <>
+                  <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBountyPct, darkMode && { color: "#ccc" }]}>{row.bountyPctLabel || "—"}</Text>
+                  <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColShare, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
+                    {Math.abs(row.share) > 0 ? formatCellAmount(row.share) : "—"}
+                  </Text>
+                </>
+              ) : null}
+              {includeFulfillment ? (
+                <>
+                  <View style={[styles.businessOrderDetailColShipped, styles.productSalesDetailStatusCell]}>
+                    {row.shippedStatus && row.shippedStatus !== "—" ? (
+                      (() => {
+                        const badgeStyle = getProductSaleStatusBadgeStyle("shippedLine", row.shippedStatus);
+                        return (
+                          <View style={[styles.productSalesDetailStatusBadge, badgeStyle.badge]}>
+                            <Text style={[styles.productSalesDetailStatusBadgeText, badgeStyle.text]}>{row.shippedStatus}</Text>
+                          </View>
+                        );
+                      })()
+                    ) : (
+                      <Text style={[styles.businessOrderDetailCell, darkMode && { color: "#aaa" }]}>—</Text>
+                    )}
+                  </View>
+                  <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColTracking, darkMode && { color: "#ccc" }]} numberOfLines={2}>
+                    {row.tracking}
+                  </Text>
+                </>
+              ) : null}
+            </>
+          );
+
+          return selectable ? (
+            <TouchableOpacity
+              key={row.key}
+              style={[styles.businessOrderDetailDataRow, !row.isLast && styles.productSalesDetailDataRowBorder, darkMode && styles.productSalesDetailDataRowDark]}
+              onPress={() => onToggleSelect?.(row.key)}
+              activeOpacity={0.7}
+              disabled={selectionDisabled}
+            >
+              {rowContent}
+            </TouchableOpacity>
+          ) : (
+            <View key={row.key} style={[styles.businessOrderDetailDataRow, !row.isLast && styles.productSalesDetailDataRowBorder, darkMode && styles.productSalesDetailDataRowDark]}>
+              {rowContent}
+            </View>
+          );
+        })}
         {footerLabel ? (
           <View style={[styles.orderDetailLineTableFooterRow, darkMode && styles.productSalesDetailTotalRowDark]}>
+            {selectable ? <View style={styles.businessOrderDetailColSelect} /> : null}
             <Text style={[styles.orderDetailLineTableFooterLabel, styles.businessOrderDetailColProductId, darkMode && { color: "#eee" }]}>{footerLabel}</Text>
             <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColDescription]} />
             <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty]} />
@@ -2886,6 +2922,7 @@ function ReturnDetailsModal({
 }) {
   const sale = orderDetail?.sale || null;
   const returns = Array.isArray(orderDetail?.returns) ? orderDetail.returns : [];
+  const returnLines = collectReturnDetailLines(orderDetail);
   const returnItems = buildReturnDetailDisplayItems(orderDetail, bountyRows);
   const reverse = buildReverseTransactionFromReturnItems(returnItems, sale, {
     refundBreakdown: confirmResult?.refund_breakdown || orderDetail?.refund_breakdown || null,
@@ -2964,73 +3001,19 @@ function ReturnDetailsModal({
             <ScrollView style={styles.businessOrderDetailScroll} nestedScrollEnabled keyboardShouldPersistTaps='handled'>
               <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { marginTop: 8 }]}>{awaitingSellerAction ? "Select item(s) received:" : "Items being returned"}</Text>
 
-              {returnItems.length > 0 ? (
-                <View style={{ marginTop: 4 }}>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      paddingVertical: 8,
-                      paddingHorizontal: 4,
-                      borderBottomWidth: 1,
-                      borderBottomColor: darkMode ? "#555" : "#ddd",
-                    }}
-                  >
-                    {awaitingSellerAction ? <View style={{ width: 30 }} /> : null}
-                    <Text style={{ flex: 1.4, fontSize: 11, fontWeight: "700", color: darkMode ? "#aaa" : "#666" }}>Item</Text>
-                    <Text style={{ width: 36, fontSize: 11, fontWeight: "700", color: darkMode ? "#aaa" : "#666", textAlign: "center" }}>Qty</Text>
-                    <Text style={{ width: 64, fontSize: 11, fontWeight: "700", color: darkMode ? "#aaa" : "#666", textAlign: "right" }}>Bounty</Text>
-                    <Text style={{ width: 72, fontSize: 11, fontWeight: "700", color: darkMode ? "#aaa" : "#666", textAlign: "right" }}>Price</Text>
-                  </View>
-                  {returnItems.map((item) => {
-                    const isReceived = !awaitingSellerAction || receivedKeys.includes(item.key);
-                    const choiceLines = getItemizedChoiceLines(item.choiceSource || {});
-                    const bountyAmount = Number(item.bountyPaidReversed) || Number(item.lineBounty) || 0;
-                    return (
-                      <View
-                        key={item.key}
-                        style={{
-                          paddingVertical: 10,
-                          paddingHorizontal: 4,
-                          borderBottomWidth: 1,
-                          borderBottomColor: darkMode ? "#444" : "#eee",
-                        }}
-                      >
-                        <TouchableOpacity
-                          style={{ flexDirection: "row", alignItems: "flex-start" }}
-                          onPress={() => awaitingSellerAction && onToggleReceivedItem?.(item.key)}
-                          activeOpacity={awaitingSellerAction ? 0.7 : 1}
-                          disabled={!awaitingSellerAction || confirming || declining}
-                        >
-                          {awaitingSellerAction ? (
-                            <Ionicons
-                              name={isReceived ? "checkbox" : "square-outline"}
-                              size={20}
-                              color={isReceived ? "#18884A" : darkMode ? "#aaa" : "#555"}
-                              style={{ marginRight: 10, marginTop: 1 }}
-                            />
-                          ) : null}
-                          <View style={{ flex: 1.4, paddingRight: 6 }}>
-                            <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", fontWeight: "600" }} numberOfLines={3}>
-                              {item.itemName || item.description}
-                            </Text>
-                            {choiceLines.map((choiceLine, choiceIdx) => (
-                              <Text key={`${item.key}-opt-${choiceIdx}`} style={{ fontSize: 12, color: darkMode ? "#bbb" : "#666", marginTop: 2 }}>
-                                {formatChoiceLineText(choiceLine)}
-                              </Text>
-                            ))}
-                            {item.specialInstructions ? (
-                              <Text style={{ fontSize: 12, color: darkMode ? "#aaa" : "#777", marginTop: 2, fontStyle: "italic" }}>Note: {item.specialInstructions}</Text>
-                            ) : null}
-                          </View>
-                          <Text style={{ width: 36, fontSize: 13, color: darkMode ? "#ddd" : "#333", textAlign: "center", marginTop: 1 }}>{item.qty}</Text>
-                          <Text style={{ width: 64, fontSize: 13, color: darkMode ? "#ddd" : "#333", textAlign: "right", marginTop: 1 }}>{bountyAmount > 0 ? `$${bountyAmount.toFixed(2)}` : "—"}</Text>
-                          <Text style={{ width: 72, fontSize: 13, fontWeight: "600", color: "#B71C1C", textAlign: "right", marginTop: 1 }}>${item.lineTotal.toFixed(2)}</Text>
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  })}
-                </View>
+              {returnLines.length > 0 ? (
+                <OrderDetailLinesTable
+                  lines={returnLines}
+                  darkMode={darkMode}
+                  signedRows
+                  bountyRows={bountyRows}
+                  transactionUid={String(sale?.transaction_uid || orderUid || "").trim()}
+                  isSellerView={isSellerView}
+                  selectable={awaitingSellerAction}
+                  selectedKeys={receivedKeys}
+                  onToggleSelect={onToggleReceivedItem}
+                  selectionDisabled={confirming || declining}
+                />
               ) : (
                 <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No pending return line items on this order.</Text>
               )}
@@ -8678,6 +8661,12 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     paddingVertical: 10,
     paddingHorizontal: 2,
+  },
+  businessOrderDetailColSelect: {
+    width: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
   },
   businessOrderDetailCell: {
     fontSize: 13,
