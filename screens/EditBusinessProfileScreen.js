@@ -345,6 +345,8 @@ const returnWindowDaysForForm = (service) => {
   return days > 0 ? String(days) : DEFAULT_RETURN_WINDOW_DAYS;
 };
 
+const serviceOptionsTouched = (service) => Boolean(service?._serviceOptionsTouched || service?._choiceGroupsTouched);
+
 const ChoiceGroupsEditor = ({ groups = [], onChange, darkMode }) => {
   const addGroup = () => {
     onChange([
@@ -2007,43 +2009,92 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
         //     .catch((e) => console.warn(`Failed to save options for ${uid}:`, e));
         // });
 
-        // Replace the entire optionSavePromises block with:
-        const optionSavePromises = servicesForPayload.map(async (localSvc) => {
-          // For existing services, bs_uid is already known
+        // Save options only for products whose choices were edited this session.
+        // Posting choice_groups: [] for every product on every save wipes options in the DB.
+        const optionResults = [];
+        const savedOptionUids = new Set();
+        for (const localSvc of servicesForPayload) {
           let uid = localSvc.bs_uid && String(localSvc.bs_uid).trim() !== "" ? localSvc.bs_uid : null;
 
-          // For new services (no bs_uid), match by name from returnedServices
           if (!uid) {
-            uid = returnedServices.find((r) => String(r.bs_service_name || "").trim() === String(localSvc.bs_service_name || "").trim() && String(r.bs_uid || "").trim() !== "")?.bs_uid || null;
+            uid =
+              returnedServices.find(
+                (r) =>
+                  String(r.bs_service_name || "").trim() === String(localSvc.bs_service_name || "").trim() &&
+                  String(r.bs_uid || "").trim() !== "",
+              )?.bs_uid || null;
           }
 
           console.log(`🔵 Service "${localSvc.bs_service_name}" -> uid: ${uid}, groups: ${(localSvc.bs_choice_groups || []).length}`);
           console.log(`🔵 Choice groups content:`, JSON.stringify(localSvc.bs_choice_groups));
 
           if (!uid) {
-            console.warn(`⚠️ No uid for "${localSvc.bs_service_name}", skipping`);
-            return Promise.resolve();
+            console.warn(`⚠️ No uid for "${localSvc.bs_service_name}", skipping options`);
+            if (serviceOptionsTouched(localSvc)) {
+              optionResults.push({
+                failed: true,
+                name: localSvc.bs_service_name,
+                message: `Could not save options for "${localSvc.bs_service_name}". Please try saving again.`,
+              });
+            }
+            continue;
           }
 
-          // Always save options even if bs_choice_groups is empty (to clear removed groups)
-          return fetch(`${API_BASE_URL}/api/business_service_options/${uid}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              choice_groups: localSvc.bs_choice_groups || [],
-              special_instructions_enabled: localSvc.bs_special_instructions_enabled || 0,
-              special_instructions_max_chars: CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS,
-            }),
-          })
-            .then((res) => {
-              console.log(`🔵 Options save status for ${uid}:`, res.status);
-              return res.json();
-            })
-            .then((data) => console.log(`🔵 Options save result for ${uid}:`, JSON.stringify(data)))
-            .catch((e) => console.warn(`Failed to save options for ${uid}:`, e));
-        });
+          if (!serviceOptionsTouched(localSvc)) {
+            console.log(`🔵 Skipping options save for "${localSvc.bs_service_name}" (${uid}) — options were not edited`);
+            continue;
+          }
 
-        await Promise.all(optionSavePromises);
+          if (savedOptionUids.has(uid)) {
+            console.warn(`🔵 Skipping duplicate options save for bs_uid ${uid} ("${localSvc.bs_service_name}")`);
+            continue;
+          }
+          savedOptionUids.add(uid);
+
+          try {
+            const res = await fetch(`${API_BASE_URL}/api/business_service_options/${encodeURIComponent(uid)}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                choice_groups: localSvc.bs_choice_groups || [],
+                special_instructions_enabled: localSvc.bs_special_instructions_enabled || 0,
+                special_instructions_max_chars: CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS,
+              }),
+            });
+            console.log(`🔵 Options save status for ${uid}:`, res.status);
+            const data = await res.json().catch(() => ({}));
+            console.log(`🔵 Options save result for ${uid}:`, JSON.stringify(data));
+            if (!res.ok) {
+              optionResults.push({
+                failed: true,
+                name: localSvc.bs_service_name,
+                status: res.status,
+                message: data?.message || data?.error || `Options save failed (${res.status})`,
+              });
+              continue;
+            }
+            optionResults.push({ ok: true });
+          } catch (e) {
+            console.warn(`Failed to save options for ${uid}:`, e);
+            optionResults.push({
+              failed: true,
+              name: localSvc.bs_service_name,
+              message: e?.message || "Options save failed",
+            });
+          }
+        }
+
+        const optionFailures = optionResults.filter((r) => r?.failed);
+        if (optionFailures.length > 0) {
+          const names = optionFailures
+            .map((f) => f.name)
+            .filter(Boolean)
+            .join(", ");
+          throw new Error(
+            optionFailures[0]?.message ||
+              `Could not save product options${names ? ` for: ${names}` : ""}. Your other changes may have been saved — please try again.`,
+          );
+        }
 
         if (deferFavoriteToSecondPut || deferProfileToSecondPut) {
           try {
@@ -2634,6 +2685,60 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     setServices((prev) => prev.map((row) => ({ ...row, business_cc_fee_payer: p })));
   }, [formData.businessPaysCcFee]);
 
+  const serviceUidsKey = useMemo(
+    () =>
+      services
+        .map((s) => String(s.bs_uid || "").trim())
+        .filter(Boolean)
+        .join("|"),
+    [services],
+  );
+
+  // Hydrate choice groups from the options API so saving one product does not wipe others
+  useEffect(() => {
+    if (!serviceUidsKey) return;
+
+    let cancelled = false;
+    Promise.all(
+      services.map((service, index) => {
+        const uid = String(service.bs_uid || "").trim();
+        if (!uid) return Promise.resolve(null);
+        if (Array.isArray(service.bs_choice_groups) && service.bs_choice_groups.length > 0) {
+          return Promise.resolve(null);
+        }
+        return fetch(`${API_BASE_URL}/api/business_service_options/${encodeURIComponent(uid)}`)
+          .then((res) => res.json())
+          .then((data) => ({
+            index,
+            groups: Array.isArray(data?.result) ? data.result : [],
+          }))
+          .catch((e) => {
+            console.warn(`Failed to hydrate service options for ${uid}:`, e);
+            return { index, groups: [] };
+          });
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      setServices((prev) => {
+        let changed = false;
+        const next = [...prev];
+        results.forEach((r) => {
+          if (!r || !r.groups.length) return;
+          if (Array.isArray(next[r.index]?.bs_choice_groups) && next[r.index].bs_choice_groups.length > 0) return;
+          next[r.index] = { ...next[r.index], bs_choice_groups: r.groups };
+          changed = true;
+        });
+        return changed ? next : prev;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+    // Only re-run when the set of product UIDs changes, not on every services mutation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serviceUidsKey]);
+
   const defaultService = {
     bs_uid: "",
     bs_service_name: "",
@@ -2816,6 +2921,12 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
       bs_choice_groups: formSource.bs_choice_groups || [],
       bs_special_instructions_enabled: formSource.bs_special_instructions_enabled || 0,
       bs_special_instructions_max_chars: CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS,
+      _serviceOptionsTouched: Boolean(
+        formSource._serviceOptionsTouched ||
+          formSource._choiceGroupsTouched ||
+          existingService?._serviceOptionsTouched ||
+          existingService?._choiceGroupsTouched,
+      ),
       _svcNewImageUri,
       _svcWebImageFile,
       _svcDeleteImageUrl,
@@ -2936,11 +3047,13 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     if (service.bs_uid && service.bs_uid.trim() !== "") {
       const localGroups = service.bs_choice_groups || [];
       if (localGroups.length === 0) {
-        fetch(`${API_BASE_URL}/api/business_service_options/${service.bs_uid}`)
+        fetch(`${API_BASE_URL}/api/business_service_options/${encodeURIComponent(service.bs_uid)}`)
           .then((res) => res.json())
           .then((data) => {
-            if (data.result && data.result.length > 0) {
-              handleServiceChange("bs_choice_groups", data.result);
+            const groups = Array.isArray(data?.result) ? data.result : [];
+            if (groups.length > 0) {
+              handleServiceChange("bs_choice_groups", groups);
+              setServices((prev) => prev.map((s, i) => (i === index ? { ...s, bs_choice_groups: groups } : s)));
             }
           })
           .catch((e) => console.warn("Failed to load service options:", e));
@@ -3810,7 +3923,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
           <ChoiceGroupsEditor
             groups={serviceForm.bs_choice_groups || []}
             onChange={(groups) => {
-              handleServiceChange("bs_choice_groups", groups);
+              setServiceForm((prev) => ({ ...prev, bs_choice_groups: groups, _serviceOptionsTouched: true }));
               setIsChanged(true);
             }}
             darkMode={darkMode}
@@ -3829,7 +3942,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
               !(serviceForm.bs_special_instructions_enabled === 1 || serviceForm.bs_special_instructions_enabled === "1") && styles.bountyTypeBtnActive,
             ]}
             onPress={() => {
-              handleServiceChange("bs_special_instructions_enabled", 0);
+              setServiceForm((prev) => ({ ...prev, bs_special_instructions_enabled: 0, _serviceOptionsTouched: true }));
               setIsChanged(true);
             }}
           >
@@ -3854,6 +3967,7 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
                 ...prev,
                 bs_special_instructions_enabled: 1,
                 bs_special_instructions_max_chars: CUSTOMER_SPECIAL_INSTRUCTIONS_MAX_CHARS,
+                _serviceOptionsTouched: true,
               }));
               setIsChanged(true);
             }}

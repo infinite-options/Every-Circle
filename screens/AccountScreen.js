@@ -925,46 +925,68 @@ function extractReturnRefundState(source = {}, override = {}) {
   );
   let displayStatus = String(override.display_status ?? source.display_status ?? "").trim();
 
-  if (displayStatus) {
-    const match = displayStatus.match(
-      /^(returning|returned)\s*[-–]\s*(pending|refunded|rejected|stripe\s*fail|stripe_fail|stripe_failed)$/i,
-    );
-    if (match) {
-      if (!returnStatus) returnStatus = match[1].toLowerCase();
-      if (!refundStatus) {
-        const received = match[2].toLowerCase().replace(/\s+/g, "_");
-        refundStatus = received === "stripe_fail" || received === "stripe_failed" ? "stripe_fail" : received;
-      }
+  const returnDisplayMatch = displayStatus.match(
+    /^(returning|returned)\s*[-–]\s*(pending|refunded|rejected|stripe\s*fail|stripe_fail|stripe_failed)$/i,
+  );
+  if (returnDisplayMatch) {
+    if (!returnStatus) returnStatus = returnDisplayMatch[1].toLowerCase();
+    if (!refundStatus) {
+      const received = returnDisplayMatch[2].toLowerCase().replace(/\s+/g, "_");
+      refundStatus = received === "stripe_fail" || received === "stripe_failed" ? "stripe_fail" : received;
     }
   }
 
+  const explicitReturnSignal =
+    override.returnRequested === true ||
+    override.returnRequested === 1 ||
+    Number(source.transaction_return_requested) === 1 ||
+    isReturnListRow(source) ||
+    !!returnDisplayMatch ||
+    returnStatus === "returning" ||
+    returnStatus === "returned";
+
   // Legacy single-field values from older FE / AsyncStorage.
-  if (returnStatus === "accepted") {
-    returnStatus = "returned";
-    if (!refundStatus || refundStatus === "accepted") refundStatus = "refunded";
-  } else if (returnStatus === "declined") {
-    refundStatus = refundStatus || "rejected";
-    // Decline before receipt → Returning - Rejected
-    returnStatus = "returning";
-  } else if (returnStatus === "resolved" || returnStatus === "completed") {
-    returnStatus = "returned";
-    refundStatus = refundStatus || "refunded";
-  } else if (returnStatus === "rejected" && !refundStatus) {
-    refundStatus = "rejected";
-    returnStatus = "returning";
+  // Only remap order-lifecycle words (completed/accepted/etc.) when this is actually a return.
+  if (explicitReturnSignal || returnStatus === "returning" || returnStatus === "returned") {
+    if (returnStatus === "accepted") {
+      returnStatus = "returned";
+      if (!refundStatus || refundStatus === "accepted") refundStatus = "refunded";
+    } else if (returnStatus === "declined") {
+      refundStatus = refundStatus || "rejected";
+      // Decline before receipt → Returning - Rejected
+      returnStatus = "returning";
+    } else if (returnStatus === "resolved" || returnStatus === "completed") {
+      returnStatus = "returned";
+      refundStatus = refundStatus || "refunded";
+    } else if (returnStatus === "rejected" && !refundStatus) {
+      refundStatus = "rejected";
+      returnStatus = "returning";
+    }
+  } else if (["accepted", "declined", "resolved", "completed", "rejected"].includes(returnStatus)) {
+    // Sale/order rows sometimes carry lifecycle statuses in return_status fields — ignore them.
+    returnStatus = "";
   }
 
   if (refundStatus === "declined") refundStatus = "rejected";
   if (refundStatus === "accepted") refundStatus = "refunded";
 
+  const isKnownReturnStatus = returnStatus === "returning" || returnStatus === "returned";
+  const isKnownRefundStatus =
+    refundStatus === "pending" ||
+    refundStatus === "refunded" ||
+    refundStatus === "rejected" ||
+    refundStatus === "stripe_fail";
+
+  // Do NOT treat an arbitrary display_status (or unknown status strings) as a return.
+  // That was falsely marking Business Purchases as Returned when no return was requested.
   const returnRequested =
     override.returnRequested === true ||
     override.returnRequested === 1 ||
     Number(source.transaction_return_requested) === 1 ||
-    !!returnStatus ||
-    !!refundStatus ||
-    !!displayStatus ||
-    isReturnListRow(source);
+    isReturnListRow(source) ||
+    !!returnDisplayMatch ||
+    isKnownReturnStatus ||
+    (isKnownRefundStatus && isKnownReturnStatus);
 
   const stripeRefund = override.stripe_refund || source.stripe_refund || null;
   const stripeRefundFailed =
@@ -1219,6 +1241,7 @@ function resolveReturnLineBountyAmounts(line, returnQty, bountyRows, transaction
     lineBounty: Math.abs(lineBounty) || 0,
     earnedShare: Math.abs(earnedShare) || 0,
     bountyPaidReversed: Math.abs(bountyPaidReversed) || 0,
+    percentage: display?.percentage ?? scaledDisplay?.percentage ?? null,
     itemLabel: scaledDisplay?.itemLabel || (lineBounty > 0 ? `$${lineBounty.toFixed(2)}` : null),
     shareLabel: scaledDisplay?.shareLabel || (earnedShare > 0 ? `$${earnedShare.toFixed(2)}` : null),
   };
@@ -1896,25 +1919,68 @@ function OrderDetailReturnHeader({ transaction, darkMode }) {
   );
 }
 
-function OrderDetailLinesTable({ lines, darkMode, footerLabel, footerAmount, footerAmountSigned, signedRows: signedRowsProp, showFulfillmentColumns }) {
+function OrderDetailLinesTable({
+  lines,
+  darkMode,
+  footerLabel,
+  footerAmount,
+  footerAmountSigned,
+  signedRows: signedRowsProp,
+  showFulfillmentColumns,
+  bountyRows = [],
+  transactionUid = "",
+  isSellerView = false,
+}) {
   const signedRows = signedRowsProp ?? !!footerAmountSigned;
   const includeFulfillment = !!showFulfillmentColumns && !signedRows;
   const detailRows = (lines || []).map((line, index) => {
-    const unitCost = Math.abs(parseFloat(line.ti_bs_cost) || 0);
     const qty = Math.abs(
       line.return_quantity != null ? parseInt(line.return_quantity, 10) || 0 : parseInt(line.ti_bs_qty, 10) || 0,
     );
+    const enrichment = enrichFromReceiptRow(line);
+    const choiceSource = enrichment || {
+      selectedChoiceItems: parseReceiptJsonField(line.selected_choice_items ?? line.ti_selected_choice_items, []),
+      selectedChoiceLabels: parseReceiptJsonField(line.selected_choice_labels ?? line.ti_selected_choice_labels, {}),
+      selected_options: Array.isArray(line.selected_options) ? line.selected_options : [],
+      choicesExtraCost: parseFloat(line.choices_extra_cost ?? line.ti_choices_extra_cost ?? 0) || 0,
+    };
+    const choiceLines = getItemizedChoiceLines(choiceSource || {});
+    const specialInstructions =
+      enrichment?.specialInstructions || String(line.special_instructions ?? line.ti_special_instructions ?? "").trim();
+    const unitCost = Math.abs(getReceiptLineUnitPrice(line, enrichment) || parseFloat(line.ti_bs_cost) || 0);
     const lineTotal = unitCost * qty;
+    const bountyAmounts = resolveReturnLineBountyAmounts(line, qty || 1, bountyRows, transactionUid);
+    const bountyAmount = isSellerView
+      ? bountyAmounts.bountyPaidReversed || bountyAmounts.lineBounty || 0
+      : bountyAmounts.lineBounty || bountyAmounts.bountyPaidReversed || 0;
+    const shareAmount = Math.abs(bountyAmounts.earnedShare || 0);
+    const displayPct = bountyAmounts.percentage;
+    let bountyPctLabel = null;
+    if (displayPct != null && Number.isFinite(displayPct)) {
+      bountyPctLabel =
+        displayPct > 0 && displayPct <= 1
+          ? `${Math.round(displayPct * 1000) / 10}%`
+          : `${Math.round(displayPct * 10) / 10}%`;
+    } else if (bountyAmount > 0 && shareAmount > 0) {
+      bountyPctLabel = `${Math.round((shareAmount / bountyAmount) * 1000) / 10}%`;
+    }
     const displayQty = signedRows ? -qty : qty;
     const displayUnitCost = signedRows ? -unitCost : unitCost;
     const displayLineTotal = signedRows ? -lineTotal : lineTotal;
+    const displayBounty = signedRows ? -Math.abs(bountyAmount) : Math.abs(bountyAmount);
+    const displayShare = signedRows ? -shareAmount : shareAmount;
     const fulfillment = includeFulfillment ? formatLineFulfillmentDisplay(line) : null;
     return {
       key: line.ti_uid || `${line.ti_bs_id}-${index}`,
       productId: line.ti_bs_id || "—",
-      description: line.item_name || "—",
+      description: line.item_name || line.bs_service_name || line.bs_service_desc || "—",
+      choiceLines,
+      specialInstructions,
       unitCost: displayUnitCost,
       qty: displayQty,
+      bounty: displayBounty,
+      bountyPctLabel,
+      share: displayShare,
       lineTotal: displayLineTotal,
       shippedStatus: fulfillment?.statusLabel || "—",
       tracking: fulfillment?.trackingLabel || "—",
@@ -1930,20 +1996,57 @@ function OrderDetailLinesTable({ lines, darkMode, footerLabel, footerAmount, foo
   const formatCellAmount = signedRows ? formatSignedOrderMoney : formatOrderMoney;
   const footerValue = footerAmount ?? detailRows.reduce((sum, row) => sum + row.lineTotal, 0);
   const signedCellStyle = signedRows ? { color: "#B71C1C" } : null;
+  const optionTextColor = darkMode ? "#bbb" : "#666";
+  const noteTextColor = darkMode ? "#aaa" : "#777";
+  const showBuyerShareColumns = !isSellerView;
 
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-      <View style={[styles.businessOrderDetailTable, includeFulfillment && styles.businessOrderDetailTableWithFulfillment]}>
+      <View
+        style={[
+          styles.businessOrderDetailTable,
+          styles.businessOrderDetailTableWithBounty,
+          showBuyerShareColumns && styles.businessOrderDetailTableWithBuyerShare,
+          includeFulfillment && styles.businessOrderDetailTableWithFulfillment,
+        ]}
+      >
         <View style={[styles.businessOrderDetailHeaderRow, darkMode && styles.productSalesDetailHeaderRowDark]}>
-          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColProductId]}>Product ID</Text>
-          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColDescription]}>Description</Text>
-          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColUnitCost]}>Unit cost</Text>
-          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColQty]}>Qty</Text>
-          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColMoney]}>Line total</Text>
+          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColProductId]} numberOfLines={1}>
+            Product ID
+          </Text>
+          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColDescription]} numberOfLines={1}>
+            Description
+          </Text>
+          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColQty]} numberOfLines={1}>
+            Qty
+          </Text>
+          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColUnitCost]} numberOfLines={1}>
+            Unit Cost
+          </Text>
+          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColMoney]} numberOfLines={1}>
+            Line Total
+          </Text>
+          <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColBounty]} numberOfLines={1}>
+            Bounty
+          </Text>
+          {showBuyerShareColumns ? (
+            <>
+              <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColBountyPct]} numberOfLines={1}>
+                Bounty %
+              </Text>
+              <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColShare]} numberOfLines={1}>
+                Your Share
+              </Text>
+            </>
+          ) : null}
           {includeFulfillment ? (
             <>
-              <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColShipped]}>Shipped</Text>
-              <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColTracking]}>Tracking</Text>
+              <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColShipped]} numberOfLines={1}>
+                Shipped
+              </Text>
+              <Text style={[styles.businessOrderDetailHeaderCell, styles.businessOrderDetailColTracking]} numberOfLines={1}>
+                Tracking
+              </Text>
             </>
           ) : null}
         </View>
@@ -1959,18 +2062,47 @@ function OrderDetailLinesTable({ lines, darkMode, footerLabel, footerAmount, foo
             <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColProductId, styles.businessOrderDetailProductId, darkMode && { color: "#eee" }]}>
               {row.productId}
             </Text>
-            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColDescription, darkMode && { color: "#ccc" }]} numberOfLines={3}>
-              {row.description}
+            <View style={[styles.businessOrderDetailCell, styles.businessOrderDetailColDescription]}>
+              <Text style={[{ fontSize: 13, color: darkMode ? "#ccc" : "#333" }]} numberOfLines={3}>
+                {row.description}
+              </Text>
+              {(row.choiceLines || []).map((choiceLine, choiceIdx) => (
+                <Text
+                  key={`${row.key}-opt-${choiceIdx}`}
+                  style={{ fontSize: 11, color: optionTextColor, marginTop: 2, lineHeight: 15 }}
+                  numberOfLines={2}
+                >
+                  {formatChoiceLineText(choiceLine)}
+                </Text>
+              ))}
+              {row.specialInstructions ? (
+                <Text style={{ fontSize: 11, color: noteTextColor, marginTop: 2, fontStyle: "italic", lineHeight: 15 }} numberOfLines={2}>
+                  Note: {row.specialInstructions}
+                </Text>
+              ) : null}
+            </View>
+            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
+              {row.qty}
             </Text>
             <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
               {formatCellAmount(row.unitCost)}
             </Text>
-            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
-              {row.qty}
-            </Text>
             <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColMoney, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
               {formatCellAmount(row.lineTotal)}
             </Text>
+            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBounty, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
+              {Math.abs(row.bounty) > 0 ? formatCellAmount(row.bounty) : "—"}
+            </Text>
+            {showBuyerShareColumns ? (
+              <>
+                <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBountyPct, darkMode && { color: "#ccc" }]}>
+                  {row.bountyPctLabel || "—"}
+                </Text>
+                <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColShare, signedCellStyle, darkMode && !signedRows && { color: "#ccc" }]}>
+                  {Math.abs(row.share) > 0 ? formatCellAmount(row.share) : "—"}
+                </Text>
+              </>
+            ) : null}
             {includeFulfillment ? (
               <>
                 <View style={[styles.businessOrderDetailColShipped, styles.productSalesDetailStatusCell]}>
@@ -1998,8 +2130,8 @@ function OrderDetailLinesTable({ lines, darkMode, footerLabel, footerAmount, foo
           <View style={[styles.orderDetailLineTableFooterRow, darkMode && styles.productSalesDetailTotalRowDark]}>
             <Text style={[styles.orderDetailLineTableFooterLabel, styles.businessOrderDetailColProductId, darkMode && { color: "#eee" }]}>{footerLabel}</Text>
             <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColDescription]} />
-            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost]} />
             <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColQty]} />
+            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColUnitCost]} />
             <Text
               style={[
                 styles.orderDetailLineTableFooterValue,
@@ -2010,6 +2142,13 @@ function OrderDetailLinesTable({ lines, darkMode, footerLabel, footerAmount, foo
             >
               {formatFooterAmount(footerValue)}
             </Text>
+            <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBounty]} />
+            {showBuyerShareColumns ? (
+              <>
+                <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColBountyPct]} />
+                <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColShare]} />
+              </>
+            ) : null}
             {includeFulfillment ? (
               <>
                 <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColShipped]} />
@@ -2050,7 +2189,18 @@ function OrderDetailShippingCard({ shippingAddress, darkMode }) {
 
 const SHIPPING_CARRIER_OPTIONS = ["USPS", "UPS", "FedEx", "DHL", "Other"];
 
-function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, error, darkMode, isSellerView, onSaveFulfillment }) {
+function OrderDetailModal({
+  visible,
+  onClose,
+  orderUid,
+  orderDetail,
+  loading,
+  error,
+  darkMode,
+  isSellerView,
+  onSaveFulfillment,
+  bountyRows = [],
+}) {
   const sale = orderDetail?.sale || null;
   const returns = Array.isArray(orderDetail?.returns) ? orderDetail.returns : [];
   const summary = orderDetail?.summary || null;
@@ -2215,7 +2365,14 @@ function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, er
               {needsShipping ? <OrderDetailShippingCard shippingAddress={shippingAddress} darkMode={darkMode} /> : null}
 
               <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { marginTop: 8 }]}>Items purchased</Text>
-              <OrderDetailLinesTable lines={saleLines} darkMode={darkMode} showFulfillmentColumns={showFulfillmentColumns} />
+              <OrderDetailLinesTable
+                lines={saleLines}
+                darkMode={darkMode}
+                showFulfillmentColumns={showFulfillmentColumns}
+                bountyRows={bountyRows}
+                transactionUid={transactionUid}
+                isSellerView={isSellerView}
+              />
 
               {showSellerShipControls ? (
                 <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
@@ -2381,7 +2538,14 @@ function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, er
                   {returns.map((ret, retIndex) => (
                     <View key={ret.transaction_uid || retIndex} style={styles.orderDetailReturnBlock}>
                       <OrderDetailReturnHeader transaction={ret} darkMode={darkMode} />
-                      <OrderDetailLinesTable lines={ret.lines || []} darkMode={darkMode} signedRows />
+                      <OrderDetailLinesTable
+                        lines={ret.lines || []}
+                        darkMode={darkMode}
+                        signedRows
+                        bountyRows={bountyRows}
+                        transactionUid={String(ret.transaction_uid || transactionUid || "").trim()}
+                        isSellerView={isSellerView}
+                      />
                     </View>
                   ))}
                 </>
@@ -6554,18 +6718,27 @@ export default function AccountScreen({ navigation }) {
 
                         const transactionServices =
                           businessReceiptCache[transaction.transaction_uid] || businessBountyData?.data?.filter((item) => item.transaction_uid === transaction.transaction_uid) || [];
-                        const returnLogistics = getReturnLogisticsForCachedUid(
-                          transaction,
-                          returnStatuses,
-                          transaction.transaction_uid,
-                        ) || resolveReturnLogisticsLabels(transaction, {
-                          returnRequested:
-                            transaction.transaction_return_requested === 1 ||
-                            returnRequests[transaction.transaction_uid]?.items?.length > 0,
-                        });
+                        // Seller Business Purchases: only trust API return fields (or cache when API
+                        // already says a return exists). Do not invent a return from:
+                        // - buyer-local returnRequests leftovers
+                        // - unrelated display_status / lifecycle strings on the sale row
+                        // - stale return_status_* AsyncStorage alone
+                        const apiReturnRequested = Number(transaction.transaction_return_requested) === 1;
+                        const rowReturnLogistics = resolveReturnLogisticsLabels(transaction);
+                        const returnLogistics =
+                          apiReturnRequested || rowReturnLogistics
+                            ? getReturnLogisticsForCachedUid(transaction, returnStatuses, transaction.transaction_uid) ||
+                              rowReturnLogistics ||
+                              (apiReturnRequested
+                                ? resolveReturnLogisticsLabels(transaction, { returnRequested: 1 })
+                                : null)
+                            : null;
+                        const hasCustomerReturnRequest = apiReturnRequested || !!returnLogistics;
                         const awaitingReturnAction =
                           returnLogistics?.return_status === "returning" && returnLogistics?.refund_status === "pending";
                         const returnRefunded = returnLogistics?.refund_status === "refunded";
+                        const showReturnCompletedRow =
+                          returnRefunded || returnLogistics?.return_status === "returned";
 
                         return (
                           <View key={transaction.transaction_uid || i}>
@@ -6601,11 +6774,11 @@ export default function AccountScreen({ navigation }) {
                                 style={[
                                   styles.businessTransactionCell,
                                   {
-                                    color: returnRefunded || returnLogistics?.return_status === "returned" ? "#B71C1C" : "#333",
+                                    color: showReturnCompletedRow ? "#B71C1C" : "#333",
                                   },
                                 ]}
                               >
-                                {returnRefunded || returnLogistics?.return_status === "returned"
+                                {showReturnCompletedRow
                                   ? `-$${transaction.transaction_taxes.toFixed(2)}`
                                   : `$${transaction.transaction_taxes.toFixed(2)}`}
                               </Text>
@@ -6640,7 +6813,7 @@ export default function AccountScreen({ navigation }) {
                                   <Text style={styles.noServicesText}>No services data available</Text>
                                 )}
                                 {/* Return request indicator */}
-                                {(transaction.transaction_return_requested === 1 || returnRequests[transaction.transaction_uid]?.items?.length > 0) && (
+                                {hasCustomerReturnRequest && (
                                   <TouchableOpacity
                                     style={{
                                       marginTop: 8,
@@ -6665,7 +6838,7 @@ export default function AccountScreen({ navigation }) {
                                     <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>Return Requested by Customer — Tap for Return Details</Text>
                                   </TouchableOpacity>
                                 )}
-                                {(returnRefunded || returnLogistics?.return_status === "returned") && (
+                                {showReturnCompletedRow && (
                                   <View
                                     style={{
                                       flexDirection: "row",
@@ -6722,6 +6895,8 @@ export default function AccountScreen({ navigation }) {
                     <View style={styles.receiptTableHeader}>
                       <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellItem]}>Item</Text>
                       <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellQty]}>Qty</Text>
+                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellBounty]}>Bounty</Text>
+                      <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellShare]}>Your Share</Text>
                       <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellCost]}>Unit</Text>
                       <Text style={[styles.receiptHeaderCell, styles.receiptHeaderCellCost]}>Total</Text>
                     </View>
@@ -6736,7 +6911,20 @@ export default function AccountScreen({ navigation }) {
                         receiptTransaction?.transaction_uid,
                       );
                       const bountyDisplay = resolveReceiptLineBountyDisplay(item, bountyRow);
-                      const bountyMetaColor = darkMode ? "#aaa" : "#666";
+                      const bountyCell =
+                        bountyDisplay?.lineBounty != null && bountyDisplay.lineBounty > 0
+                          ? `$${bountyDisplay.lineBounty.toFixed(2)}`
+                          : "—";
+                      const shareCell =
+                        bountyDisplay?.earned != null ? `$${bountyDisplay.earned.toFixed(2)}` : "—";
+                      const sharePct =
+                        bountyDisplay?.percentage != null
+                          ? bountyDisplay.percentage > 0 && bountyDisplay.percentage <= 1
+                            ? `${Math.round(bountyDisplay.percentage * 1000) / 10}%`
+                            : `${Math.round(bountyDisplay.percentage * 10) / 10}%`
+                          : null;
+                      const moneyCellColor = darkMode ? "#ddd" : "#333";
+                      const moneyMetaColor = darkMode ? "#aaa" : "#666";
 
                       const enrich = {
                         ...(receiptEnrichedItems[tiUid] || enrichFromReceiptRow(item) || receiptEnrichedItems[item.ti_bs_id] || receiptEnrichedItems[item.bs_uid] || {}),
@@ -6761,27 +6949,25 @@ export default function AccountScreen({ navigation }) {
                                   {qtyTypeLabel}
                                 </Text>
                               ) : null}
-                              {bountyDisplay?.itemLabel ? (
-                                <Text style={{ fontSize: 10, color: bountyMetaColor, lineHeight: 14, marginTop: 2 }}>
-                                  Bounty: {bountyDisplay.itemLabel}
-                                </Text>
-                              ) : null}
-                              {bountyDisplay?.shareLabel ? (
-                                <Text style={{ fontSize: 10, color: bountyMetaColor, lineHeight: 14 }}>
-                                  Your share: {bountyDisplay.shareLabel}
-                                </Text>
+                            </View>
+                            <Text style={[styles.receiptTableCell, styles.receiptTableCellQty, { color: moneyCellColor }]}>{qty}</Text>
+                            <Text style={[styles.receiptTableCell, styles.receiptTableCellBounty, { color: moneyCellColor }]}>{bountyCell}</Text>
+                            <View style={styles.receiptTableCellShare}>
+                              <Text style={[styles.receiptTableCell, { color: moneyCellColor, width: "100%", textAlign: "right", paddingHorizontal: 0 }]}>
+                                {shareCell}
+                              </Text>
+                              {sharePct && shareCell !== "—" ? (
+                                <Text style={{ fontSize: 9, color: moneyMetaColor, textAlign: "right", lineHeight: 12 }}>{sharePct}</Text>
                               ) : null}
                             </View>
-                            <Text style={[styles.receiptTableCell, styles.receiptTableCellQty]}>{qty}</Text>
-                            <Text style={[styles.receiptTableCell, styles.receiptTableCellCost]}>${baseCost.toFixed(2)}</Text>
-                            <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, { fontWeight: "600" }]}>
+                            <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, { color: moneyCellColor }]}>${baseCost.toFixed(2)}</Text>
+                            <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, { fontWeight: "600", color: moneyCellColor }]}>
                               ${lineTotal.toFixed(2)}
                             </Text>
                           </View>
                         );
                       }
 
-                      const choicesExtraCost = getReceiptLineChoicesExtraCost(item, enrich);
                       const unitPrice = getReceiptLineUnitPrice(item, enrich);
                       const lineTotal = unitPrice * qty;
                       const summaryDescription =
@@ -6805,20 +6991,19 @@ export default function AccountScreen({ navigation }) {
                                 marginTop: 2,
                               }}
                             />
-                            {bountyDisplay?.itemLabel ? (
-                              <Text style={{ fontSize: 10, color: bountyMetaColor, lineHeight: 14, marginTop: 2 }}>
-                                Bounty: {bountyDisplay.itemLabel}
-                              </Text>
-                            ) : null}
-                            {bountyDisplay?.shareLabel ? (
-                              <Text style={{ fontSize: 10, color: bountyMetaColor, lineHeight: 14 }}>
-                                Your share: {bountyDisplay.shareLabel}
-                              </Text>
+                          </View>
+                          <Text style={[styles.receiptTableCell, styles.receiptTableCellQty, { color: moneyCellColor }]}>{qty}</Text>
+                          <Text style={[styles.receiptTableCell, styles.receiptTableCellBounty, { color: moneyCellColor }]}>{bountyCell}</Text>
+                          <View style={styles.receiptTableCellShare}>
+                            <Text style={[styles.receiptTableCell, { color: moneyCellColor, width: "100%", textAlign: "right", paddingHorizontal: 0 }]}>
+                              {shareCell}
+                            </Text>
+                            {sharePct && shareCell !== "—" ? (
+                              <Text style={{ fontSize: 9, color: moneyMetaColor, textAlign: "right", lineHeight: 12 }}>{sharePct}</Text>
                             ) : null}
                           </View>
-                          <Text style={[styles.receiptTableCell, styles.receiptTableCellQty]}>{qty}</Text>
-                          <Text style={[styles.receiptTableCell, styles.receiptTableCellCost]}>${unitPrice.toFixed(2)}</Text>
-                          <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, { fontWeight: "600" }]}>
+                          <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, { color: moneyCellColor }]}>${unitPrice.toFixed(2)}</Text>
+                          <Text style={[styles.receiptTableCell, styles.receiptTableCellCost, { fontWeight: "600", color: moneyCellColor }]}>
                             ${lineTotal.toFixed(2)}
                           </Text>
                         </View>
@@ -7687,6 +7872,9 @@ export default function AccountScreen({ navigation }) {
         isSellerView={orderDetailModal.isSellerView}
         darkMode={darkMode}
         onSaveFulfillment={saveOrderFulfillmentUpdates}
+        bountyRows={
+          orderDetailModal.isSellerView ? businessBountyData?.data || [] : bountyData?.data || []
+        }
       />
 
       <ReturnDetailsModal
@@ -8244,6 +8432,12 @@ const styles = StyleSheet.create({
     minWidth: 520,
     marginBottom: 8,
   },
+  businessOrderDetailTableWithBounty: {
+    minWidth: 700,
+  },
+  businessOrderDetailTableWithBuyerShare: {
+    minWidth: 900,
+  },
   businessOrderDetailHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -8257,6 +8451,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#888",
     paddingHorizontal: 6,
+    flexShrink: 0,
   },
   businessOrderDetailDataRow: {
     flexDirection: "row",
@@ -8268,12 +8463,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#333",
     paddingHorizontal: 6,
+    flexShrink: 0,
   },
   businessOrderDetailColProductId: {
-    width: 100,
+    width: 104,
   },
   businessOrderDetailColDescription: {
-    width: 180,
+    width: 200,
   },
   businessOrderDetailProductId: {
     fontWeight: "600",
@@ -8313,22 +8509,34 @@ const styles = StyleSheet.create({
     marginTop: -4,
   },
   businessOrderDetailColUnitCost: {
-    width: 80,
+    width: 86,
     textAlign: "right",
   },
   businessOrderDetailColQty: {
     width: 44,
     textAlign: "right",
   },
+  businessOrderDetailColBounty: {
+    width: 72,
+    textAlign: "right",
+  },
+  businessOrderDetailColBountyPct: {
+    width: 78,
+    textAlign: "right",
+  },
+  businessOrderDetailColShare: {
+    width: 92,
+    textAlign: "right",
+  },
   businessOrderDetailColMoney: {
-    width: 84,
+    width: 90,
     textAlign: "right",
   },
   businessOrderDetailTableWithFulfillment: {
-    minWidth: 780,
+    minWidth: 1020,
   },
   businessOrderDetailColShipped: {
-    width: 100,
+    width: 86,
   },
   businessOrderDetailColTracking: {
     width: 160,
@@ -8880,11 +9088,21 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   receiptHeaderCellQty: {
-    width: 30,
+    width: 28,
     textAlign: "center",
   },
+  receiptHeaderCellBounty: {
+    width: 52,
+    textAlign: "right",
+    fontSize: 10,
+  },
+  receiptHeaderCellShare: {
+    width: 56,
+    textAlign: "right",
+    fontSize: 10,
+  },
   receiptHeaderCellCost: {
-    width: 54,
+    width: 50,
     textAlign: "right",
   },
   receiptTableRow: {
@@ -8908,11 +9126,20 @@ const styles = StyleSheet.create({
     paddingRight: 4,
   },
   receiptTableCellQty: {
-    width: 30,
+    width: 28,
     textAlign: "center",
   },
+  receiptTableCellBounty: {
+    width: 52,
+    textAlign: "right",
+  },
+  receiptTableCellShare: {
+    width: 56,
+    paddingHorizontal: 4,
+    alignItems: "flex-end",
+  },
   receiptTableCellCost: {
-    width: 54,
+    width: 50,
     textAlign: "right",
   },
   receiptCloseButton: {

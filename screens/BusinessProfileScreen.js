@@ -64,6 +64,41 @@ const SHOW_BUSINESS_PROFILE_CONTACT_SECTION = false;
 // Module-level cache so category list is fetched at most once per app session
 let _categoryListCache = null;
 
+const getServiceUid = (service) => String(service?.bs_uid ?? "").trim();
+
+/** Normalize GET /api/business_service_options/{bs_uid} into choice-group array. */
+const parseServiceOptionsResponse = (data) => {
+  if (Array.isArray(data?.result)) return data.result;
+  if (Array.isArray(data?.choice_groups)) return data.choice_groups;
+  if (Array.isArray(data?.data?.result)) return data.data.result;
+  if (Array.isArray(data?.data?.choice_groups)) return data.data.choice_groups;
+  if (Array.isArray(data)) return data;
+  return [];
+};
+
+const buildBusinessServicesList = (rawBusiness, resultServices, profileCcFeePayer) => {
+  let list = [];
+  // Prefer DB-backed services from businessinfo — they always include bs_uid.
+  if (Array.isArray(resultServices) && resultServices.length > 0) {
+    list = resultServices;
+  } else if (rawBusiness?.business_services) {
+    if (typeof rawBusiness.business_services === "string") {
+      try {
+        list = JSON.parse(rawBusiness.business_services);
+      } catch (e) {
+        list = [];
+      }
+    } else if (Array.isArray(rawBusiness.business_services)) {
+      list = rawBusiness.business_services;
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  return list.map((svc) => ({
+    ...normalizeBusinessServiceFromApi(svc),
+    business_cc_fee_payer: profileCcFeePayer,
+  }));
+};
+
 export default function BusinessProfileScreen({ route, navigation }) {
   const { darkMode } = useDarkMode();
   const { business_uid, returnTo, searchState } = route.params || {};
@@ -546,29 +581,7 @@ export default function BusinessProfileScreen({ route, navigation }) {
         business_profile_img: businessProfileImgUrl,
         business_profile_img_is_public: rawBusiness.business_profile_img_is_public === "1" || rawBusiness.business_profile_img_is_public === 1,
         business_cc_fee_payer: profileCcFeePayer,
-        business_services: (() => {
-          let list = [];
-          if (rawBusiness.business_services) {
-            if (typeof rawBusiness.business_services === "string") {
-              try {
-                list = JSON.parse(rawBusiness.business_services);
-              } catch (e) {
-                list = [];
-              }
-            } else if (Array.isArray(rawBusiness.business_services)) {
-              list = rawBusiness.business_services;
-            }
-          }
-
-          if ((!Array.isArray(list) || list.length === 0) && Array.isArray(result.services)) {
-            list = result.services;
-          }
-          if (!Array.isArray(list)) return [];
-          return list.map((svc) => ({
-            ...normalizeBusinessServiceFromApi(svc),
-            business_cc_fee_payer: profileCcFeePayer,
-          }));
-        })(),
+        business_services: buildBusinessServicesList(rawBusiness, result.services, profileCcFeePayer),
         business_updated_at: rawBusiness.business_updated_at ?? rawBusiness.updated_at,
       };
 
@@ -792,16 +805,19 @@ export default function BusinessProfileScreen({ route, navigation }) {
     console.log("🛒 handleProductPress - service.bs_uid:", service.bs_uid);
     console.log("🛒 handleProductPress - full service:", JSON.stringify(service, null, 2));
     // Fetch choice groups for this service
-    if (service.bs_uid && String(service.bs_uid).trim() !== "") {
+    const serviceUid = getServiceUid(service);
+    if (serviceUid) {
       setServiceOptionsLoading(true);
-      fetch(`${API_BASE_URL}/api/business_service_options/${service.bs_uid}`)
+      fetch(`${API_BASE_URL}/api/business_service_options/${encodeURIComponent(serviceUid)}`)
         .then((res) => res.json())
         .then((data) => {
           console.log("🛒 Options response data:", JSON.stringify(data, null, 2));
-          setServiceOptions(data.result || []);
+          setServiceOptions(parseServiceOptionsResponse(data));
         })
         .catch((e) => console.warn("Failed to load service options:", e))
         .finally(() => setServiceOptionsLoading(false));
+    } else {
+      console.warn("🛒 handleProductPress — missing bs_uid; cannot load options");
     }
     setBountySort("connection");
     setBountySearch("");
@@ -2048,7 +2064,14 @@ export default function BusinessProfileScreen({ route, navigation }) {
               </TouchableOpacity>
               {showServices &&
                 business.business_services.map((service, idx) => (
-                  <ProductCard key={idx} service={service} businessUid={business_uid} showEditButton={isOwner} darkMode={darkMode} onPress={() => handleProductPress(service)} />
+                  <ProductCard
+                    key={getServiceUid(service) ? `${getServiceUid(service)}-${idx}` : `svc-${idx}`}
+                    service={service}
+                    businessUid={business_uid}
+                    showEditButton={isOwner}
+                    darkMode={darkMode}
+                    onPress={() => handleProductPress(service)}
+                  />
                 ))}
             </View>
           )}
