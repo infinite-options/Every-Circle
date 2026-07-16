@@ -1637,7 +1637,7 @@ export default function SettingsScreen() {
           {showInformation && (
             <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { marginBottom: 16 }]}>
               {/* How It Works */}
-              <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("HowItWorksScreen")}>
+              <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("HowItWorksScreen")}>
                 <View style={styles.itemLabel}>
                   <MaterialIcons name='help' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>How It Works</Text>
@@ -1646,7 +1646,7 @@ export default function SettingsScreen() {
               </TouchableOpacity>
 
               {/* Contact Us */}
-              <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ContactUs")}>
+              <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ContactUs")}>
                 <View style={styles.itemLabel}>
                   <MaterialIcons name='contact-mail' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Contact Us</Text>
@@ -1655,7 +1655,7 @@ export default function SettingsScreen() {
               </TouchableOpacity>
 
               {/* Terms and Conditions */}
-              <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("TermsAndConditions")}>
+              <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("TermsAndConditions")}>
                 <View style={styles.itemLabel}>
                   <MaterialIcons name='description' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Terms & Conditions</Text>
@@ -1664,7 +1664,7 @@ export default function SettingsScreen() {
               </TouchableOpacity>
 
               {/* Privacy Policy */}
-              <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("PrivacyPolicy")}>
+              <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("PrivacyPolicy")}>
                 <View style={styles.itemLabel}>
                   <MaterialIcons name='privacy-tip' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Privacy Policy</Text>
@@ -1673,7 +1673,7 @@ export default function SettingsScreen() {
               </TouchableOpacity>
 
               {/* Change Password */}
-              {!hideChangePassword && <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
+              {!hideChangePassword && <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
                 <View style={styles.itemLabel}>
                   <MaterialIcons name='lock' size={20} style={styles.icon} color={settingsMenuIconColor} />
                   <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
@@ -2837,6 +2837,11 @@ const styles = StyleSheet.create({
   /** Tighter vertical padding so title-to-title spacing matches single-line rows above/below */
   settingItemWithHelp: {
     paddingVertical: 7,
+  },
+  /** Denser rows for Information section links */
+  compactSettingItem: {
+    paddingVertical: 8,
+    marginBottom: 0,
   },
   darkSettingItem: {
     backgroundColor: COLORS.darkItemBackground,

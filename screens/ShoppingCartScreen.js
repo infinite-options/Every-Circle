@@ -594,7 +594,12 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
           throw new Error(result.error.message || "Payment failed");
         }
 
-        await recordSingleBusinessTransaction(buyerUid, clientSecret, group, escrowBySeller[group.sellerId] !== false);
+        // Client secret is pi_xxx_secret_yyy — store only the PaymentIntent ID for refunds
+        const paymentIntentId = String(clientSecret || "").split("_secret_")[0];
+        if (!paymentIntentId) {
+          throw new Error("Invalid payment intent. Please try again.");
+        }
+        await recordSingleBusinessTransaction(buyerUid, paymentIntentId, group, escrowBySeller[group.sellerId] !== false);
         completedGroups.push(group);
       }
 

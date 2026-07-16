@@ -14,6 +14,7 @@ import {
   TRANSACTIONS_RETURN_ENDPOINT,
   TRANSACTIONS_RETURN_CONFIRM_ENDPOINT,
   TRANSACTIONS_RETURNS_DECLINED_ENDPOINT,
+  CREATE_REFUND_ENDPOINT,
 } from "../apiConfig";
 import Svg, { Circle, Line, Text as SvgText, G, Path } from "react-native-svg";
 import { useFocusEffect } from "@react-navigation/native";
@@ -855,6 +856,96 @@ function resolveSaleOrderUid(saleRow) {
 
 function isReturnListRow(row) {
   return Number(row?.is_return) === 1 || String(row?.transaction_type || "").toLowerCase() === "return";
+}
+
+/**
+ * Seller confirm note selects which Stripe account (IO-Payments business_code) to refund on.
+ * Test codes (ECTEST / PMTEST) must match the account used at purchase; anything else → EC / PM live.
+ */
+function resolveRefundBusinessCode(sellerNote) {
+  const n = String(sellerNote || "").trim().toUpperCase();
+  if (n === "ECTEST" || n === "PMTEST") return n;
+  if (n === "EC" || n === "PM") return n;
+  // Default live (createPaymentIntent uses ECTEST in dev; live purchases use EC)
+  return "EC";
+}
+
+/**
+ * POST createRefund on IO-Payments — same shape as createPaymentIntent, plus payment_intent.
+ * Caller is responsible for using the same business_code family as the original charge.
+ */
+async function createStripeRefund({ customerUid, businessCode, paymentIntent, refundAmount, tax = 0, metadata = null }) {
+  const total = Number(refundAmount);
+  if (!customerUid) throw new Error("customer_uid is required for refund");
+  if (!paymentIntent) throw new Error("payment_intent is required for refund");
+  if (!Number.isFinite(total) || total <= 0) throw new Error("Invalid refund amount");
+
+  const requestBody = {
+    customer_uid: customerUid,
+    business_code: businessCode || "EC",
+    payment_intent: String(paymentIntent).split("_secret_")[0],
+    payment_summary: {
+      tax: parseFloat(Number(tax || 0).toFixed(2)),
+      total: Number(total).toFixed(2),
+    },
+  };
+  if (metadata && typeof metadata === "object") {
+    requestBody.metadata = metadata;
+  }
+
+  console.log("============================================");
+  console.log("ENDPOINT: CREATE_REFUND");
+  console.log("URL:", CREATE_REFUND_ENDPOINT);
+  console.log("METHOD: POST");
+  console.log("REQUEST BODY:", JSON.stringify(requestBody, null, 2));
+  console.log("============================================");
+
+  const response = await fetch(CREATE_REFUND_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requestBody),
+  });
+
+  console.log("RESPONSE STATUS:", response.status);
+  console.log("RESPONSE OK:", response.ok);
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch (_) {
+    data = null;
+  }
+  console.log("RESPONSE BODY:", JSON.stringify(data, null, 2));
+
+  if (!response.ok) {
+    const message =
+      (data && typeof data === "object" && (data.error || data.message)) ||
+      `Refund request failed (HTTP ${response.status})`;
+    return {
+      ok: false,
+      skipped: false,
+      refund_id: null,
+      message: String(message),
+      stripe_response: data,
+      http_status: response.status,
+    };
+  }
+
+  const refundId =
+    (typeof data === "string" && data.startsWith("re_") ? data : null) ||
+    data?.id ||
+    data?.refund_id ||
+    data?.refund?.id ||
+    null;
+
+  return {
+    ok: true,
+    skipped: false,
+    refund_id: refundId,
+    message: data?.message || "Refund created",
+    stripe_response: data,
+    http_status: response.status,
+  };
 }
 
 /**
@@ -4213,6 +4304,9 @@ export default function AccountScreen({ navigation }) {
 
   const [showDeclineNoteModal, setShowDeclineNoteModal] = useState(false);
   const [declineNote, setDeclineNote] = useState("");
+  const [showConfirmReceiptNoteModal, setShowConfirmReceiptNoteModal] = useState(false);
+  const [confirmReceiptNote, setConfirmReceiptNote] = useState("");
+  const [pendingConfirmReceipt, setPendingConfirmReceipt] = useState(null); // { transactionUid, orderUid, orderDetail, listIdx }
   const [pendingDeclineIdx, setPendingDeclineIdx] = useState(null);
 
   // above your effect or focus logic
@@ -4548,7 +4642,71 @@ export default function AccountScreen({ navigation }) {
     return { ok: true, result: result?.data && typeof result.data === "object" ? result.data : result };
   };
 
-  const handleSellerReturnConfirmAction = async ({ transactionUid, orderUidForStatus, action, sellerNote = "" }) => {
+  /**
+   * Persist successful IO-Payments createRefund when confirm still stored rejected/CC Issue
+   * (Every-Circle local Stripe path had no secret key).
+   */
+  const persistRefundedStatusToBackend = async ({
+    transactionUid,
+    sellerId,
+    orderUid,
+    returnTransactionUid,
+    state,
+    stripeRefund,
+  }) => {
+    const body = {
+      transaction_uid: transactionUid,
+      seller_id: sellerId,
+      action: "set_refund_status",
+      return_status: "returned",
+      refund_status: "refunded",
+      display_status: state?.display_status || "Returned - Refunded",
+      transaction_return_status: "returned",
+      transaction_refund_status: "refunded",
+    };
+    const orderKey = String(orderUid || "").trim();
+    const returnTxn = String(returnTransactionUid || "").trim();
+    if (orderKey) body.order_uid = orderKey;
+    if (returnTxn) body.return_transaction_uid = returnTxn;
+    if (stripeRefund && typeof stripeRefund === "object") body.stripe_refund = stripeRefund;
+    if (stripeRefund?.refund_id) body.stripe_refund_id = stripeRefund.refund_id;
+
+    console.log("============================================");
+    console.log("ENDPOINT: TRANSACTIONS_RETURN_CONFIRM (set_refund_status → refunded)");
+    console.log("URL:", TRANSACTIONS_RETURN_CONFIRM_ENDPOINT);
+    console.log("METHOD: PUT");
+    console.log("REQUEST BODY:", JSON.stringify(body, null, 2));
+    console.log("============================================");
+
+    const response = await fetch(TRANSACTIONS_RETURN_CONFIRM_ENDPOINT, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    let result = null;
+    try {
+      result = await response.json();
+    } catch (_) {
+      result = null;
+    }
+    const apiCode = result?.code ?? result?.data?.code;
+    if (!response.ok || (apiCode != null && !isApiSuccessCode(apiCode))) {
+      const message = result?.message || result?.data?.message || `HTTP ${response.status}`;
+      // Deployed API may still be the old confirm handler (confirm|decline only).
+      if (/action must be ['"]confirm['"] or ['"]decline['"]/i.test(String(message))) {
+        console.warn(
+          "Every-Circle-Backend is not deployed with set_refund_status yet. Deploy transactions.py so refunded/CC Issue can be persisted. Local UI will still show refunded.",
+          body,
+        );
+        return { ok: false, undeployed: true, result };
+      }
+      console.warn("Failed to persist refunded status to backend:", message, body);
+      return { ok: false, result };
+    }
+    return { ok: true, result: result?.data && typeof result.data === "object" ? result.data : result };
+  };
+
+  const handleSellerReturnConfirmAction = async ({ transactionUid, orderUidForStatus, action, sellerNote = "", stripeRefundResult = null }) => {
     const sellerId = resolveSellerIdForReturn(transactionUid);
     if (!sellerId) {
       Alert.alert("Error", "Missing seller_id for return confirmation.");
@@ -4561,6 +4719,18 @@ export default function AccountScreen({ navigation }) {
         action,
         transaction_return_seller_note: sellerNote || (action === "confirm" ? "Item received" : ""),
       };
+      // When FE already called IO-Payments createRefund, pass result so backend does not re-call Stripe.
+      if (action === "confirm" && stripeRefundResult && typeof stripeRefundResult === "object") {
+        body.stripe_refund = {
+          ok: Boolean(stripeRefundResult.ok),
+          skipped: Boolean(stripeRefundResult.skipped),
+          refund_id: stripeRefundResult.refund_id || null,
+          message: stripeRefundResult.message || null,
+        };
+        if (stripeRefundResult.refund_id) {
+          body.stripe_refund_id = stripeRefundResult.refund_id;
+        }
+      }
       const response = await fetch(TRANSACTIONS_RETURN_CONFIRM_ENDPOINT, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -4582,22 +4752,67 @@ export default function AccountScreen({ navigation }) {
         action === "confirm"
           ? { return_status: "returned", refund_status: "pending", display_status: "Returned - Pending" }
           : { return_status: "returning", refund_status: "rejected", display_status: "Returning - Rejected" };
-      const stripeRefund = payload.stripe_refund || null;
+
+      // Prefer the IO-Payments createRefund result from the FE when present.
+      // Deployed Every-Circle confirm may still report "Stripe secret key not configured"
+      // from its local key path even after createRefund already succeeded on Stripe.
+      const clientStripeOk = action === "confirm" && stripeRefundResult?.ok === true;
+      const stripeRefund = clientStripeOk
+        ? {
+            ok: true,
+            skipped: false,
+            refund_id: stripeRefundResult.refund_id || payload.stripe_refund?.refund_id || null,
+            message: stripeRefundResult.message || "Refund created",
+          }
+        : payload.stripe_refund || stripeRefundResult || null;
+
       const stripeFailedOnConfirm =
         action === "confirm" &&
+        !clientStripeOk &&
         (payload.refund_status === "rejected" ||
           payload.refund_status === "stripe_fail" ||
           payload.refund_status === "stripe_failed" ||
           stripeRefund?.ok === false ||
           stripeRefund?.skipped === true);
+
       const state = extractReturnRefundState(payload, {
         return_status: payload.return_status || defaults.return_status,
-        refund_status: stripeFailedOnConfirm ? "stripe_fail" : payload.refund_status || defaults.refund_status,
-        display_status: stripeFailedOnConfirm ? "Returned - CC Issue" : payload.display_status || defaults.display_status,
+        refund_status: clientStripeOk
+          ? "refunded"
+          : stripeFailedOnConfirm
+            ? "stripe_fail"
+            : payload.refund_status || defaults.refund_status,
+        display_status: clientStripeOk
+          ? "Returned - Refunded"
+          : stripeFailedOnConfirm
+            ? "Returned - CC Issue"
+            : payload.display_status || defaults.display_status,
         returnRequested: 1,
         stripe_refund: stripeRefund,
       });
-      if (stripeFailedOnConfirm) {
+      if (clientStripeOk) {
+        state.return_status = "returned";
+        state.refund_status = "refunded";
+        state.display_status = "Returned - Refunded";
+        // If backend still stored rejected/CC Issue (old local Stripe path), correct it.
+        const backendRefund = String(payload.refund_status || payload.transaction_refund_status || "")
+          .trim()
+          .toLowerCase();
+        if (backendRefund !== "refunded") {
+          try {
+            await persistRefundedStatusToBackend({
+              transactionUid,
+              sellerId,
+              orderUid: orderUidForStatus || resolveListRowOrderUid(payload) || transactionUid,
+              returnTransactionUid: payload.return_transaction_uid || payload.transaction_uid,
+              state,
+              stripeRefund,
+            });
+          } catch (persistErr) {
+            console.warn("Error persisting refunded status after successful createRefund:", persistErr);
+          }
+        }
+      } else if (stripeFailedOnConfirm) {
         state.return_status = "returned";
         state.refund_status = "stripe_fail";
         state.display_status = "Returned - CC Issue";
@@ -4666,13 +4881,121 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
-  const handleReturnAccept = async (transactionUid, orderUidForStatus, sellerNote = "Item received") => {
+  const handleReturnAccept = async (transactionUid, orderUidForStatus, sellerNote = "Item received", stripeRefundResult = null) => {
     return handleSellerReturnConfirmAction({
       transactionUid,
       orderUidForStatus,
       action: "confirm",
       sellerNote,
+      stripeRefundResult,
     });
+  };
+
+  /**
+   * Prompt for seller note, call IO-Payments createRefund (business_code from note), then confirm on EC backend.
+   */
+  const openConfirmReceiptNoteModal = ({ transactionUid, orderUid, orderDetail = null, listIdx = null }) => {
+    setPendingConfirmReceipt({ transactionUid, orderUid, orderDetail, listIdx });
+    setConfirmReceiptNote("");
+    setShowConfirmReceiptNoteModal(true);
+  };
+
+  const submitConfirmReceiptWithNote = async () => {
+    const pending = pendingConfirmReceipt;
+    if (!pending?.transactionUid) {
+      setShowConfirmReceiptNoteModal(false);
+      return;
+    }
+    const sellerNote = String(confirmReceiptNote || "").trim() || "Item received";
+    const businessCode = resolveRefundBusinessCode(sellerNote);
+    const orderDetail = pending.orderDetail || returnDetailModal.orderDetail;
+    const sale = orderDetail?.sale || orderDetail || {};
+    const paymentIntent = String(sale.transaction_stripe_pi || "").split("_secret_")[0];
+    const buyerUid = String(sale.transaction_profile_id || "").trim();
+    const returnItems = buildReturnDetailDisplayItems(orderDetail, businessBountyData?.data || []);
+    const reverse = buildReverseTransactionFromReturnItems(returnItems, sale, {
+      refundBreakdown: orderDetail?.refund_breakdown || null,
+      returns: Array.isArray(orderDetail?.returns) ? orderDetail.returns : [],
+    });
+    const refundAmount = Math.abs(Number(reverse?.total) || 0);
+    const refundTax = Math.abs(Number(reverse?.taxes) || 0);
+
+    setShowConfirmReceiptNoteModal(false);
+    setReturnDetailAccepting(true);
+    let stripeRefundResult = null;
+    try {
+      if (paymentIntent && refundAmount > 0 && buyerUid) {
+        stripeRefundResult = await createStripeRefund({
+          customerUid: buyerUid,
+          businessCode,
+          paymentIntent,
+          refundAmount,
+          tax: refundTax,
+          metadata: {
+            order_uid: pending.orderUid || pending.transactionUid,
+            transaction_uid: pending.transactionUid,
+            seller_note: sellerNote,
+          },
+        });
+      } else {
+        stripeRefundResult = {
+          ok: false,
+          skipped: true,
+          refund_id: null,
+          message: !paymentIntent
+            ? "No Stripe payment intent on sale"
+            : !buyerUid
+              ? "Missing buyer customer_uid"
+              : "Refund amount too small",
+        };
+      }
+
+      const outcome = await handleReturnAccept(pending.transactionUid, pending.orderUid || pending.transactionUid, sellerNote, stripeRefundResult);
+      if (outcome?.ok) {
+        if (pending.listIdx != null) {
+          const perKey = `${pending.transactionUid}_${pending.listIdx}`;
+          setReturnStatuses((prev) => ({
+            ...prev,
+            [perKey]: outcome.state,
+            [pending.transactionUid]: outcome.state,
+          }));
+          await AsyncStorage.setItem(`return_status_${perKey}`, JSON.stringify(outcome.state));
+        }
+        setReturnConfirmResult(outcome.result || outcome);
+        setReturnDetailModal((prev) =>
+          prev.visible
+            ? {
+                ...prev,
+                orderDetail: prev.orderDetail
+                  ? {
+                      ...prev.orderDetail,
+                      sale: prev.orderDetail.sale ? applyReturnRefundFieldsToRow(prev.orderDetail.sale, outcome.state) : prev.orderDetail.sale,
+                      return_status: outcome.state?.return_status,
+                      refund_status: outcome.state?.refund_status,
+                      display_status: outcome.state?.display_status,
+                      stripe_refund: outcome.stripe_refund || stripeRefundResult,
+                    }
+                  : prev.orderDetail,
+              }
+            : prev,
+        );
+        try {
+          const ctx = {};
+          const bizUid = selectedAccount !== "personal" ? selectedAccount || businessUID : businessUID;
+          if (bizUid) ctx.businessUid = bizUid;
+          if (pending.orderUid) {
+            const refreshed = await fetchOrderDetailApi(pending.orderUid, ctx);
+            setReturnDetailModal((prev) => (prev.visible ? { ...prev, orderDetail: refreshed } : prev));
+          }
+        } catch (_) {
+          /* keep local status update */
+        }
+      }
+    } finally {
+      setReturnDetailAccepting(false);
+      setPendingConfirmReceipt(null);
+      setConfirmReceiptNote("");
+    }
   };
 
   const handleReturnDecline = async (transactionUid, note = "", orderUidForStatus) => {
@@ -7667,16 +7990,12 @@ export default function AccountScreen({ navigation }) {
                           <View style={{ flexDirection: "row", gap: 8 }}>
                             <TouchableOpacity
                               style={{ flex: 1, padding: 10, borderRadius: 8, alignItems: "center", backgroundColor: "#18884A" }}
-                              onPress={async () => {
-                                const outcome = await handleReturnAccept(viewingReturnTransactionUid, viewingReturnTransactionUid);
-                                if (outcome?.ok) {
-                                  setReturnStatuses((prev) => ({
-                                    ...prev,
-                                    [perKey]: outcome.state,
-                                    [viewingReturnTransactionUid]: outcome.state,
-                                  }));
-                                  await AsyncStorage.setItem(`return_status_${perKey}`, JSON.stringify(outcome.state));
-                                }
+                              onPress={() => {
+                                openConfirmReceiptNoteModal({
+                                  transactionUid: viewingReturnTransactionUid,
+                                  orderUid: viewingReturnTransactionUid,
+                                  listIdx: idx,
+                                });
                               }}
                             >
                               <Text style={{ color: "#fff", fontWeight: "bold" }}>Confirm receipt</Text>
@@ -7703,6 +8022,69 @@ export default function AccountScreen({ navigation }) {
             <TouchableOpacity style={[styles.receiptCloseButton, { borderColor: "#B71C1C" }]} onPress={() => setShowReturnNoteViewModal(false)}>
               <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>Close</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Confirm Receipt Note Modal — note stored on sale; ECTEST/PMTEST selects test Stripe account */}
+      <Modal
+        animationType='fade'
+        transparent={true}
+        visible={showConfirmReceiptNoteModal}
+        onRequestClose={() => {
+          setShowConfirmReceiptNoteModal(false);
+          setConfirmReceiptNote("");
+          setPendingConfirmReceipt(null);
+        }}
+      >
+        <View style={[styles.receiveItemModalOverlay, darkMode && styles.darkModalOverlay]}>
+          <View style={[styles.receiveItemModalContent, darkMode && styles.darkModalContent]}>
+            <Text style={[styles.receiveItemModalHeader, { color: "#18884A" }, darkMode && styles.darkTitle]}>Confirm Receipt</Text>
+            <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>
+              Add a note for this return (optional). Enter ECTEST or PMTEST to refund on the test Stripe account; otherwise EC / PM (live) is used.
+            </Text>
+            <TextInput
+              style={{
+                borderWidth: 1,
+                borderColor: "#ddd",
+                borderRadius: 8,
+                padding: 12,
+                fontSize: 14,
+                minHeight: 80,
+                textAlignVertical: "top",
+                backgroundColor: darkMode ? "#3a3a3a" : "#f9f9f9",
+                color: darkMode ? "#fff" : "#333",
+                marginBottom: 16,
+              }}
+              placeholder='e.g. Item received in good condition — or ECTEST'
+              placeholderTextColor={darkMode ? "#888" : "#aaa"}
+              multiline
+              value={confirmReceiptNote}
+              onChangeText={setConfirmReceiptNote}
+            />
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <TouchableOpacity
+                style={[styles.receiveItemModalButton, styles.receiveItemNoButton, darkMode && styles.darkCancelButton]}
+                onPress={() => {
+                  setShowConfirmReceiptNoteModal(false);
+                  setConfirmReceiptNote("");
+                  setPendingConfirmReceipt(null);
+                }}
+              >
+                <Text style={[styles.receiveItemModalButtonText, styles.receiveItemNoButtonText, darkMode && styles.darkCancelButtonText]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.receiveItemModalButton, { backgroundColor: "#18884A" }, returnDetailAccepting && { opacity: 0.6 }]}
+                disabled={returnDetailAccepting}
+                onPress={submitConfirmReceiptWithNote}
+              >
+                {returnDetailAccepting ? (
+                  <ActivityIndicator size='small' color='#fff' />
+                ) : (
+                  <Text style={[styles.receiveItemModalButtonText, { color: "#fff" }]}>Confirm & refund</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -8116,37 +8498,11 @@ export default function AccountScreen({ navigation }) {
           const returnItems = buildReturnDetailDisplayItems(returnDetailModal.orderDetail, businessBountyData?.data || []);
           const allReceived = returnItems.length > 0 && returnItems.every((item) => returnReceivedItemKeys.includes(item.key));
           if (!txnUid || !allReceived) return;
-          setReturnDetailAccepting(true);
-          try {
-            const outcome = await handleReturnAccept(txnUid, returnDetailModal.orderUid);
-            if (outcome?.ok) {
-              setReturnConfirmResult(outcome.result || outcome);
-              setReturnDetailModal((prev) => ({
-                ...prev,
-                orderDetail: prev.orderDetail
-                  ? {
-                      ...prev.orderDetail,
-                      sale: prev.orderDetail.sale ? applyReturnRefundFieldsToRow(prev.orderDetail.sale, outcome.state) : prev.orderDetail.sale,
-                      return_status: outcome.state?.return_status,
-                      refund_status: outcome.state?.refund_status,
-                      display_status: outcome.state?.display_status,
-                      stripe_refund: outcome.stripe_refund,
-                    }
-                  : prev.orderDetail,
-              }));
-              try {
-                const ctx = {};
-                const bizUid = selectedAccount !== "personal" ? selectedAccount || businessUID : businessUID;
-                if (bizUid) ctx.businessUid = bizUid;
-                const refreshed = await fetchOrderDetailApi(returnDetailModal.orderUid, ctx);
-                setReturnDetailModal((prev) => ({ ...prev, orderDetail: refreshed }));
-              } catch (_) {
-                /* keep local status update */
-              }
-            }
-          } finally {
-            setReturnDetailAccepting(false);
-          }
+          openConfirmReceiptNoteModal({
+            transactionUid: txnUid,
+            orderUid: returnDetailModal.orderUid,
+            orderDetail: returnDetailModal.orderDetail,
+          });
         }}
         onDecline={() => {
           setPendingDeclineIdx(null);

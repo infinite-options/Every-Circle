@@ -36,9 +36,20 @@ export const LOGIN_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaw
 export const UPDATE_EMAIL_PASSWORD_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/UpdateEmailPassword/EVERY-CIRCLE";
 export const SET_TEMP_PASSWORD_ENDPOINT = "https://mrle52rri4.execute-api.us-west-1.amazonaws.com/dev/api/v2/SetTempPassword/EVERY-CIRCLE";
 
-// Stripe Payment Endpoints
+// Stripe Payment Endpoints (IO-Payments-Backend — huo8rhh76i)
 export const CREATE_PAYMENT_INTENT_ENDPOINT = "https://huo8rhh76i.execute-api.us-west-1.amazonaws.com/dev/api/v2/createPaymentIntent";
 export const GET_STRIPE_PUBLIC_KEY_ENDPOINT = "https://huo8rhh76i.execute-api.us-west-1.amazonaws.com/dev/api/v2/stripe_key";
+/**
+ * POST — refund a PaymentIntent (same Stripe account as the original charge).
+ * Body mirrors createPaymentIntent, plus payment_intent + refund amount:
+ * {
+ *   customer_uid,          // buyer profile_uid
+ *   business_code,         // EC | ECTEST | PM | PMTEST (from seller confirm note)
+ *   payment_intent,        // transaction_stripe_pi (pi_…)
+ *   payment_summary: { tax, total }  // total = refund dollars (string/number)
+ * }
+ */
+export const CREATE_REFUND_ENDPOINT = "https://huo8rhh76i.execute-api.us-west-1.amazonaws.com/dev/api/v2/createRefund";
 
 // User Profile Endpoints
 export const USER_INFO_ENDPOINT = `${API_BASE_URL}/userinfo`;
