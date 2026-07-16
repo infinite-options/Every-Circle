@@ -14,7 +14,7 @@ export const SEARCH_BASE_URL = "https://ioec2vrecsearch.infiniteoptions.com";
 // export const API_BASE_URL = "https://ioec2ecaspm.infiniteoptions.com";
 
 // Local Development (commented out by default)
-//  export const API_BASE_URL = "http://localhost:4090";
+// export const API_BASE_URL = "http://localhost:4090";
 // export const API_BASE_URL = "http://127.0.0.1:4090";
 
 // Google and Apple Authentication Endpoints
@@ -139,6 +139,9 @@ export const NEARBY_USERS_ENDPOINT = `${API_BASE_URL}/api/v1/nearby`;
 export const CHAT_CONVERSATIONS_ENDPOINT = `${API_BASE_URL}/api/v1/chat/conversations`;
 export const CHAT_MESSAGES_ENDPOINT = `${API_BASE_URL}/api/v1/chat/messages`;
 export const ABLY_TOKEN_ENDPOINT = `${API_BASE_URL}/api/v1/ably/token`;
+
+/** GET /:blocker_uid — list of blocked users; POST/DELETE body: { blocker_uid, blocked_uid } */
+export const BLOCKED_USERS_ENDPOINT = `${API_BASE_URL}/api/v1/blocked-users`;
 
 console.log("API Configuration loaded");
 // console.log("Base URL:", API_BASE_URL);

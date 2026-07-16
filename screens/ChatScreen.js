@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Keyboard, Platform } from "react-native";
+import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Keyboard, Platform, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,7 +10,7 @@ import BottomNavBar from "../components/BottomNavBar";
 import MiniCard from "../components/MiniCard";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { useUnread } from "../contexts/UnreadContext";
-import { CHAT_CONVERSATIONS_ENDPOINT, CHAT_MESSAGES_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_INFO_ENDPOINT } from "../apiConfig";
+import { CHAT_CONVERSATIONS_ENDPOINT, CHAT_MESSAGES_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_INFO_ENDPOINT, BLOCKED_USERS_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { createAblyRealtimeClient } from "../utils/ablyClient";
 import { normalizeMessageForUi, orderMessagesForChatList } from "../utils/chatConversations";
@@ -125,6 +125,10 @@ export default function ChatScreen() {
   const [pendingReplyContext, setPendingReplyContext] = useState(reply_context || null);
   /** Fetched profile for MiniCard; when null, `paramMiniCardUser` is used. */
   const [fetchedMiniCard, setFetchedMiniCard] = useState(null);
+  /** True when the other participant has blocked me or turned off all messages. */
+  const [recipientMessagesDisabled, setRecipientMessagesDisabled] = useState(false);
+  /** True when I have blocked other_uid. */
+  const [isBlocked, setIsBlocked] = useState(false);
 
   const flatListRef = useRef(null);
   const ablyClientRef = useRef(null);
@@ -237,6 +241,31 @@ export default function ChatScreen() {
     };
   }, [other_uid]);
 
+  // Check whether I've already blocked the other party, so a returning visit to this chat
+  // shows the "Blocked" indicator immediately instead of only after toggling it in NetworkScreen.
+  useEffect(() => {
+    let cancelled = false;
+    if (!myUid || !other_uid) {
+      setIsBlocked(false);
+      return;
+    }
+    (async () => {
+      try {
+        const res = await fetch(`${BLOCKED_USERS_ENDPOINT}/${encodeURIComponent(myUid)}`);
+        if (!res.ok || cancelled) return;
+        const json = await res.json();
+        if (cancelled) return;
+        const list = Array.isArray(json.result) ? json.result : [];
+        setIsBlocked(list.some((b) => b.blocked_uid === other_uid));
+      } catch (_) {
+        /* keep previous state on failure */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [myUid, other_uid]);
+
   // Once we have myUid, ensure a conversation exists
   useEffect(() => {
     if (!myUid) return;
@@ -275,11 +304,12 @@ export default function ChatScreen() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${CHAT_MESSAGES_ENDPOINT}/${encodeURIComponent(cid)}`);
+      const res = await fetch(`${CHAT_MESSAGES_ENDPOINT}/${encodeURIComponent(cid)}?viewer_uid=${encodeURIComponent(myUid || "")}`);
       const json = await res.json();
       const raw = Array.isArray(json.result) ? json.result : [];
       const mapped = raw.map(normalizeMessageForUi);
       setMessages(orderMessagesForChatList(mapped));
+      setRecipientMessagesDisabled(!!json.recipient_messages_disabled);
     } catch (e) {
       setError("Could not load messages.");
     } finally {
@@ -447,6 +477,12 @@ export default function ChatScreen() {
         ),
       });
       const json = await res.json();
+      if (typeof json.recipient_messages_disabled === "boolean") {
+        setRecipientMessagesDisabled(json.recipient_messages_disabled);
+      }
+      if (!res.ok) {
+        throw new Error(json?.message || "Could not send message.");
+      }
       setMessages((prev) => {
         const confirmed = normalizeMessageForUi({
           ...optimistic,
@@ -464,6 +500,7 @@ export default function ChatScreen() {
       // Remove optimistic on failure
       setMessages((prev) => prev.filter((m) => m.message_uid !== optimistic.message_uid));
       setInputText(text);
+      Alert.alert("Message not sent", e.message || "Could not send message.");
     } finally {
       setSending(false);
     }
@@ -543,6 +580,13 @@ export default function ChatScreen() {
         }
       />
 
+      {isBlocked && (
+        <View style={styles.blockedTopBanner}>
+          <Ionicons name='hand-left' size={14} color='#c0392b' />
+          <Text style={styles.blockedTopBannerText}>You've blocked {otherName}</Text>
+        </View>
+      )}
+
       {other_uid && paramMiniCardUser ? (
         <View style={[styles.chatMiniCardOuter, darkMode && styles.chatMiniCardOuterDark]}>
           <TouchableOpacity
@@ -600,6 +644,12 @@ export default function ChatScreen() {
           />
         )}
 
+        {recipientMessagesDisabled && (
+          <View style={styles.dayLabelWrap}>
+            <Text style={[styles.dayLabel, styles.messagesOffBanner, darkMode && styles.dayLabelDark]}>{otherName} has messages turned off</Text>
+          </View>
+        )}
+
         <View style={[styles.inputBar, darkMode && styles.inputBarDark]}>
           {pendingReplyContext?.label || pendingReplyContext?.quote ? (
             <View style={[styles.pendingReplyChip, darkMode && styles.pendingReplyChipDark]}>
@@ -641,6 +691,16 @@ const styles = StyleSheet.create({
   containerDark: { backgroundColor: "#121212" },
   /** Reserve space above absolute BottomNavBar */
   screenWithBottomNav: { paddingBottom: 88 },
+
+  blockedTopBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 6,
+    backgroundColor: "#ffe0e0",
+  },
+  blockedTopBannerText: { fontSize: 12, fontWeight: "600", color: "#c0392b" },
 
   chatMiniCardOuter: {
     paddingHorizontal: 12,
@@ -748,6 +808,7 @@ const styles = StyleSheet.create({
   msgTime: { fontSize: 10, color: "#bbb", marginTop: 2, marginHorizontal: 4 },
   msgTimeMine: { textAlign: "right" },
   msgTimeDark: { color: "#555" },
+  messagesOffBanner: { color: "#c0392b", backgroundColor: "#ffe0e0", fontWeight: "600" },
 
   // Empty messages
   emptyMessages: {

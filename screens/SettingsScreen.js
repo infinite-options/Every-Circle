@@ -1,6 +1,6 @@
 //SettingsScreen.js
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, TextInput, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator } from "react-native";
 import * as Location from "expo-location";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -13,25 +13,12 @@ import MiniCard from "../components/MiniCard";
 import NearbyAlertBanner from "../components/NearbyAlertBanner";
 import { createAblyRealtimeClient, resetSharedAblyClient } from "../utils/ablyClient";
 import { clearUserProfileCacheStorage } from "../utils/sessionProfile";
-import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT, USER_INFO_ENDPOINT } from "../apiConfig";
+import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUSINESS_CLAIM_ENDPOINT } from "../apiConfig";
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
-import { fetchSeekingModerationReviewQueue, fetchSeekingModerationDetail, reviewSeekingModeration } from "../utils/seekingModeration";
-import {
-  fetchProfileModerationReviewQueue,
-  fetchProfileModerationDetail,
-  reviewProfileModeration,
-} from "../utils/profileModeration";
-import {
-  fetchBusinessModerationReviewQueue,
-  fetchBusinessModerationDetail,
-  reviewBusinessModeration,
-} from "../utils/businessModeration";
 import OfferingReviewDetailPanel from "../components/OfferingReviewDetailPanel";
-import SeekingReviewDetailPanel from "../components/SeekingReviewDetailPanel";
-import ProfileReviewDetailPanel from "../components/ProfileReviewDetailPanel";
-import BusinessReviewDetailPanel from "../components/BusinessReviewDetailPanel";
+import { parseCoordinateValue } from "../utils/validateCoordinates";
 
 // Only import GoogleSignin on native platforms (not web)
 let GoogleSignin = null;
@@ -55,9 +42,15 @@ import { SHOW_NETWORK_DEBUG_UI, SETTINGS_NETWORK_DEBUG_MODE_KEY } from "../confi
 import versionData from "../version.json";
 import Constants from "expo-constants";
 import appConfig from "../config";
-import { obscureApiKey } from "../utils/obscureApiKey";
 
-/** LoginScreen-style helper for dev OAuth client fingerprint (partial, for debugging). */
+/** LoginScreen-style helpers for dev API key fingerprint (partial, for debugging). */
+function getApiKeyLastTwoDigits(clientId) {
+  if (!clientId) return "Not set";
+  const match = clientId.match(/(.+)\.apps\.googleusercontent\.com$/);
+  if (match) return "..." + match[1].slice(-2);
+  return "..." + clientId.slice(-2);
+}
+
 function getApiKeyFirstFourDigits(clientId) {
   if (!clientId) return "Not set";
   const match = clientId.match(/([\w-]+)-([\w]+)\.apps\.googleusercontent\.com$/);
@@ -122,6 +115,27 @@ const DEFAULT_NEARBY_SETTINGS = {
   //       and survive across devices/sessions without relying on AsyncStorage alone.
 };
 
+// Default settings for Messages Privacy — persisted server-side on profile_personal
+// (profile_personal_messages_receive_from + profile_personal_messages_receive_types).
+// There is no sender-side restriction — everyone can always attempt to message anyone;
+// only the recipient's own "Can Message Me" audience setting can block it.
+const DEFAULT_MESSAGES_SETTINGS = {
+  receiveFrom: "all_circles", // who can message me: 'everyone' | 'all_circles' | 'specific'
+  receiveFromTypes: { friends: true, colleagues: true, family: true },
+};
+
+/** "friends,family" -> { friends: true, colleagues: false, family: true }; empty/missing -> all true (default). */
+function parseCircleTypesCsv(csv) {
+  if (!csv) return { friends: true, colleagues: true, family: true };
+  const active = new Set(
+    String(csv)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  return { friends: active.has("friends"), colleagues: active.has("colleagues"), family: active.has("family") };
+}
+
 // --- Live location sharing constants ---
 const SHARE_LOCATION_DURATION_HOURS = 1; // how long a sharing session lasts
 const SHARE_LOCATION_DISTANCE_METERS = 50; // min movement before watcher fires a callback
@@ -161,12 +175,12 @@ async function resolveLocationOptionCoords(option) {
 }
 
 /** Two tappable labels (Edit Profile–style) instead of a Switch. */
-function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMode }) {
+function SettingsBoolPills({ value, onValueChange, leftLabel, rightLabel, darkMode, variant = "yesNo" }) {
   const leftOn = !value;
   const rightOn = value;
-  const leftBgStyle = leftOn ? styles.togglePillActiveRed : null;
-  const rightBgStyle = rightOn ? styles.togglePillActiveGreen : null;
-  const leftTextActiveStyle = leftOn ? styles.togglePillTextActive : null;
+  const leftBgStyle = variant === "background" ? (leftOn ? styles.togglePillThemeLight : null) : leftOn ? styles.togglePillActiveRed : null;
+  const rightBgStyle = variant === "background" ? (rightOn ? styles.togglePillThemeDark : null) : rightOn ? styles.togglePillActiveGreen : null;
+  const leftTextActiveStyle = variant === "background" && leftOn ? styles.togglePillTextDarkEmphasis : leftOn ? styles.togglePillTextActive : null;
   const rightTextActiveStyle = rightOn ? styles.togglePillTextActive : null;
 
   return (
@@ -218,6 +232,10 @@ export default function SettingsScreen() {
   const [homeAddressCoords, setHomeAddressCoords] = useState({ lat: null, lng: null });
   const [nearbyPrivacyModalVisible, setNearbyPrivacyModalVisible] = useState(false);
 
+  // Messages Privacy (who can message me) — persisted server-side
+  const [messagesSettings, setMessagesSettings] = useState(DEFAULT_MESSAGES_SETTINGS);
+  const [messagesPrivacyModalVisible, setMessagesPrivacyModalVisible] = useState(false);
+
   // Live location sharing refs (stable across renders — no state needed)
   const locationWatcherRef = useRef(null); // expo-location subscription
   const autoOffTimerRef = useRef(null); // setTimeout handle for 1-hour auto-off
@@ -244,7 +262,9 @@ export default function SettingsScreen() {
   // Define custom questions for the Account page
   const settingsFeedbackQuestions = ["Settings - Question 1?", "Settings - Question 2?", "Settings - Question 3?"];
 
-  const [isAdmin, setIsAdmin] = useState(false);
+  //for declined refunds - only show to admins
+  const ADMIN_EMAILS = ["shrutitest20@gmail.com", "admin@everycircle.com", "pmarathay@gmail.com", "cplata@everycircle.com"];
+
   const [showAdminSection, setShowAdminSection] = useState(false);
   const [adminReturns, setAdminReturns] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
@@ -256,43 +276,8 @@ export default function SettingsScreen() {
   const [adminClaims, setAdminClaims] = useState([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [showClaimsSection, setShowClaimsSection] = useState(false);
-  const [adminOfferings, setAdminOfferings] = useState([]);
-  const [offeringsLoading, setOfferingsLoading] = useState(false);
-  const [showOfferingsSection, setShowOfferingsSection] = useState(false);
-  const [offeringReviewModalVisible, setOfferingReviewModalVisible] = useState(false);
-  const [offeringReviewItem, setOfferingReviewItem] = useState(null);
-  const [offeringReviewDetail, setOfferingReviewDetail] = useState(null);
-  const [offeringReviewNote, setOfferingReviewNote] = useState("");
-  const [offeringReviewLoading, setOfferingReviewLoading] = useState(false);
-  const [offeringReviewSubmitting, setOfferingReviewSubmitting] = useState(false);
-  const [adminSeeking, setAdminSeeking] = useState([]);
-  const [seekingLoading, setSeekingLoading] = useState(false);
-  const [showSeekingSection, setShowSeekingSection] = useState(false);
-  const [seekingReviewModalVisible, setSeekingReviewModalVisible] = useState(false);
-  const [seekingReviewItem, setSeekingReviewItem] = useState(null);
-  const [seekingReviewDetail, setSeekingReviewDetail] = useState(null);
-  const [seekingReviewNote, setSeekingReviewNote] = useState("");
-  const [seekingReviewLoading, setSeekingReviewLoading] = useState(false);
-  const [seekingReviewSubmitting, setSeekingReviewSubmitting] = useState(false);
-  const [adminProfiles, setAdminProfiles] = useState([]);
-  const [profilesLoading, setProfilesLoading] = useState(false);
-  const [showProfilesSection, setShowProfilesSection] = useState(false);
-  const [profileReviewModalVisible, setProfileReviewModalVisible] = useState(false);
-  const [profileReviewItem, setProfileReviewItem] = useState(null);
-  const [profileReviewDetail, setProfileReviewDetail] = useState(null);
-  const [profileReviewNote, setProfileReviewNote] = useState("");
-  const [profileReviewLoading, setProfileReviewLoading] = useState(false);
-  const [profileReviewSubmitting, setProfileReviewSubmitting] = useState(false);
-  const [adminBusinesses, setAdminBusinesses] = useState([]);
-  const [businessesLoading, setBusinessesLoading] = useState(false);
-  const [showBusinessesSection, setShowBusinessesSection] = useState(false);
-  const [businessReviewModalVisible, setBusinessReviewModalVisible] = useState(false);
-  const [businessReviewItem, setBusinessReviewItem] = useState(null);
-  const [businessReviewDetail, setBusinessReviewDetail] = useState(null);
-  const [businessReviewNote, setBusinessReviewNote] = useState("");
-  const [businessReviewLoading, setBusinessReviewLoading] = useState(false);
-  const [businessReviewSubmitting, setBusinessReviewSubmitting] = useState(false);
   const [hideChangePassword, setHideChangePassword] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
 
   console.log("In SettingsScreen");
 
@@ -310,6 +295,10 @@ export default function SettingsScreen() {
       if (t !== null) setTermsAccepted(JSON.parse(t));
       if (c !== null) setAllowCookies(JSON.parse(c));
       if(isThirdPartyAuth !== null) setHideChangePassword(JSON.parse(isThirdPartyAuth));
+      
+      // Load email quickly from AsyncStorage for admin check
+      const storedEmail = await AsyncStorage.getItem("user_email");
+      if (storedEmail) setUserEmail(storedEmail);
 
       try {
         const nd = await AsyncStorage.getItem(SETTINGS_NETWORK_DEBUG_MODE_KEY);
@@ -648,50 +637,27 @@ export default function SettingsScreen() {
             locationIsPublic: result.personal_info.profile_personal_location_is_public === 1,
             imageIsPublic: result.personal_info.profile_personal_image_is_public === 1,
           });
-          const nearbyLat = result.personal_info.profile_personal_nearby_lat;
-          const nearbyLng = result.personal_info.profile_personal_nearby_lng;
+          const nearbyLat = parseCoordinateValue(result.personal_info.profile_personal_nearby_lat);
+          const nearbyLng = parseCoordinateValue(result.personal_info.profile_personal_nearby_lng);
           const nearbyAt = result.personal_info.profile_personal_nearby_updated_at;
           if (nearbyLat != null && nearbyLng != null) {
             setStoredCoords({ lat: nearbyLat, lng: nearbyLng, updatedAt: nearbyAt });
           }
-          const homeLat = result.personal_info.profile_personal_latitude;
-          const homeLng = result.personal_info.profile_personal_longitude;
+          const homeLat = parseCoordinateValue(result.personal_info.profile_personal_latitude);
+          const homeLng = parseCoordinateValue(result.personal_info.profile_personal_longitude);
           if (homeLat != null && homeLng != null) {
             setHomeAddressCoords({ lat: homeLat, lng: homeLng });
           }
+          setMessagesSettings({
+            receiveFrom: result.personal_info.profile_personal_messages_receive_from || "all_circles",
+            receiveFromTypes: parseCircleTypesCsv(result.personal_info.profile_personal_messages_receive_types),
+          });
         }
       } catch (e) {
         console.error("Error loading cached profile for settings:", e);
       }
     };
     loadProfileFromCache();
-  }, []);
-
-  useEffect(() => {
-    const fetchUserInfo = async () => {
-      try {
-        const userUid = await AsyncStorage.getItem("user_uid");
-        if (!userUid) return;
-
-        const response = await fetch(`${USER_INFO_ENDPOINT}/${encodeURIComponent(userUid)}`);
-        const result = await response.json();
-
-        if (!response.ok) {
-          console.warn("userinfo fetch failed:", response.status, result);
-          setIsAdmin(false);
-          return;
-        }
-
-        const row = Array.isArray(result?.result) ? result.result[0] : result?.result ?? result?.data ?? result;
-        const role = row?.user_role;
-        setIsAdmin(role === "ADMIN");
-      } catch (e) {
-        console.error("Failed to fetch user info:", e);
-        setIsAdmin(false);
-      }
-    };
-
-    fetchUserInfo();
   }, []);
 
   // --- Live location sharing ---
@@ -856,6 +822,29 @@ export default function SettingsScreen() {
         });
       }
     } catch (_) {}
+  };
+
+  const updateMessagesSettings = async (newSettings) => {
+    setMessagesSettings(newSettings);
+    try {
+      const uid = await AsyncStorage.getItem("profile_uid");
+      if (!uid) return;
+      const formData = new FormData();
+      formData.append("profile_uid", uid);
+      formData.append("profile_personal_messages_receive_from", newSettings.receiveFrom);
+      formData.append(
+        "profile_personal_messages_receive_types",
+        Object.keys(newSettings.receiveFromTypes)
+          .filter((k) => newSettings.receiveFromTypes[k])
+          .join(","),
+      );
+      await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(uid)}`, {
+        method: "PUT",
+        body: formData,
+      });
+    } catch (_) {
+      /* keep local state on failure — next load will resync from the server */
+    }
   };
 
   // Stop live sharing (manual off, auto-off, or logout)
@@ -1122,251 +1111,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const fetchAdminOfferings = async () => {
-    setOfferingsLoading(true);
-    try {
-      const rows = await fetchModerationReviewQueue();
-      setAdminOfferings(rows);
-    } catch (e) {
-      console.error("Admin offerings fetch error:", e);
-      Alert.alert("Error", e?.message || "Failed to load offering review queue.");
-    } finally {
-      setOfferingsLoading(false);
-    }
-  };
-
-  const openOfferingReview = async (item) => {
-    const uid = item?.profile_expertise_uid || item?.expertise_uid;
-    if (!uid) return;
-    setOfferingReviewItem(item);
-    setOfferingReviewDetail(null);
-    setOfferingReviewNote("");
-    setOfferingReviewModalVisible(true);
-    setOfferingReviewLoading(true);
-    try {
-      const detail = await fetchOfferingModerationDetail(uid);
-      setOfferingReviewDetail(detail);
-    } catch (e) {
-      console.error("Offering review detail error:", e);
-      Alert.alert("Error", e?.message || "Failed to load offering details.");
-      setOfferingReviewModalVisible(false);
-    } finally {
-      setOfferingReviewLoading(false);
-    }
-  };
-
-  const handleOfferingReview = async (action) => {
-    const uid = offeringReviewItem?.profile_expertise_uid || offeringReviewItem?.expertise_uid || offeringReviewDetail?.profile_expertise_uid;
-    if (!uid) return;
-    if (action === "reject" && !offeringReviewNote.trim()) {
-      Alert.alert("Note required", "Please enter a note explaining the rejection for the offering owner.");
-      return;
-    }
-    setOfferingReviewSubmitting(true);
-    try {
-      await reviewOfferingModeration({
-        profileExpertiseUid: uid,
-        action,
-        note: offeringReviewNote.trim(),
-      });
-      setAdminOfferings((prev) => prev.filter((row) => (row.profile_expertise_uid || row.expertise_uid) !== uid));
-      setOfferingReviewModalVisible(false);
-      setOfferingReviewItem(null);
-      setOfferingReviewDetail(null);
-      Alert.alert("Done", `Offering ${action === "approve" ? "approved" : "rejected"} successfully.`);
-    } catch (e) {
-      console.error("Offering review submit error:", e);
-      Alert.alert("Error", e?.message || "Failed to submit review.");
-    } finally {
-      setOfferingReviewSubmitting(false);
-    }
-  };
-
-  const fetchAdminSeeking = async () => {
-    setSeekingLoading(true);
-    try {
-      const rows = await fetchSeekingModerationReviewQueue();
-      setAdminSeeking(rows);
-    } catch (e) {
-      console.error("Admin seeking fetch error:", e);
-      Alert.alert("Error", e?.message || "Failed to load seeking review queue.");
-    } finally {
-      setSeekingLoading(false);
-    }
-  };
-
-  const openSeekingReview = async (item) => {
-    const uid = item?.profile_wish_uid || item?.wish_uid;
-    if (!uid) return;
-    setSeekingReviewItem(item);
-    setSeekingReviewDetail(null);
-    setSeekingReviewNote("");
-    setSeekingReviewModalVisible(true);
-    setSeekingReviewLoading(true);
-    try {
-      const detail = await fetchSeekingModerationDetail(uid);
-      setSeekingReviewDetail(detail);
-    } catch (e) {
-      console.error("Seeking review detail error:", e);
-      Alert.alert("Error", e?.message || "Failed to load seeking details.");
-      setSeekingReviewModalVisible(false);
-    } finally {
-      setSeekingReviewLoading(false);
-    }
-  };
-
-  const handleSeekingReview = async (action) => {
-    const uid = seekingReviewItem?.profile_wish_uid || seekingReviewItem?.wish_uid || seekingReviewDetail?.profile_wish_uid;
-    if (!uid) return;
-    if (action === "reject" && !seekingReviewNote.trim()) {
-      Alert.alert("Note required", "Please enter a note explaining the rejection for the seeking post owner.");
-      return;
-    }
-    setSeekingReviewSubmitting(true);
-    try {
-      await reviewSeekingModeration({
-        profileWishUid: uid,
-        action,
-        note: seekingReviewNote.trim(),
-      });
-      setAdminSeeking((prev) => prev.filter((row) => (row.profile_wish_uid || row.wish_uid) !== uid));
-      setSeekingReviewModalVisible(false);
-      setSeekingReviewItem(null);
-      setSeekingReviewDetail(null);
-      Alert.alert("Done", `Seeking post ${action === "approve" ? "approved" : "rejected"} successfully.`);
-    } catch (e) {
-      console.error("Seeking review submit error:", e);
-      Alert.alert("Error", e?.message || "Failed to submit review.");
-    } finally {
-      setSeekingReviewSubmitting(false);
-    }
-  };
-
-  const fetchAdminProfiles = async () => {
-    setProfilesLoading(true);
-    try {
-      const rows = await fetchProfileModerationReviewQueue();
-      setAdminProfiles(rows);
-    } catch (e) {
-      console.error("Admin profiles fetch error:", e);
-      Alert.alert("Error", e?.message || "Failed to load profile review queue.");
-    } finally {
-      setProfilesLoading(false);
-    }
-  };
-
-  const openProfileReview = async (item) => {
-    const uid = item?.profile_personal_uid || item?.profile_uid;
-    if (!uid) return;
-    setProfileReviewItem(item);
-    setProfileReviewDetail(null);
-    setProfileReviewNote("");
-    setProfileReviewModalVisible(true);
-    setProfileReviewLoading(true);
-    try {
-      const detail = await fetchProfileModerationDetail(uid);
-      setProfileReviewDetail(detail);
-    } catch (e) {
-      console.error("Profile review detail error:", e);
-      Alert.alert("Error", e?.message || "Failed to load profile details.");
-      setProfileReviewModalVisible(false);
-    } finally {
-      setProfileReviewLoading(false);
-    }
-  };
-
-  const handleProfileReview = async (action) => {
-    const uid =
-      profileReviewItem?.profile_personal_uid ||
-      profileReviewItem?.profile_uid ||
-      profileReviewDetail?.profile_personal_uid ||
-      profileReviewDetail?.profile?.profile_personal_uid ||
-      profileReviewDetail?.personal_info?.profile_personal_uid;
-    if (!uid) return;
-    if (action === "reject" && !profileReviewNote.trim()) {
-      Alert.alert("Note required", "Please enter a note explaining the rejection for the profile owner.");
-      return;
-    }
-    setProfileReviewSubmitting(true);
-    try {
-      await reviewProfileModeration({
-        profilePersonalUid: uid,
-        action,
-        note: profileReviewNote.trim(),
-      });
-      setAdminProfiles((prev) => prev.filter((row) => (row.profile_personal_uid || row.profile_uid) !== uid));
-      setProfileReviewModalVisible(false);
-      setProfileReviewItem(null);
-      setProfileReviewDetail(null);
-      Alert.alert("Done", `Profile ${action === "approve" ? "approved" : "rejected"} successfully.`);
-    } catch (e) {
-      console.error("Profile review submit error:", e);
-      Alert.alert("Error", e?.message || "Failed to submit review.");
-    } finally {
-      setProfileReviewSubmitting(false);
-    }
-  };
-
-  const fetchAdminBusinesses = async () => {
-    setBusinessesLoading(true);
-    try {
-      const rows = await fetchBusinessModerationReviewQueue();
-      setAdminBusinesses(rows);
-    } catch (e) {
-      console.error("Admin businesses fetch error:", e);
-      Alert.alert("Error", e?.message || "Failed to load business review queue.");
-    } finally {
-      setBusinessesLoading(false);
-    }
-  };
-
-  const openBusinessReview = async (item) => {
-    const uid = item?.business_uid;
-    if (!uid) return;
-    setBusinessReviewItem(item);
-    setBusinessReviewDetail(null);
-    setBusinessReviewNote("");
-    setBusinessReviewModalVisible(true);
-    setBusinessReviewLoading(true);
-    try {
-      const detail = await fetchBusinessModerationDetail(uid);
-      setBusinessReviewDetail(detail);
-    } catch (e) {
-      console.error("Business review detail error:", e);
-      Alert.alert("Error", e?.message || "Failed to load business details.");
-      setBusinessReviewModalVisible(false);
-    } finally {
-      setBusinessReviewLoading(false);
-    }
-  };
-
-  const handleBusinessReview = async (action) => {
-    const uid = businessReviewItem?.business_uid || businessReviewDetail?.business_uid || businessReviewDetail?.business?.business_uid;
-    if (!uid) return;
-    if (action === "reject" && !businessReviewNote.trim()) {
-      Alert.alert("Note required", "Please enter a note explaining the rejection for the business owner.");
-      return;
-    }
-    setBusinessReviewSubmitting(true);
-    try {
-      await reviewBusinessModeration({
-        businessUid: uid,
-        action,
-        note: businessReviewNote.trim(),
-      });
-      setAdminBusinesses((prev) => prev.filter((row) => row.business_uid !== uid));
-      setBusinessReviewModalVisible(false);
-      setBusinessReviewItem(null);
-      setBusinessReviewDetail(null);
-      Alert.alert("Done", `Business ${action === "approve" ? "approved" : "rejected"} successfully.`);
-    } catch (e) {
-      console.error("Business review submit error:", e);
-      Alert.alert("Error", e?.message || "Failed to submit review.");
-    } finally {
-      setBusinessReviewSubmitting(false);
-    }
-  };
-
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Nearby alert banner — floats above everything */}
@@ -1399,7 +1143,7 @@ export default function SettingsScreen() {
           {/* Profile MiniCard at top */}
           {personalProfileData && (
             <TouchableOpacity activeOpacity={0.7} onPress={handleNavigateProfile}>
-              <View style={styles.profileMiniCardWrap}>
+              <View style={{ marginBottom: 16 }}>
                 <MiniCard user={personalProfileData} />
               </View>
             </TouchableOpacity>
@@ -1444,7 +1188,7 @@ export default function SettingsScreen() {
                     <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Background</Text>
                   </Text>
                 </View>
-                <SettingsBoolPills value={darkMode} onValueChange={(v) => toggleDarkMode(v)} leftLabel='Light' rightLabel='Dark' darkMode={darkMode} />
+                <SettingsBoolPills value={darkMode} onValueChange={(v) => toggleDarkMode(v)} leftLabel='Light' rightLabel='Dark' darkMode={darkMode} variant='background' />
               </View>
 
               {/* Privacy Mode */}
@@ -1536,7 +1280,11 @@ export default function SettingsScreen() {
                       <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Update Nearby Location</Text>
                     </Text>
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
-                      {storedCoords.lat != null ? `${parseFloat(storedCoords.lat).toFixed(5)}, ${parseFloat(storedCoords.lng).toFixed(5)}` : "No location set"}
+                      {(() => {
+                        const lat = parseCoordinateValue(storedCoords.lat);
+                        const lng = parseCoordinateValue(storedCoords.lng);
+                        return lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "No location set";
+                      })()}
                     </Text>
                   </View>
                 </View>
@@ -1551,12 +1299,36 @@ export default function SettingsScreen() {
                       <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Home Address Coordinates</Text>
                     </Text>
                     <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>
-                      {homeAddressCoords.lat != null ? `${parseFloat(homeAddressCoords.lat).toFixed(5)}, ${parseFloat(homeAddressCoords.lng).toFixed(5)}` : "No home coordinates set"}
+                      {(() => {
+                        const lat = parseCoordinateValue(homeAddressCoords.lat);
+                        const lng = parseCoordinateValue(homeAddressCoords.lng);
+                        return lat != null && lng != null ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "No home coordinates set";
+                      })()}
                     </Text>
                   </View>
                 </View>
                 <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
               </TouchableOpacity>
+
+              {/* Messages Privacy — opens modal */}
+              {(() => {
+                const PRIVACY_LABEL = { everyone: "Everyone", all_circles: "All Circles", specific: "Specific" };
+                const receiveLabel = PRIVACY_LABEL[messagesSettings.receiveFrom] || messagesSettings.receiveFrom;
+                return (
+                  <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setMessagesPrivacyModalVisible(true)} activeOpacity={0.8}>
+                    <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
+                      <Ionicons name='chatbubble-ellipses' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                      <View>
+                        <Text style={[styles.itemText, darkMode && styles.darkItemText]}>
+                          <Text style={{ fontWeight: "bold", color: darkMode ? COLORS.darkText : COLORS.lightText }}>Messages Privacy</Text>
+                        </Text>
+                        <Text style={[styles.nearbySubText, darkMode && styles.darkNearbySubText]}>Can message me: {receiveLabel}</Text>
+                      </View>
+                    </View>
+                    <MaterialIcons name='chevron-right' size={22} color={settingsMenuIconColor} />
+                  </TouchableOpacity>
+                );
+              })()}
             </View>
           )}
 
@@ -1568,7 +1340,7 @@ export default function SettingsScreen() {
 
           {/* Information & Links Container */}
           {showInformation && (
-            <View style={[styles.settingsGroupContainer, styles.informationGroupContainer, darkMode && styles.darkSettingsGroupContainer]}>
+            <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { marginBottom: 16 }]}>
               {/* How It Works */}
               <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("HowItWorksScreen")}>
                 <View style={styles.itemLabel}>
@@ -1606,15 +1378,13 @@ export default function SettingsScreen() {
               </TouchableOpacity>
 
               {/* Change Password */}
-              {!hideChangePassword && (
-                <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
-                  <View style={styles.itemLabel}>
-                    <MaterialIcons name='lock' size={20} style={styles.icon} color={settingsMenuIconColor} />
-                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
-                  </View>
-                  <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
-                </TouchableOpacity>
-              )}
+              {!hideChangePassword && <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
+                <View style={styles.itemLabel}>
+                  <MaterialIcons name='lock' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
+                </View>
+                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
+              </TouchableOpacity>} 
             </View>
           )}
 
@@ -1625,8 +1395,9 @@ export default function SettingsScreen() {
             </Text>
           </View>
 
-          {/* ADMIN Section — only visible to admins */}
-          {isAdmin && (
+          {/* ADMIN Section — only visible to authorized emails */}
+          {console.log("Admin check email:", personalProfileData?.email, "in list:", ADMIN_EMAILS.includes(personalProfileData?.email))}
+          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
             <>
               <TouchableOpacity
                 style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.15)", marginTop: 8 }]}
@@ -1757,7 +1528,7 @@ export default function SettingsScreen() {
             </>
           )}
 
-          {isAdmin && (
+          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
             <>
               <TouchableOpacity
                 style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.10)", marginTop: 8 }]}
@@ -1849,294 +1620,6 @@ export default function SettingsScreen() {
             </>
           )}
 
-          {isAdmin && (
-            <>
-              <TouchableOpacity
-                style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.10)", marginTop: 8 }]}
-                onPress={() => {
-                  setShowOfferingsSection(!showOfferingsSection);
-                  if (!showOfferingsSection && adminOfferings.length === 0) fetchAdminOfferings();
-                }}
-              >
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <MaterialIcons name='flag' size={16} color='#B71C1C' />
-                  <Text style={[styles.informationSectionHeaderText, { color: "#B71C1C" }]}>
-                    OFFERING REVIEWS {adminOfferings.length > 0 ? `(${adminOfferings.length})` : ""}
-                  </Text>
-                </View>
-                <Ionicons name={showOfferingsSection ? "chevron-up" : "chevron-down"} size={20} color='#B71C1C' />
-              </TouchableOpacity>
-
-              {showOfferingsSection && (
-                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#B71C1C" }]}>
-                  {offeringsLoading ? (
-                    <ActivityIndicator size='small' color='#B71C1C' style={{ margin: 16 }} />
-                  ) : adminOfferings.length === 0 ? (
-                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No offerings pending review.</Text>
-                  ) : (
-                    adminOfferings.map((row, idx) => {
-                      const uid = row.profile_expertise_uid || row.expertise_uid || "";
-                      const title = row.profile_expertise_title || row.title || uid || "Offering";
-                      const flagCount =
-                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
-                      const description = row.profile_expertise_description || row.description || "";
-                      const ownerName = [row.owner_first_name || row.profile_personal_first_name, row.owner_last_name || row.profile_personal_last_name]
-                        .filter(Boolean)
-                        .join(" ");
-                      return (
-                        <TouchableOpacity
-                          key={uid || idx}
-                          style={{
-                            padding: 12,
-                            borderBottomWidth: idx < adminOfferings.length - 1 ? 1 : 0,
-                            borderBottomColor: darkMode ? "#444" : "#eee",
-                            backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#fff5f5") : "transparent",
-                          }}
-                          onPress={() => openOfferingReview(row)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>{title}</Text>
-                          {description ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
-                              {description}
-                            </Text>
-                          ) : null}
-                          {ownerName ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text>
-                          ) : null}
-                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
-                            {uid}
-                            {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
-                          </Text>
-                          <Text style={{ fontSize: 11, color: "#4B2E83", marginTop: 6, fontWeight: "600" }}>Tap to review →</Text>
-                        </TouchableOpacity>
-                      );
-                    })
-                  )}
-                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminOfferings}>
-                    <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </>
-          )}
-
-          {isAdmin && (
-            <>
-              <TouchableOpacity
-                style={[styles.informationSectionHeader, { backgroundColor: "rgba(79, 138, 139, 0.12)", marginTop: 8 }]}
-                onPress={() => {
-                  setShowSeekingSection(!showSeekingSection);
-                  if (!showSeekingSection && adminSeeking.length === 0) fetchAdminSeeking();
-                }}
-              >
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <MaterialIcons name='flag' size={16} color='#4F8A8B' />
-                  <Text style={[styles.informationSectionHeaderText, { color: "#4F8A8B" }]}>
-                    SEEKING REVIEWS {adminSeeking.length > 0 ? `(${adminSeeking.length})` : ""}
-                  </Text>
-                </View>
-                <Ionicons name={showSeekingSection ? "chevron-up" : "chevron-down"} size={20} color='#4F8A8B' />
-              </TouchableOpacity>
-
-              {showSeekingSection && (
-                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#4F8A8B" }]}>
-                  {seekingLoading ? (
-                    <ActivityIndicator size='small' color='#4F8A8B' style={{ margin: 16 }} />
-                  ) : adminSeeking.length === 0 ? (
-                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No seeking posts pending review.</Text>
-                  ) : (
-                    adminSeeking.map((row, idx) => {
-                      const uid = row.profile_wish_uid || row.wish_uid || "";
-                      const title = row.profile_wish_title || row.title || uid || "Seeking";
-                      const flagCount =
-                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
-                      const description = row.profile_wish_description || row.description || "";
-                      const ownerName = [row.owner_first_name || row.profile_personal_first_name, row.owner_last_name || row.profile_personal_last_name]
-                        .filter(Boolean)
-                        .join(" ");
-                      return (
-                        <TouchableOpacity
-                          key={uid || idx}
-                          style={{
-                            padding: 12,
-                            borderBottomWidth: idx < adminSeeking.length - 1 ? 1 : 0,
-                            borderBottomColor: darkMode ? "#444" : "#eee",
-                            backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#f5fbfb") : "transparent",
-                          }}
-                          onPress={() => openSeekingReview(row)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>{title}</Text>
-                          {description ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
-                              {description}
-                            </Text>
-                          ) : null}
-                          {ownerName ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text>
-                          ) : null}
-                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
-                            {uid}
-                            {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
-                          </Text>
-                          <Text style={{ fontSize: 11, color: "#4F8A8B", marginTop: 6, fontWeight: "600" }}>Tap to review →</Text>
-                        </TouchableOpacity>
-                      );
-                    })
-                  )}
-                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminSeeking}>
-                    <Text style={{ color: "#4F8A8B", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </>
-          )}
-
-          {isAdmin && (
-            <>
-              <TouchableOpacity
-                style={[styles.informationSectionHeader, { backgroundColor: "rgba(106, 27, 154, 0.10)", marginTop: 8 }]}
-                onPress={() => {
-                  setShowProfilesSection(!showProfilesSection);
-                  if (!showProfilesSection && adminProfiles.length === 0) fetchAdminProfiles();
-                }}
-              >
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <MaterialIcons name='person' size={16} color='#6A1B9A' />
-                  <Text style={[styles.informationSectionHeaderText, { color: "#6A1B9A" }]}>
-                    PROFILE REVIEWS {adminProfiles.length > 0 ? `(${adminProfiles.length})` : ""}
-                  </Text>
-                </View>
-                <Ionicons name={showProfilesSection ? "chevron-up" : "chevron-down"} size={20} color='#6A1B9A' />
-              </TouchableOpacity>
-
-              {showProfilesSection && (
-                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#6A1B9A" }]}>
-                  {profilesLoading ? (
-                    <ActivityIndicator size='small' color='#6A1B9A' style={{ margin: 16 }} />
-                  ) : adminProfiles.length === 0 ? (
-                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No profiles pending review.</Text>
-                  ) : (
-                    adminProfiles.map((row, idx) => {
-                      const uid = row.profile_personal_uid || row.profile_uid || "";
-                      const name = [row.profile_personal_first_name || row.owner_first_name || row.first_name, row.profile_personal_last_name || row.owner_last_name || row.last_name]
-                        .filter(Boolean)
-                        .join(" ");
-                      const flagCount =
-                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
-                      const tagLine = row.profile_personal_tag_line || row.tag_line || "";
-                      const email = row.user_email || row.user_email_id || row.email || "";
-                      return (
-                        <TouchableOpacity
-                          key={uid || idx}
-                          style={{
-                            padding: 12,
-                            borderBottomWidth: idx < adminProfiles.length - 1 ? 1 : 0,
-                            borderBottomColor: darkMode ? "#444" : "#eee",
-                            backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#faf5ff") : "transparent",
-                          }}
-                          onPress={() => openProfileReview(row)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>
-                            {name || uid || "Profile"}
-                          </Text>
-                          {tagLine ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
-                              {tagLine}
-                            </Text>
-                          ) : null}
-                          {email ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>{email}</Text>
-                          ) : null}
-                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
-                            {uid}
-                            {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
-                          </Text>
-                          <Text style={{ fontSize: 11, color: "#6A1B9A", marginTop: 6, fontWeight: "600" }}>Tap to review →</Text>
-                        </TouchableOpacity>
-                      );
-                    })
-                  )}
-                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminProfiles}>
-                    <Text style={{ color: "#6A1B9A", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </>
-          )}
-
-          {isAdmin && (
-            <>
-              <TouchableOpacity
-                style={[styles.informationSectionHeader, { backgroundColor: "rgba(156, 69, 247, 0.10)", marginTop: 8 }]}
-                onPress={() => {
-                  setShowBusinessesSection(!showBusinessesSection);
-                  if (!showBusinessesSection && adminBusinesses.length === 0) fetchAdminBusinesses();
-                }}
-              >
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <MaterialIcons name='storefront' size={16} color='#9C45F7' />
-                  <Text style={[styles.informationSectionHeaderText, { color: "#9C45F7" }]}>
-                    BUSINESS REVIEWS {adminBusinesses.length > 0 ? `(${adminBusinesses.length})` : ""}
-                  </Text>
-                </View>
-                <Ionicons name={showBusinessesSection ? "chevron-up" : "chevron-down"} size={20} color='#9C45F7' />
-              </TouchableOpacity>
-
-              {showBusinessesSection && (
-                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#9C45F7" }]}>
-                  {businessesLoading ? (
-                    <ActivityIndicator size='small' color='#9C45F7' style={{ margin: 16 }} />
-                  ) : adminBusinesses.length === 0 ? (
-                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No businesses pending review.</Text>
-                  ) : (
-                    adminBusinesses.map((row, idx) => {
-                      const uid = row.business_uid || "";
-                      const name = row.business_name || uid || "Business";
-                      const flagCount =
-                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
-                      const category = row.business_category || "";
-                      const ownerName = [row.owner_first_name, row.owner_last_name].filter(Boolean).join(" ");
-                      return (
-                        <TouchableOpacity
-                          key={uid || idx}
-                          style={{
-                            padding: 12,
-                            borderBottomWidth: idx < adminBusinesses.length - 1 ? 1 : 0,
-                            borderBottomColor: darkMode ? "#444" : "#eee",
-                            backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#f7f0ff") : "transparent",
-                          }}
-                          onPress={() => openBusinessReview(row)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>{name}</Text>
-                          {category ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
-                              {category}
-                            </Text>
-                          ) : null}
-                          {ownerName ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text>
-                          ) : null}
-                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
-                            {uid}
-                            {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
-                          </Text>
-                          <Text style={{ fontSize: 11, color: "#9C45F7", marginTop: 6, fontWeight: "600" }}>Tap to review →</Text>
-                        </TouchableOpacity>
-                      );
-                    })
-                  )}
-                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminBusinesses}>
-                    <Text style={{ color: "#9C45F7", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </>
-          )}
-
           {/* Bottom Logout Button - Styled like Submit button */}
           <TouchableOpacity style={[styles.bottomLogoutButton, darkMode && styles.darkBottomLogoutButton]} onPress={handleLogout}>
             <Text style={[styles.bottomLogoutText, darkMode && styles.darkBottomLogoutText]}>Log out</Text>
@@ -2149,7 +1632,8 @@ export default function SettingsScreen() {
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Android: {getApiKeyFirstFourDigits(appConfig.googleClientIds.android)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Web: {getApiKeyFirstFourDigits(appConfig.googleClientIds.web)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>URL Scheme: {appConfig.googleURLScheme ? appConfig.googleURLScheme.split("-").pop().slice(0, 4) : "Not set"}</Text>
-              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Google API: {obscureApiKey(appConfig.googleApiKey)}</Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Maps API: {getApiKeyLastTwoDigits(appConfig.googleMapsApiKey)}</Text>
+              <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Places API: {getApiKeyLastTwoDigits(appConfig.googlePlacesApiKey)}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>Environment: {__DEV__ ? "Development" : "Production"}</Text>
               <Text style={[styles.apiKeysText, darkMode && styles.darkApiKeysText]}>iOS Build: {Constants.expoConfig?.ios?.buildNumber || "Not set"}</Text>
             </View>
@@ -2186,7 +1670,7 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Offering moderation review modal */}
+{/* Offering moderation review modal */}
       <Modal visible={offeringReviewModalVisible} transparent animationType='slide' onRequestClose={() => !offeringReviewSubmitting && setOfferingReviewModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox, { maxHeight: "92%", width: "94%", maxWidth: 520 }]}>
@@ -2536,6 +2020,56 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
+      {/* Messages Privacy Modal */}
+      <Modal visible={messagesPrivacyModalVisible} transparent={true} animationType='slide' onRequestClose={() => setMessagesPrivacyModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox]}>
+            <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Messages Privacy</Text>
+            <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>Control who can message you.</Text>
+
+            <Text style={[styles.nearbyPrivacyGroupLabel, darkMode && styles.darkItemText, { marginTop: 8 }]}>Can Message Me</Text>
+            {[
+              { key: "everyone", label: "Everyone (all app users)" },
+              { key: "all_circles", label: "All Circle Members" },
+              { key: "specific", label: "Specific Circles" },
+            ].map(({ key, label }) => (
+              <TouchableOpacity key={key} style={styles.nearbyPrivacyOptionRow} onPress={() => updateMessagesSettings({ ...messagesSettings, receiveFrom: key })} activeOpacity={0.7}>
+                <Ionicons name={messagesSettings.receiveFrom === key ? "radio-button-on" : "radio-button-off"} size={18} color={COLORS.primary} style={{ marginRight: 10 }} />
+                <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+            {messagesSettings.receiveFrom === "specific" && (
+              <View style={styles.nearbyPrivacyCheckboxGroup}>
+                {[
+                  { key: "friends", label: "Friends" },
+                  { key: "colleagues", label: "Colleagues" },
+                  { key: "family", label: "Family" },
+                ].map(({ key, label }) => (
+                  <TouchableOpacity
+                    key={key}
+                    style={styles.nearbyPrivacyCheckboxRow}
+                    onPress={() =>
+                      updateMessagesSettings({
+                        ...messagesSettings,
+                        receiveFromTypes: { ...messagesSettings.receiveFromTypes, [key]: !messagesSettings.receiveFromTypes[key] },
+                      })
+                    }
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name={messagesSettings.receiveFromTypes[key] ? "checkbox" : "square-outline"} size={17} color={COLORS.primary} style={{ marginRight: 10 }} />
+                    <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            <TouchableOpacity onPress={() => setMessagesPrivacyModalVisible(false)} style={[styles.closeModalButton, { marginTop: 20, alignSelf: "stretch" }]}>
+              <Text style={[styles.closeButtonText, { textAlign: "center" }]}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Modals unchanged */}
       <Modal visible={qrModalVisible} transparent={true} animationType='fade'>
         <View style={styles.modalOverlay}>
@@ -2588,7 +2122,7 @@ export default function SettingsScreen() {
           <View style={[styles.modalBox, darkMode && styles.darkModalBox]}>
             <MaterialIcons name='warning' size={48} color={COLORS.warningRed} style={{ marginBottom: 15 }} />
             <Text style={[styles.warningTitle, darkMode && styles.darkWarningTitle]}>Cookies Required</Text>
-            <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>If you do not allow cookies, you will only have access to the Settings screen.</Text>
+            <Text style={[styles.warningText, darkMode && styles.darkWarningText]}>If you do not allow cookies, you will only have access to the Settings scresen.</Text>
             <View style={styles.warningButtonContainer}>
               <TouchableOpacity onPress={cancelCookiesRejection} style={[styles.warningButton, styles.cancelButton]}>
                 <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -2707,15 +2241,6 @@ const styles = StyleSheet.create({
   settingsContainer: {
     padding: 15,
     paddingBottom: 80,
-    ...Platform.select({
-      web: { padding: 13, paddingBottom: 74 },
-    }),
-  },
-  profileMiniCardWrap: {
-    marginBottom: 16,
-    ...Platform.select({
-      web: { marginBottom: 12 },
-    }),
   },
   settingItem: {
     borderRadius: 8,
@@ -2725,20 +2250,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    ...Platform.select({
-      web: {
-        paddingVertical: 10,
-        paddingHorizontal: 12,
-        marginBottom: 6,
-      },
-    }),
   },
   /** Tighter vertical padding so title-to-title spacing matches single-line rows above/below */
   settingItemWithHelp: {
     paddingVertical: 7,
-    ...Platform.select({
-      web: { paddingVertical: 6 },
-    }),
   },
   darkSettingItem: {
     backgroundColor: COLORS.darkItemBackground,
@@ -2783,6 +2298,12 @@ const styles = StyleSheet.create({
   togglePillActiveGreen: {
     backgroundColor: "#4CAF50",
   },
+  togglePillThemeLight: {
+    backgroundColor: "#FFE082",
+  },
+  togglePillThemeDark: {
+    backgroundColor: COLORS.primary,
+  },
   togglePillText: {
     fontSize: 12,
     color: "#4e4e4e",
@@ -2792,6 +2313,10 @@ const styles = StyleSheet.create({
   },
   togglePillTextActive: {
     color: "#fff",
+    fontWeight: "bold",
+  },
+  togglePillTextDarkEmphasis: {
+    color: "#333",
     fontWeight: "bold",
   },
   darkTogglePillText: {
@@ -2867,13 +2392,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginVertical: 20,
     marginBottom: 30,
-    ...Platform.select({
-      web: {
-        paddingVertical: 11,
-        marginVertical: 12,
-        marginBottom: 18,
-      },
-    }),
   },
   darkBottomLogoutButton: {
     backgroundColor: "#4B2E83",
@@ -2916,9 +2434,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     paddingHorizontal: 16,
     alignItems: "center",
-    ...Platform.select({
-      web: { marginTop: 10, marginBottom: 6 },
-    }),
   },
   dateTimeText: {
     fontSize: 12,
@@ -2935,15 +2450,6 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.lightGroupBackground,
     marginBottom: 16,
     overflow: "hidden",
-    ...Platform.select({
-      web: { marginBottom: 12 },
-    }),
-  },
-  informationGroupContainer: {
-    marginBottom: 16,
-    ...Platform.select({
-      web: { marginBottom: 12 },
-    }),
   },
   darkSettingsGroupContainer: {
     backgroundColor: COLORS.darkGroupBackground,
@@ -3022,9 +2528,6 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     marginBottom: 8,
-    ...Platform.select({
-      web: { paddingVertical: 10, paddingHorizontal: 12, marginBottom: 8 },
-    }),
   },
   settingsSectionHeaderText: {
     fontSize: 14,
@@ -3041,9 +2544,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 8,
     marginTop: 16,
-    ...Platform.select({
-      web: { paddingVertical: 10, paddingHorizontal: 12, marginBottom: 8, marginTop: 10 },
-    }),
   },
   informationSectionHeaderText: {
     fontSize: 14,
