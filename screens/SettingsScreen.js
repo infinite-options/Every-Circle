@@ -2194,7 +2194,7 @@ export default function SettingsScreen() {
             {offeringReviewLoading ? (
               <ActivityIndicator size='small' color='#B71C1C' style={{ marginVertical: 24 }} />
             ) : (
-              <ScrollView style={{ maxHeight: 480 }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
+              <ScrollView style={{ maxHeight: 480, minWidth: '100%' }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
                 <OfferingReviewDetailPanel detail={offeringReviewDetail} queueItem={offeringReviewItem} darkMode={darkMode} />
                 <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6, marginTop: 4 }}>Admin note (required for reject)</Text>
                 <TextInput
@@ -2252,7 +2252,7 @@ export default function SettingsScreen() {
             {seekingReviewLoading ? (
               <ActivityIndicator size='small' color='#4F8A8B' style={{ marginVertical: 24 }} />
             ) : (
-              <ScrollView style={{ maxHeight: 480 }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
+              <ScrollView style={{ maxHeight: 480,  minWidth: '100%' }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
                 <SeekingReviewDetailPanel detail={seekingReviewDetail} queueItem={seekingReviewItem} darkMode={darkMode} />
                 <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6, marginTop: 4 }}>Admin note (required for reject)</Text>
                 <TextInput
@@ -2310,7 +2310,7 @@ export default function SettingsScreen() {
             {profileReviewLoading ? (
               <ActivityIndicator size='small' color='#6A1B9A' style={{ marginVertical: 24 }} />
             ) : (
-              <ScrollView style={{ maxHeight: 480 }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
+              <ScrollView style={{ maxHeight: 480, minWidth: '100%' }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
                 <ProfileReviewDetailPanel detail={profileReviewDetail} queueItem={profileReviewItem} darkMode={darkMode} />
                 <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6, marginTop: 4 }}>Admin note (required for reject)</Text>
                 <TextInput
@@ -2368,7 +2368,7 @@ export default function SettingsScreen() {
             {businessReviewLoading ? (
               <ActivityIndicator size='small' color='#9C45F7' style={{ marginVertical: 24 }} />
             ) : (
-              <ScrollView style={{ maxHeight: 480 }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
+              <ScrollView style={{ maxHeight: 480, minWidth: '100%' }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
                 <BusinessReviewDetailPanel detail={businessReviewDetail} queueItem={businessReviewItem} darkMode={darkMode} />
                 <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6, marginTop: 4 }}>Admin note (required for reject)</Text>
                 <TextInput

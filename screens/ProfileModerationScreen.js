@@ -8,6 +8,7 @@ import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { getHeaderColors } from "../config/headerColors";
+import OwnerContentReports from "../components/OwnerContentReports";
 import {
   acknowledgeProfileModeration,
   canAcknowledgeTakenDownProfile,
@@ -18,6 +19,7 @@ import {
   MODERATION_STATUS,
   PROFILE_SUPPORT_EMAIL,
 } from "../utils/profileModeration";
+import { getOwnerVisibleReports } from "../utils/ownerVisibleReports";
 
 const MAROON = "#6f130f";
 
@@ -40,6 +42,7 @@ export default function ProfileModerationScreen() {
     (!isPending && status != null);
   const statusLabel = isTakenDown && !isPending ? "Taken down" : getProfileModerationStatusLabel(moderationItem);
   const message = getProfileModerationOwnerMessage(moderationItem);
+  const ownerReports = getOwnerVisibleReports(moderationItem);
   const canAcknowledge = canAcknowledgeTakenDownProfile(moderationItem);
 
   const openSupportEmail = () => Linking.openURL(`mailto:${PROFILE_SUPPORT_EMAIL}`);
@@ -92,6 +95,12 @@ export default function ProfileModerationScreen() {
         <View style={[styles.card, darkMode && styles.darkCard]}>
           <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>{message || "Your profile is currently unavailable."}</Text>
         </View>
+
+        {ownerReports.length > 0 ? (
+          <View style={[styles.card, darkMode && styles.darkCard]}>
+            <OwnerContentReports reports={ownerReports} darkMode={darkMode} />
+          </View>
+        ) : null}
 
         <View style={[styles.card, darkMode && styles.darkCard]}>
           <Text style={[styles.secTitle, darkMode && styles.darkText]}>Disputes</Text>

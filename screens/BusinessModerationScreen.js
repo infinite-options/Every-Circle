@@ -8,6 +8,7 @@ import AppHeader from "../components/AppHeader";
 import BottomNavBar from "../components/BottomNavBar";
 import { useDarkMode } from "../contexts/DarkModeContext";
 import { getHeaderColors } from "../config/headerColors";
+import OwnerContentReports from "../components/OwnerContentReports";
 import {
   acknowledgeBusinessModeration,
   canAcknowledgeTakenDownBusiness,
@@ -18,6 +19,7 @@ import {
   MODERATION_STATUS,
   BUSINESS_SUPPORT_EMAIL,
 } from "../utils/businessModeration";
+import { getOwnerVisibleReports } from "../utils/ownerVisibleReports";
 
 const MAROON = "#6f130f";
 
@@ -41,6 +43,7 @@ export default function BusinessModerationScreen() {
     (!isPending && status != null);
   const statusLabel = isTakenDown && !isPending ? "Taken down" : getBusinessModerationStatusLabel(moderationItem);
   const message = getBusinessModerationOwnerMessage(moderationItem);
+  const ownerReports = getOwnerVisibleReports(moderationItem);
   const canAcknowledge = canAcknowledgeTakenDownBusiness(moderationItem);
 
   const openSupportEmail = () => Linking.openURL(`mailto:${BUSINESS_SUPPORT_EMAIL}`);
@@ -93,6 +96,12 @@ export default function BusinessModerationScreen() {
         <View style={[styles.card, darkMode && styles.darkCard]}>
           <Text style={[styles.bodyText, darkMode && styles.darkBodyText]}>{message || "Your business is currently unavailable."}</Text>
         </View>
+
+        {ownerReports.length > 0 ? (
+          <View style={[styles.card, darkMode && styles.darkCard]}>
+            <OwnerContentReports reports={ownerReports} darkMode={darkMode} />
+          </View>
+        ) : null}
 
         <View style={[styles.card, darkMode && styles.darkCard]}>
           <Text style={[styles.secTitle, darkMode && styles.darkText]}>Disputes</Text>
