@@ -100,6 +100,11 @@ export async function getAddressSuggestions(input) {
   return _getPlacePredictions(input, ["address"]);
 }
 
+/** City / locality autocomplete (excludes streets and businesses). */
+export async function getCitySuggestions(input) {
+  return _getPlacePredictions(input, ["(cities)"]);
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 /** Pull a single value out of Google's address_components array by type */
 function _ac(components, type) {

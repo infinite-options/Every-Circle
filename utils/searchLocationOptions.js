@@ -1,6 +1,9 @@
 /** Default search origin — user's home coordinates from profile settings. */
 export const SEARCH_LOCATION_HOME = "home";
 
+/** User-picked city via Google Places (coords stored separately). */
+export const SEARCH_LOCATION_CUSTOM = "custom";
+
 /** Ten major US cities for the Search location filter. */
 export const MAJOR_US_SEARCH_CITIES = [
   { key: "new_york", label: "New York, NY", shortLabel: "NYC", lat: 40.7128, lng: -74.006 },
@@ -16,11 +19,27 @@ export const MAJOR_US_SEARCH_CITIES = [
 ];
 
 export function getSearchLocationOption(locationKey) {
-  if (!locationKey || locationKey === SEARCH_LOCATION_HOME) return null;
+  if (!locationKey || locationKey === SEARCH_LOCATION_HOME || locationKey === SEARCH_LOCATION_CUSTOM) return null;
   return MAJOR_US_SEARCH_CITIES.find((city) => city.key === locationKey) || null;
 }
 
-export function resolveSearchLocationCoords(locationKey, homeCoords) {
+export function buildCustomSearchCity({ label, lat, lng, placeId = null }) {
+  const fullLabel = String(label || "").trim() || "Custom city";
+  const shortLabel = fullLabel.split(",")[0].trim() || fullLabel;
+  return {
+    key: SEARCH_LOCATION_CUSTOM,
+    label: fullLabel,
+    shortLabel,
+    lat,
+    lng,
+    placeId: placeId || null,
+  };
+}
+
+export function resolveSearchLocationCoords(locationKey, homeCoords, customCity = null) {
+  if (locationKey === SEARCH_LOCATION_CUSTOM && customCity?.lat != null && customCity?.lng != null) {
+    return { lat: customCity.lat, lng: customCity.lng };
+  }
   const city = getSearchLocationOption(locationKey);
   if (city) return { lat: city.lat, lng: city.lng };
   if (homeCoords?.lat != null && homeCoords?.lng != null) {
@@ -29,14 +48,24 @@ export function resolveSearchLocationCoords(locationKey, homeCoords) {
   return { lat: null, lng: null };
 }
 
-export function getSearchLocationFilterLabel(locationKey) {
+export function getSearchLocationFilterLabel(locationKey, customCity = null) {
   if (!locationKey || locationKey === SEARCH_LOCATION_HOME) return "Search location";
+  if (locationKey === SEARCH_LOCATION_CUSTOM) {
+    return customCity?.shortLabel || customCity?.label || "Custom city";
+  }
   const city = getSearchLocationOption(locationKey);
   return city?.shortLabel || city?.label || "Search location";
 }
 
-export function getSearchLocationFullLabel(locationKey) {
+export function getSearchLocationFullLabel(locationKey, customCity = null) {
   if (!locationKey || locationKey === SEARCH_LOCATION_HOME) return "My home";
+  if (locationKey === SEARCH_LOCATION_CUSTOM) {
+    return customCity?.label || "Custom city";
+  }
   const city = getSearchLocationOption(locationKey);
   return city?.label || "My home";
+}
+
+export function isNonHomeSearchLocation(locationKey) {
+  return !!locationKey && locationKey !== SEARCH_LOCATION_HOME;
 }
