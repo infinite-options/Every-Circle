@@ -131,12 +131,14 @@ export function normalizeOfferingModeration(exp) {
     moderated === MODERATED_ACKNOWLEDGED
       ? MODERATION_STATUS.ACKNOWLEDGED
       : raw.status ?? raw.resubmissionStatus ?? raw.resubmission_status ?? null;
+  const reports = Array.isArray(raw.reports) ? raw.reports : Array.isArray(raw.pendingFlags) ? raw.pendingFlags : [];
   return {
     moderated,
     status,
     canEdit: raw.canEdit ?? raw.can_edit ?? moderated === MODERATED_ACTIVE,
     flagCount: Number(raw.flagCount ?? raw.flag_count) || 0,
     rejectionNote: raw.rejectionNote ?? raw.rejection_note ?? "",
+    reports,
   };
 }
 

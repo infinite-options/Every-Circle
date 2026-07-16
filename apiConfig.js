@@ -14,7 +14,7 @@ export const SEARCH_BASE_URL = "https://ioec2vrecsearch.infiniteoptions.com";
 // export const API_BASE_URL = "https://ioec2ecaspm.infiniteoptions.com";
 
 // Local Development (commented out by default)
-//  export const API_BASE_URL = "http://localhost:4090";
+// export const API_BASE_URL = "http://localhost:4090";
 // export const API_BASE_URL = "http://127.0.0.1:4090";
 
 // Google and Apple Authentication Endpoints
@@ -84,7 +84,10 @@ export const TRANSACTIONS_ENDPOINT = `${API_BASE_URL}/api/v1/transactions`;
 /** PUT body: profile_id, transaction_uid, transaction_in_escrow, delivery_verification_items */
 /** POST — buyer submit return request (note + line items) */
 export const TRANSACTIONS_RETURN_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/return`;
-/** PUT — seller confirm receipt (action=confirm) or reject return (action=decline) */
+/** PUT — seller confirm receipt (action=confirm) or reject return (action=decline).
+ *  Also action=set_refund_status to persist return_status / refund_status after Stripe outcome
+ *  (e.g. returned + stripe_fail) without re-attempting the Stripe refund.
+ */
 export const TRANSACTIONS_RETURN_CONFIRM_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/return/confirm`;
 /** GET list / PUT resolve — admin declined returns queue */
 export const TRANSACTIONS_RETURNS_DECLINED_ENDPOINT = `${API_BASE_URL}/api/v1/transactions/returns/declined`;
@@ -136,6 +139,9 @@ export const NEARBY_USERS_ENDPOINT = `${API_BASE_URL}/api/v1/nearby`;
 export const CHAT_CONVERSATIONS_ENDPOINT = `${API_BASE_URL}/api/v1/chat/conversations`;
 export const CHAT_MESSAGES_ENDPOINT = `${API_BASE_URL}/api/v1/chat/messages`;
 export const ABLY_TOKEN_ENDPOINT = `${API_BASE_URL}/api/v1/ably/token`;
+
+/** GET /:blocker_uid — list of blocked users; POST/DELETE body: { blocker_uid, blocked_uid } */
+export const BLOCKED_USERS_ENDPOINT = `${API_BASE_URL}/api/v1/blocked-users`;
 
 console.log("API Configuration loaded");
 // console.log("Base URL:", API_BASE_URL);

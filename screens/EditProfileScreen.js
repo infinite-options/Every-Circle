@@ -332,7 +332,14 @@ const EditProfileScreen = ({ route, navigation }) => {
   const [shortBioHeight, setShortBioHeight] = useState(40); // Initial height for Short Bio
   const fileInputRef = useRef(null); // For web file input
   const [imageUpdateKey, setImageUpdateKey] = useState(0); // Key to force MiniCard re-render when image changes
-  const [homeAddress, setHomeAddress] = useState("");
+  const [homeAddress, setHomeAddress] = useState(() => {
+    const savedAddress = user?.personal_info?.profile_personal_home_address || user?.homeAddress;
+    if (savedAddress) return savedAddress;
+    if (initialHomeLatLng.lat != null && initialHomeLatLng.lng != null) {
+      return [user?.city, user?.state].filter(Boolean).join(", ");
+    }
+    return "";
+  });
   const [addressSuggestions, setAddressSuggestions] = useState([]);
   const [addressSearchLoading, setAddressSearchLoading] = useState(false);
   const addressDebounceRef = useRef(null);
@@ -694,6 +701,7 @@ const EditProfileScreen = ({ route, navigation }) => {
 
       payload.append("profile_personal_city", formData.city);
       payload.append("profile_personal_state", formData.state);
+      payload.append("profile_personal_home_address", homeAddress);
       if (homeLat != null && homeLng != null) {
         payload.append("profile_personal_latitude", String(homeLat));
         payload.append("profile_personal_longitude", String(homeLng));
@@ -1154,6 +1162,7 @@ const EditProfileScreen = ({ route, navigation }) => {
                 ...user.personal_info,
                 profile_personal_city: formData.city,
                 profile_personal_state: formData.state,
+                profile_personal_home_address: homeAddress,
                 profile_personal_latitude: homeLat,
                 profile_personal_longitude: homeLng,
                 profile_personal_location_is_public: formData.locationIsPublic ? 1 : 0,

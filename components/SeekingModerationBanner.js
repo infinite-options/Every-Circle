@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import OwnerContentReports from "./OwnerContentReports";
 import {
   getSeekingModerationOwnerMessage,
   getSeekingModerationStatus,
@@ -51,6 +52,7 @@ const SeekingModerationBanner = ({ item, darkMode = false, compact = false }) =>
         </Text>
       </View>
       {message ? <Text style={[styles.message, compact && styles.messageCompact, darkMode && styles.messageDark]}>{message}</Text> : null}
+      <OwnerContentReports item={item} darkMode={darkMode} compact={compact} />
     </View>
   );
 };

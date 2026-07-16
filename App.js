@@ -39,7 +39,6 @@ import { GOOGLE_SOCIAL_AUTH_ENDPOINT, APPLE_AUTH_ENDPOINT, API_BASE_URL } from "
 import versionData from "./version.json";
 import { DarkModeProvider } from "./contexts/DarkModeContext";
 import { UnreadProvider } from "./contexts/UnreadContext";
-import MessageNotificationBanner from "./components/MessageNotificationBanner";
 import TextNodeErrorBoundary from "./components/TextNodeErrorBoundary";
 import LoginScreen from "./screens/LoginScreen";
 import SignUpScreen from "./screens/SignUpScreen";
@@ -1055,18 +1054,6 @@ export default function App() {
                 <Stack.Screen name='EveryCircleMap' component={EveryCircleMapScreen} options={{ headerShown: false }} />
               </Stack.Navigator>
             </NavigationContainer>
-            <MessageNotificationBanner
-              onOpen={(conversationUid, senderUid, senderName, senderImage) => {
-                if (navigationRef.current) {
-                  navigationRef.current.navigate("Chat", {
-                    conversation_uid: conversationUid,
-                    other_uid: senderUid,
-                    other_name: senderName,
-                    other_image: senderImage || null,
-                  });
-                }
-              }}
-            />
           </View>
         </UnreadProvider>
       </DarkModeProvider>
