@@ -1,6 +1,6 @@
 //SettingsScreen.js
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert, Modal, ActivityIndicator, TextInput } from "react-native";
 import * as Location from "expo-location";
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -17,7 +17,21 @@ import { TRANSACTIONS_RETURNS_DECLINED_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, BUS
 import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
+import { fetchSeekingModerationReviewQueue, fetchSeekingModerationDetail, reviewSeekingModeration } from "../utils/seekingModeration";
+import {
+  fetchProfileModerationReviewQueue,
+  fetchProfileModerationDetail,
+  reviewProfileModeration,
+} from "../utils/profileModeration";
+import {
+  fetchBusinessModerationReviewQueue,
+  fetchBusinessModerationDetail,
+  reviewBusinessModeration,
+} from "../utils/businessModeration";
 import OfferingReviewDetailPanel from "../components/OfferingReviewDetailPanel";
+import SeekingReviewDetailPanel from "../components/SeekingReviewDetailPanel";
+import ProfileReviewDetailPanel from "../components/ProfileReviewDetailPanel";
+import BusinessReviewDetailPanel from "../components/BusinessReviewDetailPanel";
 import { parseCoordinateValue } from "../utils/validateCoordinates";
 
 // Only import GoogleSignin on native platforms (not web)
@@ -276,6 +290,42 @@ export default function SettingsScreen() {
   const [adminClaims, setAdminClaims] = useState([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [showClaimsSection, setShowClaimsSection] = useState(false);
+  const [adminOfferings, setAdminOfferings] = useState([]);
+  const [offeringsLoading, setOfferingsLoading] = useState(false);
+  const [showOfferingsSection, setShowOfferingsSection] = useState(false);
+  const [offeringReviewModalVisible, setOfferingReviewModalVisible] = useState(false);
+  const [offeringReviewItem, setOfferingReviewItem] = useState(null);
+  const [offeringReviewDetail, setOfferingReviewDetail] = useState(null);
+  const [offeringReviewNote, setOfferingReviewNote] = useState("");
+  const [offeringReviewLoading, setOfferingReviewLoading] = useState(false);
+  const [offeringReviewSubmitting, setOfferingReviewSubmitting] = useState(false);
+  const [adminSeeking, setAdminSeeking] = useState([]);
+  const [seekingLoading, setSeekingLoading] = useState(false);
+  const [showSeekingSection, setShowSeekingSection] = useState(false);
+  const [seekingReviewModalVisible, setSeekingReviewModalVisible] = useState(false);
+  const [seekingReviewItem, setSeekingReviewItem] = useState(null);
+  const [seekingReviewDetail, setSeekingReviewDetail] = useState(null);
+  const [seekingReviewNote, setSeekingReviewNote] = useState("");
+  const [seekingReviewLoading, setSeekingReviewLoading] = useState(false);
+  const [seekingReviewSubmitting, setSeekingReviewSubmitting] = useState(false);
+  const [adminProfiles, setAdminProfiles] = useState([]);
+  const [profilesLoading, setProfilesLoading] = useState(false);
+  const [showProfilesSection, setShowProfilesSection] = useState(false);
+  const [profileReviewModalVisible, setProfileReviewModalVisible] = useState(false);
+  const [profileReviewItem, setProfileReviewItem] = useState(null);
+  const [profileReviewDetail, setProfileReviewDetail] = useState(null);
+  const [profileReviewNote, setProfileReviewNote] = useState("");
+  const [profileReviewLoading, setProfileReviewLoading] = useState(false);
+  const [profileReviewSubmitting, setProfileReviewSubmitting] = useState(false);
+  const [adminBusinesses, setAdminBusinesses] = useState([]);
+  const [businessesLoading, setBusinessesLoading] = useState(false);
+  const [showBusinessesSection, setShowBusinessesSection] = useState(false);
+  const [businessReviewModalVisible, setBusinessReviewModalVisible] = useState(false);
+  const [businessReviewItem, setBusinessReviewItem] = useState(null);
+  const [businessReviewDetail, setBusinessReviewDetail] = useState(null);
+  const [businessReviewNote, setBusinessReviewNote] = useState("");
+  const [businessReviewLoading, setBusinessReviewLoading] = useState(false);
+  const [businessReviewSubmitting, setBusinessReviewSubmitting] = useState(false);
   const [hideChangePassword, setHideChangePassword] = useState(false);
   const [userEmail, setUserEmail] = useState("");
 
@@ -1111,6 +1161,251 @@ export default function SettingsScreen() {
     }
   };
 
+  const fetchAdminOfferings = async () => {
+    setOfferingsLoading(true);
+    try {
+      const rows = await fetchModerationReviewQueue();
+      setAdminOfferings(rows);
+    } catch (e) {
+      console.error("Admin offerings fetch error:", e);
+      Alert.alert("Error", e?.message || "Failed to load offering review queue.");
+    } finally {
+      setOfferingsLoading(false);
+    }
+  };
+
+  const openOfferingReview = async (item) => {
+    const uid = item?.profile_expertise_uid || item?.expertise_uid;
+    if (!uid) return;
+    setOfferingReviewItem(item);
+    setOfferingReviewDetail(null);
+    setOfferingReviewNote("");
+    setOfferingReviewModalVisible(true);
+    setOfferingReviewLoading(true);
+    try {
+      const detail = await fetchOfferingModerationDetail(uid);
+      setOfferingReviewDetail(detail);
+    } catch (e) {
+      console.error("Offering review detail error:", e);
+      Alert.alert("Error", e?.message || "Failed to load offering details.");
+      setOfferingReviewModalVisible(false);
+    } finally {
+      setOfferingReviewLoading(false);
+    }
+  };
+
+  const handleOfferingReview = async (action) => {
+    const uid = offeringReviewItem?.profile_expertise_uid || offeringReviewItem?.expertise_uid || offeringReviewDetail?.profile_expertise_uid;
+    if (!uid) return;
+    if (action === "reject" && !offeringReviewNote.trim()) {
+      Alert.alert("Note required", "Please enter a note explaining the rejection for the offering owner.");
+      return;
+    }
+    setOfferingReviewSubmitting(true);
+    try {
+      await reviewOfferingModeration({
+        profileExpertiseUid: uid,
+        action,
+        note: offeringReviewNote.trim(),
+      });
+      setAdminOfferings((prev) => prev.filter((row) => (row.profile_expertise_uid || row.expertise_uid) !== uid));
+      setOfferingReviewModalVisible(false);
+      setOfferingReviewItem(null);
+      setOfferingReviewDetail(null);
+      Alert.alert("Done", `Offering ${action === "approve" ? "approved" : "rejected"} successfully.`);
+    } catch (e) {
+      console.error("Offering review submit error:", e);
+      Alert.alert("Error", e?.message || "Failed to submit review.");
+    } finally {
+      setOfferingReviewSubmitting(false);
+    }
+  };
+
+  const fetchAdminSeeking = async () => {
+    setSeekingLoading(true);
+    try {
+      const rows = await fetchSeekingModerationReviewQueue();
+      setAdminSeeking(rows);
+    } catch (e) {
+      console.error("Admin seeking fetch error:", e);
+      Alert.alert("Error", e?.message || "Failed to load seeking review queue.");
+    } finally {
+      setSeekingLoading(false);
+    }
+  };
+
+  const openSeekingReview = async (item) => {
+    const uid = item?.profile_wish_uid || item?.wish_uid;
+    if (!uid) return;
+    setSeekingReviewItem(item);
+    setSeekingReviewDetail(null);
+    setSeekingReviewNote("");
+    setSeekingReviewModalVisible(true);
+    setSeekingReviewLoading(true);
+    try {
+      const detail = await fetchSeekingModerationDetail(uid);
+      setSeekingReviewDetail(detail);
+    } catch (e) {
+      console.error("Seeking review detail error:", e);
+      Alert.alert("Error", e?.message || "Failed to load seeking details.");
+      setSeekingReviewModalVisible(false);
+    } finally {
+      setSeekingReviewLoading(false);
+    }
+  };
+
+  const handleSeekingReview = async (action) => {
+    const uid = seekingReviewItem?.profile_wish_uid || seekingReviewItem?.wish_uid || seekingReviewDetail?.profile_wish_uid;
+    if (!uid) return;
+    if (action === "reject" && !seekingReviewNote.trim()) {
+      Alert.alert("Note required", "Please enter a note explaining the rejection for the seeking post owner.");
+      return;
+    }
+    setSeekingReviewSubmitting(true);
+    try {
+      await reviewSeekingModeration({
+        profileWishUid: uid,
+        action,
+        note: seekingReviewNote.trim(),
+      });
+      setAdminSeeking((prev) => prev.filter((row) => (row.profile_wish_uid || row.wish_uid) !== uid));
+      setSeekingReviewModalVisible(false);
+      setSeekingReviewItem(null);
+      setSeekingReviewDetail(null);
+      Alert.alert("Done", `Seeking post ${action === "approve" ? "approved" : "rejected"} successfully.`);
+    } catch (e) {
+      console.error("Seeking review submit error:", e);
+      Alert.alert("Error", e?.message || "Failed to submit review.");
+    } finally {
+      setSeekingReviewSubmitting(false);
+    }
+  };
+
+  const fetchAdminProfiles = async () => {
+    setProfilesLoading(true);
+    try {
+      const rows = await fetchProfileModerationReviewQueue();
+      setAdminProfiles(rows);
+    } catch (e) {
+      console.error("Admin profiles fetch error:", e);
+      Alert.alert("Error", e?.message || "Failed to load profile review queue.");
+    } finally {
+      setProfilesLoading(false);
+    }
+  };
+
+  const openProfileReview = async (item) => {
+    const uid = item?.profile_personal_uid || item?.profile_uid;
+    if (!uid) return;
+    setProfileReviewItem(item);
+    setProfileReviewDetail(null);
+    setProfileReviewNote("");
+    setProfileReviewModalVisible(true);
+    setProfileReviewLoading(true);
+    try {
+      const detail = await fetchProfileModerationDetail(uid);
+      setProfileReviewDetail(detail);
+    } catch (e) {
+      console.error("Profile review detail error:", e);
+      Alert.alert("Error", e?.message || "Failed to load profile details.");
+      setProfileReviewModalVisible(false);
+    } finally {
+      setProfileReviewLoading(false);
+    }
+  };
+
+  const handleProfileReview = async (action) => {
+    const uid =
+      profileReviewItem?.profile_personal_uid ||
+      profileReviewItem?.profile_uid ||
+      profileReviewDetail?.profile_personal_uid ||
+      profileReviewDetail?.profile?.profile_personal_uid ||
+      profileReviewDetail?.personal_info?.profile_personal_uid;
+    if (!uid) return;
+    if (action === "reject" && !profileReviewNote.trim()) {
+      Alert.alert("Note required", "Please enter a note explaining the rejection for the profile owner.");
+      return;
+    }
+    setProfileReviewSubmitting(true);
+    try {
+      await reviewProfileModeration({
+        profilePersonalUid: uid,
+        action,
+        note: profileReviewNote.trim(),
+      });
+      setAdminProfiles((prev) => prev.filter((row) => (row.profile_personal_uid || row.profile_uid) !== uid));
+      setProfileReviewModalVisible(false);
+      setProfileReviewItem(null);
+      setProfileReviewDetail(null);
+      Alert.alert("Done", `Profile ${action === "approve" ? "approved" : "rejected"} successfully.`);
+    } catch (e) {
+      console.error("Profile review submit error:", e);
+      Alert.alert("Error", e?.message || "Failed to submit review.");
+    } finally {
+      setProfileReviewSubmitting(false);
+    }
+  };
+
+  const fetchAdminBusinesses = async () => {
+    setBusinessesLoading(true);
+    try {
+      const rows = await fetchBusinessModerationReviewQueue();
+      setAdminBusinesses(rows);
+    } catch (e) {
+      console.error("Admin businesses fetch error:", e);
+      Alert.alert("Error", e?.message || "Failed to load business review queue.");
+    } finally {
+      setBusinessesLoading(false);
+    }
+  };
+
+  const openBusinessReview = async (item) => {
+    const uid = item?.business_uid;
+    if (!uid) return;
+    setBusinessReviewItem(item);
+    setBusinessReviewDetail(null);
+    setBusinessReviewNote("");
+    setBusinessReviewModalVisible(true);
+    setBusinessReviewLoading(true);
+    try {
+      const detail = await fetchBusinessModerationDetail(uid);
+      setBusinessReviewDetail(detail);
+    } catch (e) {
+      console.error("Business review detail error:", e);
+      Alert.alert("Error", e?.message || "Failed to load business details.");
+      setBusinessReviewModalVisible(false);
+    } finally {
+      setBusinessReviewLoading(false);
+    }
+  };
+
+  const handleBusinessReview = async (action) => {
+    const uid = businessReviewItem?.business_uid || businessReviewDetail?.business_uid || businessReviewDetail?.business?.business_uid;
+    if (!uid) return;
+    if (action === "reject" && !businessReviewNote.trim()) {
+      Alert.alert("Note required", "Please enter a note explaining the rejection for the business owner.");
+      return;
+    }
+    setBusinessReviewSubmitting(true);
+    try {
+      await reviewBusinessModeration({
+        businessUid: uid,
+        action,
+        note: businessReviewNote.trim(),
+      });
+      setAdminBusinesses((prev) => prev.filter((row) => row.business_uid !== uid));
+      setBusinessReviewModalVisible(false);
+      setBusinessReviewItem(null);
+      setBusinessReviewDetail(null);
+      Alert.alert("Done", `Business ${action === "approve" ? "approved" : "rejected"} successfully.`);
+    } catch (e) {
+      console.error("Business review submit error:", e);
+      Alert.alert("Error", e?.message || "Failed to submit review.");
+    } finally {
+      setBusinessReviewSubmitting(false);
+    }
+  };
+
   return (
     <View style={[styles.container, darkMode && styles.darkContainer]}>
       {/* Nearby alert banner — floats above everything */}
@@ -1614,6 +1909,294 @@ export default function SettingsScreen() {
                   )}
                   <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminClaims}>
                     <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          )}
+
+          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
+            <>
+              <TouchableOpacity
+                style={[styles.informationSectionHeader, { backgroundColor: "rgba(183, 28, 28, 0.10)", marginTop: 8 }]}
+                onPress={() => {
+                  setShowOfferingsSection(!showOfferingsSection);
+                  if (!showOfferingsSection && adminOfferings.length === 0) fetchAdminOfferings();
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <MaterialIcons name='flag' size={16} color='#B71C1C' />
+                  <Text style={[styles.informationSectionHeaderText, { color: "#B71C1C" }]}>
+                    OFFERING REVIEWS {adminOfferings.length > 0 ? `(${adminOfferings.length})` : ""}
+                  </Text>
+                </View>
+                <Ionicons name={showOfferingsSection ? "chevron-up" : "chevron-down"} size={20} color='#B71C1C' />
+              </TouchableOpacity>
+
+              {showOfferingsSection && (
+                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#B71C1C" }]}>
+                  {offeringsLoading ? (
+                    <ActivityIndicator size='small' color='#B71C1C' style={{ margin: 16 }} />
+                  ) : adminOfferings.length === 0 ? (
+                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No offerings pending review.</Text>
+                  ) : (
+                    adminOfferings.map((row, idx) => {
+                      const uid = row.profile_expertise_uid || row.expertise_uid || "";
+                      const title = row.profile_expertise_title || row.title || uid || "Offering";
+                      const flagCount =
+                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
+                      const description = row.profile_expertise_description || row.description || "";
+                      const ownerName = [row.owner_first_name || row.profile_personal_first_name, row.owner_last_name || row.profile_personal_last_name]
+                        .filter(Boolean)
+                        .join(" ");
+                      return (
+                        <TouchableOpacity
+                          key={uid || idx}
+                          style={{
+                            padding: 12,
+                            borderBottomWidth: idx < adminOfferings.length - 1 ? 1 : 0,
+                            borderBottomColor: darkMode ? "#444" : "#eee",
+                            backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#fff5f5") : "transparent",
+                          }}
+                          onPress={() => openOfferingReview(row)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>{title}</Text>
+                          {description ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
+                              {description}
+                            </Text>
+                          ) : null}
+                          {ownerName ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text>
+                          ) : null}
+                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
+                            {uid}
+                            {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#4B2E83", marginTop: 6, fontWeight: "600" }}>Tap to review →</Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminOfferings}>
+                    <Text style={{ color: "#B71C1C", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          )}
+
+          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
+            <>
+              <TouchableOpacity
+                style={[styles.informationSectionHeader, { backgroundColor: "rgba(79, 138, 139, 0.12)", marginTop: 8 }]}
+                onPress={() => {
+                  setShowSeekingSection(!showSeekingSection);
+                  if (!showSeekingSection && adminSeeking.length === 0) fetchAdminSeeking();
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <MaterialIcons name='flag' size={16} color='#4F8A8B' />
+                  <Text style={[styles.informationSectionHeaderText, { color: "#4F8A8B" }]}>
+                    SEEKING REVIEWS {adminSeeking.length > 0 ? `(${adminSeeking.length})` : ""}
+                  </Text>
+                </View>
+                <Ionicons name={showSeekingSection ? "chevron-up" : "chevron-down"} size={20} color='#4F8A8B' />
+              </TouchableOpacity>
+
+              {showSeekingSection && (
+                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#4F8A8B" }]}>
+                  {seekingLoading ? (
+                    <ActivityIndicator size='small' color='#4F8A8B' style={{ margin: 16 }} />
+                  ) : adminSeeking.length === 0 ? (
+                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No seeking posts pending review.</Text>
+                  ) : (
+                    adminSeeking.map((row, idx) => {
+                      const uid = row.profile_wish_uid || row.wish_uid || "";
+                      const title = row.profile_wish_title || row.title || uid || "Seeking";
+                      const flagCount =
+                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
+                      const description = row.profile_wish_description || row.description || "";
+                      const ownerName = [row.owner_first_name || row.profile_personal_first_name, row.owner_last_name || row.profile_personal_last_name]
+                        .filter(Boolean)
+                        .join(" ");
+                      return (
+                        <TouchableOpacity
+                          key={uid || idx}
+                          style={{
+                            padding: 12,
+                            borderBottomWidth: idx < adminSeeking.length - 1 ? 1 : 0,
+                            borderBottomColor: darkMode ? "#444" : "#eee",
+                            backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#f5fbfb") : "transparent",
+                          }}
+                          onPress={() => openSeekingReview(row)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>{title}</Text>
+                          {description ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
+                              {description}
+                            </Text>
+                          ) : null}
+                          {ownerName ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text>
+                          ) : null}
+                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
+                            {uid}
+                            {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#4F8A8B", marginTop: 6, fontWeight: "600" }}>Tap to review →</Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminSeeking}>
+                    <Text style={{ color: "#4F8A8B", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          )}
+
+          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
+            <>
+              <TouchableOpacity
+                style={[styles.informationSectionHeader, { backgroundColor: "rgba(106, 27, 154, 0.10)", marginTop: 8 }]}
+                onPress={() => {
+                  setShowProfilesSection(!showProfilesSection);
+                  if (!showProfilesSection && adminProfiles.length === 0) fetchAdminProfiles();
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <MaterialIcons name='person' size={16} color='#6A1B9A' />
+                  <Text style={[styles.informationSectionHeaderText, { color: "#6A1B9A" }]}>
+                    PROFILE REVIEWS {adminProfiles.length > 0 ? `(${adminProfiles.length})` : ""}
+                  </Text>
+                </View>
+                <Ionicons name={showProfilesSection ? "chevron-up" : "chevron-down"} size={20} color='#6A1B9A' />
+              </TouchableOpacity>
+
+              {showProfilesSection && (
+                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#6A1B9A" }]}>
+                  {profilesLoading ? (
+                    <ActivityIndicator size='small' color='#6A1B9A' style={{ margin: 16 }} />
+                  ) : adminProfiles.length === 0 ? (
+                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No profiles pending review.</Text>
+                  ) : (
+                    adminProfiles.map((row, idx) => {
+                      const uid = row.profile_personal_uid || row.profile_uid || "";
+                      const name = [row.profile_personal_first_name || row.owner_first_name || row.first_name, row.profile_personal_last_name || row.owner_last_name || row.last_name]
+                        .filter(Boolean)
+                        .join(" ");
+                      const flagCount =
+                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
+                      const tagLine = row.profile_personal_tag_line || row.tag_line || "";
+                      const email = row.user_email || row.user_email_id || row.email || "";
+                      return (
+                        <TouchableOpacity
+                          key={uid || idx}
+                          style={{
+                            padding: 12,
+                            borderBottomWidth: idx < adminProfiles.length - 1 ? 1 : 0,
+                            borderBottomColor: darkMode ? "#444" : "#eee",
+                            backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#faf5ff") : "transparent",
+                          }}
+                          onPress={() => openProfileReview(row)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>
+                            {name || uid || "Profile"}
+                          </Text>
+                          {tagLine ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
+                              {tagLine}
+                            </Text>
+                          ) : null}
+                          {email ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>{email}</Text>
+                          ) : null}
+                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
+                            {uid}
+                            {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#6A1B9A", marginTop: 6, fontWeight: "600" }}>Tap to review →</Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminProfiles}>
+                    <Text style={{ color: "#6A1B9A", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          )}
+
+          {ADMIN_EMAILS.includes(userEmail || personalProfileData?.email) && (
+            <>
+              <TouchableOpacity
+                style={[styles.informationSectionHeader, { backgroundColor: "rgba(156, 69, 247, 0.10)", marginTop: 8 }]}
+                onPress={() => {
+                  setShowBusinessesSection(!showBusinessesSection);
+                  if (!showBusinessesSection && adminBusinesses.length === 0) fetchAdminBusinesses();
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <MaterialIcons name='storefront' size={16} color='#9C45F7' />
+                  <Text style={[styles.informationSectionHeaderText, { color: "#9C45F7" }]}>
+                    BUSINESS REVIEWS {adminBusinesses.length > 0 ? `(${adminBusinesses.length})` : ""}
+                  </Text>
+                </View>
+                <Ionicons name={showBusinessesSection ? "chevron-up" : "chevron-down"} size={20} color='#9C45F7' />
+              </TouchableOpacity>
+
+              {showBusinessesSection && (
+                <View style={[styles.settingsGroupContainer, darkMode && styles.darkSettingsGroupContainer, { borderColor: "#9C45F7" }]}>
+                  {businessesLoading ? (
+                    <ActivityIndicator size='small' color='#9C45F7' style={{ margin: 16 }} />
+                  ) : adminBusinesses.length === 0 ? (
+                    <Text style={{ color: "#888", padding: 12, fontSize: 13 }}>No businesses pending review.</Text>
+                  ) : (
+                    adminBusinesses.map((row, idx) => {
+                      const uid = row.business_uid || "";
+                      const name = row.business_name || uid || "Business";
+                      const flagCount =
+                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
+                      const category = row.business_category || "";
+                      const ownerName = [row.owner_first_name, row.owner_last_name].filter(Boolean).join(" ");
+                      return (
+                        <TouchableOpacity
+                          key={uid || idx}
+                          style={{
+                            padding: 12,
+                            borderBottomWidth: idx < adminBusinesses.length - 1 ? 1 : 0,
+                            borderBottomColor: darkMode ? "#444" : "#eee",
+                            backgroundColor: idx % 2 === 0 ? (darkMode ? "#2a2a2a" : "#f7f0ff") : "transparent",
+                          }}
+                          onPress={() => openBusinessReview(row)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>{name}</Text>
+                          {category ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
+                              {category}
+                            </Text>
+                          ) : null}
+                          {ownerName ? (
+                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text>
+                          ) : null}
+                          <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
+                            {uid}
+                            {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#9C45F7", marginTop: 6, fontWeight: "600" }}>Tap to review →</Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                  <TouchableOpacity style={{ padding: 10, alignItems: "center" }} onPress={fetchAdminBusinesses}>
+                    <Text style={{ color: "#9C45F7", fontSize: 12, fontWeight: "600" }}>↻ Refresh</Text>
                   </TouchableOpacity>
                 </View>
               )}
