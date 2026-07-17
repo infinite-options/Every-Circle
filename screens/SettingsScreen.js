@@ -249,6 +249,8 @@ export default function SettingsScreen() {
   // Messages Privacy (who can message me) — persisted server-side
   const [messagesSettings, setMessagesSettings] = useState(DEFAULT_MESSAGES_SETTINGS);
   const [messagesPrivacyModalVisible, setMessagesPrivacyModalVisible] = useState(false);
+  // Master "turn off all messages" switch — persisted server-side (profile_personal_messages_off)
+  const [messagesOff, setMessagesOff] = useState(false);
 
   // Live location sharing refs (stable across renders — no state needed)
   const locationWatcherRef = useRef(null); // expo-location subscription
@@ -702,6 +704,7 @@ export default function SettingsScreen() {
             receiveFrom: result.personal_info.profile_personal_messages_receive_from || "all_circles",
             receiveFromTypes: parseCircleTypesCsv(result.personal_info.profile_personal_messages_receive_types),
           });
+          setMessagesOff(result.personal_info.profile_personal_messages_off === 1);
         }
       } catch (e) {
         console.error("Error loading cached profile for settings:", e);
@@ -894,6 +897,25 @@ export default function SettingsScreen() {
       });
     } catch (_) {
       /* keep local state on failure — next load will resync from the server */
+    }
+  };
+
+  const toggleMessagesOff = async (value) => {
+    setMessagesOff(value);
+    try {
+      const uid = await AsyncStorage.getItem("profile_uid");
+      if (!uid) return;
+      const formData = new FormData();
+      formData.append("profile_uid", uid);
+      formData.append("profile_personal_messages_off", value ? "1" : "0");
+      const res = await fetch(`${USER_PROFILE_INFO_ENDPOINT}?profile_uid=${encodeURIComponent(uid)}`, {
+        method: "PUT",
+        body: formData,
+      });
+      if (!res.ok) throw new Error(`Failed to update: ${res.status}`);
+    } catch (e) {
+      setMessagesOff(!value);
+      Alert.alert("Error", "Could not update your messages setting.");
     }
   };
 
@@ -1608,7 +1630,7 @@ export default function SettingsScreen() {
               {/* Messages Privacy — opens modal */}
               {(() => {
                 const PRIVACY_LABEL = { everyone: "Everyone", all_circles: "All Circles", specific: "Specific" };
-                const receiveLabel = PRIVACY_LABEL[messagesSettings.receiveFrom] || messagesSettings.receiveFrom;
+                const receiveLabel = messagesOff ? "No one (all messages off)" : PRIVACY_LABEL[messagesSettings.receiveFrom] || messagesSettings.receiveFrom;
                 return (
                   <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setMessagesPrivacyModalVisible(true)} activeOpacity={0.8}>
                     <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
@@ -2610,18 +2632,29 @@ export default function SettingsScreen() {
             <Text style={[styles.nearbyModalTitle, darkMode && styles.darkWarningTitle]}>Messages Privacy</Text>
             <Text style={[styles.nearbyModalSubtitle, darkMode && styles.darkNearbySubText]}>Control who can message you.</Text>
 
-            <Text style={[styles.nearbyPrivacyGroupLabel, darkMode && styles.darkItemText, { marginTop: 8 }]}>Can Message Me</Text>
+            <View style={[styles.nearbyPrivacyOptionRow, { justifyContent: "space-between", paddingRight: 4 }]}>
+              <Text style={[styles.nearbyPrivacyGroupLabel, darkMode && styles.darkItemText, { marginTop: 0 }]}>Turn Off All Messages</Text>
+              <SettingsBoolPills value={messagesOff} onValueChange={toggleMessagesOff} leftLabel='Off' rightLabel='On' darkMode={darkMode} />
+            </View>
+
+            <Text style={[styles.nearbyPrivacyGroupLabel, darkMode && styles.darkItemText, { marginTop: 8, opacity: messagesOff ? 0.4 : 1 }]}>Can Message Me</Text>
             {[
               { key: "everyone", label: "Everyone (all app users)" },
               { key: "all_circles", label: "All Circle Members" },
               { key: "specific", label: "Specific Circles" },
             ].map(({ key, label }) => (
-              <TouchableOpacity key={key} style={styles.nearbyPrivacyOptionRow} onPress={() => updateMessagesSettings({ ...messagesSettings, receiveFrom: key })} activeOpacity={0.7}>
+              <TouchableOpacity
+                key={key}
+                style={[styles.nearbyPrivacyOptionRow, messagesOff && { opacity: 0.4 }]}
+                onPress={() => !messagesOff && updateMessagesSettings({ ...messagesSettings, receiveFrom: key })}
+                activeOpacity={messagesOff ? 1 : 0.7}
+                disabled={messagesOff}
+              >
                 <Ionicons name={messagesSettings.receiveFrom === key ? "radio-button-on" : "radio-button-off"} size={18} color={COLORS.primary} style={{ marginRight: 10 }} />
                 <Text style={[styles.nearbyPrivacyOptionText, darkMode && styles.darkNearbySubText]}>{label}</Text>
               </TouchableOpacity>
             ))}
-            {messagesSettings.receiveFrom === "specific" && (
+            {messagesSettings.receiveFrom === "specific" && !messagesOff && (
               <View style={styles.nearbyPrivacyCheckboxGroup}>
                 {[
                   { key: "friends", label: "Friends" },
