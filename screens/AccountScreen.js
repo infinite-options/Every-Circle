@@ -1233,18 +1233,23 @@ function getReturnStatusOverrideFromCache(returnStatusesByKey, ...keys) {
 /**
  * Status cache lookup for a list row.
  * Return rows must prefer trr_uid / return txn uid — never inherit a sibling return's
- * order-level cached "refunded" status when concurrent returns share an order_uid.
+ * order-level cached "refunded"/"pending" status when concurrent returns share an order_uid.
  */
 function getReturnStatusOverrideForRow(returnStatusesByKey, row, orderUid, listTransactionUid) {
   const trrUid = resolveTrrUid(row);
+  const isPendingReturnRow =
+    row?.is_pending_return === true ||
+    Number(row?.is_pending_return) === 1 ||
+    String(row?.transaction_uid || "").startsWith("540-") ||
+    String(row?.transaction_uid || "").startsWith("return-request-");
   if (isReturnListRow(row) || trrUid) {
     return getReturnStatusOverrideFromCache(
       returnStatusesByKey,
       trrUid,
       listTransactionUid,
       row?.transaction_uid,
-      // Only fall back to order_uid when this row has no trr (legacy single-return).
-      trrUid ? null : orderUid,
+      // Legacy single pending return may use order_uid; completed reverse txns must not.
+      isPendingReturnRow && !trrUid ? orderUid : null,
     );
   }
   return getReturnStatusOverrideFromCache(returnStatusesByKey, orderUid, listTransactionUid);
@@ -1414,12 +1419,14 @@ function applyHydratedReturnStateToPurchaseRows(rows, stateByOrderUid, itemHydra
     const state = stateByOrderUid?.[orderUid];
     const items = itemHydrationByOrderUid?.[orderUid];
     let next = row;
-    if (state) {
+    const isReturn = isReturnListRow(next);
+    // Sale-level return_status (often still "returning" while one reverse txn is refunded)
+    // must not overwrite completed reverse-txn rows that share order_uid.
+    if (state && !isReturn) {
       next = applyReturnRefundFieldsToRow(next, state);
       if (state.stripe_refund) next = { ...next, stripe_refund: state.stripe_refund };
     }
     if (items) {
-      const isReturn = isReturnListRow(next);
       next = {
         ...next,
         ...(items.pending_returns?.length
@@ -1448,6 +1455,88 @@ function applyHydratedReturnStateToPurchaseRows(rows, stateByOrderUid, itemHydra
     }
     return next;
   });
+}
+
+/**
+ * Build a buyer PURCHASES return row from GET /orders/:uid `returns[]` entry.
+ * Account-screen often omits reverse txns from the purchase list.
+ */
+function buildCompletedReturnPurchaseRow(saleRow, ret) {
+  const orderUid = resolveListRowOrderUid(saleRow);
+  const saleTxnUid = String(saleRow?.transaction_uid || orderUid || "").trim();
+  const retUid = String(ret?.transaction_uid || "").trim();
+  const retLines = Array.isArray(ret?.lines) ? ret.lines : [];
+  const retMoneyTotal = parseFloat(ret?.transaction_total ?? ret?.transaction_amount ?? NaN);
+  const total = Number.isFinite(retMoneyTotal) && retMoneyTotal !== 0 ? -Math.abs(retMoneyTotal) : 0;
+  const itemSummary = resolveReturnRowItemSummary(
+    {
+      is_return: 1,
+      transaction_type: "return",
+      lines: retLines,
+      _return_detail_lines: retLines,
+    },
+    saleRow,
+    null,
+  );
+  const qty =
+    itemSummary.qty != null
+      ? itemSummary.qty
+      : Math.abs(parseInt(retLines[0]?.return_quantity ?? retLines[0]?.ti_bs_qty, 10) || 1);
+  return {
+    ...(saleRow && typeof saleRow === "object" ? saleRow : {}),
+    is_return: 1,
+    is_pending_return: 0,
+    transaction_type: "return",
+    _isSyntheticReturn: true,
+    _fromOrderDetailReturns: true,
+    transaction_uid: retUid,
+    order_uid: orderUid !== "—" ? orderUid : saleTxnUid,
+    original_transaction_uid: saleTxnUid,
+    transaction_total: total,
+    seller_total: total,
+    bounty_paid: 0,
+    _pending_return_money: { total, bountyPaid: 0 },
+    ti_bs_qty: qty,
+    purchased_item: itemSummary.purchased_item || resolveLineItemDisplayName(retLines[0]) || null,
+    lines: retLines,
+    _return_detail_lines: retLines,
+    return_status: "returned",
+    refund_status: "refunded",
+    display_status: "Returned - Refunded",
+    transaction_return_status: "returned",
+    transaction_refund_status: "refunded",
+    transaction_return_requested: 1,
+    pending_return: undefined,
+    pending_returns: undefined,
+    _completed_returns: undefined,
+    transaction_datetime: ret?.transaction_datetime || ret?.transaction_datetime_local || saleRow?.transaction_datetime,
+    transaction_in_escrow: 0,
+  };
+}
+
+/** Insert completed reverse txns from order-detail hydration when missing from account-screen purchases. */
+function injectCompletedReturnsIntoPurchaseRows(rows, itemHydrationByOrderUid) {
+  if (!Array.isArray(rows) || !itemHydrationByOrderUid) return rows || [];
+  const existingTxnUids = new Set(
+    rows.map((row) => String(row?.transaction_uid || "").trim()).filter(Boolean),
+  );
+  const extras = [];
+  for (const [orderUid, items] of Object.entries(itemHydrationByOrderUid)) {
+    const completed = Array.isArray(items?.completed_returns) ? items.completed_returns : [];
+    if (!completed.length) continue;
+    const saleRow =
+      rows.find((row) => !isReturnListRow(row) && resolveListRowOrderUid(row) === orderUid) || {
+        order_uid: orderUid,
+        transaction_uid: orderUid,
+      };
+    for (const ret of completed) {
+      const retUid = String(ret?.transaction_uid || "").trim();
+      if (!retUid || existingTxnUids.has(retUid)) continue;
+      existingTxnUids.add(retUid);
+      extras.push(buildCompletedReturnPurchaseRow(saleRow, ret));
+    }
+  }
+  return extras.length ? [...rows, ...extras] : rows;
 }
 
 /** Normalize list/API return rows so stripe_fail (and returned+rejected) surface consistently when read. */
@@ -2141,6 +2230,8 @@ function resolveLineItemDisplayName(line) {
     const s = String(candidate ?? "").trim();
     if (!s) continue;
     if (s.toLowerCase() === "item") continue;
+    // Pending-return stubs sometimes put the ti_uid in item_name / purchased_item.
+    if (/^\d{3}-\d+$/.test(s)) continue;
     return s;
   }
   return null;
@@ -2156,7 +2247,8 @@ function resolveReturnRowItemSummary(returnOrSaleRow, saleSibling, returnRequest
     ...(Array.isArray(saleSibling?.lines) ? saleSibling.lines : []),
     ...(Array.isArray(returnOrSaleRow?._sale_detail_lines) ? returnOrSaleRow._sale_detail_lines : []),
     ...(Array.isArray(returnOrSaleRow?._return_detail_lines) ? returnOrSaleRow._return_detail_lines : []),
-    ...(Array.isArray(returnOrSaleRow?.lines) && !isReturnListRow(returnOrSaleRow) ? returnOrSaleRow.lines : []),
+    ...(Array.isArray(returnOrSaleRow?.return_lines) ? returnOrSaleRow.return_lines : []),
+    ...(Array.isArray(returnOrSaleRow?.lines) ? returnOrSaleRow.lines : []),
   ];
   // De-dupe lookup lines by ti_uid while keeping first occurrence.
   const seenLookup = new Set();
@@ -2169,41 +2261,59 @@ function resolveReturnRowItemSummary(returnOrSaleRow, saleSibling, returnRequest
     uniqueLookupLines.push(line);
   }
 
-  // Prefer concurrent pending_returns items; fall back to singular / local request.
-  const pendingCandidates = [
-    collectItemsFromPendingReturns(returnOrSaleRow),
-    collectItemsFromPendingReturns(saleSibling),
-    returnOrSaleRow?.transaction_return_items,
-    saleSibling?.transaction_return_items,
-    collectPendingReturnItemsFromRequestData(returnRequestData, uniqueLookupLines),
+  const isPendingReturnRow =
+    returnOrSaleRow?.is_pending_return === true ||
+    Number(returnOrSaleRow?.is_pending_return) === 1 ||
+    String(returnOrSaleRow?.transaction_uid || "").startsWith("540-") ||
+    String(returnOrSaleRow?.transaction_uid || "").startsWith("return-request-");
+
+  // Completed reverse txns: prefer their own lines first (do not steal sibling pending_return items).
+  const ownReturnLines = [
+    ...(Array.isArray(returnOrSaleRow?._return_detail_lines) ? returnOrSaleRow._return_detail_lines : []),
+    ...(Array.isArray(returnOrSaleRow?.return_lines) ? returnOrSaleRow.return_lines : []),
+    ...(isReturnListRow(returnOrSaleRow) && Array.isArray(returnOrSaleRow.lines) ? returnOrSaleRow.lines : []),
   ];
-  let pendingItems = [];
-  for (const candidate of pendingCandidates) {
-    if (Array.isArray(candidate) && candidate.length) {
-      pendingItems = candidate;
-      break;
-    }
+
+  let enriched = [];
+  if (!isPendingReturnRow && ownReturnLines.length) {
+    enriched = ownReturnLines.map((line) => {
+      const qty = Math.abs(parseInt(line.return_quantity ?? line.ti_bs_qty ?? line.quantity, 10) || 1);
+      return {
+        ...line,
+        item_name: resolveLineItemDisplayName(line) || "Item",
+        return_quantity: qty,
+        ti_bs_qty: qty,
+      };
+    });
   }
 
-  let enriched = mapPendingReturnItemsToLines(pendingItems, uniqueLookupLines);
-
-  // Actual reverse txn: use its own / hydrated return lines when they carry returned items.
   if (!enriched.length) {
-    const returnLines = [
-      ...(Array.isArray(returnOrSaleRow?._return_detail_lines) ? returnOrSaleRow._return_detail_lines : []),
-      ...(isReturnListRow(returnOrSaleRow) && Array.isArray(returnOrSaleRow.lines) ? returnOrSaleRow.lines : []),
+    const pendingCandidates = [
+      collectItemsFromPendingReturns(returnOrSaleRow),
+      ...(isPendingReturnRow ? [collectItemsFromPendingReturns(saleSibling)] : []),
+      returnOrSaleRow?.transaction_return_items,
+      collectPendingReturnItemsFromRequestData(returnRequestData, uniqueLookupLines),
     ];
-    if (returnLines.length) {
-      enriched = returnLines.map((line) => {
-        const qty = Math.abs(parseInt(line.return_quantity ?? line.ti_bs_qty ?? line.quantity, 10) || 1);
-        return {
-          ...line,
-          item_name: resolveLineItemDisplayName(line) || "Item",
-          return_quantity: qty,
-          ti_bs_qty: qty,
-        };
-      });
+    let pendingItems = [];
+    for (const candidate of pendingCandidates) {
+      if (Array.isArray(candidate) && candidate.length) {
+        pendingItems = candidate;
+        break;
+      }
     }
+    enriched = mapPendingReturnItemsToLines(pendingItems, uniqueLookupLines);
+  }
+
+  if (!enriched.length && ownReturnLines.length) {
+    enriched = ownReturnLines.map((line) => {
+      const qty = Math.abs(parseInt(line.return_quantity ?? line.ti_bs_qty ?? line.quantity, 10) || 1);
+      return {
+        ...line,
+        item_name: resolveLineItemDisplayName(line) || "Item",
+        return_quantity: qty,
+        ti_bs_qty: qty,
+      };
+    });
   }
 
   // Sale lines marked with returned_qty > 0.
@@ -2320,15 +2430,23 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, returnStatusesByKey
       pending_return: isPendingReturnRow ? row.pending_return || saleSibling?.pending_return : row.pending_return,
     };
     const statusOverride = getReturnStatusOverrideForRow(returnStatusesByKey, row, orderUid, txnUid);
+    // Completed reverse txns: ignore sale-level "returning/pending" cache leftovers.
+    const completedStatusOverride = isPendingReturnRow
+      ? statusOverride
+      : {
+          ...statusOverride,
+          ...(statusOverride.return_status === "returning" ? { return_status: "returned" } : {}),
+          ...(statusOverride.refund_status === "pending" ? { refund_status: "refunded" } : {}),
+        };
     const logistics = resolveReturnLogisticsLabels(statusSource, {
-      ...statusOverride,
+      ...completedStatusOverride,
       returnRequested: true,
-      // Completed reverse txns without explicit status → Returned / Refunded.
       ...(isPendingReturnRow
         ? {}
         : {
-            return_status: statusOverride.return_status || statusSource.return_status || "returned",
-            refund_status: statusOverride.refund_status || statusSource.refund_status || "refunded",
+            return_status: completedStatusOverride.return_status || statusSource.return_status || "returned",
+            refund_status: completedStatusOverride.refund_status || statusSource.refund_status || "refunded",
+            display_status: completedStatusOverride.display_status || statusSource.display_status || "Returned - Refunded",
           }),
     });
     const returnRequestData = returnRequestsByKey?.[orderUid] || returnRequestsByKey?.[txnUid] || null;
@@ -2347,8 +2465,19 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, returnStatusesByKey
     const total = money.total || estimated.total || 0;
     const bountyPaid = money.bountyPaid || estimated.bountyPaid || 0;
     const itemSummary = resolveReturnRowItemSummary(row, saleSibling, returnRequestData);
+    const rawPurchasedItem = String(row.purchased_item || "").trim();
+    const purchasedItemLooksLikeUid = /^\d{3}-\d+$/.test(rawPurchasedItem);
     const withMoney = {
       ...row,
+      // Pending return list rows often omit business_name but include seller_id.
+      business_name:
+        row.business_name ||
+        saleSibling?.business_name ||
+        saleSibling?.transaction_business_name ||
+        null,
+      seller_id: row.seller_id || saleSibling?.seller_id || saleSibling?.transaction_business_id || null,
+      transaction_business_id:
+        row.transaction_business_id || saleSibling?.transaction_business_id || saleSibling?.seller_id || null,
       transaction_total: total,
       seller_total: total,
       bounty_paid: bountyPaid,
@@ -2357,8 +2486,14 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, returnStatusesByKey
       display_status: statusSource.display_status || row.display_status,
       purchased_item:
         itemSummary.purchased_item ||
-        (itemSummary.qty != null ? null : row.purchased_item && String(row.purchased_item).trim().toLowerCase() !== "item" ? row.purchased_item : null),
+        (itemSummary.qty != null || purchasedItemLooksLikeUid
+          ? null
+          : rawPurchasedItem && rawPurchasedItem.toLowerCase() !== "item"
+            ? rawPurchasedItem
+            : null),
       ...(itemSummary.qty != null ? { ti_bs_qty: itemSummary.qty } : {}),
+      original_transaction_uid:
+        row.original_transaction_uid || row.transaction_original_uid || saleSibling?.transaction_uid || null,
     };
     if (!logistics) return withMoney;
     return applyReturnRefundFieldsToRow(withMoney, logistics);
@@ -5611,14 +5746,25 @@ export default function AccountScreen({ navigation }) {
       const outcome = await handleReturnAccept(saleUid, saleUid, sellerNote, stripeRefundResult, trrUid || null);
       if (outcome?.ok) {
         if (pending.listIdx != null) {
-          const perKey = `${saleUid}_${pending.listIdx}`;
-          setReturnStatuses((prev) => ({
-            ...prev,
-            [perKey]: outcome.state,
-            [saleUid]: outcome.state,
-            ...(trrUid ? { [trrUid]: outcome.state } : {}),
-          }));
+          const perKey = trrUid ? `${trrUid}_${pending.listIdx}` : `${saleUid}_${pending.listIdx}`;
+          setReturnStatuses((prev) => {
+            const next = {
+              ...prev,
+              [perKey]: outcome.state,
+              ...(trrUid ? { [trrUid]: outcome.state } : { [saleUid]: outcome.state }),
+            };
+            // Do not leave order-level Refunded when a specific concurrent return was confirmed.
+            if (trrUid && next[saleUid]) delete next[saleUid];
+            return next;
+          });
           await AsyncStorage.setItem(`return_status_${perKey}`, JSON.stringify(outcome.state));
+          if (trrUid) {
+            try {
+              await AsyncStorage.removeItem(`return_status_${saleUid}`);
+            } catch (_) {
+              /* ignore */
+            }
+          }
         }
         setReturnConfirmResult(outcome.result || outcome);
         setReturnDetailModal((prev) =>
@@ -5874,14 +6020,30 @@ export default function AccountScreen({ navigation }) {
               refund_status: hydrated.refund_status,
               display_status: hydrated.display_status,
             };
+            // Sale / order-level only — never stamp sale "returning/pending" onto completed reverse txns.
             statusPatch[orderUid] = payload;
-            if (hydrated.saleTxnUid) statusPatch[hydrated.saleTxnUid] = payload;
+            if (hydrated.saleTxnUid && hydrated.saleTxnUid !== orderUid) {
+              statusPatch[hydrated.saleTxnUid] = payload;
+            }
+            // Completed reverse txns are Returned / Refunded (or keep stripe_fail if that was hydrated).
+            const completedPayload =
+              hydrated.refund_status === "stripe_fail"
+                ? payload
+                : {
+                    return_status: "returned",
+                    refund_status: "refunded",
+                    display_status: "Returned - Refunded",
+                  };
             for (const returnTxnUid of hydrated.returnTxnUids || []) {
-              statusPatch[returnTxnUid] = payload;
+              if (returnTxnUid && returnTxnUid !== orderUid && returnTxnUid !== hydrated.saleTxnUid) {
+                statusPatch[returnTxnUid] = completedPayload;
+              }
             }
           }
           if (Object.keys(stateByOrderUid).length || Object.keys(itemHydrationByOrderUid).length) {
             normalizedPurchases = applyHydratedReturnStateToPurchaseRows(normalizedPurchases, stateByOrderUid, itemHydrationByOrderUid);
+            // Ensure completed reverse txns appear as PURCHASES rows (account-screen often omits them).
+            normalizedPurchases = injectCompletedReturnsIntoPurchaseRows(normalizedPurchases, itemHydrationByOrderUid);
             if (Object.keys(statusPatch).length) {
               setReturnStatuses((prev) => ({ ...prev, ...statusPatch }));
               await Promise.all(
@@ -7683,7 +7845,7 @@ export default function AccountScreen({ navigation }) {
                             <View style={{ flex: 1, paddingHorizontal: 4, justifyContent: "center", minWidth: 0 }}>
                               <TouchableOpacity onPress={() => navigateToPurchaseSeller(navigation, transaction)} activeOpacity={0.7} disabled={!sellerId}>
                                 <Text style={[styles.transactionBusiness, sellerId ? styles.receiptLink : null]} numberOfLines={4}>
-                                  {transaction.business_name || "N/A"}
+                                  {transaction.business_name || transaction.transaction_business_name || "N/A"}
                                 </Text>
                               </TouchableOpacity>
                             </View>
@@ -8877,13 +9039,24 @@ export default function AccountScreen({ navigation }) {
                     const outcome = await handleReturnDecline(saleUid, declineNote, saleUid, trrUid || null);
                     if (outcome?.ok) {
                       if (idx != null) {
-                        setReturnStatuses((prev) => ({
-                          ...prev,
-                          [`${saleUid}_${idx}`]: outcome.state,
-                          [saleUid]: outcome.state,
-                          ...(trrUid ? { [trrUid]: outcome.state } : {}),
-                        }));
-                        await AsyncStorage.setItem(`return_status_${saleUid}_${idx}`, JSON.stringify(outcome.state));
+                        const perKey = trrUid ? `${trrUid}_${idx}` : `${saleUid}_${idx}`;
+                        setReturnStatuses((prev) => {
+                          const next = {
+                            ...prev,
+                            [perKey]: outcome.state,
+                            ...(trrUid ? { [trrUid]: outcome.state } : { [saleUid]: outcome.state }),
+                          };
+                          if (trrUid && next[saleUid]) delete next[saleUid];
+                          return next;
+                        });
+                        await AsyncStorage.setItem(`return_status_${perKey}`, JSON.stringify(outcome.state));
+                        if (trrUid) {
+                          try {
+                            await AsyncStorage.removeItem(`return_status_${saleUid}`);
+                          } catch (_) {
+                            /* ignore */
+                          }
+                        }
                       }
                       setReturnConfirmResult(outcome.result || outcome);
                       setReturnDetailModal((prev) =>
