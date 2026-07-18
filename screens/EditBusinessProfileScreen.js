@@ -38,6 +38,7 @@ import TagSectionLabel from "../components/TagSectionLabel";
 import { API_BASE_URL, BUSINESS_INFO_ENDPOINT, USER_PROFILE_INFO_ENDPOINT, CATEGORY_LIST_ENDPOINT } from "../apiConfig";
 import { normalizeBusinessServiceFromApi as normalizeBusinessServiceRow, businessPaysCcFeeFromApiPayer, canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { parsePrice, formatCostValue } from "../utils/priceUtils";
+import { offeringBountyExceedsCost } from "../components/ExpertiseSection";
 import { isTruthyTaxableFlag, isValidTaxRate, TAX_RATE_VALIDATION_MESSAGE, taxRateForTaxableSelection } from "../utils/taxValidation";
 import { mergeCustomTags, parseTagList, serializeTagList } from "../utils/tagListUtils";
 import { buildBusinessServiceForApi, DEFAULT_RETURN_WINDOW_DAYS, normServiceReturnable, normServiceReturnWindowDays, normServiceTags, productImageFileFieldName, productImageUploadKey } from "../utils/buildBusinessServiceForApi";
@@ -3374,6 +3375,11 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
     const costUnitAddBlocked = costStrFlag !== "" && parsePrice(costStrFlag) > 0 && !serviceCostHasUnit(costStrFlag);
     const parsedServiceCost = parseServiceCost(serviceForm.bs_cost || "");
     const addServiceBlocked = taxAddBlocked || quantityAddBlocked || costUnitAddBlocked;
+    const bountyExceedsCost = offeringBountyExceedsCost({
+      profile_expertise_bounty_type: serviceForm.bs_bounty_type,
+      bounty: serviceForm.bs_bounty,
+      cost: serviceForm.bs_cost,
+    });
     return (
       <View style={[styles.serviceFormContainer, darkMode && styles.darkServiceFormContainer]}>
         <Text style={[styles.formTitle, darkMode && styles.darkFormTitle]}>{editingServiceIndex !== null ? "Edit Product/Service" : "Add New Product/Service"}</Text>
@@ -3711,6 +3717,11 @@ const EditBusinessProfileScreen = ({ route, navigation }) => {
             ) : null}
           </View>
         </View>
+        {bountyExceedsCost ? (
+          <Text style={[styles.bountyCostWarning, darkMode && styles.bountyCostWarningDark]}>
+            Warning: Bounty is greater than the item cost. You may pay referrers more than you charge per item.
+          </Text>
+        ) : null}
 
         <View style={styles.serviceFormCompactRow}>
           <Text style={[styles.serviceFormRowTitle, darkMode && styles.darkServiceFormRowTitle]}>Condition</Text>
@@ -5054,6 +5065,16 @@ const styles = StyleSheet.create({
   },
   serviceFormInput: {
     marginBottom: 12,
+  },
+  bountyCostWarning: {
+    fontSize: 13,
+    color: "#FF9500",
+    marginTop: -4,
+    marginBottom: 8,
+    lineHeight: 18,
+  },
+  bountyCostWarningDark: {
+    color: "#FFB340",
   },
   bountyTypeBtn: {
     paddingHorizontal: 16,

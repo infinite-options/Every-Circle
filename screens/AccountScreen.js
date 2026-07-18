@@ -1150,11 +1150,12 @@ async function createStripeRefund({ customerUid, businessCode, paymentIntent, re
 
 /**
  * Normalize backend return/refund pair (plus legacy accepted/declined values).
- * return_status: returning | returned
+ * return_status: returning | returned | cancelled
  * refund_status: pending | refunded | rejected | stripe_fail
  *   - rejected     = seller declined before receipt (Returning - Rejected)
  *   - stripe_fail  = return confirmed but Stripe refund failed/skipped (Returned - Stripe Fail)
  *     Backend often still sends Returned - Rejected for Stripe failures; we remap those here.
+ *   - cancelled    = pre-shipment cancel (no physical return); refund side still applies
  */
 function extractReturnRefundState(source = {}, override = {}) {
   const pick = (...vals) => {
@@ -1169,22 +1170,45 @@ function extractReturnRefundState(source = {}, override = {}) {
   let refundStatus = pick(override.refund_status, override.refundStatus, source.refund_status, source.transaction_refund_status);
   let displayStatus = String(override.display_status ?? source.display_status ?? "").trim();
 
+  // Explicit cancel-before-ship signals from API / FE.
+  const cancelSignal =
+    override.cancel_unshipped === true ||
+    override.cancel_unshipped === 1 ||
+    override.is_cancel_before_ship === true ||
+    source.is_cancel_before_ship === true ||
+    source.cancel_unshipped === true ||
+    Number(source.cancel_unshipped) === 1 ||
+    source.pre_ship_cancel === true ||
+    Number(source.pre_ship_cancel) === 1 ||
+    returnStatus === "cancelled" ||
+    returnStatus === "canceled" ||
+    /^cancell?ed\s*[-–]/i.test(displayStatus);
+
   // If the list/API row itself says CC Issue / stripe_fail, don't let a stale cache "refunded" win.
   const sourceRefund = pick(source.refund_status, source.transaction_refund_status);
   const sourceDisplay = String(source.display_status || "").trim();
-  if (sourceRefund === "stripe_fail" || sourceRefund === "stripe_failed" || /returned\s*[-–]\s*(cc\s*issue|stripe\s*fail|stripe_fail|stripe_failed)/i.test(sourceDisplay)) {
+  if (sourceRefund === "stripe_fail" || sourceRefund === "stripe_failed" || /(?:returned|cancell?ed)\s*[-–]\s*(cc\s*issue|stripe\s*fail|stripe_fail|stripe_failed)/i.test(sourceDisplay)) {
     refundStatus = "stripe_fail";
-    returnStatus = pick(source.return_status, source.transaction_return_status) || "returned";
+    returnStatus = pick(source.return_status, source.transaction_return_status) || (cancelSignal ? "cancelled" : "returned");
     if (sourceDisplay) displayStatus = sourceDisplay;
   }
 
-  const returnDisplayMatch = displayStatus.match(/^(returning|returned)\s*[-–]\s*(pending|refunded|rejected|stripe\s*fail|stripe_fail|stripe_failed|cc\s*issue)$/i);
+  const returnDisplayMatch = displayStatus.match(/^(returning|returned|cancell?ed)\s*[-–]\s*(pending|refunded|rejected|stripe\s*fail|stripe_fail|stripe_failed|cc\s*issue)$/i);
   if (returnDisplayMatch) {
-    if (!returnStatus) returnStatus = returnDisplayMatch[1].toLowerCase();
+    if (!returnStatus) {
+      const word = returnDisplayMatch[1].toLowerCase();
+      returnStatus = word.startsWith("cancel") ? "cancelled" : word;
+    }
     if (!refundStatus) {
       const received = returnDisplayMatch[2].toLowerCase().replace(/\s+/g, "_");
       refundStatus = received === "stripe_fail" || received === "stripe_failed" || received === "cc_issue" ? "stripe_fail" : received;
     }
+  }
+
+  if (returnStatus === "canceled") returnStatus = "cancelled";
+  // Pre-ship cancel: prefer cancelled unless this is an explicit Returning-Rejected decline.
+  if (cancelSignal && !(returnStatus === "returning" && refundStatus === "rejected")) {
+    returnStatus = "cancelled";
   }
 
   const explicitReturnSignal =
@@ -1194,11 +1218,13 @@ function extractReturnRefundState(source = {}, override = {}) {
     isReturnListRow(source) ||
     !!returnDisplayMatch ||
     returnStatus === "returning" ||
-    returnStatus === "returned";
+    returnStatus === "returned" ||
+    returnStatus === "cancelled" ||
+    cancelSignal;
 
   // Legacy single-field values from older FE / AsyncStorage.
   // Only remap order-lifecycle words (completed/accepted/etc.) when this is actually a return.
-  if (explicitReturnSignal || returnStatus === "returning" || returnStatus === "returned") {
+  if (explicitReturnSignal || returnStatus === "returning" || returnStatus === "returned" || returnStatus === "cancelled") {
     if (returnStatus === "accepted") {
       returnStatus = "returned";
       if (!refundStatus || refundStatus === "accepted") refundStatus = "refunded";
@@ -1207,7 +1233,7 @@ function extractReturnRefundState(source = {}, override = {}) {
       // Decline before receipt → Returning - Rejected
       returnStatus = "returning";
     } else if (returnStatus === "resolved" || returnStatus === "completed") {
-      returnStatus = "returned";
+      returnStatus = cancelSignal ? "cancelled" : "returned";
       refundStatus = refundStatus || "refunded";
     } else if (returnStatus === "rejected" && !refundStatus) {
       refundStatus = "rejected";
@@ -1221,7 +1247,7 @@ function extractReturnRefundState(source = {}, override = {}) {
   if (refundStatus === "declined") refundStatus = "rejected";
   if (refundStatus === "accepted") refundStatus = "refunded";
 
-  const isKnownReturnStatus = returnStatus === "returning" || returnStatus === "returned";
+  const isKnownReturnStatus = returnStatus === "returning" || returnStatus === "returned" || returnStatus === "cancelled";
   const isKnownRefundStatus = refundStatus === "pending" || refundStatus === "refunded" || refundStatus === "rejected" || refundStatus === "stripe_fail";
 
   // Do NOT treat an arbitrary display_status (or unknown status strings) as a return.
@@ -1233,12 +1259,13 @@ function extractReturnRefundState(source = {}, override = {}) {
     isReturnListRow(source) ||
     !!returnDisplayMatch ||
     isKnownReturnStatus ||
+    cancelSignal ||
     (isKnownRefundStatus && isKnownReturnStatus);
 
   const stripeRefund = override.stripe_refund || source.stripe_refund || null;
   const stripeRefundFailed = stripeRefund && typeof stripeRefund === "object" && (stripeRefund.ok === false || stripeRefund.skipped === true);
   const displayIndicatesStripeFail =
-    /returned\s*[-–]\s*(cc\s*issue|stripe\s*fail|stripe_fail|stripe_failed)/i.test(String(displayStatus || "")) ||
+    /(?:returned|cancell?ed)\s*[-–]\s*(cc\s*issue|stripe\s*fail|stripe_fail|stripe_failed)/i.test(String(displayStatus || "")) ||
     (returnDisplayMatch &&
       ["stripe_fail", "stripe_failed", "cc_issue"].includes(
         String(returnDisplayMatch[2] || "")
@@ -1246,30 +1273,34 @@ function extractReturnRefundState(source = {}, override = {}) {
           .replace(/\s+/g, "_"),
       ));
 
-  // Returned + rejected / stripe_refund fail / display_status CC Issue = Stripe fail (not a completed refund).
+  // Returned/Cancelled + rejected / stripe_refund fail / display_status CC Issue = Stripe fail (not a completed refund).
   // Prefer these signals over a stale refund_status=refunded (common on buyer list rows).
   if (
     refundStatus === "stripe_fail" ||
     refundStatus === "stripe_failed" ||
-    (returnStatus === "returned" && refundStatus === "rejected") ||
-    (returnStatus === "returned" && stripeRefundFailed) ||
+    ((returnStatus === "returned" || returnStatus === "cancelled") && refundStatus === "rejected") ||
+    ((returnStatus === "returned" || returnStatus === "cancelled") && stripeRefundFailed) ||
     displayIndicatesStripeFail ||
     stripeRefundFailed
   ) {
-    returnStatus = "returned";
+    returnStatus = returnStatus === "cancelled" || cancelSignal ? "cancelled" : "returned";
     refundStatus = "stripe_fail";
   }
 
   if (!displayStatus && returnStatus && refundStatus) {
-    const deliveredWord = returnStatus === "returned" ? "Returned" : "Returning";
+    const deliveredWord = returnStatus === "cancelled" ? "Cancelled" : returnStatus === "returned" ? "Returned" : "Returning";
     const receivedWord = refundStatus === "refunded" ? "Refunded" : refundStatus === "stripe_fail" ? "CC Issue" : refundStatus === "rejected" ? "Rejected" : "Pending";
     displayStatus = `${deliveredWord} - ${receivedWord}`;
   } else if (displayStatus) {
     // Normalize API "Returned - Rejected" / "Stripe Fail" (post-confirm Stripe fail) for chips.
-    displayStatus = displayStatus.replace(/Returned\s*[-–]\s*Rejected/i, "Returned - CC Issue").replace(/Returned\s*[-–]\s*Stripe\s*Fail/i, "Returned - CC Issue");
+    displayStatus = displayStatus
+      .replace(/Returned\s*[-–]\s*Rejected/i, "Returned - CC Issue")
+      .replace(/Returned\s*[-–]\s*Stripe\s*Fail/i, "Returned - CC Issue")
+      .replace(/Cancell?ed\s*[-–]\s*Rejected/i, "Cancelled - CC Issue")
+      .replace(/Cancell?ed\s*[-–]\s*Stripe\s*Fail/i, "Cancelled - CC Issue");
   }
   if (refundStatus === "stripe_fail") {
-    displayStatus = "Returned - CC Issue";
+    displayStatus = returnStatus === "cancelled" ? "Cancelled - CC Issue" : "Returned - CC Issue";
   }
 
   return {
@@ -1277,6 +1308,7 @@ function extractReturnRefundState(source = {}, override = {}) {
     refund_status: refundStatus,
     display_status: displayStatus,
     active: returnRequested,
+    is_cancel_before_ship: returnStatus === "cancelled" || !!cancelSignal,
   };
 }
 
@@ -1288,10 +1320,15 @@ function extractReturnRefundState(source = {}, override = {}) {
  *   Returned  - Refunded
  *   Returned  - CC Issue     (confirm ok, Stripe refund failed/skipped)
  *   Returning - Rejected     (seller rejects before receiving)
+ *   Cancelled - Pending|Refunded|CC Issue  (pre-shipment cancel; no physical return)
  */
 function resolveReturnLogisticsLabels(row, override = {}) {
   if (!row || typeof row !== "object") return null;
-  const state = extractReturnRefundState(row, override);
+  const inferredCancel = isPreShipCancelReturn(row, override.saleSibling || override.sale || null);
+  const state = extractReturnRefundState(row, {
+    ...override,
+    ...(inferredCancel ? { cancel_unshipped: true } : {}),
+  });
   if (!state.active) return null;
 
   const isReturnTxn = isReturnListRow(row);
@@ -1301,7 +1338,7 @@ function resolveReturnLogisticsLabels(row, override = {}) {
   // Return txn rows without status fields are post-confirm refunds.
   // Do not guess "refunded" when stripe fail signals are present on the row.
   if (isReturnTxn && !returnStatus) {
-    returnStatus = "returned";
+    returnStatus = inferredCancel || state.is_cancel_before_ship ? "cancelled" : "returned";
     if (!refundStatus) {
       const stripeRefund = row.stripe_refund;
       const stripeRefundFailed = stripeRefund && typeof stripeRefund === "object" && (stripeRefund.ok === false || stripeRefund.skipped === true);
@@ -1310,7 +1347,7 @@ function resolveReturnLogisticsLabels(row, override = {}) {
       else refundStatus = Number(row.transaction_in_escrow ?? row.in_escrow) === 1 ? "pending" : "refunded";
     }
   }
-  if (!returnStatus) returnStatus = "returning";
+  if (!returnStatus) returnStatus = inferredCancel ? "cancelled" : "returning";
   if (!refundStatus) refundStatus = "pending";
 
   // Stripe fail: item received (returned) but refund rejected/failed.
@@ -1318,7 +1355,7 @@ function resolveReturnLogisticsLabels(row, override = {}) {
     refundStatus = "stripe_fail";
   }
 
-  const delivered = returnStatus === "returned" ? "Returned" : "Returning";
+  const delivered = returnStatus === "cancelled" ? "Cancelled" : returnStatus === "returned" ? "Returned" : "Returning";
   const received = refundStatus === "refunded" ? "Refunded" : refundStatus === "stripe_fail" ? "CC Issue" : refundStatus === "rejected" ? "Rejected" : "Pending";
 
   return {
@@ -1327,7 +1364,56 @@ function resolveReturnLogisticsLabels(row, override = {}) {
     return_status: returnStatus,
     refund_status: refundStatus,
     display_status: state.display_status || `${delivered} - ${received}`,
+    is_cancel_before_ship: returnStatus === "cancelled" || !!state.is_cancel_before_ship || inferredCancel,
   };
+}
+
+/** True when this return/cancel targets inventory that has not shipped yet. */
+function isPreShipCancelReturn(row, saleSibling = null) {
+  if (!row || typeof row !== "object") return false;
+  const status = String(row.return_status || row.transaction_return_status || "")
+    .trim()
+    .toLowerCase();
+  if (status === "cancelled" || status === "canceled") return true;
+  if (row.is_cancel_before_ship === true || Number(row.is_cancel_before_ship) === 1) return true;
+  if (row.cancel_unshipped === true || Number(row.cancel_unshipped) === 1) return true;
+  if (row.pre_ship_cancel === true || Number(row.pre_ship_cancel) === 1) return true;
+  if (/^cancell?ed\s*[-–]/i.test(String(row.display_status || ""))) return true;
+
+  const sale = saleSibling && typeof saleSibling === "object" && !isReturnListRow(saleSibling) ? saleSibling : null;
+  if (!sale) return false;
+  const shippedCount = parseInt(sale.shipped_item_count, 10);
+  const shippableCount = parseInt(sale.shippable_item_count ?? sale.unshipped_item_count, 10);
+  if (Number.isFinite(shippedCount) && shippedCount === 0) {
+    if ((Number.isFinite(shippableCount) && shippableCount > 0) || orderNeedsShipping(sale) || !!extractShippingAddress(sale)) {
+      return true;
+    }
+    const fs = String(sale.fulfillment_status || sale.shipping_status || "")
+      .trim()
+      .toLowerCase();
+    if (["not_shipped", "pending_shipment", "awaiting_shipment", "unfulfilled", "ready_to_ship"].includes(fs)) return true;
+  }
+  return false;
+}
+
+/**
+ * Given order-detail sale lines + return lines, true when every returned unit
+ * maps to an original sale line that still has shipped_qty === 0.
+ */
+function areScopedReturnItemsUnshipped(orderDetail, returnLines) {
+  const saleLines = Array.isArray(orderDetail?.sale?.lines) ? orderDetail.sale.lines : [];
+  const lines = Array.isArray(returnLines) ? returnLines : [];
+  if (!saleLines.length || !lines.length) return false;
+  let matched = 0;
+  for (const retLine of lines) {
+    const originalTi = String(retLine?.ti_original_ti_uid || retLine?.transaction_item_uid || retLine?.ti_uid || "").trim();
+    if (!originalTi) continue;
+    const saleLine = saleLines.find((line) => String(line?.ti_uid || line?.transaction_item_uid || "").trim() === originalTi);
+    if (!saleLine) continue;
+    matched += 1;
+    if (getLineShippedQty(saleLine) > 0) return false;
+  }
+  return matched > 0;
 }
 
 function getReturnStatusOverrideFromCache(returnStatusesByKey, ...keys) {
@@ -1452,7 +1538,7 @@ function extractReturnRefundStateFromOrderDetail(orderDetail) {
     },
   );
   if (!state?.active || !state.return_status || !state.refund_status) return null;
-  const delivered = state.return_status === "returned" ? "Returned" : "Returning";
+  const delivered = state.return_status === "cancelled" ? "Cancelled" : state.return_status === "returned" ? "Returned" : "Returning";
   const received = state.refund_status === "refunded" ? "Refunded" : state.refund_status === "stripe_fail" ? "CC Issue" : state.refund_status === "rejected" ? "Rejected" : "Pending";
   return {
     return_status: state.return_status,
@@ -1461,6 +1547,7 @@ function extractReturnRefundStateFromOrderDetail(orderDetail) {
     stripe_refund: orderDetail.stripe_refund || sale?.stripe_refund || firstReturn?.stripe_refund || null,
     saleTxnUid: String(sale?.transaction_uid || "").trim(),
     returnTxnUids: returns.map((ret) => String(ret?.transaction_uid || "").trim()).filter(Boolean),
+    is_cancel_before_ship: !!state.is_cancel_before_ship || state.return_status === "cancelled",
   };
 }
 
@@ -1921,7 +2008,7 @@ function pendingReturnFieldsFromOrderDetail(orderDetail, bountyLines = []) {
   };
 }
 
-function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, returnStatusesByKey) {
+function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, returnStatusesByKey, saleSibling = null) {
   const orderUid = resolveListRowOrderUid(row);
   const isReturn = isReturnListRow(row);
   const dateMs = transactionDateMs(row);
@@ -1930,7 +2017,11 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, return
   // Prefer fulfillment fields from account-screen list rows over hydration overrides.
   const shippingProgressOverride = listRowHasExplicitShippingProgress(row) ? null : (shippingProgressByKey && (shippingProgressByKey[orderUid] || shippingProgressByKey[listTransactionUid])) || null;
   const statusOverride = getReturnStatusOverrideForRow(returnStatusesByKey, row, orderUid, listTransactionUid);
-  const returnLogistics = resolveReturnLogisticsLabels(row, statusOverride);
+  const returnLogistics = resolveReturnLogisticsLabels(row, {
+    ...statusOverride,
+    saleSibling,
+    ...(isPreShipCancelReturn(row, saleSibling) ? { cancel_unshipped: true } : {}),
+  });
 
   // Keep Order rows on shipping/receipt chips. Return logistics belong on the Return row only.
   if (isReturn) {
@@ -1998,8 +2089,16 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, return
 function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines, shippingProgressByKey, returnStatusesByKey) {
   if (!Array.isArray(sellerLines)) return [];
   const bountyByTransactionUid = buildBountyPaidByTransactionUid(bountyLines);
+  const saleByOrderUid = {};
+  for (const row of sellerLines) {
+    if (isReturnListRow(row)) continue;
+    const orderUid = resolveListRowOrderUid(row);
+    if (orderUid && orderUid !== "—") saleByOrderUid[orderUid] = row;
+  }
   const mapped = sellerLines.map((row) => {
-    const mappedRow = mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, returnStatusesByKey);
+    const orderUid = resolveListRowOrderUid(row);
+    const saleSibling = isReturnListRow(row) ? saleByOrderUid[orderUid] || null : null;
+    const mappedRow = mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, returnStatusesByKey, saleSibling);
     if (mappedRow.isReturn) {
       const money = resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines);
       return { ...mappedRow, total: money.total, bountyPaid: money.bountyPaid };
@@ -2238,12 +2337,17 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, returnStatusesByKey
     const logistics = resolveReturnLogisticsLabels(statusSource, {
       ...completedStatusOverride,
       returnRequested: true,
+      saleSibling,
+      ...(isPreShipCancelReturn(statusSource, saleSibling) ? { cancel_unshipped: true } : {}),
       ...(isPendingReturnRow
         ? {}
         : {
-            return_status: completedStatusOverride.return_status || statusSource.return_status || "returned",
+            return_status: completedStatusOverride.return_status || statusSource.return_status || (isPreShipCancelReturn(statusSource, saleSibling) ? "cancelled" : "returned"),
             refund_status: completedStatusOverride.refund_status || statusSource.refund_status || "refunded",
-            display_status: completedStatusOverride.display_status || statusSource.display_status || "Returned - Refunded",
+            display_status:
+              completedStatusOverride.display_status ||
+              statusSource.display_status ||
+              (isPreShipCancelReturn(statusSource, saleSibling) ? "Cancelled - Refunded" : "Returned - Refunded"),
           }),
     });
     const returnRequestData = returnRequestsByKey?.[orderUid] || returnRequestsByKey?.[txnUid] || null;
@@ -2420,6 +2524,8 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
           purchasedQty,
           remainingQty,
           transactionItemUid,
+          shippedQty: getLineShippedQty(line),
+          line,
         };
       })
       .filter(Boolean);
@@ -3065,7 +3171,9 @@ function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, er
           if (!lineRequiresShipping(line) && getLineShippedQty(line) <= 0) return null;
           const purchasedQty = Math.max(1, getLinePurchasedQty(line) || 1);
           const shippedQty = getLineShippedQty(line);
-          const remainingQty = Math.max(0, purchasedQty - shippedQty);
+          const returnedQty = getLineReturnedQty(line);
+          const remainingQty = getLineRemainingShipQty(line);
+          const cancelledQty = getLineCancelledFromShipQty(line);
           const trackingCarrier = String(line.tracking_carrier || line.ti_tracking_carrier || "").trim();
           const trackingNumber = String(line.tracking_number || line.ti_tracking_number || "").trim();
           return {
@@ -3074,6 +3182,8 @@ function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, er
             itemName: line.item_name || line.ti_bs_id || "Item",
             purchasedQty,
             shippedQty,
+            returnedQty,
+            cancelledQty,
             remainingQty,
             alreadyShipped: remainingQty <= 0,
             trackingCarrier,
@@ -3215,7 +3325,7 @@ function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, er
                 <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
                   <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle]}>Mark items shipped</Text>
                   <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>
-                    Check items to ship and set how many are going out now. Qty defaults to the remaining amount. Carrier and tracking are optional.
+                    Check items to ship and set how many are going out now. Qty defaults to the remaining amount (cancelled units are excluded). Carrier and tracking are optional.
                   </Text>
 
                   {shippableLines
@@ -3233,7 +3343,13 @@ function OrderDetailModal({ visible, onClose, orderUid, orderDetail, loading, er
                                 {row.itemName}
                               </Text>
                               <Text style={[styles.orderDetailShipTrackingMeta, darkMode && { color: "#aaa" }]}>
-                                {row.shippedQty > 0 ? `${row.shippedQty}/${row.purchasedQty} shipped · ${row.remainingQty} left` : `Qty ${row.purchasedQty}`}
+                                {row.cancelledQty > 0
+                                  ? row.remainingQty > 0
+                                    ? `Ordered ${row.purchasedQty} · ${row.cancelledQty} cancelled · ${row.remainingQty} left to ship`
+                                    : `Ordered ${row.purchasedQty} · ${row.cancelledQty} cancelled · nothing left to ship`
+                                  : row.shippedQty > 0
+                                    ? `${row.shippedQty}/${row.purchasedQty} shipped · ${row.remainingQty} left`
+                                    : `Qty ${row.purchasedQty}`}
                               </Text>
                             </View>
                           </TouchableOpacity>
@@ -3432,21 +3548,30 @@ function ReturnDetailsModal({
     sale ||
     orderDetail ||
     {};
+  const preShipCancel =
+    areScopedReturnItemsUnshipped(orderDetail, returnLines) ||
+    isPreShipCancelReturn(statusSource, sale) ||
+    isPreShipCancelReturn(sourceReturnRow, sale);
   const logistics = resolveReturnLogisticsLabels(statusSource, {
     returnRequested: true,
+    ...(preShipCancel ? { cancel_unshipped: true, saleSibling: sale } : { saleSibling: sale }),
     ...(statusOverride || {}),
   });
   const returnStatus = logistics?.return_status || "";
   const refundStatus = logistics?.refund_status || "";
   const displayStatus = logistics?.display_status || "";
+  const isCancelBeforeShip = returnStatus === "cancelled" || !!logistics?.is_cancel_before_ship || preShipCancel;
   const pendingSellerDecision = returnStatus === "returning" && refundStatus === "pending";
-  const awaitingSellerAction = isSellerView && pendingSellerDecision;
-  const refundPendingAfterConfirm = returnStatus === "returned" && refundStatus === "pending";
+  const pendingCancelDecision = isCancelBeforeShip && returnStatus === "cancelled" && refundStatus === "pending";
+  const awaitingSellerAction = isSellerView && pendingSellerDecision && !isCancelBeforeShip;
+  const awaitingCancelConfirm = isSellerView && pendingCancelDecision;
+  const refundPendingAfterConfirm = (returnStatus === "returned" || returnStatus === "cancelled") && refundStatus === "pending";
   const isRefunded = refundStatus === "refunded";
   const isRejected = refundStatus === "rejected";
   const isStripeFail = refundStatus === "stripe_fail" || refundStatus === "stripe_failed";
   const receivedKeys = Array.isArray(receivedItemKeys) ? receivedItemKeys : [];
   const allItemsReceived = returnItems.length > 0 && returnItems.every((item) => receivedKeys.includes(item.key));
+  const canConfirmCancel = awaitingCancelConfirm && returnItems.length > 0;
   const buyerNote = String(
     (scoped.hasScope
       ? scoped.scopedPending?.note ||
@@ -3469,16 +3594,37 @@ function ReturnDetailsModal({
 
   const statusBanner = (() => {
     if (!logistics) return null;
-    if (pendingSellerDecision && isSellerView) return null;
+    if (pendingSellerDecision && isSellerView && !isCancelBeforeShip) return null;
+    if (pendingCancelDecision && isSellerView) return null;
+    if (pendingCancelDecision && !isSellerView) {
+      return "Items were not shipped — waiting for seller to confirm cancel and refund.";
+    }
     if (pendingSellerDecision && !isSellerView) {
       return "Waiting for seller to confirm receipt of your return.";
     }
     if (refundPendingAfterConfirm) {
+      if (isCancelBeforeShip) {
+        return isSellerView ? "Cancel confirmed — Delivered: Cancelled · Received: Pending (processing refund)" : "Seller confirmed your cancel — refund is processing.";
+      }
       return isSellerView ? "Item received — Delivered: Returned · Received: Pending (processing refund)" : "Seller received your return — refund is processing.";
     }
-    if (isRefunded) return isSellerView ? "Delivered: Returned · Received: Refunded" : "Refund completed.";
+    if (isRefunded) {
+      return isCancelBeforeShip
+        ? isSellerView
+          ? "Delivered: Cancelled · Received: Refunded"
+          : "Cancel completed — refund issued (item was never shipped)."
+        : isSellerView
+          ? "Delivered: Returned · Received: Refunded"
+          : "Refund completed.";
+    }
     if (isStripeFail) {
-      return isSellerView ? "CC Issue — Delivered: Returned · Received: CC Issue (refund not completed)" : "Refund could not be completed (card issue). Contact the seller if this persists.";
+      return isCancelBeforeShip
+        ? isSellerView
+          ? "CC Issue — Delivered: Cancelled · Received: CC Issue (refund not completed)"
+          : "Refund could not be completed (card issue). Contact the seller if this persists."
+        : isSellerView
+          ? "CC Issue — Delivered: Returned · Received: CC Issue (refund not completed)"
+          : "Refund could not be completed (card issue). Contact the seller if this persists.";
     }
     if (isRejected && returnStatus === "returning") {
       return isSellerView ? "Return rejected — Delivered: Returning · Received: Rejected" : "Seller rejected this return.";
@@ -3508,7 +3654,9 @@ function ReturnDetailsModal({
             <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No return data available.</Text>
           ) : (
             <ScrollView style={styles.businessOrderDetailScroll} nestedScrollEnabled keyboardShouldPersistTaps='handled'>
-              <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { marginTop: 8 }]}>{awaitingSellerAction ? "Select item(s) received:" : "Items being returned"}</Text>
+              <Text style={[styles.orderDetailSectionTitle, darkMode && styles.darkTitle, { marginTop: 8 }]}>
+                {awaitingSellerAction ? "Select item(s) received:" : isCancelBeforeShip ? "Items cancelled (not shipped)" : "Items being returned"}
+              </Text>
 
               {returnLines.length > 0 ? (
                 <OrderDetailLinesTable
@@ -3524,7 +3672,9 @@ function ReturnDetailsModal({
                   selectionDisabled={confirming || declining}
                 />
               ) : (
-                <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No pending return line items on this order.</Text>
+                <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>
+                  {isCancelBeforeShip ? "No cancelled line items on this order." : "No pending return line items on this order."}
+                </Text>
               )}
 
               {buyerNote ? (
@@ -3589,6 +3739,30 @@ function ReturnDetailsModal({
                   </View>
                 </View>
               ) : null}
+
+              {awaitingCancelConfirm ? (
+                <View style={[styles.orderDetailSummaryCard, darkMode && styles.orderDetailSectionCardDark, { marginTop: 12 }]}>
+                  <Text style={[styles.orderDetailSectionNote, darkMode && { color: "#aaa" }]}>
+                    These items were never shipped. Confirming cancels the ship quantity and issues the refund. No physical return is required.
+                  </Text>
+                  <View style={[styles.orderDetailShipActions, { marginTop: 14 }]}>
+                    <TouchableOpacity
+                      style={[styles.orderDetailShipSaveButton, { backgroundColor: "#18884A", flex: 1 }, (!canConfirmCancel || confirming || declining) && styles.orderDetailShipSaveButtonDisabled]}
+                      disabled={!canConfirmCancel || confirming || declining}
+                      onPress={onConfirmReceipt}
+                    >
+                      {confirming ? <ActivityIndicator size='small' color='#fff' /> : <Text style={styles.orderDetailShipSaveButtonText}>Confirm cancel & refund</Text>}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.orderDetailShipSecondaryButton, { borderColor: "#B71C1C", flex: 1 }, (confirming || declining) && { opacity: 0.5 }]}
+                      disabled={confirming || declining}
+                      onPress={onDecline}
+                    >
+                      {declining ? <ActivityIndicator size='small' color='#B71C1C' /> : <Text style={[styles.orderDetailShipSecondaryButtonText, { color: "#B71C1C" }]}>Reject cancel</Text>}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : null}
             </ScrollView>
           )}
 
@@ -3619,7 +3793,14 @@ function formatOrderDaysOpen(dateMs) {
 function shouldDisplayOrderDaysOpen(delivered, received) {
   const deliveredStatus = String(delivered || "").trim().toLowerCase();
   const receivedStatus = String(received || "").trim().toLowerCase();
-  return deliveredStatus === "not shipped" || deliveredStatus === "returning" || deliveredStatus === "partial" || receivedStatus === "no" || receivedStatus === "pending";
+  // Cancelled - Refunded/Rejected are closed (—). Cancelled - Pending still counts via received=pending.
+  return (
+    deliveredStatus === "not shipped" ||
+    deliveredStatus === "returning" ||
+    deliveredStatus === "partial" ||
+    receivedStatus === "no" ||
+    receivedStatus === "pending"
+  );
 }
 
 /** Normalize shipping_address from order detail / list transaction payloads. */
@@ -3754,10 +3935,41 @@ function getLineShippedQty(line) {
   return 0;
 }
 
+function getLineReturnedQty(line) {
+  if (!line || typeof line !== "object") return 0;
+  const explicit = parseInt(line.returned_qty ?? line.returned_quantity ?? line.return_quantity_completed, 10);
+  return Number.isFinite(explicit) && explicit > 0 ? explicit : 0;
+}
+
+/**
+ * Qty still allowed to ship. Prefer backend remaining_to_ship (accounts for
+ * ledger returns + open cancel/return reservations). Fallback subtracts returned_qty.
+ */
 function getLineRemainingShipQty(line) {
+  if (!line || typeof line !== "object") return 0;
   const purchased = getLinePurchasedQty(line);
   if (purchased <= 0) return 0;
-  return Math.max(0, purchased - getLineShippedQty(line));
+  const backendRemaining = parseInt(line.remaining_to_ship ?? line.remaining_ship_qty, 10);
+  if (Number.isFinite(backendRemaining) && backendRemaining >= 0) {
+    return Math.min(purchased, backendRemaining);
+  }
+  const shipped = getLineShippedQty(line);
+  const returned = getLineReturnedQty(line);
+  const unshipped = Math.max(0, purchased - shipped);
+  // Returns/cancels against still-unshipped units remove the shipping obligation.
+  const cancelledUnshipped = Math.min(returned, unshipped);
+  return Math.max(0, unshipped - cancelledUnshipped);
+}
+
+/** Qty removed from ship obligation (returned or reserved against this line). */
+function getLineCancelledFromShipQty(line) {
+  if (!line || typeof line !== "object") return 0;
+  const purchased = getLinePurchasedQty(line);
+  const shipped = getLineShippedQty(line);
+  const remaining = getLineRemainingShipQty(line);
+  const returned = getLineReturnedQty(line);
+  if (returned > 0) return Math.min(returned, Math.max(0, purchased - shipped));
+  return Math.max(0, purchased - shipped - remaining);
 }
 
 function isLineFullyShipped(line) {
@@ -3797,7 +4009,14 @@ function formatLineFulfillmentDisplay(line) {
     return { statusLabel: "—", trackingLabel: "—" };
   }
   if (purchased > 0) {
+    const returned = getLineReturnedQty(line);
+    const remaining = getLineRemainingShipQty(line);
+    const cancelled = getLineCancelledFromShipQty(line);
+    if (shipped <= 0 && cancelled > 0 && remaining <= 0) {
+      return { statusLabel: "Cancelled", trackingLabel: "—" };
+    }
     if (shipped <= 0) return { statusLabel: "Not shipped", trackingLabel: "—" };
+    if (remaining <= 0 && shipped >= purchased - Math.max(returned, cancelled)) return { statusLabel: "Shipped", trackingLabel };
     if (shipped >= purchased) return { statusLabel: "Shipped", trackingLabel };
     return { statusLabel: `${shipped}/${purchased}`, trackingLabel };
   }
@@ -4301,6 +4520,9 @@ function getProductSaleStatusBadgeStyle(kind, label) {
     if (normalized === "returning") {
       return { badge: { backgroundColor: "#FFF3E0" }, text: { color: "#E65100" } };
     }
+    if (normalized === "cancelled" || normalized === "canceled") {
+      return { badge: { backgroundColor: "#ECEFF1" }, text: { color: "#546E7A" } };
+    }
     if (normalized === "returned") {
       return { badge: { backgroundColor: "#FFEBEE" }, text: { color: "#B71C1C" } };
     }
@@ -4312,6 +4534,9 @@ function getProductSaleStatusBadgeStyle(kind, label) {
     }
     if (normalized === "not shipped") {
       return { badge: { backgroundColor: "#FFF3E0" }, text: { color: "#E65100" } };
+    }
+    if (normalized === "cancelled" || normalized === "canceled") {
+      return { badge: { backgroundColor: "#ECEFF1" }, text: { color: "#546E7A" } };
     }
     if (normalized.includes("/")) {
       return { badge: { backgroundColor: "#FFF8E1" }, text: { color: "#F57F17" } };
@@ -4927,7 +5152,7 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
-  const handleReturnRequest = async (transaction, buyerNote, transactionReturnItems) => {
+  const handleReturnRequest = async (transaction, buyerNote, transactionReturnItems, options = {}) => {
     const saleUid = resolveListRowOrderUid(transaction);
     if (!saleUid || saleUid === "—") return false;
     if (!Array.isArray(transactionReturnItems) || transactionReturnItems.length === 0) {
@@ -4939,6 +5164,7 @@ export default function AccountScreen({ navigation }) {
       Alert.alert("Error", "Cannot submit return: missing profile.");
       return false;
     }
+    const cancelUnshipped = options.cancel_unshipped === true;
     try {
       // One note per return request row (trr_note); do not append prior returns.
       const note = (buyerNote || "").trim();
@@ -4951,6 +5177,7 @@ export default function AccountScreen({ navigation }) {
           transaction_return_requested: 1,
           transaction_return_note: note,
           transaction_return_items: transactionReturnItems,
+          ...(cancelUnshipped ? { cancel_unshipped: true, pre_ship_cancel: true } : {}),
         }),
       });
       if (!response.ok) {
@@ -4963,28 +5190,26 @@ export default function AccountScreen({ navigation }) {
         requestResult = null;
       }
       const resultPayload = requestResult?.data && typeof requestResult.data === "object" ? requestResult.data : requestResult || {};
+      const defaultReturnStatus = cancelUnshipped ? "cancelled" : "returning";
+      const defaultDisplay = cancelUnshipped ? "Cancelled - Pending" : "Returning - Pending";
       const returningState = extractReturnRefundState(resultPayload, {
-        return_status: resultPayload.return_status || "returning",
+        return_status: resultPayload.return_status || defaultReturnStatus,
         refund_status: resultPayload.refund_status || "pending",
-        display_status: resultPayload.display_status || "Returning - Pending",
+        display_status: resultPayload.display_status || defaultDisplay,
         returnRequested: 1,
+        ...(cancelUnshipped ? { cancel_unshipped: true } : {}),
       });
+      const statusPayload = {
+        return_status: returningState.return_status || defaultReturnStatus,
+        refund_status: returningState.refund_status || "pending",
+        display_status: returningState.display_status || defaultDisplay,
+        ...(cancelUnshipped || returningState.is_cancel_before_ship ? { is_cancel_before_ship: true, cancel_unshipped: true } : {}),
+      };
       setReturnStatuses((prev) => ({
         ...prev,
-        [saleUid]: {
-          return_status: returningState.return_status || "returning",
-          refund_status: returningState.refund_status || "pending",
-          display_status: returningState.display_status || "Returning - Pending",
-        },
+        [saleUid]: statusPayload,
       }));
-      await AsyncStorage.setItem(
-        `return_status_${saleUid}`,
-        JSON.stringify({
-          return_status: returningState.return_status || "returning",
-          refund_status: returningState.refund_status || "pending",
-          display_status: returningState.display_status || "Returning - Pending",
-        }),
-      );
+      await AsyncStorage.setItem(`return_status_${saleUid}`, JSON.stringify(statusPayload));
       const existing = returnRequests[saleUid] || { items: [], notes: [] };
       const itemQuantities = selectedReturnItems.reduce((acc, id) => {
         acc[id] = returnItemQuantities[id] ?? 1;
@@ -8490,7 +8715,15 @@ export default function AccountScreen({ navigation }) {
                             Alert.alert("Error", "Could not build return items.");
                             return;
                           }
-                          const ok = await handleReturnRequest(receiptTransaction, returnNote, transactionReturnItems);
+                          const selectedAreUnshipped = selectedReturnItems.every((id) => {
+                            const row = lineById[id];
+                            if (!row) return false;
+                            const sourceLine = row.line || (Array.isArray(returnModalOrderLines) ? returnModalOrderLines.find((l) => String(l.ti_uid || "").trim() === row.transactionItemUid) : null);
+                            return getLineShippedQty(sourceLine || row) <= 0;
+                          });
+                          const ok = await handleReturnRequest(receiptTransaction, returnNote, transactionReturnItems, {
+                            cancel_unshipped: selectedAreUnshipped,
+                          });
                           if (!ok) return;
                           setShowReturnNoteModal(false);
                           setReturnNote("");
@@ -9141,8 +9374,14 @@ export default function AccountScreen({ navigation }) {
             sourceReturnRow: returnDetailModal.sourceReturnRow || null,
           };
           const returnItems = buildReturnDetailDisplayItems(returnDetailModal.orderDetail, businessBountyData?.data || [], returnScope);
+          const returnLines = collectReturnDetailLines(returnDetailModal.orderDetail, returnScope);
+          const preShipCancel =
+            areScopedReturnItemsUnshipped(returnDetailModal.orderDetail, returnLines) ||
+            isPreShipCancelReturn(returnDetailModal.sourceReturnRow, returnDetailModal.orderDetail?.sale) ||
+            isPreShipCancelReturn(returnDetailModal.orderDetail?.sale?.pending_return, returnDetailModal.orderDetail?.sale);
           const allReceived = returnItems.length > 0 && returnItems.every((item) => returnReceivedItemKeys.includes(item.key));
-          if (!saleUid || !allReceived) return;
+          if (!saleUid) return;
+          if (!preShipCancel && !allReceived) return;
           openConfirmReceiptNoteModal({
             transactionUid: saleUid,
             orderUid: returnDetailModal.orderUid || saleUid,
