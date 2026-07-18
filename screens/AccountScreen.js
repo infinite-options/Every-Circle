@@ -83,7 +83,12 @@ function isPurchaseFromBusiness(transaction) {
   const purchaseType = String(transaction?.purchase_type || "").toLowerCase();
   if (purchaseType === "business") return true;
   const serviceId = String(transaction?.ti_bs_id ?? transaction?.bs_uid ?? "").trim();
-  return serviceId.startsWith("250-");
+  if (serviceId.startsWith("250-")) return true;
+  // Prefer UID prefix when list rows omit purchase_type (common on return rows).
+  const sellerUid = resolvePurchaseSellerId(transaction);
+  if (sellerUid.startsWith("200-")) return true;
+  if (sellerUid.startsWith("110-")) return false;
+  return false;
 }
 
 function navigateToPurchaseSeller(navigation, transaction) {
@@ -92,7 +97,7 @@ function navigateToPurchaseSeller(navigation, transaction) {
     Alert.alert("Unavailable", "Seller profile is not available for this purchase.");
     return;
   }
-  if (isPurchaseFromBusiness(transaction)) {
+  if (isPurchaseFromBusiness(transaction) || sellerId.startsWith("200-")) {
     navigation.navigate("BusinessProfile", { business_uid: sellerId, returnTo: "Account" });
     return;
   }
@@ -860,7 +865,21 @@ function formatProductSaleShortDate(saleRow) {
 }
 
 function resolveListRowOrderUid(row) {
-  return String(row?.order_uid ?? row?.transaction_uid ?? "").trim() || "—";
+  // Parent purchase uid: return-request sale link, completed-return original, else self.
+  const resolved = String(
+    row?.trr_transaction_uid ?? row?.transaction_original_uid ?? row?.order_uid ?? row?.transaction_uid ?? "",
+  ).trim();
+  if (resolved) return resolved;
+  if (isReturnListRow(row)) {
+    console.error("Error: cannot resolve parent sale uid for return row", {
+      transaction_uid: row?.transaction_uid,
+      trr_uid: row?.trr_uid,
+      trr_uids: row?.trr_uids,
+      transaction_type: row?.transaction_type,
+      parent_sale_resolve_error: row?.parent_sale_resolve_error,
+    });
+  }
+  return "—";
 }
 
 function resolveSaleOrderUid(saleRow) {
@@ -874,17 +893,16 @@ function isReturnListRow(row) {
 
 /**
  * Return-request uid for concurrent pending returns.
- * Pending list rows often put trr_uid in transaction_uid; prefer explicit fields first.
+ * Prefer explicit trr_uid / trr_uids; do not treat transaction_uid as a trr.
  */
 function resolveTrrUid(row) {
   if (!row || typeof row !== "object") return "";
   const explicit = String(row.trr_uid ?? row.pending_return?.trr_uid ?? "").trim();
-  if (explicit && !explicit.startsWith("return-request-")) return explicit;
-  if (row.is_pending_return === true || Number(row.is_pending_return) === 1) {
-    const uid = String(row.transaction_uid || "").trim();
-    // Local synthetic keys are not backend trr_uids
-    if (uid && !uid.startsWith("return-request-")) return uid;
-  }
+  if (explicit && !explicit.startsWith("return-request-") && !explicit.startsWith("batch:")) return explicit;
+  const fromList = Array.isArray(row.trr_uids) ? String(row.trr_uids[0] || "").trim() : "";
+  if (fromList && !fromList.startsWith("return-request-") && !fromList.startsWith("batch:")) return fromList;
+  const fromPendingList = Array.isArray(row.pending_return?.trr_uids) ? String(row.pending_return.trr_uids[0] || "").trim() : "";
+  if (fromPendingList && !fromPendingList.startsWith("return-request-") && !fromPendingList.startsWith("batch:")) return fromPendingList;
   return "";
 }
 
@@ -896,6 +914,131 @@ function getPendingReturnsList(row) {
   }
   if (row.pending_return && typeof row.pending_return === "object") return [row.pending_return];
   return [];
+}
+
+/** Collect unique trr_uid values from rows / arrays / scalar ids (skip synthetic batch keys). */
+function normalizeTrrUidList(...sources) {
+  const out = [];
+  const seen = new Set();
+  const push = (id) => {
+    const s = String(id || "").trim();
+    if (!s || s.startsWith("return-request-") || s.startsWith("batch:")) return;
+    if (seen.has(s)) return;
+    seen.add(s);
+    out.push(s);
+  };
+  const walk = (src) => {
+    if (src == null) return;
+    if (Array.isArray(src)) {
+      src.forEach(walk);
+      return;
+    }
+    if (typeof src === "object") {
+      push(src.trr_uid);
+      push(src.trrUid);
+      if (Array.isArray(src.trr_uids)) src.trr_uids.forEach(push);
+      if (Array.isArray(src.trrUids)) src.trrUids.forEach(push);
+      if (src.pending_return) walk(src.pending_return);
+      return;
+    }
+    push(src);
+  };
+  sources.forEach(walk);
+  return out;
+}
+
+function pendingMatchesTrrScope(pending, trrUidSet) {
+  if (!pending || !trrUidSet?.size) return false;
+  return normalizeTrrUidList(pending).some((id) => trrUidSet.has(id));
+}
+
+function completedReturnMatchesScope(ret, trrUidSet, returnTxnUid = "") {
+  if (!ret || typeof ret !== "object") return false;
+  const txn = String(ret.transaction_uid || "").trim();
+  const wantTxn = String(returnTxnUid || "").trim();
+  if (wantTxn && txn && txn === wantTxn) return true;
+  if (!trrUidSet?.size) return false;
+  return normalizeTrrUidList(ret, ret.linked_trr_uid, ret.return_request_uid, ret.request_uid).some((id) => trrUidSet.has(id));
+}
+
+/** Merge concurrent pending entries that belong to one list-row batch into one estimate/note/items object. */
+function mergePendingReturnEstimates(pendings) {
+  const list = (Array.isArray(pendings) ? pendings : []).filter((p) => p && typeof p === "object");
+  if (!list.length) return null;
+  if (list.length === 1) return list[0];
+
+  let subtotal = 0;
+  let taxes = 0;
+  let fees = 0;
+  let totalCredit = 0;
+  let bounty = 0;
+  const notes = [];
+  const items = [];
+  const trrUids = normalizeTrrUidList(list);
+  for (const pending of list) {
+    const est = pending.estimated_refund || {};
+    subtotal += Math.abs(parseOrderMoneyField(est.subtotal) || 0);
+    taxes += Math.abs(parseOrderMoneyField(est.taxes ?? est.transaction_taxes) || 0);
+    fees += Math.abs(parseOrderMoneyField(est.fees_allocated ?? est.fees) || 0);
+    totalCredit += Math.abs(parseOrderMoneyField(est.total_customer_credit ?? est.total) || 0);
+    bounty += Math.abs(parseOrderMoneyField(pending.bounty_to_reclaim) || 0);
+    const note = String(pending.note || "").trim();
+    if (note && !notes.includes(note)) notes.push(note);
+    if (Array.isArray(pending.items)) items.push(...pending.items);
+  }
+  return {
+    ...list[0],
+    trr_uid: trrUids[0] || list[0].trr_uid,
+    trr_uids: trrUids,
+    items,
+    note: notes.join("\n") || list[0].note,
+    bounty_to_reclaim: bounty || list[0].bounty_to_reclaim,
+    estimated_refund: {
+      ...(list[0].estimated_refund || {}),
+      subtotal: subtotal || list[0].estimated_refund?.subtotal,
+      taxes: taxes || list[0].estimated_refund?.taxes,
+      fees_allocated: fees || list[0].estimated_refund?.fees_allocated,
+      total_customer_credit: totalCredit || list[0].estimated_refund?.total_customer_credit,
+      total: totalCredit || list[0].estimated_refund?.total,
+    },
+  };
+}
+
+/**
+ * Scope order-detail return payload to the clicked return request / reverse txn.
+ * Without scope keys, returns empty matched sets (caller may fall back to order-wide).
+ */
+function resolveScopedReturnDetail(orderDetail, { trrUids = [], trrUid = null, returnTxnUid = null } = {}) {
+  const scopedTrrUids = normalizeTrrUidList(trrUids, trrUid);
+  const trrUidSet = new Set(scopedTrrUids);
+  const wantReturnTxn = String(returnTxnUid || "").trim();
+  const hasScope = trrUidSet.size > 0 || !!wantReturnTxn;
+  if (!hasScope) {
+    return { hasScope: false, trrUids: [], trrUidSet, matchedPendings: [], matchedReturns: [], scopedPending: null };
+  }
+
+  const sale = orderDetail?.sale || null;
+  const pendingCandidates = [];
+  const seenPending = new Set();
+  for (const pending of [...getPendingReturnsList(orderDetail), ...getPendingReturnsList(sale)]) {
+    if (!pendingMatchesTrrScope(pending, trrUidSet)) continue;
+    const key = String(pending.trr_uid || normalizeTrrUidList(pending).join(",") || JSON.stringify(pending.items || [])).trim();
+    if (seenPending.has(key)) continue;
+    seenPending.add(key);
+    pendingCandidates.push(pending);
+  }
+
+  const allReturns = Array.isArray(orderDetail?.returns) ? orderDetail.returns : [];
+  const matchedReturns = allReturns.filter((ret) => completedReturnMatchesScope(ret, trrUidSet, wantReturnTxn));
+
+  return {
+    hasScope: true,
+    trrUids: scopedTrrUids,
+    trrUidSet,
+    matchedPendings: pendingCandidates,
+    matchedReturns,
+    scopedPending: mergePendingReturnEstimates(pendingCandidates),
+  };
 }
 
 /** Flatten return-line stubs across concurrent pending returns. */
@@ -1210,7 +1353,6 @@ function getReturnStatusOverrideForRow(returnStatusesByKey, row, orderUid, listT
   const isPendingReturnRow =
     row?.is_pending_return === true ||
     Number(row?.is_pending_return) === 1 ||
-    String(row?.transaction_uid || "").startsWith("540-") ||
     String(row?.transaction_uid || "").startsWith("return-request-");
   if (isReturnListRow(row) || trrUid) {
     return getReturnStatusOverrideFromCache(
@@ -1244,20 +1386,21 @@ function rowMatchesReturnStatusKeys(row, statusKeys, { scopeTrrUid = null, scope
   const uid = String(row.transaction_uid || "").trim();
   const orderUid = resolveListRowOrderUid(row);
   const originalUid = String(row.original_transaction_uid || "").trim();
-  const rowTrr = resolveTrrUid(row);
+  const rowTrrs = normalizeTrrUidList(row);
+  const rowTrr = rowTrrs[0] || resolveTrrUid(row);
   const scopeTrr = String(scopeTrrUid || "").trim();
   const scopeReturnTxn = String(scopeReturnTxnUid || "").trim();
 
   // Concurrent returns: only the matching pending request / reverse txn.
   if (scopeTrr || scopeReturnTxn) {
-    if (scopeTrr && rowTrr && rowTrr === scopeTrr) return true;
+    if (scopeTrr && rowTrrs.some((id) => id === scopeTrr || statusKeys.includes(id))) return true;
     if (scopeReturnTxn && uid && uid === scopeReturnTxn) return true;
-    if (scopeTrr && statusKeys.includes(rowTrr)) return true;
+    if (scopeTrr && rowTrr && statusKeys.includes(rowTrr)) return true;
     if (scopeReturnTxn && statusKeys.includes(uid)) return true;
     return false;
   }
 
-  return statusKeys.includes(uid) || statusKeys.includes(orderUid) || (originalUid && statusKeys.includes(originalUid)) || (rowTrr && statusKeys.includes(rowTrr));
+  return statusKeys.includes(uid) || statusKeys.includes(orderUid) || (originalUid && statusKeys.includes(originalUid)) || rowTrrs.some((id) => statusKeys.includes(id));
 }
 
 /** Order UIDs that need return/refund chip hydration from GET /orders/:uid (buyer PURCHASES). */
@@ -1374,104 +1517,35 @@ function applyHydratedReturnStateToPurchaseRows(rows, stateByOrderUid, itemHydra
       if (state.stripe_refund) next = { ...next, stripe_refund: state.stripe_refund };
     }
     if (items) {
-      next = {
-        ...next,
-        ...(items.pending_returns?.length ? { pending_returns: next.pending_returns?.length ? next.pending_returns : items.pending_returns } : {}),
-        ...(items.pending_return ? { pending_return: next.pending_return || items.pending_return } : {}),
-        ...(items.completed_returns?.length ? { _completed_returns: next._completed_returns?.length ? next._completed_returns : items.completed_returns } : {}),
-        ...(items.transaction_return_items?.length ? { transaction_return_items: next.transaction_return_items?.length ? next.transaction_return_items : items.transaction_return_items } : {}),
-      };
-      if (!isReturn && items.lines?.length) {
-        next = { ...next, lines: items.lines };
-      } else if (isReturn) {
-        const detailLines = items.return_lines?.length ? items.return_lines : items.lines;
-        if (detailLines?.length && !(Array.isArray(next.lines) && next.lines.length)) {
-          next = { ...next, lines: detailLines };
+      if (!isReturn) {
+        // Sale rows may receive order-wide pending_returns for companion UI; return rows keep their own scope.
+        next = {
+          ...next,
+          ...(items.pending_returns?.length ? { pending_returns: next.pending_returns?.length ? next.pending_returns : items.pending_returns } : {}),
+          ...(items.pending_return ? { pending_return: next.pending_return || items.pending_return } : {}),
+          ...(items.transaction_return_items?.length ? { transaction_return_items: next.transaction_return_items?.length ? next.transaction_return_items : items.transaction_return_items } : {}),
+        };
+        if (items.lines?.length) {
+          next = { ...next, lines: items.lines, _sale_detail_lines: items.lines };
         }
-        if (items.return_lines?.length) next = { ...next, _return_detail_lines: items.return_lines };
+      } else {
+        // Return rows: never replace this row's return_lines / pending_return with order-wide
+        // aggregates (sibling concurrent returns share the same order_uid).
         if (items.lines?.length) next = { ...next, _sale_detail_lines: items.lines };
-      } else if (items.lines?.length) {
-        next = { ...next, _sale_detail_lines: items.lines };
+        const hasOwnReturnLines =
+          (Array.isArray(next.return_lines) && next.return_lines.length) ||
+          (Array.isArray(next.lines) && next.lines.length) ||
+          (Array.isArray(next._return_detail_lines) && next._return_detail_lines.length);
+        if (!hasOwnReturnLines) {
+          const detailLines = items.return_lines?.length ? items.return_lines : null;
+          if (detailLines?.length) {
+            next = { ...next, lines: detailLines, _return_detail_lines: detailLines };
+          }
+        }
       }
     }
     return next;
   });
-}
-
-/**
- * Build a buyer PURCHASES return row from GET /orders/:uid `returns[]` entry.
- * Account-screen often omits reverse txns from the purchase list.
- */
-function buildCompletedReturnPurchaseRow(saleRow, ret) {
-  const orderUid = resolveListRowOrderUid(saleRow);
-  const saleTxnUid = String(saleRow?.transaction_uid || orderUid || "").trim();
-  const retUid = String(ret?.transaction_uid || "").trim();
-  const retLines = Array.isArray(ret?.lines) ? ret.lines : [];
-  const retMoneyTotal = parseFloat(ret?.transaction_total ?? ret?.transaction_amount ?? NaN);
-  const total = Number.isFinite(retMoneyTotal) && retMoneyTotal !== 0 ? -Math.abs(retMoneyTotal) : 0;
-  const itemSummary = resolveReturnRowItemSummary(
-    {
-      is_return: 1,
-      transaction_type: "return",
-      lines: retLines,
-      _return_detail_lines: retLines,
-    },
-    saleRow,
-    null,
-  );
-  const qty = itemSummary.qty != null ? itemSummary.qty : Math.abs(parseInt(retLines[0]?.return_quantity ?? retLines[0]?.ti_bs_qty, 10) || 1);
-  return {
-    ...(saleRow && typeof saleRow === "object" ? saleRow : {}),
-    is_return: 1,
-    is_pending_return: 0,
-    transaction_type: "return",
-    _isSyntheticReturn: true,
-    _fromOrderDetailReturns: true,
-    transaction_uid: retUid,
-    order_uid: orderUid !== "—" ? orderUid : saleTxnUid,
-    original_transaction_uid: saleTxnUid,
-    transaction_total: total,
-    seller_total: total,
-    bounty_paid: 0,
-    _pending_return_money: { total, bountyPaid: 0 },
-    ti_bs_qty: qty,
-    purchased_item: itemSummary.purchased_item || resolveLineItemDisplayName(retLines[0]) || null,
-    lines: retLines,
-    _return_detail_lines: retLines,
-    return_status: "returned",
-    refund_status: "refunded",
-    display_status: "Returned - Refunded",
-    transaction_return_status: "returned",
-    transaction_refund_status: "refunded",
-    transaction_return_requested: 1,
-    pending_return: undefined,
-    pending_returns: undefined,
-    _completed_returns: undefined,
-    transaction_datetime: ret?.transaction_datetime || ret?.transaction_datetime_local || saleRow?.transaction_datetime,
-    transaction_in_escrow: 0,
-  };
-}
-
-/** Insert completed reverse txns from order-detail hydration when missing from account-screen purchases. */
-function injectCompletedReturnsIntoPurchaseRows(rows, itemHydrationByOrderUid) {
-  if (!Array.isArray(rows) || !itemHydrationByOrderUid) return rows || [];
-  const existingTxnUids = new Set(rows.map((row) => String(row?.transaction_uid || "").trim()).filter(Boolean));
-  const extras = [];
-  for (const [orderUid, items] of Object.entries(itemHydrationByOrderUid)) {
-    const completed = Array.isArray(items?.completed_returns) ? items.completed_returns : [];
-    if (!completed.length) continue;
-    const saleRow = rows.find((row) => !isReturnListRow(row) && resolveListRowOrderUid(row) === orderUid) || {
-      order_uid: orderUid,
-      transaction_uid: orderUid,
-    };
-    for (const ret of completed) {
-      const retUid = String(ret?.transaction_uid || "").trim();
-      if (!retUid || existingTxnUids.has(retUid)) continue;
-      existingTxnUids.add(retUid);
-      extras.push(buildCompletedReturnPurchaseRow(saleRow, ret));
-    }
-  }
-  return extras.length ? [...rows, ...extras] : rows;
 }
 
 /** Normalize list/API return rows so stripe_fail (and returned+rejected) surface consistently when read. */
@@ -1851,7 +1925,8 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, return
   const orderUid = resolveListRowOrderUid(row);
   const isReturn = isReturnListRow(row);
   const dateMs = transactionDateMs(row);
-  const listTransactionUid = String(row.transaction_uid || "").trim();
+  const trrUidEarly = resolveTrrUid(row);
+  const listTransactionUid = String(row.transaction_uid || trrUidEarly || "").trim();
   // Prefer fulfillment fields from account-screen list rows over hydration overrides.
   const shippingProgressOverride = listRowHasExplicitShippingProgress(row) ? null : (shippingProgressByKey && (shippingProgressByKey[orderUid] || shippingProgressByKey[listTransactionUid])) || null;
   const statusOverride = getReturnStatusOverrideForRow(returnStatusesByKey, row, orderUid, listTransactionUid);
@@ -1861,13 +1936,17 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, return
   if (isReturn) {
     // Prefer pending_return for total/bounty when present, but still fill missing bounty via return txn / lines.
     const money = resolveReturnRowMoney(row, null, null);
-    const trrUid = resolveTrrUid(row);
+    const trrUid = trrUidEarly;
+    const trrUids = normalizeTrrUidList(row);
+    const delivered = returnLogistics?.delivered || "Returned";
+    const received = returnLogistics?.received || "Pending";
     return {
       key: String(trrUid || row.transaction_uid || `return-${orderUid}-${dateMs}`),
       orderUid,
       rowLabel: "Return",
       listTransactionUid,
       trrUid: trrUid || undefined,
+      trrUids: trrUids.length ? trrUids : undefined,
       isReturn: true,
       isSyntheticReturn: false,
       placedBy: resolveSalePlacedByUid(row),
@@ -1875,9 +1954,9 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, return
       dateMs,
       total: money.total,
       bountyPaid: money.bountyPaid,
-      delivered: returnLogistics?.delivered || "Returned",
-      received: returnLogistics?.received || "Pending",
-      daysOpen: "—",
+      delivered,
+      received,
+      daysOpen: shouldDisplayOrderDaysOpen(delivered, received) ? formatOrderDaysOpen(dateMs) : "—",
       returnLogistics,
       rawRow: row,
     };
@@ -1885,6 +1964,8 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, return
 
   const total = parseFloat(row.transaction_total);
   const bountyPaid = resolveSellerOrderTableBounty(row);
+  const delivered = getOrderDeliveredStatus([row], shippingProgressOverride);
+  const received = getOrderReceivedStatusFromSaleRows([row]);
   return {
     key: String(row.transaction_uid || `${orderUid}-${dateMs}`),
     orderUid,
@@ -1898,154 +1979,35 @@ function mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, return
     dateMs,
     total: Number.isFinite(total) ? total : 0,
     bountyPaid: Number.isFinite(bountyPaid) ? bountyPaid : 0,
-    delivered: getOrderDeliveredStatus([row], shippingProgressOverride),
-    received: getOrderReceivedStatusFromSaleRows([row]),
-    daysOpen: formatOrderDaysOpen(dateMs),
+    delivered,
+    received,
+    daysOpen: shouldDisplayOrderDaysOpen(delivered, received) ? formatOrderDaysOpen(dateMs) : "—",
     returnLogistics,
     rawRow: row,
   };
 }
 
-/** Companion Return row while a return is requested but no reverse txn exists in the seller list yet. */
-function buildSyntheticReturnOrderRow(orderRow, logistics, returnRequestData, bountyLines, pendingOverride = null) {
-  const rawBase = orderRow?.rawRow || {};
-  const pending = pendingOverride || rawBase.pending_return || null;
-  const trrUid = String(pending?.trr_uid || resolveTrrUid(rawBase) || orderRow.trrUid || "").trim();
-  const raw = {
-    ...rawBase,
-    ...(pending
-      ? {
-          pending_return: pending,
-          pending_returns: [pending],
-          ...(trrUid ? { trr_uid: trrUid } : {}),
-        }
-      : {}),
-  };
-  const entryMoney = pending ? resolvePendingReturnEntryMoney(pending) : { total: 0, bountyPaid: 0 };
-  const money = entryMoney.total || entryMoney.bountyPaid ? entryMoney : estimatePendingReturnMoney(raw, returnRequestData, bountyLines || []);
-  // Slightly newer than the order so Return sorts above Order when dates match.
-  const dateMs = (orderRow.dateMs || transactionDateMs(raw) || Date.now()) + 1;
-  return {
-    key: trrUid ? `return-request-${trrUid}` : `return-request-${orderRow.orderUid}`,
-    orderUid: orderRow.orderUid,
-    rowLabel: "Return",
-    listTransactionUid: orderRow.listTransactionUid,
-    trrUid: trrUid || undefined,
-    isReturn: true,
-    isSyntheticReturn: true,
-    placedBy: orderRow.placedBy,
-    dateLabel: orderRow.dateLabel || formatOrderShortDate(dateMs),
-    dateMs,
-    total: money.total,
-    bountyPaid: money.bountyPaid,
-    delivered: logistics?.delivered || (pending?.return_status === "returned" ? "Returned" : "Returning"),
-    received: logistics?.received || "Pending",
-    daysOpen: "—",
-    returnLogistics: logistics,
-    rawRow: {
-      ...raw,
-      is_return: 1,
-      is_pending_return: 1,
-      transaction_type: "return",
-      transaction_total: money.total,
-      bounty_paid: money.bountyPaid,
-      return_status: logistics?.return_status || pending?.return_status,
-      refund_status: logistics?.refund_status || pending?.refund_status,
-      display_status: logistics?.display_status || pending?.display_status,
-      transaction_return_status: logistics?.return_status || pending?.return_status,
-      transaction_refund_status: logistics?.refund_status || pending?.refund_status,
-      transaction_return_requested: 1,
-      pending_return: pending || raw.pending_return,
-      ...(trrUid ? { trr_uid: trrUid } : {}),
-    },
-  };
-}
-
 /**
  * Business ORDERS table from account-screen seller_transactions.
+ * Renders API sale + return rows only (backend owns pending/completed return rows).
  * Order bounty: order_bounty_paid
  * Return money: pending_return.estimated_refund.total_customer_credit + bounty_to_reclaim
  *   (falls back to return txn / bounty lines when reclaim is missing)
  * Return chips: display_status / return_status + refund_status on the list row
  */
-function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines, shippingProgressByKey, returnStatusesByKey, returnRequestsByKey) {
+function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines, shippingProgressByKey, returnStatusesByKey) {
   if (!Array.isArray(sellerLines)) return [];
   const bountyByTransactionUid = buildBountyPaidByTransactionUid(bountyLines);
   const mapped = sellerLines.map((row) => {
     const mappedRow = mapTransactionListRowToOrderTableRow(row, shippingProgressByKey, returnStatusesByKey);
-    if (mappedRow.isReturn && !mappedRow.isSyntheticReturn) {
+    if (mappedRow.isReturn) {
       const money = resolveReturnRowMoney(row, bountyByTransactionUid, bountyLines);
       return { ...mappedRow, total: money.total, bountyPaid: money.bountyPaid };
     }
     return mappedRow;
   });
 
-  const orderUidsWithReturnTxn = new Set(mapped.filter((row) => row.isReturn && !row.isSyntheticReturn && !row.rawRow?.is_pending_return).map((row) => row.orderUid));
-  const existingTrrUids = new Set();
-  for (const row of mapped) {
-    if (!row.isReturn || row.isSyntheticReturn) continue;
-    const trr = String(row.trrUid || resolveTrrUid(row.rawRow) || "").trim();
-    if (trr) existingTrrUids.add(trr);
-  }
-  const syntheticReturns = [];
-  for (const orderRow of mapped) {
-    if (orderRow.isReturn) continue;
-    if (!orderRow.orderUid || orderRow.orderUid === "—") continue;
-
-    const returnRequestData = returnRequestsByKey?.[orderRow.orderUid] || returnRequestsByKey?.[orderRow.listTransactionUid] || null;
-    // Join sale-line / bounty-result rows so pending return items can resolve bounty_paid.
-    const saleLinesForOrder = (sellerLines || []).filter((line) => !isReturnListRow(line) && resolveListRowOrderUid(line) === orderRow.orderUid);
-    const bountyLinesForOrder = (bountyLines || []).filter((line) => !isReturnListRow(line) && resolveListRowOrderUid(line) === orderRow.orderUid);
-    const linesForJoin = [...saleLinesForOrder];
-    for (const bountyLine of bountyLinesForOrder) {
-      const bountyTi = String(bountyLine.ti_uid || bountyLine.tb_ti_id || "").trim();
-      if (!bountyTi) continue;
-      if (linesForJoin.some((line) => String(line.ti_uid || line.transaction_item_uid || "").trim() === bountyTi)) {
-        continue;
-      }
-      linesForJoin.push(bountyLine);
-    }
-    const saleRaw = {
-      ...(orderRow.rawRow || {}),
-      lines: Array.isArray(orderRow.rawRow?.lines) && orderRow.rawRow.lines.length ? orderRow.rawRow.lines : linesForJoin,
-    };
-    const pendingList = getPendingReturnsList(saleRaw);
-
-    if (pendingList.length) {
-      let dateOffset = 1;
-      for (const pending of pendingList) {
-        const trrUid = String(pending?.trr_uid || "").trim();
-        if (trrUid && existingTrrUids.has(trrUid)) continue;
-        if (trrUid) existingTrrUids.add(trrUid);
-
-        const statusOverride = {
-          ...getReturnStatusOverrideFromCache(returnStatusesByKey, orderRow.orderUid, orderRow.listTransactionUid, trrUid),
-          returnRequested: true,
-          return_status: pending.return_status || pending.transaction_return_status,
-          refund_status: pending.refund_status || pending.transaction_refund_status,
-          display_status: pending.display_status,
-        };
-        const logistics =
-          resolveReturnLogisticsLabels({ ...saleRaw, pending_return: pending, pending_returns: [pending] }, statusOverride) ||
-          resolveReturnLogisticsLabels(saleRaw, { ...statusOverride, returnRequested: 1 });
-        if (!logistics) continue;
-
-        const synthetic = buildSyntheticReturnOrderRow({ ...orderRow, rawRow: saleRaw, dateMs: (orderRow.dateMs || 0) + dateOffset }, logistics, null, bountyLines, pending);
-        dateOffset += 1;
-        syntheticReturns.push(synthetic);
-      }
-      continue;
-    }
-
-    if (orderUidsWithReturnTxn.has(orderRow.orderUid)) continue;
-    const statusOverride = getReturnStatusOverrideFromCache(returnStatusesByKey, orderRow.orderUid, orderRow.listTransactionUid);
-    const logistics = orderRow.returnLogistics || resolveReturnLogisticsLabels(orderRow.rawRow || {}, statusOverride);
-    // Backend: if both return_status and refund_status are null → no return row.
-    if (!logistics) continue;
-    syntheticReturns.push(buildSyntheticReturnOrderRow({ ...orderRow, rawRow: saleRaw }, logistics, returnRequestData, bountyLines));
-  }
-
-  return [...mapped, ...syntheticReturns].sort((a, b) => {
+  return mapped.sort((a, b) => {
     const byDate = (b.dateMs || 0) - (a.dateMs || 0);
     if (byDate !== 0) return byDate;
     if (a.orderUid === b.orderUid) {
@@ -2054,18 +2016,6 @@ function buildBusinessOrdersListFromSellerTransactions(sellerLines, bountyLines,
     }
     return 0;
   });
-}
-
-function getBuyerPendingReturnQty(saleRow, returnRequestData) {
-  const pendingItems = [...collectItemsFromPendingReturns(saleRow), ...collectPendingReturnItemsFromRequestData(returnRequestData, Array.isArray(saleRow?.lines) ? saleRow.lines : [])];
-  if (pendingItems.length) {
-    return pendingItems.reduce((sum, item) => sum + Math.max(1, parseInt(item.return_quantity ?? item.quantity ?? item.qty ?? item.ti_bs_qty, 10) || 1), 0);
-  }
-  if (Array.isArray(returnRequestData?.items) && returnRequestData.items.length) {
-    const quantities = returnRequestData.itemQuantities || returnRequestData.notes?.[0]?.itemQuantities || {};
-    return returnRequestData.items.reduce((sum, id) => sum + Math.max(1, parseInt(quantities?.[id], 10) || 1), 0);
-  }
-  return Math.abs(parseInt(saleRow?.ti_bs_qty, 10) || 1);
 }
 
 /** Real product/service name from a line or pending-return stub (ignores placeholder "Item"). */
@@ -2110,18 +2060,33 @@ function resolveReturnRowItemSummary(returnOrSaleRow, saleSibling, returnRequest
   const isPendingReturnRow =
     returnOrSaleRow?.is_pending_return === true ||
     Number(returnOrSaleRow?.is_pending_return) === 1 ||
-    String(returnOrSaleRow?.transaction_uid || "").startsWith("540-") ||
     String(returnOrSaleRow?.transaction_uid || "").startsWith("return-request-");
 
-  // Completed reverse txns: prefer their own lines first (do not steal sibling pending_return items).
-  const ownReturnLines = [
-    ...(Array.isArray(returnOrSaleRow?._return_detail_lines) ? returnOrSaleRow._return_detail_lines : []),
-    ...(Array.isArray(returnOrSaleRow?.return_lines) ? returnOrSaleRow.return_lines : []),
-    ...(isReturnListRow(returnOrSaleRow) && Array.isArray(returnOrSaleRow.lines) ? returnOrSaleRow.lines : []),
-  ];
+  // Prefer this return row's own lines first (pending or completed).
+  // Do not use order-wide pending_returns[] / sale-sibling pending items — concurrent
+  // returns for the same order would otherwise share each other's item lists.
+  // Use one source only — hydration often mirrors the same lines onto `_return_detail_lines`,
+  // `return_lines`, and `lines`; concatenating them triple-counts Qty.
+  const ownReturnLines = (() => {
+    // For a specific pending return list row, trust backend return_lines over hydrated
+    // order-wide `_return_detail_lines` (which can include sibling concurrent returns).
+    if (isPendingReturnRow && Array.isArray(returnOrSaleRow?.return_lines) && returnOrSaleRow.return_lines.length) {
+      return returnOrSaleRow.return_lines;
+    }
+    if (Array.isArray(returnOrSaleRow?._return_detail_lines) && returnOrSaleRow._return_detail_lines.length) {
+      return returnOrSaleRow._return_detail_lines;
+    }
+    if (Array.isArray(returnOrSaleRow?.return_lines) && returnOrSaleRow.return_lines.length) {
+      return returnOrSaleRow.return_lines;
+    }
+    if (isReturnListRow(returnOrSaleRow) && Array.isArray(returnOrSaleRow.lines) && returnOrSaleRow.lines.length) {
+      return returnOrSaleRow.lines;
+    }
+    return [];
+  })();
 
   let enriched = [];
-  if (!isPendingReturnRow && ownReturnLines.length) {
+  if (ownReturnLines.length) {
     enriched = ownReturnLines.map((line) => {
       const qty = Math.abs(parseInt(line.return_quantity ?? line.ti_bs_qty ?? line.quantity, 10) || 1);
       return {
@@ -2134,10 +2099,19 @@ function resolveReturnRowItemSummary(returnOrSaleRow, saleSibling, returnRequest
   }
 
   if (!enriched.length) {
+    // Scope to this row's singular pending_return first (trr-specific), not pending_returns[]
+    // which order-detail hydration may fill with every open return for the sale.
+    const thisRowPendingItems = (() => {
+      const singular = returnOrSaleRow?.pending_return;
+      if (singular && typeof singular === "object" && Array.isArray(singular.items) && singular.items.length) {
+        return singular.items;
+      }
+      return collectItemsFromPendingReturns(returnOrSaleRow);
+    })();
     const pendingCandidates = [
-      collectItemsFromPendingReturns(returnOrSaleRow),
-      ...(isPendingReturnRow ? [collectItemsFromPendingReturns(saleSibling)] : []),
+      thisRowPendingItems,
       returnOrSaleRow?.transaction_return_items,
+      // Local AsyncStorage request only — never sibling sale pending_returns.
       collectPendingReturnItemsFromRequestData(returnRequestData, uniqueLookupLines),
     ];
     let pendingItems = [];
@@ -2148,18 +2122,6 @@ function resolveReturnRowItemSummary(returnOrSaleRow, saleSibling, returnRequest
       }
     }
     enriched = mapPendingReturnItemsToLines(pendingItems, uniqueLookupLines);
-  }
-
-  if (!enriched.length && ownReturnLines.length) {
-    enriched = ownReturnLines.map((line) => {
-      const qty = Math.abs(parseInt(line.return_quantity ?? line.ti_bs_qty ?? line.quantity, 10) || 1);
-      return {
-        ...line,
-        item_name: resolveLineItemDisplayName(line) || "Item",
-        return_quantity: qty,
-        ti_bs_qty: qty,
-      };
-    });
   }
 
   // Sale lines marked with returned_qty > 0.
@@ -2204,7 +2166,8 @@ function resolveReturnRowItemSummary(returnOrSaleRow, saleSibling, returnRequest
       byKey[key] = { name, qty: 0 };
       order.push(key);
     }
-    byKey[key].qty += qty;
+    // Same ti_uid twice is a duplicate source, not additive qty.
+    byKey[key].qty = Math.max(byKey[key].qty, qty);
     if (byKey[key].name === "Item" && name !== "Item") byKey[key].name = name;
   }
 
@@ -2218,19 +2181,12 @@ function resolveReturnRowItemSummary(returnOrSaleRow, saleSibling, returnRequest
 }
 
 /**
- * Personal PURCHASES list: keep API rows, and add a companion Return line when a refund
- * is requested but no reverse transaction exists yet (mirrors business ORDERS).
+ * Personal PURCHASES list from account-screen purchase rows.
+ * Renders API sale + return rows only (backend owns pending/completed return rows).
  * Return Amount = expected customer refund (pending_return / reverse txn), not the original sale.
  */
 function buildPersonalPurchasesListWithReturns(purchaseRows, returnStatusesByKey, returnRequestsByKey, bountyLines = []) {
   if (!Array.isArray(purchaseRows) || purchaseRows.length === 0) return [];
-
-  const orderUidsWithReturnTxn = new Set(
-    purchaseRows
-      .filter((row) => isReturnListRow(row))
-      .map((row) => resolveListRowOrderUid(row))
-      .filter((uid) => uid && uid !== "—"),
-  );
 
   const orderSaleByUid = {};
   for (const row of purchaseRows) {
@@ -2245,7 +2201,7 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, returnStatusesByKey
     const txnUid = String(row.original_transaction_uid || row.transaction_uid || "").trim();
     const saleSibling = orderSaleByUid[orderUid] || null;
     const isPendingReturnRow =
-      row.is_pending_return === true || Number(row.is_pending_return) === 1 || String(row.transaction_uid || "").startsWith("540-") || String(row.transaction_uid || "").startsWith("return-request-");
+      row.is_pending_return === true || Number(row.is_pending_return) === 1 || String(row.transaction_uid || "").startsWith("return-request-");
     // Prefer return-row fields, but inherit Stripe-fail / display_status from the parent sale when the
     // reverse-txn list row still says refunded (buyer account-screen quirk).
     const siblingState = saleSibling ? extractReturnRefundState(saleSibling, { returnRequested: 1 }) : null;
@@ -2314,6 +2270,8 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, returnStatusesByKey
       business_name: row.business_name || saleSibling?.business_name || saleSibling?.transaction_business_name || null,
       seller_id: row.seller_id || saleSibling?.seller_id || saleSibling?.transaction_business_id || null,
       transaction_business_id: row.transaction_business_id || saleSibling?.transaction_business_id || saleSibling?.seller_id || null,
+      purchase_type: row.purchase_type || saleSibling?.purchase_type || null,
+      ti_bs_id: row.ti_bs_id || saleSibling?.ti_bs_id || null,
       transaction_total: total,
       seller_total: total,
       bounty_paid: bountyPaid,
@@ -2329,197 +2287,7 @@ function buildPersonalPurchasesListWithReturns(purchaseRows, returnStatusesByKey
     return applyReturnRefundFieldsToRow(withMoney, logistics);
   });
 
-  const syntheticReturns = [];
-  // Track pending return request uids / reverse txns already represented as return list rows.
-  const existingTrrUids = new Set();
-  const existingReturnTxnUids = new Set();
-  for (const row of normalizedPurchaseRows) {
-    if (!isReturnListRow(row)) continue;
-    const trr = resolveTrrUid(row);
-    if (trr) existingTrrUids.add(trr);
-    const txn = String(row.transaction_uid || "").trim();
-    if (txn && !txn.startsWith("return-request-") && !txn.startsWith("540-")) existingReturnTxnUids.add(txn);
-  }
-
-  for (const row of normalizedPurchaseRows) {
-    if (isReturnListRow(row)) continue;
-    const orderUid = resolveListRowOrderUid(row);
-    const txnUid = String(row.transaction_uid || "").trim();
-    if (!orderUid || orderUid === "—") continue;
-
-    const returnRequestData = returnRequestsByKey?.[orderUid] || returnRequestsByKey?.[txnUid] || null;
-    const pendingList = getPendingReturnsList(row);
-
-    // Concurrent pending returns: one PURCHASES Return row per trr_uid.
-    if (pendingList.length) {
-      let offset = 1;
-      for (const pending of pendingList) {
-        const trrUid = String(pending?.trr_uid || "").trim();
-        if (trrUid && existingTrrUids.has(trrUid)) continue;
-        if (trrUid) existingTrrUids.add(trrUid);
-
-        const pendingScoped = {
-          ...row,
-          pending_return: pending,
-          // Scope list to this request so item/money helpers don't re-aggregate siblings.
-          pending_returns: [pending],
-          trr_uid: trrUid || undefined,
-        };
-        const statusOverride = {
-          ...getReturnStatusOverrideFromCache(returnStatusesByKey, trrUid),
-          returnRequested: true,
-          return_status: pending.return_status || pending.transaction_return_status,
-          refund_status: pending.refund_status || pending.transaction_refund_status,
-          display_status: pending.display_status,
-        };
-        const logistics = resolveReturnLogisticsLabels(pendingScoped, statusOverride) || resolveReturnLogisticsLabels(row, { ...statusOverride, returnRequested: 1 });
-        if (!logistics) continue;
-
-        const entryMoney = resolvePendingReturnEntryMoney(pending);
-        const money = entryMoney.total || entryMoney.bountyPaid ? entryMoney : estimatePendingReturnMoney(pendingScoped, null, bountyLines);
-        const itemSummary = resolveReturnRowItemSummary(pendingScoped, row, null);
-        const dateMs = (transactionDateMs(row) || Date.now()) + offset;
-        offset += 1;
-
-        syntheticReturns.push({
-          ...row,
-          is_return: 1,
-          is_pending_return: 1,
-          transaction_type: "return",
-          _isSyntheticReturn: true,
-          transaction_uid: trrUid || `return-request-${orderUid}-${offset}`,
-          order_uid: orderUid,
-          original_transaction_uid: txnUid,
-          ...(trrUid ? { trr_uid: trrUid } : {}),
-          transaction_total: money.total || 0,
-          seller_total: money.total || 0,
-          bounty_paid: money.bountyPaid || 0,
-          _pending_return_money: money,
-          ti_bs_qty: itemSummary.qty != null ? itemSummary.qty : 1,
-          purchased_item: itemSummary.purchased_item || null,
-          return_status: logistics.return_status,
-          refund_status: logistics.refund_status,
-          display_status: logistics.display_status,
-          transaction_return_status: logistics.return_status,
-          transaction_refund_status: logistics.refund_status,
-          transaction_return_requested: 1,
-          pending_return: pending,
-          pending_returns: [pending],
-          transaction_datetime: row.transaction_datetime,
-          _sortDateMs: dateMs,
-        });
-      }
-    } else if (!orderUidsWithReturnTxn.has(orderUid)) {
-      // Legacy: no pending_returns payload — one synthetic from sale flags / local request.
-      const statusOverride = {
-        ...getReturnStatusOverrideFromCache(returnStatusesByKey, orderUid, txnUid),
-        returnRequested: returnRequestData?.items?.length > 0 || returnRequestData?.requested === true || Number(row.transaction_return_requested) === 1,
-      };
-      const logistics = resolveReturnLogisticsLabels(row, statusOverride);
-      if (logistics) {
-        const money = estimatePendingReturnMoney(row, returnRequestData, bountyLines);
-        const returnQty = getBuyerPendingReturnQty(row, returnRequestData);
-        const itemSummary = resolveReturnRowItemSummary(row, row, returnRequestData);
-        const dateMs = (transactionDateMs(row) || Date.now()) + 1;
-
-        syntheticReturns.push({
-          ...row,
-          is_return: 1,
-          is_pending_return: 1,
-          transaction_type: "return",
-          _isSyntheticReturn: true,
-          // Unique list key; order_uid keeps parent purchase linkage for Return Details.
-          transaction_uid: `return-request-${orderUid}`,
-          order_uid: orderUid,
-          original_transaction_uid: txnUid,
-          ...(resolveTrrUid(row) ? { trr_uid: resolveTrrUid(row) } : {}),
-          transaction_total: money.total || 0,
-          seller_total: money.total || 0,
-          bounty_paid: money.bountyPaid || 0,
-          _pending_return_money: money,
-          ti_bs_qty: itemSummary.qty != null ? itemSummary.qty : returnQty,
-          // Prefer return-only item names; avoid falling back to the full original order list.
-          purchased_item: itemSummary.purchased_item || null,
-          return_status: logistics.return_status,
-          refund_status: logistics.refund_status,
-          display_status: logistics.display_status,
-          transaction_return_status: logistics.return_status,
-          transaction_refund_status: logistics.refund_status,
-          transaction_return_requested: 1,
-          pending_return: row.pending_return,
-          transaction_datetime: row.transaction_datetime,
-          _sortDateMs: dateMs,
-        });
-      }
-    }
-
-    // Completed reverse txns from GET /orders/:uid (often absent from account-screen purchase list).
-    const completedReturns = Array.isArray(row._completed_returns) ? row._completed_returns : [];
-    let completedOffset = 2;
-    for (const ret of completedReturns) {
-      const retUid = String(ret?.transaction_uid || "").trim();
-      if (!retUid || existingReturnTxnUids.has(retUid)) continue;
-      existingReturnTxnUids.add(retUid);
-
-      const retLines = Array.isArray(ret.lines) ? ret.lines : [];
-      const retMoneyTotal = parseFloat(ret.transaction_total ?? ret.transaction_amount ?? NaN);
-      const total = Number.isFinite(retMoneyTotal) && retMoneyTotal !== 0 ? -Math.abs(retMoneyTotal) : 0;
-      const itemSummary = resolveReturnRowItemSummary(
-        {
-          is_return: 1,
-          transaction_type: "return",
-          lines: retLines,
-          _return_detail_lines: retLines,
-        },
-        row,
-        null,
-      );
-      const statusOverride = getReturnStatusOverrideFromCache(returnStatusesByKey, retUid);
-      const logistics = resolveReturnLogisticsLabels(
-        {
-          is_return: 1,
-          transaction_type: "return",
-          return_status: "returned",
-          refund_status: "refunded",
-          display_status: "Returned - Refunded",
-        },
-        { ...statusOverride, returnRequested: true },
-      );
-      const dateMs = (transactionDateMs(ret) || transactionDateMs(row) || Date.now()) + completedOffset;
-      completedOffset += 1;
-
-      syntheticReturns.push({
-        ...row,
-        is_return: 1,
-        is_pending_return: 0,
-        transaction_type: "return",
-        _isSyntheticReturn: true,
-        transaction_uid: retUid,
-        order_uid: orderUid,
-        original_transaction_uid: txnUid,
-        transaction_total: total,
-        seller_total: total,
-        bounty_paid: 0,
-        _pending_return_money: { total, bountyPaid: 0 },
-        ti_bs_qty: itemSummary.qty != null ? itemSummary.qty : Math.abs(parseInt(retLines[0]?.ti_bs_qty ?? retLines[0]?.return_quantity, 10) || 1),
-        purchased_item: itemSummary.purchased_item || resolveLineItemDisplayName(retLines[0]) || null,
-        lines: retLines,
-        _return_detail_lines: retLines,
-        return_status: logistics?.return_status || "returned",
-        refund_status: logistics?.refund_status || "refunded",
-        display_status: logistics?.display_status || "Returned - Refunded",
-        transaction_return_status: logistics?.return_status || "returned",
-        transaction_refund_status: logistics?.refund_status || "refunded",
-        transaction_return_requested: 1,
-        pending_return: undefined,
-        pending_returns: undefined,
-        transaction_datetime: ret.transaction_datetime || ret.transaction_datetime_local || row.transaction_datetime,
-        _sortDateMs: dateMs,
-      });
-    }
-  }
-
-  return [...normalizedPurchaseRows, ...syntheticReturns].sort((a, b) => {
+  return normalizedPurchaseRows.sort((a, b) => {
     const aMs = a._sortDateMs || transactionDateMs(a) || 0;
     const bMs = b._sortDateMs || transactionDateMs(b) || 0;
     const byDate = bMs - aMs;
@@ -2573,14 +2341,78 @@ function formatSignedOrderMoney(value) {
   return `$${n.toFixed(2)}`;
 }
 
-function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequestData) {
+/** Return rows for one sale already included in the account-screen payload. */
+function getExistingReturnRowsForOrder(rows, orderUid) {
+  if (!Array.isArray(rows) || !orderUid || orderUid === "—") return [];
+  return rows.filter((row) => isReturnListRow(row) && resolveListRowOrderUid(row) === orderUid);
+}
+
+/**
+ * Quantities already unavailable for return, keyed by transaction-item UID.
+ * Uses one line source per backend return row so mirrored return_lines/lines/pending_return
+ * payloads are not counted more than once.
+ */
+function buildExistingReturnQtyByLine(returnRows) {
+  const quantities = {};
+  const seenEvents = new Set();
+
+  for (const row of returnRows || []) {
+    if (!row || typeof row !== "object") continue;
+    const eventUid = String(resolveTrrUid(row) || row.transaction_uid || "").trim();
+    const eventKey = eventUid || JSON.stringify(row);
+    if (seenEvents.has(eventKey)) continue;
+    seenEvents.add(eventKey);
+
+    let lines = [];
+    if (Array.isArray(row.return_lines) && row.return_lines.length) {
+      lines = row.return_lines;
+    } else if (Array.isArray(row.pending_return?.items) && row.pending_return.items.length) {
+      lines = row.pending_return.items;
+    } else if (Array.isArray(row.pending_returns) && row.pending_returns.length) {
+      lines = row.pending_returns.flatMap((pending) => (Array.isArray(pending?.items) ? pending.items : []));
+    } else if (Array.isArray(row.transaction_return_items) && row.transaction_return_items.length) {
+      lines = row.transaction_return_items;
+    } else if (Array.isArray(row.lines) && row.lines.length) {
+      lines = row.lines;
+    } else if (row.ti_uid || row.transaction_item_uid) {
+      lines = [row];
+    }
+
+    // Duplicate line representations within one return event are the same reservation.
+    const eventQtyByLine = {};
+    for (const line of lines) {
+      // Completed reverse-transaction lines have their own ti_uid; link them back to
+      // the original purchased line via ti_original_ti_uid.
+      const tiUid = String(line?.ti_original_ti_uid || line?.transaction_item_uid || line?.ti_uid || "").trim();
+      if (!tiUid) continue;
+      const qty = Math.abs(parseInt(line.return_quantity ?? line.ti_bs_qty ?? line.quantity, 10) || 1);
+      eventQtyByLine[tiUid] = Math.max(eventQtyByLine[tiUid] || 0, qty);
+    }
+
+    for (const [tiUid, qty] of Object.entries(eventQtyByLine)) {
+      quantities[tiUid] = (quantities[tiUid] || 0) + qty;
+    }
+  }
+
+  return quantities;
+}
+
+function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequestData, existingReturnRows = []) {
+  const backendReturnQtyByLine = buildExistingReturnQtyByLine(existingReturnRows);
+
   if (Array.isArray(orderLines) && orderLines.length > 0) {
     return orderLines
       .map((line) => {
         const purchasedQty = Math.max(0, parseInt(line.ti_bs_qty, 10) || 0);
-        const remainingQty = Math.max(0, parseInt(line.remaining_qty, 10) ?? purchasedQty - (parseInt(line.returned_qty, 10) || 0));
         const transactionItemUid = String(line.ti_uid || "").trim();
         if (!transactionItemUid) return null;
+        const completedQty = Math.max(0, parseInt(line.returned_qty, 10) || 0);
+        const localRequestedQty = getReturnedQtyForLine(returnRequestData, transactionItemUid, purchasedQty);
+        const backendUnavailableQty = backendReturnQtyByLine[transactionItemUid] || 0;
+        const unavailableQty = Math.max(completedQty, localRequestedQty, backendUnavailableQty);
+        const explicitRemaining = parseInt(line.remaining_qty, 10);
+        const calculatedRemaining = Math.max(0, purchasedQty - unavailableQty);
+        const remainingQty = Number.isFinite(explicitRemaining) ? Math.min(explicitRemaining, calculatedRemaining) : calculatedRemaining;
         return {
           itemId: transactionItemUid,
           itemName: line.item_name || "Item",
@@ -2595,7 +2427,10 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
 
   return (receiptLines || []).map((item, index) => {
     const purchasedQty = getReceiptLineQty(item);
-    const alreadyReturnedQty = getReturnedQtyForLine(returnRequestData, index, purchasedQty);
+    const transactionItemUid = getReceiptLineTransactionItemUid(item);
+    const localRequestedQty = getReturnedQtyForLine(returnRequestData, index, purchasedQty);
+    const backendUnavailableQty = backendReturnQtyByLine[transactionItemUid] || 0;
+    const alreadyReturnedQty = Math.max(localRequestedQty, backendUnavailableQty);
     const remainingQty = Math.max(0, purchasedQty - alreadyReturnedQty);
     return {
       itemId: String(index),
@@ -2603,7 +2438,7 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
       unitCost: item.ti_bs_cost,
       purchasedQty,
       remainingQty,
-      transactionItemUid: getReceiptLineTransactionItemUid(item),
+      transactionItemUid,
       receiptIndex: index,
     };
   });
@@ -2686,8 +2521,17 @@ function mapPendingReturnItemsToLines(pendingItems, saleLines = []) {
     .filter((line) => line.ti_uid || resolveLineItemDisplayName(line));
 }
 
-function collectReturnDetailLines(orderDetail) {
-  const returns = Array.isArray(orderDetail?.returns) ? orderDetail.returns : [];
+function collectReturnDetailLines(orderDetail, scope = null) {
+  const scoped = resolveScopedReturnDetail(orderDetail, scope || {});
+  const sale = orderDetail?.sale || null;
+  const saleLines = Array.isArray(sale?.lines) ? sale.lines : [];
+  const sourceRow = scope?.sourceReturnRow && typeof scope.sourceReturnRow === "object" ? scope.sourceReturnRow : null;
+
+  const returns = scoped.hasScope
+    ? scoped.matchedReturns
+    : Array.isArray(orderDetail?.returns)
+      ? orderDetail.returns
+      : [];
   const fromReturns = [];
   for (const ret of returns) {
     for (const line of ret.lines || []) {
@@ -2696,11 +2540,27 @@ function collectReturnDetailLines(orderDetail) {
   }
   if (fromReturns.length) return fromReturns;
 
-  const sale = orderDetail?.sale || null;
-  const saleLines = Array.isArray(sale?.lines) ? sale.lines : [];
-  const pendingItems = orderDetail?.pending_return?.items || sale?.pending_return?.items || orderDetail?.pending_return_items || sale?.transaction_return_items || [];
+  let pendingItems = [];
+  if (scoped.hasScope) {
+    pendingItems = (scoped.matchedPendings || []).flatMap((pending) => (Array.isArray(pending?.items) ? pending.items : []));
+    if (!pendingItems.length && sourceRow) {
+      const rowLines = Array.isArray(sourceRow.return_lines) ? sourceRow.return_lines : [];
+      if (rowLines.length) return rowLines;
+      pendingItems = collectItemsFromPendingReturns(sourceRow);
+    }
+  } else {
+    pendingItems =
+      orderDetail?.pending_return?.items ||
+      sale?.pending_return?.items ||
+      orderDetail?.pending_return_items ||
+      sale?.transaction_return_items ||
+      [];
+  }
   const fromPending = mapPendingReturnItemsToLines(pendingItems, saleLines);
   if (fromPending.length) return fromPending;
+
+  // When scoped to a specific return, never fall back to other returns / all marked lines.
+  if (scoped.hasScope) return [];
 
   const markedReturned = saleLines.filter((line) => {
     const returnedQty = parseInt(line.returned_qty ?? line.return_quantity, 10);
@@ -2719,10 +2579,10 @@ function collectReturnDetailLines(orderDetail) {
 }
 
 /** Enriched return-line rows for Return Details (options, amounts, bounty). */
-function buildReturnDetailDisplayItems(orderDetail, bountyRows = []) {
+function buildReturnDetailDisplayItems(orderDetail, bountyRows = [], scope = null) {
   const sale = orderDetail?.sale || null;
   const transactionUid = String(sale?.transaction_uid || orderDetail?.order_uid || "").trim();
-  const lines = collectReturnDetailLines(orderDetail);
+  const lines = collectReturnDetailLines(orderDetail, scope);
   return lines.map((line, index) => {
     const key = String(line.ti_uid || line.transaction_item_uid || `return-line-${index}`).trim();
     const qty = Math.max(1, parseInt(line.return_quantity ?? line.ti_bs_qty, 10) || 1);
@@ -2763,13 +2623,13 @@ function buildReturnDetailDisplayItems(orderDetail, bountyRows = []) {
  * Prefers pending_return.estimated_refund / bounty_to_reclaim, then refund_breakdown / return txns,
  * else estimates from line items.
  */
-function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, returns } = {}) {
+function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, returns, pendingReturn } = {}) {
   const asNegative = (n) => (n === 0 ? 0 : -Math.abs(n));
   const itemMerchandise = (items || []).reduce((sum, item) => sum + (Number(item.lineTotal) || 0), 0);
   // Prefer seller bounty_paid reversed (Orders Bounty column), else pool bounty.
   const itemBounty = (items || []).reduce((sum, item) => sum + (Number(item.bountyPaidReversed) || Number(item.lineBounty) || 0), 0);
 
-  const pending = sale?.pending_return || null;
+  const pending = pendingReturn || sale?.pending_return || null;
   const estimated = pending?.estimated_refund;
   const pendingCredit = parseOrderMoneyField(estimated?.total_customer_credit ?? estimated?.total);
   const pendingSubtotal = parseOrderMoneyField(estimated?.subtotal);
@@ -2834,7 +2694,7 @@ function buildReverseTransactionFromReturnItems(items, sale, { refundBreakdown, 
   }
 
   let taxes = 0;
-  const pendingTax = parseFloat(sale?.pending_return?.taxes ?? sale?.pending_return?.transaction_taxes ?? sale?.return_taxes ?? sale?.returned_taxes ?? NaN);
+  const pendingTax = parseFloat(pending?.taxes ?? pending?.transaction_taxes ?? sale?.return_taxes ?? sale?.returned_taxes ?? NaN);
   if (Number.isFinite(pendingTax)) {
     taxes = Math.abs(pendingTax);
   } else {
@@ -3094,7 +2954,9 @@ function OrderDetailLinesTable({
                         const badgeStyle = getProductSaleStatusBadgeStyle("shippedLine", row.shippedStatus);
                         return (
                           <View style={[styles.productSalesDetailStatusBadge, badgeStyle.badge]}>
-                            <Text style={[styles.productSalesDetailStatusBadgeText, badgeStyle.text]}>{row.shippedStatus}</Text>
+                            <Text style={[styles.productSalesDetailStatusBadgeText, badgeStyle.text]} numberOfLines={1}>
+                              {row.shippedStatus}
+                            </Text>
                           </View>
                         );
                       })()
@@ -3537,16 +3399,43 @@ function ReturnDetailsModal({
   onConfirmReceipt,
   onDecline,
   isSellerView = true,
+  trrUid = null,
+  trrUids = null,
+  returnTxnUid = null,
+  sourceReturnRow = null,
 }) {
   const sale = orderDetail?.sale || null;
-  const returns = Array.isArray(orderDetail?.returns) ? orderDetail.returns : [];
-  const returnLines = collectReturnDetailLines(orderDetail);
-  const returnItems = buildReturnDetailDisplayItems(orderDetail, bountyRows);
+  const scope = {
+    trrUid,
+    trrUids: Array.isArray(trrUids) && trrUids.length ? trrUids : normalizeTrrUidList(trrUid, sourceReturnRow),
+    returnTxnUid,
+    sourceReturnRow,
+  };
+  const scoped = resolveScopedReturnDetail(orderDetail, scope);
+  const returns = scoped.hasScope
+    ? scoped.matchedReturns
+    : Array.isArray(orderDetail?.returns)
+      ? orderDetail.returns
+      : [];
+  const returnLines = collectReturnDetailLines(orderDetail, scope);
+  const returnItems = buildReturnDetailDisplayItems(orderDetail, bountyRows, scope);
   const reverse = buildReverseTransactionFromReturnItems(returnItems, sale, {
     refundBreakdown: confirmResult?.refund_breakdown || orderDetail?.refund_breakdown || null,
     returns,
+    pendingReturn: scoped.hasScope
+      ? scoped.scopedPending || sourceReturnRow?.pending_return || null
+      : sale?.pending_return || orderDetail?.pending_return || null,
   });
-  const logistics = resolveReturnLogisticsLabels(sale || orderDetail || {}, statusOverride || {});
+  const statusSource =
+    sourceReturnRow ||
+    (scoped.hasScope && (scoped.scopedPending || scoped.matchedReturns[0])) ||
+    sale ||
+    orderDetail ||
+    {};
+  const logistics = resolveReturnLogisticsLabels(statusSource, {
+    returnRequested: true,
+    ...(statusOverride || {}),
+  });
   const returnStatus = logistics?.return_status || "";
   const refundStatus = logistics?.refund_status || "";
   const displayStatus = logistics?.display_status || "";
@@ -3558,7 +3447,15 @@ function ReturnDetailsModal({
   const isStripeFail = refundStatus === "stripe_fail" || refundStatus === "stripe_failed";
   const receivedKeys = Array.isArray(receivedItemKeys) ? receivedItemKeys : [];
   const allItemsReceived = returnItems.length > 0 && returnItems.every((item) => receivedKeys.includes(item.key));
-  const buyerNote = String(sale?.transaction_return_note || orderDetail?.pending_return?.note || returns[0]?.transaction_return_note || "").trim();
+  const buyerNote = String(
+    (scoped.hasScope
+      ? scoped.scopedPending?.note ||
+        scoped.matchedReturns[0]?.transaction_return_note ||
+        sourceReturnRow?.pending_return?.note ||
+        sourceReturnRow?.transaction_return_note ||
+        ""
+      : sale?.transaction_return_note || orderDetail?.pending_return?.note || returns[0]?.transaction_return_note || "") || "",
+  ).trim();
   const stripeRefund = confirmResult?.stripe_refund || orderDetail?.stripe_refund || null;
   const sellerBusinessName = String(sale?.business_name || sale?.transaction_business_name || orderDetail?.business_name || "").trim();
   const labelStyle = [styles.orderDetailSectionText, darkMode && { color: "#ddd" }];
@@ -3717,6 +3614,12 @@ function formatOrderDaysOpen(dateMs) {
   if (!dateMs) return "—";
   const days = Math.max(1, Math.ceil((Date.now() - dateMs) / 86400000));
   return days === 1 ? "1 day" : `${days} days`;
+}
+
+function shouldDisplayOrderDaysOpen(delivered, received) {
+  const deliveredStatus = String(delivered || "").trim().toLowerCase();
+  const receivedStatus = String(received || "").trim().toLowerCase();
+  return deliveredStatus === "not shipped" || deliveredStatus === "returning" || deliveredStatus === "partial" || receivedStatus === "no" || receivedStatus === "pending";
 }
 
 /** Normalize shipping_address from order detail / list transaction payloads. */
@@ -4253,14 +4156,14 @@ function sumBusinessOrderRows(rows) {
   );
 }
 
-function buildProductSalesOrderRows(product, sellerLines, bountyLines, shippingProgressByKey, returnStatusesByKey, returnRequestsByKey) {
+function buildProductSalesOrderRows(product, sellerLines, bountyLines, shippingProgressByKey, returnStatusesByKey) {
   const orderUids = new Set();
   for (const sale of product?.sales || []) {
     const uid = resolveListRowOrderUid(sale);
     if (uid !== "—") orderUids.add(uid);
   }
   const scopedLines = (sellerLines || []).filter((row) => orderUids.has(resolveListRowOrderUid(row)));
-  return buildBusinessOrdersListFromSellerTransactions(scopedLines, bountyLines, shippingProgressByKey, returnStatusesByKey, returnRequestsByKey);
+  return buildBusinessOrdersListFromSellerTransactions(scopedLines, bountyLines, shippingProgressByKey, returnStatusesByKey);
 }
 
 function BusinessOrdersTable({ rows, darkMode, maxBodyHeight = 320, onOrderPress, onReturnPress }) {
@@ -4700,6 +4603,9 @@ export default function AccountScreen({ navigation }) {
     orderUid: null,
     transactionUid: null,
     trrUid: null,
+    trrUids: [],
+    returnTxnUid: null,
+    sourceReturnRow: null,
     orderDetail: null,
     loading: false,
     error: null,
@@ -5034,9 +4940,8 @@ export default function AccountScreen({ navigation }) {
       return false;
     }
     try {
+      // One note per return request row (trr_note); do not append prior returns.
       const note = (buyerNote || "").trim();
-      const existingNote = returnRequests[saleUid]?.notes?.map((n) => n.note).join("\n\n---RETURN---\n\n") || "";
-      const allNotes = existingNote ? `${existingNote}\n\n---RETURN---\n\n${note}` : note;
       const response = await fetch(TRANSACTIONS_RETURN_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -5044,7 +4949,7 @@ export default function AccountScreen({ navigation }) {
           profile_id: profileId,
           transaction_uid: saleUid,
           transaction_return_requested: 1,
-          transaction_return_note: allNotes,
+          transaction_return_note: note,
           transaction_return_items: transactionReturnItems,
         }),
       });
@@ -5211,7 +5116,7 @@ export default function AccountScreen({ navigation }) {
    * Persist successful IO-Payments createRefund when confirm still stored rejected/CC Issue
    * (Every-Circle local Stripe path had no secret key).
    */
-  const persistRefundedStatusToBackend = async ({ transactionUid, sellerId, orderUid, returnTransactionUid, state, stripeRefund }) => {
+  const persistRefundedStatusToBackend = async ({ transactionUid, sellerId, orderUid, returnTransactionUid, state, stripeRefund, trrUids = null }) => {
     const body = {
       transaction_uid: transactionUid,
       seller_id: sellerId,
@@ -5224,8 +5129,15 @@ export default function AccountScreen({ navigation }) {
     };
     const orderKey = String(orderUid || "").trim();
     const returnTxn = String(returnTransactionUid || "").trim();
+    const resolvedTrrUids = normalizeTrrUidList(trrUids);
     if (orderKey) body.order_uid = orderKey;
     if (returnTxn) body.return_transaction_uid = returnTxn;
+    if (resolvedTrrUids.length > 1) {
+      body.trr_uids = resolvedTrrUids;
+      body.trr_uid = resolvedTrrUids[0];
+    } else if (resolvedTrrUids[0]) {
+      body.trr_uid = resolvedTrrUids[0];
+    }
     if (stripeRefund && typeof stripeRefund === "object") body.stripe_refund = stripeRefund;
     if (stripeRefund?.refund_id) body.stripe_refund_id = stripeRefund.refund_id;
 
@@ -5261,10 +5173,12 @@ export default function AccountScreen({ navigation }) {
     return { ok: true, result: result?.data && typeof result.data === "object" ? result.data : result };
   };
 
-  const handleSellerReturnConfirmAction = async ({ transactionUid, orderUidForStatus, trrUid = null, action, sellerNote = "", stripeRefundResult = null }) => {
+  const handleSellerReturnConfirmAction = async ({ transactionUid, orderUidForStatus, trrUid = null, trrUids = null, action, sellerNote = "", stripeRefundResult = null }) => {
+    // Backend batch-confirm: pass trr_uids[] for a multi-item wave → one ledger + one Stripe.
+    const batchTrrUids = normalizeTrrUidList(trrUids, trrUid);
     // transaction_uid must ALWAYS be the sale (500-… / order_uid). On pending rows, transaction_uid is the trr_uid.
     const saleUid = String(orderUidForStatus || transactionUid || "").trim();
-    const resolvedTrr = String(trrUid || "").trim();
+    const resolvedTrr = String(batchTrrUids[0] || trrUid || "").trim();
     const sellerId = resolveSellerIdForReturn(saleUid);
     if (!sellerId) {
       Alert.alert("Error", "Missing seller_id for return confirmation.");
@@ -5277,7 +5191,12 @@ export default function AccountScreen({ navigation }) {
         action,
         transaction_return_seller_note: sellerNote || (action === "confirm" ? "Item received" : ""),
       };
-      if (resolvedTrr) body.trr_uid = resolvedTrr;
+      if (batchTrrUids.length > 1) {
+        body.trr_uids = batchTrrUids;
+        body.trr_uid = batchTrrUids[0];
+      } else if (resolvedTrr) {
+        body.trr_uid = resolvedTrr;
+      }
       // When FE already called IO-Payments createRefund, pass result so backend does not re-call Stripe.
       if (action === "confirm" && stripeRefundResult && typeof stripeRefundResult === "object") {
         body.stripe_refund = {
@@ -5354,6 +5273,7 @@ export default function AccountScreen({ navigation }) {
               returnTransactionUid: payload.return_transaction_uid || payload.transaction_uid,
               state,
               stripeRefund,
+              trrUids: batchTrrUids.length ? batchTrrUids : normalizeTrrUidList(payload.trr_uids, payload.trr_uid, resolvedTrr),
             });
           } catch (persistErr) {
             console.warn("Error persisting refunded status after successful createRefund:", persistErr);
@@ -5391,18 +5311,21 @@ export default function AccountScreen({ navigation }) {
       // Scope status to this return request / reverse txn — never write order_uid when trr is known,
       // or sibling concurrent returns will all show Refunded.
       const returnTxnUid = String(payload.return_transaction_uid || "").trim();
-      const statusKeys = (resolvedTrr ? [resolvedTrr, payload.trr_uid, returnTxnUid] : [saleUid, transactionUid, orderUidForStatus, returnTxnUid]).map((k) => String(k || "").trim()).filter(Boolean);
+      const responseTrrUids = normalizeTrrUidList(payload.trr_uids, payload.trr_uid, batchTrrUids, resolvedTrr);
+      const statusKeys = (responseTrrUids.length ? [...responseTrrUids, returnTxnUid] : [saleUid, transactionUid, orderUidForStatus, returnTxnUid])
+        .map((k) => String(k || "").trim())
+        .filter(Boolean);
       await persistReturnRefundState(statusKeys, state, {
-        scopeTrrUid: resolvedTrr || null,
+        scopeTrrUid: responseTrrUids[0] || resolvedTrr || null,
         scopeReturnTxnUid: returnTxnUid || null,
-        clearOrderUids: resolvedTrr ? [saleUid, orderUidForStatus, transactionUid] : [],
+        clearOrderUids: responseTrrUids.length || resolvedTrr ? [saleUid, orderUidForStatus, transactionUid] : [],
       });
       // Patch list row money/status from confirm response when present (avoid waiting only on AsyncStorage).
       setBusinessSellerTransactionList((prev) =>
         (prev || []).map((row) => {
           if (
             !rowMatchesReturnStatusKeys(row, statusKeys, {
-              scopeTrrUid: resolvedTrr || null,
+              scopeTrrUid: responseTrrUids[0] || resolvedTrr || null,
               scopeReturnTxnUid: returnTxnUid || null,
             })
           ) {
@@ -5438,11 +5361,12 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
-  const handleReturnAccept = async (transactionUid, orderUidForStatus, sellerNote = "Item received", stripeRefundResult = null, trrUid = null) => {
+  const handleReturnAccept = async (transactionUid, orderUidForStatus, sellerNote = "Item received", stripeRefundResult = null, trrUid = null, trrUids = null) => {
     return handleSellerReturnConfirmAction({
       transactionUid,
       orderUidForStatus,
       trrUid,
+      trrUids,
       action: "confirm",
       sellerNote,
       stripeRefundResult,
@@ -5452,9 +5376,17 @@ export default function AccountScreen({ navigation }) {
   /**
    * Prompt for seller note, call IO-Payments createRefund (business_code from note), then confirm on EC backend.
    */
-  const openConfirmReceiptNoteModal = ({ transactionUid, orderUid, trrUid = null, orderDetail = null, listIdx = null }) => {
+  const openConfirmReceiptNoteModal = ({ transactionUid, orderUid, trrUid = null, trrUids = null, orderDetail = null, listIdx = null }) => {
     const detail = orderDetail || returnDetailModal.orderDetail || null;
-    setPendingConfirmReceipt({ transactionUid, orderUid, trrUid, orderDetail: detail, listIdx });
+    const resolvedTrrUids = normalizeTrrUidList(trrUids, trrUid, returnDetailModal.trrUids, returnDetailModal.trrUid, returnDetailModal.sourceReturnRow);
+    setPendingConfirmReceipt({
+      transactionUid,
+      orderUid,
+      trrUid: trrUid || resolvedTrrUids[0] || null,
+      trrUids: resolvedTrrUids,
+      orderDetail: detail,
+      listIdx,
+    });
     setConfirmReceiptNote("");
     // Close Return Details / legacy return-note view first so Confirm Receipt is interactive.
     setShowReturnNoteViewModal(false);
@@ -5474,15 +5406,26 @@ export default function AccountScreen({ navigation }) {
     const sale = orderDetail?.sale || orderDetail || {};
     const paymentIntent = String(sale.transaction_stripe_pi || "").split("_secret_")[0];
     const buyerUid = String(sale.transaction_profile_id || "").trim();
-    const returnItems = buildReturnDetailDisplayItems(orderDetail, businessBountyData?.data || []);
+    const trrUids = normalizeTrrUidList(pending.trrUids, pending.trrUid, returnDetailModal.trrUids, returnDetailModal.trrUid, returnDetailModal.sourceReturnRow);
+    const returnScope = {
+      trrUid: pending.trrUid || returnDetailModal.trrUid || trrUids[0] || null,
+      trrUids,
+      returnTxnUid: returnDetailModal.returnTxnUid || null,
+      sourceReturnRow: returnDetailModal.sourceReturnRow || null,
+    };
+    const scoped = resolveScopedReturnDetail(orderDetail, returnScope);
+    const returnItems = buildReturnDetailDisplayItems(orderDetail, businessBountyData?.data || [], returnScope);
     const reverse = buildReverseTransactionFromReturnItems(returnItems, sale, {
       refundBreakdown: orderDetail?.refund_breakdown || null,
-      returns: Array.isArray(orderDetail?.returns) ? orderDetail.returns : [],
+      returns: scoped.hasScope ? scoped.matchedReturns : Array.isArray(orderDetail?.returns) ? orderDetail.returns : [],
+      pendingReturn: scoped.hasScope
+        ? scoped.scopedPending || returnDetailModal.sourceReturnRow?.pending_return || null
+        : sale?.pending_return || orderDetail?.pending_return || null,
     });
     const refundAmount = Math.abs(Number(reverse?.total) || 0);
     const refundTax = Math.abs(Number(reverse?.taxes) || 0);
     const saleUid = String(pending.orderUid || pending.transactionUid || "").trim();
-    const trrUid = String(pending.trrUid || returnDetailModal.trrUid || "").trim();
+    const trrUid = String(pending.trrUid || returnDetailModal.trrUid || trrUids[0] || "").trim();
 
     setShowConfirmReceiptNoteModal(false);
     setReturnDetailAccepting(true);
@@ -5499,6 +5442,7 @@ export default function AccountScreen({ navigation }) {
             order_uid: saleUid,
             transaction_uid: saleUid,
             ...(trrUid ? { trr_uid: trrUid } : {}),
+            ...(trrUids.length > 1 ? { trr_uids: trrUids.join(",") } : {}),
             seller_note: sellerNote,
           },
         });
@@ -5511,22 +5455,29 @@ export default function AccountScreen({ navigation }) {
         };
       }
 
-      const outcome = await handleReturnAccept(saleUid, saleUid, sellerNote, stripeRefundResult, trrUid || null);
+      const outcome = await handleReturnAccept(saleUid, saleUid, sellerNote, stripeRefundResult, trrUid || null, trrUids);
       if (outcome?.ok) {
         if (pending.listIdx != null) {
-          const perKey = trrUid ? `${trrUid}_${pending.listIdx}` : `${saleUid}_${pending.listIdx}`;
+          const statusIds = trrUids.length ? trrUids : trrUid ? [trrUid] : [];
           setReturnStatuses((prev) => {
-            const next = {
-              ...prev,
-              [perKey]: outcome.state,
-              ...(trrUid ? { [trrUid]: outcome.state } : { [saleUid]: outcome.state }),
-            };
-            // Do not leave order-level Refunded when a specific concurrent return was confirmed.
-            if (trrUid && next[saleUid]) delete next[saleUid];
+            const next = { ...prev };
+            if (statusIds.length) {
+              statusIds.forEach((id) => {
+                next[id] = outcome.state;
+                next[`${id}_${pending.listIdx}`] = outcome.state;
+              });
+              if (next[saleUid]) delete next[saleUid];
+            } else {
+              next[saleUid] = outcome.state;
+              next[`${saleUid}_${pending.listIdx}`] = outcome.state;
+            }
             return next;
           });
-          await AsyncStorage.setItem(`return_status_${perKey}`, JSON.stringify(outcome.state));
-          if (trrUid) {
+          for (const id of statusIds.length ? statusIds : [saleUid]) {
+            const perKey = `${id}_${pending.listIdx}`;
+            await AsyncStorage.setItem(`return_status_${perKey}`, JSON.stringify(outcome.state));
+          }
+          if (statusIds.length) {
             try {
               await AsyncStorage.removeItem(`return_status_${saleUid}`);
             } catch (_) {
@@ -5571,11 +5522,12 @@ export default function AccountScreen({ navigation }) {
     }
   };
 
-  const handleReturnDecline = async (transactionUid, note = "", orderUidForStatus, trrUid = null) => {
+  const handleReturnDecline = async (transactionUid, note = "", orderUidForStatus, trrUid = null, trrUids = null) => {
     return handleSellerReturnConfirmAction({
       transactionUid,
       orderUidForStatus,
       trrUid,
+      trrUids,
       action: "decline",
       sellerNote: note,
     });
@@ -5810,8 +5762,6 @@ export default function AccountScreen({ navigation }) {
           }
           if (Object.keys(stateByOrderUid).length || Object.keys(itemHydrationByOrderUid).length) {
             normalizedPurchases = applyHydratedReturnStateToPurchaseRows(normalizedPurchases, stateByOrderUid, itemHydrationByOrderUid);
-            // Ensure completed reverse txns appear as PURCHASES rows (account-screen often omits them).
-            normalizedPurchases = injectCompletedReturnsIntoPurchaseRows(normalizedPurchases, itemHydrationByOrderUid);
             if (Object.keys(statusPatch).length) {
               setReturnStatuses((prev) => ({ ...prev, ...statusPatch }));
               await Promise.all(Object.keys(statusPatch).map((key) => AsyncStorage.setItem(`return_status_${key}`, JSON.stringify(statusPatch[key]))));
@@ -6135,6 +6085,9 @@ export default function AccountScreen({ navigation }) {
       orderUid: null,
       transactionUid: null,
       trrUid: null,
+      trrUids: [],
+      returnTxnUid: null,
+      sourceReturnRow: null,
       orderDetail: null,
       loading: false,
       error: null,
@@ -6154,12 +6107,20 @@ export default function AccountScreen({ navigation }) {
       const raw = orderRow?.rawRow || orderRow;
       // On pending return rows, transaction_uid is the trr_uid — keep sale uid separate.
       const saleUid = String(orderUid).trim();
-      const trrUid = String(orderRow?.trrUid || resolveTrrUid(raw) || "").trim();
+      const trrUids = normalizeTrrUidList(orderRow?.trrUid, orderRow?.trrUids, raw);
+      const trrUid = String(orderRow?.trrUid || resolveTrrUid(raw) || trrUids[0] || "").trim();
+      const isPendingReturn = Number(raw?.is_pending_return) === 1 || raw?.is_pending_return === true;
+      const candidateReturnTxn = String(orderRow?.returnTxnUid || raw?.return_transaction_uid || (!isPendingReturn && isReturnListRow(raw) ? raw?.transaction_uid : "") || "").trim();
+      const returnTxnUid = candidateReturnTxn && candidateReturnTxn !== saleUid && candidateReturnTxn !== trrUid ? candidateReturnTxn : "";
       const transactionUid = String(
-        orderRow?.original_transaction_uid || raw?.original_transaction_uid || (!trrUid || String(raw?.transaction_uid || "").trim() !== trrUid ? raw?.transaction_uid : null) || saleUid,
+        orderRow?.original_transaction_uid ||
+          raw?.original_transaction_uid ||
+          (!trrUid || String(raw?.transaction_uid || "").trim() !== trrUid ? raw?.transaction_uid : null) ||
+          saleUid,
       ).trim();
       const bountyPaidFallback = Number(orderRow?.bountyPaid ?? orderRow?.bounty_paid ?? raw?.bounty_paid ?? 0) || 0;
       const isSellerView = selectedAccount !== "personal";
+      const sourceReturnRow = isReturnListRow(raw) ? raw : null;
 
       setReturnReceivedItemKeys([]);
       setReturnConfirmResult(null);
@@ -6168,6 +6129,9 @@ export default function AccountScreen({ navigation }) {
         orderUid: saleUid,
         transactionUid,
         trrUid: trrUid || null,
+        trrUids: trrUids.length ? trrUids : trrUid ? [trrUid] : [],
+        returnTxnUid: returnTxnUid || null,
+        sourceReturnRow,
         orderDetail: null,
         loading: true,
         error: null,
@@ -6186,7 +6150,6 @@ export default function AccountScreen({ navigation }) {
         }
         const orderDetail = await fetchOrderDetailApi(saleUid, ctx);
         const saleTxnUid = String(orderDetail?.sale?.transaction_uid || transactionUid || saleUid).trim();
-        const detailTrr = String(trrUid || orderDetail?.pending_return?.trr_uid || orderDetail?.sale?.pending_return?.trr_uid || "").trim();
         setReturnDetailModal((prev) => ({
           ...prev,
           orderDetail,
@@ -6194,7 +6157,11 @@ export default function AccountScreen({ navigation }) {
           error: null,
           // Prefer sale transaction_uid; never keep a pending-row trr_uid here.
           transactionUid: saleTxnUid,
-          trrUid: detailTrr || prev.trrUid || null,
+          // Keep the clicked return scope — do not replace with orderDetail.pending_return (first only).
+          trrUid: prev.trrUid || null,
+          trrUids: Array.isArray(prev.trrUids) && prev.trrUids.length ? prev.trrUids : prev.trrUid ? [prev.trrUid] : [],
+          returnTxnUid: prev.returnTxnUid || null,
+          sourceReturnRow: prev.sourceReturnRow || null,
         }));
 
         // Keep PURCHASES chips aligned when order-detail is the authoritative Stripe-fail source.
@@ -6204,8 +6171,11 @@ export default function AccountScreen({ navigation }) {
           stripe_refund: orderDetail?.stripe_refund || sale?.stripe_refund,
         });
         if (detailState.active && detailState.refund_status === "stripe_fail") {
+          const scopeTrr = String(trrUid || "").trim();
           const returnTxnUids = (Array.isArray(orderDetail?.returns) ? orderDetail.returns : []).map((ret) => String(ret?.transaction_uid || "").trim()).filter(Boolean);
-          const statusKeys = (detailTrr ? [detailTrr, ...returnTxnUids] : [saleUid, saleTxnUid, transactionUid, ...returnTxnUids]).map((k) => String(k || "").trim()).filter(Boolean);
+          const statusKeys = (scopeTrr ? [scopeTrr, ...trrUids, ...returnTxnUids] : [saleUid, saleTxnUid, transactionUid, ...returnTxnUids])
+            .map((k) => String(k || "").trim())
+            .filter(Boolean);
           await persistReturnRefundState(
             statusKeys,
             {
@@ -6214,8 +6184,8 @@ export default function AccountScreen({ navigation }) {
               display_status: detailState.display_status || "Returned - CC Issue",
             },
             {
-              scopeTrrUid: detailTrr || null,
-              clearOrderUids: detailTrr ? [saleUid, saleTxnUid, transactionUid] : [],
+              scopeTrrUid: scopeTrr || null,
+              clearOrderUids: scopeTrr ? [saleUid, saleTxnUid, transactionUid] : [],
             },
           );
         }
@@ -6450,8 +6420,7 @@ export default function AccountScreen({ navigation }) {
     [orderDetailModal.orderUid, orderDetailModal.isSellerView, orderDetailModal.orderDetail, selectedAccount, businessUID],
   );
 
-  const openReturnNoteModalFromReceipt = useCallback(async () => {
-    const orderUid = resolveListRowOrderUid(receiptTransaction);
+  const openReturnNoteModalFromReceipt = useCallback(() => {
     setReturnModalOrderLines([]);
     setReturnModalReceiptData([]);
     setSelectedReturnItems([]);
@@ -6463,31 +6432,13 @@ export default function AccountScreen({ navigation }) {
     const saleLines = receiptOrderDetail?.sale?.lines;
     if (Array.isArray(saleLines) && saleLines.length > 0) {
       setReturnModalOrderLines(saleLines);
-      setReturnModalLoading(false);
-      return;
+    } else if (Array.isArray(receiptData) && receiptData.length > 0) {
+      setReturnModalReceiptData(receiptData);
+    } else {
+      Alert.alert("Error", "No receipt lines are available for return.");
+      setShowReturnNoteModal(false);
     }
-
-    try {
-      const profileId = receiptTransaction?.transaction_profile_id || (await AsyncStorage.getItem("profile_uid"));
-      if (!profileId || !orderUid || orderUid === "—") {
-        throw new Error("Missing profile or order id.");
-      }
-      const orderDetail = await fetchOrderDetailApi(orderUid, { profileId: String(profileId).trim() });
-      setReturnModalOrderLines(Array.isArray(orderDetail?.sale?.lines) ? orderDetail.sale.lines : []);
-      setReceiptOrderDetail(orderDetail);
-    } catch (error) {
-      console.warn("openReturnNoteModalFromReceipt:", error?.message || error);
-      if (Array.isArray(receiptData) && receiptData.length > 0) {
-        setReturnModalReceiptData(receiptData);
-        setReturnModalOrderLines([]);
-      } else {
-        setReturnModalOrderLines([]);
-        Alert.alert("Error", "Could not load order lines for return. Please try again.");
-        setShowReturnNoteModal(false);
-      }
-    } finally {
-      setReturnModalLoading(false);
-    }
+    setReturnModalLoading(false);
   }, [receiptTransaction, receiptOrderDetail, receiptData]);
 
   /**
@@ -7375,8 +7326,8 @@ export default function AccountScreen({ navigation }) {
   }, [businessBountyData, businessServices]);
   const productInventorySummary = useMemo(() => buildProductInventoryRows(businessServices), [businessServices]);
   const businessOrdersSummary = useMemo(
-    () => buildBusinessOrdersListFromSellerTransactions(businessSellerTransactionList, businessBountyData?.data || [], orderShippingProgressByKey, returnStatuses, returnRequests),
-    [businessSellerTransactionList, businessBountyData, orderShippingProgressByKey, returnStatuses, returnRequests],
+    () => buildBusinessOrdersListFromSellerTransactions(businessSellerTransactionList, businessBountyData?.data || [], orderShippingProgressByKey, returnStatuses),
+    [businessSellerTransactionList, businessBountyData, orderShippingProgressByKey, returnStatuses],
   );
   const personalPurchasesDisplayList = useMemo(
     () => buildPersonalPurchasesListWithReturns(transactionData, returnStatuses, returnRequests, bountyData?.data || []),
@@ -7570,6 +7521,7 @@ export default function AccountScreen({ navigation }) {
                               orderUid,
                               listTransactionUid: String(transaction.original_transaction_uid || orderUid).trim(),
                               trrUid: resolveTrrUid(transaction) || undefined,
+                              trrUids: normalizeTrrUidList(transaction),
                               bountyPaid: returnMoney?.bountyPaid ?? transaction.bounty_paid ?? 0,
                               rawRow: transaction,
                             });
@@ -8249,15 +8201,9 @@ export default function AccountScreen({ navigation }) {
               (() => {
                 const orderUid = resolveListRowOrderUid(receiptTransaction);
                 const saleLines = receiptOrderDetail?.sale?.lines;
-                const allItemsReturned =
-                  Array.isArray(saleLines) && saleLines.length > 0
-                    ? saleLines.every((line) => Math.max(0, parseInt(line.remaining_qty, 10) ?? 0) <= 0)
-                    : receiptData.length > 0 &&
-                      receiptData.every((row, index) => {
-                        const purchasedQty = getReceiptLineQty(row);
-                        const returnData = returnRequests[orderUid];
-                        return getReturnedQtyForLine(returnData, index, purchasedQty) >= purchasedQty;
-                      });
+                const existingReturnRows = getExistingReturnRowsForOrder(transactionData, orderUid);
+                const selectableLines = buildReturnModalSelectableLines(saleLines, receiptData, returnRequests[orderUid], existingReturnRows);
+                const allItemsReturned = selectableLines.length > 0 && selectableLines.every((line) => line.remainingQty <= 0);
 
                 return (
                   <TouchableOpacity
@@ -8321,7 +8267,12 @@ export default function AccountScreen({ navigation }) {
                 {/* Item selection */}
                 <Text style={{ fontSize: 14, color: darkMode ? "#ccc" : "#555", marginBottom: 8 }}>Select item(s) to return:</Text>
                 <ScrollView style={{ maxHeight: 220, marginBottom: 12 }}>
-                  {buildReturnModalSelectableLines(returnModalOrderLines, returnModalReceiptData, returnRequests[resolveListRowOrderUid(receiptTransaction)]).map((row) => {
+                  {buildReturnModalSelectableLines(
+                    returnModalOrderLines,
+                    returnModalReceiptData,
+                    returnRequests[resolveListRowOrderUid(receiptTransaction)],
+                    getExistingReturnRowsForOrder(transactionData, resolveListRowOrderUid(receiptTransaction)),
+                  ).map((row) => {
                     const itemId = row.itemId;
                     const isSelected = selectedReturnItems.includes(itemId);
                     const purchasedQty = row.purchasedQty;
@@ -8477,7 +8428,13 @@ export default function AccountScreen({ navigation }) {
                 {selectedReturnItems.length === 0 && <Text style={{ color: "#B71C1C", fontSize: 12, marginBottom: 8, textAlign: "center" }}>Please select at least one item to return.</Text>}
 
                 {(() => {
-                  const selectableLines = buildReturnModalSelectableLines(returnModalOrderLines, returnModalReceiptData, returnRequests[resolveListRowOrderUid(receiptTransaction)]);
+                  const orderUid = resolveListRowOrderUid(receiptTransaction);
+                  const selectableLines = buildReturnModalSelectableLines(
+                    returnModalOrderLines,
+                    returnModalReceiptData,
+                    returnRequests[orderUid],
+                    getExistingReturnRowsForOrder(transactionData, orderUid),
+                  );
                   const lineById = Object.fromEntries(selectableLines.map((line) => [line.itemId, line]));
                   const hasInvalidQty = selectedReturnItems.some((id) => {
                     const row = lineById[id];
@@ -8641,6 +8598,7 @@ export default function AccountScreen({ navigation }) {
                                   transactionUid: returnDetailModal.orderUid || viewingReturnTransactionUid,
                                   orderUid: returnDetailModal.orderUid || viewingReturnTransactionUid,
                                   trrUid: returnDetailModal.trrUid || null,
+                                  trrUids: returnDetailModal.trrUids || [],
                                   listIdx: idx,
                                 });
                               }}
@@ -8775,23 +8733,31 @@ export default function AccountScreen({ navigation }) {
                   const orderUid = returnDetailModal.orderUid || viewingReturnTransactionUid || returnDetailModal.transactionUid;
                   const saleUid = String(orderUid || "").trim();
                   const trrUid = String(returnDetailModal.trrUid || "").trim();
+                  const trrUids = normalizeTrrUidList(returnDetailModal.trrUids, trrUid, returnDetailModal.sourceReturnRow);
                   setReturnDetailDeclining(true);
                   try {
-                    const outcome = await handleReturnDecline(saleUid, declineNote, saleUid, trrUid || null);
+                    const outcome = await handleReturnDecline(saleUid, declineNote, saleUid, trrUid || null, trrUids);
                     if (outcome?.ok) {
                       if (idx != null) {
-                        const perKey = trrUid ? `${trrUid}_${idx}` : `${saleUid}_${idx}`;
+                        const statusIds = trrUids.length ? trrUids : trrUid ? [trrUid] : [];
                         setReturnStatuses((prev) => {
-                          const next = {
-                            ...prev,
-                            [perKey]: outcome.state,
-                            ...(trrUid ? { [trrUid]: outcome.state } : { [saleUid]: outcome.state }),
-                          };
-                          if (trrUid && next[saleUid]) delete next[saleUid];
+                          const next = { ...prev };
+                          if (statusIds.length) {
+                            statusIds.forEach((id) => {
+                              next[id] = outcome.state;
+                              next[`${id}_${idx}`] = outcome.state;
+                            });
+                            if (next[saleUid]) delete next[saleUid];
+                          } else {
+                            next[saleUid] = outcome.state;
+                            next[`${saleUid}_${idx}`] = outcome.state;
+                          }
                           return next;
                         });
-                        await AsyncStorage.setItem(`return_status_${perKey}`, JSON.stringify(outcome.state));
-                        if (trrUid) {
+                        for (const id of statusIds.length ? statusIds : [saleUid]) {
+                          await AsyncStorage.setItem(`return_status_${id}_${idx}`, JSON.stringify(outcome.state));
+                        }
+                        if (statusIds.length) {
                           try {
                             await AsyncStorage.removeItem(`return_status_${saleUid}`);
                           } catch (_) {
@@ -9104,7 +9070,7 @@ export default function AccountScreen({ navigation }) {
               <Text style={[styles.noDataText, darkMode && { color: "#aaa" }]}>No orders recorded for this product yet.</Text>
             ) : (
               <BusinessOrdersTable
-                rows={buildProductSalesOrderRows(productSalesModal.product, businessSellerTransactionList, businessBountyData?.data || [], orderShippingProgressByKey, returnStatuses, returnRequests)}
+                rows={buildProductSalesOrderRows(productSalesModal.product, businessSellerTransactionList, businessBountyData?.data || [], orderShippingProgressByKey, returnStatuses)}
                 darkMode={darkMode}
                 onOrderPress={openOrderDetail}
                 onReturnPress={openReturnDetails}
@@ -9140,14 +9106,20 @@ export default function AccountScreen({ navigation }) {
         error={returnDetailModal.error}
         darkMode={darkMode}
         isSellerView={returnDetailModal.isSellerView !== false}
+        trrUid={returnDetailModal.trrUid || null}
+        trrUids={returnDetailModal.trrUids || []}
+        returnTxnUid={returnDetailModal.returnTxnUid || null}
+        sourceReturnRow={returnDetailModal.sourceReturnRow || null}
         statusOverride={getReturnStatusOverrideForRow(
           returnStatuses,
           {
             is_return: 1,
             is_pending_return: returnDetailModal.trrUid ? 1 : 0,
             trr_uid: returnDetailModal.trrUid,
-            transaction_uid: returnDetailModal.transactionUid,
+            trr_uids: returnDetailModal.trrUids,
+            transaction_uid: returnDetailModal.returnTxnUid || returnDetailModal.transactionUid,
             order_uid: returnDetailModal.orderUid,
+            ...(returnDetailModal.sourceReturnRow || {}),
           },
           returnDetailModal.orderUid,
           returnDetailModal.transactionUid,
@@ -9162,13 +9134,20 @@ export default function AccountScreen({ navigation }) {
         confirmResult={returnConfirmResult}
         onConfirmReceipt={async () => {
           const saleUid = returnDetailModal.orderUid || returnDetailModal.transactionUid;
-          const returnItems = buildReturnDetailDisplayItems(returnDetailModal.orderDetail, businessBountyData?.data || []);
+          const returnScope = {
+            trrUid: returnDetailModal.trrUid || null,
+            trrUids: returnDetailModal.trrUids || [],
+            returnTxnUid: returnDetailModal.returnTxnUid || null,
+            sourceReturnRow: returnDetailModal.sourceReturnRow || null,
+          };
+          const returnItems = buildReturnDetailDisplayItems(returnDetailModal.orderDetail, businessBountyData?.data || [], returnScope);
           const allReceived = returnItems.length > 0 && returnItems.every((item) => returnReceivedItemKeys.includes(item.key));
           if (!saleUid || !allReceived) return;
           openConfirmReceiptNoteModal({
             transactionUid: saleUid,
             orderUid: returnDetailModal.orderUid || saleUid,
             trrUid: returnDetailModal.trrUid || null,
+            trrUids: returnDetailModal.trrUids || [],
             orderDetail: returnDetailModal.orderDetail,
           });
         }}
@@ -9770,10 +9749,10 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   businessOrderDetailTableWithFulfillment: {
-    minWidth: 1020,
+    minWidth: 1060,
   },
   businessOrderDetailColShipped: {
-    width: 86,
+    width: 112,
   },
   businessOrderDetailColTracking: {
     width: 160,
