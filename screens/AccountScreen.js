@@ -2501,6 +2501,46 @@ function buildExistingReturnQtyByLine(returnRows) {
   return quantities;
 }
 
+function parseOptionalBoolean(value) {
+  if (value === true || value === 1 || String(value).trim().toLowerCase() === "true" || String(value).trim() === "1") return true;
+  if (value === false || value === 0 || String(value).trim().toLowerCase() === "false" || String(value).trim() === "0") return false;
+  return null;
+}
+
+/**
+ * Prefer the backend's authoritative per-line eligibility. Older payloads may
+ * only include the snapshotted returnable/window fields; unknown stays eligible
+ * for backward compatibility and is still enforced by the POST endpoint.
+ */
+function resolveLineReturnEligibility(line) {
+  if (!line || typeof line !== "object") return { eligible: true, reason: null };
+
+  const backendEligible = parseOptionalBoolean(line.return_eligible ?? line.is_return_eligible);
+  const backendReason = String(line.return_ineligible_reason ?? line.return_eligibility_reason ?? "").trim();
+  if (backendEligible === false) {
+    return {
+      eligible: false,
+      reason: backendReason || (parseOptionalBoolean(line.returnable ?? line.is_returnable ?? line.bs_is_returnable ?? line.ti_bs_is_returnable) === false ? "Not returnable" : "Outside return window"),
+    };
+  }
+
+  const returnable = parseOptionalBoolean(line.returnable ?? line.is_returnable ?? line.bs_is_returnable ?? line.ti_bs_is_returnable);
+  const windowDaysRaw = line.return_window_days ?? line.bs_return_window_days ?? line.ti_bs_return_window_days;
+  const windowDays = windowDaysRaw == null || String(windowDaysRaw).trim() === "" ? null : parseInt(windowDaysRaw, 10);
+  if (returnable === false || (returnable == null && windowDays === 0)) {
+    return { eligible: false, reason: "Not returnable" };
+  }
+
+  const expired = parseOptionalBoolean(line.return_window_expired ?? line.is_return_window_expired);
+  const expiresAtRaw = line.return_window_expires_at ?? line.return_eligible_until ?? line.return_deadline;
+  const expiresAt = expiresAtRaw ? new Date(expiresAtRaw).getTime() : NaN;
+  if (expired === true || (Number.isFinite(expiresAt) && Date.now() > expiresAt)) {
+    return { eligible: false, reason: backendReason || "Outside return window" };
+  }
+
+  return { eligible: true, reason: null };
+}
+
 function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequestData, existingReturnRows = []) {
   const backendReturnQtyByLine = buildExistingReturnQtyByLine(existingReturnRows);
 
@@ -2517,6 +2557,7 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
         const explicitRemaining = parseInt(line.remaining_qty, 10);
         const calculatedRemaining = Math.max(0, purchasedQty - unavailableQty);
         const remainingQty = Number.isFinite(explicitRemaining) ? Math.min(explicitRemaining, calculatedRemaining) : calculatedRemaining;
+        const eligibility = resolveLineReturnEligibility(line);
         return {
           itemId: transactionItemUid,
           itemName: line.item_name || "Item",
@@ -2525,6 +2566,8 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
           remainingQty,
           transactionItemUid,
           shippedQty: getLineShippedQty(line),
+          returnEligible: eligibility.eligible,
+          returnIneligibleReason: eligibility.reason,
           line,
         };
       })
@@ -2538,6 +2581,7 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
     const backendUnavailableQty = backendReturnQtyByLine[transactionItemUid] || 0;
     const alreadyReturnedQty = Math.max(localRequestedQty, backendUnavailableQty);
     const remainingQty = Math.max(0, purchasedQty - alreadyReturnedQty);
+    const eligibility = resolveLineReturnEligibility(item);
     return {
       itemId: String(index),
       itemName: item.bs_service_name || "Item",
@@ -2546,6 +2590,9 @@ function buildReturnModalSelectableLines(orderLines, receiptLines, returnRequest
       remainingQty,
       transactionItemUid,
       receiptIndex: index,
+      returnEligible: eligibility.eligible,
+      returnIneligibleReason: eligibility.reason,
+      line: item,
     };
   });
 }
@@ -8429,16 +8476,20 @@ export default function AccountScreen({ navigation }) {
                 const existingReturnRows = getExistingReturnRowsForOrder(transactionData, orderUid);
                 const selectableLines = buildReturnModalSelectableLines(saleLines, receiptData, returnRequests[orderUid], existingReturnRows);
                 const allItemsReturned = selectableLines.length > 0 && selectableLines.every((line) => line.remainingQty <= 0);
+                const hasEligibleReturnItem = selectableLines.some((line) => line.remainingQty > 0 && line.returnEligible);
+                const returnButtonDisabled = allItemsReturned || !hasEligibleReturnItem;
 
                 return (
                   <TouchableOpacity
-                    style={[styles.receiptCloseButton, { borderColor: "#B71C1C", marginTop: 12 }, allItemsReturned && { opacity: 0.4 }]}
-                    disabled={allItemsReturned}
+                    style={[styles.receiptCloseButton, { borderColor: "#B71C1C", marginTop: 12 }, returnButtonDisabled && { opacity: 0.4 }]}
+                    disabled={returnButtonDisabled}
                     onPress={() => {
-                      if (!allItemsReturned) openReturnNoteModalFromReceipt();
+                      if (!returnButtonDisabled) openReturnNoteModalFromReceipt();
                     }}
                   >
-                    <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>{allItemsReturned ? "All Items Returned" : "Request Return"}</Text>
+                    <Text style={[styles.receiptCloseButtonText, { color: "#B71C1C" }]}>
+                      {allItemsReturned ? "All Items Returned" : !hasEligibleReturnItem ? "No Items Eligible for Return" : "Request Return"}
+                    </Text>
                   </TouchableOpacity>
                 );
               })()}
@@ -8503,6 +8554,8 @@ export default function AccountScreen({ navigation }) {
                     const purchasedQty = row.purchasedQty;
                     const remainingQty = row.remainingQty;
                     const alreadyReturned = remainingQty <= 0;
+                    const returnIneligible = !row.returnEligible;
+                    const selectionDisabled = alreadyReturned || returnIneligible;
                     const returnQty = returnItemQuantities[itemId] ?? 1;
                     const needsQtyPicker = isSelected && purchasedQty > 1 && remainingQty > 1;
 
@@ -8514,14 +8567,14 @@ export default function AccountScreen({ navigation }) {
                           paddingHorizontal: 4,
                           borderBottomWidth: 1,
                           borderBottomColor: darkMode ? "#444" : "#eee",
-                          opacity: alreadyReturned ? 0.4 : 1,
+                          opacity: selectionDisabled ? 0.4 : 1,
                         }}
                       >
                         <TouchableOpacity
-                          disabled={alreadyReturned}
+                          disabled={selectionDisabled}
                           style={{ flexDirection: "row", alignItems: "center" }}
                           onPress={() => {
-                            if (alreadyReturned) return;
+                            if (selectionDisabled) return;
                             if (isSelected) {
                               setSelectedReturnItems((prev) => prev.filter((id) => id !== itemId));
                               setReturnItemQuantities((prev) => {
@@ -8539,12 +8592,14 @@ export default function AccountScreen({ navigation }) {
                           }}
                           activeOpacity={0.7}
                         >
-                          <Ionicons name={isSelected ? "checkbox" : "square-outline"} size={18} color={isSelected ? "#B71C1C" : "#555"} style={{ marginRight: 8 }} />
-                          <Text style={{ fontSize: 13, color: darkMode ? "#fff" : "#333", flex: 1 }}>
+                          <Ionicons name={isSelected ? "checkbox" : "square-outline"} size={18} color={selectionDisabled ? "#999" : isSelected ? "#B71C1C" : "#555"} style={{ marginRight: 8 }} />
+                          <Text style={{ fontSize: 13, color: selectionDisabled ? (darkMode ? "#888" : "#777") : darkMode ? "#fff" : "#333", flex: 1 }}>
                             {row.itemName} — ${parseFloat(row.unitCost || 0).toFixed(2)} x {purchasedQty}
                           </Text>
                           {alreadyReturned ? (
                             <Text style={{ fontSize: 11, color: "#B71C1C", marginLeft: 4 }}>Already returned</Text>
+                          ) : returnIneligible ? (
+                            <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#666", marginLeft: 4 }}>{row.returnIneligibleReason || "Not eligible for return"}</Text>
                           ) : purchasedQty > remainingQty ? (
                             <Text style={{ fontSize: 11, color: "#888", marginLeft: 4 }}>{remainingQty} left</Text>
                           ) : null}
@@ -8663,7 +8718,7 @@ export default function AccountScreen({ navigation }) {
                   const lineById = Object.fromEntries(selectableLines.map((line) => [line.itemId, line]));
                   const hasInvalidQty = selectedReturnItems.some((id) => {
                     const row = lineById[id];
-                    if (!row) return true;
+                    if (!row || !row.returnEligible || row.remainingQty <= 0) return true;
                     const remainingQty = row.remainingQty;
                     const raw = returnItemQuantities[id];
                     const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
@@ -8695,7 +8750,10 @@ export default function AccountScreen({ navigation }) {
                           const transactionReturnItems = [];
                           for (const id of selectedReturnItems) {
                             const row = lineById[id];
-                            if (!row) continue;
+                            if (!row || !row.returnEligible || row.remainingQty <= 0) {
+                              Alert.alert("Item not eligible", row?.returnIneligibleReason || "This item cannot be returned.");
+                              return;
+                            }
                             const transaction_item_uid = row.transactionItemUid;
                             if (!transaction_item_uid) {
                               Alert.alert("Error", "Order line is missing ti_uid. Cannot submit return.");
