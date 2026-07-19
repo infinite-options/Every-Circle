@@ -215,6 +215,63 @@ export function getOfferingBountyTypeForCheckout(offering) {
   return "per_item";
 }
 
+/** True when an offering explicitly allows returns. */
+export function isOfferingReturnable(offering) {
+  return (
+    offering?.profile_expertise_is_returnable === 1 ||
+    offering?.profile_expertise_is_returnable === "1" ||
+    offering?.profile_expertise_is_returnable === true
+  );
+}
+
+/** True when a cart line (business product or offering) allows returns. */
+export function isCartItemReturnable(item) {
+  if (!item || typeof item !== "object") return false;
+  if (item.itemType === "expertise") return isOfferingReturnable(item);
+  return (
+    item.bs_is_returnable === 1 ||
+    item.bs_is_returnable === "1" ||
+    item.bs_is_returnable === true ||
+    item.is_returnable === 1 ||
+    item.is_returnable === "1" ||
+    item.is_returnable === true
+  );
+}
+
+/** True when an offering has shipping (free or buyer pays). N/A otherwise. */
+export function isOfferingShippingApplicable(offering) {
+  return (
+    offering?.profile_expertise_free_shipping === 1 ||
+    offering?.profile_expertise_free_shipping === "1" ||
+    offering?.profile_expertise_free_shipping === true ||
+    offering?.profile_expertise_buyer_pays_shipping === 1 ||
+    offering?.profile_expertise_buyer_pays_shipping === "1" ||
+    offering?.profile_expertise_buyer_pays_shipping === true
+  );
+}
+
+/** True when a cart line has shipping options (not N/A). */
+export function isCartItemShippingApplicable(item) {
+  if (!item || typeof item !== "object") return false;
+  if (item.itemType === "expertise") return isOfferingShippingApplicable(item);
+  if (
+    item.bs_free_shipping === 1 ||
+    item.bs_free_shipping === "1" ||
+    item.bs_free_shipping === true ||
+    item.bs_buyer_pays_shipping === 1 ||
+    item.bs_buyer_pays_shipping === "1" ||
+    item.bs_buyer_pays_shipping === true
+  ) {
+    return true;
+  }
+  // Legacy free/buyer text only counts when both flag fields are unset (same as ProductCard).
+  const freeExplicitOff = item.bs_free_shipping === 0 || item.bs_free_shipping === "0" || item.bs_free_shipping === false;
+  const buyerExplicitOff =
+    item.bs_buyer_pays_shipping === 0 || item.bs_buyer_pays_shipping === "0" || item.bs_buyer_pays_shipping === false;
+  if (freeExplicitOff && buyerExplicitOff) return false;
+  return item.bs_shipping != null && String(item.bs_shipping).trim() !== "";
+}
+
 /** Fields to persist on expertise cart items so cart/checkout can recompute correctly. */
 export function expertiseCartPersistedFields(expertiseData, modalData = {}) {
   return {
@@ -222,5 +279,19 @@ export function expertiseCartPersistedFields(expertiseData, modalData = {}) {
     profile_expertise_bounty_type: getOfferingBountyType(expertiseData),
     profile_expertise_quantity: expertiseData?.profile_expertise_quantity ?? expertiseData?.quantity ?? "",
     cost_is_total: isOfferingCostTotalUnit(expertiseData?.cost),
+    profile_expertise_is_returnable: isOfferingReturnable(expertiseData) ? 1 : 0,
+    profile_expertise_return_window_days: expertiseData?.profile_expertise_return_window_days ?? "",
+    profile_expertise_free_shipping:
+      expertiseData?.profile_expertise_free_shipping === 1 ||
+      expertiseData?.profile_expertise_free_shipping === "1" ||
+      expertiseData?.profile_expertise_free_shipping === true
+        ? 1
+        : 0,
+    profile_expertise_buyer_pays_shipping:
+      expertiseData?.profile_expertise_buyer_pays_shipping === 1 ||
+      expertiseData?.profile_expertise_buyer_pays_shipping === "1" ||
+      expertiseData?.profile_expertise_buyer_pays_shipping === true
+        ? 1
+        : 0,
   };
 }

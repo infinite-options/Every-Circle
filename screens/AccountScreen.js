@@ -2414,10 +2414,11 @@ function normalizeOrderDetailPayload(json) {
   return payload.sale != null ? payload : root;
 }
 
-function buildOrderDetailUrl(orderUid, { profileId, businessUid } = {}) {
+function buildOrderDetailUrl(orderUid, { profileId, businessUid, sellerId } = {}) {
   const params = new URLSearchParams();
   if (profileId) params.set("profile_id", profileId);
   if (businessUid) params.set("business_uid", businessUid);
+  if (sellerId) params.set("seller_id", sellerId);
   const qs = params.toString();
   const base = `${ORDERS_ENDPOINT}/${encodeURIComponent(orderUid)}`;
   return withTimeZoneQuery(qs ? `${base}?${qs}` : base);
@@ -4838,7 +4839,7 @@ function buildExpertiseRows(expertiseList, sellerTransactions) {
   });
 }
 
-export default function AccountScreen({ navigation }) {
+export default function AccountScreen({ navigation, route }) {
   const { darkMode } = useDarkMode();
   const { width: windowWidth } = useWindowDimensions();
   const [userUID, setUserUID] = useState(null);
@@ -4852,6 +4853,7 @@ export default function AccountScreen({ navigation }) {
   const [expertiseLoading, setExpertiseLoading] = useState(true);
   const [sellerTxData, setSellerTxData] = useState([]);
   const [salesModal, setSalesModal] = useState({ visible: false, item: null, transactions: [] });
+  const salesDeepLinkKeyRef = useRef("");
   const [productSalesModal, setProductSalesModal] = useState({
     visible: false,
     product: null,
@@ -4869,6 +4871,7 @@ export default function AccountScreen({ navigation }) {
     loading: false,
     error: null,
     isSellerView: false,
+    sellerId: null,
   });
   const [returnDetailModal, setReturnDetailModal] = useState({
     visible: false,
@@ -6108,6 +6111,21 @@ export default function AccountScreen({ navigation }) {
     return task;
   };
 
+  useEffect(() => {
+    const expertiseUid = String(route?.params?.offeringSalesUid || "").trim();
+    if (!expertiseUid || expertiseLoading) return;
+
+    const deepLinkKey = `${expertiseUid}:${String(route?.params?.offeringSalesToken || "")}`;
+    if (salesDeepLinkKeyRef.current === deepLinkKey) return;
+
+    const item = expertiseData.find((entry) => String(entry.expertiseUid || "").trim() === expertiseUid);
+    if (!item) return;
+
+    salesDeepLinkKeyRef.current = deepLinkKey;
+    const transactions = sellerTxData.filter((tx) => String(tx.ti_bs_id || "").trim() === expertiseUid);
+    setSalesModal({ visible: true, item, transactions });
+  }, [route?.params?.offeringSalesUid, route?.params?.offeringSalesToken, expertiseLoading, expertiseData, sellerTxData]);
+
   const resetDeliveryVerificationModal = () => {
     setShowReceiveItemModal(false);
     setPendingTransactionForConfirm(null);
@@ -6348,6 +6366,7 @@ export default function AccountScreen({ navigation }) {
       loading: false,
       error: null,
       isSellerView: false,
+      sellerId: null,
     });
   }, []);
 
@@ -6473,11 +6492,19 @@ export default function AccountScreen({ navigation }) {
   );
 
   const openOrderDetail = useCallback(
-    async (orderRow) => {
+    async (orderRow, options = {}) => {
       const orderUid = orderRow?.orderUid || resolveListRowOrderUid(orderRow?.rawRow || orderRow);
       if (!orderUid || orderUid === "—") return;
 
-      const isSellerView = selectedAccount !== "personal";
+      const isSellerView = options.isSellerView ?? selectedAccount !== "personal";
+      let sellerId = String(options.sellerId || "").trim();
+      if (isSellerView && !sellerId) {
+        if (selectedAccount !== "personal") {
+          sellerId = String(selectedAccount || businessUID || "").trim();
+        } else {
+          sellerId = String((await AsyncStorage.getItem("profile_uid")) || "").trim();
+        }
+      }
       setOrderDetailModal({
         visible: true,
         orderUid,
@@ -6485,13 +6512,16 @@ export default function AccountScreen({ navigation }) {
         loading: true,
         error: null,
         isSellerView,
+        sellerId: sellerId || null,
       });
 
       try {
         const ctx = {};
         if (isSellerView) {
-          const bizUid = selectedAccount || businessUID;
-          if (bizUid) ctx.businessUid = bizUid;
+          if (sellerId) {
+            ctx.businessUid = sellerId;
+            ctx.sellerId = sellerId;
+          }
         } else {
           const profileId = (await AsyncStorage.getItem("profile_uid")) || "";
           if (profileId) ctx.profileId = String(profileId).trim();
@@ -6528,6 +6558,7 @@ export default function AccountScreen({ navigation }) {
       if (!requestBody?.transaction_uid || !Array.isArray(requestBody.fulfillment_updates) || !requestBody.fulfillment_updates.length) {
         return false;
       }
+      const sellerIdFromModal = String(orderDetailModal.sellerId || "").trim();
       const sellerIdFromAccount = selectedAccount && selectedAccount !== "personal" ? String(selectedAccount).trim() : businessUID ? String(businessUID).trim() : "";
       const sellerIdFromOrder = String(
         orderDetailModal.orderDetail?.sale?.transaction_business_id ||
@@ -6536,9 +6567,9 @@ export default function AccountScreen({ navigation }) {
           orderDetailModal.orderDetail?.business_uid ||
           "",
       ).trim();
-      const sellerId = sellerIdFromAccount || sellerIdFromOrder;
+      const sellerId = sellerIdFromModal || sellerIdFromAccount || sellerIdFromOrder;
       if (!sellerId) {
-        Alert.alert("Could not save shipment", "Missing seller business id. Switch to a business profile and try again.");
+        Alert.alert("Could not save shipment", "Missing seller id. Close the order and open it from Sales, then try again.");
         return false;
       }
       const payload = {
@@ -6626,13 +6657,17 @@ export default function AccountScreen({ navigation }) {
 
         if (selectedAccount !== "personal") {
           await refreshAccountScreenBusiness();
+        } else {
+          await refreshAccountScreenPersonal();
         }
         if (orderUid && orderUid !== "—") {
           try {
             const ctx = {};
             if (isSellerView) {
-              const bizUid = selectedAccount || businessUID;
-              if (bizUid) ctx.businessUid = bizUid;
+              if (sellerId) {
+                ctx.businessUid = sellerId;
+                ctx.sellerId = sellerId;
+              }
             } else {
               const profileId = (await AsyncStorage.getItem("profile_uid")) || "";
               if (profileId) ctx.profileId = String(profileId).trim();
@@ -6689,7 +6724,7 @@ export default function AccountScreen({ navigation }) {
         return false;
       }
     },
-    [orderDetailModal.orderUid, orderDetailModal.isSellerView, orderDetailModal.orderDetail, selectedAccount, businessUID],
+    [orderDetailModal.orderUid, orderDetailModal.isSellerView, orderDetailModal.orderDetail, orderDetailModal.sellerId, selectedAccount, businessUID],
   );
 
   const openReturnNoteModalFromReceipt = useCallback(() => {
@@ -9385,7 +9420,7 @@ export default function AccountScreen({ navigation }) {
         isSellerView={orderDetailModal.isSellerView}
         darkMode={darkMode}
         onSaveFulfillment={saveOrderFulfillmentUpdates}
-        bountyRows={orderDetailModal.isSellerView ? businessBountyData?.data || [] : bountyData?.data || []}
+        bountyRows={orderDetailModal.isSellerView && selectedAccount !== "personal" ? businessBountyData?.data || [] : bountyData?.data || []}
       />
 
       <ReturnDetailsModal
@@ -9465,45 +9500,29 @@ export default function AccountScreen({ navigation }) {
               {salesModal.transactions?.length ? `${salesModal.transactions.length} purchase${salesModal.transactions.length !== 1 ? "s" : ""}` : "No purchases yet"}
             </Text>
 
-            <ScrollView>
-              {salesModal.transactions?.length === 0 ? (
-                <Text style={{ color: "#888", fontStyle: "italic" }}>No one has purchased this offering yet.</Text>
-              ) : (
-                salesModal.transactions.map((tx, i) => {
-                  const name = [tx.buyer_first_name, tx.buyer_last_name].filter(Boolean).join(" ") || "Unknown buyer";
-                  const qty = parseInt(tx.ti_bs_qty) || 0;
-                  const unitPrice = parseFloat(tx.unit_price) || 0;
-                  const total = parseFloat(tx.transaction_total) || 0;
-                  const showEmail = tx.buyer_email_is_public == 1 && tx.buyer_email;
-                  const showPhone = tx.buyer_phone_is_public == 1 && tx.buyer_phone;
-                  const showLocation = tx.buyer_location_is_public == 1 && (tx.buyer_city || tx.buyer_state);
-                  const purchaseDateObj = parseTransactionDateTime(tx);
-                  const purchaseDate = purchaseDateObj ? purchaseDateObj.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : null;
-                  return (
-                    <View key={i} style={{ borderTopWidth: i > 0 ? 1 : 0, borderTopColor: "#eee", paddingTop: i > 0 ? 14 : 0, marginBottom: 14 }}>
-                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-                        <Text style={{ fontSize: 15, fontWeight: "600", color: "#222" }}>{name}</Text>
-                        {purchaseDate ? <Text style={{ fontSize: 12, color: "#999" }}>{purchaseDate}</Text> : null}
-                      </View>
-                      {showEmail ? <Text style={{ fontSize: 13, color: "#555", marginBottom: 2 }}>{tx.buyer_email}</Text> : null}
-                      {showPhone ? <Text style={{ fontSize: 13, color: "#555", marginBottom: 2 }}>{tx.buyer_phone}</Text> : null}
-                      {showLocation ? <Text style={{ fontSize: 13, color: "#555", marginBottom: 6 }}>{[tx.buyer_city, tx.buyer_state].filter(Boolean).join(", ")}</Text> : null}
-                      <View style={{ flexDirection: "row", gap: 16, marginTop: 4 }}>
-                        <Text style={{ fontSize: 13, color: "#444" }}>
-                          Qty: <Text style={{ fontWeight: "600" }}>{qty}</Text>
-                        </Text>
-                        <Text style={{ fontSize: 13, color: "#444" }}>
-                          Unit: <Text style={{ fontWeight: "600" }}>${unitPrice.toFixed(2)}</Text>
-                        </Text>
-                        <Text style={{ fontSize: 13, color: "#444" }}>
-                          Total: <Text style={{ fontWeight: "600" }}>${total.toFixed(2)}</Text>
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-            </ScrollView>
+            {salesModal.transactions?.length === 0 ? (
+              <Text style={{ color: "#888", fontStyle: "italic" }}>No one has purchased this offering yet.</Text>
+            ) : (
+              <BusinessOrdersTable
+                rows={buildProductSalesOrderRows(
+                  { sales: salesModal.transactions || [] },
+                  sellerTxData,
+                  bountyData?.data || [],
+                  orderShippingProgressByKey,
+                  returnStatuses,
+                )}
+                darkMode={false}
+                maxBodyHeight={360}
+                onOrderPress={(row) => {
+                  setSalesModal({ visible: false, item: null, transactions: [] });
+                  openOrderDetail(row, { isSellerView: true });
+                }}
+                onReturnPress={(row) => {
+                  setSalesModal({ visible: false, item: null, transactions: [] });
+                  openOrderDetail(row, { isSellerView: true });
+                }}
+              />
+            )}
 
             <TouchableOpacity
               onPress={() => setSalesModal({ visible: false, item: null, transactions: [] })}

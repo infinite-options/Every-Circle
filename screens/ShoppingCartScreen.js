@@ -56,6 +56,8 @@ import {
   hasOfferingBounty,
   formatOfferingUnitPriceLabel,
   parseOfferingBountyAmount,
+  isCartItemReturnable,
+  isCartItemShippingApplicable,
 } from "../utils/offeringCartUtils";
 
 const GENERIC_CART_TITLES = ["All Items", "My Cart", "Cart"];
@@ -367,6 +369,12 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     webCheckoutSessionRef.current = webCheckoutSession;
   }, [webCheckoutSession]);
 
+  useEffect(() => {
+    if (!cartItems.some((it) => isCartItemShippingApplicable(it)) && shippingEnabled) {
+      setShippingEnabled(false);
+    }
+  }, [cartItems, shippingEnabled]);
+
   /** Start at top of the list whenever this screen is opened so users review items first; refund scroll runs only from Proceed without acknowledgement. */
   useFocusEffect(
     useCallback(() => {
@@ -531,14 +539,27 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       return;
     }
 
-    if (!refundAcknowledged) {
+    if (cartItems.some((it) => isCartItemReturnable(it)) && !refundAcknowledged) {
       setRefundError(true);
       focusRefundPolicySection();
       return;
     }
     setRefundError(false);
 
-    if (shippingEnabled && !shippingAddressComplete) {
+    const shippingNeeded = cartItems.some((it) => isCartItemShippingApplicable(it));
+    if (
+      shippingNeeded &&
+      shippingEnabled &&
+      !isShippingAddressComplete({
+        enabled: true,
+        firstName: shippingFirstName,
+        lastName: shippingLastName,
+        streetLine1: shippingStreetLine1,
+        city: shippingCity,
+        state: shippingState,
+        zip: shippingZip,
+      })
+    ) {
       Alert.alert("Shipping address required", "Please complete all required shipping fields before checkout.");
       return;
     }
@@ -982,7 +1003,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
       const salesTaxRounded = parseFloat(Number(salesTaxTotal).toFixed(2));
       const merchandiseRounded = parseFloat(Number(merchandiseSubtotal).toFixed(2));
       const shippingAddress = buildShippingAddressPayload({
-        enabled: shippingEnabled,
+        enabled: shippingEnabled && cartItems.some((it) => isCartItemShippingApplicable(it)),
         firstName: shippingFirstName,
         lastName: shippingLastName,
         streetLine1: shippingStreetLine1,
@@ -1102,6 +1123,8 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
   const sellerGroupsPreview = buildSellerCheckoutGroups(cartItems, resolveItemBusinessName);
   const multiSellerCheckout = sellerGroupsPreview.length > 1;
   const hasExpertiseInCart = cartItems.some((it) => it.itemType === "expertise");
+  const cartRequiresReturnAcknowledgement = cartItems.some((it) => isCartItemReturnable(it));
+  const cartHasShippingApplicableItems = cartItems.some((it) => isCartItemShippingApplicable(it));
   const feeDialogFirstGroup = sellerGroupsPreview[0];
   const webStripeAmount = webCheckoutSession && webCheckoutSession.groups[webCheckoutSession.index] ? webCheckoutSession.groups[webCheckoutSession.index].total : 0;
   const webCheckoutPayeeDisplayName =
@@ -1109,7 +1132,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     (feeDialogFirstGroup?.displayName && String(feeDialogFirstGroup.displayName).trim()) ||
     null;
   const shippingAddressComplete = isShippingAddressComplete({
-    enabled: shippingEnabled,
+    enabled: cartHasShippingApplicableItems && shippingEnabled,
     firstName: shippingFirstName,
     lastName: shippingLastName,
     streetLine1: shippingStreetLine1,
@@ -1117,7 +1140,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
     state: shippingState,
     zip: shippingZip,
   });
-  const checkoutBlockedByShipping = shippingEnabled && !shippingAddressComplete;
+  const checkoutBlockedByShipping = cartHasShippingApplicableItems && shippingEnabled && !shippingAddressComplete;
   const checkoutDisabled = loading || checkoutBlockedByShipping;
 
   const content = (
@@ -1264,92 +1287,94 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                   </View>
                 );
               })}
-              <View style={styles.shippingCard}>
-                <TouchableOpacity
-                  style={styles.escrowRow}
-                  onPress={() => setShippingEnabled((prev) => !prev)}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.checkbox, shippingEnabled && styles.checkboxChecked]}>
-                    {shippingEnabled && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={styles.escrowLabel}>Shipping</Text>
-                </TouchableOpacity>
-                {shippingEnabled ? (
-                  <View style={styles.shippingFields}>
-                    <Text style={styles.shippingFieldLabel}>First Name</Text>
-                    <TextInput
-                      style={styles.shippingInput}
-                      value={shippingFirstName}
-                      onChangeText={setShippingFirstName}
-                      placeholder="First Name"
-                      autoCapitalize="words"
-                      autoCorrect={false}
-                    />
-                    <Text style={styles.shippingFieldLabel}>Last Name</Text>
-                    <TextInput
-                      style={styles.shippingInput}
-                      value={shippingLastName}
-                      onChangeText={setShippingLastName}
-                      placeholder="Last Name"
-                      autoCapitalize="words"
-                      autoCorrect={false}
-                    />
-                    <Text style={styles.shippingFieldLabel}>Street Address</Text>
-                    <TextInput
-                      style={styles.shippingInput}
-                      value={shippingStreetLine1}
-                      onChangeText={setShippingStreetLine1}
-                      placeholder="Street Address Line 1"
-                      autoCapitalize="words"
-                      autoCorrect={false}
-                    />
-                    <TextInput
-                      style={styles.shippingInput}
-                      value={shippingStreetLine2}
-                      onChangeText={setShippingStreetLine2}
-                      placeholder="Street Address Line 2"
-                      autoCapitalize="words"
-                      autoCorrect={false}
-                    />
-                    <View style={styles.shippingCityStateZipRow}>
-                      <View style={styles.shippingCityField}>
-                        <Text style={styles.shippingFieldLabel}>City</Text>
-                        <TextInput
-                          style={styles.shippingInput}
-                          value={shippingCity}
-                          onChangeText={setShippingCity}
-                          placeholder="City"
-                          autoCapitalize="words"
-                          autoCorrect={false}
-                        />
-                      </View>
-                      <View style={styles.shippingStateField}>
-                        <Text style={styles.shippingFieldLabel}>State</Text>
-                        <TextInput
-                          style={styles.shippingInput}
-                          value={shippingState}
-                          onChangeText={setShippingState}
-                          placeholder="State"
-                          autoCapitalize="words"
-                          autoCorrect={false}
-                        />
-                      </View>
-                      <View style={styles.shippingZipField}>
-                        <Text style={styles.shippingFieldLabel}>Zip</Text>
-                        <TextInput
-                          style={[styles.shippingInput, styles.shippingInputLast]}
-                          value={shippingZip}
-                          onChangeText={setShippingZip}
-                          placeholder="Zip"
-                          keyboardType="number-pad"
-                          autoCorrect={false}
-                        />
+              {cartHasShippingApplicableItems ? (
+                <View style={styles.shippingCard}>
+                  <TouchableOpacity
+                    style={styles.escrowRow}
+                    onPress={() => setShippingEnabled((prev) => !prev)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.checkbox, shippingEnabled && styles.checkboxChecked]}>
+                      {shippingEnabled && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={styles.escrowLabel}>Shipping</Text>
+                  </TouchableOpacity>
+                  {shippingEnabled ? (
+                    <View style={styles.shippingFields}>
+                      <Text style={styles.shippingFieldLabel}>First Name</Text>
+                      <TextInput
+                        style={styles.shippingInput}
+                        value={shippingFirstName}
+                        onChangeText={setShippingFirstName}
+                        placeholder="First Name"
+                        autoCapitalize="words"
+                        autoCorrect={false}
+                      />
+                      <Text style={styles.shippingFieldLabel}>Last Name</Text>
+                      <TextInput
+                        style={styles.shippingInput}
+                        value={shippingLastName}
+                        onChangeText={setShippingLastName}
+                        placeholder="Last Name"
+                        autoCapitalize="words"
+                        autoCorrect={false}
+                      />
+                      <Text style={styles.shippingFieldLabel}>Street Address</Text>
+                      <TextInput
+                        style={styles.shippingInput}
+                        value={shippingStreetLine1}
+                        onChangeText={setShippingStreetLine1}
+                        placeholder="Street Address Line 1"
+                        autoCapitalize="words"
+                        autoCorrect={false}
+                      />
+                      <TextInput
+                        style={styles.shippingInput}
+                        value={shippingStreetLine2}
+                        onChangeText={setShippingStreetLine2}
+                        placeholder="Street Address Line 2"
+                        autoCapitalize="words"
+                        autoCorrect={false}
+                      />
+                      <View style={styles.shippingCityStateZipRow}>
+                        <View style={styles.shippingCityField}>
+                          <Text style={styles.shippingFieldLabel}>City</Text>
+                          <TextInput
+                            style={styles.shippingInput}
+                            value={shippingCity}
+                            onChangeText={setShippingCity}
+                            placeholder="City"
+                            autoCapitalize="words"
+                            autoCorrect={false}
+                          />
+                        </View>
+                        <View style={styles.shippingStateField}>
+                          <Text style={styles.shippingFieldLabel}>State</Text>
+                          <TextInput
+                            style={styles.shippingInput}
+                            value={shippingState}
+                            onChangeText={setShippingState}
+                            placeholder="State"
+                            autoCapitalize="words"
+                            autoCorrect={false}
+                          />
+                        </View>
+                        <View style={styles.shippingZipField}>
+                          <Text style={styles.shippingFieldLabel}>Zip</Text>
+                          <TextInput
+                            style={[styles.shippingInput, styles.shippingInputLast]}
+                            value={shippingZip}
+                            onChangeText={setShippingZip}
+                            placeholder="Zip"
+                            keyboardType="number-pad"
+                            autoCorrect={false}
+                          />
+                        </View>
                       </View>
                     </View>
-                  </View>
-                ) : null}
-              </View>
+                  ) : null}
+                </View>
+              ) : null}
               <View style={styles.totalContainer}>
                 <Text style={styles.multiSellerHint}>
                   {hasExpertiseInCart ? "Offering and expertise purchases include a 3% credit card processing fee in each seller total below (same as when you added them to the cart). " : null}
@@ -1407,30 +1432,32 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
                 ) : null}
               </View>
 
-              <View
-                collapsable={false}
-                style={styles.escrowSection}
-                onLayout={(e) => {
-                  refundSectionScrollYRef.current = e.nativeEvent.layout.y;
-                }}
-              >
-                <TouchableOpacity
-                  style={styles.escrowRow}
-                  onPress={() => {
-                    setRefundAcknowledged(!refundAcknowledged);
-                    setRefundError(false);
+              {cartRequiresReturnAcknowledgement ? (
+                <View
+                  collapsable={false}
+                  style={styles.escrowSection}
+                  onLayout={(e) => {
+                    refundSectionScrollYRef.current = e.nativeEvent.layout.y;
                   }}
-                  activeOpacity={0.7}
                 >
-                  <View style={[styles.checkbox, refundAcknowledged && styles.checkboxChecked, refundError && { borderColor: "#FF3B30" }]}>
-                    {refundAcknowledged && <Text style={styles.checkmark}>✓</Text>}
-                  </View>
-                  <Text style={[styles.escrowLabel, { flex: 1 }, refundError && { color: "#FF3B30" }]}>
-                    Return must be made in 5 days for a full refund, any returns past 5 days will result in a partial refund. Check the box to acknowledge.
-                  </Text>
-                </TouchableOpacity>
-                {refundError && <Text style={{ color: "#FF3B30", fontSize: 13, marginTop: 6, marginLeft: 34 }}>You must acknowledge the return policy before checking out.</Text>}
-              </View>
+                  <TouchableOpacity
+                    style={styles.escrowRow}
+                    onPress={() => {
+                      setRefundAcknowledged(!refundAcknowledged);
+                      setRefundError(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.checkbox, refundAcknowledged && styles.checkboxChecked, refundError && { borderColor: "#FF3B30" }]}>
+                      {refundAcknowledged && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                    <Text style={[styles.escrowLabel, { flex: 1 }, refundError && { color: "#FF3B30" }]}>
+                      Return must be made in 5 days for a full refund, any returns past 5 days will result in a partial refund. Check the box to acknowledge.
+                    </Text>
+                  </TouchableOpacity>
+                  {refundError && <Text style={{ color: "#FF3B30", fontSize: 13, marginTop: 6, marginLeft: 34 }}>You must acknowledge the return policy before checking out.</Text>}
+                </View>
+              ) : null}
             </>
           )}
         </ScrollView>
