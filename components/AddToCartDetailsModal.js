@@ -12,6 +12,7 @@ import {
   getOfferingMaxAddQuantity,
   getOfferingQuantityLabelSuffix,
   hasOfferingBounty,
+  isOfferingReturnable,
   parseOfferingCostParts,
 } from "../utils/offeringCartUtils";
 import { loadExpertiseCartQuantity } from "../utils/expertiseCartStorage";
@@ -82,6 +83,7 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
   const processingFee = (subtotal + taxAmount) * 0.03;
   const totalWithFee = subtotal + taxAmount + processingFee;
   const bountyLineTotal = hasOfferingBounty(expertiseData) ? getOfferingBountyLineTotal(expertiseData, qtyNum) : 0;
+  const itemNotReturnable = !isOfferingReturnable(expertiseData);
 
   const clampQuantity = (nextQty) => {
     if (maxCanAdd != null && maxCanAdd <= 0) return 0;
@@ -242,6 +244,18 @@ const AddToCartDetailsModal = ({ show, setShow, expertiseData, profileData, onAd
                 <Text style={[styles.bountyNoteValue, darkMode && styles.darkBountyNoteValue]}>${bountyLineTotal.toFixed(2)}</Text>
               </View>
             )}
+            {itemNotReturnable ? (
+              <Text
+                style={[
+                  styles.notReturnableNote,
+                  darkMode && styles.darkNotReturnableNote,
+                  bountyLineTotal > 0 ? styles.notReturnableNoteBelowBounty : styles.notReturnableNoteBelowTotal,
+                  bountyLineTotal <= 0 && darkMode && styles.darkNotReturnableNoteBelowTotal,
+                ]}
+              >
+                Item not returnable
+              </Text>
+            ) : null}
           </View>
 
           <View style={styles.buttonContainer}>
@@ -489,6 +503,26 @@ const styles = StyleSheet.create({
   },
   darkBountyNoteValue: {
     color: "#999",
+  },
+  notReturnableNote: {
+    fontSize: 13,
+    color: "#888",
+    fontStyle: "italic",
+  },
+  darkNotReturnableNote: {
+    color: "#999",
+  },
+  notReturnableNoteBelowBounty: {
+    marginTop: 8,
+  },
+  notReturnableNoteBelowTotal: {
+    marginTop: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#E0E0E0",
+  },
+  darkNotReturnableNoteBelowTotal: {
+    borderTopColor: "#444",
   },
   buttonContainer: {
     flexDirection: "row",

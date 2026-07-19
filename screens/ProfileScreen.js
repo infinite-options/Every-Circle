@@ -2104,7 +2104,21 @@ const ProfileScreen = ({ route, navigation }) => {
                                 )}
                                 {isCurrentUserProfile && (exp.expertise_sales > 0 || exp.expertise_responses > 0) && (
                                   <View style={styles.offeringStatsColumn}>
-                                    <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Sales: {exp.expertise_sales || 0}</Text>
+                                    {exp.expertise_sales > 0 ? (
+                                      <TouchableOpacity
+                                        onPress={() =>
+                                          navigation.navigate("Account", {
+                                            offeringSalesUid: exp.profile_expertise_uid,
+                                            offeringSalesToken: Date.now(),
+                                          })
+                                        }
+                                        activeOpacity={0.7}
+                                      >
+                                        <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Sales: {exp.expertise_sales || 0}</Text>
+                                      </TouchableOpacity>
+                                    ) : (
+                                      <Text style={[styles.wishResponseLinkText, darkMode && styles.darkWishResponseLinkText]}>Sales: 0</Text>
+                                    )}
                                     {exp.expertise_responses > 0 ? (
                                       <TouchableOpacity
                                         onPress={() => {
