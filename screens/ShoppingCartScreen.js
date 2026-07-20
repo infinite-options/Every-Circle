@@ -41,7 +41,7 @@ import StripeFeesDialog from "../components/StripeFeesDialog";
 import PaymentFailure from "../components/PaymentFailure";
 import ProductOrderSummaryLines from "../components/ProductOrderSummaryLines";
 import { parsePrice } from "../utils/priceUtils";
-import { cartChoiceEnrichmentFromItem, getItemizedChoiceLines } from "../utils/selectedChoiceItems";
+import { cartChoiceEnrichmentFromItem, normalizeSelectedChoiceItemsForApi } from "../utils/selectedChoiceItems";
 import { canonicalBusinessCcFeePayer } from "../utils/normalizeBusinessServiceFromApi";
 import { recordServicePurchase } from "../utils/purchaseService";
 import { expertiseLineMerchandiseAndTax, roundCartMoney, taxRatePercentForCalculation } from "../utils/cartLineTax";
@@ -992,7 +992,7 @@ const ShoppingCartScreenContent = ({ route, navigation }) => {
           unit_price: item.unitPrice || parsePrice(item.bs_cost),
           selected_choices: item.selectedChoices || {},
           selected_choice_labels: item.selectedChoiceLabels || {},
-          selected_choice_items: getItemizedChoiceLines(item),
+          selected_choice_items: normalizeSelectedChoiceItemsForApi(item),
           special_instructions: item.specialInstructions || "",
         };
       });

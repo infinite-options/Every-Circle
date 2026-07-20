@@ -154,9 +154,16 @@ function getPreviouslyReceivedQty(row) {
   return q > 0 ? Math.round(q) : 0;
 }
 
-/** Remaining quantity the buyer can still confirm on a line. */
+/** Qty still expected to arrive (purchased minus cancelled / pre-ship returned units). */
+function getReceivableQty(row) {
+  const purchased = Math.max(getReceiptLineQty(row), getLinePurchasedQty(row) || 0);
+  const cancelled = getLineCancelledFromShipQty(row);
+  return Math.max(0, purchased - cancelled);
+}
+
+/** Remaining quantity the buyer can still confirm on a line (excludes cancelled units). */
 function getRemainingQtyToReceive(row) {
-  return Math.max(0, getReceiptLineQty(row) - getPreviouslyReceivedQty(row));
+  return Math.max(0, getReceivableQty(row) - getPreviouslyReceivedQty(row));
 }
 
 /** Stable id for a receipt line in API payloads (prefer transaction line uid). */
@@ -260,17 +267,18 @@ async function fetchReceiptLinesForTransaction(transaction) {
   return items;
 }
 
-/** True when every receipt line has been fully marked as received. */
+/** True when every receipt line has been fully marked as received (cancelled units excluded). */
 function areAllReceiptLinesFullyReceived(receiptRows, selectedItemIds, receivedQuantities) {
   if (!Array.isArray(receiptRows) || receiptRows.length === 0) return false;
   return receiptRows.every((row, index) => {
-    const purchasedQty = getReceiptLineQty(row);
+    const receivableQty = getReceivableQty(row);
+    if (receivableQty <= 0) return true;
     const alreadyReceived = getPreviouslyReceivedQty(row);
     const itemId = String(index);
     const newlySelected = selectedItemIds.includes(itemId);
     const raw = receivedQuantities[itemId];
     const newlyReceived = newlySelected ? (typeof raw === "number" ? raw : parseInt(String(raw), 10) || 0) : 0;
-    return alreadyReceived + newlyReceived >= purchasedQty;
+    return alreadyReceived + newlyReceived >= receivableQty;
   });
 }
 
@@ -3016,6 +3024,7 @@ function OrderDetailLinesTable({
   const signedRows = signedRowsProp ?? !!footerAmountSigned;
   const includeFulfillment = !!showFulfillmentColumns && !signedRows;
   const selected = Array.isArray(selectedKeys) ? selectedKeys : [];
+  const [expandedTrackingKeys, setExpandedTrackingKeys] = useState({});
   const detailRows = (lines || []).map((line, index) => {
     const qty = Math.abs(line.return_quantity != null ? parseInt(line.return_quantity, 10) || 0 : parseInt(line.ti_bs_qty, 10) || 0);
     const enrichment = enrichFromReceiptRow(line);
@@ -3060,6 +3069,7 @@ function OrderDetailLinesTable({
       lineTotal: displayLineTotal,
       shippedStatus: fulfillment?.statusLabel || "—",
       tracking: fulfillment?.trackingLabel || "—",
+      trackingPairs: fulfillment?.trackingPairs || [],
       isLast: index === lines.length - 1,
       isSelected: selected.includes(rowKey),
     };
@@ -3186,9 +3196,47 @@ function OrderDetailLinesTable({
                       <Text style={[styles.businessOrderDetailCell, darkMode && { color: "#aaa" }]}>—</Text>
                     )}
                   </View>
-                  <Text style={[styles.businessOrderDetailCell, styles.businessOrderDetailColTracking, darkMode && { color: "#ccc" }]} numberOfLines={2}>
-                    {row.tracking}
-                  </Text>
+                  {(() => {
+                    const trackingExpanded = !!expandedTrackingKeys[row.key];
+                    const trackingPairs = Array.isArray(row.trackingPairs) ? row.trackingPairs : [];
+                    const hasTracking = trackingPairs.length > 0;
+                    const longestPair = trackingPairs.reduce((max, pair) => Math.max(max, pair.length), 0);
+                    const trackingLikelyTruncated = hasTracking && (trackingPairs.length > 2 || longestPair > 28);
+                    const visiblePairs = trackingExpanded || !trackingLikelyTruncated ? trackingPairs : trackingPairs.slice(0, 2);
+                    const showExpandControl = hasTracking && trackingLikelyTruncated;
+                    return (
+                      <TouchableOpacity
+                        style={[styles.businessOrderDetailCell, styles.businessOrderDetailColTracking]}
+                        disabled={!showExpandControl}
+                        onPress={() => {
+                          if (!showExpandControl) return;
+                          setExpandedTrackingKeys((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        {hasTracking ? (
+                          visiblePairs.map((pair, pairIndex) => (
+                            <Text
+                              key={`${row.key}-tracking-${pairIndex}`}
+                              style={[
+                                styles.businessOrderDetailTrackingText,
+                                pairIndex > 0 && styles.businessOrderDetailTrackingTextSpaced,
+                                darkMode && { color: "#ccc" },
+                              ]}
+                              numberOfLines={trackingExpanded ? undefined : 1}
+                            >
+                              {pair}
+                            </Text>
+                          ))
+                        ) : (
+                          <Text style={[styles.businessOrderDetailTrackingText, darkMode && { color: "#ccc" }]}>—</Text>
+                        )}
+                        {showExpandControl ? (
+                          <Text style={styles.businessOrderDetailTrackingExpandHint}>{trackingExpanded ? "Show less" : "…"}</Text>
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  })()}
                 </>
               ) : null}
             </>
@@ -4120,39 +4168,89 @@ function isLineShipped(line) {
   return isLineFullyShipped(line);
 }
 
+/** Split multi-shipment carrier / tracking fields (backend joins with " | "). */
+function splitTrackingField(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw || raw === "—") return [];
+  return raw
+    .split(/\s*\|\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Build carrier+number pairs for one or more shipments.
+ * e.g. carriers "UPS | DHL" + numbers "111 | 222" → ["UPS 111", "DHL 222"]
+ */
+function getTrackingPairs(carrierRaw, trackingRaw) {
+  const carriers = splitTrackingField(carrierRaw);
+  const numbers = splitTrackingField(trackingRaw);
+  if (!carriers.length && !numbers.length) return [];
+
+  if (carriers.length === 1 && numbers.length > 1) {
+    return numbers.map((n) => `${carriers[0]} ${n}`.trim()).filter(Boolean);
+  }
+  if (numbers.length === 1 && carriers.length > 1) {
+    return carriers.map((c) => `${c} ${numbers[0]}`.trim()).filter(Boolean);
+  }
+
+  const count = Math.max(carriers.length, numbers.length);
+  const pairs = [];
+  for (let i = 0; i < count; i++) {
+    const pair = [carriers[i], numbers[i]].filter(Boolean).join(" ");
+    if (pair) pairs.push(pair);
+  }
+  return pairs;
+}
+
+/** Inline label (comma-separated) for compact contexts like Delivery Verification. */
+function formatTrackingLabel(carrierRaw, trackingRaw) {
+  const pairs = getTrackingPairs(carrierRaw, trackingRaw);
+  return pairs.length ? pairs.join(", ") : "—";
+}
+
 function formatLineFulfillmentDisplay(line) {
   if (!line || typeof line !== "object") {
-    return { statusLabel: "—", trackingLabel: "—" };
+    return { statusLabel: "—", trackingLabel: "—", trackingPairs: [], cancelNote: "" };
   }
   const status = getLineFulfillmentStatus(line);
   const carrier = String(line.tracking_carrier || line.ti_tracking_carrier || "").trim();
   const trackingNumber = String(line.tracking_number || line.ti_tracking_number || "").trim();
-  const trackingLabel = [carrier, trackingNumber].filter(Boolean).join(" · ") || "—";
+  const trackingPairs = getTrackingPairs(carrier, trackingNumber);
+  const trackingLabel = trackingPairs.length ? trackingPairs.join(", ") : "—";
   const purchased = getLinePurchasedQty(line);
   const shipped = getLineShippedQty(line);
 
   if (NOT_REQUIRED_FULFILLMENT_STATUSES.has(status) || (!lineRequiresShipping(line) && shipped <= 0)) {
-    return { statusLabel: "—", trackingLabel: "—" };
+    return { statusLabel: "—", trackingLabel: "—", trackingPairs: [], cancelNote: "" };
   }
   if (purchased > 0) {
     const returned = getLineReturnedQty(line);
     const remaining = getLineRemainingShipQty(line);
     const cancelled = getLineCancelledFromShipQty(line);
+    const cancelNote = cancelled > 0 ? `${cancelled}/${purchased} cancelled` : "";
     if (shipped <= 0 && cancelled > 0 && remaining <= 0) {
-      return { statusLabel: "Cancelled", trackingLabel: "—" };
+      return { statusLabel: "Cancelled", trackingLabel: "—", trackingPairs: [], cancelNote };
     }
-    if (shipped <= 0) return { statusLabel: "Not shipped", trackingLabel: "—" };
-    if (remaining <= 0 && shipped >= purchased - Math.max(returned, cancelled)) return { statusLabel: "Shipped", trackingLabel };
-    if (shipped >= purchased) return { statusLabel: "Shipped", trackingLabel };
-    return { statusLabel: `${shipped}/${purchased}`, trackingLabel };
+    if (shipped <= 0) return { statusLabel: "Not shipped", trackingLabel: "—", trackingPairs: [], cancelNote: "" };
+    // Nothing left to ship (remaining shipped and/or cancelled).
+    if (remaining <= 0 && shipped >= purchased - Math.max(returned, cancelled)) {
+      if (cancelled > 0 && shipped < purchased) {
+        return { statusLabel: `Shipped ${shipped}/${purchased}`, trackingLabel, trackingPairs, cancelNote };
+      }
+      return { statusLabel: "Shipped", trackingLabel, trackingPairs, cancelNote };
+    }
+    if (shipped >= purchased) return { statusLabel: "Shipped", trackingLabel, trackingPairs, cancelNote };
+    // Still awaiting more units to ship.
+    return { statusLabel: `${shipped}/${purchased}`, trackingLabel, trackingPairs, cancelNote };
   }
   if (isLineFullyShipped(line) || SHIPPED_FULFILLMENT_STATUSES.has(status)) {
-    return { statusLabel: "Shipped", trackingLabel };
+    return { statusLabel: "Shipped", trackingLabel, trackingPairs, cancelNote: "" };
   }
   if (["not_shipped", "pending_shipment", "awaiting_shipment", "unfulfilled", "pending", "ready_to_ship"].includes(status) || lineRequiresShipping(line)) {
-    return { statusLabel: "Not shipped", trackingLabel: "—" };
+    return { statusLabel: "Not shipped", trackingLabel: "—", trackingPairs: [], cancelNote: "" };
   }
-  return { statusLabel: "—", trackingLabel: "—" };
+  return { statusLabel: "—", trackingLabel: "—", trackingPairs: [], cancelNote: "" };
 }
 
 /**
@@ -4281,6 +4379,103 @@ function getOrderShippingProgress(sources) {
     return "not_required";
   }
   return "unknown";
+}
+
+/**
+ * Receipt APIs often omit remaining_to_ship / cancelled_qty / tracking.
+ * Merge those fields from order detail so Delivery Verification can treat
+ * cancelled units as non-receivable instead of "awaiting ship".
+ */
+function enrichReceiptLinesWithOrderFulfillment(receiptLines, orderDetail) {
+  if (!Array.isArray(receiptLines) || !receiptLines.length || !orderDetail) return receiptLines || [];
+  const sale = orderDetail.sale || orderDetail;
+  const saleLines = Array.isArray(sale?.lines) ? sale.lines : [];
+  const saleByTiUid = {};
+  for (const line of saleLines) {
+    const uid = String(line?.ti_uid || line?.transaction_item_uid || "").trim();
+    if (uid) saleByTiUid[uid] = line;
+  }
+  const returnRows = Array.isArray(orderDetail.returns) ? orderDetail.returns : [];
+  const cancelledByLine = buildExistingReturnQtyByLine(returnRows);
+  const progress = getOrderShippingProgress([sale].filter(Boolean));
+
+  return receiptLines.map((receipt) => {
+    const tiUid = String(receipt?.ti_uid || receipt?.transaction_item_uid || "").trim();
+    const saleLine = tiUid ? saleByTiUid[tiUid] : null;
+    const merged = { ...receipt };
+
+    if (saleLine) {
+      const copyIfMissing = [
+        "fulfillment_status",
+        "ti_fulfillment_status",
+        "shipped",
+        "is_shipped",
+        "ti_shipped",
+        "ti_shipped_at",
+        "shipped_at",
+        "fulfilled_at",
+      ];
+      for (const field of copyIfMissing) {
+        if ((merged[field] == null || merged[field] === "") && saleLine[field] != null && saleLine[field] !== "") {
+          merged[field] = saleLine[field];
+        }
+      }
+      if (saleLine.shipped_qty != null || saleLine.ti_shipped_qty != null || saleLine.shipped_quantity != null || saleLine.fulfillment_shipped_qty != null) {
+        const shipped =
+          saleLine.shipped_qty ?? saleLine.ti_shipped_qty ?? saleLine.shipped_quantity ?? saleLine.fulfillment_shipped_qty;
+        merged.shipped_qty = shipped;
+        merged.ti_shipped_qty = shipped;
+      }
+      if (saleLine.remaining_to_ship != null || saleLine.remaining_ship_qty != null) {
+        merged.remaining_to_ship = saleLine.remaining_to_ship ?? saleLine.remaining_ship_qty;
+      }
+      const saleCancelled =
+        saleLine.returned_qty ??
+        saleLine.returned_quantity ??
+        saleLine.cancelled_qty ??
+        saleLine.canceled_qty ??
+        saleLine.cancelled_quantity ??
+        saleLine.canceled_quantity;
+      if (saleCancelled != null && saleCancelled !== "") {
+        merged.returned_qty = saleCancelled;
+        merged.cancelled_qty = saleCancelled;
+      }
+      const carrier = saleLine.tracking_carrier || saleLine.ti_tracking_carrier;
+      const tracking = saleLine.tracking_number || saleLine.ti_tracking_number;
+      if (carrier) {
+        merged.tracking_carrier = carrier;
+        merged.ti_tracking_carrier = carrier;
+      }
+      if (tracking) {
+        merged.tracking_number = tracking;
+        merged.ti_tracking_number = tracking;
+      }
+    }
+
+    const fromReturns = tiUid ? cancelledByLine[tiUid] || 0 : 0;
+    if (fromReturns > 0) {
+      const existing = getLineReturnedQty(merged);
+      const cancelled = Math.max(existing, fromReturns);
+      merged.cancelled_qty = cancelled;
+      if (!merged.returned_qty) merged.returned_qty = cancelled;
+    }
+
+    // Order has nothing left to ship: any unshipped units on this line were cancelled.
+    if (progress === "complete") {
+      const purchased = Math.max(getLinePurchasedQty(merged), getReceiptLineQty(merged));
+      const shipped = getLineShippedQty(merged);
+      if (purchased > shipped) {
+        merged.remaining_to_ship = 0;
+        const cancelled = Math.max(getLineReturnedQty(merged), purchased - shipped);
+        if (cancelled > 0) {
+          merged.cancelled_qty = cancelled;
+          if (!merged.returned_qty) merged.returned_qty = cancelled;
+        }
+      }
+    }
+
+    return merged;
+  });
 }
 
 /** True when list payload itself has enough fulfillment signal (no order-detail fetch needed). */
@@ -6282,7 +6477,18 @@ export default function AccountScreen({ navigation, route }) {
     setDeliveryVerificationLoading(true);
     try {
       const items = await fetchReceiptLinesForTransaction(transaction);
-      setDeliveryVerificationReceiptData(items);
+      let enriched = items;
+      try {
+        const orderUid = resolveListRowOrderUid(transaction);
+        const profileId = transaction.transaction_profile_id || (await AsyncStorage.getItem("profile_uid"));
+        if (orderUid && orderUid !== "—") {
+          const orderDetail = await fetchOrderDetailApi(orderUid, { profileId });
+          enriched = enrichReceiptLinesWithOrderFulfillment(items, orderDetail);
+        }
+      } catch (enrichErr) {
+        console.warn("Delivery verification fulfillment enrich failed:", enrichErr);
+      }
+      setDeliveryVerificationReceiptData(enriched);
     } catch (error) {
       console.error("Error loading delivery verification items:", error);
       Alert.alert("Error", error.message || "Failed to load order items.");
@@ -9283,6 +9489,7 @@ export default function AccountScreen({ navigation, route }) {
                   const isSelected = selectedReceivedItems.includes(itemId);
                   const purchasedQty = getReceiptLineQty(item);
                   const alreadyReceivedQty = getPreviouslyReceivedQty(item);
+                  const cancelledQty = getLineCancelledFromShipQty(item);
                   const remainingQty = getRemainingQtyToReceive(item);
                   const verifiableQty = getVerifiableReceiveRemaining(item, pendingTransactionForConfirm);
                   const fullyReceived = remainingQty <= 0;
@@ -9292,13 +9499,37 @@ export default function AccountScreen({ navigation, route }) {
                   const needsQtyPicker = isSelected && verifiableQty > 1;
                   const shipDisplay = formatLineFulfillmentDisplay(item);
                   const shippedQty = getLineShippedQty(item);
+                  const cancelNote = shipDisplay.cancelNote || (cancelledQty > 0 ? `${cancelledQty}/${purchasedQty} cancelled` : "");
                   const showShipMeta =
                     orderNeedsShipping(item) ||
                     orderNeedsShipping(pendingTransactionForConfirm) ||
                     listRowHasExplicitShippingProgress(item) ||
                     shippedQty > 0 ||
+                    cancelledQty > 0 ||
                     awaitingShipment ||
                     (shipDisplay.statusLabel && shipDisplay.statusLabel !== "—");
+
+                  let shipMetaText = "Ready to verify";
+                  if (awaitingShipment) {
+                    shipMetaText =
+                      shipDisplay.statusLabel === "—" || shipDisplay.statusLabel === "Not shipped"
+                        ? "Not shipped yet — verify after shipping"
+                        : `${shipDisplay.statusLabel} — verify after shipping`;
+                  } else if (shipDisplay.statusLabel && shipDisplay.statusLabel !== "—") {
+                    if (shipDisplay.statusLabel === "Shipped" && shippedQty > 0 && purchasedQty > 1) {
+                      shipMetaText = `Shipped ${shippedQty}/${purchasedQty}`;
+                    } else if (shipDisplay.statusLabel.includes("/") && !String(shipDisplay.statusLabel).startsWith("Shipped")) {
+                      shipMetaText = `Shipped ${shipDisplay.statusLabel}`;
+                    } else {
+                      shipMetaText = shipDisplay.statusLabel;
+                    }
+                  }
+                  if (!awaitingShipment && shipDisplay.trackingLabel && shipDisplay.trackingLabel !== "—") {
+                    shipMetaText = `${shipMetaText} · ${shipDisplay.trackingLabel}`;
+                  }
+                  if (cancelNote) {
+                    shipMetaText = `${shipMetaText} · ${cancelNote}`;
+                  }
 
                   return (
                     <View
@@ -9341,24 +9572,13 @@ export default function AccountScreen({ navigation, route }) {
                             {item.bs_service_name || "Item"} — ${parseFloat(item.ti_bs_cost || 0).toFixed(2)} x {purchasedQty}
                           </Text>
                           {showShipMeta ? (
-                            <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#666", marginTop: 2 }}>
-                              {awaitingShipment
-                                ? shipDisplay.statusLabel === "—"
-                                  ? "Not shipped yet — verify after shipping"
-                                  : `${shipDisplay.statusLabel === "Not shipped" ? "Not shipped yet" : shipDisplay.statusLabel} — verify after shipping`
-                                : shipDisplay.statusLabel === "—"
-                                  ? "Ready to verify"
-                                  : shipDisplay.statusLabel === "Shipped" && shippedQty > 0 && purchasedQty > 1
-                                    ? `Shipped ${shippedQty}/${purchasedQty}`
-                                    : shipDisplay.statusLabel.includes("/")
-                                      ? `Shipped ${shipDisplay.statusLabel}`
-                                      : shipDisplay.statusLabel}
-                              {!awaitingShipment && shipDisplay.trackingLabel && shipDisplay.trackingLabel !== "—" ? ` · ${shipDisplay.trackingLabel}` : ""}
-                            </Text>
+                            <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#666", marginTop: 2 }}>{shipMetaText}</Text>
                           ) : null}
                         </View>
                         {fullyReceived ? (
-                          <Text style={{ fontSize: 11, color: "#9C45F7", marginLeft: 4 }}>Received</Text>
+                          <Text style={{ fontSize: 11, color: "#9C45F7", marginLeft: 4 }}>
+                            {alreadyReceivedQty > 0 ? "Received" : cancelledQty >= purchasedQty ? "Cancelled" : "Shipped"}
+                          </Text>
                         ) : awaitingShipment ? (
                           <Text style={{ fontSize: 11, color: "#E65100", marginLeft: 4 }}>Awaiting ship</Text>
                         ) : alreadyReceivedQty > 0 || (shippedQty > 0 && shippedQty < purchasedQty) ? (
@@ -9449,7 +9669,10 @@ export default function AccountScreen({ navigation, route }) {
               <Text style={{ color: "#9C45F7", fontSize: 12, marginBottom: 12, textAlign: "center" }}>
                 {deliveryVerificationReceiptData.some((line) => canSelectReceiptLineForVerification(line, pendingTransactionForConfirm))
                   ? "Please select at least one shipped item you received."
-                  : "No shipped items available to verify yet."}
+                  : deliveryVerificationReceiptData.length > 0 &&
+                      deliveryVerificationReceiptData.every((line) => getRemainingQtyToReceive(line) <= 0)
+                    ? "All receivable items on this order have been verified."
+                    : "No shipped items available to verify yet."}
               </Text>
             ) : null}
 
@@ -10208,13 +10431,26 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   businessOrderDetailTableWithFulfillment: {
-    minWidth: 1060,
+    minWidth: 1100,
   },
   businessOrderDetailColShipped: {
     width: 112,
   },
   businessOrderDetailColTracking: {
-    width: 160,
+    width: 200,
+  },
+  businessOrderDetailTrackingText: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: "#333",
+  },
+  businessOrderDetailTrackingTextSpaced: {
+    marginTop: 4,
+  },
+  businessOrderDetailTrackingExpandHint: {
+    fontSize: 11,
+    color: "#9C45F7",
+    marginTop: 2,
   },
   businessOrderDetailColReturns: {
     width: 110,
