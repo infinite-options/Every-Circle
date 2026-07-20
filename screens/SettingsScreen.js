@@ -18,16 +18,8 @@ import { fetchMiddleware as fetch } from "../utils/httpMiddleware";
 import { loadPrivacyMode, setPrivacyMode } from "../utils/privacyMode";
 import { fetchModerationReviewQueue, fetchOfferingModerationDetail, reviewOfferingModeration } from "../utils/offeringModeration";
 import { fetchSeekingModerationReviewQueue, fetchSeekingModerationDetail, reviewSeekingModeration } from "../utils/seekingModeration";
-import {
-  fetchProfileModerationReviewQueue,
-  fetchProfileModerationDetail,
-  reviewProfileModeration,
-} from "../utils/profileModeration";
-import {
-  fetchBusinessModerationReviewQueue,
-  fetchBusinessModerationDetail,
-  reviewBusinessModeration,
-} from "../utils/businessModeration";
+import { fetchProfileModerationReviewQueue, fetchProfileModerationDetail, reviewProfileModeration } from "../utils/profileModeration";
+import { fetchBusinessModerationReviewQueue, fetchBusinessModerationDetail, reviewBusinessModeration } from "../utils/businessModeration";
 import OfferingReviewDetailPanel from "../components/OfferingReviewDetailPanel";
 import SeekingReviewDetailPanel from "../components/SeekingReviewDetailPanel";
 import ProfileReviewDetailPanel from "../components/ProfileReviewDetailPanel";
@@ -279,7 +271,7 @@ export default function SettingsScreen() {
   const settingsFeedbackQuestions = ["Settings - Question 1?", "Settings - Question 2?", "Settings - Question 3?"];
 
   //for declined refunds - only show to admins
-  const ADMIN_EMAILS = ["shrutitest20@gmail.com", "admin@everycircle.com", "pmarathay@gmail.com", "cplata@everycircle.com"];
+  const ADMIN_EMAILS = ["shrutitest20@gmail.com", "admin@everycircle.com", "pmarathay@gmail.com"];
 
   const [showAdminSection, setShowAdminSection] = useState(false);
   const [adminReturns, setAdminReturns] = useState([]);
@@ -346,8 +338,8 @@ export default function SettingsScreen() {
       if (p !== null) setDisplayPhoneNumber(JSON.parse(p));
       if (t !== null) setTermsAccepted(JSON.parse(t));
       if (c !== null) setAllowCookies(JSON.parse(c));
-      if(isThirdPartyAuth !== null) setHideChangePassword(JSON.parse(isThirdPartyAuth));
-      
+      if (isThirdPartyAuth !== null) setHideChangePassword(JSON.parse(isThirdPartyAuth));
+
       // Load email quickly from AsyncStorage for admin check
       const storedEmail = await AsyncStorage.getItem("user_email");
       if (storedEmail) setUserEmail(storedEmail);
@@ -1632,7 +1624,11 @@ export default function SettingsScreen() {
                 const PRIVACY_LABEL = { everyone: "Everyone", all_circles: "All Circles", specific: "Specific" };
                 const receiveLabel = messagesOff ? "No one (all messages off)" : PRIVACY_LABEL[messagesSettings.receiveFrom] || messagesSettings.receiveFrom;
                 return (
-                  <TouchableOpacity style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]} onPress={() => setMessagesPrivacyModalVisible(true)} activeOpacity={0.8}>
+                  <TouchableOpacity
+                    style={[styles.settingItem, styles.settingItemWithHelp, darkMode && styles.darkSettingItem]}
+                    onPress={() => setMessagesPrivacyModalVisible(true)}
+                    activeOpacity={0.8}
+                  >
                     <View style={[styles.itemLabel, { flex: 1, marginRight: 10 }]}>
                       <Ionicons name='chatbubble-ellipses' size={20} style={styles.icon} color={settingsMenuIconColor} />
                       <View>
@@ -1695,13 +1691,15 @@ export default function SettingsScreen() {
               </TouchableOpacity>
 
               {/* Change Password */}
-              {!hideChangePassword && <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
-                <View style={styles.itemLabel}>
-                  <MaterialIcons name='lock' size={20} style={styles.icon} color={settingsMenuIconColor} />
-                  <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
-                </View>
-                <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
-              </TouchableOpacity>} 
+              {!hideChangePassword && (
+                <TouchableOpacity style={[styles.settingItem, styles.compactSettingItem, darkMode && styles.darkSettingItem]} onPress={() => navigation.navigate("ChangePassword")}>
+                  <View style={styles.itemLabel}>
+                    <MaterialIcons name='lock' size={20} style={styles.icon} color={settingsMenuIconColor} />
+                    <Text style={[styles.itemText, darkMode && styles.darkItemText]}>Change Password</Text>
+                  </View>
+                  <MaterialIcons name='chevron-right' size={24} color={settingsMenuIconColor} />
+                </TouchableOpacity>
+              )}
             </View>
           )}
 
@@ -1948,9 +1946,7 @@ export default function SettingsScreen() {
               >
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <MaterialIcons name='flag' size={16} color='#B71C1C' />
-                  <Text style={[styles.informationSectionHeaderText, { color: "#B71C1C" }]}>
-                    OFFERING REVIEWS {adminOfferings.length > 0 ? `(${adminOfferings.length})` : ""}
-                  </Text>
+                  <Text style={[styles.informationSectionHeaderText, { color: "#B71C1C" }]}>OFFERING REVIEWS {adminOfferings.length > 0 ? `(${adminOfferings.length})` : ""}</Text>
                 </View>
                 <Ionicons name={showOfferingsSection ? "chevron-up" : "chevron-down"} size={20} color='#B71C1C' />
               </TouchableOpacity>
@@ -1965,12 +1961,9 @@ export default function SettingsScreen() {
                     adminOfferings.map((row, idx) => {
                       const uid = row.profile_expertise_uid || row.expertise_uid || "";
                       const title = row.profile_expertise_title || row.title || uid || "Offering";
-                      const flagCount =
-                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
+                      const flagCount = Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
                       const description = row.profile_expertise_description || row.description || "";
-                      const ownerName = [row.owner_first_name || row.profile_personal_first_name, row.owner_last_name || row.profile_personal_last_name]
-                        .filter(Boolean)
-                        .join(" ");
+                      const ownerName = [row.owner_first_name || row.profile_personal_first_name, row.owner_last_name || row.profile_personal_last_name].filter(Boolean).join(" ");
                       return (
                         <TouchableOpacity
                           key={uid || idx}
@@ -1989,9 +1982,7 @@ export default function SettingsScreen() {
                               {description}
                             </Text>
                           ) : null}
-                          {ownerName ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text>
-                          ) : null}
+                          {ownerName ? <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text> : null}
                           <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
                             {uid}
                             {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
@@ -2020,9 +2011,7 @@ export default function SettingsScreen() {
               >
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <MaterialIcons name='flag' size={16} color='#4F8A8B' />
-                  <Text style={[styles.informationSectionHeaderText, { color: "#4F8A8B" }]}>
-                    SEEKING REVIEWS {adminSeeking.length > 0 ? `(${adminSeeking.length})` : ""}
-                  </Text>
+                  <Text style={[styles.informationSectionHeaderText, { color: "#4F8A8B" }]}>SEEKING REVIEWS {adminSeeking.length > 0 ? `(${adminSeeking.length})` : ""}</Text>
                 </View>
                 <Ionicons name={showSeekingSection ? "chevron-up" : "chevron-down"} size={20} color='#4F8A8B' />
               </TouchableOpacity>
@@ -2037,12 +2026,9 @@ export default function SettingsScreen() {
                     adminSeeking.map((row, idx) => {
                       const uid = row.profile_wish_uid || row.wish_uid || "";
                       const title = row.profile_wish_title || row.title || uid || "Seeking";
-                      const flagCount =
-                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
+                      const flagCount = Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
                       const description = row.profile_wish_description || row.description || "";
-                      const ownerName = [row.owner_first_name || row.profile_personal_first_name, row.owner_last_name || row.profile_personal_last_name]
-                        .filter(Boolean)
-                        .join(" ");
+                      const ownerName = [row.owner_first_name || row.profile_personal_first_name, row.owner_last_name || row.profile_personal_last_name].filter(Boolean).join(" ");
                       return (
                         <TouchableOpacity
                           key={uid || idx}
@@ -2061,9 +2047,7 @@ export default function SettingsScreen() {
                               {description}
                             </Text>
                           ) : null}
-                          {ownerName ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text>
-                          ) : null}
+                          {ownerName ? <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text> : null}
                           <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
                             {uid}
                             {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
@@ -2092,9 +2076,7 @@ export default function SettingsScreen() {
               >
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <MaterialIcons name='person' size={16} color='#6A1B9A' />
-                  <Text style={[styles.informationSectionHeaderText, { color: "#6A1B9A" }]}>
-                    PROFILE REVIEWS {adminProfiles.length > 0 ? `(${adminProfiles.length})` : ""}
-                  </Text>
+                  <Text style={[styles.informationSectionHeaderText, { color: "#6A1B9A" }]}>PROFILE REVIEWS {adminProfiles.length > 0 ? `(${adminProfiles.length})` : ""}</Text>
                 </View>
                 <Ionicons name={showProfilesSection ? "chevron-up" : "chevron-down"} size={20} color='#6A1B9A' />
               </TouchableOpacity>
@@ -2111,8 +2093,7 @@ export default function SettingsScreen() {
                       const name = [row.profile_personal_first_name || row.owner_first_name || row.first_name, row.profile_personal_last_name || row.owner_last_name || row.last_name]
                         .filter(Boolean)
                         .join(" ");
-                      const flagCount =
-                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
+                      const flagCount = Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
                       const tagLine = row.profile_personal_tag_line || row.tag_line || "";
                       const email = row.user_email || row.user_email_id || row.email || "";
                       return (
@@ -2127,17 +2108,13 @@ export default function SettingsScreen() {
                           onPress={() => openProfileReview(row)}
                           activeOpacity={0.8}
                         >
-                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>
-                            {name || uid || "Profile"}
-                          </Text>
+                          <Text style={{ fontSize: 13, fontWeight: "bold", color: darkMode ? "#fff" : "#333", marginBottom: 2 }}>{name || uid || "Profile"}</Text>
                           {tagLine ? (
                             <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 4 }} numberOfLines={2}>
                               {tagLine}
                             </Text>
                           ) : null}
-                          {email ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>{email}</Text>
-                          ) : null}
+                          {email ? <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>{email}</Text> : null}
                           <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
                             {uid}
                             {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
@@ -2166,9 +2143,7 @@ export default function SettingsScreen() {
               >
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <MaterialIcons name='storefront' size={16} color='#9C45F7' />
-                  <Text style={[styles.informationSectionHeaderText, { color: "#9C45F7" }]}>
-                    BUSINESS REVIEWS {adminBusinesses.length > 0 ? `(${adminBusinesses.length})` : ""}
-                  </Text>
+                  <Text style={[styles.informationSectionHeaderText, { color: "#9C45F7" }]}>BUSINESS REVIEWS {adminBusinesses.length > 0 ? `(${adminBusinesses.length})` : ""}</Text>
                 </View>
                 <Ionicons name={showBusinessesSection ? "chevron-up" : "chevron-down"} size={20} color='#9C45F7' />
               </TouchableOpacity>
@@ -2183,8 +2158,7 @@ export default function SettingsScreen() {
                     adminBusinesses.map((row, idx) => {
                       const uid = row.business_uid || "";
                       const name = row.business_name || uid || "Business";
-                      const flagCount =
-                        Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
+                      const flagCount = Number(row.moderation?.flagCount ?? row.moderation?.flag_count ?? row.flagCount ?? row.flag_count ?? row.pending_flag_count) || 0;
                       const category = row.business_category || "";
                       const ownerName = [row.owner_first_name, row.owner_last_name].filter(Boolean).join(" ");
                       return (
@@ -2205,9 +2179,7 @@ export default function SettingsScreen() {
                               {category}
                             </Text>
                           ) : null}
-                          {ownerName ? (
-                            <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text>
-                          ) : null}
+                          {ownerName ? <Text style={{ fontSize: 12, color: darkMode ? "#ccc" : "#555", marginBottom: 2 }}>Owner: {ownerName}</Text> : null}
                           <Text style={{ fontSize: 11, color: darkMode ? "#aaa" : "#999" }}>
                             {uid}
                             {flagCount > 0 ? ` · ${flagCount} pending flag${flagCount === 1 ? "" : "s"}` : ""}
@@ -2275,7 +2247,7 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-{/* Offering moderation review modal */}
+      {/* Offering moderation review modal */}
       <Modal visible={offeringReviewModalVisible} transparent animationType='slide' onRequestClose={() => !offeringReviewSubmitting && setOfferingReviewModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.nearbyModalBox, darkMode && styles.darkModalBox, { maxHeight: "92%", width: "94%", maxWidth: 520 }]}>
@@ -2283,7 +2255,7 @@ export default function SettingsScreen() {
             {offeringReviewLoading ? (
               <ActivityIndicator size='small' color='#B71C1C' style={{ marginVertical: 24 }} />
             ) : (
-              <ScrollView style={{ maxHeight: 480, minWidth: '100%' }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
+              <ScrollView style={{ maxHeight: 480, minWidth: "100%" }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
                 <OfferingReviewDetailPanel detail={offeringReviewDetail} queueItem={offeringReviewItem} darkMode={darkMode} />
                 <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6, marginTop: 4 }}>Admin note (required for reject)</Text>
                 <TextInput
@@ -2322,11 +2294,7 @@ export default function SettingsScreen() {
                 <Text style={{ color: "#fff", fontWeight: "bold" }}>Reject</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              onPress={() => !offeringReviewSubmitting && setOfferingReviewModalVisible(false)}
-              style={{ marginTop: 12, alignItems: "center" }}
-              disabled={offeringReviewSubmitting}
-            >
+            <TouchableOpacity onPress={() => !offeringReviewSubmitting && setOfferingReviewModalVisible(false)} style={{ marginTop: 12, alignItems: "center" }} disabled={offeringReviewSubmitting}>
               <Text style={{ color: darkMode ? "#aaa" : "#666" }}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -2341,7 +2309,7 @@ export default function SettingsScreen() {
             {seekingReviewLoading ? (
               <ActivityIndicator size='small' color='#4F8A8B' style={{ marginVertical: 24 }} />
             ) : (
-              <ScrollView style={{ maxHeight: 480,  minWidth: '100%' }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
+              <ScrollView style={{ maxHeight: 480, minWidth: "100%" }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
                 <SeekingReviewDetailPanel detail={seekingReviewDetail} queueItem={seekingReviewItem} darkMode={darkMode} />
                 <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6, marginTop: 4 }}>Admin note (required for reject)</Text>
                 <TextInput
@@ -2380,11 +2348,7 @@ export default function SettingsScreen() {
                 <Text style={{ color: "#fff", fontWeight: "bold" }}>Reject</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              onPress={() => !seekingReviewSubmitting && setSeekingReviewModalVisible(false)}
-              style={{ marginTop: 12, alignItems: "center" }}
-              disabled={seekingReviewSubmitting}
-            >
+            <TouchableOpacity onPress={() => !seekingReviewSubmitting && setSeekingReviewModalVisible(false)} style={{ marginTop: 12, alignItems: "center" }} disabled={seekingReviewSubmitting}>
               <Text style={{ color: darkMode ? "#aaa" : "#666" }}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -2399,7 +2363,7 @@ export default function SettingsScreen() {
             {profileReviewLoading ? (
               <ActivityIndicator size='small' color='#6A1B9A' style={{ marginVertical: 24 }} />
             ) : (
-              <ScrollView style={{ maxHeight: 480, minWidth: '100%' }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
+              <ScrollView style={{ maxHeight: 480, minWidth: "100%" }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
                 <ProfileReviewDetailPanel detail={profileReviewDetail} queueItem={profileReviewItem} darkMode={darkMode} />
                 <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6, marginTop: 4 }}>Admin note (required for reject)</Text>
                 <TextInput
@@ -2438,11 +2402,7 @@ export default function SettingsScreen() {
                 <Text style={{ color: "#fff", fontWeight: "bold" }}>Reject</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              onPress={() => !profileReviewSubmitting && setProfileReviewModalVisible(false)}
-              style={{ marginTop: 12, alignItems: "center" }}
-              disabled={profileReviewSubmitting}
-            >
+            <TouchableOpacity onPress={() => !profileReviewSubmitting && setProfileReviewModalVisible(false)} style={{ marginTop: 12, alignItems: "center" }} disabled={profileReviewSubmitting}>
               <Text style={{ color: darkMode ? "#aaa" : "#666" }}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -2457,7 +2417,7 @@ export default function SettingsScreen() {
             {businessReviewLoading ? (
               <ActivityIndicator size='small' color='#9C45F7' style={{ marginVertical: 24 }} />
             ) : (
-              <ScrollView style={{ maxHeight: 480, minWidth: '100%' }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
+              <ScrollView style={{ maxHeight: 480, minWidth: "100%" }} keyboardShouldPersistTaps='handled' showsVerticalScrollIndicator>
                 <BusinessReviewDetailPanel detail={businessReviewDetail} queueItem={businessReviewItem} darkMode={darkMode} />
                 <Text style={{ fontSize: 12, fontWeight: "600", color: darkMode ? "#ccc" : "#555", marginBottom: 6, marginTop: 4 }}>Admin note (required for reject)</Text>
                 <TextInput
@@ -2496,11 +2456,7 @@ export default function SettingsScreen() {
                 <Text style={{ color: "#fff", fontWeight: "bold" }}>Reject</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              onPress={() => !businessReviewSubmitting && setBusinessReviewModalVisible(false)}
-              style={{ marginTop: 12, alignItems: "center" }}
-              disabled={businessReviewSubmitting}
-            >
+            <TouchableOpacity onPress={() => !businessReviewSubmitting && setBusinessReviewModalVisible(false)} style={{ marginTop: 12, alignItems: "center" }} disabled={businessReviewSubmitting}>
               <Text style={{ color: darkMode ? "#aaa" : "#666" }}>Cancel</Text>
             </TouchableOpacity>
           </View>
